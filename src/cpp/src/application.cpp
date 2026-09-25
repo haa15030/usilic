@@ -5769,6 +5769,14 @@ bool Application::toggleMark() {
     archiveView_.redraw();  // 今、マーク自身のStandoutを塗る――ContentView::setMarkedPredicate()参照
     return true;
   }
+  if (currentMode_ == ApplicationMode::Underline) {
+    // UnderlineMode::toggleMark()自身の宣言コメント参照(2026-09-25)。
+    // USILIC履歴の目次("MAN"/"DIR"/"FILE"の見出し)は選択の対象外。
+    if (usilicLevel_ == UsilicLevel::Toc || !underlineMode_.selectedEntry()) return false;
+    underlineMode_.toggleMark(underlineView_.cursorIndex());
+    underlineView_.redraw();
+    return true;
+  }
   if (currentMode_ != ApplicationMode::Directory) return false;
   const DirectoryEntry *selected = directoryMode_.selectedEntry();
   if (!selected) return false;
@@ -12381,10 +12389,26 @@ bool Application::executeQuickLook() {
     // 2026-09-25追加、直接のユーザー要望("^Ouの一覧でクイックルックは
     // できる？"): ハイライト行のパス。MANの項目(" (man)")やUSILIC
     // 目次の見出し("MAN"/"DIR"/"FILE")等、実在しないものは対象外。
-    const std::string *entry = underlineMode_.selectedEntry();
+    // 同日追記("（ls）同様、複数指定のクイックルック"): '.'/'['/']'で
+    // 選択があればその全部(UnderlineMode::targetEntries())。
+    if (usilicLevel_ == UsilicLevel::Toc) return false;
+    for (const auto &entry : underlineMode_.targetEntries()) {
+      std::error_code ec;
+      if (std::filesystem::exists(entry, ec)) paths.push_back(entry);
+    }
+    if (paths.empty()) return false;
+  } else if (currentMode_ == ApplicationMode::Du) {
+    // 2026-09-25追加、直接のユーザー要望("実行ファイル一覧以外のリスト
+    // 上でも可能なら"): DUの結果のハイライト行(DuEntry::pathは
+    // openSelectedDuEntry()がそのまま開いている絶対パス)。^X^F/^X^Dの
+    // 履歴一覧は、打った文字がそのままパスの直接編集になる
+    // (feedRegexListByte())ため、スペースを含むパスを打てなくなる
+    // Spaceの横取りはしない。PROGRAM/CUT/MAN等、ファイルを指さない
+    // 一覧も対象外。
+    const DuEntry *entry = duMode_.selectedEntry();
     std::error_code ec;
-    if (!entry || usilicLevel_ == UsilicLevel::Toc || !std::filesystem::exists(*entry, ec)) return false;
-    paths.push_back(*entry);
+    if (!entry || !std::filesystem::exists(entry->path, ec)) return false;
+    paths.push_back(entry->path);
   } else {
     return false;
   }

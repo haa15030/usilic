@@ -1,5 +1,6 @@
 #pragma once
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -44,9 +45,19 @@ class UnderlineMode {
   const std::vector<std::string> &entries() const;
   const std::string *selectedEntry() const;
 
+  // 2026-09-25追加、直接のユーザー要望("（ls）同様、複数指定のクイック
+  // ルック実装"): (ls)/ARCと同じ'.'/'['/']'による選択(Application::
+  // toggleMark()経由)。show()で一覧が作り直されると選択は消える。
+  // targetEntries()は選択があればその全部、無ければカーソル行
+  // (DirectoryMode::targetEntries()と同じ慣習)。
+  void toggleMark(int index);
+  bool isMarked(int index) const;
+  std::vector<std::string> targetEntries() const;
+
  private:
   ContentView &view_;
   std::vector<std::string> entries_;
+  std::set<int> markedIndices_;  // toggleMark()参照
 };
 
 }  // namespace fm
