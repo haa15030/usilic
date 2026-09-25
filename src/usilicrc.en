@@ -169,10 +169,14 @@ SHELL
 HISTORY
 # Format: `line'
 #
-# The maximum number of lines kept in the HISTORY list.  Beyond this, the
-# oldest line is removed.
+# The maximum number of lines kept per history kind (FILE, DIR, MAN,
+# LOCATE, FGREP, EGREP, SHELL commands).  Beyond this, the oldest line is
+# removed (USILIC keeps three times as many).  0 means unlimited (the
+# default).  History never gets large enough to matter for memory, but
+# ~/.usilic/history is rewritten whole each time an entry is added, so set
+# a limit if saving starts to feel slow.
 
-	500
+	0
 
 WAIT
 # Format: `wait'

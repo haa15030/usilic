@@ -373,7 +373,7 @@ TEST_CASE("loadHistoryText: fields containing spaces and control bytes round-tri
 }
 
 // History::setRetentionCount()自身のコメント参照(2026-09-25、usilicrcのHISTORY)。
-TEST_CASE("setRetentionCount: usilicrc's HISTORY replaces the default 200; lowering it trims the oldest") {
+TEST_CASE("setRetentionCount: usilicrc's HISTORY caps each ring; lowering it trims the oldest; 0 is unlimited") {
   fm::History history;
   history.setRetentionCount(500);
   for (int i = 0; i < 300; i++) history.pushRecent(fm::RingCategory::RecentEgrepPattern, "p" + std::to_string(i));
@@ -389,6 +389,17 @@ TEST_CASE("setRetentionCount: usilicrc's HISTORY replaces the default 200; lower
   REQUIRE(ring.size() == 100);
   CHECK(ring.front() == "p200");
   CHECK(ring.back() == "p299");
-  history.setRetentionCount(0);
-  CHECK(history.retentionCount() == 1);
+  history.setRetentionCount(-5);
+  CHECK(history.retentionCount() == 0);
+}
+
+// History自身のコンストラクタのコメント参照(2026-09-25、既定は無制限)。
+TEST_CASE("History: the default (0) keeps every entry -- no count limit") {
+  fm::History history;
+  CHECK(history.retentionCount() == 0);
+  for (int i = 0; i < 1000; i++) history.pushRecent(fm::RingCategory::RecentFile, "/f" + std::to_string(i));
+  CHECK(history.recentEntries(fm::RingCategory::RecentFile).size() == 1000);
+  fm::History reloaded;
+  reloaded.loadHistoryText(history.serialize("usilic", "now"), false);
+  CHECK(reloaded.recentEntries(fm::RingCategory::RecentFile).size() == 1000);
 }

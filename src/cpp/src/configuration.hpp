@@ -352,7 +352,7 @@ class Configuration {
   std::map<int, std::string> keyEntrySpecs_;   // KEY: K-n
   KeyBindings keyBindings_;
   int bufferSizeLimitBytes_ = 1 * 1024 * 1024;
-  int historyRetentionCount_ = 200;
+  int historyRetentionCount_ = 0;  // 0は無制限(History自身のコンストラクタのコメント参照)
   int waitIntervalMicros_ = 100000;  // conf_wait()の静的k_wait初期化値(100000)
   int columnThreshold_ = 8;  // columnThreshold()自身のコメント参照
   bool smoothScrollEnabled_ = false;

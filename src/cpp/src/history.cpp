@@ -1,6 +1,7 @@
 #include "history.hpp"
 
 #include <algorithm>
+#include <limits>
 
 #include <cctype>
 #include <cstdlib>
@@ -225,7 +226,7 @@ void History::mirrorToUsilicImpl(RingCategory source, const std::string &name) {
   if (!ring.empty() && ring.back() == entry) return;
   ring.push_back(entry);
   // 3種(FILE/DIR/MAN)を1本にまとめるので、保持数もそれに合わせて3倍にする。
-  if (static_cast<int>(ring.size()) > retentionCount_ * 3) ring.pop_front();
+  if (ring.size() > limitFor(RingCategory::Usilic)) ring.pop_front();
 }
 
 void History::pushRecentImpl(RingCategory category, const std::string &name) {
@@ -248,7 +249,7 @@ void History::pushRecentImpl(RingCategory category, const std::string &name) {
   auto &ring = rings_[category];
   if (!ring.empty() && ring.back() == name) return;
   ring.push_back(name);
-  if (static_cast<int>(ring.size()) > retentionCount_) ring.pop_front();
+  if (ring.size() > limitFor(category)) ring.pop_front();
 
   // 2026-08-27の追加、直接のユーザー報告("旧では同時にDIR履歴に
   // も所在地記載がなされる...^Tに限らずLOCATE、DUその他（ls）経由でな
@@ -307,11 +308,17 @@ const std::deque<std::string> &History::recentEntries(RingCategory category) con
 int History::retentionCount() const { return retentionCount_; }
 
 void History::setRetentionCount(int count) {
-  retentionCount_ = std::max(1, count);
+  retentionCount_ = std::max(0, count);
   for (auto &kv : rings_) {
-    std::size_t limit = static_cast<std::size_t>(kv.first == RingCategory::Usilic ? retentionCount_ * 3 : retentionCount_);
-    while (kv.second.size() > limit) kv.second.pop_front();
+    while (kv.second.size() > limitFor(kv.first)) kv.second.pop_front();
   }
+}
+
+// 種類ごとの保持数の上限。0(無制限、2026-09-25からの既定)なら上限なし。
+// USILICはFILE/DIR/MANの3種を1本にまとめるので3倍。
+std::size_t History::limitFor(RingCategory category) const {
+  if (retentionCount_ <= 0) return std::numeric_limits<std::size_t>::max();
+  return static_cast<std::size_t>(category == RingCategory::Usilic ? retentionCount_ * 3 : retentionCount_);
 }
 
 bool History::smoothScrollEnabled() const { return smoothScrollEnabled_; }
@@ -467,8 +474,7 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     auto &ring = rings_[category];
     while (i < lines.size() && !isSectionBoundary(lines[i])) {
       ring.push_back(decodeField(lines[i]));
-      if (static_cast<int>(ring.size()) > (category == RingCategory::Usilic ? retentionCount_ * 3 : retentionCount_))
-        ring.pop_front();
+      if (ring.size() > limitFor(category)) ring.pop_front();
       i++;
     }
   };

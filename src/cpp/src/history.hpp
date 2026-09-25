@@ -152,7 +152,10 @@ class History {
     std::string pendingCutProgram;    // CUT::chpのプログラム名、未解決(クラスコメント参照)
   };
 
-  explicit History(int retentionCount = 200);
+  // retentionCount: 種類ごとの保持数。0は無制限(2026-09-25から既定、直接の
+  // ユーザー依頼――200はlegacyのmenu.cの決め打ちをそのまま移しただけで根拠が
+  // 無く、履歴はメモリの面では何年分でも問題にならない規模のため)。
+  explicit History(int retentionCount = 0);
 
   // 2026-09-20追加、直接のユーザー依頼("大きめの方針転換...historyへの
   // その場反映は^R発動のHISTORY以外でお願いしたい"): pushRecent()が
@@ -196,10 +199,10 @@ class History {
   const std::deque<std::string> &recentEntries(RingCategory category) const;  // 古い順..新しい順
   int retentionCount() const;
   // 2026-09-25追加、直接のユーザー依頼: usilicrcのHISTORY(Configuration::
-  // historyRetentionCount())を反映する。それまでmain.cppは`fm::History history;`
-  // と既定の200で作っており、usilicrcを読むのはその後だったため、HISTORYの
-  // 値はどこにも効いていなかった。1未満は1にする。既に保持数を超えている
-  // リングは古い方から切り詰める。
+  // historyRetentionCount())を反映する。それまでmain.cppはHistoryを既定の
+  // 保持数で作っており、usilicrcを読むのはその後だったため、HISTORYの値は
+  // どこにも効いていなかった。0は無制限(負の値も0)。既に保持数を超えて
+  // いるリングは古い方から切り詰める。
   void setRetentionCount(int count);
 
   // -- セッションレベルのトレーラ設定 --
@@ -305,6 +308,7 @@ class History {
   std::map<RingCategory, std::deque<std::string>> rings_;
 
   int retentionCount_;
+  std::size_t limitFor(RingCategory category) const;  // setRetentionCount()参照
   bool smoothScrollEnabled_ = false;
   bool modeLineVisible_ = true;
   int lsMode_ = 0;
