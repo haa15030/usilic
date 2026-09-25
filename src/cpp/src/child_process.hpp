@@ -99,6 +99,13 @@ struct ChildProcessOptions {
   // このクラスがそちらについて知る必要をなくすため――KeyInputが
   // sub.cを直接呼ぶ代わりにsetPidReporter()を公開したのと同じ考え方。
   const std::string *stderrLogPath = nullptr;
+  // 標準出力として読み込む最大バイト数(0は無制限)。2026-09-25追加、直接の
+  // ユーザー依頼(usilicrcのBUFFERを「バッファへ読み込むモードはすべて対象」
+  // に): 超えたら読むのをやめて子プロセスを終了させ(SIGTERM。止めないと
+  // 書き込みの途中で詰まったままになる)、出力を最後の改行で切り、
+  // Result::truncatedを立てる――legacyのalloc_pipe()の"Not enough buffer"
+  // (そこまでで読み込みを止める)と同じ。
+  std::size_t maxOutputBytes = 0;
 };
 
 class ChildProcess {
@@ -107,6 +114,7 @@ class ChildProcess {
     std::string output;
     bool ok = false;       // 起動され、ステータス0で正常終了した
     int exitStatus = -1;   // 生の終了コード。正常終了しなかった場合は-1
+    bool truncated = false;  // Options::maxOutputBytesで打ち切った
   };
 
   using Options = ChildProcessOptions;

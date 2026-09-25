@@ -44,8 +44,12 @@ std::vector<std::string> DuMode::commandArgvFor(const std::string &path) const {
 bool DuMode::loadUsage(const std::string &path) {
   std::vector<std::string> argv = commandArgvFor(path);
   if (argv.empty()) return false;
-  ChildProcess::Result result = ChildProcess::run(argv);
+  // usilicrcのBUFFER(2026-09-25、ChildProcessOptions::maxOutputBytes参照)。
+  ChildProcess::Options options;
+  options.maxOutputBytes = static_cast<std::size_t>(configuration_.bufferSizeLimitBytes());
+  ChildProcess::Result result = ChildProcess::run(argv, options);
   if (!result.ok) return false;
+  if (result.truncated) configuration_.noteBufferLimitHit();
   return loadUsageFromOutput(path, result.output);
 }
 

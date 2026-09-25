@@ -62,6 +62,25 @@ std::string readAll(int fd) {
   return out;
 }
 
+// readAll()の上限付き版(ChildProcessOptions::maxOutputBytes参照)。上限に
+// 達したら読むのをやめ、最後の改行までに切ってtruncatedを立てる。
+std::string readAllLimited(int fd, std::size_t maxBytes, bool *truncated) {
+  if (maxBytes == 0) return readAll(fd);
+  std::string out;
+  char buf[4096];
+  ssize_t n;
+  while ((n = read(fd, buf, sizeof(buf))) > 0) {
+    out.append(buf, n);
+    if (out.size() > maxBytes) {
+      *truncated = true;
+      std::size_t newline = out.rfind('\n', maxBytes);
+      out.resize(newline == std::string::npos ? maxBytes : newline + 1);
+      break;
+    }
+  }
+  return out;
+}
+
 // `input`を`fd`へ書き込んで終了する、小さな専用プロセスをforkする
 // ――これから子プロセスの標準出力を読むためにブロックしようとして
 // いるのと同じプロセスから書き込むと、入力がパイプバッファより
@@ -129,12 +148,15 @@ ChildProcess::Result ChildProcess::run(const std::vector<std::string> &argv,
     close(inPv[1]);
   }
 
-  result.output = readAll(outPv[0]);
+  result.output = readAllLimited(outPv[0], options.maxOutputBytes, &result.truncated);
+  if (result.truncated) kill(childPid, SIGTERM);  // ChildProcessOptions::maxOutputBytes参照
   close(outPv[0]);
 
   reapStatus(writerPid);
   result.exitStatus = reapStatus(childPid);
-  result.ok = (result.exitStatus == 0);
+  // 上限で打ち切った場合(子プロセスはこちらが止めた)も、そこまでの出力は
+  // 有効なので成功扱い(ChildProcessOptions::maxOutputBytes参照)。
+  result.ok = (result.exitStatus == 0) || result.truncated;
   return result;
 }
 
@@ -209,13 +231,17 @@ ChildProcess::Result ChildProcess::runPipeline(const std::vector<std::string> &a
     close(inPv[1]);
   }
 
-  result.output = readAll(outPv[0]);
+  result.output = readAllLimited(outPv[0], options.maxOutputBytes, &result.truncated);
+  if (result.truncated) {  // ChildProcessOptions::maxOutputBytes参照
+    kill(pid1, SIGTERM);
+    kill(pid2, SIGTERM);
+  }
   close(outPv[0]);
 
   reapStatus(writerPid);
   reapStatus(pid1);
   result.exitStatus = reapStatus(pid2);
-  result.ok = (result.exitStatus == 0);
+  result.ok = (result.exitStatus == 0) || result.truncated;  // run()自身の同じコメント参照
   return result;
 }
 

@@ -284,8 +284,11 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   // 英語以外のロケールの`ls`は最後の空白によるヒューリスティックへ
   // フォールバックし、空白を含むファイル名を誤って分割してしまう。
   options.forceCLocale = true;
+  // usilicrcのBUFFER(2026-09-25、ChildProcessOptions::maxOutputBytes参照)。
+  options.maxOutputBytes = static_cast<std::size_t>(configuration_.bufferSizeLimitBytes());
   ChildProcess::Result result = ChildProcess::run(argv, options);
   if (!result.ok) return false;
+  if (result.truncated) configuration_.noteBufferLimitHit();
 
   std::vector<DirectoryEntry> entries;
   std::vector<ContentView::Line> lines;

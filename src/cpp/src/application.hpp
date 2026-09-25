@@ -3148,6 +3148,10 @@ class Application {
   // の^Mを^O^Mへ切り替えた時の"Not enough buffer"。
   void showTransientNotice(ContentView &view, const std::string &text);
   void clearTransientNotice();
+  void showBufferLimitNoticeIfHit();  // それ自身のコメント(application.cpp)参照
+  bool capAsyncOutput(std::string &output, pid_t pid);  // それ自身のコメント(application.cpp)参照
+  void capBufferContent(std::vector<unsigned char> &content);  // 同上
+  bool handleMouseClickImpl(int row, int column);
 
   enum class PromptKind {
     None,

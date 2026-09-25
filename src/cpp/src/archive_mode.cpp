@@ -212,6 +212,8 @@ bool ArchiveMode::loadArchive(const std::string &path) {
   // ファイル名を一切見ないため無関係。
   ChildProcess::Options options;
   options.forceUtf8CTypeForListing = true;
+  // usilicrcのBUFFER(2026-09-25、ChildProcessOptions::maxOutputBytes参照)。
+  options.maxOutputBytes = static_cast<std::size_t>(configuration_.bufferSizeLimitBytes());
   ChildProcess::Result result;
   if (command->pipedFromArgv) {
     // パイプ形式(例えば.tgz: gzip -dc <file> | tar tvf -)は、
@@ -226,6 +228,7 @@ bool ArchiveMode::loadArchive(const std::string &path) {
     result = ChildProcess::run(argv, options);
   }
   if (!result.ok) return false;
+  if (result.truncated) configuration_.noteBufferLimitHit();
   return finishLoadFromOutput(path, result.output);
 }
 

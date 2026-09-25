@@ -3177,6 +3177,7 @@ bool Application::feedUntranslatedByte(int byte, std::optional<KeyInput::Special
   bool result = feedByteImpl(byte, special);
   --stdinPagerCheckDepth_;
   if (wasStdin && currentMode_ != ApplicationMode::File) discardStdinPager(wasReturnsToShell);
+  if (outermost) showBufferLimitNoticeIfHit();
   return result;
 }
 
@@ -3799,7 +3800,16 @@ bool Application::handleCommand(Command command) {
   bool result = handleCommandImpl(command);
   --stdinPagerCheckDepth_;
   if (wasStdin && currentMode_ != ApplicationMode::File) discardStdinPager(wasReturnsToShell);
+  if (outermost) showBufferLimitNoticeIfHit();
   return result;
+}
+
+// usilicrcのBUFFER(2026-09-25): どこかの読み込みがBUFFERを超えていたら
+// (Configuration::noteBufferLimitHit())、今の画面に"Not enough buffer"を
+// 一時メッセージとして出す。入力/コマンドの処理の後、マウスのクリック/
+// ドロップ、非同期の読み込み(DU/アーカイブ一覧)の完了時に呼ぶ。
+void Application::showBufferLimitNoticeIfHit() {
+  if (configuration_.consumeBufferLimitHit()) showTransientNotice(activeView(), "Not enough buffer");
 }
 
 void Application::showTransientNotice(ContentView &view, const std::string &text) {
@@ -4749,21 +4759,8 @@ bool Application::openSelectedEntry() {
     if (startArchiveLoadAsync(path)) return true;  // 今は待機中――awaitingArchiveLoad()参照
     activeView().redraw();
   }
-  // 2026-09-25追加、直接のユーザー依頼(BUFFERの検討で"2と3でいい。ただし
-  // ^O^Mへ切り替えた際にNot enough bufferは出してほしい。どれかのキーで
-  // 消去"): usilicrcのBUFFER(それまで読むだけで使われていなかった)を超える
-  // ファイルは、全体を読み込む代わりに^O^M(1行ずつ読む、画面に出る分だけ
-  // 読み込む)と同じ方法で開き、"Not enough buffer"を一時メッセージとして
-  // 出す。legacyはここで読み込み自体を止めていた(alloc_pipe()の中断)。
-  {
-    std::error_code sizeEc;
-    auto size = std::filesystem::file_size(path, sizeEc);
-    if (!sizeEc && static_cast<long long>(size) > configuration_.bufferSizeLimitBytes()) {
-      if (!openSelectedEntryNoWrap()) return false;
-      showTransientNotice(fileView_, "Not enough buffer");
-      return true;
-    }
-  }
+  // BUFFERを超えるファイルは、FileMode::loadFile()自身が^O^M方式へ切り替える
+  // (そちらのコメント参照)。
   if (!fileMode_.loadFile(path, [this]() { return keyInterruptRequested(); })) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;  // それ自身の宣言コメント参照
@@ -4946,6 +4943,7 @@ bool Application::openSelectedArchiveEntry() {
 
   auto content = archiveMode_.extractSelected();
   if (!content) return false;
+  capBufferContent(*content);  // usilicrcのBUFFER、それ自身のコメント参照
 
   // 2026-08-26修正、実際の報告("一覧から選んだファイル内容がハイ
   // ライト表示（←不要）かつ80桁分しか表示されない"):
@@ -4998,6 +4996,7 @@ bool Application::openSelectedArchiveEntry() {
 bool Application::descendToNestedArchive(const ArchiveEntry &entry) {
   auto content = archiveMode_.extractSelected();
   if (!content) return false;
+  capBufferContent(*content);  // usilicrcのBUFFER、それ自身のコメント参照
 
   std::string tempPath = materializeArchiveTempFile(allocateArcDirectory(), entry.name, *content);
   if (tempPath.empty()) return false;
@@ -8554,9 +8553,49 @@ void Application::finishDuAsync() {
 
 bool Application::awaitingDu() const { return duPid_ > 0; }
 
+// usilicrcのBUFFER(2026-09-25、"バッファへ読み込むモードはすべて対象"):
+// 非同期に溜めている出力(DU/アーカイブ一覧)がBUFFERを超えたら、子プロセスを
+// 止め、最後の改行で切り、Configuration::noteBufferLimitHit()で"Not enough
+// buffer"を出させる――legacyのalloc_pipe()の中断と同じく、そこまでの一覧を
+// 表示する(legacyでは8MBでもDUの一覧でよくこれが出ていた)。超えたらtrue。
+// usilicrcのBUFFER(2026-09-25): アーカイブから取り出した中身がBUFFERを超えて
+// いたら、最後の改行までに切り、"Not enough buffer"を出させる。取り出しの実行
+// 自体には上限を付けない(アーカイブ全体を展開した出力から目的のファイルを探す
+// ので、途中で打ち切ると後ろにあるファイルが見つからなくなる)。
+void Application::capBufferContent(std::vector<unsigned char> &content) {
+  auto limit = static_cast<std::size_t>(configuration_.bufferSizeLimitBytes());
+  if (content.size() <= limit) return;
+  std::size_t cut = limit;
+  for (std::size_t i = limit; i > 0; i--) {
+    if (content[i - 1] == '\n') {
+      cut = i;
+      break;
+    }
+  }
+  content.resize(cut);
+  configuration_.noteBufferLimitHit();
+}
+
+bool Application::capAsyncOutput(std::string &output, pid_t pid) {
+  if (static_cast<long long>(output.size()) <= configuration_.bufferSizeLimitBytes()) return false;
+  ChildProcess::terminate(pid);
+  std::size_t newline = output.rfind('\n', static_cast<std::size_t>(configuration_.bufferSizeLimitBytes()));
+  output.resize(newline == std::string::npos ? static_cast<std::size_t>(configuration_.bufferSizeLimitBytes()) : newline + 1);
+  configuration_.noteBufferLimitHit();
+  return true;
+}
+
 void Application::pollDuCompletion() {
   if (duPid_ <= 0) return;
   duPendingOutput_ += ChildProcess::readAvailable(duOutputFd_);
+  if (capAsyncOutput(duPendingOutput_, duPid_)) {
+    close(duOutputFd_);
+    duOutputFd_ = -1;
+    duPid_ = -1;
+    finishDuAsync();
+    showBufferLimitNoticeIfHit();
+    return;
+  }
   if (!ChildProcess::hasExited(duPid_)) return;
   // 2026-09-19追加: hasExited()がまさに今waitpid()で回収した直後
   // ――子プロセス自身は既に標準出力をクローズ済み(execvp()した
@@ -8569,6 +8608,7 @@ void Application::pollDuCompletion() {
   duOutputFd_ = -1;
   duPid_ = -1;
   finishDuAsync();
+  showBufferLimitNoticeIfHit();
 }
 
 // awaitingArchiveLoad()自身の宣言コメント参照。openSelectedEntry()
@@ -8685,6 +8725,14 @@ bool Application::awaitingArchiveLoad() const { return archiveLoadPid_ > 0; }
 void Application::pollArchiveLoadCompletion() {
   if (archiveLoadPid_ <= 0) return;
   archiveLoadPendingOutput_ += ChildProcess::readAvailable(archiveLoadOutputFd_);
+  if (capAsyncOutput(archiveLoadPendingOutput_, archiveLoadPid_)) {  // それ自身のコメント参照
+    close(archiveLoadOutputFd_);
+    archiveLoadOutputFd_ = -1;
+    archiveLoadPid_ = -1;
+    finishArchiveLoadAsync();
+    showBufferLimitNoticeIfHit();
+    return;
+  }
   if (!ChildProcess::hasExited(archiveLoadPid_)) return;
   // pollDuCompletion()自身の同じ理由のコメント参照。
   archiveLoadPendingOutput_ += ChildProcess::readAvailable(archiveLoadOutputFd_);
@@ -8692,6 +8740,7 @@ void Application::pollArchiveLoadCompletion() {
   archiveLoadOutputFd_ = -1;
   archiveLoadPid_ = -1;
   finishArchiveLoadAsync();
+  showBufferLimitNoticeIfHit();
 }
 
 // ^J^D(K-38): Command::RedisplayDu自身のコメント参照。
@@ -13743,6 +13792,12 @@ bool Application::consumeGuiModeToggleRequest() {
 // しているのと同じ方法で、クリックが即座に実際の選択を確定させる
 // ようにする。
 bool Application::handleMouseClick(int row, int column) {
+  bool result = handleMouseClickImpl(row, column);
+  showBufferLimitNoticeIfHit();  // usilicrcのBUFFER、それ自身のコメント参照
+  return result;
+}
+
+bool Application::handleMouseClickImpl(int row, int column) {
   if (currentMode_ == ApplicationMode::Directory) {
     int idx = directoryView_.lineIndexAtRow(row);
     if (idx < 0) return false;
@@ -13968,6 +14023,7 @@ bool Application::openDroppedPaths(const std::vector<std::string> &paths) {
     }
   }
   activeView().redraw();
+  showBufferLimitNoticeIfHit();
   return opened;
 }
 

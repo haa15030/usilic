@@ -511,7 +511,7 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
           int mb = std::atoi(v->c_str());
           if (mb > 100 || mb == 0) {
             errors_.push_back("BUFFER: value out of range (1-100): " + *v);
-            mb = 1;
+            mb = 64;  // 既定と同じ(bufferSizeLimitBytes_自身のコメント参照。legacyは1)
           }
           bufferSizeLimitBytes_ = mb * 1024 * 1024;
         }

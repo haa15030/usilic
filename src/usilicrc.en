@@ -139,9 +139,14 @@ EDITOR
 BUFFER
 # Format: `size'
 #
-# The maximum size of the buffer (in MB) allocated for a file or archive.
+# The maximum size read into the buffer (in MB, 1-100; default 64).  A file
+# larger than this is not read whole when opened with ^M etc.; it is opened
+# like ^O^M, reading only what is shown.  Lists (ls, DU, LOCATE, archive
+# contents), files extracted from an archive, MAN and ^[^M (read as is)
+# stop reading at this size.  Either way "Not enough buffer" is shown
+# (any key clears it).
 
-	8
+	64
 
 CODE
 # Format: `code0' `code1' ...

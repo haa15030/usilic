@@ -237,10 +237,10 @@ TEST_CASE("COLUMN directive: defaults to 8 when absent from usilicrc") {
   CHECK(config.columnThreshold() == 8);
 }
 
-TEST_CASE("BUFFER: an out-of-range value is clamped to 1 and recorded as an error") {
+TEST_CASE("BUFFER: an out-of-range value falls back to the default 64 and is recorded as an error") {
   Configuration config;
   REQUIRE(config.loadRcText("BUFFER\n 500\n", true));
-  CHECK(config.bufferSizeLimitBytes() == 1 * 1024 * 1024);
+  CHECK(config.bufferSizeLimitBytes() == 64 * 1024 * 1024);
   CHECK_FALSE(config.errors().empty());
 }
 
@@ -385,4 +385,9 @@ TEST_CASE("GREP directive: each line's first token (or a quoted string) becomes 
   Configuration config;
   REQUIRE(config.loadRcText("GREP\n\t\"^  [0-9]+\\.\"   # headings\n\tm.n\t# man\n\tCP|MV|RM # ops\n", true));
   CHECK(config.grepPresets() == std::vector<std::string>{"^  [0-9]+\\.", "m.n", "CP|MV|RM"});
+}
+
+TEST_CASE("BUFFER: the default (no BUFFER directive) is 64MB") {
+  Configuration config;
+  CHECK(config.bufferSizeLimitBytes() == 64 * 1024 * 1024);
 }

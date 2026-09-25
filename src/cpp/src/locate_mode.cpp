@@ -22,7 +22,10 @@ std::vector<std::string> runLocateRoleOnce(const Configuration &configuration, C
   static const std::string kDevNull = "/dev/null";
   ChildProcessOptions options;
   if (errorsToDevNull) options.stderrLogPath = &kDevNull;
+  // usilicrcのBUFFER(2026-09-25、ChildProcessOptions::maxOutputBytes参照)。
+  options.maxOutputBytes = static_cast<std::size_t>(configuration.bufferSizeLimitBytes());
   ChildProcess::Result result = ChildProcess::run(argv, options);
+  if (result.truncated) configuration.noteBufferLimitHit();
   // 本物の`locate`は、単に何も見つからなかった時に終了コード1を返す
   // (あるいはLocateUserDbについては、初回のビルド前にデータベース
   // ファイルがまだ存在しない時にも)――実行そのものの本当の失敗

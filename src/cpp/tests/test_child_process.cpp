@@ -77,3 +77,15 @@ TEST_CASE("runPipeline: with piped-in input as well (three stages: writer | argv
   CHECK(result.ok == true);
   CHECK(result.output == "HELLO\n");
 }
+
+// ChildProcessOptions::maxOutputBytes自身のコメント参照(2026-09-25、usilicrcのBUFFER)。
+TEST_CASE("run with maxOutputBytes: stops an endless writer, cuts at the last newline, and counts as ok") {
+  ChildProcess::Options options;
+  options.maxOutputBytes = 1000;
+  ChildProcess::Result result = ChildProcess::run({"yes", "line"}, options);
+  CHECK(result.truncated);
+  CHECK(result.ok);
+  CHECK(result.output.size() <= 1000);
+  CHECK(result.output.size() > 900);
+  CHECK(result.output.back() == '\n');
+}

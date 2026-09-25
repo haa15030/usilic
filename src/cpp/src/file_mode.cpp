@@ -547,13 +547,19 @@ std::vector<ContentView::Line> FileMode::readAndWrapChunked(const std::string &p
   // 抑える」という2つの相反する要求の、深く検証していない妥協点。
   constexpr std::size_t kChunkBytes = 8 * 1024 * 1024;
   std::string chunk(kChunkBytes, '\0');
-  while (in) {
-    in.read(chunk.data(), static_cast<std::streamsize>(chunk.size()));
+  // BUFFER(2026-09-25、loadFile()自身のコメント参照): 「そのまま読む」は
+  // 生のバイトを見せるモードなので^O^M方式へは切り替えず、legacyと同じく
+  // BUFFERまでで読み込みを止めて"Not enough buffer"を出させる。
+  long long remaining = configuration_.bufferSizeLimitBytes();
+  while (in && remaining > 0) {
+    in.read(chunk.data(), static_cast<std::streamsize>(std::min<long long>(kChunkBytes, remaining)));
     std::streamsize n = in.gcount();
     if (n <= 0) break;
     pipe.feed(chunk.substr(0, static_cast<std::size_t>(n)));
+    remaining -= n;
     if (shouldAbort()) break;
   }
+  if (remaining <= 0 && in.peek() != std::char_traits<char>::eof()) configuration_.noteBufferLimitHit();
   pipe.flush();
 
   lines.reserve(pipe.lines().size());
@@ -568,6 +574,19 @@ std::vector<ContentView::Line> FileMode::readAndWrapChunked(const std::string &p
 bool FileMode::loadFile(const std::string &path, const std::function<bool()> &shouldAbort) {
   noWrapMode_ = false;
   rawControlCodesMode_ = false;
+  // 2026-09-25追加、直接のユーザー依頼(usilicrcのBUFFER、"バッファへ読み込む
+  // モードはすべて対象"): BUFFERを超えるファイルは全体を読み込まず、^O^M
+  // (loadFileAsPipe()、画面に出る分だけ読み込む)と同じ方法で開き、
+  // Configuration::noteBufferLimitHit()で"Not enough buffer"を出させる。
+  // ここ1か所で、^M/^Xf/履歴/LOCATE/DU/USILIC/ドロップ等、loadFile()を通る
+  // 全ての入口が対象になる。
+  std::error_code sizeEc;
+  auto size = std::filesystem::file_size(path, sizeEc);
+  if (!sizeEc && static_cast<long long>(size) > configuration_.bufferSizeLimitBytes()) {
+    if (!loadFileAsPipe(path)) return false;
+    configuration_.noteBufferLimitHit();
+    return true;
+  }
   return loadFileImpl(path, shouldAbort);
 }
 

@@ -305,6 +305,18 @@ class Configuration {
   // 既定のままならisIdentity())。Applicationはこれを複製して入力に使う。
   const KeyBindings &keyBindings() const;
   int bufferSizeLimitBytes() const;                // BUFFER
+  // BUFFER(2026-09-25、直接のユーザー依頼"バッファへ読み込むモードはすべて
+  // 対象"): 読み込みがBUFFERを超えた(ファイルを^O^M方式へ切り替えた、あるいは
+  // 一覧/アーカイブの中身等をそこで打ち切った)ことの印。各モードはこの
+  // Configurationを読み取り専用で持っているので、印だけはconstのまま立てられる
+  // (mutable)。Applicationは入力やコマンドの処理の後でconsumeBufferLimitHit()
+  // を見て"Not enough buffer"を一時メッセージとして出す。
+  void noteBufferLimitHit() const { bufferLimitHit_ = true; }
+  bool consumeBufferLimitHit() const {
+    bool hit = bufferLimitHit_;
+    bufferLimitHit_ = false;
+    return hit;
+  }
   int historyRetentionCount() const;               // HISTORY
   int waitIntervalMicros() const;                  // WAIT
   bool smoothScrollEnabled() const;                // SCROLL
@@ -351,7 +363,11 @@ class Configuration {
   std::map<int, std::string> keyPrefixSpecs_;  // KEY: F-n
   std::map<int, std::string> keyEntrySpecs_;   // KEY: K-n
   KeyBindings keyBindings_;
-  int bufferSizeLimitBytes_ = 1 * 1024 * 1024;
+  // 既定64MB(2026-09-25、直接のユーザー依頼。それまでの1MBはlegacyの
+  // conf_bsize()が範囲外の値に使っていた戻り先を既定に流用したもので、根拠は
+  // 無かった。legacyでは8MBでもDUの一覧でよく"Not enough buffer"が出ていた)。
+  int bufferSizeLimitBytes_ = 64 * 1024 * 1024;
+  mutable bool bufferLimitHit_ = false;  // noteBufferLimitHit()参照
   int historyRetentionCount_ = 0;  // 0は無制限(History自身のコンストラクタのコメント参照)
   int waitIntervalMicros_ = 100000;  // conf_wait()の静的k_wait初期化値(100000)
   int columnThreshold_ = 8;  // columnThreshold()自身のコメント参照

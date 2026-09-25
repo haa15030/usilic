@@ -47,7 +47,11 @@ std::optional<std::vector<ContentView::Line>> ManMode::runAndWrap(const std::str
   std::optional<std::string> previousManWidthValue;
   if (previousManWidth) previousManWidthValue = previousManWidth;
   ::setenv("MANWIDTH", std::to_string(width_).c_str(), 1);
-  ChildProcess::Result result = ChildProcess::run(argv);
+  // usilicrcのBUFFER(2026-09-25、ChildProcessOptions::maxOutputBytes参照)。
+  ChildProcess::Options options;
+  options.maxOutputBytes = static_cast<std::size_t>(configuration_.bufferSizeLimitBytes());
+  ChildProcess::Result result = ChildProcess::run(argv, options);
+  if (result.truncated) configuration_.noteBufferLimitHit();
   if (previousManWidthValue) {
     ::setenv("MANWIDTH", previousManWidthValue->c_str(), 1);
   } else {
