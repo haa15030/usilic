@@ -1,5 +1,7 @@
 #include "application.hpp"
 
+#include <poll.h>
+
 #include <algorithm>
 #include <csignal>
 #include <cstdio>
@@ -4701,6 +4703,19 @@ bool Application::openSelectedEntryRaw() {
   // 届いていた場合(考えにくいが、例えば直前の操作の取りこぼし等)は
   // 捨てずにplayRawMacro()で送り返し、通常のディスパッチへ委ねる。
   auto shouldAbort = [this]() {
+    // 2026-09-25修正、直接のユーザー報告("GUI起動で.mdファイルを
+    // `^[^M`すると...無反応"、-cは問題無し): 「実はすでにGUI」起動では
+    // 起動元ターミナルが^Cのためにcooked mode(ICANON、main()の
+    // guiOwnsWholeSession分岐のkeyInput.leaveRawMode()参照)へ戻されて
+    // おり、そこでのread()はそのターミナルで改行が打たれるまで
+    // ブロックする――raw mode(VMIN=0/VTIME=1、0.1秒で諦める)を前提
+    // にしていたこの覗き見がそこで止まり、GUI全体が固まっていた。
+    // 実際に何か届いている時だけ読む。
+    if (!keyInput_.isPlayingRawMacro()) {
+      if (keyInput_.fd() < 0) return false;
+      struct pollfd pfd{keyInput_.fd(), POLLIN, 0};
+      if (::poll(&pfd, 1, 0) <= 0 || !(pfd.revents & POLLIN)) return false;
+    }
     int byte = keyInput_.readByte();
     if (byte == 0) return false;
     if (byte == kControlG) return true;
