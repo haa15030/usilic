@@ -1951,7 +1951,7 @@ class Application {
   // アプリケーションで開く」で渡されたパスを開く(GraphicalDisplay::
   // consumeDroppedFiles()参照)。1つなら^Xfでパスを入力した時と同じ
   // executePathInput()(ディレクトリ→DIR、アーカイブ→ARC、他→FILE)、
-  // 複数なら`usilic a b c`起動と同じstartPagerFileList()。
+  // 複数なら^Ouと同じUnderline一覧を作り、その最上行を開く。
   bool openDroppedPaths(const std::vector<std::string> &paths);
 
  private:

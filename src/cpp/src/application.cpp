@@ -13796,13 +13796,28 @@ bool Application::openDroppedPaths(const std::vector<std::string> &paths) {
   if (paths.size() == 1) {
     opened = executePathInput(paths.front());
   } else {
-    // 実在する通常ファイルだけに絞る(フォルダ混じりのドロップ等)。
-    std::vector<std::string> files;
+    // 2026-09-25変更、直接のユーザー要望("複数ファイルをusilic画面へ
+    // ドラッグでは、pagerのusilicに渡しているが、^Ouへは渡せない？
+    // 一覧の最上行^Mで表示"): `usilic a b c`起動と同じページャ
+    // (startPagerFileList()、^Gで戻れない・'q'でusilic自体が終わる)
+    // ではなく、(ls)で選んだファイルを^Ouした時と同じUnderline一覧へ
+    // 渡し、その最上行を^Mしたのと同じ状態で開く――^Gで一覧へ戻り、
+    // ';'/':'で巡回できる。一覧からの^Gの戻り先は、ドロップ時点の
+    // (ls)のディレクトリ(startUnderlineFileView()と同じ)。
+    std::vector<std::string> existing;
     for (const auto &path : paths) {
       std::error_code ec;
-      if (std::filesystem::is_regular_file(path, ec)) files.push_back(path);
+      if (std::filesystem::exists(path, ec)) existing.push_back(path);
     }
-    opened = !files.empty() && startPagerFileList(files);
+    if (existing.empty()) {
+      opened = false;
+    } else {
+      underlineOriginDirectory_ = directoryMode_.currentDirectory();
+      usilicLevel_ = UsilicLevel::None;
+      underlineMode_.show(std::move(existing));
+      currentMode_ = ApplicationMode::Underline;
+      opened = openSelectedUnderlineEntry();
+    }
   }
   activeView().redraw();
   return opened;
