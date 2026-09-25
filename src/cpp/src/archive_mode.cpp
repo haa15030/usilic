@@ -244,6 +244,14 @@ bool ArchiveMode::finishLoadFromOutput(const std::string &path, const std::strin
   if (!reader) return false;
 
   std::vector<ArchiveEntry> entries = reader->parseListing(output);
+  // 2026-09-25追加(ARCHIVE節の要否の検討で、直接のユーザー依頼により実際の
+  // 動作を確認して判明): 一覧が1件も取れなければ、アーカイブとして読めなかった
+  // (中身がその形式でないファイルに別名を付けた等、一覧のコマンドが失敗した)
+  // とみなす。以前は成功扱いで、空のARCモード(0/0)に入っていた。呼び出し側は
+  // 普通のファイルとして開き直す(Application::finishArchiveLoadAsync()、
+  // executePathInput()等)。中身が本当に空のアーカイブも普通のファイルとして
+  // 開くことになるが、その場合はCODEの判定で種類が表示される。
+  if (entries.empty()) return false;
 
   currentArchive_ = path;
   archiveKind_ = kind;

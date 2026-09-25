@@ -378,6 +378,30 @@ Configuration::Configuration() {
   // /ConfiguredRole::RarExtract自身のコメント参照。
   addBuiltinArchive(".rar", ArchiveKind::Rar, {{"lsar", "-l"}, std::nullopt});
   addBuiltinArchive(".7z", ArchiveKind::SevenZip, {{"7z", "l"}, std::nullopt});
+
+  // 2026-09-25追加、直接のユーザー依頼(ARCHIVEの要否の検討で): それまで
+  // 同梱のusilicrcのARCHIVE節に頼っていた定番の別名を組み込みにした――
+  // usilicrcが読めない環境でも、.tar.gz等がARCモード(開く/一覧/取り出し/
+  // ^Oa/入れ子)で同じように扱われるように。別名は形式(一覧/取り出しの
+  // コマンドと、ArchiveKindごとの読み取り方)を組み込みからそのまま借りる
+  // だけ(ARCHIVE節と同じ)。ARCHIVE節は、.epub/.cbz等「中身が既存の形式」
+  // という珍しい拡張子を利用者が足すために残す。
+  auto addBuiltinAlias = [&](const std::string &newSuffix, const std::string &builtinSuffix) {
+    for (const auto &builtin : builtinArchiveEntries_) {
+      if (builtin.suffix != builtinSuffix) continue;
+      SuffixEntry e = builtin;
+      e.suffix = newSuffix;
+      suffixEntries_.push_back(e);
+      return;
+    }
+  };
+  addBuiltinAlias(".tar.gz", ".tgz");
+  addBuiltinAlias(".taz", ".tgz");
+  addBuiltinAlias(".tar.z", ".tgz");
+  addBuiltinAlias(".jar", ".zip");
+  addBuiltinAlias(".tbz2", ".tar.bz2");
+  addBuiltinAlias(".txz", ".tar.xz");
+  addBuiltinAlias(".tzst", ".tar.zst");
 }
 
 std::optional<ProgramCommand> Configuration::findBuiltinArchiveAlias(const std::string &searchText) const {

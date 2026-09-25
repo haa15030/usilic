@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <thread>
 #include <poll.h>
 #include <unistd.h>
 
@@ -15492,4 +15493,22 @@ TEST_CASE_FIXTURE(Fixture, "^O^L shows the new sort key (Date/Size/Kind/Name) in
   line = app.activeContentView().modeLineText();
   CHECK(line.find("Name") == std::string::npos);
   CHECK(line.find("(ls)") != std::string::npos);
+}
+
+// ArchiveMode::finishLoadFromOutput()自身の2026-09-25のコメント参照。
+TEST_CASE_FIXTURE(Fixture, "ARCHIVE alias on a file whose content isn't that format: ^M opens it as a plain file, "
+                           "not an empty ARC listing") {
+  REQUIRE(configuration.loadRcText("ARCHIVE\n\t.foo\t.zip\n", true));
+  { std::ofstream(root / "bad.foo") << "this is not a zip\nsecond line\n"; }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("bad.foo");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  app.handleCommand(Command::Enter);
+  for (int i = 0; i < 250 && app.awaitingArchiveLoad(); i++) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    app.pollArchiveLoadCompletion();
+  }
+  CHECK(app.currentMode() == ApplicationMode::File);
+  REQUIRE_FALSE(app.activeContentView().lines().empty());
+  CHECK(app.activeContentView().lines()[0].text == "this is not a zip");
 }

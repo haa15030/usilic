@@ -15,29 +15,31 @@ ARCHIVE
 # Format: `newSuffix' `builtinSuffix'
 #
 # Each line adds `newSuffix' as an alias of a built-in archive suffix
-# (the list below).  It cannot define a new extraction command.
+# (the list below).  Listing and extracting are format-specific code, so a
+# new format (its commands or how to read its listing) cannot be defined
+# here.  It only works for files whose content is an existing format, like
+# .epub or .cbz.  An alias added here works everywhere in ARC mode
+# (opening, listing, extracting, ^Oa, archives inside archives).
 #
 # Built-in suffixes:
 #  .tar        tar tvf
-#  .tgz        gzip -dc | tar tvf -
-#  .tar.bz2    bzip2 -dc | tar tvf -
-#  .tar.xz     xz -dc | tar tvf -
-#  .tar.zst    zstd -dc | tar tvf -
+#  .tgz        gzip -dc | tar tvf -   (also .tar.gz .taz .tar.z)
+#  .tar.bz2    bzip2 -dc | tar tvf -  (also .tbz2)
+#  .tar.xz     xz -dc | tar tvf -     (also .txz)
+#  .tar.zst    zstd -dc | tar tvf -   (also .tzst)
 #  .lzh        lha
-#  .zip        unzip -l
+#  .zip        unzip -l               (also .jar)
 #  .rpm        rpm -qplv
 #  .deb        ar tv
 #  .rar        lsar -l
 #  .7z         7z l
 #
+# Examples:
 
-	.taz	.tgz
-	.tar.z	.tgz
-	.tar.gz	.tgz
-	.jar	.zip
-	.tbz2	.tar.bz2
-	.txz	.tar.xz
-	.tzst	.tar.zst
+#	.epub	.zip
+#	.cbz	.zip
+#	.apk	.zip
+#	.cbr	.rar
 
 FILE
 # Format: `suffix' `program' (option)

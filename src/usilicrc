@@ -14,29 +14,31 @@ ARCHIVE
 # 書式: 新しいsuffix  組み込みのsuffix
 #
 # 組み込みのアーカイブの suffix(下の一覧)に、新しい suffix を別名として
-# 追加します。新しい展開コマンドを定義するものではありません。
+# 追加します。アーカイブの一覧や取り出しは形式ごとに専用の処理なので、
+# 新しい形式(コマンドや一覧の読み方)をここで定義することはできません。
+# 使えるのは、.epub や .cbz のように中身が既存の形式であるファイルだけ
+# です。ここで足した別名は、ARC モード(開く、一覧、取り出し、^Oa、
+# アーカイブの中のアーカイブ)の全てで効きます。
 #
 # 組み込みの suffix:
 #  .tar        tar tvf
-#  .tgz        gzip -dc | tar tvf -
-#  .tar.bz2    bzip2 -dc | tar tvf -
-#  .tar.xz     xz -dc | tar tvf -
-#  .tar.zst    zstd -dc | tar tvf -
+#  .tgz        gzip -dc | tar tvf -   (.tar.gz .taz .tar.z も同じ)
+#  .tar.bz2    bzip2 -dc | tar tvf -  (.tbz2 も同じ)
+#  .tar.xz     xz -dc | tar tvf -     (.txz も同じ)
+#  .tar.zst    zstd -dc | tar tvf -   (.tzst も同じ)
 #  .lzh        lha
-#  .zip        unzip -l
+#  .zip        unzip -l               (.jar も同じ)
 #  .rpm        rpm -qplv
 #  .deb        ar tv
 #  .rar        lsar -l
 #  .7z         7z l
 #
+# 例:
 
-	.taz	.tgz
-	.tar.z	.tgz
-	.tar.gz	.tgz
-	.jar	.zip
-	.tbz2	.tar.bz2
-	.txz	.tar.xz
-	.tzst	.tar.zst
+#	.epub	.zip
+#	.cbz	.zip
+#	.apk	.zip
+#	.cbr	.rar
 
 FILE
 # 書式: suffix  program  (option)

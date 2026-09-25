@@ -391,3 +391,22 @@ TEST_CASE("BUFFER: the default (no BUFFER directive) is 64MB") {
   Configuration config;
   CHECK(config.bufferSizeLimitBytes() == 64 * 1024 * 1024);
 }
+
+// Configuration自身のコンストラクタの2026-09-25のコメント参照(定番の別名を組み込みに)。
+TEST_CASE("built-in archive aliases: .tar.gz/.taz/.tar.z/.jar/.tbz2/.txz/.tzst work without any usilicrc") {
+  Configuration config;
+  auto kindOf = [&](const std::string &name) {
+    fm::ArchiveKind kind = fm::ArchiveKind::None;
+    config.programForSuffix(name, &kind);
+    return kind;
+  };
+  for (const char *name : {"a.tar.gz", "a.taz", "a.tar.z", "a.tbz2", "a.txz", "a.tzst"}) {
+    CAPTURE(name);
+    CHECK(kindOf(name) == fm::ArchiveKind::Tar);
+  }
+  CHECK(kindOf("a.jar") == fm::ArchiveKind::Zip);
+  // .tar.gzは.gz(FILEのgzip -dc)より長い一致なのでアーカイブ扱い。
+  REQUIRE(config.loadRcText("FILE\n\t.gz\tgzip\t-dc\n", true));
+  CHECK(kindOf("a.tar.gz") == fm::ArchiveKind::Tar);
+  CHECK(kindOf("a.gz") == fm::ArchiveKind::None);
+}

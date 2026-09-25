@@ -2163,7 +2163,9 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
       close(archiveLoadOutputFd_);
       archiveLoadOutputFd_ = -1;
       archiveLoadPid_ = -1;
+      archiveLoadAborted_ = true;  // finishArchiveLoadAsync()自身の2026-09-25のコメント参照
       finishArchiveLoadAsync();
+      archiveLoadAborted_ = false;
       return true;
     }
     return false;
@@ -8722,10 +8724,19 @@ void Application::finishArchiveLoadAsync() {
     archiveParentStack_.clear();  // 全く新しい最上位のアーカイブ――以前のネストした降下の連鎖はもう当てはまらない
     currentMode_ = ApplicationMode::Archive;
     history_.pushRecent(RingCategory::RecentFile, archiveLoadPendingPath_);
+  } else if (!archiveLoadAborted_ && fileMode_.loadFile(archiveLoadPendingPath_)) {
+    // 2026-09-25追加: アーカイブとして読めなかった(一覧が1件も取れない――
+    // 中身がその形式でないファイルに別名を付けた等、ArchiveMode::
+    // finishLoadFromOutput()自身のコメント参照)なら、普通のファイルとして
+    // 開く。executePathInput()等の同期の経路が既にしている(loadArchive()が
+    // 失敗したらloadFile())のと同じ。^Gで中断した場合は開かない。
+    currentMode_ = ApplicationMode::File;
+    fileReturnMode_ = ApplicationMode::Directory;
+    fileView_.redraw();
   } else {
-    // 解決できなかった/一覧コマンドが失敗した(^Gによる中断で出力が
-    // 全く読めていなかった場合を含む)――Directoryのまま、単に
-    // 読み込み中メッセージを消して再描画する。
+    // ^Gによる中断(出力が全く読めていなかった場合を含む)、あるいは普通の
+    // ファイルとしても開けなかった――Directoryのまま、単に読み込み中
+    // メッセージを消して再描画する。
     activeView().redraw();
   }
 }
