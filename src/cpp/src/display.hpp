@@ -128,7 +128,22 @@ class Display {
     Highlight,
     HighlightCurrent,
     HighlightOff,
+    // 2026-09-26追加、直接のユーザー依頼("ページャーとSHELL両方で色を
+    // 解釈するよう実装して"、IDEAS.mdの「PAGERのANSI非対応」項目):
+    // `git log`等が出すANSIの色エスケープ(SGR 30-37/90-97/38;5;n/
+    // 38;2;r;g;b等)を、生の`^[[33m`ではなく本物の色として表示する
+    // ためのラン専用の種別。他の種別と違い、色の値そのものを
+    // AttributeRun::fg/bg(下記)に持つ――setAttribute()には渡さず、
+    // 描画側はsetColor()で適用する。
+    Color,
   };
+
+  // Attribute::Color自身のコメント参照。色の値の表現: kDefaultColor
+  // (-1)=端末/ウィンドウの既定色、0〜255=xterm互換の256色パレット
+  // 番号(0〜15は利用者の配色設定に従う基本16色)、kTrueColorFlag|0xRRGGBB
+  // =24bitの直接指定。
+  static constexpr int kDefaultColor = -1;
+  static constexpr int kTrueColorFlag = 0x1000000;
 
   enum class Key { Up, Down, Left, Right, PageUp, PageDown };
 
@@ -209,6 +224,11 @@ class Display {
   // 継ぎ込み、bash自身がその前後で太字オン/オフを出力するように
   // している)。端末がその属性に対応していなければ空文字列を返す。
   virtual std::string attributeEscape(Attribute attr) const = 0;
+  // Attribute::Color自身のコメント参照: 以後putChar()する文字の前景色/
+  // 背景色(kDefaultColorで既定色へ戻す)。Highlight/HighlightCurrentが
+  // 有効な間はそちらの色が優先される。色を表現できない実装(テスト用の
+  // 記録ディスプレイ等)のため、既定では何もしない。
+  virtual void setColor(int /*fg*/, int /*bg*/) {}
 
   // -- 端末のジオメトリ --
   virtual int rows() const = 0;
@@ -369,6 +389,9 @@ class Display {
     int start;  // 所有する行自身のテキストへのバイトオフセット
     int end;
     Attribute attribute;
+    // attribute==Colorのときだけ意味を持つ(Attribute::Color自身のコメント参照)。
+    int fg = kDefaultColor;
+    int bg = kDefaultColor;
   };
 
   // 1本のrenderScrolled()の行: `text`に、他の全ての場所で既に

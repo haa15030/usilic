@@ -743,3 +743,72 @@ TEST_CASE("wrapLine: a styled run that ends exactly at the wrap width doesn't le
     CHECK(pipe.lines().back().attributes.empty());
   }
 }
+
+// 2026-09-26追加、直接のユーザー依頼("ページャーとSHELL両方で色を解釈する
+// よう実装して"): ANSIのSGRエスケープ(`git log`等の色)は本文から取り除かれ、
+// Display::Attribute::Colorのラン(と太字/反転等)として運ばれる。
+namespace {
+const fm::AttributeRun *colorRunAt(const fm::StyledLine &line, int pos) {
+  for (const auto &run : line.attributes)
+    if (run.attribute == Display::Attribute::Color && pos >= run.start && pos < run.end) return &run;
+  return nullptr;
+}
+bool hasRunAt(const fm::StyledLine &line, Display::Attribute attr, int pos) {
+  for (const auto &run : line.attributes)
+    if (run.attribute == attr && pos >= run.start && pos < run.end) return true;
+  return false;
+}
+}  // namespace
+
+TEST_CASE("PipeBuffer: ANSI SGR colors become Color runs and the escapes disappear from the text") {
+  PipeBuffer buf(Charset::Encoding::Utf8, 80, 1 << 20);
+  buf.feed("\x1b[33mcommit abc\x1b[m plain\n");
+  buf.flush();
+  REQUIRE(buf.lines().size() == 1);
+  const auto &line = buf.lines()[0];
+  CHECK(line.text == "commit abc plain");
+  const auto *run = colorRunAt(line, 0);
+  REQUIRE(run);
+  CHECK(run->fg == 3);
+  CHECK(run->bg == Display::kDefaultColor);
+  CHECK(colorRunAt(line, 9));
+  CHECK_FALSE(colorRunAt(line, 11));  // after ESC[m
+}
+
+TEST_CASE("PipeBuffer: 256-color, 24-bit, bright colors, and reset carry over lines until changed") {
+  PipeBuffer buf(Charset::Encoding::Utf8, 80, 1 << 20);
+  buf.feed("\x1b[38;5;208;48;2;1;2;3mA\x1b[91mB\nC\x1b[0mD\n");
+  buf.flush();
+  REQUIRE(buf.lines().size() == 2);
+  const auto *a = colorRunAt(buf.lines()[0], 0);
+  REQUIRE(a);
+  CHECK(a->fg == 208);
+  CHECK(a->bg == (Display::kTrueColorFlag | 0x010203));
+  const auto *b = colorRunAt(buf.lines()[0], 1);
+  REQUIRE(b);
+  CHECK(b->fg == 9);
+  const auto *c = colorRunAt(buf.lines()[1], 0);  // 改行をまたいで持続
+  REQUIRE(c);
+  CHECK(c->fg == 9);
+  CHECK_FALSE(colorRunAt(buf.lines()[1], 1));
+}
+
+TEST_CASE("PipeBuffer: SGR bold/reverse map to Bold/Standout; non-SGR escapes (ESC[K, OSC) are dropped") {
+  PipeBuffer buf(Charset::Encoding::Utf8, 80, 1 << 20);
+  buf.feed("\x1b[1;7mX\x1b[22;27m\x1b[Ky\x1b]0;title\x07z\n");
+  buf.flush();
+  REQUIRE(buf.lines().size() == 1);
+  const auto &line = buf.lines()[0];
+  CHECK(line.text == "Xyz");
+  CHECK(hasRunAt(line, Display::Attribute::Bold, 0));
+  CHECK(hasRunAt(line, Display::Attribute::Standout, 0));
+  CHECK_FALSE(hasRunAt(line, Display::Attribute::Bold, 1));
+}
+
+TEST_CASE("PipeBuffer: with detectOverstrike=false (^[^M \"as is\"), escapes stay as raw control bytes") {
+  PipeBuffer buf(Charset::Encoding::Utf8, 80, 1 << 20, /*detectOverstrike=*/false);
+  buf.feed("\x1b[33mA\n");
+  buf.flush();
+  REQUIRE(buf.lines().size() == 1);
+  CHECK(buf.lines()[0].text == "\x1b[33mA");
+}

@@ -91,6 +91,16 @@ class PipeBuffer {
   void wrapLine(const std::string &convertedLine);
   int byteLengthAt(const std::string &s, int pos) const;
   int widthAt(const std::string &s, int pos, int charBytes) const;
+  // 2026-09-26追加、直接のユーザー依頼("ページャーとSHELL両方で色を
+  // 解釈するよう実装して"): `git log`等が出すANSIのエスケープシーケンス
+  // の扱い。escapeLengthAt()は`pos`(ESC)から始まる完結したシーケンスの
+  // バイト長(完結していなければ0――その場合は従来通り制御文字として
+  // 表示する)。applyEscape()はそれがSGR(`ESC[...m`)なら下のsgr*_へ
+  // 反映し、それ以外(カーソル移動・行消去`ESC[K`・OSC等)は何もしない
+  // (表示からは取り除く)。detectOverstrike_がfalse(^[^Mの"as is"表示、
+  // 制御コードをそのまま見せるモード)の時は、どちらも使われない。
+  int escapeLengthAt(const std::string &s, int pos) const;
+  void applyEscape(const std::string &s, int pos, int len);
 
   Charset::Encoding encoding_;
   int width_;
@@ -163,6 +173,12 @@ class PipeBuffer {
   // 同じ理由で合わせてカウンタ化した。
   int currentBold_ = 0;
   int currentUnderline_ = 0;
+
+  // escapeLengthAt()自身のコメント参照。SGRで指定された現在の状態――
+  // 本物の端末と同じく、改行や折り返しをまたいで次のSGRまで持続する。
+  // 色の値の表現はDisplay::Attribute::Color自身のコメント参照。
+  bool sgrBold_ = false, sgrUnderline_ = false, sgrItalic_ = false, sgrReverse_ = false;
+  int sgrFg_ = Display::kDefaultColor, sgrBg_ = Display::kDefaultColor;
 
   std::vector<StyledLine> lines_;
 };

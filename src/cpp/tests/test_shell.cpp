@@ -380,6 +380,32 @@ TEST_CASE("processOutputBytes: recognizes a synthetic PS1 marker and extracts th
   CHECK(shell.scrollback().lines()[0].text == "hello output");
 }
 
+// 2026-09-26追加、直接のユーザー依頼("ページャーとSHELL両方で色を解釈する
+// よう実装して"): SHELLの出力中のSGR(`ls --color`等)は、以前のように
+// 捨てられるのではなく、scrollbackの行にColorのランとして残る(本文には
+// 残らない)。バックスペースは色コードではなく本物の文字を消す。
+TEST_CASE("processOutputBytes: SGR colors in shell output become Color runs on the scrollback line") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  options.promptMark = "<M>";
+  options.programName = "prog";
+  Shell shell(d, options);
+
+  shell.processOutputBytes("\x1b[31mredX\x1b[m\x08 ok\n<M>prog:/home/user$ <M>");
+
+  REQUIRE(shell.scrollback().lines().size() == 1);
+  const auto &line = shell.scrollback().lines()[0];
+  CHECK(line.text == "red ok");
+  bool redAtStart = false, colorAfter = false;
+  for (const auto &run : line.attributes) {
+    if (run.attribute != fm::Display::Attribute::Color) continue;
+    if (run.start == 0 && run.fg == 1) redAtStart = true;
+    if (run.end > 3) colorAfter = true;
+  }
+  CHECK(redAtStart);
+  CHECK_FALSE(colorAfter);
+}
+
 // 2026-08-17 fix: zsh's default PS1 (`%~`)/bash's `\w` abbreviate the
 // cwd with a leading '~' whenever it's $HOME (bare "~") or a
 // subdirectory of it ("~/subdir") -- used to be stored into

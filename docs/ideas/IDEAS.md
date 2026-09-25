@@ -134,7 +134,7 @@ legacyの挙動。
   ユーザー判断]
   現状: CP/MV/RMはSHELLでコマンドを実行するので、cp/mv/rm自身のエラー
   メッセージはSHELL画面に出るはずだが、未確認。
-- 【未実装】tcb自身のPAGERモード(SHELLモードで`export PAGER='tcb -p <pid>'`と
+- 【実装済み】tcb自身のPAGERモード(SHELLモードで`export PAGER='tcb -p <pid>'`と
   自動設定される、tcb自身をページャーとして使う仕組み)が、ANSIエスケー
   プシーケンス(色・属性)を解釈せず生のまま表示してしまう
   [現状は`less`のように色・属性を解釈した表示ができず、`git log`等の
@@ -144,9 +144,9 @@ legacyの挙動。
   差し当たりの回避策は`git config --global core.pager less`や
   `PAGER=less <コマンド>`でlessを直接使うこと]
   (2026-07-20、`PAGER=... git log`の表示崩れをユーザーが発見)
-  現状: usilicのページャーはANSIの色/属性のエスケープを解釈しない(制御文字
-  として表示される)。groffの出力だけはGROFF_NO_SGRで重ね打ち形式にして
-  いる。
+  現状: 2026-09-26、ページャー/SHELLともANSIの色・属性(SGR)を解釈して
+  着色表示するようにした(docs/CHANGES.md項目478)。groffの出力は引き続き
+  GROFF_NO_SGRで重ね打ち形式にしている。
 - 【要確認】TAB補完の候補一覧表示挙動が、PROGRAM起動時(`^Jp`)とSHELLプロンプト
   直接入力時とで異なるように見える
   [`^Jp`経由で「ls -l ワールドニュース」[tab]→(共通プレフィックス

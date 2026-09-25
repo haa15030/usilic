@@ -537,6 +537,7 @@ bool Shell::consumeEscapeByte(unsigned char c) {
     case EscapeKind::JustEsc:
       if (c == '[') {
         escapeState_ = EscapeKind::Csi;
+        escapeSequence_ = "\x1b[";  // escapeSequence_自身の宣言コメント参照
       } else if (c == ']') {
         escapeState_ = EscapeKind::Osc;
       } else {
@@ -554,7 +555,16 @@ bool Shell::consumeEscapeByte(unsigned char c) {
       // パラメータバイト(0x30-0x3F)と中間バイト(0x20-0x2F)は
       // シーケンスを続けさせる。最終バイト(0x40-0x7E)がそれを
       // 終える。
-      if (c >= 0x40 && c <= 0x7e) escapeState_ = EscapeKind::None;
+      escapeSequence_.push_back(static_cast<char>(c));
+      if (c >= 0x40 && c <= 0x7e) {
+        escapeState_ = EscapeKind::None;
+        // 2026-09-26追加(escapeSequence_自身の宣言コメント参照): SGRだけは
+        // 捨てずに本文へ渡す。ただしプロンプト検出の途中(inPromptTail_/
+        // markerMatchBuffer_)には混ぜない――そちらはプロンプト文字列
+        // そのものの照合用。
+        if (c == 'm' && !inPromptTail_ && markerMatchBuffer_.empty()) appendEscapeSequence(escapeSequence_);
+        escapeSequence_.clear();
+      }
       return true;
     case EscapeKind::Osc:
       if (c == 0x07) {
@@ -604,6 +614,54 @@ bool Shell::consumeEscapeByte(unsigned char c) {
 //   - それ以外の何か: 通常通り追加される。末尾の'\n'は、今や完成
 //     した行を、1回の呼び出しでpipeBuffer_.feed()へフラッシュ
 //     する。
+// escapeSequence_自身の宣言コメント参照。直前の裸のCR(sawBareCr_)は、
+// appendBodyByte()で次の普通の文字が来た時と同じく「行の上書き」として
+// 先に確定させてから積む。
+void Shell::appendEscapeSequence(const std::string &sequence) {
+  if (sawBareCr_) {
+    sawBareCr_ = false;
+    pendingLine_.clear();
+    retireTentativeLivePrompt();
+  }
+  pendingLine_ += sequence;
+}
+
+namespace {
+// pendingLine_末尾に連なるSGR(`ESC[...m`)を除いた、見える部分の終わり
+// の位置。バックスペースで消すべき1文字を、色コードの中からではなく
+// 本物の文字から選ぶために使う。
+std::size_t visibleEndIgnoringTrailingSgr(const std::string &line) {
+  std::size_t end = line.size();
+  while (end > 0 && line[end - 1] == 'm') {
+    std::size_t esc = line.rfind('\x1b', end - 1);
+    if (esc == std::string::npos || esc + 1 >= end || line[esc + 1] != '[') break;
+    bool params = true;
+    for (std::size_t k = esc + 2; k + 1 < end; k++)
+      if (!((line[k] >= '0' && line[k] <= '9') || line[k] == ';' || line[k] == ':')) params = false;
+    if (!params) break;
+    end = esc;
+  }
+  return end;
+}
+
+// 確定前のプロンプト表示(flushIdleOutput())用: SGRを取り除いた文字列
+// (promptPlain_は幅計算に使われ、埋め込みのエスケープを含まない約束)。
+std::string stripSgr(const std::string &line) {
+  std::string out;
+  for (std::size_t k = 0; k < line.size(); k++) {
+    if (line[k] == '\x1b' && k + 1 < line.size() && line[k + 1] == '[') {
+      std::size_t m = line.find('m', k + 2);
+      if (m != std::string::npos) {
+        k = m;
+        continue;
+      }
+    }
+    out.push_back(line[k]);
+  }
+  return out;
+}
+}  // namespace
+
 void Shell::appendBodyByte(unsigned char c) {
   if (sawBareCr_) {
     sawBareCr_ = false;
@@ -623,7 +681,10 @@ void Shell::appendBodyByte(unsigned char c) {
     return;
   }
   if (c == 0x08) {
-    if (!pendingLine_.empty()) pendingLine_.pop_back();
+    // 2026-09-26: 末尾が色コード(appendEscapeSequence())なら、その手前の
+    // 本物の文字を消す(色コードは残す)。
+    std::size_t end = visibleEndIgnoringTrailingSgr(pendingLine_);
+    if (end > 0) pendingLine_.erase(end - 1, 1);
     return;
   }
   pendingLine_.push_back(static_cast<char>(c));
@@ -659,10 +720,12 @@ void Shell::flushPendingLine() {
 // だった場合、appendBodyByte()側が改行到達時に正しく後始末する)。
 void Shell::flushIdleOutput() {
   if (pendingLine_.empty()) return;
-  if (tentativeLivePrompt_ && pendingLine_ == promptPlain_) return;  // 前回描画から変化無し
+  std::string plainPending = stripSgr(pendingLine_);  // stripSgr()自身のコメント参照
+  if (plainPending.empty()) return;
+  if (tentativeLivePrompt_ && plainPending == promptPlain_) return;  // 前回描画から変化無し
   awaitingRealPrompt_ = false;  // handlePromptDetected()自身の同名の代入と同じ理由
-  promptPlain_ = pendingLine_;
-  promptDecorated_ = pendingLine_;  // 確証の無い推測なので、usilic-1.5b:のような装飾は付けず生のバイト列のまま
+  promptPlain_ = plainPending;
+  promptDecorated_ = plainPending;  // 確証の無い推測なので、usilic-1.5b:のような装飾は付けず生のバイト列のまま
   tentativeLivePrompt_ = true;
   updateCommandLineField();
   redrawPromptRow();
@@ -687,7 +750,7 @@ void Shell::flushNewScrollbackLines() {
   std::vector<ContentView::Line> newLines(scrollback_.lines());
   newLines.reserve(plines.size());
   for (std::size_t i = start; i < plines.size(); i++)
-    newLines.push_back({plines[i].text, std::nullopt, std::nullopt, {}});
+    newLines.push_back({plines[i].text, std::nullopt, std::nullopt, plines[i].attributes});
   linesConsumed_ = plines.size();
   scrollback_.setLines(std::move(newLines));
   exitHistoryBrowsing();  // 新しい出力の到着は「生きた状態へ戻る」ことを意味する、自身の宣言コメント参照

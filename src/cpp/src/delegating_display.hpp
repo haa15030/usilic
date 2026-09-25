@@ -61,6 +61,7 @@ class DelegatingDisplay : public Display {
 
   void setAttribute(Attribute attr) override;
   std::string attributeEscape(Attribute attr) const override;
+  void setColor(int fg, int bg) override;
 
   int rows() const override;
   int columns() const override;

@@ -133,6 +133,86 @@ int PipeBuffer::widthAt(const std::string &s, int pos, int charBytes) const {
 // 2文字以上の禁則文字(例えば"」。")までは追いかけない(1段階の
 // 押し出しのみ)――実用上ほぼ現れない組み合わせのための複雑化を
 // 避ける単純化。
+// escapeLengthAt()自身の宣言コメント参照(pipe_buffer.hpp)。ECMA-48の
+// 形: CSI(ESC [ パラメータ* 中間* 終端0x40-0x7E)、OSC(ESC ] ... BEL
+// またはESC \)、それ以外(ESC 中間* 終端0x30-0x7E、`ESC(B`等)。
+int PipeBuffer::escapeLengthAt(const std::string &s, int pos) const {
+  int n = static_cast<int>(s.size());
+  if (pos + 1 >= n || static_cast<unsigned char>(s[pos]) != 0x1b) return 0;
+  auto byteAt = [&](int p) { return static_cast<unsigned char>(s[p]); };
+  unsigned char kind = byteAt(pos + 1);
+  if (kind == '[') {
+    int p = pos + 2;
+    while (p < n && byteAt(p) >= 0x30 && byteAt(p) <= 0x3F) p++;
+    while (p < n && byteAt(p) >= 0x20 && byteAt(p) <= 0x2F) p++;
+    return (p < n && byteAt(p) >= 0x40 && byteAt(p) <= 0x7E) ? p - pos + 1 : 0;
+  }
+  if (kind == ']') {
+    for (int p = pos + 2; p < n; p++) {
+      if (byteAt(p) == 0x07) return p - pos + 1;
+      if (byteAt(p) == 0x1b && p + 1 < n && s[p + 1] == '\\') return p - pos + 2;
+      if (byteAt(p) == '\n') return 0;
+    }
+    return 0;
+  }
+  int p = pos + 1;
+  while (p < n && byteAt(p) >= 0x20 && byteAt(p) <= 0x2F) p++;
+  return (p < n && byteAt(p) >= 0x30 && byteAt(p) <= 0x7E) ? p - pos + 1 : 0;
+}
+
+void PipeBuffer::applyEscape(const std::string &s, int pos, int len) {
+  if (len < 3 || s[pos + 1] != '[' || s[pos + len - 1] != 'm') return;
+  std::string params = s.substr(static_cast<std::size_t>(pos + 2), static_cast<std::size_t>(len - 3));
+  if (!params.empty() && (params[0] < '0' || params[0] > ';')) return;  // `ESC[?...m`等の私用形式は対象外
+  std::vector<int> codes;
+  int value = -1;
+  for (char ch : params + ";") {
+    if (ch >= '0' && ch <= '9') {
+      value = (value < 0 ? 0 : value * 10) + (ch - '0');
+    } else if (ch == ';' || ch == ':') {
+      codes.push_back(value < 0 ? 0 : value);
+      value = -1;
+    }
+  }
+  // 38/48(拡張色)の続き: 5;n(256色)または2;r;g;b(24bit)。
+  auto extendedColor = [&](std::size_t &k) -> int {
+    if (k + 2 < codes.size() && codes[k + 1] == 5) {
+      int n = codes[k + 2];
+      k += 2;
+      return (n >= 0 && n <= 255) ? n : Display::kDefaultColor;
+    }
+    if (k + 4 < codes.size() && codes[k + 1] == 2) {
+      int rgb = ((codes[k + 2] & 0xFF) << 16) | ((codes[k + 3] & 0xFF) << 8) | (codes[k + 4] & 0xFF);
+      k += 4;
+      return Display::kTrueColorFlag | rgb;
+    }
+    return Display::kDefaultColor;
+  };
+  for (std::size_t k = 0; k < codes.size(); k++) {
+    int c = codes[k];
+    if (c == 0) {
+      sgrBold_ = sgrUnderline_ = sgrItalic_ = sgrReverse_ = false;
+      sgrFg_ = sgrBg_ = Display::kDefaultColor;
+    } else if (c == 1) sgrBold_ = true;
+    else if (c == 3) sgrItalic_ = true;
+    else if (c == 4) sgrUnderline_ = true;
+    else if (c == 7) sgrReverse_ = true;
+    else if (c == 22) sgrBold_ = false;
+    else if (c == 23) sgrItalic_ = false;
+    else if (c == 24) sgrUnderline_ = false;
+    else if (c == 27) sgrReverse_ = false;
+    else if (c >= 30 && c <= 37) sgrFg_ = c - 30;
+    else if (c == 38) sgrFg_ = extendedColor(k);
+    else if (c == 39) sgrFg_ = Display::kDefaultColor;
+    else if (c >= 40 && c <= 47) sgrBg_ = c - 40;
+    else if (c == 48) sgrBg_ = extendedColor(k);
+    else if (c == 49) sgrBg_ = Display::kDefaultColor;
+    else if (c >= 90 && c <= 97) sgrFg_ = c - 90 + 8;
+    else if (c >= 100 && c <= 107) sgrBg_ = c - 100 + 8;
+    // それ以外(2=薄く、5=点滅、9=取り消し線等)は表示手段が無いので無視する。
+  }
+}
+
 static bool isForbiddenAtLineStart(const std::string &s, int pos, int len) {
   static const char *const kForbidden[] = {
       // 句読点・区切り記号
@@ -361,6 +441,14 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
   auto skipMarkersFrom = [&](int pos) -> int {
     while (pos + 1 < n) {
       unsigned char mc = static_cast<unsigned char>(convertedLine[pos]);
+      // 2026-09-26追加: ANSIのエスケープも幅0の目印として読み飛ばす
+      // (escapeLengthAt()自身の宣言コメント参照)。
+      if (mc == 0x1b && detectOverstrike_) {
+        int escLen = escapeLengthAt(convertedLine, pos);
+        if (escLen <= 0) break;
+        pos += escLen;
+        continue;
+      }
       if (mc == '\x01') {
         auto [value, digitsEnd] = readIndentDigits(pos + 1);
         if (value < 0) break;
@@ -396,6 +484,13 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     int pos = from;
     while (pos < to) {
       unsigned char mc = static_cast<unsigned char>(convertedLine[pos]);
+      if (mc == 0x1b && detectOverstrike_) {  // skipMarkersFrom()自身の同じ分岐参照
+        int escLen = escapeLengthAt(convertedLine, pos);
+        if (escLen <= 0) break;
+        applyEscape(convertedLine, pos, escLen);
+        pos += escLen;
+        continue;
+      }
       if (mc == '\x01') {
         auto [value, digitsEnd] = readIndentDigits(pos + 1);
         if (value < 0) break;
@@ -449,6 +544,27 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     int len = byteLengthAt(convertedLine, p);
     if (p + len > n) return false;
     return isForbiddenAtLineStart(convertedLine, p, len);
+  };
+
+  // 1文字分(wrapText_の[start, start+bytes))に、今有効な装飾のランを
+  // 積み、積んだ要素数を返す(popLastCharForKinsoku()が同じ数だけ
+  // 取り除けるように)。HELPのマークアップ(currentItalic_等)と、
+  // 2026-09-26追加のANSIのSGR(sgr*_)の両方をここでまとめる。
+  auto pushStyleRuns = [&](int start, int bytes) -> int {
+    int count = 0;
+    auto push = [&](Display::Attribute a) {
+      wrapAttrs_.push_back({start, start + bytes, a});
+      count++;
+    };
+    if (currentItalic_ || sgrItalic_) push(Display::Attribute::Italic);
+    if (currentBold_ || sgrBold_) push(Display::Attribute::Bold);
+    if (currentUnderline_ || sgrUnderline_) push(Display::Attribute::Underline);
+    if (sgrReverse_) push(Display::Attribute::Standout);
+    if (sgrFg_ != Display::kDefaultColor || sgrBg_ != Display::kDefaultColor) {
+      wrapAttrs_.push_back({start, start + bytes, Display::Attribute::Color, sgrFg_, sgrBg_});
+      count++;
+    }
+    return count;
   };
 
   while (i < n) {
@@ -508,6 +624,15 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       if (digit == '0' || digit == '1') {
         currentUnderline_ = std::max(0, currentUnderline_ + (digit == '1' ? 1 : -1));
         i += 2;
+        continue;
+      }
+    }
+    // escapeLengthAt()自身の宣言コメント参照(2026-09-26追加)。
+    if (c == 0x1b && detectOverstrike_) {
+      int escLen = escapeLengthAt(convertedLine, i);
+      if (escLen > 0) {
+        applyEscape(convertedLine, i, escLen);
+        i += escLen;
         continue;
       }
     }
@@ -681,13 +806,13 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       // 全runを走査してBold/Underline/Standout/Italicそれぞれ独立に
       // ORするだけ)なので、単にここでも同じ範囲へItalic用の
       // AttributeRunをもう1つ積むだけでよい。
-      if (currentItalic_) wrapAttrs_.push_back({start, start + keepBytes, Display::Attribute::Italic});
+      // 2026-09-26: 下のcurrentBold_等と合わせてpushStyleRuns()へまとめた
+      // (ANSIのSGR由来の装飾も同じ場所で積むため)。
+      int styleCount = pushStyleRuns(start, keepBytes);
       // currentBold_/currentUnderline_自身のコメント参照: 上のcurrentItalic_と同じ
       // 理屈――本物のnroff重ね打ちで検出したattr(Bold/Underlineのどちらか一方)に
       // 加えて、我々自身のトグルバイトで有効になっている方をもう1つ重ねて積む
       // (attrと同じ属性なら単なる重複runで無害、違う属性なら組み合わせが揃う)。
-      if (currentBold_) wrapAttrs_.push_back({start, start + keepBytes, Display::Attribute::Bold});
-      if (currentUnderline_) wrapAttrs_.push_back({start, start + keepBytes, Display::Attribute::Underline});
       wrapCol_ += w;
       i = keepStart + keepBytes;
       lastCharSeqStart = placementStart;
@@ -696,7 +821,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       // 実際にwrapAttrs_へ積んだ要素数と一致させる(popLastCharForKinsoku()が
       // 過不足なく取り消せるように)――base(attr自身)1つ+italic/bold/underlineの
       // トグルがそれぞれ有効な分。
-      lastCharAttrCount = 1 + (currentItalic_ ? 1 : 0) + (currentBold_ ? 1 : 0) + (currentUnderline_ ? 1 : 0);
+      lastCharAttrCount = 1 + styleCount;
       if (wrapCol_ >= width_) {
         // popLastCharForKinsoku()自身のコメント参照(禁則処理の作り
         // 直し): ちょうど幅ぴったりで満杯になった直後、次の(マーカー
@@ -743,22 +868,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     // currentBold_/currentUnderline_(2026-09-22追加)も同じ粒度で重ねる――
     // 本物のnroff重ね打ちを経ない、我々自身のトグルバイトだけが有効な
     // (=このプレーン文字パスに来る)場合の太字/下線の唯一の発生源。
-    int charAttrCount = 0;
-    if (currentItalic_ || currentBold_ || currentUnderline_) {
-      int start = static_cast<int>(wrapText_.size());
-      if (currentItalic_) {
-        wrapAttrs_.push_back({start, start + charBytes, Display::Attribute::Italic});
-        charAttrCount++;
-      }
-      if (currentBold_) {
-        wrapAttrs_.push_back({start, start + charBytes, Display::Attribute::Bold});
-        charAttrCount++;
-      }
-      if (currentUnderline_) {
-        wrapAttrs_.push_back({start, start + charBytes, Display::Attribute::Underline});
-        charAttrCount++;
-      }
-    }
+    int charAttrCount = pushStyleRuns(static_cast<int>(wrapText_.size()), charBytes);
     wrapText_.append(convertedLine, i, charBytes);
     wrapCol_ += w;
     i += charBytes;

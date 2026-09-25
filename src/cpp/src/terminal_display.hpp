@@ -125,6 +125,7 @@ class TerminalDisplay : public Display {
 
   void setAttribute(Attribute attr) override;
   std::string attributeEscape(Attribute attr) const override;
+  void setColor(int fg, int bg) override;
 
   int rows() const override;
   int columns() const override;
@@ -197,6 +198,12 @@ class TerminalDisplay : public Display {
   // エスケープを再送する必要があるため、有効な方のAttributeそのもの
   // (無効ならnullopt)を保持する。
   std::optional<Display::Attribute> highlightVariant_;
+  // setColor()で要求された現在の色(Display::Attribute::Color自身の
+  // コメント参照)。BoldOff(exit_attribute_modeへ波及し得る)/
+  // HighlightOff("\x1b[39;49m")で端末側の色が既定へ戻された後に
+  // 送り直すため、boldOn_等と同じく状態として持つ。
+  int fg_ = Display::kDefaultColor, bg_ = Display::kDefaultColor;
+  void emitColor();
 };
 
 }  // namespace fm

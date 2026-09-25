@@ -25,6 +25,7 @@ void DelegatingDisplay::scrollReverse() { backend_->scrollReverse(); }
 
 void DelegatingDisplay::setAttribute(Attribute attr) { backend_->setAttribute(attr); }
 std::string DelegatingDisplay::attributeEscape(Attribute attr) const { return backend_->attributeEscape(attr); }
+void DelegatingDisplay::setColor(int fg, int bg) { backend_->setColor(fg, bg); }
 
 int DelegatingDisplay::rows() const { return backend_->rows(); }
 int DelegatingDisplay::columns() const { return backend_->columns(); }

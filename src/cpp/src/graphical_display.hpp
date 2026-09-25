@@ -187,6 +187,7 @@ class GraphicalDisplay : public Display {
   void scrollReverse() override;
 
   void setAttribute(Attribute attr) override;
+  void setColor(int fg, int bg) override;
   std::string attributeEscape(Attribute attr) const override;
 
   int rows() const override;

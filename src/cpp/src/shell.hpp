@@ -573,6 +573,12 @@ class Shell {
   // シーケンス(もしあれば)を通り越して走査中か。
   enum class EscapeKind { None, JustEsc, Csi, Osc, OscEscPending };
   EscapeKind escapeState_ = EscapeKind::None;
+  // 2026-09-26追加、直接のユーザー依頼("ページャーとSHELL両方で色を
+  // 解釈するよう実装して"): 走査中のCSIシーケンスそのもの。完結した
+  // 時点でSGR(`ESC[...m`、色/太字等)だったら、捨てずに本文へ渡す
+  // (appendEscapeSequence()、PipeBuffer::applyEscape()が解釈する)。
+  std::string escapeSequence_;
+  void appendEscapeSequence(const std::string &sequence);
 
   int viewportRows_ = 0, columns_ = 0;
   std::string promptPlain_;  // 現在のプロンプトテキスト、埋め込みエスケープコード無し(幅計算用)

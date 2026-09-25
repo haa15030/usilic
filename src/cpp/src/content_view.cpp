@@ -898,6 +898,17 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
     }
     highlightState = want;
   };
+  // 2026-09-26追加(Display::Attribute::Color自身のコメント参照): ANSIの
+  // 色エスケープ由来の色。setBold()等と同じく、変化した時だけ送る
+  // (BoldOff/HighlightOffによる端末側のリセットからの復帰はDisplay側
+  // ――TerminalDisplay::emitColor()――が受け持つ)。
+  int colorFg = Display::kDefaultColor, colorBg = Display::kDefaultColor;
+  auto setColor = [&](int fg, int bg) {
+    if (fg == colorFg && bg == colorBg) return;
+    display_.setColor(fg, bg);
+    colorFg = fg;
+    colorBg = bg;
+  };
 
   // `markedNow`は、highlightStartが0の場合(よくあるケースで、
   // DirectoryModeのls一覧以外の全ての呼び出し元)にだけtrueで始まる
@@ -1166,6 +1177,7 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
       if (!renderedAttributes->empty()) {
         bool wantBold = false, wantUnderline = false, wantStandout = false, wantItalic = false,
              wantHighlight = false, wantHighlightCurrent = false;
+        int wantFg = Display::kDefaultColor, wantBg = Display::kDefaultColor;
         for (const AttributeRun &run : *renderedAttributes) {
           if (static_cast<int>(idx) < run.start || static_cast<int>(idx) >= run.end) continue;
           if (run.attribute == Display::Attribute::Bold) wantBold = true;
@@ -1174,7 +1186,12 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
           else if (run.attribute == Display::Attribute::Italic) wantItalic = true;
           else if (run.attribute == Display::Attribute::Highlight) wantHighlight = true;
           else if (run.attribute == Display::Attribute::HighlightCurrent) wantHighlightCurrent = true;
+          else if (run.attribute == Display::Attribute::Color) {
+            wantFg = run.fg;
+            wantBg = run.bg;
+          }
         }
+        setColor(wantFg, wantBg);
         setBold(wantBold);
         setUnderline(wantUnderline);
         setItalic(wantItalic);
@@ -1268,6 +1285,7 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
     setUnderline(false);
     setItalic(false);
     setHighlightState(HighlightState::Off);
+    setColor(Display::kDefaultColor, Display::kDefaultColor);
   }
 }
 

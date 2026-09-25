@@ -260,6 +260,7 @@ void TerminalDisplay::setAttribute(Attribute attr) {
     case Attribute::Highlight: highlightVariant_ = Attribute::Highlight; break;
     case Attribute::HighlightCurrent: highlightVariant_ = Attribute::HighlightCurrent; break;
     case Attribute::HighlightOff: highlightVariant_ = std::nullopt; break;
+    case Attribute::Color: break;  // setColor()経由でのみ適用(attributeEscape()は空)
   }
 
   // 2026-09-04追加、直接のユーザー報告("-cでは斜体にならない"=fk)を
@@ -295,7 +296,11 @@ void TerminalDisplay::setAttribute(Attribute attr) {
     // (highlightOn_単なるboolだった頃と違い、どちらだったか自体が
     // 情報として必要)。
     if (highlightVariant_) tputs(attributeEscape(*highlightVariant_).c_str(), 1, outc);
+    else emitColor();  // setColor()自身のコメント参照(ANSIの色もリセットに巻き込まれる)
   }
+  // 2026-09-26追加: HighlightOff自身の"\x1b[39;49m"は色を既定へ戻して
+  // しまうので、ANSIの色(setColor())が有効ならそれを送り直す。
+  if (attr == Attribute::HighlightOff) emitColor();
 
   std::fflush(stdout);
 }
@@ -361,8 +366,47 @@ std::string TerminalDisplay::attributeEscape(Attribute attr) const {
       return "\x1b[38;2;176;226;255;48;2;205;0;205m";
     case Attribute::HighlightOff:
       return "\x1b[39;49m";
+    case Attribute::Color:
+      return "";
   }
   return "";
+}
+
+// Display::setColor()自身のコメント参照(2026-09-26追加)。基本16色
+// (0〜15)は30〜37/90〜97(背景は40〜47/100〜107)で送る――38;5;nでも
+// 同じ色番号を指せるが、古い端末との互換性と、`git log`等自身が
+// 送るのと同じ形に揃えるため。
+namespace {
+std::string colorParams(int color, bool background) {
+  if (color == Display::kDefaultColor) return background ? "49" : "39";
+  if (color & Display::kTrueColorFlag) {
+    int rgb = color & 0xFFFFFF;
+    return std::string(background ? "48" : "38") + ";2;" + std::to_string((rgb >> 16) & 0xFF) + ";" +
+           std::to_string((rgb >> 8) & 0xFF) + ";" + std::to_string(rgb & 0xFF);
+  }
+  if (color < 8) return std::to_string((background ? 40 : 30) + color);
+  if (color < 16) return std::to_string((background ? 100 : 90) + color - 8);
+  return std::string(background ? "48" : "38") + ";5;" + std::to_string(color);
+}
+}  // namespace
+
+// BoldOff/HighlightOffで端末側の色がリセットされた後、setColor()で
+// 要求済みの色を送り直す。Highlight中はそちらの色を優先する。
+void TerminalDisplay::emitColor() {
+  if (!outputEnabled_ || highlightVariant_) return;
+  if (fg_ == kDefaultColor && bg_ == kDefaultColor) return;
+  std::string esc = "\x1b[" + colorParams(fg_, false) + ";" + colorParams(bg_, true) + "m";
+  tputs(esc.c_str(), 1, outc);
+}
+
+void TerminalDisplay::setColor(int fg, int bg) {
+  if (fg == fg_ && bg == bg_) return;
+  fg_ = fg;
+  bg_ = bg;
+  if (!outputEnabled_ || highlightVariant_) return;  // Highlight中はそちらが優先、解除時にemitColor()
+  std::string esc = "\x1b[" + colorParams(fg_, false) + ";" + colorParams(bg_, true) + "m";
+  tputs(esc.c_str(), 1, outc);
+  std::fflush(stdout);
 }
 
 int TerminalDisplay::rows() const { return rows_; }

@@ -37,6 +37,10 @@ struct Cell {
   // 無い、TerminalDisplay::highlightVariant_と同じ理屈)。
   bool highlight = false;
   bool highlightCurrent = false;
+  // 2026-09-26追加(Display::Attribute::Color自身のコメント参照): ANSIの
+  // 色エスケープ由来の前景色/背景色(Display::kDefaultColorなら既定色)。
+  int fgColor = Display::kDefaultColor;
+  int bgColor = Display::kDefaultColor;
   bool continuation = false;  // 2列幅のグリフの「影」となる2つ目のセル――それ自体では描画されない
 };
 
@@ -57,6 +61,30 @@ struct Cell {
 constexpr SDL_Color kHighlightCurrentBgColor{205, 0, 205, 255};
 constexpr SDL_Color kHighlightCurrentFgColor{176, 226, 255, 255};
 constexpr SDL_Color kHighlightBgColor{175, 238, 238, 255};
+
+// Display::Attribute::Color自身のコメント参照(2026-09-26追加): 色番号
+// (256色パレット/24bit直接指定)をRGBへ。基本16色は、本物の端末と違い
+// ウィンドウ側に利用者の配色設定が無いので、xtermの既定値を使う。
+SDL_Color ansiColorToSdl(int color) {
+  if (color & Display::kTrueColorFlag) {
+    int rgb = color & 0xFFFFFF;
+    return SDL_Color{static_cast<Uint8>((rgb >> 16) & 0xFF), static_cast<Uint8>((rgb >> 8) & 0xFF),
+                     static_cast<Uint8>(rgb & 0xFF), 255};
+  }
+  static const SDL_Color kBasic[16] = {
+      {0, 0, 0, 255},       {205, 0, 0, 255},     {0, 205, 0, 255},     {205, 205, 0, 255},
+      {0, 0, 238, 255},     {205, 0, 205, 255},   {0, 205, 205, 255},   {229, 229, 229, 255},
+      {127, 127, 127, 255}, {255, 0, 0, 255},     {0, 255, 0, 255},     {255, 255, 0, 255},
+      {92, 92, 255, 255},   {255, 0, 255, 255},   {0, 255, 255, 255},   {255, 255, 255, 255}};
+  if (color < 16) return kBasic[std::max(0, color)];
+  if (color < 232) {
+    static const Uint8 kLevels[6] = {0, 95, 135, 175, 215, 255};
+    int n = color - 16;
+    return SDL_Color{kLevels[n / 36], kLevels[(n / 6) % 6], kLevels[n % 6], 255};
+  }
+  Uint8 gray = static_cast<Uint8>(8 + 10 * (color - 232));
+  return SDL_Color{gray, gray, gray, 255};
+}
 
 // `utf8Bytes`の先頭のUTF-8シーケンス(他所でfm::Utf8::
 // sequence_length()によって既に正しい長さに分割済み)を、単一の
@@ -584,6 +612,7 @@ struct GraphicalDisplay::Impl {
   int savedRow = 0, savedCol = 0;
   bool standoutActive = false, boldActive = false, underlineActive = false, italicActive = false,
        highlightActive = false, highlightCurrentActive = false;
+  int fgColorActive = Display::kDefaultColor, bgColorActive = Display::kDefaultColor;  // setColor()
 
   // renderCursor()が実際に描く「論理的な」カーソル位置――上の
   // cursorRow/cursorCol(純粋に「次のバイトがどこに書かれるか」で
@@ -1154,6 +1183,8 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
   cell.italic = impl_->italicActive;
   cell.highlight = impl_->highlightActive;
   cell.highlightCurrent = impl_->highlightCurrentActive;
+  cell.fgColor = impl_->fgColorActive;
+  cell.bgColor = impl_->bgColorActive;
   cell.continuation = false;
 
   if (width == 2 && impl_->cursorCol + 1 < impl_->columns) {
@@ -1166,6 +1197,8 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
     shadow.italic = cell.italic;
     shadow.highlight = cell.highlight;
     shadow.highlightCurrent = cell.highlightCurrent;
+    shadow.fgColor = cell.fgColor;
+    shadow.bgColor = cell.bgColor;
   }
   impl_->cursorCol += std::max(width, 1);
 }
@@ -1195,7 +1228,9 @@ void GraphicalDisplay::renderCellBackground(int row, int col) {
   const Cell &cell = impl_->cellAt(row, col);
   SDL_Rect box{Impl::kMarginX + col * impl_->cellWidth, Impl::kMarginY + row * impl_->cellHeight, impl_->cellWidth,
                impl_->cellHeight};
-  SDL_Color bg = cell.standout ? impl_->fg : impl_->bg;
+  // 2026-09-26: ANSIの色(Cell::fgColor/bgColor)を反映。反転表示なら入れ替える。
+  SDL_Color bg = cell.bgColor != Display::kDefaultColor ? ansiColorToSdl(cell.bgColor) : impl_->bg;
+  if (cell.standout) bg = cell.fgColor != Display::kDefaultColor ? ansiColorToSdl(cell.fgColor) : impl_->fg;
   // kHighlightCurrentBgColor自身のコメント参照――standoutの結果を
   // 上書きする(この用途では、たまたまカーソル/マークの反転表示と
   // 重なっても、マッチの背景ハイライトの方を優先して常に見える
@@ -1212,8 +1247,8 @@ void GraphicalDisplay::renderCell(int row, int col) {
   SDL_Rect box{Impl::kMarginX + col * impl_->cellWidth, Impl::kMarginY + row * impl_->cellHeight, impl_->cellWidth,
                impl_->cellHeight};
 
-  SDL_Color fg = impl_->fg;
-  SDL_Color bg = impl_->bg;
+  SDL_Color fg = cell.fgColor != Display::kDefaultColor ? ansiColorToSdl(cell.fgColor) : impl_->fg;
+  SDL_Color bg = cell.bgColor != Display::kDefaultColor ? ansiColorToSdl(cell.bgColor) : impl_->bg;
   if (cell.standout) std::swap(fg, bg);
   // kHighlightCurrentBgColor自身のコメント参照(2026-09-10改訂: 前景色
   // だけの初版から、背景色+コントラストの取れた前景色のペアへ。
@@ -1611,7 +1646,14 @@ void GraphicalDisplay::setAttribute(Attribute attr) {
       impl_->highlightActive = false;
       impl_->highlightCurrentActive = false;
       break;
+    case Attribute::Color:
+      break;  // setColor()経由でのみ適用
   }
+}
+
+void GraphicalDisplay::setColor(int fg, int bg) {
+  impl_->fgColorActive = fg;
+  impl_->bgColorActive = bg;
 }
 
 // ピクセルでレンダリングされるウィンドウにはエスケープシーケンスという
@@ -2769,6 +2811,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
     // オフセット==画面上の列である)。
     bool wantBold = false, wantUnderline = false, wantStandout = false, wantItalic = false,
          wantHighlight = false, wantHighlightCurrent = false;
+    int wantFg = Display::kDefaultColor, wantBg = Display::kDefaultColor;
     for (const auto &run : attributes) {
       if (static_cast<int>(pos) < run.start || static_cast<int>(pos) >= run.end) continue;
       if (run.attribute == Display::Attribute::Bold) wantBold = true;
@@ -2777,6 +2820,21 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       else if (run.attribute == Display::Attribute::Italic) wantItalic = true;
       else if (run.attribute == Display::Attribute::Highlight) wantHighlight = true;
       else if (run.attribute == Display::Attribute::HighlightCurrent) wantHighlightCurrent = true;
+      else if (run.attribute == Display::Attribute::Color) {
+        wantFg = run.fg;
+        wantBg = run.bg;
+      }
+    }
+    // 2026-09-26追加(Display::Attribute::Color自身のコメント参照): ANSIの
+    // 色。renderCell()と同じく、反転表示なら前景/背景を入れ替える。
+    SDL_Color runFg = wantFg != Display::kDefaultColor ? ansiColorToSdl(wantFg) : sdlFg;
+    SDL_Color runBg = wantBg != Display::kDefaultColor ? ansiColorToSdl(wantBg) : impl_->bg;
+    if (wantStandout) std::swap(runFg, runBg);
+    if (!wantStandout && wantBg != Display::kDefaultColor) {
+      SDL_Rect bgRect{Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y, width * impl_->cellWidth,
+                      impl_->cellHeight};
+      SDL_SetRenderDrawColor(impl_->renderer, runBg.r, runBg.g, runBg.b, 255);
+      SDL_RenderFillRect(impl_->renderer, &bgRect);
     }
     // 2026-09-02追加、直接のユーザー依頼("ついでに透かしが消える件も
     // よろしく"): ContentView::scrollHighlightForLine()(main.cpp自身の
@@ -2790,7 +2848,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
     if (wantStandout) {
       SDL_Rect cellRect{Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y, width * impl_->cellWidth,
                          impl_->cellHeight};
-      SDL_SetRenderDrawColor(impl_->renderer, fg.r, fg.g, fg.b, 255);
+      SDL_SetRenderDrawColor(impl_->renderer, runBg.r, runBg.g, runBg.b, 255);
       SDL_RenderFillRect(impl_->renderer, &cellRect);
     }
     // renderCellBackground()自身のkHighlightCurrentBgColorコメント
@@ -2806,7 +2864,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       SDL_RenderFillRect(impl_->renderer, &cellRect);
     }
     if (glyph != " " && lead >= 0x20) {
-      SDL_Color cellFg = wantStandout ? impl_->bg : sdlFg;
+      SDL_Color cellFg = runFg;
       // renderCell()自身のkHighlightCurrentFgColorコメント参照――
       // standoutによる入れ替え後に上書きする独立の色ペア。他の全ての
       // 一致(wantHighlight)は前景を変更しない。

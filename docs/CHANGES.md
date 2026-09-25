@@ -12612,6 +12612,36 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      復元」というパターンを`promptKind_`自身にも新設)。詳細は項目412
      (KEY/HELPの節)参照。
 
+478. **2026-09-26: ページャー/SHELLでANSIの色・属性エスケープ(SGR)を解釈して
+    着色表示するようにした(IDEAS.mdの「PAGERのANSI非対応」項目)**
+   - **経緯**: 直接のユーザー依頼("ページャーとSHELL両方で色を解釈するよう
+     実装して")。SHELLで`git log`を実行すると、PAGER(usilic自身)の画面に
+     `^[[33m`が生のまま出ていた。「着色された画面を見た記憶がある」との
+     ことで実装の形跡を探したが、見つかったのは項目の「原因5」
+     (2026-08-01、`Shell::consumeEscapeByte()`)の「除去のみ」の処理だけ
+     だった(SHELL画面に直接流れる出力から`^[[33m`が消えるが、色は付かない)。
+   - **実装**:
+     - `Display::Attribute::Color`と`AttributeRun::fg/bg`(色の値: -1=既定、
+       0〜255=256色パレット、`kTrueColorFlag|0xRRGGBB`=24bit)、
+       `Display::setColor()`を新設。
+     - `PipeBuffer`(ページャー/SHELL/MAN共通の行バッファ): `ESC[...m`を解釈
+       (0/1/3/4/7/22/23/24/27、30〜37/90〜97/38;5;n/38;2;r;g;b、背景も同様)
+       して太字/斜体/下線/反転/色のランにし、それ以外のCSI(`ESC[K`等)・OSC・
+       `ESC(B`等は表示から取り除く。状態は本物の端末同様、改行をまたいで
+       持続する。`^[^M`("as is"、detectOverstrike=false)では従来通り生のまま。
+     - `Shell`: CSIのうちSGRだけは捨てずに本文へ渡し、scrollbackの行へ属性を
+       引き継ぐ(以前は属性自体を`{}`で捨てていた)。バックスペースは末尾の
+       色コードではなくその手前の文字を消す。確定前のプロンプト表示には
+       SGRを混ぜない。
+     - 描画: `ContentView::renderLine()`が色のランを`setColor()`へ。
+       `TerminalDisplay`は基本16色を30〜37/90〜97、それ以外を38;5;n/38;2で
+       送り、BoldOff(exit_attribute_mode)/HighlightOffで色がリセットされた
+       後は送り直す。`^S`のハイライト中はハイライトの色を優先。
+       `GraphicalDisplay`(-g)はセルに色を持たせ、xterm既定のパレットでRGBへ
+       変換(ドラッグ/慣性スクロール中のrenderTextRun()も同様)。
+   - **検証**: PipeBuffer/Shellのdoctestを追加。実バイナリにstdinから
+     色付きの行を流し、端末へ`ESC[33;49m`等が送られることをPTYで確認。
+
 ## 13. LIST(TAB補完)
 
 12. **2026-07-19: TAB補完・長い日本語行での横スクロール時のUTF-8破損を
