@@ -2128,6 +2128,40 @@ TEST_CASE_FIXTURE(Fixture, "CUT: splitting log.txt on 'marker' produces one segm
   CHECK(app.cutMode().segments()[2].label == "marker three");
 }
 
+// 2026-09-26追加、直接のユーザー依頼("CUT一覧上のF/EGREPを実装して"):
+// CUTの見出し一覧でも^S(FGREP)/^J^S(EGREP)がin-placeで効き、マッチした
+// 見出しへカーソルが移って、そのまま^Mでそのセグメントを開ける。
+TEST_CASE_FIXTURE(Fixture, "CUT list: ^S (FGREP) and ^J^S (EGREP) search the segment labels in place") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.handleCommand(Command::StartCut));
+  feedText("marker");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.cutMode().segments().size() == 3);
+
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S
+  REQUIRE(app.promptActive());
+  feedText("three");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.activeContentView().cursorIndex() == 2);
+
+  REQUIRE(app.handleCommand(Command::Back));  // ends the search, stays on the list
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  feedText("t[wx]o");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.activeContentView().cursorIndex() == 1);
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::CutContent);
+}
+
 TEST_CASE_FIXTURE(Fixture, "CUT (regular file, K-35/^Jb): splits the SELECTED entry directly, without opening it first") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");

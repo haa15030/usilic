@@ -9533,6 +9533,11 @@ bool Application::isGrepInPlaceEligibleMode(ApplicationMode mode) const {
     case ApplicationMode::Shell:
     case ApplicationMode::CutContent:
     case ApplicationMode::ListBrowser:
+    // 2026-09-26追加、直接のユーザー依頼("HISTORY.mdを`^<`でCUTして調べ事
+    // しようとするのに検索は必要なのでCUT一覧上のF/EGREPを実装して"): CUTの
+    // 一覧(区切った各セグメントの見出し)でも^S/^J^Sで検索し、マッチした
+    // 見出しへ移動して^Mでそのセグメントを開けるようにする。
+    case ApplicationMode::Cut:
       return true;
     default:
       return false;
