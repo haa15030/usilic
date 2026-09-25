@@ -313,7 +313,24 @@ std::string renderInline(const std::string &text) {
 
 }  // namespace
 
-std::string markdownToHelpMarkup(const std::string &text) {
+std::string markdownToHelpMarkup(const std::string &source) {
+  // 2026-09-25追加、直接のユーザー報告("HISTORY.md:1322以降がボールド、
+  // :1783以降がイタリック、:11219以降がアンダーライン"): 元テキスト中に
+  // 文字どおり書かれた"<b>"/"<u>"/"<i>"/"<indentN>"(HISTORY.mdはHELP用
+  // マークアップ自体を議論した記録なので頻出する。`<b>`のようにコード
+  // スパンの中でも同じ)が、この変換の出力をそのまま受け取る
+  // expandHelpMarkup()に本物のタグとして解釈されていた――タグは
+  // オン/オフの切り替え式なので、閉じていない"<b>"が1つあるだけで
+  // 以降が最後まで太字になる。最初に元テキストの'<'をすべて"<lt>"
+  // (expandHelpMarkup()が文字どおりの'<'へ戻す、自身のコメント参照)へ
+  // 置き換えてから変換する。この変換自体は'<'を記法として一切使わない
+  // ので、置き換えても解釈は変わらない。
+  std::string text;
+  text.reserve(source.size());
+  for (char c : source) {
+    if (c == '<') text += "<lt>";
+    else text += c;
+  }
   // 行ごとに分割する(末尾の改行の有無を記憶して、最後だけ復元する)。
   std::vector<std::string> lines;
   {

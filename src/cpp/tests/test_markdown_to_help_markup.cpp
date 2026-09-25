@@ -128,3 +128,11 @@ TEST_CASE("markdownToHelpMarkup: the CommonMark 'rule of 3' resolves an otherwis
           "mix of single and double asterisks correctly") {
   CHECK(markdownToHelpMarkup("**foo*bar***") == "<b>foo<i>bar</i></b>");
 }
+
+// markdownToHelpMarkup()自身の2026-09-25のコメント参照("<lt>"エスケープ)。
+TEST_CASE("markdownToHelpMarkup: literal <b>/<u>/<i> in the source (plain or in a code span) stay literal text") {
+  std::string expanded = fm::expandHelpMarkup(fm::markdownToHelpMarkup("tags <b>/<u> and `<i>` here\n"));
+  CHECK(expanded.find("<b>/<u>") != std::string::npos);
+  CHECK(expanded.find("<i>") != std::string::npos);
+  CHECK(expanded.find('\x03') == std::string::npos);  // 太字の切り替えバイトが出ていない
+}

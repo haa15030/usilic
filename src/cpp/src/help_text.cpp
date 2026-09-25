@@ -133,6 +133,16 @@ std::string expandHelpMarkup(const std::string &text) {
     // ループにそのまま委ねる(入れ子の<b>/<u>もそのまま機能するが、
     // 同じ文字が斜体と太字/下線を同時に持つケースはwrapLine()側の
     // 制約により非対応――そちら自身のコメント参照)。
+    // 2026-09-25追加: "<lt>"は文字どおりの'<'――markdownToHelpMarkup()が
+    // 元テキストの'<'をすべてこれへ置き換える(そちら自身のコメント参照)。
+    // タグとして解釈されては困る"<b>"等を文字どおり表示するための
+    // エスケープ。
+    const std::string literalLt = "<lt>";
+    if (text.compare(i, literalLt.size(), literalLt) == 0) {
+      out += '<';
+      i += literalLt.size();
+      continue;
+    }
     const std::string italicOpen = "<i>", italicClose = "</i>";
     if (text.compare(i, italicOpen.size(), italicOpen) == 0) {
       out += '\x02';
