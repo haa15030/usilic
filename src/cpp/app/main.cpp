@@ -143,6 +143,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <termios.h>
 #include <unistd.h>
 #include <utility>
 #include <vector>
@@ -1811,7 +1812,32 @@ void syncCursorBeforeCoastStoppingKey(int coastLevel, bool &wasActivelyScrolling
 // "waiting terminal" scenario doesn't exist without a separate GUI
 // window at all).
 volatile std::sig_atomic_t gGuiSessionSigintReceived = 0;
-void handleSigintForGuiSession(int) { gGuiSessionSigintReceived = 1; }
+// 2026-09-25拡張、直接のユーザー報告("GUI起動で.mdファイルを`^[^M`
+// すると暴走する。ついては裏ターミナルで`^C`投入でkill可を実装
+// よろしく"): 1回目はこれまで通りフラグを立てるだけ(runGuiPhase()が
+// 次の周回で拾い、ESC ESC Enterと同じ穏当な終了へ進む)。ただし暴走中は
+// その周回自体が回ってこない(どこか別の場所で止まっている/回り続けて
+// いる)ことがあり得るので、フラグが立ったままの状態でもう一度届いた
+// ら、既定の動作に戻して自分自身へ送り直し、強制終了する。signal()/
+// raise()はどちらもasync-signal-safe。
+void handleSigintForGuiSession(int) {
+  if (gGuiSessionSigintReceived) {
+    std::signal(SIGINT, SIG_DFL);
+    std::raise(SIGINT);
+    return;
+  }
+  gGuiSessionSigintReceived = 1;
+}
+
+// 起動元ターミナルで外部プログラム(PROGRAM/EDIT)を動かしている間は、
+// そのプログラム自身への^C(lessの検索中断等)でusilicまで終了しない
+// よう、SIGINTを一時的に無視する。子プロセス側はChildProcess自身の
+// resetSignalsToDefault()で既定に戻るので、^Cは子には従来通り届く。
+struct IgnoreSigintWhileChildRuns {
+  void (*previous)(int);
+  IgnoreSigintWhileChildRuns() : previous(std::signal(SIGINT, SIG_IGN)) {}
+  ~IgnoreSigintWhileChildRuns() { std::signal(SIGINT, previous); }
+};
 
 void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   bool dragging = false;
@@ -3176,7 +3202,10 @@ bool runProgramInLaunchingTerminal(const std::string &command, fm::GraphicalDisp
   // first), but this at least makes the BRIEF flash blank instead of
   // stale leftover content -- `clear` is a fast, near-instant builtin/
   // binary, so the perceived gap shrinks even if it can't reach zero.
-  fm::ChildProcess::runInteractive({"sh", "-c", "clear; " + command});
+  {
+    IgnoreSigintWhileChildRuns ignoreSigint;  // それ自身のコメント参照
+    fm::ChildProcess::runInteractive({"sh", "-c", "clear; " + command});
+  }
   gui.setVisible(true);
   gui.raise();
   return true;
@@ -3201,7 +3230,10 @@ bool runEditorInLaunchingTerminal(const std::vector<std::string> &argv, fm::Grap
   }
   gui.setVisible(false);
   clearLaunchingTerminal();
-  fm::ChildProcess::runInteractive(argv);
+  {
+    IgnoreSigintWhileChildRuns ignoreSigint;  // runProgramInLaunchingTerminal()の同じ箇所参照
+    fm::ChildProcess::runInteractive(argv);
+  }
   gui.setVisible(true);
   gui.raise();
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
@@ -3320,7 +3352,29 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   app.editMode().setForegroundLauncher(
       [&gui](const std::vector<std::string> &argv) { return runEditorInLaunchingTerminal(argv, *gui); });
 
+  // 2026-09-25追加、handleSigintForGuiSession()自身のコメント参照:
+  // これまで起動元ターミナルの^Cを拾えたのは「実はすでにGUI」起動
+  // (guiOwnsWholeSession)だけで、-g/^Og経由のこの経路ではターミナルが
+  // raw mode(ISIG無効)のままのため、^Cはシグナルにならず誰も読まない
+  // 1バイトとして捨てられていた。GUIの間だけISIGを有効にしてSIGINTを
+  // 拾う(^Z/^\は無効化――GUIウィンドウを出したまま停止/コアダンプ
+  // させないため)。制御端末が無い(Finderからの起動等)場合は何もしない。
+  struct termios savedTermios{};
+  bool termiosSaved = isatty(STDIN_FILENO) && tcgetattr(STDIN_FILENO, &savedTermios) == 0;
+  if (termiosSaved) {
+    struct termios withSignals = savedTermios;
+    withSignals.c_lflag |= ISIG;
+    withSignals.c_cc[VSUSP] = _POSIX_VDISABLE;
+    withSignals.c_cc[VQUIT] = _POSIX_VDISABLE;
+    tcsetattr(STDIN_FILENO, TCSANOW, &withSignals);
+  }
+  gGuiSessionSigintReceived = 0;
+  void (*previousSigint)(int) = std::signal(SIGINT, handleSigintForGuiSession);
+
   runGuiPhase(app, *gui);
+
+  std::signal(SIGINT, previousSigint);
+  if (termiosSaved) tcsetattr(STDIN_FILENO, TCSANOW, &savedTermios);
 
   app.programMode().setForegroundLauncher(nullptr);  // back to plain ChildProcess::runInteractive() in terminal mode
   app.editMode().setForegroundLauncher(nullptr);
