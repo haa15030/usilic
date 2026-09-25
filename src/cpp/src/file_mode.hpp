@@ -96,6 +96,11 @@ class FileMode {
   // 復元する。ファイルが読めない場合(存在しない、権限が無い、等)は
   // false。
   bool loadFile(const std::string &path);
+  // 2026-09-25追加、usilicrcのCODE(バイナリ判定)用――binaryTypeText()
+  // 自身のコメント参照。バイナリと判定したファイルの種類をlegacyと同じ
+  // くERRORログへも記録するため、そのパスを受け取る(CpMvRmModeと同じ
+  // ポインタ渡し。nullptrなら記録しない)。
+  void setErrorLogPath(const std::string *path) { errorLogPath_ = path; }
 
   // 2026-09-14追加、直接のユーザー依頼("（ls）での^O^M/^[^Mを実装
   // して"、QUICK.txt自身のK-23/K-24自身の説明): loadFile()と全く同じ
@@ -550,6 +555,8 @@ class FileMode {
   History &history_;
   const Configuration &configuration_;
   Charset::Encoding encoding_;
+  const std::string *errorLogPath_ = nullptr;  // setErrorLogPath()参照
+  std::optional<std::string> binaryTypeText(const std::string &path, const std::string &content) const;
   int width_;
   // 2026-09-14追加、直接のユーザー依頼("（ls）での^O^M/^[^Mを実装
   // して"): loadFileNoWrap()/loadFileRaw()自身のコメント参照。

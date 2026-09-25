@@ -535,3 +535,23 @@ TEST_CASE_FIXTURE(Fixture, "loadFileRaw (^[^M): a .md file is shown with its lit
     if (line.text.find("# Title") != std::string::npos) sawLiteralHash = true;
   CHECK(sawLiteralHash);
 }
+
+// FileMode::binaryTypeText()自身のコメント参照(2026-09-25、usilicrcのCODE)。
+TEST_CASE_FIXTURE(Fixture, "loadFile: with CODE set, a file holding a non-allowed control byte shows \"(^X) <file type>\" "
+                           "instead of its content") {
+  REQUIRE(configuration.loadRcText("CODE\n 8 9 10 12 13 27\n", true));
+  std::string path = writeFile("bin.dat", std::string("abc\x01" "def\n", 8));
+  REQUIRE(mode.loadFile(path));
+  REQUIRE(view.lines().size() == 1);
+  CHECK(view.lines()[0].text.rfind("(^A) ", 0) == 0);
+  CHECK_FALSE(view.lines()[0].attributes.empty());  // 太字
+}
+
+TEST_CASE_FIXTURE(Fixture, "loadFile: allowed control bytes (and an empty CODE) keep a file as text") {
+  std::string path = writeFile("ff.txt", "page1\fpage2\n");
+  REQUIRE(mode.loadFile(path));  // CODE未設定: 判定しない
+  CHECK(view.lines()[0].text.find("page1") != std::string::npos);
+  REQUIRE(configuration.loadRcText("CODE\n 8 9 10 12 13 27\n", true));
+  REQUIRE(mode.loadFile(path));  // \f(12)は許可されている
+  CHECK(view.lines()[0].text.find("page1") != std::string::npos);
+}

@@ -14,10 +14,12 @@
 #include <sstream>
 #include <system_error>
 
+#include "charset.hpp"
 #include "child_process.hpp"
 #include "help_text.hpp"
 #include "markdown_to_help_markup.hpp"
 #include "pipe_buffer.hpp"
+#include "utf8.hpp"
 
 namespace fm {
 
@@ -373,6 +375,53 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
 // のが"そのまま(as is)読む"の実体だった。rawControlCodesMode_が真の
 // 間はこの変換を丸ごとスキップし、生バイトをそのままcontentとして
 // 返すようにした。
+// 2026-09-25追加、直接のユーザー依頼(usilicrcのCODEが読み込まれる
+// だけで使われていなかった件、"実装して"): legacy code.cのcheck_type()/
+// init_code()/type_file()の移植。usilicrcのCODEが空(code0が0、または
+// CODEセクション自体が無い)ならこの判定はしない。そうでなければ、
+// 先頭N_buff(0x10000)バイトをCharset::detect()へCODEの許可リスト付きで
+// 渡し(UTF-8端末で正しいUTF-8ならテキスト扱い、が他より優先)、バイナリ
+// と判定されたら、内容をlegacyと同じ「(^X) <file(1)の結果>」の太字1行
+// (^Xは最初に見つかった許可されていない制御文字)へ差し替え、ERROR
+// ログにも"file: <パス>: <種類>."を記録する。legacyのK_h(\b)まわりの
+// 追加判定(\bの直後がNUL等)は移植していない。
+std::optional<std::string> FileMode::binaryTypeText(const std::string &path, const std::string &content) const {
+  const std::string &allowed = configuration_.allowedControlBytes();
+  if (allowed.empty() || content.empty()) return std::nullopt;
+  int window = static_cast<int>(std::min<std::size_t>(content.size(), 0x10000));
+  const auto *bytes = reinterpret_cast<const unsigned char *>(content.data());
+  if (Charset::detect(bytes, window, encoding_, allowed.c_str()) != Charset::Encoding::Binary) return std::nullopt;
+  unsigned char offending = 0;
+  for (int i = 0; i < window; i++) {
+    unsigned char c = bytes[i];
+    if (c == 0 || (c < 0x20 && c != '\n' && allowed.find(static_cast<char>(c)) == std::string::npos)) {
+      offending = c;
+      break;
+    }
+  }
+  std::string type;
+  ChildProcess::Result result = ChildProcess::run({"file", "-b", path});
+  if (result.ok) {
+    type = result.output.substr(0, result.output.find('\n'));
+  } else {
+    type = "cannot execute `file'";
+  }
+  std::string plain = std::string("(^") + static_cast<char>('@' + offending) + ") " + type;
+  if (errorLogPath_) {
+    std::ofstream log(*errorLogPath_, std::ios::app);
+    log << "file: " << path << ": " << plain << ".\n";
+  }
+  // PipeBufferの重ね打ち検出(X\bX→太字)でlegacyのtobo()の太字を表す。
+  std::string bold;
+  for (std::size_t i = 0; i < plain.size();) {
+    int len = std::max(1, Utf8::sequence_length(static_cast<unsigned char>(plain[i])));
+    std::string glyph = plain.substr(i, len);
+    bold += glyph + "\b" + glyph;
+    i += len;
+  }
+  return bold + "\n";
+}
+
 std::string FileMode::loadAndTransformContent(const std::string &path) const {
   std::ifstream in(path, std::ios::binary);
   if (!in) return {};
@@ -381,6 +430,7 @@ std::string FileMode::loadAndTransformContent(const std::string &path) const {
   if (!in.good() && !in.eof()) return {};
   std::string content = buffer.str();
   if (rawControlCodesMode_) return content;
+  if (auto typeText = binaryTypeText(path, content)) return *typeText;
   // isHelpMarkupPagerFile()自身のコメント参照(HELP.txt/QUICK.txtの
   // <indentN>/<i>/<b>/<u>markupを、リテラルなタグのままではなく
   // ^Jh自身のkHelpTextJa/kHelpTextGuiJaと同じ規約で展開する)。

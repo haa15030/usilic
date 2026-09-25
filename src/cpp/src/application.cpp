@@ -566,6 +566,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // 実装されており合成的なプロバイダに対してテスト済み
   // (test_shell.cpp参照)であるにも関わらず、Shellモードでの
   // Tabが黙って何もしないことを意味していた。
+  fileMode_.setErrorLogPath(&errorLogPath_);  // FileMode::binaryTypeText()参照(usilicrcのCODE)
   shell_.setCompletionProvider(
       [this](const std::string &partial) { return completeFilesystemPath(partial, shell_.currentDirectory()); });
   // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装(shouldSearchPath()
