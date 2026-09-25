@@ -3169,6 +3169,7 @@ bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special
 bool Application::feedCanonicalByte(int byte) { return feedUntranslatedByte(byte, std::nullopt); }
 
 bool Application::feedUntranslatedByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  clearTransientNotice();  // showTransientNotice()自身の宣言コメント参照(どのキーでも消える)
   bool outermost = stdinPagerCheckDepth_ == 0;
   bool wasStdin = outermost && stdinPagerActive();
   bool wasReturnsToShell = wasStdin && fileMode_.pagerReturnsToShell();
@@ -3801,12 +3802,23 @@ bool Application::handleCommand(Command command) {
   return result;
 }
 
+void Application::showTransientNotice(ContentView &view, const std::string &text) {
+  clearTransientNotice();
+  view.setPositionTextOverride(text, /*plain=*/true);
+  transientNoticeView_ = &view;
+  view.redraw();
+}
+
+void Application::clearTransientNotice() {
+  if (!transientNoticeView_) return;
+  ContentView *view = transientNoticeView_;
+  transientNoticeView_ = nullptr;
+  view->setPositionTextOverride(std::nullopt);
+  if (&activeView() == view) view->redraw();
+}
+
 bool Application::handleCommandImpl(Command command) {
-  if (directoryMarkRefusalShown_) {  // toggleMark()自身のコメント参照
-    directoryMarkRefusalShown_ = false;
-    directoryView_.setPositionTextOverride(std::nullopt);
-    if (currentMode_ == ApplicationMode::Directory) directoryView_.redraw();
-  }
+  clearTransientNotice();  // showTransientNotice()自身の宣言コメント参照
   // なぜこれがモードラインのプロバイダ自体の内部ではなく「ここ」
   // (ディスパッチされたコマンドごとに一度)に生きているのか、そして
   // なぜ(ほとんどの実際のキー入力はそこを通るが、副次的なホバー/
@@ -4737,7 +4749,22 @@ bool Application::openSelectedEntry() {
     if (startArchiveLoadAsync(path)) return true;  // 今は待機中――awaitingArchiveLoad()参照
     activeView().redraw();
   }
-  if (!fileMode_.loadFile(path)) return false;
+  // 2026-09-25追加、直接のユーザー依頼(BUFFERの検討で"2と3でいい。ただし
+  // ^O^Mへ切り替えた際にNot enough bufferは出してほしい。どれかのキーで
+  // 消去"): usilicrcのBUFFER(それまで読むだけで使われていなかった)を超える
+  // ファイルは、全体を読み込む代わりに^O^M(1行ずつ読む、画面に出る分だけ
+  // 読み込む)と同じ方法で開き、"Not enough buffer"を一時メッセージとして
+  // 出す。legacyはここで読み込み自体を止めていた(alloc_pipe()の中断)。
+  {
+    std::error_code sizeEc;
+    auto size = std::filesystem::file_size(path, sizeEc);
+    if (!sizeEc && static_cast<long long>(size) > configuration_.bufferSizeLimitBytes()) {
+      if (!openSelectedEntryNoWrap()) return false;
+      showTransientNotice(fileView_, "Not enough buffer");
+      return true;
+    }
+  }
+  if (!fileMode_.loadFile(path, [this]() { return keyInterruptRequested(); })) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;  // それ自身の宣言コメント参照
   return true;
@@ -4833,6 +4860,36 @@ bool Application::openSelectedEntryNoWrap() {
   return true;
 }
 
+// 長い同期の読み込み(^[^Mの「そのまま読む」、^Mの通常の読み込み)の途中で、
+// どれかのキーが押されたか。押されていればそのキーを捨ててtrue(2026-09-25、
+// ^[^M自身のラムダから括り出し、^Mでも使うようにした――直接のユーザー
+// 質問"^Mは中断できないの？")。
+bool Application::keyInterruptRequested() {
+  // 2026-09-25修正、直接のユーザー報告("GUI起動で.mdファイルを
+  // `^[^M`すると...無反応"、-cは問題無し): 「実はすでにGUI」起動では
+  // 起動元ターミナルが^Cのためにcooked mode(ICANON、main()の
+  // guiOwnsWholeSession分岐のkeyInput.leaveRawMode()参照)へ戻されて
+  // おり、そこでのread()はそのターミナルで改行が打たれるまで
+  // ブロックする――raw mode(VMIN=0/VTIME=1、0.1秒で諦める)を前提
+  // にしていたこの覗き見がそこで止まり、GUI全体が固まっていた。
+  // 実際に何か届いている時だけ読む。
+  //
+  // 同日変更、直接のユーザー要望("`^G`で停止よりも形としては緊急性を
+  // 伴うとも言えるので`^G`→任意のキーにしてほしい"): 中断のキーを
+  // ^G限定から「任意のキー」へ広げた(押したキーは中断のためだけに
+  // 使い、コマンドとしては実行しない)。GUIではキーがSDL経由で届き
+  // 起動元ターミナルには来ないので、setInterruptPeeker()(main.cppの
+  // runGuiPhase()が設定する)でGUIウィンドウ側のキーも見る。
+  // usilicrcのマクロ再生中のバイトは「押されたキー」ではないので
+  // 見ない(KeyInput::readByte()ではなく端末fdを直接read()する)。
+  if (interruptPeeker_ && interruptPeeker_()) return true;
+  if (keyInput_.fd() < 0) return false;
+  struct pollfd pfd{keyInput_.fd(), POLLIN, 0};
+  if (::poll(&pfd, 1, 0) <= 0 || !(pfd.revents & POLLIN)) return false;
+  unsigned char discarded;
+  return ::read(keyInput_.fd(), &discarded, 1) > 0;
+}
+
 bool Application::openSelectedEntryRaw() {
   const DirectoryEntry *entry = directoryMode_.selectedEntry();
   if (!entry || entry->isDirectory) return false;
@@ -4848,31 +4905,7 @@ bool Application::openSelectedEntryRaw() {
   // 関数」そのもの――新しい仕組みは不要だった。^G以外の何かが偶然
   // 届いていた場合(考えにくいが、例えば直前の操作の取りこぼし等)は
   // 捨てずにplayRawMacro()で送り返し、通常のディスパッチへ委ねる。
-  auto shouldAbort = [this]() {
-    // 2026-09-25修正、直接のユーザー報告("GUI起動で.mdファイルを
-    // `^[^M`すると...無反応"、-cは問題無し): 「実はすでにGUI」起動では
-    // 起動元ターミナルが^Cのためにcooked mode(ICANON、main()の
-    // guiOwnsWholeSession分岐のkeyInput.leaveRawMode()参照)へ戻されて
-    // おり、そこでのread()はそのターミナルで改行が打たれるまで
-    // ブロックする――raw mode(VMIN=0/VTIME=1、0.1秒で諦める)を前提
-    // にしていたこの覗き見がそこで止まり、GUI全体が固まっていた。
-    // 実際に何か届いている時だけ読む。
-    //
-    // 同日変更、直接のユーザー要望("`^G`で停止よりも形としては緊急性を
-    // 伴うとも言えるので`^G`→任意のキーにしてほしい"): 中断のキーを
-    // ^G限定から「任意のキー」へ広げた(押したキーは中断のためだけに
-    // 使い、コマンドとしては実行しない)。GUIではキーがSDL経由で届き
-    // 起動元ターミナルには来ないので、setInterruptPeeker()(main.cppの
-    // runGuiPhase()が設定する)でGUIウィンドウ側のキーも見る。
-    // usilicrcのマクロ再生中のバイトは「押されたキー」ではないので
-    // 見ない(KeyInput::readByte()ではなく端末fdを直接read()する)。
-    if (interruptPeeker_ && interruptPeeker_()) return true;
-    if (keyInput_.fd() < 0) return false;
-    struct pollfd pfd{keyInput_.fd(), POLLIN, 0};
-    if (::poll(&pfd, 1, 0) <= 0 || !(pfd.revents & POLLIN)) return false;
-    unsigned char discarded;
-    return ::read(keyInput_.fd(), &discarded, 1) > 0;
-  };
+  auto shouldAbort = [this]() { return keyInterruptRequested(); };
   if (!fileMode_.loadFileRaw(path, shouldAbort)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;
@@ -5865,9 +5898,7 @@ bool Application::toggleMark() {
     const auto &entries = directoryMode_.entries();
     for (int i = 0; i < static_cast<int>(entries.size()); i++) {
       if (i == cursor || !entries[i].isDirectory || !directoryMode_.isMarked(i)) continue;
-      directoryView_.setPositionTextOverride("Cannot select multiple directories", /*plain=*/true);
-      directoryMarkRefusalShown_ = true;
-      directoryView_.redraw();
+      showTransientNotice(directoryView_, "Cannot select multiple directories");
       display_.putChar(0x07);
       display_.flush();
       return false;

@@ -17,7 +17,10 @@ SDL_LIBS   := $(shell pkg-config --libs sdl2 SDL2_ttf 2>/dev/null)
 # and existing call sites are meant to keep omitting new trailing fields
 # rather than being revisited every time one is added. Disabled globally
 # instead of patched at each of the 100+ call sites this warning fires on.
-CXXFLAGS ?= -std=c++17 -Wall -Wextra -Wno-missing-field-initializers -g $(SDL_CFLAGS)
+# -O2(2026-09-25追加、直接のユーザー依頼): それまでは最適化無し(-gのみ)で
+# ビルドしており、92MB/100万行のファイルの^Mに約10.6秒かかっていた。-gは
+# デバッガ用にそのまま残す。
+CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -Wno-missing-field-initializers -g $(SDL_CFLAGS)
 # terminal_display.cpp uses ncurses' terminfo API (setupterm/tputs/
 # tgoto), same as the legacy C's config.sh (LIBS= -lncurses).
 # mac_font_resolver.cpp's CoreText/CoreFoundation use is #ifdef

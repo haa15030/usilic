@@ -2222,6 +2222,7 @@ class Application {
   void discardStdinPager(bool returnsToShell);
   int stdinPagerCheckDepth_ = 0;
   std::function<bool()> interruptPeeker_;  // setInterruptPeeker()参照
+  bool keyInterruptRequested();  // それ自身のコメント(application.cpp)参照
   ContentView &viewForMode(ApplicationMode mode);
   void layoutViews();
   std::vector<std::string> collectTargetPaths() const;
@@ -3137,10 +3138,16 @@ class Application {
   bool leaderOPending_ = false;  // ^Oを見た、2バイトのコマンドを完成させるバイトを待っている(2026-09-08のキー再編で^Xの大半の役割を引き継いだ)
   bool wantsExit_ = false;
   bool guiModeToggleRequested_ = false;
-  // 2026-09-25追加、toggleMark()自身のディレクトリ複数選択の拒否
-  // メッセージ(directoryView_の位置欄へ出す)が表示中か。次に
-  // handleCommand()へ来たコマンドの冒頭で消す。
-  bool directoryMarkRefusalShown_ = false;
+  // 2026-09-25追加、次のキーで消える一時メッセージ(showTransientNotice()
+  // 参照)を今表示しているビュー。nullptrなら表示していない。
+  ContentView *transientNoticeView_ = nullptr;
+  // 一時メッセージを`view`のモードラインの位置欄(GREPの"No String"と同じ
+  // 場所、非ハイライト)に出す。どのキーでも(feedUntranslatedByte()の冒頭、
+  // あるいはhandleCommand()の冒頭で)消え、そのキー自体は通常どおり働く。
+  // 使い道: toggleMark()のディレクトリ複数選択の拒否、BUFFERを超えるファイル
+  // の^Mを^O^Mへ切り替えた時の"Not enough buffer"。
+  void showTransientNotice(ContentView &view, const std::string &text);
+  void clearTransientNotice();
 
   enum class PromptKind {
     None,

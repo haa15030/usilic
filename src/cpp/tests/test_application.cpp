@@ -15444,3 +15444,32 @@ TEST_CASE_FIXTURE(Fixture, "usilicrc KEY: a one-character key change (j -> J) do
   app.feedByte('J', std::nullopt);
   CHECK(app.promptText() == "jJ");
 }
+
+// Application::openSelectedEntry()のBUFFERのコメント参照(2026-09-25)。
+TEST_CASE_FIXTURE(Fixture, "^M on a file larger than BUFFER opens it like ^O^M (a stream) with a "
+                           "\"Not enough buffer\" notice that the next key clears") {
+  REQUIRE(configuration.loadRcText("BUFFER\n\t1\n", true));  // 1MB
+  {
+    std::ofstream big(root / "big.txt");
+    for (int i = 0; i < 40000; i++) big << "line " << i << " ------------------------------------\n";  // 約1.7MB
+  }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("big.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().hasActiveStream());
+  CHECK(app.activeContentView().modeLineText().find("Not enough buffer") != std::string::npos);
+  app.feedByte('j', std::nullopt);
+  CHECK(app.activeContentView().modeLineText().find("Not enough buffer") == std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^M on a file within BUFFER still loads it whole, without the notice") {
+  REQUIRE(configuration.loadRcText("BUFFER\n\t1\n", true));
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK_FALSE(app.fileMode().hasActiveStream());
+  CHECK(app.activeContentView().lines().size() == 2);
+}

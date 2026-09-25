@@ -385,12 +385,22 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
 // (^Xは最初に見つかった許可されていない制御文字)へ差し替え、ERROR
 // ログにも"file: <パス>: <種類>."を記録する。legacyのK_h(\b)まわりの
 // 追加判定(\bの直後がNUL等)は移植していない。
-std::optional<std::string> FileMode::binaryTypeText(const std::string &path, const std::string &content) const {
+// binaryTypeText()の判定部分だけ(file(1)の実行やERRORログへの記録という
+// 副作用が無い)。loadFileAsPipe()の「整形が要らなければ元のファイルから直接
+// 流す」判定でも使う(2026-09-25)。
+bool FileMode::looksBinary(const std::string &content) const {
   const std::string &allowed = configuration_.allowedControlBytes();
-  if (allowed.empty() || content.empty()) return std::nullopt;
+  if (allowed.empty() || content.empty()) return false;
   int window = static_cast<int>(std::min<std::size_t>(content.size(), 0x10000));
   const auto *bytes = reinterpret_cast<const unsigned char *>(content.data());
-  if (Charset::detect(bytes, window, encoding_, allowed.c_str()) != Charset::Encoding::Binary) return std::nullopt;
+  return Charset::detect(bytes, window, encoding_, allowed.c_str()) == Charset::Encoding::Binary;
+}
+
+std::optional<std::string> FileMode::binaryTypeText(const std::string &path, const std::string &content) const {
+  if (!looksBinary(content)) return std::nullopt;
+  const std::string &allowed = configuration_.allowedControlBytes();
+  int window = static_cast<int>(std::min<std::size_t>(content.size(), 0x10000));
+  const auto *bytes = reinterpret_cast<const unsigned char *>(content.data());
   unsigned char offending = 0;
   for (int i = 0; i < window; i++) {
     unsigned char c = bytes[i];
@@ -464,7 +474,8 @@ std::string FileMode::loadAndTransformContent(const std::string &path) const {
   return content;
 }
 
-std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path) const {
+std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path,
+                                                       const std::function<bool()> &shouldAbort) const {
   std::string content = loadAndTransformContent(path);
 
   // 2026-09-14追加、直接のユーザー依頼("（ls）での^O^M/^[^Mを実装
@@ -476,7 +487,23 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path) co
   // 挙動、水平スクロールバー等の新規UIは無い)。
   int effectiveWidth = noWrapMode_ ? kNoWrapWidth : width_;
   PipeBuffer pipe(encoding_, effectiveWidth, 64L * 1024 * 1024, /*detectOverstrike=*/!rawControlCodesMode_);
-  pipe.feed(content);
+  // 2026-09-25追加、直接のユーザー質問("^Mは中断できないの？"): 時間が
+  // かかるのは読み込みそのものより、この画面用の行への組み立て(折り返し/
+  // 装飾の解釈)なので、1MB程度ずつ(行の区切りで)渡し、その合間に
+  // shouldAbort()(Application::keyInterruptRequested()、どれかのキー)を
+  // 見る。中断したらそこまでの行だけを表示する。
+  constexpr std::size_t kChunkBytes = 1024 * 1024;
+  std::size_t pos = 0;
+  while (pos < content.size()) {
+    std::size_t end = std::min(content.size(), pos + kChunkBytes);
+    if (end < content.size()) {
+      std::size_t newline = content.find('\n', end);
+      end = (newline == std::string::npos) ? content.size() : newline + 1;
+    }
+    pipe.feed(content.substr(pos, end - pos));
+    pos = end;
+    if (pos < content.size() && shouldAbort && shouldAbort()) break;
+  }
   pipe.flush();
 
   std::vector<ContentView::Line> lines;
@@ -538,10 +565,10 @@ std::vector<ContentView::Line> FileMode::readAndWrapChunked(const std::string &p
   return lines;
 }
 
-bool FileMode::loadFile(const std::string &path) {
+bool FileMode::loadFile(const std::string &path, const std::function<bool()> &shouldAbort) {
   noWrapMode_ = false;
   rawControlCodesMode_ = false;
-  return loadFileImpl(path);
+  return loadFileImpl(path, shouldAbort);
 }
 
 bool FileMode::loadFileNoWrap(const std::string &path) {
@@ -560,9 +587,28 @@ bool FileMode::loadFileRaw(const std::string &path, const std::function<bool()> 
 bool FileMode::loadFileAsPipe(const std::string &path) {
   std::ifstream probe(path, std::ios::binary);
   if (!probe) return false;
+  // 2026-09-25追加(BUFFERを超えるファイルを^Mから^O^Mへ切り替えるようにした
+  // のに伴い、直接のユーザー依頼): 以前は常にloadAndTransformContent()で
+  // ファイル全体をメモリへ読み、一時ファイルへ書き直してから流していた
+  // (数十〜数百MBのファイルではそれ自体が重い)。整形(HELP用マークアップ/
+  // Markdown/roff/バイナリの種類表示)が要らないファイルは、元のファイルを
+  // そのまま流す――先頭の64KBだけで判定できる(looksLikeRoffDocument()は
+  // 先頭4KB、バイナリ判定は先頭64KBしか見ない)。
+  std::string head(0x10000, '\0');
+  probe.read(head.data(), static_cast<std::streamsize>(head.size()));
+  head.resize(static_cast<std::size_t>(probe.gcount()));
   probe.close();
 
   rawControlCodesMode_ = false;
+  if (!isHelpMarkupPagerFile(path) && !isMarkdownFile(path) && !looksLikeRoffDocument(head) && !looksBinary(head)) {
+    int fd = ::open(path.c_str(), O_RDONLY);
+    if (fd >= 0) {
+      loadStream(fd, /*ownsFd=*/true, "", 1, /*noWrap=*/false);
+      annotations_.pushWithNameOverride(FileAnnotationKind::Search, "", "(stdin)");
+      setPagerReturnsToDirectory(true);
+      return true;
+    }
+  }
   std::string content = loadAndTransformContent(path);
   return loadContentAsPipe(content);
 }
@@ -639,7 +685,7 @@ bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()>
   view_.setContentMayGrow(false);  // setContentMayGrow()自身の宣言コメント参照。この非ストリーミング読み込みは常に一括で確定済み
 
   // 2026-09-16追加、loadFileRaw()自身の宣言コメント参照。
-  view_.setLines(rawControlCodesMode_ && shouldAbort ? readAndWrapChunked(path, shouldAbort) : readAndWrap(path));
+  view_.setLines(rawControlCodesMode_ && shouldAbort ? readAndWrapChunked(path, shouldAbort) : readAndWrap(path, shouldAbort));
   currentFile_ = path;
   // 新しい読み込みは古い検索を無効にする――AnnotationStack自身のコメント参照
   annotations_.clear();

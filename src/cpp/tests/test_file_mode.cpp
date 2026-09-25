@@ -555,3 +555,15 @@ TEST_CASE_FIXTURE(Fixture, "loadFile: allowed control bytes (and an empty CODE) 
   REQUIRE(mode.loadFile(path));  // \f(12)は許可されている
   CHECK(view.lines()[0].text.find("page1") != std::string::npos);
 }
+
+// FileMode::readAndWrap()の中断のコメント参照(2026-09-25、"^Mは中断できないの？")。
+TEST_CASE_FIXTURE(Fixture, "loadFile with shouldAbort: stops between chunks and keeps only the lines read so far") {
+  std::string content;
+  for (int i = 0; i < 60000; i++) content += "line " + std::to_string(i) + " ----------------------------------\n";
+  std::string path = writeFile("big.txt", content);  // 約2.6MB = 3チャンク程度
+  REQUIRE(mode.loadFile(path, [] { return true; }));
+  CHECK(view.lines().size() > 0);
+  CHECK(view.lines().size() < 60000);
+  REQUIRE(mode.loadFile(path));
+  CHECK(view.lines().size() == 60000);
+}

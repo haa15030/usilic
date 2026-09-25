@@ -95,7 +95,9 @@ class FileMode {
   // このパスに対して記憶済みのカーソル位置がHistoryにあればそれを
   // 復元する。ファイルが読めない場合(存在しない、権限が無い、等)は
   // false。
-  bool loadFile(const std::string &path);
+  // shouldAbort(2026-09-25追加): 読み込みの途中で呼び、trueなら中断して
+  // そこまでを表示する(readAndWrap()自身のコメント参照)。
+  bool loadFile(const std::string &path, const std::function<bool()> &shouldAbort = {});
   // 2026-09-25追加、usilicrcのCODE(バイナリ判定)用――binaryTypeText()
   // 自身のコメント参照。バイナリと判定したファイルの種類をlegacyと同じ
   // くERRORログへも記録するため、そのパスを受け取る(CpMvRmModeと同じ
@@ -520,7 +522,7 @@ class FileMode {
   // rawControlCodesMode_が真でなければHELP-markup展開/roff文書の
   // groff整形を適用する――loadAndTransformContent()自身のコメント参照。
   std::string loadAndTransformContent(const std::string &path) const;
-  std::vector<ContentView::Line> readAndWrap(const std::string &path) const;
+  std::vector<ContentView::Line> readAndWrap(const std::string &path, const std::function<bool()> &shouldAbort = {}) const;
   // loadStream()/ensureLoadedThrough()が共有する: streamFd_から
   // 有限サイズのチャンクで読み込み、それぞれをstreamPipe_へ供給
   // する。streamPipe_->lines()がtargetLineCountに達するか、EOFに
@@ -557,6 +559,7 @@ class FileMode {
   Charset::Encoding encoding_;
   const std::string *errorLogPath_ = nullptr;  // setErrorLogPath()参照
   std::optional<std::string> binaryTypeText(const std::string &path, const std::string &content) const;
+  bool looksBinary(const std::string &content) const;  // binaryTypeText()の判定部分だけ
   int width_;
   // 2026-09-14追加、直接のユーザー依頼("（ls）での^O^M/^[^Mを実装
   // して"): loadFileNoWrap()/loadFileRaw()自身のコメント参照。
