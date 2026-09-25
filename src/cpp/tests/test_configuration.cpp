@@ -375,3 +375,10 @@ TEST_CASE("shipped usilicrc's PROGRAM section includes \"man\" (SHELL: `man ls` 
   }
   CHECK(foundMan);
 }
+
+// Configuration::grepPresets()自身の宣言コメント参照(2026-09-25再実装)。
+TEST_CASE("GREP directive: each line's first token (or a quoted string) becomes a preset, comments dropped") {
+  Configuration config;
+  REQUIRE(config.loadRcText("GREP\n\t\"^  [0-9]+\\.\"   # headings\n\tm.n\t# man\n\tCP|MV|RM # ops\n", true));
+  CHECK(config.grepPresets() == std::vector<std::string>{"^  [0-9]+\\.", "m.n", "CP|MV|RM"});
+}

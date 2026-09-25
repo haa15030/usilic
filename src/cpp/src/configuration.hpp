@@ -292,6 +292,9 @@ class Configuration {
   // するかにちなんで命名してあり、その食い違いを再導入しないように
   // している。
   const std::string &allowedControlBytes() const;  // CODE
+  // GREP(2026-09-25再実装): EGREP/CUT(正規表現)の履歴の一覧に常に加える
+  // 検索文字列。Application::startPromptHistoryRecall()参照。
+  const std::vector<std::string> &grepPresets() const;
   int bufferSizeLimitBytes() const;                // BUFFER
   int historyRetentionCount() const;               // HISTORY
   int waitIntervalMicros() const;                  // WAIT
@@ -336,6 +339,7 @@ class Configuration {
   std::vector<std::string> programSeedCommands_;
 
   std::string allowedControlBytes_;
+  std::vector<std::string> grepPresets_;  // GREP
   int bufferSizeLimitBytes_ = 1 * 1024 * 1024;
   int historyRetentionCount_ = 200;
   int waitIntervalMicros_ = 100000;  // conf_wait()の静的k_wait初期化値(100000)

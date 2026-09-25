@@ -74,17 +74,37 @@ GREP
 #
 # The `string' that will be used in EGREP or CUT.
 # (String contains a space character must be enclosed within parentheses "".)
+#
+# 2026-09-25: TUTORIAL's EGREP chapter examples, in the same order as its
+# regular-expression list -- each one matches some text in TUTORIAL itself.
+# Written for `grep -E' on both macOS (BSD grep) and Linux (GNU grep):
+# \d/\D are spelled [0-9]/[^0-9], and grep -E has no non-greedy *?/+?,
+# (?:...) or look-around, so those have no example.
 
-	\/\*[a-z]*\*\/				 # usilic source
-	^					 # ~/.usilic/history 
-	"^  [0-9][0-9]+\."			 # ^J^B for HELP
-	"^  [0-9]+\."				 # ^J^C for HELP
-	^Question				 # Linux-FAQ
-	"^Subject: "				 # Mailing list
-	^[0-9]*\.				 # FAQ etc.
-	"^[A-Z][A-Z]+"			 # MAN
-	"diff \-"				 # diff file
-	~$					 # backup file
+	"^  [0-9]+\."            # ^     : chapter headings (1. 2. ...)
+	）$                       # $     : lines ending with a full-width )
+	\bls\b                   # \b    : ls as a word
+	usilic\B                 # \B    : usilic in usilicrc
+	m.n                      # .     : man
+	\^[JOX][a-z]             # [ ]   : ^Jp ^Ou ^Xd ...
+	"\^[^JOX ]"              # [^ ]  : ^M ^[ ^K ...
+	[a-z]+\(1\)              # [a-z] : usilic(1) man(1) ...
+	[0-9]\.[0-9]\.           # \d    : section numbers 2.2. ...
+	[0-9]+[^0-9][0-9]+       # \D    : 01/66 1.5 0x20 ...
+	\w+rc\b                  # \w    : usilicrc
+	\^\W                     # \W    : ^[ ^@
+	\^J\s                    # \s    : ^J b
+	~/\S+                    # \S    : ~/.usilic/history ...
+	-[a-z]*v[a-z]*           # *     : -rvi -vf ...
+	[0-9]+%                  # +     : 48% ...
+	\.tar(\.gz)?             # ?     : .tar .tar.gz
+	[0-9]{4}                 # {n}   : 1918 2000 ...
+	[0-9]{2,}                # {n,}  : numbers of 2+ digits
+	\b[a-z]{2,3}\(1\)        # {n,m} : ls(1) man(1) vi(1) ...
+	CP|MV|RM                 # |     : CP MV RM
+	\.(gz|bz2|xz|zst)        # ( )   : compressed-file suffixes
+	~/\.usilic/              # \.    : ~/.usilic/
+	\(\?                     # \?    : (?: (?= ...
 
 PROGRAM
 # Format: `program' (option)

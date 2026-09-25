@@ -503,37 +503,6 @@ std::string buildCutFileHistoryEntry(const std::string &path, const std::string 
 // 完結する分、ERE前提の旧パターンより移植性も高い。
 std::string tutorialCutPattern() { return "^\xE3\x80\x80[0-9]"; }
 
-// 宣言側(application.hpp)のコメント参照。各行末のコメントは、TUTORIALの
-// 一覧のどの項目の例か、とTUTORIALの本文で実際に当たるもの。
-const std::vector<std::string> &tutorialEgrepExamples() {
-  static const std::vector<std::string> examples = {
-      "^  [0-9]+\\.",           // ^     : 章の見出し(1. 2. ...)
-      "\xEF\xBC\x89$",           // $     : 全角の閉じ括弧で終わる行
-      "\\bls\\b",               // \b    : 単独の ls
-      "usilic\\B",               // \B    : usilicrc の usilic
-      "m.n",                       // .     : man
-      "\\^[JOX][a-z]",           // [ ]   : ^Jp ^Ou ^Xd 等
-      "\\^[^JOX ]",              // [^ ]  : ^M ^[ ^K 等
-      "[a-z]+\\(1\\)",          // [a-z] : usilic(1) man(1) 等
-      "[0-9]\\.[0-9]\\.",        // \d    : 節番号 2.2. 等([0-9]で代用)
-      "[0-9]+[^0-9][0-9]+",        // \D    : 01/66 1.5 0x20 等([^0-9]で代用)
-      "\\w+rc\\b",              // \w    : usilicrc
-      "\\^\\W",                  // \W    : ^[ ^@
-      "\\^J\\s",                 // \s    : 表記の ^J b
-      "~/\\S+",                   // \S    : ~/.usilic/history 等
-      "-[a-z]*v[a-z]*",            // *     : -rvi -vf 等
-      "[0-9]+%",                   // +     : 48% 等
-      "\\.tar(\\.gz)?",          // ?     : .tar .tar.gz
-      "[0-9]{4}",                  // {n}   : 1918 2000 等
-      "[0-9]{2,}",                 // {n,}  : 2桁以上の数
-      "\\b[a-z]{2,3}\\(1\\)",   // {n,m} : ls(1) man(1) vi(1) 等
-      "CP|MV|RM",                  // |     : CP MV RM
-      "\\.(gz|bz2|xz|zst)",       // ( )   : 圧縮形式の suffix
-      "~/\\.usilic/",             // \.    : ~/.usilic/
-      "\\(\\?",                  // \?    : (?: (?= 等
-  };
-  return examples;
-}
 
 Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
                           Charset::Encoding encoding, int width, ShellOptions shellOptions,
@@ -2285,6 +2254,30 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     return feedRegexListByte(byte, special);
   }
 
+  // 2026-09-25追加、直接のユーザー依頼によるキー再編("^Cをプレフィックス
+  // にするのは？ ^Cb：バッファをCUT、^Cf：ファイルをCUT。CUTのCは^CのC"):
+  // ^Cは他の接頭キー(^J/^X/^O/ESC)と違い、ここ(通常の画面)だけで接頭
+  // キーとして働く――SHELL画面ではシェルへの割り込みとしてそのまま
+  // 送る必要があり(feedShellByte()は通らない)、プロンプトでは入力の
+  // 中断(feedPromptByteInner())なので、どちらにも足していない。
+  if (leaderCPending_) {
+    leaderCPending_ = false;
+    if (special) return false;
+    switch (byte) {
+      case 'b':  // ^C b : CUT(バッファ分割、旧^Jc)
+        return handleCommand(Command::StartCut);
+      case 'f':  // ^C f : CUT(ファイル分割、旧^J^C)
+        return handleCommand(Command::StartCutFile);
+      default:
+        return false;  // 認識されない^Cシーケンス
+    }
+  }
+  if (!special && byte == kControlC && !escPending_ && !leaderJPending_ && !leaderJOPending_ && !leaderXPending_ &&
+      !leaderOPending_ && !gotoLineGPending_ && !gotoLineDigitsPending_) {
+    leaderCPending_ = true;
+    return true;  // シーケンス継続中、no-opではない
+  }
+
   if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ ||
       gotoLineGPending_ || gotoLineDigitsPending_ ||
       (!special && (byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape))) {
@@ -2776,8 +2769,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     leaderJPending_ = false;
     if (special) return false;
     switch (byte) {
-      case 0x0b:  // ^J ^K : ファイルセレクタへ移動(K-18)
-        return handleCommand(Command::GoToFileSelector);
+      case 0x0b:  // ^J ^K : 親ディレクトリへ移動(旧^O^K、K-19。2026-09-25のキー再編、^J ^C自身のコメント参照)
+        return handleCommand(Command::GoToParentDirectory);
       case kLeaderJ:  // ^J ^J : 最も最近のRecentFileエントリへ移動――Command::GoToRecentFile自身のコメント参照
         return handleCommand(Command::GoToRecentFile);
       case kControlS:  // ^J ^S : EGREP
@@ -2785,10 +2778,11 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 2026-09-14再編、直接のユーザー依頼(Command::StartCut自身の
       // コメント参照): ^Jb/^J^Bは廃止し、旧「通常ファイル」CUT
       // (Directory一覧から直接、開かずに分割)は^J^Cへ統合した。
-      case 'c':  // ^J c : CUT(バッファ分割)
-        return handleCommand(Command::StartCut);
-      case kControlC:  // ^J ^C : CUT(ファイル分割、旧^Jb/^J^Bの後継)
-        return handleCommand(Command::StartCutFile);
+      // 2026-09-25、直接のユーザー依頼によるキー再編("^Cをプレフィックスにするのは？ ^Cb：バッファをCUT、^Cf：ファイルをCUT。CUTのCは^CのC。空いた^J^CがCurrentDirectory、空いた^J^Kが^O^K"、全選択およびバッファ保存の^O/^X移動も同時): CUTは^Cb/^Cfへ移った(dispatchByte()自身の
+      // leaderCPending_参照)。^J^Cは旧^J^K(ファイルセレクタ=カレント
+      // ディレクトリ)を引き継ぐ。
+      case kControlC:  // ^J ^C : カレントディレクトリ(ファイルセレクタ)へ移動(旧^J^K、K-18)
+        return handleCommand(Command::GoToFileSelector);
       case 'a':  // ^J a : TUTORIAL/TUTORIAL.en切替(Command::ToggleTutorialLanguage自身のコメント参照)
         return handleCommand(Command::ToggleTutorialLanguage);
       // K-43/K-44、K-41/K-42(CLAUDE.mdの経緯の項目289の追跡): LOCATE/
@@ -2856,10 +2850,6 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StartUsilicHistorySorted);
       case 'u':  // ^J u : USILIC、時系列HISTORY
         return handleCommand(Command::StartUsilicHistory);
-      case 'y':  // ^J y : 全マーク(CP、MV、RM、ARC)
-        return handleCommand(Command::MarkAll);
-      case 'n':  // ^J n : 全マーク解除(CP、MV、RM、ARC)
-        return handleCommand(Command::ClearAllMarks);
       // 2026-09-08、直接のユーザー依頼によるキー再編で^Oaから移行
       // (ARCが^Xaから^Oaへ移るための地ならし)。2026-09-20、
       // Command::ToggleHelpLanguage自体が(新HELP自身のコメント参照、
@@ -2920,6 +2910,10 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StartDirectoryInput);
       case kLeaderX:  // ^X ^X : 大きく飛ぶ前の行と行き来(K-16、Command::ExchangeJumpMark参照)
         return handleCommand(Command::ExchangeJumpMark);
+      // 2026-09-25、^O^Wから戻した(emacsのwrite-fileと同じ位置、
+      // 2026-09-08のキー再編前の元の^X^W。^J ^C自身のコメント参照)。
+      case 0x17:  // ^X ^W : バッファを作業ファイル(INFOのWORK)へ保存(K-17)
+        return handleCommand(Command::SaveBufferToFile);
       case 0x04:  // ^X ^D : DIR(ディレクトリ名を選択、K-48)
         return handleCommand(Command::StartDirectoryHistory);
       case kControlC:  // ^X ^C : 終了
@@ -2968,8 +2962,12 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 割り当てる(ToggleLsReverse自身の宣言コメント参照)。
       case 'l':  // ^O l : `ls`のソート順を逆順(-r)にトグル
         return handleCommand(Command::ToggleLsReverse);
-      case 0x0b:  // ^O ^K : 親ディレクトリへ移動(K-19)
-        return handleCommand(Command::GoToParentDirectory);
+      // 2026-09-25のキー再編(^J ^C自身のコメント参照): ^O^Kは^J^Kへ、
+      // ^Jy/^Jnは^Oy/^Onへ(「^Oは設定・切替・操作」の切り分け)。
+      case 'y':  // ^O y : 全マーク(CP、MV、RM、ARC、旧^Jy)
+        return handleCommand(Command::MarkAll);
+      case 'n':  // ^O n : 全マーク解除(CP、MV、RM、ARC、旧^Jn)
+        return handleCommand(Command::ClearAllMarks);
       case kCarriageReturn:  // ^O ^M : 「行単位で読む」(K-23、M_fp)
         return handleCommand(Command::ReadFileNoWrap);
       // ^O^C / ^O^Y(M_copy/M_paste): usilicrc自身のK-29/K-30の
@@ -3015,8 +3013,6 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
                  // それは^J aへ先に移した(kKeyTable自身の"^Ja"コメント
                  // 参照)。
         return handleCommand(Command::StartArchiveExtract);
-      case 0x17:  // ^O ^W : バッファをwFilePath_へ保存(旧^X^W)
-        return handleCommand(Command::SaveBufferToFile);
       case 's':  // ^O s : SHELLを再起動(旧^X s、K-60)
         return handleCommand(Command::RestartShell);
       // 2026-09-08追加、直接のユーザー依頼によるキー再編: SHELLモード
@@ -3325,7 +3321,8 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     // goToFileSelector()が実際のcurrentMode_==Shellを見て、それを
     // 明示的に処理できる(それ自身の新しいShellの分岐参照)よう、
     // ここでは除外した。
-    bool isShellSafeGoToFileSelector = leaderJPending_ && byte == 0x0b;
+    // ^J^C(2026-09-25のキー再編で^J^Kから移った、dispatchLeaderByte()の^J ^C自身のコメント参照)。
+    bool isShellSafeGoToFileSelector = leaderJPending_ && byte == kControlC;
     // 2026-09-20追加、直接のユーザー報告("^O^S/^J^Sが利かない"):
     // すぐ上のisShellSafeGoToFileSelectorと全く同じ理屈――FGREP
     // (^O^S)/EGREP(^J^S)は、feedShellByte()自身の新しいプレーンな
@@ -10828,6 +10825,19 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   } else {
     const std::deque<std::string> &recent = history_.recentEntries(category);
     items.assign(recent.begin(), recent.end());
+    // usilicrcのGREP(Configuration::grepPresets()、2026-09-25再実装):
+    // EGREP/CUT(正規表現)の一覧に常に加える――時系列の一覧なので、まだ
+    // 履歴に無いものを古い側(先頭)にusilicrcの並びどおりに置く。履歴
+    // 自体(~/.usilic/history)には書き込まないので、履歴のある既存の
+    // 環境でも、usilicrcを差し替えればその時点から一覧に出る。
+    if (category == RingCategory::RecentEgrepPattern) {
+      std::vector<std::string> presets;
+      for (const auto &preset : configuration_.grepPresets())
+        if (std::find(items.begin(), items.end(), preset) == items.end() &&
+            std::find(presets.begin(), presets.end(), preset) == presets.end())
+          presets.push_back(preset);
+      items.insert(items.begin(), presets.begin(), presets.end());
+    }
   }
   // archiveHistoryFilterActive()自身のコメント参照。
   // promptHistoryRecallKind_/promptHistoryRecallReturnMode_はどちらも
@@ -13833,7 +13843,7 @@ ApplicationMode Application::currentMode() const { return currentMode_; }
 Charset::Encoding Application::encoding() const { return encoding_; }
 
 bool Application::awaitingSequenceOrPromptByte() const {
-  return escPending_ || leaderJPending_ || gotoLineGPending_ || gotoLineDigitsPending_ ||
+  return escPending_ || leaderJPending_ || leaderCPending_ || gotoLineGPending_ || gotoLineDigitsPending_ ||
          promptKind_ != PromptKind::None;
 }
 DirectoryMode &Application::directoryMode() { return directoryMode_; }

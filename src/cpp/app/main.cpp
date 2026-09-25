@@ -4303,9 +4303,6 @@ int main(int argc, char **argv) {
         history.pushRecent(fm::RingCategory::RecentFile,
                             fm::buildCutFileHistoryEntry(tutorialPath, fm::tutorialCutPattern(), fm::GrepSyntax::Basic));
       }
-      // fm::tutorialEgrepExamples()自身の宣言コメント参照(2026-09-25)。
-      for (const auto &pattern : fm::tutorialEgrepExamples())
-        history.pushRecent(fm::RingCategory::RecentEgrepPattern, pattern);
     }
   }
 

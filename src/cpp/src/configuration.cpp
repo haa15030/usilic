@@ -477,16 +477,25 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         break;
       }
       case 5: {  // GREP
-        // 2026-09-11削除、直接のユーザー依頼(startGrepPrompt()自身の
-        // コメント参照、"FGREPおよびEGREPを同じ仕様に統一...候補一覧は
-        // 廃棄"): 以前はここでこのセクションの各パターンを解析し、
-        // grepSeedPatterns_(EGREP/CUT-Regexの候補一覧の種)へ格納して
-        // いたが、その候補一覧自体が上の統一で廃止されたため、格納先
-        // ごと不要になった。GREP:ディレクティブ自体はdirectiveKeywords()
-        // に残したまま(既存のusilicrcファイルにこのセクションが残って
-        // いても「不明なディレクティブ」エラーにしないため)、内容は
-        // nextDataLine()で読み飛ばすだけにする。
-        while (nextDataLine(lines, i)) {
+        // 2026-09-11に一度削除(FGREP/EGREPの統一で専用の候補一覧を廃止
+        // したため、読み飛ばすだけにしていた)。2026-09-25再実装、直接の
+        // ユーザー依頼("usilicrcのGREPをTUTORIAL版に置き換えて実装して"):
+        // 格納先は廃止された候補一覧ではなく、統一後のEGREP/CUT(正規表現)
+        // の履歴の一覧(Application::startPromptHistoryRecall()参照)。
+        // legacy str.cのconf_grep()と同じく、各行の最初のトークン(引用符
+        // '"'/'\''で始まれば対応する引用符まで、それ以外は最初の空白/タブ
+        // まで)を積む。
+        while (auto data = nextDataLine(lines, i)) {
+          const std::string &line = *data;
+          if (line.empty()) continue;
+          std::string token;
+          if (line[0] == '"' || line[0] == '\'') {
+            std::size_t close = line.find_first_of("\"'", 1);
+            token = line.substr(1, close == std::string::npos ? std::string::npos : close - 1);
+          } else {
+            token = line.substr(0, line.find_first_of(" \t"));
+          }
+          if (!token.empty()) grepPresets_.push_back(token);
         }
         break;
       }
@@ -666,6 +675,7 @@ void Configuration::setCommandForTest(ConfiguredRole role, ProgramCommand comman
 const std::vector<std::string> &Configuration::programSeedCommands() const { return programSeedCommands_; }
 
 const std::string &Configuration::allowedControlBytes() const { return allowedControlBytes_; }
+const std::vector<std::string> &Configuration::grepPresets() const { return grepPresets_; }
 int Configuration::bufferSizeLimitBytes() const { return bufferSizeLimitBytes_; }
 int Configuration::historyRetentionCount() const { return historyRetentionCount_; }
 int Configuration::waitIntervalMicros() const { return waitIntervalMicros_; }

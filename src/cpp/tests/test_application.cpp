@@ -1893,15 +1893,15 @@ TEST_CASE_FIXTURE(Fixture, "GREP: searching from File mode stays in File mode, i
 
 // -- feedByte: ^Jc / ^J^C leader sequences for CUT --
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J c starts a CUT prompt (StartCut) once in File mode") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^C b (formerly ^J c) starts a CUT prompt (StartCut) once in File mode") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
-  app.feedByte(0x0a, std::nullopt);
-  CHECK(app.feedByte('c', std::nullopt));
+  app.feedByte(0x03, std::nullopt);  // ^C(2026-09-25のキー再編、旧^J)
+  CHECK(app.feedByte('b', std::nullopt));
   CHECK(app.promptActive());
 }
 
@@ -1913,15 +1913,15 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J c starts a CUT prompt (StartCut) once i
 // currentMode_/promptTextの3点)はキー再編前と偶然同じだが、実際に
 // 開いているプロンプトの種類はCutPatternではなくPathInputへ変わって
 // いる。
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^C now dispatches to StartCutFile, which falls back to the "
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^C f (formerly ^J ^C) dispatches to StartCutFile, which falls back to the "
                            "typed-path prompt when not in Directory mode") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
 
-  app.feedByte(0x0a, std::nullopt);
-  CHECK(app.feedByte(0x03, std::nullopt));
+  app.feedByte(0x03, std::nullopt);  // ^C(2026-09-25のキー再編、旧^J)
+  CHECK(app.feedByte('f', std::nullopt));
   CHECK(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.promptText().empty());
@@ -6754,7 +6754,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): shows a status screen with th
 // grow to reflect them, not just that the labels exist.
 TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): WORK and arc.N lists grow as w.N/arc.N are actually used") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X(2026-09-25、旧^O)
   REQUIRE(app.feedByte(0x17, std::nullopt));  // ^W -- allocates w.1
 
   CHECK(app.feedByte(0x09, std::nullopt));  // ^I
@@ -6770,7 +6770,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): WORK and arc.N lists grow as 
 TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the WORK line opens w.1 as a FILE; ^G returns to "
                            "the banner itself (not the original directory)") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X(2026-09-25、旧^O)
   REQUIRE(app.feedByte(0x17, std::nullopt));  // ^W -- allocates w.1
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
 
@@ -7312,10 +7312,10 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ESC s starts Shell mode (StartShell)") {
   CHECK(app.currentMode() == ApplicationMode::Shell);
 }
 
-TEST_CASE_FIXTURE(Fixture, "saveBufferToFile (^O^W, K-17): writes the active view's lines to the "
+TEST_CASE_FIXTURE(Fixture, "saveBufferToFile (^X^W, K-17): writes the active view's lines to the "
                            "current work file (w.1 on first use)") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X(2026-09-25、旧^O)
   CHECK(app.feedByte(0x17, std::nullopt));    // ^W
 
   std::ifstream in(root / ".usilic" / "w.1");
@@ -7624,11 +7624,11 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^O o toggles DirectoryMode::filenameOnlyMo
   CHECK(history.lsMode() == 0);
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^O ^K jumps to the parent directory (K-19, M_m)") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^K (formerly ^O ^K) jumps to the parent directory (K-19, M_m)") {
   REQUIRE(app.start(path() + "subdir/"));
   REQUIRE(app.directoryMode().currentDirectory() == path() + "subdir/");
 
-  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J(2026-09-25のキー再編、旧^O)
   CHECK(app.feedByte(0x0b, std::nullopt));    // ^K
   CHECK(app.directoryMode().currentDirectory() == path());
   CHECK(app.directoryMode().canGoBack());  // ^G returns to subdir/, same as descending into it normally would
@@ -7841,7 +7841,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): ^G toggles back to 
   CHECK(app.directoryMode().currentDirectory() == path());  // toggled back to the original root directory
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^K dispatches GoToFileSelector") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^C (formerly ^J ^K) dispatches GoToFileSelector") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -7849,7 +7849,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^K dispatches GoToFileSelector") {
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
   app.feedByte(0x0a, std::nullopt);  // ^J
-  CHECK(app.feedByte(0x0b, std::nullopt));  // ^K
+  CHECK(app.feedByte(0x03, std::nullopt));  // ^C(2026-09-25のキー再編、旧^K)
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.directoryMode().currentDirectory() == path());
 }
@@ -8075,7 +8075,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): from HELP, falls ba
 // pre-switch exclusion (isShellSafeGoToFileSelector) and
 // goToFileSelector()'s own new Shell branch are needed together --
 // this test only passes with both in place.
-TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector) / ^J^K: from Shell mode, goes to a real `ls` "
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector) / ^J^C: from Shell mode, goes to a real `ls` "
                            "listing of the SHELL's own actual working directory, not shellReturnMode_") {
   REQUIRE(app.start(path()));
   int idx = indexOf("subdir/");
@@ -8098,7 +8098,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector) / ^J^K: from Shell m
   REQUIRE(pumpUntil(app, [&] { return app.shell().currentDirectory() == root.string(); }));
 
   REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
-  CHECK(app.feedByte(0x0b, std::nullopt));    // ^K
+  CHECK(app.feedByte(0x03, std::nullopt));    // ^C(2026-09-25のキー再編、旧^K)
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.directoryMode().currentDirectory() == root.string() + "/");
 }
@@ -9435,16 +9435,16 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X^X goes back to the line before ESC >, a
 
 // 2026-09-08、直接のユーザー依頼によるキー再編で^X^Y/^X^Nから^Jy/^Jn
 // へ移行(両方とも既存の^O割り当てと衝突するため、揃えて^Jへ)。
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J y marks all entries (K-72), ^J n clears all marks (K-73), "
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O y marks all entries (K-72), ^O n clears all marks (K-73), "
                            "excluding \"./\"/\"../\"") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O(2026-09-25のキー再編、旧^J)
   CHECK(app.feedByte('y', std::nullopt));     // y
   CHECK(app.directoryMode().markedCount() == app.directoryMode().entries().size() - 2);
   CHECK_FALSE(app.directoryMode().isMarked(0));  // "./"
   CHECK_FALSE(app.directoryMode().isMarked(1));  // "../"
 
-  REQUIRE(app.feedByte(0x0a, std::nullopt));
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
   CHECK(app.feedByte('n', std::nullopt));  // n
   CHECK(app.directoryMode().markedCount() == 0);
 }
@@ -15403,4 +15403,16 @@ TEST_CASE("History: the USILIC ring survives serialize/load, and files without t
   legacy.erase(at, end - at);
   fm::History h3;
   CHECK(h3.loadHistoryText(legacy, false));
+}
+
+// Application::startPromptHistoryRecall()のusilicrc GREPのコメント参照(2026-09-25)。
+TEST_CASE_FIXTURE(Fixture, "EGREP list (^J^S then ^R): usilicrc GREP presets are listed ahead of the history, "
+                           "without duplicating one that is already in the history") {
+  REQUIRE(configuration.loadRcText("GREP\n\tm.n\n\tCP|MV|RM\n", true));
+  history.pushRecent(RingCategory::RecentEgrepPattern, "CP|MV|RM");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "typed");
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  CHECK(app.listBrowserMode().items() == std::vector<std::string>{"m.n", "CP|MV|RM", "typed"});
 }
