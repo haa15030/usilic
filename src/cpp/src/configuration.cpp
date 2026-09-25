@@ -301,11 +301,15 @@ Configuration::Configuration() {
   // する)。`grep -F`/`grep -E`は同じ機能を、廃止予定でない形で提供する
   // ――引数の意味(-nは行番号、-eはパターンを明示するフラグでパターン
   // 自体が"-"始まりでもオプションと誤認されない)は変えていない。
-  roleCommands_[ConfiguredRole::Egrep] = {{"grep", "-En"}, std::nullopt};
+  // 2026-09-25修正: Egrep/Grepには-eが無く、"-"で始まるパターン(例えば
+  // TUTORIALのEGREP例の"-[a-z]*v[a-z]*")が"grep: invalid option"になって
+  // いた――Fgrepと同じく-eを付ける(パターンは常にargvの最後に付く、
+  // GrepMode::search()/CutMode自身の呼び出し参照)。
+  roleCommands_[ConfiguredRole::Egrep] = {{"grep", "-Ene"}, std::nullopt};
   roleCommands_[ConfiguredRole::Fgrep] = {{"grep", "-Fne"}, std::nullopt};
   // 2026-09-05追加(直接のユーザー依頼、"新たにGREP（grep）を新設"):
   // プレーンな`grep`(基本正規表現、-F/-Eどちらのフラグも無し)。
-  roleCommands_[ConfiguredRole::Grep] = {{"grep", "-n"}, std::nullopt};
+  roleCommands_[ConfiguredRole::Grep] = {{"grep", "-ne"}, std::nullopt};  // -eは上のEgrep自身のコメント参照
   roleCommands_[ConfiguredRole::GzipDecompress] = {{"gzip", "-dc"}, std::nullopt};
   roleCommands_[ConfiguredRole::Bzip2Decompress] = {{"bzip2", "-d"}, std::nullopt};
   roleCommands_[ConfiguredRole::Tar] = {{"tar"}, std::nullopt};

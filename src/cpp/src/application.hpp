@@ -1356,6 +1356,17 @@ struct AnchorSnapshot {
 // 起きやすい――両者が正典として1箇所(application.cpp)だけで定義した
 // この関数を呼ぶことで、その危険を排除する。
 std::string tutorialCutPattern();
+// 2026-09-25追加、直接のユーザー依頼("EGREPの項で各種正規表現を載せた
+// んだが今イチ意味がわかりにくい。そこでTUTORIAL全文からそれぞれの
+// パターンに合致するやつを拾ってくれないかな。最初の起動時それらが
+// すでに履歴に載っているようにしたい"): TUTORIALのEGREPの章の正規表現
+// 一覧と同じ順に、TUTORIAL自身の本文に実際にマッチする例を並べたもの。
+// main.cppが真っ新起動時(~/.usilic/historyが無い時)にEGREP履歴へ
+// 事前登録する。EGREPは`grep -E`なので、macOSのBSD grepとLinuxの
+// GNU grepの両方で同じ意味になる書き方に限っている(\d/\Dは[0-9]/
+// [^0-9]で代用。最短一致・(?:)・先読み/後読みはgrep -Eに無いので
+// 例も無い)。
+const std::vector<std::string> &tutorialEgrepExamples();
 
 // parseCutFileHistoryEntry()/buildCutFileHistoryEntry()自身の定義側
 // コメント参照(application.cpp): FILE履歴の合成CUTエントリ

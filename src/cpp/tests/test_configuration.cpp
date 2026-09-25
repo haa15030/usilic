@@ -15,9 +15,9 @@ TEST_CASE("built-in defaults: role-based commands are populated without loading 
   CHECK(config.commandFor(ConfiguredRole::Man).argv == std::vector<std::string>{"man"});
   // 2026-09-05変更(直接のユーザー依頼、"fgrepとegrepの代わりにgrep -F
   // とgrep -Eで代用"): configuration.cpp自身のコメント参照。
-  CHECK(config.commandFor(ConfiguredRole::Egrep).argv == std::vector<std::string>{"grep", "-En"});
+  CHECK(config.commandFor(ConfiguredRole::Egrep).argv == std::vector<std::string>{"grep", "-Ene"});
   CHECK(config.commandFor(ConfiguredRole::Fgrep).argv == std::vector<std::string>{"grep", "-Fne"});
-  CHECK(config.commandFor(ConfiguredRole::Grep).argv == std::vector<std::string>{"grep", "-n"});
+  CHECK(config.commandFor(ConfiguredRole::Grep).argv == std::vector<std::string>{"grep", "-ne"});
   CHECK_FALSE(config.commandFor(ConfiguredRole::Du).argv.empty());
 }
 

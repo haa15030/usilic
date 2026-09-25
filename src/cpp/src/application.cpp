@@ -503,6 +503,38 @@ std::string buildCutFileHistoryEntry(const std::string &path, const std::string 
 // 完結する分、ERE前提の旧パターンより移植性も高い。
 std::string tutorialCutPattern() { return "^\xE3\x80\x80[0-9]"; }
 
+// 宣言側(application.hpp)のコメント参照。各行末のコメントは、TUTORIALの
+// 一覧のどの項目の例か、とTUTORIALの本文で実際に当たるもの。
+const std::vector<std::string> &tutorialEgrepExamples() {
+  static const std::vector<std::string> examples = {
+      "^  [0-9]+\\.",           // ^     : 章の見出し(1. 2. ...)
+      "\xEF\xBC\x89$",           // $     : 全角の閉じ括弧で終わる行
+      "\\bls\\b",               // \b    : 単独の ls
+      "usilic\\B",               // \B    : usilicrc の usilic
+      "m.n",                       // .     : man
+      "\\^[JOX][a-z]",           // [ ]   : ^Jp ^Ou ^Xd 等
+      "\\^[^JOX ]",              // [^ ]  : ^M ^[ ^K 等
+      "[a-z]+\\(1\\)",          // [a-z] : usilic(1) man(1) 等
+      "[0-9]\\.[0-9]\\.",        // \d    : 節番号 2.2. 等([0-9]で代用)
+      "[0-9]+[^0-9][0-9]+",        // \D    : 01/66 1.5 0x20 等([^0-9]で代用)
+      "\\w+rc\\b",              // \w    : usilicrc
+      "\\^\\W",                  // \W    : ^[ ^@
+      "\\^J\\s",                 // \s    : 表記の ^J b
+      "~/\\S+",                   // \S    : ~/.usilic/history 等
+      "-[a-z]*v[a-z]*",            // *     : -rvi -vf 等
+      "[0-9]+%",                   // +     : 48% 等
+      "\\.tar(\\.gz)?",          // ?     : .tar .tar.gz
+      "[0-9]{4}",                  // {n}   : 1918 2000 等
+      "[0-9]{2,}",                 // {n,}  : 2桁以上の数
+      "\\b[a-z]{2,3}\\(1\\)",   // {n,m} : ls(1) man(1) vi(1) 等
+      "CP|MV|RM",                  // |     : CP MV RM
+      "\\.(gz|bz2|xz|zst)",       // ( )   : 圧縮形式の suffix
+      "~/\\.usilic/",             // \.    : ~/.usilic/
+      "\\(\\?",                  // \?    : (?: (?= 等
+  };
+  return examples;
+}
+
 Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
                           Charset::Encoding encoding, int width, ShellOptions shellOptions,
                           std::string homeDirectory, std::string tempRootDirectory, std::string workRootDirectory,
