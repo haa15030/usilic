@@ -195,6 +195,12 @@ class History {
   void pushRecent(RingCategory category, const std::string &name);
   const std::deque<std::string> &recentEntries(RingCategory category) const;  // 古い順..新しい順
   int retentionCount() const;
+  // 2026-09-25追加、直接のユーザー依頼: usilicrcのHISTORY(Configuration::
+  // historyRetentionCount())を反映する。それまでmain.cppは`fm::History history;`
+  // と既定の200で作っており、usilicrcを読むのはその後だったため、HISTORYの
+  // 値はどこにも効いていなかった。1未満は1にする。既に保持数を超えている
+  // リングは古い方から切り詰める。
+  void setRetentionCount(int count);
 
   // -- セッションレベルのトレーラ設定 --
   bool smoothScrollEnabled() const;

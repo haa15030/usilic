@@ -1,5 +1,7 @@
 #include "history.hpp"
 
+#include <algorithm>
+
 #include <cctype>
 #include <cstdlib>
 
@@ -303,6 +305,14 @@ const std::deque<std::string> &History::recentEntries(RingCategory category) con
 }
 
 int History::retentionCount() const { return retentionCount_; }
+
+void History::setRetentionCount(int count) {
+  retentionCount_ = std::max(1, count);
+  for (auto &kv : rings_) {
+    std::size_t limit = static_cast<std::size_t>(kv.first == RingCategory::Usilic ? retentionCount_ * 3 : retentionCount_);
+    while (kv.second.size() > limit) kv.second.pop_front();
+  }
+}
 
 bool History::smoothScrollEnabled() const { return smoothScrollEnabled_; }
 void History::setSmoothScrollEnabled(bool enabled) {

@@ -371,3 +371,24 @@ TEST_CASE("loadHistoryText: fields containing spaces and control bytes round-tri
   CHECK(loaded.containsName(NameSetCategory::CutPattern, "pattern with spaces"));
   CHECK(loaded.recentEntries(RingCategory::RecentFile)[0] == "/a file/with spaces.txt");
 }
+
+// History::setRetentionCount()自身のコメント参照(2026-09-25、usilicrcのHISTORY)。
+TEST_CASE("setRetentionCount: usilicrc's HISTORY replaces the default 200; lowering it trims the oldest") {
+  fm::History history;
+  history.setRetentionCount(500);
+  for (int i = 0; i < 300; i++) history.pushRecent(fm::RingCategory::RecentEgrepPattern, "p" + std::to_string(i));
+  CHECK(history.recentEntries(fm::RingCategory::RecentEgrepPattern).size() == 300);
+
+  // 500件分で書き出したものを500件の保持数で読み直しても、全て残る。
+  fm::History reloaded(500);
+  reloaded.loadHistoryText(history.serialize("usilic", "now"), false);
+  CHECK(reloaded.recentEntries(fm::RingCategory::RecentEgrepPattern).size() == 300);
+
+  history.setRetentionCount(100);
+  const auto &ring = history.recentEntries(fm::RingCategory::RecentEgrepPattern);
+  REQUIRE(ring.size() == 100);
+  CHECK(ring.front() == "p200");
+  CHECK(ring.back() == "p299");
+  history.setRetentionCount(0);
+  CHECK(history.retentionCount() == 1);
+}

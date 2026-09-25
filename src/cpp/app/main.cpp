@@ -252,7 +252,9 @@ void saveHistoryToDisk(const fm::History &sessionHistory, const std::string &usi
   std::string historyLockPath = usilicDir + "history.lock";
   acquireHistoryLock(historyLockPath);
 
-  fm::History diskHistory;
+  // 保持数はこのセッションと同じ(usilicrcのHISTORY)――既定の200のままだと、
+  // 保存のたびにファイルが200件へ切り詰められてしまう。
+  fm::History diskHistory(sessionHistory.retentionCount());
   std::string currentDiskText = readFileIfExists(historyPath);
   if (!currentDiskText.empty()) {
     diskHistory.loadHistoryText(currentDiskText, charsetExplicitlySet);
@@ -4235,6 +4237,8 @@ int main(int argc, char **argv) {
   if (rcText.empty() && homeEnv) rcText = readFileIfExists(std::string(homeEnv) + "/.local/lib/usilic/usilicrc");
   if (rcText.empty()) rcText = readFileIfExists("/usr/local/lib/usilic/usilicrc");
   if (!rcText.empty()) configuration.loadRcText(rcText, /*fileManagerMode=*/true);
+  // usilicrcのHISTORY(History::setRetentionCount()自身のコメント参照、2026-09-25)。
+  history.setRetentionCount(configuration.historyRetentionCount());
 
   // LOCATE's personal database (2026-08-22 addition, docs/CHANGES.md
   // item 406): see ConfiguredRole's own enum comment and Configuration::
