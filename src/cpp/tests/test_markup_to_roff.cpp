@@ -133,66 +133,79 @@ TEST_CASE("convertMarkupToLegacyHelpText: a closing tag with no matching opener 
 
 using fm::convertMarkupToMsRoffSource;
 
+namespace {
+// 2026-09-25: convertMarkupToMsRoffSource()は-mと同じ見た目にするための
+// 前置き(.cflags 512 ...で終わる)と末尾(.br/.pl)を必ず付けるように
+// なったので、本文の変換を見るテストはそれらを取り除いて比べる。
+std::string msBody(const std::string &out) {
+  std::size_t prologueEnd = out.find(".cflags 512 ");
+  std::string body = out.substr(out.find('\n', prologueEnd) + 1);
+  const std::string epilogue = ".br\n.pl \\n(nlu+1v\n";
+  if (body.size() >= epilogue.size() && body.compare(body.size() - epilogue.size(), epilogue.size(), epilogue) == 0)
+    body.erase(body.size() - epilogue.size());
+  return body;
+}
+}  // namespace
+
+TEST_CASE("convertMarkupToMsRoffSource: the prologue makes groff render like -m -- no margin/page "
+          "header, left-adjusted, no hyphenation, ASCII ^'~`- kept as ASCII, CJK line breaking") {
+  std::string out = convertMarkupToMsRoffSource("x");
+  for (const char *request : {".po 0\n", ".nr HM 0\n", ".ds CH\n", ".ll 78n\n", ".nh\n", ".ad l\n",
+                              ".char ^ \\[u005E]\n", ".cflags 512 \\C'[CJKnormal]'\n"})
+    CHECK(out.find(request) != std::string::npos);
+  CHECK(out.size() >= 20);
+  CHECK(out.compare(out.size() - 20, 20, "x\n.br\n.pl \\n(nlu+1v\n") == 0);
+}
+
 TEST_CASE("convertMarkupToMsRoffSource: <b>X</b> becomes \\fBX\\fP (roff font-change escape, "
           "package-agnostic, works under -ms same as -man)") {
-  std::string out = convertMarkupToMsRoffSource("<b>AB</b>");
-  CHECK(out == "\\fBAB\\fP");
+  CHECK(msBody(convertMarkupToMsRoffSource("<b>AB</b>")) == "\\fBAB\\fP\n");
 }
 
 TEST_CASE("convertMarkupToMsRoffSource: <u>X</u> and <i>X</i> both become \\fIX\\fP (italic) -- "
           "roff/troff has no underline primitive, matching convertMarkupToLegacyHelpText()'s own "
           "identical unification of the two tags") {
-  CHECK(convertMarkupToMsRoffSource("<u>AB</u>") == "\\fIAB\\fP");
-  CHECK(convertMarkupToMsRoffSource("<i>AB</i>") == "\\fIAB\\fP");
+  CHECK(msBody(convertMarkupToMsRoffSource("<u>AB</u>")) == "\\fIAB\\fP\n");
+  CHECK(msBody(convertMarkupToMsRoffSource("<i>AB</i>")) == "\\fIAB\\fP\n");
 }
 
 TEST_CASE("convertMarkupToMsRoffSource: <indentN>...</indent> becomes \".in Nn\" ... \".in 0\" -- "
-          "the portable, macro-package-agnostic troff indent request (not a -man/-ms-specific "
-          "block macro like .RS/.RE), on its own line") {
-  std::string out = convertMarkupToMsRoffSource("<indent3>hello</indent>");
-  CHECK(out == ".in 3n\nhello\n.in 0\n");
+          "the portable, macro-package-agnostic troff indent request, on its own line") {
+  CHECK(msBody(convertMarkupToMsRoffSource("<indent3>hello</indent>")) == ".in 3n\nhello\n.in 0\n");
 }
 
-TEST_CASE("convertMarkupToMsRoffSource: the newline immediately after an opening <indentN> tag and "
-          "immediately before a closing </indent> tag are both readability-only and swallowed, "
-          "matching convertMarkupToLegacyHelpText()'s own identical convention") {
-  std::string out = convertMarkupToMsRoffSource("<indent2>\nhello\n</indent>");
-  CHECK(out == ".in 2n\nhello\n.in 0\n");
+TEST_CASE("convertMarkupToMsRoffSource: the newline right after an opening <indentN> is swallowed; "
+          "a source line ending before </indent> still gets its own .br") {
+  CHECK(msBody(convertMarkupToMsRoffSource("<indent2>\nhello\n</indent>")) == ".in 2n\nhello\n.br\n.in 0\n");
 }
 
-TEST_CASE("convertMarkupToMsRoffSource: a blank line (paragraph break in the source) becomes .PP "
-          "(-ms's own default indented-paragraph-start macro) -- this is how the original "
-          "novel-draft paragraph-indent request gets satisfied here: by -ms's own built-in "
-          "behavior, not a usilic-side mechanism") {
-  std::string out = convertMarkupToMsRoffSource("first\n\nsecond");
-  CHECK(out == "first\n.PP\nsecond");
+TEST_CASE("convertMarkupToMsRoffSource: each source line stays one output line (.br), and a blank "
+          "line becomes a plain .sp -- not -ms's .PP, whose first-line indent and fill-mode "
+          "paragraph made -n look nothing like -m (2026-09-25)") {
+  CHECK(msBody(convertMarkupToMsRoffSource("first\nsecond\n\nthird")) ==
+        "first\n.br\nsecond\n.br\n.sp\nthird\n");
 }
 
 TEST_CASE("convertMarkupToMsRoffSource: a leading '.' or '\\'' at the start of a line is escaped "
-          "with \\& (zero-width) so it is never misread as a troff control line -- a real risk "
-          "here (unlike convertMarkupToLegacyHelpText(), which produces final plain text with no "
-          "downstream parser)") {
-  CHECK(convertMarkupToMsRoffSource(".gitignore") == "\\&.gitignore");
-  CHECK(convertMarkupToMsRoffSource("'quoted'") == "\\&'quoted'");
+          "with \\& (zero-width) so it is never misread as a troff control line") {
+  CHECK(msBody(convertMarkupToMsRoffSource(".gitignore")) == "\\&.gitignore\n");
+  CHECK(msBody(convertMarkupToMsRoffSource("'quoted'")) == "\\&'quoted'\n");
   // Not at the start of a line -- no escaping needed.
-  CHECK(convertMarkupToMsRoffSource("a.b") == "a.b");
+  CHECK(msBody(convertMarkupToMsRoffSource("a.b")) == "a.b\n");
 }
 
 TEST_CASE("convertMarkupToMsRoffSource: a literal backslash is escaped as \\e so it is never "
           "misread as the start of a troff escape sequence") {
-  CHECK(convertMarkupToMsRoffSource("C:\\path") == "C:\\epath");
+  CHECK(msBody(convertMarkupToMsRoffSource("C:\\path")) == "C:\\epath\n");
 }
 
-TEST_CASE("convertMarkupToMsRoffSource: plain characters with no roff significance (^, ~, "
-          "full-width：, -) pass through unescaped when not at the start of a line -- the "
-          "mid-string '.' in \"~/.usilic\" is NOT at a line start, so it is left alone (unlike "
-          "the dedicated leading-'.'-at-line-start test above)") {
-  std::string out = convertMarkupToMsRoffSource("^H ~/.usilic C\xEF\xBC\x9Ax a-b");
-  CHECK(out == "^H ~/.usilic C\xEF\xBC\x9Ax a-b");
+TEST_CASE("convertMarkupToMsRoffSource: plain characters (^, ~, full-width：, -) pass through "
+          "unescaped when not at the start of a line (the prologue's .char requests keep them ASCII)") {
+  CHECK(msBody(convertMarkupToMsRoffSource("^H ~/.usilic C\xEF\xBC\x9Ax a-b")) ==
+        "^H ~/.usilic C\xEF\xBC\x9Ax a-b\n");
 }
 
 TEST_CASE("convertMarkupToMsRoffSource: a closing tag with no matching opener is passed through "
           "literally rather than corrupting or hanging (malformed-markup safety net)") {
-  std::string out = convertMarkupToMsRoffSource("<b>unterminated");
-  CHECK(out == "<b>unterminated");
+  CHECK(msBody(convertMarkupToMsRoffSource("<b>unterminated")) == "<b>unterminated\n");
 }

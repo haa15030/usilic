@@ -129,10 +129,8 @@ std::string convertMarkupToLegacyHelpText(const std::string &markup) {
 // roffソース」である点が異なる――そのため、そちら側には無かった
 // 2つの処理が必要になる: (1)行頭の"."/"'"、リテラルな"\"のエスケープ
 // (さもないと著者の本文がroffの制御行/エスケープと誤認される)、
-// (2)空行を.PP(-msの「段落先頭字下げ」既定マクロ)へ変換する処理
-// (小説の下書きのパラグラフ先頭字下げという、この機能自身の当初の
-// 動機を、usilic独自の仕組みではなく-msマクロパッケージ自身の既定の
-// 振る舞いとして実現する)。
+// (2)改行・空行の扱い(2026-09-25以降は元の1行=出力の1行の.brと、
+// 空行の.sp――関数本体冒頭の同日のコメント参照)。
 std::string convertMarkupToMsRoffSource(const std::string &markup) {
   std::string out;
   out.reserve(markup.size() * 2);
@@ -143,6 +141,34 @@ std::string convertMarkupToMsRoffSource(const std::string &markup) {
   const std::string indentOpenPrefix = "<indent";
   const std::string indentClose = "</indent>";
   bool atLineStart = true;
+
+  // 2026-09-25追加、直接のユーザー要望("-nの見た目が-mと違いすぎる。
+  // -mと同じになるならしてほしい"): 以前は-ms既定のfillモード段落
+  // (.PP)に任せていたため、groffに通すと(1)元の改行が詰められて1段落
+  // が流し込みになり、(2)両端揃えで単語間に大きな空白が入り、(3)'^'
+  // '\''/'~'/'`'/'-'が組版記号(ˆ ’ ˜ 等)に置き換わり、(4).PPが段落先頭
+  // を字下げしていた――-m(元の行をそのまま保ち、長い行だけ字下げ付き
+  // で折り返す)とは別物の見た目だった。-ms/-mandoc(usilic自身が.md
+  // 以外のroffソースを自動整形する時の-mandoc、ConfiguredRole::Groff
+  // 参照)のどちらでも同じになるよう、マクロパッケージ非依存の
+  // プリミティブだけで-mの見た目へ寄せる: 左余白/ページ見出し無し、
+  // 行長78桁(man既定と同じ)、両端揃え・ハイフネーション無し、上記の
+  // ASCII記号はASCIIのまま、元の1行=出力の1行(行末ごとに.br)、空行は
+  // .PPではなく素の.sp。
+  out += ".\\\" usilic -n: -m(usilic自身の表示)と同じ見た目にするための前置き\n"
+         ".nr PO 0\n.po 0\n.nr HM 0\n.nr FM 0\n.nr PL 100000v\n.pl 100000v\n.ds CH\n.nr LL 78n\n.ll 78n\n.nh\n.ad l\n"
+         ".char - \\[u002D]\n.char ' \\[u0027]\n.char ^ \\[u005E]\n.char ~ \\[u007E]\n.char ` \\[u0060]\n"
+         // 日本語の文字の間でも改行できるようにする(-mは任意の位置で
+         // 折り返す)。groff 1.24のja.tmacの定義をそのまま取り込み、
+         // -mjaを付けずに済むようにしている。
+         ".class [CJKprepunct] , : ; > } \\[u3001] \\[u3002] \\[uFF0C] \\[uFF0E] \\[u30FB] \\[uFF1A] "
+         "\\[uFF1B] \\[uFF1F] \\[uFF01] \\[uFF09] \\[u3015] \\[uFF3D] \\[uFF5D] \\[u300D] \\[u300F] "
+         "\\[u3011] \\[u3041] \\[u3043] \\[u3045] \\[u3047] \\[u3049] \\[u3063] \\[u3083] \\[u3085] "
+         "\\[u3087] \\[u30FC] \\[u30A1] \\[u30A3] \\[u30A5] \\[u30A7] \\[u30A9] \\[u30C3] \\[u30E3] "
+         "\\[u30E5] \\[u30E7]\n"
+         ".class [CJKpostpunct] \\[uFF08] \\[u3014] \\[uFF3B] \\[uFF5B] \\[u300C] \\[u300E] \\[u3010]\n"
+         ".class [CJKnormal] \\[u3041]-\\[u3096] \\[u30A0]-\\[u30FF] \\[u4E00]-\\[u9FFF]\n"
+         ".cflags 128 \\C'[CJKprepunct]'\n.cflags 256 \\C'[CJKpostpunct]'\n.cflags 512 \\C'[CJKnormal]'\n";
 
   auto ensureFreshLine = [&]() {
     if (!out.empty() && out.back() != '\n') out += '\n';
@@ -165,7 +191,7 @@ std::string convertMarkupToMsRoffSource(const std::string &markup) {
     if (isIndentOpen) {
       int value = std::atoi(markup.substr(numStart, numEnd - numStart).c_str());
       ensureFreshLine();
-      out += ".in " + std::to_string(value) + "n\n";
+      out += ".in " + std::to_string(value) + "n\n";  // .inは自身で改行(break)を伴う
       i = numEnd + 1;
       if (i < markup.size() && markup[i] == '\n') i++;  // convertMarkupToLegacyHelpText()自身の同じ理由のコメント参照
       atLineStart = true;
@@ -173,22 +199,23 @@ std::string convertMarkupToMsRoffSource(const std::string &markup) {
     }
     if (markup.compare(i, indentClose.size(), indentClose) == 0) {
       ensureFreshLine();
-      out += ".in 0\n";
+      out += ".in 0\n";  // .inは自身で改行(break)を伴う
       i += indentClose.size();
+      // 閉じタグの直後の改行は、閉じタグのあった行自体の行末として
+      // 消費する(さもないと下の分岐で余分な空行(.sp)になる)。
+      if (i < markup.size() && markup[i] == '\n') i++;
       atLineStart = true;
       continue;
     }
     if (markup[i] == '\n') {
-      // 空行(段落区切り) -> .PP。両方の改行文字をまとめて消費する
-      // (そうしないと.PPの直後に本物の空行がもう1行残ってしまう)。
-      if (i + 1 < markup.size() && markup[i + 1] == '\n') {
+      // 上の2026-09-25のコメント参照: 文字のある行の行末は.br(元の1行=
+      // 出力の1行)、行頭での改行(=空行)は.sp。
+      if (atLineStart) {
         ensureFreshLine();
-        out += ".PP\n";
-        i += 2;
-        atLineStart = true;
-        continue;
+        out += ".sp\n";
+      } else {
+        out += "\n.br\n";
       }
-      out += '\n';
       i++;
       atLineStart = true;
       continue;
@@ -227,6 +254,11 @@ std::string convertMarkupToMsRoffSource(const std::string &markup) {
     appendEscaped(markup[i]);
     i++;
   }
+  // 前置きの.pl 100000v(ページ区切りの空行を起こさないため)の分だけ
+  // 末尾が空行で埋まらないよう、最後にページ長を現在位置まで縮める
+  // (man自身の連続表示と同じ定番の手法)。
+  ensureFreshLine();
+  out += ".br\n.pl \\n(nlu+1v\n";
   return out;
 }
 
