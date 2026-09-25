@@ -12377,6 +12377,14 @@ bool Application::executeQuickLook() {
     if (!p.empty() && p.back() != '/') p += '/';
     p += entries[match->sourceLineIndex].name;
     paths.push_back(p);
+  } else if (currentMode_ == ApplicationMode::Underline) {
+    // 2026-09-25追加、直接のユーザー要望("^Ouの一覧でクイックルックは
+    // できる？"): ハイライト行のパス。MANの項目(" (man)")やUSILIC
+    // 目次の見出し("MAN"/"DIR"/"FILE")等、実在しないものは対象外。
+    const std::string *entry = underlineMode_.selectedEntry();
+    std::error_code ec;
+    if (!entry || usilicLevel_ == UsilicLevel::Toc || !std::filesystem::exists(*entry, ec)) return false;
+    paths.push_back(*entry);
   } else {
     return false;
   }
