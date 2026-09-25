@@ -384,6 +384,42 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     }
     return pos;
   };
+  // 2026-09-25追加、直接のユーザー報告("(HISTORY.mdの):180からイタリックに
+  // なってる"): 行がちょうど幅いっぱいで終わると、下の各所は
+  // peekNewlineAfterMarkers()で見つけた改行の直後まで`i = nlPos + 1`で一気に
+  // 進む(直後の本物の改行を、幅いっぱいの折り返しと同じ1回のfinalize()へ
+  // 吸収するため)。その時、間にある印(行末の</i>等)を読み飛ばすだけで状態の
+  // 変化を適用していなかったため、ちょうど幅いっぱいで終わる<i>...</i>の行
+  // (HISTORY.mdの引用行)の後ろが最後まで斜体のままになっていた。メイン
+  // ループと同じ状態の変化を、飛ばす範囲[from, to)に適用する。
+  auto applyMarkersUntil = [&](int from, int to) {
+    int pos = from;
+    while (pos < to) {
+      unsigned char mc = static_cast<unsigned char>(convertedLine[pos]);
+      if (mc == '\x01') {
+        auto [value, digitsEnd] = readIndentDigits(pos + 1);
+        if (value < 0) break;
+        currentIndent_ = value;
+        pos = digitsEnd;
+        continue;
+      }
+      if (mc == 0xEF) {
+        auto [count, runEnd] = readPortableIndentRun(pos);
+        if (count <= 0) break;
+        currentIndent_ = count - 1;
+        pos = runEnd;
+        continue;
+      }
+      if (pos + 1 >= to) break;
+      unsigned char digit = static_cast<unsigned char>(convertedLine[pos + 1]);
+      int delta = (digit == '1') ? 1 : (digit == '0' ? -1 : 0);
+      if (mc == '\x02') currentItalic_ = std::max(0, currentItalic_ + delta);
+      else if (mc == '\x03') currentBold_ = std::max(0, currentBold_ + delta);
+      else if (mc == '\x04') currentUnderline_ = std::max(0, currentUnderline_ + delta);
+      else break;
+      pos += 2;
+    }
+  };
   auto peekNewlineAfterMarkers = [&](int pos) -> int {
     int p = skipMarkersFrom(pos);
     return (p < n && convertedLine[p] == '\n') ? p : -1;
@@ -537,6 +573,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
         // 出力されてしまう(下の一般文字パス自身の同じ呼び出し参照)。
         int nlPos = peekNewlineAfterMarkers(i);
         if (nlPos >= 0) {
+          applyMarkersUntil(i, nlPos);  // それ自身のコメント参照
           i = nlPos + 1;
           finalize(true);
         } else {
@@ -676,6 +713,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
         // peekNewlineAfterMarkers()自身のコメント参照。
         int nlPos = peekNewlineAfterMarkers(i);
         if (nlPos >= 0) {
+          applyMarkersUntil(i, nlPos);  // それ自身のコメント参照
           i = nlPos + 1;
           finalize(true);
         } else {
@@ -737,6 +775,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       // peekNewlineAfterMarkers()自身のコメント参照。
       int nlPos = peekNewlineAfterMarkers(i);
       if (nlPos >= 0) {
+        applyMarkersUntil(i, nlPos);  // それ自身のコメント参照
         i = nlPos + 1;
         finalize(true);
       } else {

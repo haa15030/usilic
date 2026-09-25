@@ -726,3 +726,20 @@ TEST_CASE("detectOverstrike defaults to true when the constructor argument is om
   REQUIRE(buf.lines()[0].attributes.size() == 1);
   CHECK(buf.lines()[0].attributes[0].attribute == Display::Attribute::Bold);
 }
+
+// PipeBuffer::wrapLine()のapplyMarkersUntil()自身のコメント参照(2026-09-25、
+// HISTORY.mdの引用行の後ろが最後まで斜体になっていた件)。
+TEST_CASE("wrapLine: a styled run that ends exactly at the wrap width doesn't leak its style onto later lines") {
+  for (const char *tag : {"i", "b", "u"}) {
+    CAPTURE(tag);
+    std::string body;
+    for (int i = 0; i < 49; i++) body += "\xE3\x81\x82";  // あ x49 = 98桁、字下げ2と合わせてちょうど100桁
+    std::string markup = std::string("<indent02><") + tag + ">" + body + "</" + tag + "></indent>\nafter\n";
+    fm::PipeBuffer pipe(fm::Charset::Encoding::Utf8, 100, 1 << 20);
+    pipe.feed(fm::expandHelpMarkup(markup));
+    pipe.flush();
+    REQUIRE(pipe.lines().size() >= 2);
+    CHECK(pipe.lines().back().text == "after");
+    CHECK(pipe.lines().back().attributes.empty());
+  }
+}
