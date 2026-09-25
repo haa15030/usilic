@@ -1840,6 +1840,27 @@ struct IgnoreSigintWhileChildRuns {
 };
 
 void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
+  // 2026-09-25追加、Application::setInterruptPeeker()自身の宣言コメント
+  // 参照: ^[^Mの読み込み中にGUIウィンドウ側で押されたキーで中断できる
+  // ようにする。キーは中断のためだけに使い、捨てる(コマンドとしては
+  // 実行しない)。ウィンドウが閉じられた場合も中断扱い。途中のどの
+  // returnからでも確実に外すため、デストラクタで解除する。
+  struct InterruptPeekerGuard {
+    fm::Application &app;
+    ~InterruptPeekerGuard() { app.setInterruptPeeker(nullptr); }
+  } interruptPeekerGuard{app};
+  app.setInterruptPeeker([&app, &gui]() {
+    // pumpEvents()の「閉じられた」は一度きり(次の呼び出しでは再び
+    // trueを返す)なので、ここで消費した分をループ側が見落とさないよう
+    // 終了要求に変えておく(ループ先頭のwantsExit()で抜ける)。
+    if (!gui.pumpEvents()) {
+      app.requestImmediateExit();
+      return true;
+    }
+    bool anyKey = false;
+    while (gui.consumeKeyEvent()) anyKey = true;
+    return anyKey;
+  });
   bool dragging = false;
   // 2026-08-30、直接のユーザー報告(GUI、ARCモードで再現させたスクリー
   // ンショット付き――ただし根本原因はモードを問わない): マウスボタンを

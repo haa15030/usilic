@@ -1935,6 +1935,12 @@ class Application {
   // 判明した(.steering/20260829-copy-mode/内のrequirements.md自身
   // のC++移植側の該当構造の調査結果参照)。
   ContentView &activeContentView();
+  // 2026-09-25追加: 長い同期処理(^[^Mの「そのまま読む」)の途中で、
+  // GUIウィンドウ側にキー入力が届いたかを問い合わせる関数。GUIでは
+  // キーがSDL経由で届き起動元ターミナル(keyInput_)には来ないため。
+  // main.cppのrunGuiPhase()が設定し、抜ける時にnullptrへ戻す。
+  // openSelectedEntryRaw()自身のshouldAbortのコメント参照。
+  void setInterruptPeeker(std::function<bool()> peeker);
 
  private:
   // p_kmのための、1つの記録されたバイト(クラスコメント参照)――
@@ -2187,6 +2193,7 @@ class Application {
   // 再描画する。
   bool returnFromCopy();
   ContentView &activeView();
+  std::function<bool()> interruptPeeker_;  // setInterruptPeeker()参照
   ContentView &viewForMode(ApplicationMode mode);
   void layoutViews();
   std::vector<std::string> collectTargetPaths() const;

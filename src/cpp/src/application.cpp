@@ -4711,16 +4711,21 @@ bool Application::openSelectedEntryRaw() {
     // ブロックする――raw mode(VMIN=0/VTIME=1、0.1秒で諦める)を前提
     // にしていたこの覗き見がそこで止まり、GUI全体が固まっていた。
     // 実際に何か届いている時だけ読む。
-    if (!keyInput_.isPlayingRawMacro()) {
-      if (keyInput_.fd() < 0) return false;
-      struct pollfd pfd{keyInput_.fd(), POLLIN, 0};
-      if (::poll(&pfd, 1, 0) <= 0 || !(pfd.revents & POLLIN)) return false;
-    }
-    int byte = keyInput_.readByte();
-    if (byte == 0) return false;
-    if (byte == kControlG) return true;
-    keyInput_.playRawMacro(std::string(1, static_cast<char>(byte)));
-    return false;
+    //
+    // 同日変更、直接のユーザー要望("`^G`で停止よりも形としては緊急性を
+    // 伴うとも言えるので`^G`→任意のキーにしてほしい"): 中断のキーを
+    // ^G限定から「任意のキー」へ広げた(押したキーは中断のためだけに
+    // 使い、コマンドとしては実行しない)。GUIではキーがSDL経由で届き
+    // 起動元ターミナルには来ないので、setInterruptPeeker()(main.cppの
+    // runGuiPhase()が設定する)でGUIウィンドウ側のキーも見る。
+    // usilicrcのマクロ再生中のバイトは「押されたキー」ではないので
+    // 見ない(KeyInput::readByte()ではなく端末fdを直接read()する)。
+    if (interruptPeeker_ && interruptPeeker_()) return true;
+    if (keyInput_.fd() < 0) return false;
+    struct pollfd pfd{keyInput_.fd(), POLLIN, 0};
+    if (::poll(&pfd, 1, 0) <= 0 || !(pfd.revents & POLLIN)) return false;
+    unsigned char discarded;
+    return ::read(keyInput_.fd(), &discarded, 1) > 0;
   };
   if (!fileMode_.loadFileRaw(path, shouldAbort)) return false;
   currentMode_ = ApplicationMode::File;
@@ -13671,5 +13676,7 @@ CpMvRmMode &Application::cpMvRmMode() { return cpMvRmMode_; }
 EditMode &Application::editMode() { return editMode_; }
 ExecMode &Application::execMode() { return execMode_; }
 ContentView &Application::activeContentView() { return activeView(); }
+
+void Application::setInterruptPeeker(std::function<bool()> peeker) { interruptPeeker_ = std::move(peeker); }
 
 }  // namespace fm
