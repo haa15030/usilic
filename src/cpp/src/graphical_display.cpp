@@ -2739,7 +2739,20 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
     unsigned char lead = static_cast<unsigned char>(line[pos]);
     int len = Utf8::sequence_length(lead);
     if (pos + len > line.size()) len = 1;
-    int width = std::max(1, Utf8::display_width(reinterpret_cast<const unsigned char *>(line.data() + pos), len));
+    int naturalWidth = Utf8::display_width(reinterpret_cast<const unsigned char *>(line.data() + pos), len);
+    // 2026-09-25修正、直接のユーザー報告("~/Documents/A_jp.txtの70行目
+    // あたり、-g起動では停止時とスクロール時でGETSEL=...の行が１文字
+    // ズレる"、スクリーンショット=ha/=hb): PipeBuffer::wrapLine()は
+    // タブを「U+2060 WORD JOINER(幅0)+スペース」へ置き換える(検索で
+    // タブを見つけられるようにするため、自身のコメント参照)。静止時の
+    // 描画はUtf8::display_width()どおり幅0として扱うが、ここは
+    // std::max(1, ...)で最低1桁として数えていたため、タブを含む行だけ
+    // スクロール中に1桁右へずれていた。幅0の文字は桁を進めずに飛ばす。
+    if (naturalWidth == 0 && len > 1) {
+      pos += len;
+      continue;
+    }
+    int width = std::max(1, naturalWidth);
     std::string glyph = line.substr(pos, len);
     // 2026-08-21修正、直接のユーザー報告("マウスの左クリック（画面
     // ドラッグスタンバイ状態）中だと文字装飾が利かず"――HELP自身の
