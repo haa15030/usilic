@@ -3447,14 +3447,26 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   // 1バイトとして捨てられていた。GUIの間だけISIGを有効にしてSIGINTを
   // 拾う(^Z/^\は無効化――GUIウィンドウを出したまま停止/コアダンプ
   // させないため)。制御端末が無い(Finderからの起動等)場合は何もしない。
+  // 2026-09-26修正、直接のユーザー依頼("-gのページャー起動でも裏ターミナル
+  // で^Cによる終了実装よろしく"): 以前は標準入力(STDIN_FILENO)の端末設定
+  // だけを変えていたため、`git log`のPAGERや`cmd | usilic -g`のように
+  // 標準入力がパイプのページャー起動では、ISIGが一度も有効にならず^Cが
+  // 効かなかった。キー入力(KeyInput::open("/dev/tty"))と同じく、標準入力が
+  // 端末でなければ制御端末/dev/ttyそのものを相手にする。
+  int signalTtyFd = STDIN_FILENO;
+  bool closeSignalTty = false;
+  if (!isatty(signalTtyFd)) {
+    signalTtyFd = ::open("/dev/tty", O_RDWR | O_NOCTTY);
+    closeSignalTty = signalTtyFd >= 0;
+  }
   struct termios savedTermios{};
-  bool termiosSaved = isatty(STDIN_FILENO) && tcgetattr(STDIN_FILENO, &savedTermios) == 0;
+  bool termiosSaved = signalTtyFd >= 0 && isatty(signalTtyFd) && tcgetattr(signalTtyFd, &savedTermios) == 0;
   if (termiosSaved) {
     struct termios withSignals = savedTermios;
     withSignals.c_lflag |= ISIG;
     withSignals.c_cc[VSUSP] = _POSIX_VDISABLE;
     withSignals.c_cc[VQUIT] = _POSIX_VDISABLE;
-    tcsetattr(STDIN_FILENO, TCSANOW, &withSignals);
+    tcsetattr(signalTtyFd, TCSANOW, &withSignals);
   }
   gGuiSessionSigintReceived = 0;
   void (*previousSigint)(int) = std::signal(SIGINT, handleSigintForGuiSession);
@@ -3462,7 +3474,8 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   runGuiPhase(app, *gui);
 
   std::signal(SIGINT, previousSigint);
-  if (termiosSaved) tcsetattr(STDIN_FILENO, TCSANOW, &savedTermios);
+  if (termiosSaved) tcsetattr(signalTtyFd, TCSANOW, &savedTermios);
+  if (closeSignalTty) ::close(signalTtyFd);
 
   app.programMode().setForegroundLauncher(nullptr);  // back to plain ChildProcess::runInteractive() in terminal mode
   app.editMode().setForegroundLauncher(nullptr);
