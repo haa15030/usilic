@@ -2572,6 +2572,11 @@ class Application {
   // 中に実際に変化していればliveIncrementalGrepSearch()を呼ぶだけの
   // 薄い皮になっている。
   bool feedPromptByteInner(int byte);
+  // 2026-09-26追加(emacs_tutorial.txtの単語編集キー): ESCの直後の1バイトが
+  // f/b/d/DEL/^Hなら、editorの単語移動/単語killとして処理してescPending_を
+  // 下ろし、trueを返す。それ以外は何もせずfalse(通常のリーダー処理へ)。
+  // feedPromptByteInner()とfeedShellByte()で共有する。
+  bool applyWordEditEscape(LineEditor &editor, int byte);
   bool submitPrompt();
   void cancelPrompt();
   // 2026-09-10追加、submitPrompt()自身のコメント参照(直接のユーザー

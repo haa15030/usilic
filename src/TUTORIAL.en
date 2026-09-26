@@ -796,6 +796,11 @@
   ^^AA             : Move to the beginning of line
   ^^BB             : Move backward a character
   ^^FF             : Move forward a character
+  ^^[[ff            : Move forward a word
+  ^^[[bb            : Move backward a word
+  ^^[[dd            : Kill the word after the cursor
+  ^^[[^^HH           : Kill the word before the cursor
+  ^^__             : Undo the last edit
   ^^LL             : Redisplay the window
   ^^NN             : Move cursor one line down
   ^^PP             : Move cursor one line up

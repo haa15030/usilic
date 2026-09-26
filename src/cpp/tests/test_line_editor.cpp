@@ -235,3 +235,93 @@ TEST_CASE("selectAll: setText() (e.g. re-seeding for the next prompt) clears any
   typeAscii(e, "x");
   CHECK(e.text() == "freshx");  // ordinary append, no leftover selectAll from the previous seed
 }
+
+// 2026-09-26追加: M-f/M-b/M-d/M-DEL(単語編集)とC-_(undo)。
+TEST_CASE("word motion: M-b/M-f stop at word boundaries, treating symbols as separators") {
+  RecordingDisplay d(3, 40);
+  LineEditor e(d, Charset::Encoding::Utf8);
+  e.setField(0, 0, 40);
+  e.setText("less ~/git/usilic");
+  e.moveWordLeft();
+  CHECK(e.cursorBytePos() == 11);  // "usilic"の先頭
+  e.moveWordLeft();
+  CHECK(e.cursorBytePos() == 7);  // "git"の先頭
+  e.moveWordRight();
+  CHECK(e.cursorBytePos() == 10);  // "git"の末尾
+  e.moveHome();
+  e.moveWordRight();
+  CHECK(e.cursorBytePos() == 4);  // "less"の末尾
+}
+
+TEST_CASE("word motion: multibyte characters count as word characters") {
+  RecordingDisplay d(3, 40);
+  LineEditor e(d, Charset::Encoding::Utf8);
+  e.setField(0, 0, 40);
+  e.setText("cat 日本語.txt");
+  e.moveWordLeft();  // "txt"の先頭
+  e.moveWordLeft();  // "日本語"の先頭
+  CHECK(e.cursorBytePos() == 4);
+  e.moveWordRight();
+  CHECK(e.cursorBytePos() == 4 + 9);
+}
+
+TEST_CASE("word kill: M-DEL/M-d go to the kill buffer and can be yanked back") {
+  RecordingDisplay d(3, 40);
+  LineEditor e(d, Charset::Encoding::Utf8);
+  e.setField(0, 0, 40);
+  e.setText("cp foo/bar baz");
+  e.killWordBackward();
+  CHECK(e.text() == "cp foo/bar ");
+  e.yank();
+  CHECK(e.text() == "cp foo/bar baz");
+  e.moveHome();
+  e.killWordForward();
+  CHECK(e.text() == " foo/bar baz");
+  e.moveEnd();
+  e.yank();
+  CHECK(e.text() == " foo/bar bazcp");
+}
+
+TEST_CASE("undo: typed characters group, other edits undo one at a time") {
+  RecordingDisplay d(3, 40);
+  LineEditor e(d, Charset::Encoding::Utf8);
+  e.setField(0, 0, 40);
+  typeAscii(e, "hello world");
+  e.killWordBackward();
+  CHECK(e.text() == "hello ");
+  e.undo();
+  CHECK(e.text() == "hello world");
+  CHECK(e.cursorBytePos() == 11);
+  e.undo();  // 連続した11文字の入力は1回分
+  CHECK(e.text() == "");
+  e.undo();  // もう取り消す物は無い(BEL)
+  CHECK(e.text() == "");
+}
+
+TEST_CASE("undo: self-insertion groups at most 20 characters, like Emacs") {
+  RecordingDisplay d(3, 40);
+  LineEditor e(d, Charset::Encoding::Ascii);
+  e.setField(0, 0, 40);
+  typeAscii(e, "abcdefghijklmnopqrstuvwxy");  // 25文字
+  e.undo();
+  CHECK(e.text() == "abcdefghijklmnopqrst");
+  e.undo();
+  CHECK(e.text() == "");
+}
+
+TEST_CASE("undo: setText(\"\") and clearUndo() drop the history; other setText() is undoable") {
+  RecordingDisplay d(3, 40);
+  LineEditor e(d, Charset::Encoding::Ascii);
+  e.setField(0, 0, 40);
+  typeAscii(e, "abc");
+  e.setText("/tmp");
+  e.undo();
+  CHECK(e.text() == "abc");
+  e.setText("");
+  e.undo();
+  CHECK(e.text() == "");
+  typeAscii(e, "x");
+  e.clearUndo();
+  e.undo();
+  CHECK(e.text() == "x");
+}

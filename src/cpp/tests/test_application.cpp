@@ -15581,3 +15581,81 @@ TEST_CASE_FIXTURE(Fixture, "ARCHIVE alias on a file whose content isn't that for
   REQUIRE_FALSE(app.activeContentView().lines().empty());
   CHECK(app.activeContentView().lines()[0].text == "this is not a zip");
 }
+
+// 2026-09-26追加: ESC f/b/d/DEL(M-f/M-b/M-d/M-DEL)と^_(undo)が、本物の入口
+// (feedByte()、KEY節の置き換え層を含む)からプロンプトの編集として効くこと。
+// ESCの後の他のバイトは従来通りリーダーへ回ること(^[^[でプロンプトが消えない
+// ことまでは見ず、ここでは単語編集が他のESCコマンドを食わないことだけを見る)。
+TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ESC f/b/d/DEL edit by word, ^_ undoes") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCut));
+  feedText("less ~/git/usilic");
+  auto esc = [&](int b) {
+    REQUIRE(app.feedByte(0x1b, std::nullopt));
+    REQUIRE(app.feedByte(b, std::nullopt));
+  };
+  esc(0x7f);  // M-DEL
+  CHECK(app.promptText() == "less ~/git/");
+  esc(0x08);  // M-^H も同じ
+  CHECK(app.promptText() == "less ~/");
+  REQUIRE(app.feedByte(0x1f, std::nullopt));  // ^_
+  CHECK(app.promptText() == "less ~/git/");
+  esc('b');  // "git"の先頭へ
+  esc('b');  // "less"の先頭へ
+  esc('d');  // "less"をkill
+  CHECK(app.promptText() == " ~/git/");
+  esc('f');  // "git"の末尾へ
+  feedText("hub");
+  CHECK(app.promptText() == " ~/github/");
+  REQUIRE(app.feedByte(0x19, std::nullopt));  // ^Y: M-dでkillした"less"
+  CHECK(app.promptText() == " ~/githubless/");
+  REQUIRE(app.feedByte(0x1f, std::nullopt));
+  REQUIRE(app.feedByte(0x1f, std::nullopt));
+  CHECK(app.promptText() == " ~/git/");
+  CHECK(app.promptActive());
+  // 通常の確定が従来通り効く(ESC処理の後にリーダー状態が残っていない)。
+  REQUIRE(app.feedByte(0x15, std::nullopt));
+  feedText("cpmv");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedPromptByte: a new prompt starts with an empty undo history") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCut));
+  feedText("abc");
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
+  REQUIRE(app.handleCommand(Command::StartCut));
+  std::string seeded = app.promptText();
+  REQUIRE(app.feedByte(0x1f, std::nullopt));  // 取り消す物は無い
+  CHECK(app.promptText() == seeded);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedShellByte: ESC f/b/d/DEL and ^_ edit the SHELL command line without leaving SHELL") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartShell));
+  if (!pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); })) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  for (unsigned char c : std::string("cp foo/bar baz")) REQUIRE(app.feedByte(c, std::nullopt));
+  auto esc = [&](int b) {
+    REQUIRE(app.feedByte(0x1b, std::nullopt));
+    REQUIRE(app.feedByte(b, std::nullopt));
+  };
+  esc(0x7f);
+  CHECK(app.shell().commandLine().text() == "cp foo/bar ");
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  esc('b');
+  esc('b');
+  CHECK(app.shell().commandLine().cursorBytePos() == 3);
+  esc('d');
+  CHECK(app.shell().commandLine().text() == "cp /bar ");
+  esc('f');
+  CHECK(app.shell().commandLine().cursorBytePos() == 7);
+  REQUIRE(app.feedByte(0x1f, std::nullopt));
+  CHECK(app.shell().commandLine().text() == "cp foo/bar ");
+  REQUIRE(app.feedByte(0x1f, std::nullopt));
+  CHECK(app.shell().commandLine().text() == "cp foo/bar baz");
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+}

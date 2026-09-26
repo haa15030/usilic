@@ -24574,6 +24574,25 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      `make app`/jキー回帰チェックも完了。
 
 
+479. **2026-09-26: 文字入力(モードラインのプロンプト・SHELLのコマンドライン)に
+    Emacsの単語編集キー(M-f/M-b/M-d/M-DEL)とundo(C-_)を追加**
+   - **経緯**: 直接のユーザー依頼("emacs_tutorial.txt...に書かれている内容で、
+     モードラインの文字入力プロンプトに反映できるキーアサインがあれば反映して
+     欲しい")。候補を提示し、単語編集4つ+C-_を両方の入力経路へ、に決定。
+     M-y(kill ring)・C-SPC/C-w(範囲kill、CP/MV/ARCの^Wと衝突)は見送り。
+   - **実装**: `LineEditor`に`moveWordLeft/Right()`・`killWordBackward/
+     Forward()`・`undo()`/`clearUndo()`を追加。単語の文字はASCII英数字と
+     非ASCII(マルチバイト文字)、それ以外(空白、`/`、`.`等)が区切り
+     (日本語の文節は判定しない)。単語killは^U/^Kと同じkillバッファへ入り、
+     ^Yで戻せる。undoは(内容、カーソル位置)のスナップショットで、連続した
+     文字入力はEmacs同様20文字ずつ1回分。`setText("")`(SHELLの送信後等)と
+     `activatePrompt()`で履歴を捨てる。
+     ESC f/b/d/DEL(^H)はグローバルなESCシーケンスに割り当てが無いので、
+     `Application::applyWordEditEscape()`でリーダー処理の手前で横取りする
+     (SHELLではモードの一時切り替えより前)。TUTORIAL/TUTORIAL.enの
+     「5.2 Command-line」に追記。
+   - **検証**: LineEditorのdoctestを追加。
+
 ## 22. UTF-8コア処理(charset判定・変換、モード非依存)
 
 3. **UTF-8対応(Step 1〜7完了、2026-07-16)**

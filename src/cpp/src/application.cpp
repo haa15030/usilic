@@ -39,6 +39,7 @@ constexpr int kControlS = 0x13;        // ^S
 constexpr int kControlC = 0x03;        // ^C
 constexpr int kControlG = 0x07;        // ^G
 constexpr int kControlQ = 0x11;        // ^Q
+constexpr int kControlUnderscore = 0x1f;  // ^_ (C-_、undo)
 constexpr int kControlW = 0x17;        // ^W
 constexpr int kCarriageReturn = 0x0d;  // ^M
 // 末尾のディレクトリの切り詰め(2026-08-12修正): drawPromptLabel()
@@ -3344,6 +3345,9 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   // 起動される`vim`/`less`のような、正真正銘の生の、対話的な子プロ
   // セスは、これが触れない、完全に別個の、本物のpty経由のパススルー
   // のコードパスである。)
+  // ESC f/b/d/DEL: feedPromptByteInner()の同じ横取り参照。下の
+  // shellLeaderPendingの処理(SHELLから抜けるモード切り替え)より前に行う。
+  if (!special && applyWordEditEscape(shell_.commandLine(), byte)) return true;
   bool shellLeaderPending =
       leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ || escPending_;
   if (!special && (shellLeaderPending || byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape)) {
@@ -3711,6 +3715,10 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   if (byte == 0x19) {  // ^Y: ^U/^Kの削除バッファを再挿入
     shell_.commandLine().yank();
     shell_.commandLine().redraw();
+    return true;
+  }
+  if (byte == kControlUnderscore) {  // ^_: 取り消し(LineEditor::undo()参照)
+    shell_.commandLine().undo();
     return true;
   }
   if (byte == kControlC) {
@@ -10127,6 +10135,29 @@ bool Application::feedPromptByte(int byte) {
   return result;
 }
 
+bool Application::applyWordEditEscape(LineEditor &editor, int byte) {
+  if (!escPending_) return false;
+  switch (byte) {
+    case 'f':
+      editor.moveWordRight();
+      break;
+    case 'b':
+      editor.moveWordLeft();
+      break;
+    case 'd':
+      editor.killWordForward();
+      break;
+    case 0x7f:
+    case 0x08:
+      editor.killWordBackward();
+      break;
+    default:
+      return false;
+  }
+  escPending_ = false;
+  return true;
+}
+
 bool Application::feedPromptByteInner(int byte) {
   // ^Q(2026-08-11修正): 実際のユーザーの記憶――"文字列入力の際の
   // コントロールコードは^Qの前置で入力できたような"。LineEditorは
@@ -10192,6 +10223,9 @@ bool Application::feedPromptByteInner(int byte) {
   // promptKind_チェック(promptKind_は変わっていない)を通じて単に
   // feedPromptByte()へ再入場するだけになるので、直接リーダーの
   // リゾルバへ行く。
+  // ESC f/b/d/DEL(M-f/M-b/M-d/M-DEL、2026-09-26追加): グローバルな
+  // ESCシーケンスには割り当てが無いので、リーダーへ回す前に横取りする。
+  if (applyWordEditEscape(promptEditor_, byte)) return true;
   if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ ||
       byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape) {
     return dispatchLeaderByte(byte, std::nullopt);
@@ -10464,6 +10498,10 @@ bool Application::feedPromptByteInner(int byte) {
   if (byte == 0x19) {  // ^Y: ^U/^Kの削除バッファを再挿入
     promptEditor_.yank();
     promptEditor_.redraw();
+    return true;
+  }
+  if (byte == kControlUnderscore) {  // ^_: 取り消し(LineEditor::undo()参照)
+    promptEditor_.undo();
     return true;
   }
   // ^N/^P(2026-08-12修正): 直接のユーザー報告――^J^S/^J^Cの候補リスト
@@ -12182,6 +12220,7 @@ void Application::activatePrompt(PromptKind kind, const std::string &initialText
   promptCandidateListActive_ = !positionText.empty();
   drawPromptLabel(kind, positionText);
   promptEditor_.setText(initialText);
+  promptEditor_.clearUndo();  // 前のプロンプトの内容へは戻さない
   if (cursorAtStart) promptEditor_.moveHome();
   if (selectAllOnSeed) promptEditor_.selectAll();
   promptEditor_.redraw();

@@ -30,6 +30,11 @@ void LineEditor::setField(int row, int col0, int width) {
 }
 
 void LineEditor::setText(const std::string &text) {
+  // 空の行は新しい入力の始まり(SHELLの送信後、プロンプトの開始等)なので
+  // 取り消しの履歴を捨てる。それ以外の置き換え(^W・^N/^P・補完・履歴の
+  // 呼び出し)は1回分の編集として取り消せるようにしておく。
+  if (text.empty()) clearUndo();
+  else if (text != buffer_) pushUndo();
   buffer_ = text;
   if (static_cast<int>(buffer_.size()) > kMaxLength - 1)
     buffer_.resize(kMaxLength - 1);
@@ -202,8 +207,10 @@ void LineEditor::redraw() {
   display_.flush();
 }
 
-void LineEditor::insertText(const std::string &bytesIn) {
+void LineEditor::insertText(const std::string &bytesIn, bool selfInsert) {
   if (bytesIn.empty()) return;
+  if (!selfInsert || selectAllPending_ || undoInsertRun_ == 0 || undoInsertRun_ >= kUndoInsertGroup) pushUndo();
+  if (selfInsert) undoInsertRun_++;
   if (selectAllPending_) {
     selectAllPending_ = false;
     buffer_.clear();
@@ -223,7 +230,7 @@ void LineEditor::insertText(const std::string &bytesIn) {
 
 void LineEditor::insertByte(unsigned char byte) {
   if (encoding_ != Charset::Encoding::Utf8) {
-    insertText(std::string(1, static_cast<char>(byte)));
+    insertText(std::string(1, static_cast<char>(byte)), /*selfInsert=*/true);
     return;
   }
   if (pendingUtf8_.empty()) {
@@ -235,11 +242,12 @@ void LineEditor::insertByte(unsigned char byte) {
   if (static_cast<int>(pendingUtf8_.size()) < want) return;  // さらにバイトを待つ
   std::string complete = pendingUtf8_;
   pendingUtf8_.clear();
-  insertText(complete);
+  insertText(complete, /*selfInsert=*/true);
 }
 
 void LineEditor::backspace() {
   if (selectAllPending_) {
+    pushUndo();
     selectAllPending_ = false;
     buffer_.clear();
     cursorPos_ = 0;
@@ -250,6 +258,7 @@ void LineEditor::backspace() {
     display_.putChar(7);
     return;
   }
+  pushUndo();
   int n = charBytesBefore(cursorPos_);
   buffer_.erase(cursorPos_ - n, n);
   cursorPos_ -= n;
@@ -258,6 +267,7 @@ void LineEditor::backspace() {
 
 void LineEditor::deleteForward() {
   if (selectAllPending_) {
+    pushUndo();
     selectAllPending_ = false;
     buffer_.clear();
     cursorPos_ = 0;
@@ -268,6 +278,7 @@ void LineEditor::deleteForward() {
     display_.putChar(7);
     return;
   }
+  pushUndo();
   int n = charBytesAt(cursorPos_);
   buffer_.erase(cursorPos_, n);
   redraw();
@@ -275,18 +286,21 @@ void LineEditor::deleteForward() {
 
 void LineEditor::moveHome() {
   selectAllPending_ = false;
+  undoInsertRun_ = 0;
   cursorPos_ = 0;
   redraw();
 }
 
 void LineEditor::moveEnd() {
   selectAllPending_ = false;
+  undoInsertRun_ = 0;
   cursorPos_ = static_cast<int>(buffer_.size());
   redraw();
 }
 
 void LineEditor::moveLeft() {
   selectAllPending_ = false;
+  undoInsertRun_ = 0;
   if (cursorPos_ <= 0) {
     display_.putChar(7);
     return;
@@ -297,6 +311,7 @@ void LineEditor::moveLeft() {
 
 void LineEditor::moveRight() {
   selectAllPending_ = false;
+  undoInsertRun_ = 0;
   if (cursorPos_ >= static_cast<int>(buffer_.size())) {
     display_.putChar(7);
     return;
@@ -307,6 +322,7 @@ void LineEditor::moveRight() {
 
 void LineEditor::killToStart() {
   selectAllPending_ = false;
+  if (cursorPos_ > 0) pushUndo();
   killBuffer_ = buffer_.substr(0, cursorPos_);
   buffer_.erase(0, cursorPos_);
   cursorPos_ = 0;
@@ -315,12 +331,108 @@ void LineEditor::killToStart() {
 
 void LineEditor::killToEnd() {
   selectAllPending_ = false;
+  if (cursorPos_ < static_cast<int>(buffer_.size())) pushUndo();
   killBuffer_ = buffer_.substr(cursorPos_);
   buffer_.erase(cursorPos_);
   redraw();
 }
 
 void LineEditor::yank() { insertText(killBuffer_); }
+
+namespace {
+// moveWordLeft()自身の宣言コメント参照。
+bool isWordByte(unsigned char b) {
+  return b >= 0x80 || (b >= '0' && b <= '9') || (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z');
+}
+}  // namespace
+
+int LineEditor::wordLeftPos() const {
+  int pos = cursorPos_;
+  while (pos > 0 && !isWordByte(static_cast<unsigned char>(buffer_[pos - 1]))) pos--;
+  while (pos > 0 && isWordByte(static_cast<unsigned char>(buffer_[pos - 1]))) pos--;
+  return pos;
+}
+
+int LineEditor::wordRightPos() const {
+  int n = static_cast<int>(buffer_.size());
+  int pos = cursorPos_;
+  while (pos < n && !isWordByte(static_cast<unsigned char>(buffer_[pos]))) pos++;
+  while (pos < n && isWordByte(static_cast<unsigned char>(buffer_[pos]))) pos++;
+  return pos;
+}
+
+void LineEditor::moveWordLeft() {
+  selectAllPending_ = false;
+  undoInsertRun_ = 0;
+  if (cursorPos_ <= 0) {
+    display_.putChar(7);
+    return;
+  }
+  cursorPos_ = wordLeftPos();
+  redraw();
+}
+
+void LineEditor::moveWordRight() {
+  selectAllPending_ = false;
+  undoInsertRun_ = 0;
+  if (cursorPos_ >= static_cast<int>(buffer_.size())) {
+    display_.putChar(7);
+    return;
+  }
+  cursorPos_ = wordRightPos();
+  redraw();
+}
+
+void LineEditor::killWordBackward() {
+  selectAllPending_ = false;
+  int start = wordLeftPos();
+  if (start == cursorPos_) {
+    display_.putChar(7);
+    return;
+  }
+  pushUndo();
+  killBuffer_ = buffer_.substr(start, cursorPos_ - start);
+  buffer_.erase(start, cursorPos_ - start);
+  cursorPos_ = start;
+  redraw();
+}
+
+void LineEditor::killWordForward() {
+  selectAllPending_ = false;
+  int end = wordRightPos();
+  if (end == cursorPos_) {
+    display_.putChar(7);
+    return;
+  }
+  pushUndo();
+  killBuffer_ = buffer_.substr(cursorPos_, end - cursorPos_);
+  buffer_.erase(cursorPos_, end - cursorPos_);
+  redraw();
+}
+
+void LineEditor::pushUndo() {
+  undoInsertRun_ = 0;
+  if (static_cast<int>(undoStack_.size()) >= kMaxUndo) undoStack_.erase(undoStack_.begin());
+  undoStack_.push_back({buffer_, cursorPos_});
+}
+
+void LineEditor::undo() {
+  selectAllPending_ = false;
+  undoInsertRun_ = 0;
+  if (undoStack_.empty()) {
+    display_.putChar(7);
+    return;
+  }
+  buffer_ = undoStack_.back().buffer;
+  cursorPos_ = undoStack_.back().cursorPos;
+  undoStack_.pop_back();
+  redraw();
+}
+
+void LineEditor::clearUndo() {
+  undoStack_.clear();
+  undoInsertRun_ = 0;
+}
 
 void LineEditor::setKillBuffer(const std::string &text) { killBuffer_ = text; }
 

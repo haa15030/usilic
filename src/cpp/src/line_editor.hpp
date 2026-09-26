@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "charset.hpp"
 #include "display.hpp"
@@ -71,6 +72,20 @@ class LineEditor {
   void moveEnd();
   void moveLeft();
   void moveRight();
+  // M-f/M-b(2026-09-26追加、emacs_tutorial.txtの単語移動): 単語の文字は
+  // ASCIIの英数字と非ASCII(マルチバイト文字)、それ以外(空白や/ . -等の
+  // 記号)が区切り。バイト単位で判定しても、マルチバイト文字の先頭・継続
+  // バイトはどちらも0x80以上なので、文字の途中で止まることは無い。
+  void moveWordLeft();
+  void moveWordRight();
+  // M-DEL/M-d: 上と同じ単語の範囲をkillバッファへ切り取る(^Yで戻せる)。
+  void killWordBackward();
+  void killWordForward();
+  // C-_(2026-09-26追加): 直前の編集を取り消す。連続した文字入力は
+  // Emacsと同じく20文字までを1回分にまとめる。取り消す物が無ければBEL。
+  void undo();
+  // 取り消しの履歴を捨てる。setText("")も同じことをする(新しい行)。
+  void clearUndo();
 
   // 2026-09-11追加、直接のユーザー報告(docs/CHANGES.md項目439参照:
   // LOCATEプロンプトが前回クエリを事前入力するが、カーソルが末尾に
@@ -129,7 +144,11 @@ class LineEditor {
  private:
   static constexpr int kMaxLength = 1024;  // legacyのCにおけるN_line
 
-  void insertText(const std::string &bytes);
+  // selfInsertは1文字ずつの入力(insertByte())――undoのまとまりに使う。
+  void insertText(const std::string &bytes, bool selfInsert = false);
+  void pushUndo();
+  int wordLeftPos() const;
+  int wordRightPos() const;
   int charBytesBefore(int pos) const;  // posで「終わる」文字のバイト数
   int charBytesAt(int pos) const;      // posで「始まる」文字のバイト数
   int byteToColumn(int shift, int bytePos) const;
@@ -150,6 +169,15 @@ class LineEditor {
   std::string killBuffer_;
   bool quotedInsertPending_ = false;
   bool selectAllPending_ = false;
+
+  struct UndoState {
+    std::string buffer;
+    int cursorPos;
+  };
+  static constexpr int kMaxUndo = 100;
+  static constexpr int kUndoInsertGroup = 20;  // Emacsの「文字の挿入は20個ずつ」
+  std::vector<UndoState> undoStack_;
+  int undoInsertRun_ = 0;  // 直前の記録から続いている文字入力の数(0=まとまり無し)
 
   // insertByte()用のUTF-8部分シーケンス累積バッファ、複数回の呼び出しをまたぐ。
   std::string pendingUtf8_;
