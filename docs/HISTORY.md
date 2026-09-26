@@ -23538,3 +23538,412 @@ PROGRAMは、入力されたコマンドをそのまま実行していました�
 GUI対応の項目は下位の記述が長いので、末尾に今の状況をまとめた1項目を足します。
 
 すべての項目に印が付きました。コミットします（自動追記された`docs/HISTORY.md`も一緒にコミットします）。
+
+IDEAS.mdの全20項目に印と現状の説明を付けました。ローカルでコミット済み（`af9f42a`、pushはまだ）で、自動追記された`docs/HISTORY.md`も一緒にコミットしています。
+
+「追加機能要望」の冒頭に印の意味の説明を置き、各項目の先頭に印を、末尾に「現状:」として根拠を1〜3行で書き足しました。`[]`の中は記録した当時のlegacyの挙動である、という注記も加えています。
+
+| 印 | 項目 |
+|---|---|
+| 【実装済み】 | ARCの入れ子、FGREP/EGREPのハイライト、`^Jl`でupdatedb、多重起動の乗っ取り、SHELLの強制終了（`^Os`）、GUI対応（ほぼ全部） |
+| 【一部実装】 | 外部プログラムの自動インストール（groffだけ）、`^J^L`（前回の文字列は残すが、Enterで再検索する）、PROGRAMからの`less`（①②は対応済み、③は未確認） |
+| 【未実装】 | usilicrcの初回コピー、SIGSEGVからの回収、文字コードの一覧選択、ページャーでのANSIの色、`.[0-9]`指定、IMEの注記 |
+| 【要確認】 | HELPのリサイズ時の再整形、日本語man、RM/MVの権限エラーの表示、Tab補完の挙動差 |
+
+調べ直した中で分かったことが2つあります。
+- **PROGRAMの`less`の件**: `^Jp`の入力欄に、ハイライト中（選択中）のファイル名があらかじめ入るようになっていました。記録にあった①②は解決済みです。
+- **`^J^L`**: 前回の検索文字列は残りますが、IDEAS.mdの要望の「同じ文字列なら再検索せず、前回の結果画面へ戻る」はまだでした。
+
+GUIの項目は記述が長いので、末尾に「現状(2026-09-26)」として実装済みの範囲をまとめました。残りは、右クリックのPROGRAM一覧メニュー（右クリックを`^G`にしたので不要かもしれません）と、GUIでのSHELLプロンプトの太字です。
+
+<pushして
+
+>pushしました（`origin/mpi-gui-fix`は`7faeb38..01bc5f6`）。直前のやり取りで`docs/HISTORY.md`に追記された分も、先にコミット（`01bc5f6`）してから含めています。
+
+<HISTORY.mdを`^<`でCUTして調べ事しようとするのに検索は必要なのでCUT一覧上のF/EGREPを実装して。
+
+>CUTの一覧（区切った各セグメントの見出しの一覧）の上で、`^S`（逐次検索）と`^J^S`（EGREP）が今どう動くかを確認します。
+
+<This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   The user develops usilic, a text-based file manager (legacy C in old/, C++ port in src/cpp/). Across this session they asked for:
+   - Help syncing mini/Ubuntu via git.
+   - Many -g (GUI) bug fixes.
+   - Key reorganization.
+   - usilicrc features wired to the program: KEY, GREP, SHELL, HISTORY, BUFFER, CODE, ARCHIVE.
+   - Documentation tasks: TUTORIAL review, -n roff output, IDEAS.md status marking.
+   - Pushes on request.
+   
+   **Latest request:** "HISTORY.mdを`^<`でCUTして調べ事しようとするのに検索は必要なのでCUT一覧上のF/EGREPを実装して。" This means implementing FGREP (^S incremental) and EGREP (^J^S) searching on the CUT segment-label list (ApplicationMode::Cut).
+
+2. Key Technical Concepts:
+   - Build and tooling: C++17, doctest, SDL2 GUI (GraphicalDisplay), Makefile now `-O2 -g`, `-ld_classic` added only if the linker accepts it.
+   - Input path: `Application::feedByte` (KeyBindings translation) → `feedUntranslatedByte` → `feedByteImpl`/`dispatchByte`/`dispatchLeaderByte`.
+   - Key bindings: a KeyBindings layer (key_bindings.cpp/hpp) remaps usilicrc KEY F-n/K-n to canonical default sequences.
+   - Transient notices: `showTransientNotice`/`clearTransientNotice` show a message that any key clears. Used for "Not enough buffer", "Cannot select multiple directories", and the ^O^L sort label.
+   - Buffer limit: `Configuration::noteBufferLimitHit()`/`consumeBufferLimitHit()` (mutable flag). `ChildProcessOptions::maxOutputBytes` plus `Result::truncated`.
+   - Grep-in-place machinery:
+     - Entry points: `startIncrementalGrepPrompt`, `startGrepPrompt`.
+     - Mode gate: `isGrepInPlaceEligibleMode`.
+     - State helpers: `activateGrepInPlace`, `deactivateGrepInPlace`, `jumpToGrepInPlaceMatch`.
+     - `viewForMode(grepInPlaceOriginMode_)` selects the searched view.
+   - Other:
+     - Markdown→help markup: tags `<b>` `<u>` `<i>` `<indentN>`, with the `<lt>` escape; PipeBuffer does the wrapping.
+     - Stop hook `.claude/hooks/history_sync.py` auto-appends docs/HISTORY.md.
+     - `.steering/` is gitignored.
+
+3. Files and Code Sections (major changes this session, all committed):
+   - **src/cpp/app/main.cpp**
+     - Coast click stop-only when outside the highlight scope (`isColumnWithinLineScope`).
+     - Visible-window-only line building in renderScrolled.
+     - InterruptPeeker set in runGuiPhase.
+     - SIGINT two-stage handler; ISIG enabled during tryEnterGuiPhase; `IgnoreSigintWhileChildRuns`.
+     - Drop handling via `consumeDroppedFiles`.
+     - groff offer (`offerGroffInstallOnce`, `findExecutable`).
+     - Right-click uses `feedCanonicalByte(0x07)`.
+     - `history.setRetentionCount(configuration.historyRetentionCount())` after rc load; diskHistory built with the session retention.
+     - Shell selected via `configuration.shellArgv(getenv SHELL)`.
+   - **src/cpp/src/application.cpp/hpp**
+     - `startupFilePath()`; INFO click branch; INFO resume.
+     - `keyInterruptRequested()`.
+     - ^X^X ExchangeJumpMark.
+     - toggleMark refuses multiple directories, and supports Underline marks.
+     - `switchToShellIfBusy`.
+     - (stdin) discard wrappers: `feedByteImpl`/`handleCommandImpl`/`stdinPagerActive`/`discardStdinPager`.
+     - `openDroppedPaths` (multi → Underline list).
+     - QuickLook for Underline (marked) and Du.
+     - Key reorganization: ^C prefix (`leaderCPending_`: ^Cb StartCut, ^Cf StartCutFile), ^J^C GoToFileSelector, ^J^K GoToParentDirectory, ^Oy/^On mark all/clear, ^X^W SaveBufferToFile. The shell-safe check now uses kControlC.
+     - `keyBindingContext()`, `feedCanonicalByte`.
+     - GREP presets merged into the EGREP ring list in startPromptHistoryRecall.
+     - `showBufferLimitNoticeIfHit`, `capAsyncOutput`, `capBufferContent`, `handleMouseClickImpl`.
+     - ^O^L sort label (`sortLabelNoticeShown_`).
+     - finishArchiveLoadAsync falls back to loadFile unless `archiveLoadAborted_`.
+   - **src/cpp/src/key_bindings.cpp/hpp** (new)
+     - Table K-1..K-95 in TUTORIAL order and F-0..F-4 = `C-x`/`C-j`/`C-o`/`C-c`/`C-j C-o`.
+     - `parseSpec`, `configure`, and longest-match `feed(byte, Context, Pending&) const`.
+   - **src/cpp/src/configuration.cpp/hpp**
+     - KEY parsing into keyPrefixSpecs_/keyEntrySpecs_; the KeyBindings object is built at the end of loadRcText.
+     - GREP presets.
+     - `shellArgv(envShell)`: supported bash/zsh/tcsh/csh, then usilicrc SHELL, then bash.
+     - HISTORY default 0 (unlimited).
+     - BUFFER default 64MB (invalid values fall back to 64).
+     - Built-in archive aliases (.tar.gz/.taz/.tar.z→.tgz, .jar→.zip, .tbz2, .txz, .tzst).
+   - **src/cpp/src/file_mode.cpp/hpp**
+     - `binaryTypeText`/`looksBinary` (CODE).
+     - `loadFile(path, shouldAbort)`: streams via loadFileAsPipe if the file exceeds BUFFER.
+     - Chunked readAndWrap with abort; raw read capped at BUFFER.
+     - loadFileAsPipe streams plain files directly.
+     - `setErrorLogPath`.
+   - **src/cpp/src/pipe_buffer.cpp**: `applyMarkersUntil(from,to)` applies skipped style/indent markers when the wrap boundary absorbs the newline. This fixed italics leaking to the end of HISTORY.md.
+   - **src/cpp/src/markdown_to_help_markup.cpp** and **help_text.cpp**: `<` is escaped to `<lt>` and expanded back to `<`.
+   - **src/cpp/src/markup_to_roff.cpp**: the -n output mimics -m.
+     - Prologue: .po 0, HM/FM 0, PL 100000v, .ll 78n, .nh, .ad l, .char ASCII, CJK .class/.cflags.
+     - Each line gets .br; blank lines become .sp.
+     - Epilogue: `.pl \n(nlu+1v`.
+   - **Other src/cpp/src files**:
+     - history.cpp/hpp: `setRetentionCount` and `limitFor` (0 = unlimited).
+     - shell.cpp: csh gets setenv COLUMNS/PAGER/MANPAGER.
+     - child_process: maxOutputBytes/truncated.
+     - locate/du/archive/directory/man modes: output caps.
+     - archive_mode: an empty listing counts as failure.
+     - directory_mode: sort label; Kind rank is ext-files, then no-ext files, then dirs.
+     - graphical_display: HiDPI scale resync, bold width overflow in renderTextRun, zero-width skip, idle scrollbar when content fits, BEL → `systemBeep()` (mac_cursor.mm NSBeep), drop events.
+     - underline_mode: marks.
+     - path_resolver: trailing "/~".
+   - **Makefile**: -O2; installs usilicrc.en; -ld_classic conditional.
+   - **Config and docs**:
+     - src/usilicrc (Japanese comments) and src/usilicrc.en (English), generated by scratchpad gen_usilicrc.py with identical settings. Contents: GREP 24 TUTORIAL examples, KEY new format, HISTORY 0, BUFFER 64, CODE adds 7, ARCHIVE examples commented.
+     - docs/ideas/IDEAS.md: status marks.
+     - src/TUTORIAL.txt.proposed (untracked, for diff); src/TUTORIAL.1 regenerated with the new -n.
+   - **Tests added**: test_key_bindings.cpp (new), plus additions in application, configuration, file_mode, pipe_buffer, history, child_process, directory_mode, markdown, markup_to_roff and path_resolver.
+
+4. Errors and fixes:
+   - Python replace assertions failed several times because of duplicate or mismatched strings. I re-checked the exact text and patched again with more context.
+   - A test used private `activeView()`; I switched it to `activeContentView()`.
+   - A KeyBindings disable rule on ^T swallowed longer sequences; I changed matching to longest-match.
+   - An empty F-n spec errored; it is now treated as the default.
+   - Truncated ChildProcess results counted as failures; truncated now counts as ok.
+   - In the shell, ^J^C detection was hardcoded to 0x0b; fixed to kControlC.
+   - A wrong ARCHIVE alias led into an empty ARC; it now falls back to plain file, distinguishing a ^G abort.
+   - Test grep listed "skip MESSAGE" cases as failures. That was a misread; the known env failures are 7z, Adobe, LOCATE and qlmanage.
+   - **User feedback:**
+     - "コミットしてよ": I had pushed without committing HISTORY.md; I now commit it with every push.
+     - My CODE implementation contradicted an earlier answer (HISTORY.md:21104); the user chose A (keep the legacy behavior).
+
+5. Problem Solving:
+   - Solved problems (dozens): see section 3.
+   - Known environment test failures: 7z missing (12), Adobe path (2), LOCATE and qlmanage.
+
+6. All user messages (in order, condensed but faithful):
+   - mini git pull said "Already up to date" and make did nothing; branch questions ("前はブランチで作業するのではなくマージしたと思うけど？", "これはubuntuでも同じ？", Ubuntu auth error and branch output); "ubuntuもOK" plus a list of -g scroll bugs and `^Xd/~^M`.
+   - Bold "usilic v1.5b" shrinks while scrolling.
+   - ^I INFO click; the usilicrc Startup file is unresponsive.
+   - INFO ^X^C resume shows ~/.usilic/usilic.
+   - "usilicrcについてはIDEAS.md:33…ubuntuの-g起動は今やってほしい…pushして"; "ubuntuではGUI起動できないんじゃなかった？"
+   - "CPU i5-2500K…GUIしてるのでOK。フルテストやっていいよ。"
+   - -ld_classic error on the MacBook and a quarter-size GUI; "pushして"; "macbookはOK…裏ターミナルで^C投入でkill可を実装"; "~/git/usilic/CLAUDE.mdを^[^M。-cは問題無し。"; "/btw症状は無反応。"; "^G→任意のキーにしてほしい。"
+   - The 8-item list (scrollbar, ^X^X, .[] dirs, SHELL busy CP/MV/RM, groff, drag, (stdin), Finder); answers "2.(a) 5.…1回で。Ubuntuはそれでいい。7.…^Gでも戻れない。"
+   - "Homebrewはある模様…groffは見つからない"; brew output; A_jp.txt tab offset; "確認OK。複数ファイルを…^Ouへは渡せない？"; "^Ouの一覧でクイックルックはできる？"; "（ls）同様、複数指定のクイックルック…"
+   - "usilicrcのCODEって実装してたっけ？" then "実装して。"; HISTORY.md bold/italic/underline; TUTORIAL.man/.1 -n look plus content check; "3. はA。他は検討してみる。EGREP…履歴に載っているように"
+   - Backslash input, GREP from TUTORIAL, the ^C prefix scheme and related decisions; the KEY section design request; AskUserQuestion answers (disable old key, delete M-?/P-?, whole-file ja/en); "pushして"
+   - SHELL bash? "その形で直して"; HISTORY 500 questions and "直してみて"; "既定が200であることの根拠って何？"; "取っ払う…非常用エリア…"; "進めて。"
+   - CODE TAGS/SO/SI; "他には何かある？"; "7を足して"; BUFFER validity; "2と3でいい。…Not enough buffer…^Mは中断できないの？"; "…8MBではやはりせまい。既定が1MBの理由は？64MBで試したい。バッファへ読み込むモードはすべて対象。"
+   - "^O^Lソート巡回の種別を…"; "Kindのはずなのに…g と n…"; "…3,4,2,1が自然…./と../は先頭でいい。"
+   - "ARCHIVEは必要？"; "ARCHIVEってARCモードでも使われてるんじゃなかった？"; the concern about format-specific parsing; "進めて。"; "/btw終わったらプッシュして。"; "/btwプッシュが終わったらIDEAS.mdに未実装があれば挙げてみて。"
+   - "HISTORY.mdはリポジトリ外なの？"; "コミットしてpushして"; ":180からイタリックになってる。"; "pushして。"; "コミットしてよ。"; "IDEAS.mdの実装済み項目に印を付けて整理して"; "pushして"
+   - Latest: "HISTORY.mdを`^<`でCUTして調べ事しようとするのに検索は必要なのでCUT一覧上のF/EGREPを実装して。"
+
+7. Pending Tasks:
+   - Implement FGREP/EGREP (^S incremental, ^J^S EGREP) on the CUT list (ApplicationMode::Cut).
+   - Earlier optional items (only if the user asks): IDEAS unimplemented items; the TUTORIAL.txt.proposed review (user "検討してみる"); ^O^M key placement (user "思案中").
+
+8. Current Work:
+   I was starting "CUT一覧上のF/EGREPを実装". Findings so far:
+   - `Application::isGrepInPlaceEligibleMode()` (application.cpp around line 9524) returns true for Directory, File, Man, Locate, Du, Archive, ArchiveContent, Shell, CutContent and ListBrowser. ApplicationMode::Cut is missing.
+   - `startIncrementalGrepPrompt()` returns false if the mode is not eligible.
+   - `startGrepPrompt(syntax)` sets grepReturnMode_ = currentMode_.
+   - activateGrepInPlace, deactivateGrepInPlace and jumpToGrepInPlaceMatch use `viewForMode(grepInPlaceOriginMode_)`. They special-case Shell, plus File (annotations pop). viewForMode handles Cut (cutView_).
+   - No edits have been made yet for this task.
+
+9. Optional Next Step:
+   Continue the latest request, "CUT一覧上のF/EGREPを実装して":
+   - Add `case ApplicationMode::Cut:` to `isGrepInPlaceEligibleMode()`.
+   - Verify that ^S (StartIncrementalGrep) and ^J^S (StartEgrep) work in Cut mode through in-place grep: matches highlight, ^N/^P jump, Enter opens the segment, and deactivation restores the list. Check EGREP submit also uses in-place for Cut, and look for Cut-specific key interception.
+   - Add a test_application test that CUTs a file, searches with ^S, and checks the cursor moves to the matching label.
+   - Run targeted tests, then make install / make app / ditto, and commit with a Japanese "why" message. Do not push unless asked; when pushing, commit docs/HISTORY.md first.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/haa15030/.claude/projects/-Users-haa15030-git-usilic/e010b61e-f57f-4af9-9dab-cf27cb5389a6.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
+
+>Let me look at the grep submit path and the activate/jump functions to see what they assume about the origin view.
+
+Build passed. Now copying the app into place and committing.
+
+CUT一覧で ^S(FGREP)と ^J^S(EGREP)による検索ができるようになりました。コミット `0366d55` です(pushはまだしていません)。
+
+- **原因:** in-placeで検索できるモードの一覧(`isGrepInPlaceEligibleMode()`)に、CUT一覧が入っていませんでした。そのためCUT一覧では ^S も ^J^S も無反応でした。
+- **修正:** CUT一覧をその一覧に1行加えただけです。検索の仕組み自体は、もともとCUT一覧の画面も扱える作りでした。
+- **使える操作:**
+  - 見出しの一致箇所がハイライトされ、カーソルがそこへ移ります。
+  - ^N/^P で前後の一致へ移動します。
+  - ^M でそのセグメントを開きます。
+  - ^G で検索を終えて一覧に戻ります。
+- **確認:** テストを1件追加し、通ることを確かめました。log.txtを「marker」でCUTし、^S「three」で3件目へ、^J^S「t[wx]o」で2件目へ移り、^Mでそのセグメントが開くことを見ています。
+- **インストール:** `make install`・`make app` 済みで、`~/Applications/usilic.app` も更新してあります。
+
+HISTORY.mdを `^<` でCUTして、実機で試してみてください。
+
+<~/git/usilic/docs/（ls）のHISTORY.mdで`^Cf^<^M^S色^M`（「^<」のファイル分割一覧上で「色」を検索）→`^G^Sエスケープ^M`（一旦一覧へ戻り「エスケープ」で再検索）→`^G^R`。
+一旦一覧へ戻って「色」を入力すべく履歴を発動しても見つからず「エスケープ」も無し。以前検索の「エスケープシーケンス」以降検索文字列が登録されていない模様。戻り値は非ハイライトの右詰「FGREP」。
+
+>Tracing why ^S searches from the CUT list don't show up in ^R history. Reproducing it in a scratch test.
+
+A PTY test isn't possible here (pyte isn't installed), so I'm reproducing your exact key sequence in a debug test instead.
+
+Still reproducing: dumping the bottom screen lines after each key to see what the mode line shows.
+
+Driving the real binary: the pager-mode start exited, so I'm switching to a temp directory holding only a copy of HISTORY.md.
+
+Your running session's history file was last written at 06:33, so I'm checking which push that was.
+
+A possible explanation: with the Japanese IME on, the ^M after typing 色 may only confirm the IME conversion, so the prompt is closed by ^G instead. Checking what ^G does to a live ^S search.
+
+I couldn't reproduce it, so I'm removing the debug test before reporting.
+
+再現できませんでした。まだ何も直していません。
+
+**こちらでの確認結果**
+今インストールされているバイナリを疑似端末で操作しました。~/.usilic はコピーして使い、HISTORY.md(2.8MB)で次のように進めました。
+
+- `^Cf`→`^<^M`→`^S色^M`→`^G`→`^Sエスケープ^M`→`^G`
+- 続けて `^S^R` を押すと、HISTORY一覧の末尾(142/142 END)に「…エスケープシーケンス / 色 / エスケープ」がちゃんと載りました。
+- 開始地点は、パス入力から入った場合も、(ls)でHISTORY.mdを選んで `^Cf` した場合も同じ結果でした。
+
+**ただし実機側には痕跡があります**
+今動いている `usilic -c`(pid 40489、06:30起動、修正後のバイナリ)は、検索1件ごとに ~/.usilic/history へ即時保存する作りです。ところがファイルの最終更新は06:33:08で止まっています。このとき記録されたのは `HISTORY.md "^<"` のCUTです。つまりそのセッションでは、CUT以降の「色」「エスケープ」の ^M が確定処理まで届いていないようです。
+
+思い当たる原因は日本語入力(IME)です。「色」を変換入力した直後の ^M が、変換の確定として使われて usilic まで届かなかった可能性があります。その場合、次の ^G は「検索の取り消し」になり、履歴には残りません。ただしこの取り消しはハイライトも消すので、見た目に違和感がなかったかは気になっています。
+
+**確認させてください**
+1. `^G^R` は、CUT一覧に戻ってから `^S` を押し、その入力行で `^R` を押しましたか? CUT一覧で `^S` を付けずに `^R` だけ押すと、今は何も起きません。一覧で `^R` を押したら直接FGREP履歴が開いてほしい、という要望でしたらそう実装します。
+2. 「色」「エスケープ」を入力したあと、IMEの確定とは別にもう一度 ^M(Enter)を押しましたか? ^M のあと、モード行は「CUT 1/24」のような表示に変わっていましたか?
+3. 「非ハイライトの右詰『FGREP』」は、HISTORY一覧のモード行右端に出る「FGREP」のことでしょうか? 私の再現でも、この欄は反転表示なしの右寄せで出ています。これをどう表示すべきか(例: 他のモードと同じく反転表示にする)を教えてください。
+
+<「^<」のファイル分割一覧上で「色」を検索①、までやってみると`^N`/`^P`でちゃんと次/前のマッチ文字列へ移動するので「色」は確かにusilicまで届いてる。一旦戻って再度「色」を検索しようと`^S^R`とやっても「色」はやはり無い。
+戻り値は①のときの「CUT」と同じでいい。
+
+>The PTY run started from the wrong directory, so I'm checking the history-pick path from the CUT list with a unit test instead.
+
+Changing the right end of the HISTORY list opened from a search input line (`^S^R`/`^J^S^R`) to show the return destination (CUT, etc.), the same as the input line in ①.
+
+Now the main fix: recording the search text in the history even when a live `^S` search is left with `^G`.
+
+</btw日本語でよろしく。
+
+>テストのビルドがまだ終わっていないので、完了を待っています。
+
+了解しました、以後も日本語で進めます。
+
+今は修正後のテストの完了待ちです。直した点は次の2つです:
+1. `^S`で入力行を開いたまま`^N`/`^P`でマッチを見て`^G`で抜けても、入力した文字列を履歴に記録する。これまではEnterで確定したときしか記録しなかったので、「色」が`^S^R`に出ませんでした。
+2. `^S^R`の履歴一覧の右端を、①と同じく戻り先の「CUT」にする。これまでは「FGREP」が出ていました。
+
+テストが通ったら、インストールしてコミットします。
+
+</btw何のテスト？
+
+>今回の修正に関係するユニットテスト(doctest)を、名前で絞り込んで実行しています。フルスイートではありません。
+
+- **新しく追加した1件**: CUT一覧で`^S`→`t`→`^N`→`^G`と操作したとき、次の2点を確かめます。
+  - 「t」がFGREP履歴に記録される
+  - `^S^R`で開く一覧の右端が「FGREP」ではなく「CUT」になる
+- **既存のテスト**: 名前に「CUT list」「history」「^R」「incremental」「GREP」を含むものです。変えたのが`^G`での取り消し処理と、履歴一覧のモード行の2か所なので、その周辺を壊していないかを見ています。
+
+ただ、CLAUDE.mdの取り決めは「確信が持てないときに、対象を絞って確認するだけ」なので、今回は絞り込みが広すぎたかもしれません。結果が出たら、コンパイル確認と`make install`まで進めてお渡しします。
+
+4件失敗しています。詳細が出力に残っていなかったので、同じ絞り込みで再実行して失敗箇所だけ表示します。
+
+通りました。インストールしてコミットします。
+
+2点とも直しました。コミットは `8c79665` で、`make install` と `~/Applications/usilic.app` の更新も済んでいます(pushはまだです)。
+
+**① 「色」が`^S^R`に出ない件**
+- **原因:** 検索文字列を履歴に記録するのは、`^M`で確定したときだけでした。`^S`は入力行を開いたまま`^N`/`^P`でマッチを移動できるので、見終えたら`^G`で抜けるのが自然です。ところがその抜け方だと、何度検索しても何も記録されていませんでした。
+- **修正:** `^G`で抜けた場合も、入力した文字列を記録するようにしました。ハイライトが消える動きはこれまでどおりです。
+
+**② `^S^R`一覧の右端**
+- 右端には「FGREP」が反転表示なしで出ていました。これを、①の入力行と同じく戻り先の「CUT」にしました。
+- この変更はCUT一覧に限りません。`^S^R`・`^J^S^R`をどこから開いても、右端は戻り先になります。たとえば(ls)から開くと、入力行と同じくディレクトリのパスが出ます。
+- 以前(2026-08-05)は「種別をバッジとして右に出す」ことを確かめるテストがありました。今回のご指示に合わせて書き換えています。
+
+**テスト**
+- 関連するテストを名前で絞り込んで実行し、新しく追加した1件も含めて通っています。
+- 実行中に4件失敗しましたが、1件は上の書き換え前のテストで、書き換え後は通りました。残り3件(Adobeのパス2件と7z)は以前からの環境依存のものです。
+
+同じ手順で試してみてください。`^S色`→`^N`→`^G`→`^S^R`で、一覧の末尾に「色」が出るはずです。
+
+<確認OK。
+何で「色」を検索したかというと、IDEAS:45　色・属性のエスケープシーケンスが未実装の件、解消されたusilic画面をgit logで見た記憶があるから。
+以前は^[[33mだったのがちゃんと着色表示になっていた。だから未実装と聞いて確かめてみると確かに直ってない。
+HISTORY.mdでは見つからなかったが実装済みの形跡は本当に無い？　CHANGES.mdも見てみて。
+
+>ページャーの行バッファに色付きの1行を通して、ESCがどう扱われるかを見る小さな試験プログラムをビルドしています。
+
+`git log`の色は、今のusilicでも解釈されていません。CHANGES.md・git log・コードを当たりましたが、色を付けて表示する処理を実装した形跡はありませんでした。
+
+**実際に試した結果**
+usilicのページャーの行バッファに、`git log`と同じ形の色付き1行(`ESC[33mcommit abc ESC[m`)を通してみました。ESCは制御文字のまま残り、色の情報は付きませんでした。SHELLで`git log`を実行すると、この経路を通ります(PAGERがusilic自身になっているため)。なので`^[[33m`が見えるのは今も同じはずで、IDEAS:137の「未実装」は正しいです。
+
+**実装に近い形跡として見つかったもの**
+- **CHANGES.md(原因5、2026-08-01、コミット`0412e31`)**: SHELLの画面に直接流れる出力から、ESC系の制御コードを取り除く処理を入れています。ただし記録にも「色/属性情報の再現ではなく除去のみ」とはっきり書かれています。
+  - このため、ページャーを通さない形で実行した出力は、`^[[33m`が消えて無色の文字として出ます。例としては`git --no-pager log`、`git log | cat`、ページャーが起動しないほど短い出力などです。
+- **groff**: `GROFF_NO_SGR=1`で色コード自体を出させず、重ね打ち(太字・下線)の形式で受け取っています。色を解釈しているわけではありません。
+- **CHANGES.md 項目454付近の「着色」**: `^S`のマッチをマゼンタで強調する話で、別件です。
+- **HISTORY.md:2505**: 「lessはESCをそのまま端末に流しているだけ」という説明をした回です。実装はしていません。
+
+**「着色された画面を見た記憶」について**
+考えられるのは次のどれかだと思います。
+1. 上の「除去のみ」の処理で`^[[33m`が消えたのを見た。ただしこの場合は色は付きません。
+2. `^Jp`(PROGRAM)で`less`を起動したか、PAGERが`less`の環境で見た。IDEAS:137にも、この経路なら色付きで出ると書いてあります。
+3. usilicを通さない普通のターミナルで見た画面と混ざっている。
+
+どの画面で見たか心当たりがあれば、もう少し絞り込めます。実装する場合、方針は2つあります。
+- ページャーとSHELL画面の両方で、ESCの色・属性コードを解釈して着色する。
+- 最低限として、ページャーでも`^[[33m`を除去し、SHELL画面と同じ見た目に揃える。
+
+どちらで進めるか指示をください。
+
+<ページャーとSHELL両方で色を解釈するよう実装して。
+
+>まず、表示側がどういう属性(色)を持てるかを確認します。
+
+属性は色の値を持たない列挙型なので、色を運ぶ仕組みの追加が必要です。描画側(端末版・GUI版)が属性をどう適用しているかを読みます。
+
+描画側のループ構造は把握できました。次は、色を解析する場所の候補であるPipeBuffer(ページャー・SHELL共通の行バッファ)の内部を読みます。
+
+GUIのスクロール中の描画経路も色対応が必要と分かりました。その関数を読んでから実装に入ります。
+
+Display の定義にコメントが挟まっていて置換が一致しなかったので、実際の行を見て直します。
+
+次は端末版です。色の状態を記録し、太字解除(全リセットになる場合がある)とハイライト解除の後に色を送り直すようにします。
+
+Ok, there's a long comment between the switch and the BoldOff re-emit. I'm switching to small, targeted replacements.
+
+次はGUI版です。セルに色を持たせ、パレット番号からRGBへの変換を追加します。
+
+GUI版ができました。次は ContentView の描画ループで、色のランを `setColor()` に渡す処理です。
+
+`make usilic` は通りました(警告1件は以前からのもの)。テストの方もビルドし、テスト用の表示クラスで列挙型の網羅漏れが出ないか確認します。
+
+SHELLの合成バイト列テストの書き方が分かったので、色付き出力が色付きの行として画面に入ることを確かめるテストを1件追加します。
+
+ページャーとSHELLの両方で、ESCの色・属性コード(SGR)を解釈して色付きで表示するようにしました。コミットは `ff34d26` です。`make install`・`make app` と `~/Applications/usilic.app` の更新も済んでいます(pushはまだです)。
+
+**表示の変化**
+- **ページャー**: SHELLで`git log`などを実行したときに出ていた `^[[33m` が、黄色などの本物の色で表示されます。色付きの文字列を含むファイルを開いたときも同じです。
+- **SHELL画面**: これまで取り除いていただけの色コード(`ls --color` など)も、色付きで表示されます。
+- **解釈する範囲**: 基本16色(明るい色を含む)、256色、24bitの色です。太字・斜体・下線・反転も解釈します。行消去など色以外のESC列は、画面から取り除きます。
+- **`^[^M`("as is"表示)**: 制御コードを見るためのモードなので、これまでどおり生のまま表示します。
+- **端末(-c)**: 基本16色は、ターミナルの配色設定に従った色で出ます。`^S`のハイライトと重なった箇所は、ハイライトの色が優先されます。
+- **GUI(-g)**: xtermの標準的な配色で描きます。ドラッグや慣性スクロールの途中も同じ色です。
+
+**確認したこと**
+- 新しく追加したテスト5件(行バッファ4件、SHELL 1件)を含め、PipeBufferとSHELL関連のテストが通っています。
+- 実際のバイナリに色付きの行を標準入力から流し、端末へ `ESC[33;49m`(黄)や緑+太字の指定が送られていることを確認しました。
+- SHELLで実際にコマンドを打って目で見る確認と、GUIでの見た目の確認はしていません。
+
+**記録**
+- IDEAS.mdの該当項目を「実装済み」に変えました。
+- docs/CHANGES.mdに項目478として、「以前は取り除くだけだった」経緯も含めて記録しました。
+
+**残っている制限**
+SHELL画面に直接流れる出力(ページャーを通らないもの)に `ESC(B` が混ざると、直後の `B` が1文字残ることがあります。以前からある小さな問題で、今回は直していません。
+
+SHELLで`git log`や`ls --color`を試してみてください。
+
+<確認OK。
+-gのページャー起動でも裏ターミナルで^Cによる終了実装よろしく。
+usilicrcのKEYを見て、TUTORIALに記載漏れの修復をしたいんだが、KEYの順序を変えたらどうなるの？　この件を先に回答よろしく。
+
+>先にKEYの質問に答えるため、行の順序と番号がどう扱われるかをコードで確かめます。
+
+ページャー起動でも同じ関数(`tryEnterGuiPhase`)を通るかを確かめたうえで、ISIGを設定する対象を「標準入力が端末でなければ `/dev/tty`」に変えます。
+
+-gのページャー起動でも、起動元ターミナルの^Cで終了できるように直しました。コミットは `0d2f5b1` です。`make install`・`make app` と `~/Applications/usilic.app` の更新も済んでいます(pushはまだです)。
+
+**原因**
+GUIが動いている間は、起動元ターミナルの^Cを割り込みとして受け取れるよう端末を設定しています。ところがその設定を、標準入力に対してしか行っていませんでした。`git log | usilic -g` のようなページャー起動では標準入力がパイプなので設定が一度も効かず、^Cはただの1文字として捨てられていました。
+
+**修正**
+標準入力が端末でないときは、キー入力と同じく制御端末(`/dev/tty`)そのものに設定し、終了時に元に戻します。
+
+**確認**
+コンパイルとインストールまでです。GUIウィンドウを実際に開く試験はしていません。`cmd | usilic -g` などで起動し、裏のターミナルで^Cを押して終了するか試してみてください。
+
+KEYの順序の件は、上に書いたとおりです。行の並べ替えは自由ですが、K番号の振り直しは組み込みの表・usilicrc(日英)・テストの3か所を同時に直す必要があります。
+
+<今だけ仕様を変更してくれないかな。今後も追加・変更はあるので、今の K-1、K-2、...とキーアサインとの関係を内部で保持してもらってusilicrc上の順序を変えても組み合わせは不変みたいな感じで。
+規模でかい？
+
+>組み込みの表が番号をどう使っているかで答えが変わるので、先に確認します。
+
+英語版で行の折り返しが不自然になったので、段落ごと整えます。
+
+規模は小さく済みました。プログラムの動作は変えていません。コミットは `d0cb562` で、`make install` 済みです(pushはまだです)。
+
+**実は元からそうなっていました**
+キーの割り当ては、usilicrcのK番号だけで機能を引いていて、行の順序も番号の並びも使っていません。なので「番号と機能の関係を内部に持ち、usilicrc上で並べ替えても組み合わせは変わらない」は、今の作りのままで成り立ちます。
+
+**今回決めた約束**
+- 今の K-1〜K-95 の番号は、それぞれの機能の固定のIDとして今後も振り直しません。
+- 新しい機能を追加するときは K-96、K-97… と続きの番号を付けます。
+- usilicrcでは行を好きな順(例えばTUTORIALの順)に並べてかまいません。その結果番号が飛び飛びになっても問題ありません。
+
+**変更したもの**
+- `src/usilicrc` と `src/usilicrc.en` のKEY節の説明文を「K-n の番号は機能ごとに固定のIDで、行の順序に意味は無い」という内容に書き換えました。以前の「K-1以降はTUTORIALに出てくる順」という説明は外しています。
+- 組み込みの表(`key_bindings.cpp`)のコメントにも同じ方針を書きました。
+- 行を逆順に書いても結果が同じになることを確かめるテストを1件追加し、通っています。
+
+TUTORIALの記載漏れを直すときは、usilicrcのKEY行をTUTORIALの順に並べ替えるだけで大丈夫です。本文に載っていないキーが見つかったら、番号はそのままで行の位置だけ動かしてください。
