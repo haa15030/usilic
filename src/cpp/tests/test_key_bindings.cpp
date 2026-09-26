@@ -155,3 +155,12 @@ TEST_CASE("src/usilicrc and src/usilicrc.en: read without errors, their KEY sect
     CHECK(config.allowedControlBytes().find('\x07') != std::string::npos);  // CODEのBEL(2026-09-25追加)
   }
 }
+
+// 2026-09-26追加、直接のユーザー依頼: K番号は機能の固定IDで、usilicrc上の行の
+// 順序(番号の並び)は意味を持たない。
+TEST_CASE("KeyBindings: the order of K-n lines in usilicrc does not matter") {
+  CHECK(configured("\tK-3\tC-n\n\tK-1\tC-g\n\tK-2\tC-p\n").isIdentity());
+  KeyBindings b = configured("\tK-17\tF-1 C-c\n\tK-16\tF-1 C-k\n");  // 入れ替えを逆順の行で書く
+  CHECK(run(b, {kJ, 0x0b}) == std::vector<int>{kJ, kCtrlC});
+  CHECK(run(b, {kJ, kCtrlC}) == std::vector<int>{kJ, 0x0b});
+}

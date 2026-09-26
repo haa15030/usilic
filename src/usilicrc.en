@@ -239,12 +239,13 @@ KEY
 # Format: F-n  keys    (defines prefix key F-0 .. F-4)
 #         K-n  keys    (the keys of function K-n)
 #
-# K-1 onward follow the order of TUTORIAL (keys not in TUTORIAL's text
-# come after them, then ^T/^H (HELP) and the macros last).  Changing the
-# keys of a function makes it work only with the new keys; the old keys
-# stop working (they can be given to another function).  Leaving the keys
-# empty unassigns the function.  A number whose line is removed keeps its
-# default keys (with the new prefix if F-n was changed).
+# Each K-n number is a fixed ID of its function: neither the order of the
+# lines nor that of the numbers means anything, so the lines may be
+# rearranged freely (a new function gets the next number at the end).
+# Changing the keys of a function makes it work only with the new keys;
+# the old keys stop working (they can be given to another function).
+# Leaving the keys empty unassigns the function.  A number whose line is
+# removed keeps its default keys (with the new prefix if F-n was changed).
 #
 # Writing keys:
 #   F-n    prefix key F-n

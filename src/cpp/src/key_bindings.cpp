@@ -20,6 +20,13 @@ const std::vector<const char *> &KeyBindings::defaultPrefixSpecs() {
 // K-70〜K-89はTUTORIALの本文に出てこないキー、K-90〜K-92は^T/^H(HELP)、
 // K-93〜K-95はマクロ――直接のユーザー依頼(requirements.md参照)。src/usilicrc/
 // usilicrc.enのKEY節はこの表と同じ内容で、test_key_bindings.cppがそれを確かめる。
+// 2026-09-26追記、直接のユーザー依頼("今のK-1、K-2、...とキーアサインとの関係を
+// 内部で保持してもらってusilicrc上の順序を変えても組み合わせは不変みたいな感じで"):
+// K番号は機能ごとの「固定のID」とし、今後も振り直さない(上の「TUTORIALに出てくる
+// 順」は2026-09-25時点の初期割り当ての由来にすぎない)。機能を追加する時は
+// K-96以降の続きの番号を付ける。usilicrc上では行を好きな順(例えばTUTORIALの
+// 順)に並べてよい――configure()は番号で引くだけで、行の順序も番号の並びも
+// 使わない。
 const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
   static const std::vector<DefaultEntry> entries = {
       {1, "C-g"},        // ^G    前のモードへ戻る
