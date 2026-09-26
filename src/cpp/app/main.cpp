@@ -4029,7 +4029,22 @@ int main(int argc, char **argv) {
   // このusilicは引き続き独立したfork/execのまま、既定の起動先だけが
   // GUIからCUIへ変わる。
   if (!forceCui && !forceGui && std::getenv("USILIC")) forceCui = true;
-  if (!forceCui && !forceGui) forceGui = true;
+  // 2026-09-26変更、直接のユーザー依頼("(デフォでGUI起動)はssh経由だと
+  // 特に問題なので引数無しはCUIに変更した方が望ましい"): 上の
+  // 2026-08-21の「macOSの既定は-g」を改め、制御端末がある限りmacOSでも
+  // 既定はCUIとする(ssh越しにGUIウィンドウをローカル側へ開こうとして
+  // しまうのを避ける)。制御端末が一切無い場合(Finderからの.app
+  // ダブルクリック起動、下のkeyInput.fd() < 0の分岐参照)だけは、CUIでは
+  // 何も表示できないので従来通りGUIを既定にする。
+  if (!forceCui && !forceGui) {
+    int ttyFd = ::open("/dev/tty", O_RDWR | O_NOCTTY);
+    if (ttyFd >= 0) {
+      ::close(ttyFd);
+      forceCui = true;
+    } else {
+      forceGui = true;
+    }
+  }
 #else
   if (!forceCui && !forceGui) forceCui = true;
 #endif
