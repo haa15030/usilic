@@ -26914,3 +26914,17 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      上の一覧(起動後最初の1回だけ取得、quickLookSupportedTypes())にあれば
      クイックルックで開く。Spotlightが種類を返さない場所では画像/PDFの判定
      だけ。usilicrc/usilicrc.enのEXEC節の説明も更新。
+
+486. **2026-09-27: TUTORIALの編集途上版(src/TUTORIAL_draft.txt)の解説文を完成**
+   - **経緯**: 直接のユーザー依頼("TUTORIALの編集途上版...をsrc/TUTORIAL_draft.txtに
+     置いてみた。同じくらいの粒度でいいので解説文を完成させてほしい。QUICK.txtは、
+     それを元にこちらで作るんで、-g、スクロール調整も含めたすべてのオプションと、
+     -gへの言及がある以上、GUI機能の詳細もお願いしたい。文字装飾はこちらでやるから
+     下書きを作ってみて")。ユーザーの原稿はそのまま先に1コミットし、完成版は別
+     コミットにして差分を見られるようにした。
+   - **内容**: キーを現行の実装(usilicrcのKEY節)に合わせて訂正(ディレクトリ移動
+     ^J^C/^J^K、選択の[/]の向き、^Oy/^On、CUT ^Cb/^Cf、FILE ^Xf/^X^F、DIR ^Xd/
+     ^X^D、SHELL再起動^Os、INFOの項目と^J^Oe/^J^Os/^J^Od/^J^Ow等)。EGREPの
+     メタ文字はgrep -Eで使えるものに訂正(\d・最短一致・先読み等は無い、{n,m})。
+     USILIC、マクロ、HELP/TUTORIALの節と、起動オプション(-c -g -f -u -i -h -m
+     -n)、GUI(-g)、環境変数の章を追加。設定の章をusilicrcの現行の節に合わせた。
