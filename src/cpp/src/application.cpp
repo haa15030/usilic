@@ -14591,11 +14591,38 @@ bool Application::openDroppedPaths(const std::vector<std::string> &paths) {
   return opened;
 }
 
-bool Application::offerShellCommand(const std::string &commandLine) {
+bool Application::offerShellCommand(const std::string &commandLine, std::function<std::string()> followUp,
+                                    int retries) {
   if (!ensureShellActive()) return false;
   shell_.commandLine().setText(commandLine);
   shell_.redrawPromptRow();
+  if (followUp) shellOffer_ = ShellOffer{std::move(followUp), commandLine, shell_.promptGeneration(), retries};
+  else shellOffer_.reset();
   return true;
+}
+
+// offerShellCommand()自身の宣言コメント参照。実行ループから毎回呼ばれる。
+// プロンプトが新しく出ても、入力欄がまだ置いた行のまま(=ユーザーがまだ
+// 実行していない。SHELL起動直後の最初のプロンプト等)なら何もしない。
+void Application::pollShellOfferFollowUp() {
+  if (!shellOffer_) return;
+  if (!shell_.alive()) {
+    shellOffer_.reset();
+    return;
+  }
+  int generation = shell_.promptGeneration();
+  if (generation == shellOffer_->generation) return;
+  shellOffer_->generation = generation;
+  if (shell_.commandLine().text() == shellOffer_->offered) return;
+  std::string next = shellOffer_->followUp();
+  if (next.empty() || shellOffer_->retries <= 0) {
+    shellOffer_.reset();
+    return;
+  }
+  shellOffer_->retries--;
+  shellOffer_->offered = next;
+  shell_.commandLine().setText(next);
+  if (currentMode_ == ApplicationMode::Shell) shell_.redrawPromptRow();
 }
 
 }  // namespace fm

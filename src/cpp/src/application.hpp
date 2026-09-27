@@ -1955,7 +1955,14 @@ class Application {
   void setInterruptPeeker(std::function<bool()> peeker);
   // 2026-09-25追加(main.cppのofferGroffInstallOnce()用): SHELLへ
   // 切り替え、`commandLine`を入力欄に置いた状態で(実行はせずに)待つ。
-  bool offerShellCommand(const std::string &commandLine);
+  // 2026-09-27拡張(直接のユーザー提案"brew install groffは2回必要なので、処理
+  // が終わり、プロンプトが戻ったらインストール済みかどうか確認後、未インス
+  // トールのアプリのみ再度brew実行"): `followUp`を渡すと、置いた行が実行されて
+  // プロンプトが戻るたびに呼び、空でない文字列が返ればそれを再び入力欄に
+  // 置く(最大`retries`回)。pollShellOfferFollowUp()参照。
+  bool offerShellCommand(const std::string &commandLine, std::function<std::string()> followUp = nullptr,
+                         int retries = 2);
+  void pollShellOfferFollowUp();
   // 2026-09-25追加: GUIウィンドウへドロップされた/Finderから「この
   // アプリケーションで開く」で渡されたパスを開く(GraphicalDisplay::
   // consumeDroppedFiles()参照)。1つなら^Xfでパスを入力した時と同じ
@@ -3301,6 +3308,15 @@ class Application {
     // 発動元(2026-09-27、cpMvRmOrigin_自身のコメント参照)。
     ApplicationMode origin = ApplicationMode::Directory;
   };
+  // offerShellCommand()のfollowUp(2026-09-27)。`offered`は置いた行、
+  // `generation`はその時点のshell_.promptGeneration()。
+  struct ShellOffer {
+    std::function<std::string()> followUp;
+    std::string offered;
+    int generation;
+    int retries;
+  };
+  std::optional<ShellOffer> shellOffer_;
   std::optional<PendingCpMvRmShellRun> pendingCpMvRmShellRun_;
   // CP/MV/RMを(ls)以外の一覧(LOCATE/DU/^X^F・^X^D/USILIC)から発動した場合
   // (2026-09-27、直接のユーザー依頼、list_marks.hpp参照)の発動元と、発動時に

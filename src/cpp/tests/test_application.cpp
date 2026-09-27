@@ -15845,3 +15845,31 @@ TEST_CASE_FIXTURE(Fixture, "Space (Archive mode): Quick Look on the highlighted 
   CHECK(receivedCommand.find("inner.txt") != std::string::npos);
   CHECK(app.currentMode() == ApplicationMode::Archive);
 }
+
+// 2026-09-27追加、直接のユーザー提案("brew install groffは2回必要なので、処理が
+// 終わり、プロンプトが戻ったら...未インストールのアプリのみ再度brew実行"):
+// offerShellCommand()のfollowUpは、置いた行が実行されてプロンプトが戻った
+// 後に呼ばれ、返した行が再び入力欄に置かれる(空なら終わり)。
+TEST_CASE_FIXTURE(Fixture, "offerShellCommand(): follow-up re-offers after the offered line ran, until it returns empty") {
+  REQUIRE(app.start(path()));
+  int calls = 0;
+  if (!app.offerShellCommand("true", [&]() -> std::string { return ++calls == 1 ? "printf again" : ""; })) {
+    MESSAGE("shell not available -- skipping");
+    return;
+  }
+  app.pollShellOfferFollowUp();
+  CHECK(calls == 0);  // まだ実行していない
+  app.shell().submitLine();
+  REQUIRE(pumpUntil(app, [&] {
+    app.pollShellOfferFollowUp();
+    return calls == 1;
+  }));
+  // (fixtureのPROGRAMにechoがあり、echoはSHELLではなくPROGRAMとして走るのでprintf)
+  CHECK(app.shell().commandLine().text() == "printf again");
+  app.shell().submitLine();
+  REQUIRE(pumpUntil(app, [&] {
+    app.pollShellOfferFollowUp();
+    return calls == 2;
+  }));
+  CHECK(app.shell().commandLine().text().empty());
+}

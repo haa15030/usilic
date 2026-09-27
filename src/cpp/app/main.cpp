@@ -1501,6 +1501,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     app.pollArchiveLoadCompletion();
     app.pollPendingCpMvRmShellRun();
     app.pollPendingArchiveExtractShellRun();
+    app.pollShellOfferFollowUp();
     app.pollShellHandoff();
     app.pollPagerExitNotice();
     syncMouseTracking();
@@ -1897,26 +1898,36 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
   const std::vector<std::pair<std::string, std::string>> tools = {
       {"groff", "groff"}, {"mg", "mg"}, {"info", "info"}, {"7z", "p7zip-full"}};
 #endif
-  std::string packages;
-  for (const auto &tool : tools) {
-    bool found = !findExecutable(tool.first).empty();
-    if (tool.first == "7zz" || tool.first == "7z") found = !findExecutable("7z").empty() || !findExecutable("7zz").empty();
-    if (!found) packages += " " + tool.second;
-  }
-  if (packages.empty()) return;
-  std::ofstream(marker) << "";
+  // 見つからないものだけのインストールコマンド(全部あれば空)。
+  auto installCommand = [tools]() -> std::string {
+    std::string packages;
+    for (const auto &tool : tools) {
+      bool found = !findExecutable(tool.first).empty();
+      if (tool.first == "7zz" || tool.first == "7z")
+        found = !findExecutable("7z").empty() || !findExecutable("7zz").empty();
+      if (!found) packages += " " + tool.second;
+    }
+    if (packages.empty()) return "";
 #ifdef __APPLE__
-  std::string brew = findExecutable("brew");
-  // brewがPATH上に無い(Finderからの起動でHomebrewの既定の場所だけで
-  // 見つかった)場合は、SHELLでもそのまま実行できるようフルパスで書く。
-  std::string command;
-  if (brew.empty()) command = "open https://brew.sh  # Homebrew未インストール: 導入後に brew install" + packages;
-  else if (brew == findExecutableOnPathOnly("brew")) command = "brew install" + packages;
-  else command = brew + " install" + packages;
+    std::string brew = findExecutable("brew");
+    // brewがPATH上に無い(Finderからの起動でHomebrewの既定の場所だけで
+    // 見つかった)場合は、SHELLでもそのまま実行できるようフルパスで書く。
+    if (brew.empty()) return "open https://brew.sh  # Homebrew未インストール: 導入後に brew install" + packages;
+    if (brew == findExecutableOnPathOnly("brew")) return "brew install" + packages;
+    return brew + " install" + packages;
 #else
-  std::string command = "sudo apt install -y" + packages;  // -y: aptの確認(Y/n)を省く(2026-09-27)
+    return "sudo apt install -y" + packages;  // -y: aptの確認(Y/n)を省く(2026-09-27)
 #endif
-  app.offerShellCommand(command);
+  };
+  std::string command = installCommand();
+  if (command.empty()) return;
+  std::ofstream(marker) << "";
+  // 2026-09-27追加、直接のユーザー提案("brew install groffは2回必要なので、
+  // 処理が終わり、プロンプトが戻ったらインストール済みかどうか確認後、
+  // 未インストールのアプリのみ再度brew実行"): 実行後にまだ足りないものが
+  // あれば、その分だけのコマンドを再び入力欄に置く(最大2回。実行はやはり
+  // ユーザーのreturnで)。
+  app.offerShellCommand(command, installCommand, /*retries=*/2);
 }
 
 void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
@@ -2051,6 +2062,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     app.pollArchiveLoadCompletion();
     app.pollPendingCpMvRmShellRun();
     app.pollPendingArchiveExtractShellRun();
+    app.pollShellOfferFollowUp();
     app.pollShellHandoff();
     // `suppressDraw`(2026-09-07追加、直接のユーザー報告"わかったのは
     // ブロックカーソル位置を画面上真ん中辺に変更すると、瞬時の表示も
