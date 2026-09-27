@@ -64,7 +64,8 @@ EXEC
 # info は Homebrew では texinfo に入っています(brew install texinfo)。
 #
 # macOS では、ここに無い suffix のファイルでも、CODE でバイナリと判定され、
-# file(1) で画像か PDF と判定されたもの(.jpg .png .bmp .tiff .pdf など)は、
+# 画像・PDF か、クイックルックが扱える種類(qlmanage -m plugins の一覧。
+# .numbers .key .pages .docx .xlsx、音声、動画、フォントなど)のものは、
 # その旨を表示する代わりにクイックルック(qlmanage -p)で開きます。
 
 #	.mp4	open

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <set>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -2425,6 +2426,7 @@ class Application {
   bool executeShowErrorLog();
   bool executeOpenDataDirectory();  // K-96
   bool openExternallyIfApplicable(const std::string &path);
+  static const std::set<std::string> &quickLookSupportedTypes();
   bool openListEntrySpecial(bool raw);  // ^O^M/^[^Mの一覧版(2026-09-27)
   bool runQuickLook(const std::vector<std::string> &paths);
   bool executeOpenWorkList();       // K-97

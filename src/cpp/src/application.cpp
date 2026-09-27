@@ -8066,10 +8066,46 @@ bool Application::openExternallyIfApplicable(const std::string &path) {
   }
   if (::access("/usr/bin/qlmanage", X_OK) != 0 || !fileMode_.isBinaryFile(path)) return false;
   ChildProcess::Result result = ChildProcess::run({"file", "-b", "--mime-type", path});
-  if (!result.ok) return false;
-  std::string mime = result.output.substr(0, result.output.find('\n'));
-  if (mime.compare(0, 6, "image/") != 0 && mime != "application/pdf") return false;
-  return runQuickLook({path});
+  std::string mime = result.ok ? result.output.substr(0, result.output.find('\n')) : "";
+  if (mime.compare(0, 6, "image/") == 0 || mime == "application/pdf") return runQuickLook({path});
+  // 2026-09-27拡張、直接のユーザー質問("画像・pdf以外で見れそうなのは.numbers
+  // とか。可能なヤツ一覧とかは無い？"): クイックルックが扱える種類の一覧は
+  // `qlmanage -m plugins`(UTIと担当するジェネレーターの対応表)で取れる。
+  // ファイル自身のUTI(と、その上位の種類)を`mdls -name kMDItemContentTypeTree`
+  // で取り、どれかが一覧にあればクイックルックで開く(Numbers/Keynote/Pages、
+  // Office、音声、動画、フォント等)。Spotlightが種類を返さない場所のファイル
+  // は上の画像/PDFの判定だけになる。
+  const std::set<std::string> &supported = quickLookSupportedTypes();
+  if (supported.empty()) return false;
+  ChildProcess::Result tree = ChildProcess::run({"mdls", "-raw", "-name", "kMDItemContentTypeTree", path});
+  if (!tree.ok) return false;
+  for (std::size_t open = tree.output.find('"'); open != std::string::npos;
+       open = tree.output.find('"', tree.output.find('"', open + 1) + 1)) {
+    std::size_t close = tree.output.find('"', open + 1);
+    if (close == std::string::npos) break;
+    if (supported.count(tree.output.substr(open + 1, close - open - 1))) return runQuickLook({path});
+  }
+  return false;
+}
+
+// `qlmanage -m plugins`の各行("  <UTI> -> <ジェネレーター> (...)")のUTIの集合。
+// 起動後最初の1回だけ実行する(openExternallyIfApplicable()参照)。
+const std::set<std::string> &Application::quickLookSupportedTypes() {
+  static const std::set<std::string> types = [] {
+    std::set<std::string> result;
+    ChildProcess::Result plugins = ChildProcess::run({"qlmanage", "-m", "plugins"});
+    if (!plugins.ok) return result;
+    std::istringstream lines(plugins.output);
+    std::string line;
+    while (std::getline(lines, line)) {
+      std::size_t arrow = line.find(" -> ");
+      if (arrow == std::string::npos) continue;
+      std::size_t start = line.find_first_not_of(' ');
+      if (start < arrow) result.insert(line.substr(start, arrow - start));
+    }
+    return result;
+  }();
+  return types;
 }
 
 // K-96(^J^Od、2026-09-27): dataDirectory()自身の宣言コメント参照。

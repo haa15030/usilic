@@ -26900,3 +26900,17 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      見つからないものだけのbrew/aptコマンド」を返す関数を渡す(最大2回)。
      実行はやはりユーザーのreturnで。
    - **検証**: 置いた行の実行後に再提案され、空を返すと終わるテストを追加。
+
+485. **2026-09-27: バイナリをクイックルックで開く対象を、画像/PDFから
+    「クイックルックが扱える種類」全般へ**
+   - **経緯**: 直接のユーザー質問("画像・pdf以外で見れそうなのは.numbers
+     とか。可能なヤツ一覧とかは無い？")。
+   - **一覧**: `qlmanage -m plugins`がクイックルックの扱える種類(UTI)と担当
+     ジェネレーターの対応表を出す(iWork、Office、音声、動画、フォント、
+     vCard、iCal等)。
+   - **実装**: openExternallyIfApplicable()で、CODEでバイナリと判定された
+     ファイルが画像/PDF(file(1)のMIME)でなければ、`mdls -raw -name
+     kMDItemContentTypeTree`でファイルのUTIとその上位の種類を取り、どれかが
+     上の一覧(起動後最初の1回だけ取得、quickLookSupportedTypes())にあれば
+     クイックルックで開く。Spotlightが種類を返さない場所では画像/PDFの判定
+     だけ。usilicrc/usilicrc.enのEXEC節の説明も更新。
