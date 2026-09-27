@@ -503,6 +503,10 @@ class FileMode {
   // 呼び出し元自身のコメント参照。
   void closeStream();
 
+  // usilicrcのCODEで見てバイナリか(先頭64KBだけ読む、binaryTypeText()と同じ
+  // 判定)。2026-09-27追加、Application::openExternallyIfApplicable()用。
+  bool isBinaryFile(const std::string &path) const;
+
  private:
   // loadFile()/loadFileNoWrap()/loadFileRaw()が共有する本体――呼び出し元が
   // 先にnoWrapMode_/rawControlCodesMode_をセットしてから呼ぶ。shouldAbort

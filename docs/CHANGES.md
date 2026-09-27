@@ -26773,3 +26773,117 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      更新した。
 
 
+
+481. **2026-09-27: 一括の依頼への対応 ―― ~/.usilic/data/(旧saved)と
+    ^J^Od/^J^Ow、LOCATE/DU/FILE/USILICでの選択とCP/MV/RM・^Jp、モード中の
+    モード発動キー、RMの"Delete? (y/n) "、EGREPの一覧の復活、^[uの目次に
+    PROGRAM/WORK、usilicrcの整理(PROGRAM/EXEC/FILE/EGREP、CP/MV/RMの-iを
+    外す)、EXECをPROGRAMの履歴へ、CODEの判定の高速化、初回のインストール
+    提案をgroff/mg/infoへ**
+   - **経緯**: 直接のユーザー依頼(一括、`.steering/20260927-feedback-data-
+     marks-usilicrc/`参照)。
+   - **data**: `~/.usilic/saved/`を`~/.usilic/data/`へ改名(^X^Wの名前付き保存先・
+     ^Oaの既定の展開先、`Application::dataDirectory()`)。K-96 `^J^Od`でDIRとして
+     開き、K-97 `^J^Ow`で^[uの目次の新しい「WORK」(^X^Wの作業ファイルw.N、
+     複数)を直接開く。
+   - **^[uの目次**: MAN/DIR/FILEに加えPROGRAM(^J^Pと同じソート済みの一覧、
+     ^MでPROGRAMプロンプトにその文字列)とWORK。ユーザーは^J^Uと記憶して
+     いたが、MAN/DIR/FILEの目次は^[u(^J^Uは種類ごとにソートした一覧)。
+   - **選択**: `ListMarks`(list_marks.hpp)を新設し、LOCATE/DU/^X^F・^X^Dの
+     一覧/USILIC(^[uの各グループ、^J^U、^Ju、^Ou)で`.`/`[`/`]`/^SPC/^Oy/^On。
+     ^X^F・^X^Dの一覧は打った文字がパスの編集になるので^SPCだけ。選択
+     (無ければハイライト行)をCP/MV/RM(^Oc/^Om/^Or、(ls)と同じく選択が無ければ
+     発動しない)、^Jp(同じディレクトリならcdして名前、そうでなければ絶対パス)、
+     クイックルック(LOCATE/DU)の対象にする。CP/MVが成功すれば宛先の(ls)へ、
+     RMや失敗は発動元の一覧へ戻り選択を解く(LOCATEは検索し直す)。相対の
+     宛先は先頭の対象の親ディレクトリ基準。
+   - **モード中の発動キー**: LOCATE中の^J^Lのガードを外し、戻り先は最初の
+     発動元のまま再プロンプト。DU中の^Jdはハイライト行(ファイルならその親)を
+     再集計。MANは以前から可。
+   - **EGREPの一覧**: usilicrcの節名をEGREPに(GREPも受理)。EGREP/CUT(正規
+     表現)の^Rで、まず実例をusilicrcの並びのまま先頭に置いた一覧(モード
+     ライン"EGREP")、もう一度^Rで純粋な時系列の履歴(以前は実例を履歴の
+     古い側へ混ぜていたので、検索するほど埋もれていった)。
+   - **usilicrc**: PROGRAMからemacs/emacs -nw/xemacs/mule/mule -nw/dviout/
+     xdviを削除しmgを追加(infoは既存)。EXECからlynx/xdvi/dvioutを削除、
+     `open -a`の注意(直後にアプリ名が要る、既定のアプリなら`open`だけ)と
+     texinfoの注記。FILEに.xz/.lzma/.zst。CP/MV/RMの既定(Configuration・
+     config.sh・usilicrc・TUTORIAL)を`cp -vR`/`mv -v`/`rm -vr`に。
+   - **EXEC**: 正常終了した時だけ「プログラム ベース名」をPROGRAMの履歴へ。
+   - **CODE**: 判定は先頭64KBしか見ないのにファイル全体を読んでから判定して
+     いた。先頭64KBだけ読み、バイナリなら残りを読まない。
+   - **初回の提案**: groffに加えmg/info(Homebrewはtexinfo)のうち無いものを
+     まとめて1回(印は~/.usilic/install-offered)。
+   - **クイックルックの成否(質問への回答、コード変更無し)**: `qlmanage -p`は
+     成功・プレビュー不可・存在しないファイルのいずれでも出力無し・終了
+     コード0で、SIGINTでも0で終わる(実測)。成否の判別はできないので、
+     PROGRAMの履歴から除けるのは事前に分かる「実在しない」ものだけ(既に
+     除外済み)。発動した端末の^Cで終了できる(ssh経由でも、qlmanageは
+     その端末の前面のプロセスなので)。
+   - **検証**: doctestを4件追加(LOCATEの選択と^Jp、LOCATE中の^J^L、^J^Ow、
+     EGREPの一覧)。RM/目次の既存テストの期待値を更新。
+
+482. **2026-09-27(項目481の続き): RMがSHELLで止まる件の修正(長いコマンド
+    ラインの切り捨て)、^J^Ol→^J^Os、子の実行中の^Cでusilicごと終わる件、
+    一覧からの^Ou、"Destination? "、EGREP一覧のカーソル、CUTを拡張正規表現に、
+    CUTのモードライン**
+   - **RMがSHELLで止まる**(直接のユーザー報告: ~/.usilic/data/に展開した
+     `._`ファイル8個をRMすると、SHELLで止まり、`y`を打っても進まない):
+     SHELLのログを調べると、rmのコマンドラインが途中(`…web_fl.t`)で切れて
+     bashに届き、閉じていない引用符のため`>`の継続プロンプトで入力待ちに
+     なっていた(`y`はその継続行に入っていただけで、`-i`とは無関係)。原因は
+     2つ: (1)SHELLのコマンドライン(LineEditor)の上限がlegacyのN_line由来の
+     1024バイトで、CP/MV/RM・ARC展開・^J^Wは組み立てたコマンドをそこへ
+     setText()してから送るため、1023バイト目以降が黙って切り捨てられていた
+     ――64KBへ拡大。(2)ptyへの書き込み中にusilicがbashの出力(エコー)を
+     読まないため、約2KBで双方が詰まる(Pythonで実測)――Shell::writeToPty()で
+     書き込めない間は出力を読んで処理する(ハンドシェイク完了後のみ。起動時の
+     番兵を横取りしないため)。諦めるまでの上限は回数ではなく10秒(起動直後は
+     poll()が即座に返って空回りするため、回数では一瞬で諦めてしまう)。
+   - **^J^Os**: SHELLのログを^J^Olから^J^Osへ(K-53)。^J^Od(data)と同じく
+     開く対象の頭文字に揃える。
+   - **子の実行中の^C**: クイックルック等をusilicを起動した端末の^Cで止めると
+     usilicごと終わっていた(子と同じプロセスグループなのでSIGINTがusilicにも
+     届く)。ChildProcess::runInteractive()で子を待つ間だけusilic側のSIGINT/
+     SIGQUITを無視する(子には従来どおり届く)。PROGRAM/EXEC/EDITも同じ。
+   - **一覧からの^Ou(閲覧)**: LOCATE/DU/^X^F・^X^D/USILICの選択(無ければ
+     ハイライト行)を閲覧の一覧にし、^Gで元の一覧へ戻る(USILICからなら
+     中身・階層・カーソルも戻す)。
+   - **"Destination? "**: CP/MVの宛先プロンプト(?の前の空白を削除)。
+   - **EGREP一覧のカーソル**: 最後に使った正規表現(履歴の最新)の行に置く。
+   - **CUTを拡張正規表現に**: `^Jc`等のCUTは素のgrep(基本正規表現)で分割して
+     いたため`\w+rc\b`の`+`が文字として扱われヒットしなかった(EGREPは
+     `grep -E`でヒット)。EGREPの実例一覧をCUTでも使うので、CUT(^Jc、ファイル
+     へのCUT、FILE履歴からのCUT)も`grep -E`にした。2026-09-14の「CUTは一律
+     grep仕様」(基本正規表現)からの変更。
+   - **CUTのモードライン**: 一覧の画面に`(egrep)`のバッジ(in-place GREPと同じ
+     並び)。選んだセグメントの画面の戻り値は、選んだ見出し(画面の先頭行と
+     重複)ではなく「CUT: 検索文字列」を右端まで埋めて表示。
+   - **検証**: test_shellに約5000バイトのコマンドラインが欠けずに届くテスト、
+     test_applicationに一覧からの^Ou・EGREP一覧のカーソルのテストを追加。
+     既存テストの期待値(saved→data、目次の件数、LOCATE中のLOCATE、^J^Os、
+     Destination?)を更新。
+
+483. **2026-09-27(項目482の続き): 初回の提案に7-Zip(sevenzip)、7zが無ければ
+    7zz、一覧での^O^M/^[^M、ARCでのクイックルック、バイナリの画像/PDFは
+    クイックルックで開く**
+   - **初回の提案**: 直接のユーザー提案("brew install groff mg texinfo 7zz")。
+     Homebrewに`7zz`というformulaは無く、7-Zipはsevenzip(コマンド名が7zz)。
+     groff/mg/texinfo/sevenzipのうち無いものをまとめて提示(Ubuntuは
+     `sudo apt install -y ... p7zip-full`、-yで確認を省く)。brew installは
+     もともとy/nを聞かない。usilicは`7z`を呼んでいたので、`7z`が無く`7zz`が
+     あればそちらを使う(fm::sevenZipCommand()、ARCの一覧・取り出し・展開)。
+   - **一覧での^O^M/^[^M**: LOCATE/DU/^X^F・^X^D/USILICのハイライト行を(ls)と
+     同じ読み方で開く(openListEntrySpecial())。^Gの戻り先は^Mと同じ。
+     ディレクトリ・アーカイブは^Mと同じ。^X^F・^X^Dの一覧では^O/ESCの後の^Mを
+     「決定」として横取りしないようにした。
+   - **ARCのクイックルック**: Spaceでハイライト行のメンバーを<workRoot>/ql/へ
+     取り出してqlmanage -p(ディレクトリ・中のアーカイブは対象外、その場合は
+     従来どおりページ送り)。
+   - **バイナリの画像/PDF**: 直接のユーザー提案("file(1)で画像ファイルだと判定
+     されたファイルはusilic画面にその旨表示する代わりにクイックルック行き")。
+     ^M等でファイルを開く前(openExternallyIfApplicable()、EXECの判定と同じ
+     場所。(ls)・LOCATE・DU・USILIC・^X^F・^Xf)に、CODEでバイナリかつ
+     `file -b --mime-type`がimage/*かapplication/pdfなら、qlmanage -pで開く
+     (macOSのみ)。あわせてDU・USILIC・^Xfの経路でもEXECが効くようになった。
+   - **検証**: LOCATEの^O^M/^[^M、ARCのSpaceのテストを追加。

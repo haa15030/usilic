@@ -68,7 +68,11 @@ std::vector<std::string> runLocateRole(const Configuration &configuration, Confi
 }  // namespace
 
 LocateMode::LocateMode(ContentView &view, const Configuration &configuration)
-    : view_(view), configuration_(configuration) {}
+    : view_(view), configuration_(configuration) {
+  // 選択行の見た目は(ls)と同じ(2026-09-27、list_marks.hpp参照)。
+  view_.setMarkedPredicate([this](int index) { return marks_.isMarked(index); });
+  view_.setMarkedRowUsesUnderline(true);
+}
 
 bool LocateMode::search(const std::string &query) {
   if (query.empty()) return false;
@@ -92,6 +96,7 @@ bool LocateMode::search(const std::string &query) {
 
   query_ = query;
   results_ = std::move(results);
+  marks_.clear();
 
   // 2026-09-11追加、直接のユーザー報告("久々にusilic -c（引数無し）で
   // 起動してみたら^J^Lで--(CUT時、最初のマッチまでの区分)が出る。

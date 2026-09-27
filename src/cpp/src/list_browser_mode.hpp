@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "content_view.hpp"
+#include "list_marks.hpp"
 
 namespace fm {
 
@@ -59,10 +60,15 @@ class ListBrowserMode {
 
   const std::vector<std::string> &items() const;
   const std::string *selectedItem() const;
+  // 選択(2026-09-27、list_marks.hpp自身のコメント参照)。一覧を作り直すと
+  // 消える。
+  ListMarks &marks() { return marks_; }
+  const ListMarks &marks() const { return marks_; }
 
  private:
   ContentView &view_;
   std::vector<std::string> items_;
+  ListMarks marks_;
 };
 
 }  // namespace fm

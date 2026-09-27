@@ -396,6 +396,15 @@ bool FileMode::looksBinary(const std::string &content) const {
   return Charset::detect(bytes, window, encoding_, allowed.c_str()) == Charset::Encoding::Binary;
 }
 
+bool FileMode::isBinaryFile(const std::string &path) const {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) return false;
+  std::string head(0x10000, '\0');
+  in.read(head.data(), static_cast<std::streamsize>(head.size()));
+  head.resize(static_cast<std::size_t>(in.gcount()));
+  return looksBinary(head);
+}
+
 std::optional<std::string> FileMode::binaryTypeText(const std::string &path, const std::string &content) const {
   if (!looksBinary(content)) return std::nullopt;
   const std::string &allowed = configuration_.allowedControlBytes();
@@ -435,12 +444,23 @@ std::optional<std::string> FileMode::binaryTypeText(const std::string &path, con
 std::string FileMode::loadAndTransformContent(const std::string &path) const {
   std::ifstream in(path, std::ios::binary);
   if (!in) return {};
-  std::ostringstream buffer;
-  buffer << in.rdbuf();
-  if (!in.good() && !in.eof()) return {};
-  std::string content = buffer.str();
+  // 2026-09-27修正、直接のユーザー報告("CODE: なんかバイナリ判定に時間が
+  // かかるんだが、最後まで読んでるの？"): 以前はファイル全体をメモリへ
+  // 読んでからバイナリ判定していた(判定自体は先頭64KBしか見ないのに、
+  // 大きなバイナリほど読み込みだけで待たされていた)。先に先頭64KBだけ
+  // 読んで判定し、バイナリなら残りは読まない。
+  std::string content(0x10000, '\0');
+  in.read(content.data(), static_cast<std::streamsize>(content.size()));
+  content.resize(static_cast<std::size_t>(in.gcount()));
+  if (!rawControlCodesMode_)
+    if (auto typeText = binaryTypeText(path, content)) return *typeText;
+  if (in) {
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    content += buffer.str();
+  }
+  if (in.bad()) return {};
   if (rawControlCodesMode_) return content;
-  if (auto typeText = binaryTypeText(path, content)) return *typeText;
   // isHelpMarkupPagerFile()自身のコメント参照(HELP.txt/QUICK.txtの
   // <indentN>/<i>/<b>/<u>markupを、リテラルなタグのままではなく
   // ^Jh自身のkHelpTextJa/kHelpTextGuiJaと同じ規約で展開する)。

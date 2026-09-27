@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "content_view.hpp"
+#include "list_marks.hpp"
 
 namespace fm {
 
@@ -53,11 +54,12 @@ class UnderlineMode {
   void toggleMark(int index);
   bool isMarked(int index) const;
   std::vector<std::string> targetEntries() const;
+  ListMarks &marks() { return markedIndices_; }  // ^Oy/^On用(2026-09-27)
 
  private:
   ContentView &view_;
   std::vector<std::string> entries_;
-  std::set<int> markedIndices_;  // toggleMark()参照
+  ListMarks markedIndices_;  // toggleMark()参照
 };
 
 }  // namespace fm

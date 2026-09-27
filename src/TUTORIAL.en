@@ -575,15 +575,17 @@
            The _p_r_o_g_r_a_m will be launched with argument of the file that
            has the ssuuffffiixx.
 
-     GREP
+     EGREP
         format  : ssttrriinngg
         example : \/\*usilic\*\/
 
-           The ssttrriinngg list that will be displayed in the EEGGRREEPP or CCUUTT.
+           The ssttrriinngg list that will be shown first by ^^RR in EEGGRREEPP or CCUUTT
+           (regular expression); ^^RR again shows the history.  The old
+           name GREP is also accepted.
 
      PROGRAM
         format  : pprrooggrraamm
-        example : dviout
+        example : mg
 
            The _p_r_o_g_r_a_m list that will be displayed in the PPRROOGGRRAAMM.
 
@@ -653,19 +655,19 @@
         format  : _c_p (option)
         example : cp -rvi
 
-           Command of CCPP mode. (default : cp -vRi)
+           Command of CCPP mode. (default : cp -vR)
 
      MV
         format  : _m_v (option)
         example : mv -vi
 
-           Command of MMVV mode. (default : mv -vi)
+           Command of MMVV mode. (default : mv -v)
 
      RM
         format  : _r_m (option)
         example : rm -rvi
 
-           Command of RRMM mode. (default : rm -vri)
+           Command of RRMM mode. (default : rm -vr)
 
      KEY
 

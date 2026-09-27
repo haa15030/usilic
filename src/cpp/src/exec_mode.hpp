@@ -3,6 +3,7 @@
 #include <string>
 
 #include "configuration.hpp"
+#include "history.hpp"
 #include "key_input.hpp"
 
 namespace fm {
@@ -27,7 +28,9 @@ namespace fm {
 // 既に実装済み)と、実行後どうするか(Mode/Applicationの仕事)。
 class ExecMode {
  public:
-  explicit ExecMode(KeyInput &keyInput);
+  // history: 正常終了したEXECをPROGRAMの履歴(RingCategory::ShellCommand)へ
+  // 記録する先(2026-09-27、run()自身のコメント参照)。nullptrなら記録しない。
+  explicit ExecMode(KeyInput &keyInput, History *history = nullptr);
 
   // command.argvの末尾にpathを追加して実行する。
   // 終了ステータスを返す。command.argvが空なら-1。
@@ -35,6 +38,7 @@ class ExecMode {
 
  private:
   KeyInput &keyInput_;
+  History *history_;
 };
 
 }  // namespace fm

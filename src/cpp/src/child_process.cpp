@@ -258,7 +258,21 @@ int ChildProcess::runInteractive(const std::vector<std::string> &argv) {
     _exit(127);  // execvp()失敗――そのまま処理を続けusilicとして動き続けることは絶対に無い
   }
 
-  return reapStatus(pid);
+  // 2026-09-27追加、直接のユーザー報告("クイックルックを終了するのに^C
+  // だとusilicごと終わってしまう"): 子は端末を共有する同じプロセス
+  // グループにいるので、端末の^C(SIGINT)/^\(SIGQUIT)はusilic自身にも
+  // 届く。子を待っている間だけusilic側で無視する(子はresetSignalsToDefault()
+  // で既定に戻しているので、^Cは子には従来どおり届く)。main.cppの
+  // IgnoreSigintWhileChildRuns(GUIの起動元ターミナル用)と同じ考え方。
+  struct sigaction ignore {}, oldInt {}, oldQuit {};
+  ignore.sa_handler = SIG_IGN;
+  sigemptyset(&ignore.sa_mask);
+  sigaction(SIGINT, &ignore, &oldInt);
+  sigaction(SIGQUIT, &ignore, &oldQuit);
+  int status = reapStatus(pid);
+  sigaction(SIGINT, &oldInt, nullptr);
+  sigaction(SIGQUIT, &oldQuit, nullptr);
+  return status;
 }
 
 pid_t ChildProcess::spawnInteractive(const std::vector<std::string> &argv) {

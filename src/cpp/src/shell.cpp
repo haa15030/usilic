@@ -16,6 +16,8 @@
 
 #include "shell.hpp"
 
+#include <chrono>
+
 #include <algorithm>
 #include <csignal>
 #include <cstdlib>
@@ -393,6 +395,7 @@ bool Shell::start(const std::string &initialDirectory) {
     terminate();
     return false;
   }
+  handshakeDone_ = true;
   return true;
 }
 
@@ -438,6 +441,7 @@ void Shell::terminate() {
     close(masterFd_);
     masterFd_ = -1;
   }
+  handshakeDone_ = false;
 }
 
 int Shell::ptyFd() const { return masterFd_; }
@@ -1552,10 +1556,15 @@ void Shell::sendControlByte(unsigned char byte) { writeToPty(std::string(1, stat
 void Shell::writeToPty(const std::string &bytes) {
   if (masterFd_ < 0) return;
   std::size_t off = 0;
+  // 書き込みが進まない状態の開始時刻(下の諦める判定用)。回数ではなく時間で
+  // 数える――起動直後はpoll()がすぐ返ってwrite()がEAGAINのまま空回りする
+  // ことがあり、回数の上限では一瞬で諦めてしまう。
+  auto stallStart = std::chrono::steady_clock::now();
   while (off < bytes.size()) {
     ssize_t n = write(masterFd_, bytes.data() + off, bytes.size() - off);
     if (n > 0) {
       off += static_cast<std::size_t>(n);
+      stallStart = std::chrono::steady_clock::now();
       continue;
     }
     if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
@@ -1569,10 +1578,29 @@ void Shell::writeToPty(const std::string &bytes) {
       // 最初の一時的なEAGAINで書き込みの残りを黙って落とすのでは
       // なく、ptyがもっと受け入れるようになるのを短く待って再試行
       // する。
+      //
+      // 2026-09-27修正、直接のユーザー報告("~/.usilic/data/の._ファイル群を
+      // 削除しようとするとSHELLで止まる"): 長いコマンドライン(8個の長い
+      // ファイル名を並べたrm、約2.1KB)を書いている途中で、bashは受け取った
+      // 文字をエコーとして出力へ書くが、usilicはこのループの中にいて出力を
+      // 読まないため、ptyの出力側が満杯になるとbashは止まり、入力も読まなく
+      // なる(macOSでは約2KBで詰まることを実測で確認)。その後の書き込みは
+      // 捨てられ、bashには途中で切れたコマンドライン(閉じていない引用符)が
+      // 届いて">"の継続プロンプトで入力待ちになっていた。書き込めない間は、
+      // 出力を読んで通常どおり処理する(onPtyReadable()と同じ)ことで
+      // bashを先へ進ませる。
       struct pollfd pfd {
-        masterFd_, POLLOUT, 0
+        masterFd_, POLLOUT | POLLIN, 0
       };
-      poll(&pfd, 1, 100);
+      // ハンドシェイク前(start()自身のセットアップコマンドの書き込み中)は
+      // 読まない――waitForHandshake()が待っている番兵を横取りしてしまう。
+      if (!handshakeDone_) pfd.events = POLLOUT;
+      if (poll(&pfd, 1, 100) > 0 && (pfd.revents & POLLIN)) {
+        char buf[4096];
+        ssize_t r = read(masterFd_, buf, sizeof(buf));
+        if (r > 0) processOutputBytes(std::string(buf, static_cast<std::size_t>(r)));
+      }
+      if (std::chrono::steady_clock::now() - stallStart > std::chrono::seconds(10)) break;  // 無限ループの防止
       continue;
     }
     break;  // 本物の書き込みエラー――諦める

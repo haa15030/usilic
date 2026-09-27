@@ -459,7 +459,7 @@ std::optional<std::tuple<std::string, std::string, GrepSyntax>> parseCutFileHist
   std::string filePath = entry.substr(0, openPos);
   std::string pattern = entry.substr(openPos + 2, entry.size() - (openPos + 2) - 1);
   if (filePath.empty() || pattern.empty()) return std::nullopt;
-  return std::make_tuple(filePath, pattern, GrepSyntax::Basic);
+  return std::make_tuple(filePath, pattern, GrepSyntax::Regex);  // 2026-09-27、CUTは拡張正規表現(startCutPrompt()の呼び出し元参照)
 }
 
 // parseCutFileHistoryEntry()自身のコメント参照――その逆変換。CUTは
@@ -557,7 +557,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       underlineMode_(underlineView_),
       listBrowserMode_(listBrowserView_),
       editMode_(keyInput, configuration),
-      execMode_(keyInput),
+      execMode_(keyInput, &history),
       copyMode_(copyView_) {
   layoutViews();
   // K-65(^I): Shell自身のコマンドラインのための、実際のファイル
@@ -936,11 +936,14 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
                                           ? (grepReturnListCategory_ == RingCategory::RecentFile ? "FILE" : "DIR")
                                           : previousModeName(grepReturnMode_);
         if (!destinationName.empty()) {
-          return {"HISTORY", trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
+          // 2026-09-27: ソート側(EGREPの一覧等)は"HISTORY"ではなく"EGREP"/"FGREP"。
+          return {listBrowserChronological_ ? "HISTORY" : ringCategoryLabel(listBrowserCategory_), trailing,
+                  /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                   truncatedTrailingPath(destinationName), /*trailingPlain=*/true, /*trailing2RightJustified=*/true};
         }
       }
-      return {"HISTORY", trailing, /*fillTrailingToEdge=*/false,
+      return {listBrowserChronological_ ? "HISTORY" : ringCategoryLabel(listBrowserCategory_), trailing,
+              /*fillTrailingToEdge=*/false,
               /*rightWatermark=*/promptLabelText(promptHistoryContext_->kind), /*trailing2=*/"",
               /*trailingPlain=*/false, /*trailing2RightJustified=*/false,
               /*trailing2Kind=*/ContentView::TrailingKind::QueryEcho,
@@ -1114,8 +1117,12 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     if (cutOrigin_ == CutOrigin::Help) {
       return {name, trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", label};
     }
-    if (!label.empty()) trailing += "  " + label;
-    return {name, trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/"", /*trailing2=*/""};
+    // 2026-09-27変更、直接のユーザー依頼("選択後の戻り値が、一覧で選んだ行の
+    // 表示になっているんだけど、それは画面の冒頭行でもあるので重複...
+    // 「CUT: 検索文字列（←パディング→）」にしてみて"): 選んだ見出し(=この
+    // 画面の先頭行)ではなく、分割に使った検索文字列を右端まで埋めて出す。
+    (void)label;
+    return {name, trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", "CUT: " + cutMode_.pattern()};
   });
   // cutView_自体(セグメントの「ラベル」リスト、CutContentの1つ上の
   // レベル――それ自身のクラスコメント参照)向けのモードラインの
@@ -1196,7 +1203,13 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     if (!cutMode_.parentPattern() && (cutOrigin_ == CutOrigin::File || cutOrigin_ == CutOrigin::Directory)) {
       std::string path = (cutOrigin_ == CutOrigin::File) ? fileMode_.currentFile() : directoryMode_.currentDirectory();
       std::size_t bytes = contentByteCount(cutOrigin_ == CutOrigin::File ? fileView_ : directoryView_);
-      return {name, std::to_string(bytes), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", path};
+      // 2026-09-27追加、直接のユーザー依頼("CUTのモードライン、検索結果一覧の
+      // 画面では(EGREP)があるほうがいい"): in-place GREPと同じ並び(バッジ、
+      // その後に戻り値)。
+      ContentView::ModeLineFields fields{name, std::to_string(bytes), /*fillTrailingToEdge=*/true,
+                                          /*rightWatermark=*/"", grepSyntaxBadge(cutSyntax_)};
+      fields.trailing3 = path;
+      return fields;
     }
     // 2026-09-15追加、すぐ上のFile/Directoryの分岐と同じ形――Man/
     // Locate/Du自身の「今どこにいるか」を表す値(manMode_.currentPage()/
@@ -1209,7 +1222,10 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       std::size_t bytes = contentByteCount(cutOrigin_ == CutOrigin::Man ? manView_
                                             : cutOrigin_ == CutOrigin::Locate ? locateView_
                                                                               : duView_);
-      return {name, std::to_string(bytes), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", path};
+      ContentView::ModeLineFields fields{name, std::to_string(bytes), /*fillTrailingToEdge=*/true,
+                                          /*rightWatermark=*/"", grepSyntaxBadge(cutSyntax_)};  // 上の同日のコメント参照
+      fields.trailing3 = path;
+      return fields;
     }
     std::string trailing;
     if (auto parent = cutMode_.parentPattern()) {
@@ -2498,7 +2514,18 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
         break;
     }
   }
+  // ^O^M/^[^M(2026-09-27、openListEntrySpecial()参照): リーダーキーの途中の
+  // ^Mは「決定」ではなく、そのリーダーの続きとして扱う。
+  if (isNav && !special && byte == kCarriageReturn && (escPending_ || leaderOPending_)) isNav = false;
   if (isNav) return handleCommand(resolveCommand(byte, special));
+  // ^SPC(2026-09-27): ^X^F/^X^Dの一覧では'.'/'['/']'は打った文字として
+  // パスの編集になるので、選択は^SPCだけで行う(list_marks.hpp参照)。
+  if (!special && byte == 0x80 && promptHistoryContext_ &&
+      (promptHistoryContext_->kind == PromptKind::RecentFile ||
+       promptHistoryContext_->kind == PromptKind::RecentDirectory) &&
+      !(escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_)) {
+    return handleCommand(Command::ToggleMark);
+  }
   if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ ||
       gotoLineGPending_ || gotoLineDigitsPending_ ||
       (!special && (byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape))) {
@@ -2907,8 +2934,14 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     switch (byte) {
       case 'e':  // ^J ^O e : ERROR(旧^X^Ke)
         return handleCommand(Command::ShowErrorLog);
-      case 'l':  // ^J ^O l : LOG(旧^X^Kl)
+      // 2026-09-27、直接のユーザー依頼("^J^Ol改め^J^Os"): ^J^Od(data)と
+      // 同じく、開く対象の名前(SHELL)の頭文字に揃える。
+      case 's':  // ^J ^O s : SHELLのログ(旧^J^Ol、旧々^X^Kl)
         return handleCommand(Command::ShowShellLog);
+      case 'd':  // ^J ^O d : ~/.usilic/data/(K-96、2026-09-27)
+        return handleCommand(Command::OpenDataDirectory);
+      case 'w':  // ^J ^O w : WORK(K-97、2026-09-27)
+        return handleCommand(Command::OpenWorkList);
       default:
         return false;  // このスライスでは認識されない^J^Oシーケンス
     }
@@ -4052,10 +4085,10 @@ bool Application::handleCommandImpl(Command command) {
       if (currentMode_ == ApplicationMode::File) return openSelectedBannerEntry();
       return false;
     case Command::ReadFileNoWrap:
-      if (currentMode_ != ApplicationMode::Directory) return handleCommand(Command::Enter);
+      if (currentMode_ != ApplicationMode::Directory) return openListEntrySpecial(/*raw=*/false);
       return openSelectedEntryNoWrap();
     case Command::ReadFileRaw:
-      if (currentMode_ != ApplicationMode::Directory) return handleCommand(Command::Enter);
+      if (currentMode_ != ApplicationMode::Directory) return openListEntrySpecial(/*raw=*/true);
       return openSelectedEntryRaw();
     case Command::Back:
       if (currentMode_ == ApplicationMode::Copy) return returnFromCopy();
@@ -4334,9 +4367,9 @@ bool Application::handleCommandImpl(Command command) {
     case Command::StartIncrementalGrep:
       return startIncrementalGrepPrompt();
     case Command::StartCut:
-      return startCutPrompt(GrepSyntax::Basic);
+      return startCutPrompt(GrepSyntax::Regex);  // 2026-09-27、BREからERE(grep -E)へ。下の同日のコメント参照
     case Command::StartCutFile:
-      return startCutFilePrompt(GrepSyntax::Basic);
+      return startCutFilePrompt(GrepSyntax::Regex);
     case Command::ToggleTutorialLanguage:
       tutorialPath_ = (tutorialPath_ == tutorialBasePath_) ? tutorialBasePath_ + ".en" : tutorialBasePath_;
       return true;
@@ -4420,6 +4453,10 @@ bool Application::handleCommandImpl(Command command) {
       return startArchivePrompt();
     case Command::ShowErrorLog:
       return executeShowErrorLog();
+    case Command::OpenDataDirectory:
+      return executeOpenDataDirectory();
+    case Command::OpenWorkList:
+      return executeOpenWorkList();
     case Command::ShowShellLog:
       return executeShowShellLog();
     case Command::StartLog:
@@ -4678,6 +4715,15 @@ bool Application::handleCommandImpl(Command command) {
       directoryView_.redraw();
       return true;
     case Command::MarkAll:
+      // LOCATE/DU/^X^F・^X^D/USILIC(2026-09-27、list_marks.hpp参照)。
+      if (currentMode_ != ApplicationMode::Directory && currentMode_ != ApplicationMode::Archive) {
+        int size = 0;
+        ListMarks *marks = activeListMarks(&size);
+        if (!marks) return false;
+        marks->markAll(size);
+        activeView().redraw();
+        return true;
+      }
       if (currentMode_ == ApplicationMode::Archive) {
         archiveMode_.markAll();
         archiveView_.redraw();  // ContentView::setMarkedPredicate()自身のコメント参照
@@ -4688,6 +4734,14 @@ bool Application::handleCommandImpl(Command command) {
       directoryView_.redraw();
       return true;
     case Command::ClearAllMarks:
+      if (currentMode_ != ApplicationMode::Directory && currentMode_ != ApplicationMode::Archive) {
+        int size = 0;
+        ListMarks *marks = activeListMarks(&size);
+        if (!marks) return false;
+        marks->clear();
+        activeView().redraw();
+        return true;
+      }
       if (currentMode_ == ApplicationMode::Archive) {
         archiveMode_.clearMarks();
         archiveView_.redraw();
@@ -4768,11 +4822,7 @@ bool Application::openSelectedEntry() {
   // 統一された拡張子テーブルは、実務上はチェックの順序をほぼ無意味
   // にしている)。完全に引き渡して、PROGRAM/EDITと同じ形で、
   // Directoryモードへ変わらず戻る。
-  if (configuration_.isExec(path)) {
-    if (auto command = configuration_.programForSuffix(path)) execMode_.run(*command, path);
-    activeView().redraw();
-    return true;
-  }
+  if (openExternallyIfApplicable(path)) return true;  // EXEC/画像のクイックルック(2026-09-27)
 
   // 2026-09-20修正、直接のユーザー報告("debian-keyring...tar.xzを
   // 踏んだら反応が無くなった。LOCATE同様、^Gで読み込みを中断できる
@@ -4921,6 +4971,62 @@ bool Application::keyInterruptRequested() {
   if (::poll(&pfd, 1, 0) <= 0 || !(pfd.revents & POLLIN)) return false;
   unsigned char discarded;
   return ::read(keyInput_.fd(), &discarded, 1) > 0;
+}
+
+// ^O^M/^[^Mの一覧版(2026-09-27追加、直接のユーザー依頼"^O^M、^[^MをLOCATE、
+// DU、FILE、USILIC へもよろしく"): ハイライト行のファイルを、(ls)の
+// openSelectedEntryNoWrap()/openSelectedEntryRaw()と同じ読み方で開く。^Gの
+// 戻り先は^Mで開いた時と同じ(LOCATE/DU/USILICはその一覧、^X^F・^X^Dは(ls))。
+// ディレクトリやアーカイブ、選択できない一覧では従来どおり^Mと同じ。
+bool Application::openListEntrySpecial(bool raw) {
+  int size = 0;
+  if (!activeListMarks(&size)) return handleCommand(Command::Enter);
+  std::string path;
+  switch (currentMode_) {
+    case ApplicationMode::Locate:
+      if (const std::string *result = locateMode_.selectedResult()) path = *result;
+      break;
+    case ApplicationMode::Du:
+      if (const DuEntry *entry = duMode_.selectedEntry()) path = entry->path;
+      break;
+    case ApplicationMode::ListBrowser:
+      if (const std::string *item = listBrowserMode_.selectedItem()) {
+        path = *item;
+        if (auto parsed = parseCutFileHistoryEntry(path)) path = std::get<0>(*parsed);
+      }
+      break;
+    case ApplicationMode::Underline:
+      if (const std::string *entry = underlineMode_.selectedEntry()) path = *entry;
+      break;
+    default:
+      break;
+  }
+  std::error_code ec;
+  ArchiveKind kind = ArchiveKind::None;
+  if (path.empty() || !std::filesystem::is_regular_file(path, ec) ||
+      (configuration_.programForSuffix(path, &kind) && kind != ArchiveKind::None))
+    return handleCommand(Command::Enter);
+
+  ApplicationMode origin = currentMode_;
+  std::string originName = origin == ApplicationMode::Locate ? "LOCATE"
+                           : origin == ApplicationMode::Du     ? "DU"
+                           : origin == ApplicationMode::Underline ? "USILIC"
+                                                               : "FILE";
+  if (raw) {
+    auto shouldAbort = [this]() { return keyInterruptRequested(); };
+    if (!fileMode_.loadFileRaw(path, shouldAbort)) return false;
+    fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, path, originName);
+  } else {
+    if (!fileMode_.loadFileAsPipe(path)) return false;
+    fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, path, "(stdin)");
+    std::string directory = std::filesystem::path(path).parent_path().string() + "/";
+    fileMode_.setPagerListingDirectory(truncatedTrailingPath(directory));
+  }
+  if (origin == ApplicationMode::ListBrowser) promptHistoryContext_ = std::nullopt;
+  currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = origin == ApplicationMode::ListBrowser ? ApplicationMode::Directory : origin;
+  fileView_.redraw();
+  return true;
 }
 
 bool Application::openSelectedEntryRaw() {
@@ -5116,6 +5222,7 @@ bool Application::openSelectedDuEntry() {
     directoryView_.redraw();
     return true;
   }
+  if (openExternallyIfApplicable(entry->path)) return true;  // EXEC/画像のクイックルック(2026-09-27)
   if (!fileMode_.loadFile(entry->path)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Du;
@@ -5220,11 +5327,7 @@ bool Application::openSelectedLocateResult() {
   // 項目416参照)は、常に下のfileMode_.loadFile()へ流れ落ちるので
   // はなく、完全に引き渡して、Directoryモードから(ls)へ変わらず
   // 戻るEXECと同様に、LOCATEの結果リストへ変わらず戻る。
-  if (configuration_.isExec(*path)) {
-    if (auto command = configuration_.programForSuffix(*path)) execMode_.run(*command, *path);
-    locateView_.redraw();
-    return true;
-  }
+  if (openExternallyIfApplicable(*path)) return true;  // EXEC/画像のクイックルック(2026-09-27)
   if (!fileMode_.loadFile(*path)) return false;
   currentMode_ = ApplicationMode::File;
   // 2026-08-14修正(ここでの以前の版に対する2つの直接のユーザーの
@@ -5815,6 +5918,7 @@ bool Application::openRecentFileEntry(const std::string &path) {
     currentMode_ = ApplicationMode::Archive;
     return true;
   }
+  if (openExternallyIfApplicable(path)) return true;  // EXEC/画像のクイックルック(2026-09-27)
   if (!fileMode_.loadFile(path)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;  // それ自身の宣言コメント参照
@@ -5917,6 +6021,18 @@ bool Application::toggleMark() {
     underlineView_.redraw();
     return true;
   }
+  // LOCATE/DU/^X^F・^X^D(2026-09-27、list_marks.hpp参照)。
+  {
+    int size = 0;
+    if (ListMarks *marks = activeListMarks(&size)) {
+      ContentView &view = activeView();
+      int cursor = view.cursorIndex();
+      if (cursor < 0 || cursor >= size) return false;
+      marks->toggle(cursor, size);
+      view.redraw();
+      return true;
+    }
+  }
   if (currentMode_ != ApplicationMode::Directory) return false;
   const DirectoryEntry *selected = directoryMode_.selectedEntry();
   if (!selected) return false;
@@ -5945,6 +6061,7 @@ bool Application::toggleMark() {
 }
 
 std::vector<std::string> Application::collectTargetPaths() const {
+  if (cpMvRmOrigin_ != ApplicationMode::Directory) return cpMvRmListTargets_;  // 2026-09-27、それ自身の宣言コメント参照
   std::vector<std::string> paths;
   std::string dir = directoryMode_.currentDirectory();
   for (const auto &entry : directoryMode_.targetEntries()) {
@@ -5989,8 +6106,135 @@ std::vector<std::string> Application::collectTargetFilePaths() const {
   return paths;
 }
 
+// ^[uの目次の見出し(2026-09-27、PROGRAM/WORKを追加: 直接のユーザー依頼
+// "^J^P一覧をUSILICのMAN/FILE/DIR一覧にPROGRAMで加えてほしい"、"WORKも
+// そうしたい（^J^Ow）ので^[u（複数ファイル可）で対応")。usilicGroupKind_は
+// この並びの添字。
+static const std::vector<std::string> &usilicTocTitles() {
+  static const std::vector<std::string> titles = {"MAN", "DIR", "FILE", "PROGRAM", "WORK"};
+  return titles;
+}
+static constexpr int kUsilicGroupProgram = 3;
+static constexpr int kUsilicGroupWork = 4;
+
+// activeListMarks()/listTargetPaths()(2026-09-27): application.hpp自身の
+// 宣言コメント参照。^X^F/^X^Dの一覧(ListBrowser)はファイル/ディレクトリの
+// 履歴の時だけ(PROGRAM/MAN等の一覧はファイルを指さない)、USILICは目次と
+// PROGRAMの項目以外。
+ListMarks *Application::activeListMarks(int *size) {
+  switch (currentMode_) {
+    case ApplicationMode::Locate:
+      *size = static_cast<int>(locateMode_.results().size());
+      return &locateMode_.marks();
+    case ApplicationMode::Du:
+      *size = static_cast<int>(duMode_.entries().size());
+      return &duMode_.marks();
+    case ApplicationMode::ListBrowser:
+      if (listBrowserCategory_ != RingCategory::RecentFile && listBrowserCategory_ != RingCategory::RecentDirectory)
+        return nullptr;
+      *size = static_cast<int>(listBrowserMode_.items().size());
+      return &listBrowserMode_.marks();
+    case ApplicationMode::Underline:
+      if (usilicLevel_ == UsilicLevel::Toc ||
+          (usilicLevel_ == UsilicLevel::Group && usilicGroupKind_ == kUsilicGroupProgram))
+        return nullptr;
+      *size = static_cast<int>(underlineMode_.entries().size());
+      return &underlineMode_.marks();
+    default:
+      return nullptr;
+  }
+}
+
+std::vector<std::string> Application::listTargetPaths() const {
+  auto collect = [](const ListMarks &marks, int cursor, int size, const auto &pathAt) {
+    std::vector<std::string> raw;
+    if (marks.count() > 0) {
+      for (int i : marks.indices())
+        if (i < size) raw.push_back(pathAt(i));
+    } else if (cursor >= 0 && cursor < size) {
+      raw.push_back(pathAt(cursor));
+    }
+    return raw;
+  };
+  std::vector<std::string> raw;
+  switch (currentMode_) {
+    case ApplicationMode::Locate: {
+      const auto &results = locateMode_.results();
+      raw = collect(locateMode_.marks(), locateView_.cursorIndex(), static_cast<int>(results.size()),
+                    [&](int i) { return results[i]; });
+      break;
+    }
+    case ApplicationMode::Du: {
+      const auto &entries = duMode_.entries();
+      raw = collect(duMode_.marks(), duView_.cursorIndex(), static_cast<int>(entries.size()),
+                    [&](int i) { return entries[i].path; });
+      break;
+    }
+    case ApplicationMode::ListBrowser: {
+      if (listBrowserCategory_ != RingCategory::RecentFile && listBrowserCategory_ != RingCategory::RecentDirectory)
+        return {};
+      const auto &items = listBrowserMode_.items();
+      raw = collect(listBrowserMode_.marks(), listBrowserView_.cursorIndex(), static_cast<int>(items.size()),
+                    [&](int i) {
+                      // ^X^Fの「パス "パターン"」(CUTの履歴)はパスの部分。
+                      if (auto parsed = parseCutFileHistoryEntry(items[i])) return std::get<0>(*parsed);
+                      return items[i];
+                    });
+      break;
+    }
+    case ApplicationMode::Underline: {
+      if (usilicLevel_ == UsilicLevel::Toc ||
+          (usilicLevel_ == UsilicLevel::Group && usilicGroupKind_ == kUsilicGroupProgram))
+        return {};
+      raw = underlineMode_.targetEntries();
+      break;
+    }
+    default:
+      return {};
+  }
+  std::vector<std::string> paths;
+  for (auto &path : raw) {
+    while (path.size() > 1 && path.back() == '/') path.pop_back();
+    std::error_code ec;
+    if (!path.empty() && path.front() == '/' && std::filesystem::exists(path, ec)) paths.push_back(path);
+  }
+  return paths;
+}
+
+bool Application::startListCpMvRmPrompt(PromptKind kind) {
+  int size = 0;
+  ListMarks *marks = activeListMarks(&size);
+  // (ls)と同じく、何も選択していなければ発動しない(startCopyPrompt()自身の
+  // コメント参照)。
+  if (!marks || marks->count() == 0) return false;
+  std::vector<std::string> paths = listTargetPaths();
+  if (paths.empty()) return false;
+  if (switchToShellIfBusy()) return true;
+  cpMvRmOrigin_ = currentMode_;
+  cpMvRmListTargets_ = std::move(paths);
+  ContentView &view = activeView();
+  activatePrompt(kind, "", ModeLine::format(view.cursorIndex() + 1, size));
+  promptCandidateListActive_ = false;  // startDestinationPrompt()自身のコメント参照
+  return true;
+}
+
 bool Application::startUnderlineFileView() {
-  if (currentMode_ != ApplicationMode::Directory) return false;
+  if (currentMode_ != ApplicationMode::Directory) {
+    // 一覧から(2026-09-27、underlineReturn_自身の宣言コメント参照): 選択
+    // (無ければハイライト行)を閲覧の一覧にする。
+    int size = 0;
+    if (!activeListMarks(&size)) return false;
+    std::vector<std::string> paths = listTargetPaths();
+    if (paths.empty()) return false;
+    UnderlineReturn back{currentMode_, {}, usilicLevel_, usilicGroupKind_, activeView().cursorIndex()};
+    if (currentMode_ == ApplicationMode::Underline) back.entries = underlineMode_.entries();
+    underlineReturn_ = std::move(back);
+    usilicLevel_ = UsilicLevel::None;
+    underlineMode_.show(std::move(paths));
+    currentMode_ = ApplicationMode::Underline;
+    return true;
+  }
+  underlineReturn_.reset();
   std::vector<std::string> paths = collectTargetFilePaths();
   if (paths.empty()) return false;
   underlineOriginDirectory_ = directoryMode_.currentDirectory();
@@ -6002,6 +6246,7 @@ bool Application::startUnderlineFileView() {
 
 bool Application::startUsilicHistory(UsilicStyle style) {
   if (currentMode_ != ApplicationMode::Directory) return false;
+  underlineReturn_.reset();
   underlineOriginDirectory_ = directoryMode_.currentDirectory();
   if (style == UsilicStyle::Toc) {
     // 2026-09-21、直接のユーザー仕様(`^[u`): MAN/DIR/FILEの3項目の
@@ -6009,7 +6254,7 @@ bool Application::startUsilicHistory(UsilicStyle style) {
     // ソート・重複排除、行番号なし)へ進み、^Gは一覧→目次→Directoryの順に戻る。
     usilicLevel_ = UsilicLevel::Toc;
     usilicGroupKind_ = 0;
-    underlineMode_.show({"MAN", "DIR", "FILE"});
+    underlineMode_.show(usilicTocTitles());
     currentMode_ = ApplicationMode::Underline;
     return true;
   }
@@ -6028,19 +6273,29 @@ bool Application::startUsilicHistory(UsilicStyle style) {
 }
 
 // 履歴1行の種別: `/`で始まらなければMAN、`/`で始まり`/`で終わればDIR、それ以外はFILE。
+
 static int usilicKindOf(const std::string &e) {
   if (e.empty() || e[0] != '/') return 0;
   return e.back() == '/' ? 1 : 2;
 }
 
 bool Application::openUsilicGroup(const std::string &title) {
-  int kind = title == "MAN" ? 0 : (title == "DIR" ? 1 : 2);
-  const auto &ring = history_.recentEntries(RingCategory::Usilic);
+  const auto &titles = usilicTocTitles();
+  int kind = static_cast<int>(std::find(titles.begin(), titles.end(), title) - titles.begin());
+  if (kind >= static_cast<int>(titles.size())) return false;
   std::vector<std::string> entries;
-  for (const auto &e : ring)
-    if (usilicKindOf(e) == kind) entries.push_back(e);
-  std::sort(entries.begin(), entries.end());
-  entries.erase(std::unique(entries.begin(), entries.end()), entries.end());
+  if (kind == kUsilicGroupProgram) {
+    entries = sortedUniqueRecentEntries(RingCategory::ShellCommand);  // ^J^Pの一覧と同じ
+  } else if (kind == kUsilicGroupWork) {
+    // 作成順(w.1、w.2...)のまま。まだ無ければ空の一覧。
+    entries = allocatedWorkFiles_;
+  } else {
+    const auto &ring = history_.recentEntries(RingCategory::Usilic);
+    for (const auto &e : ring)
+      if (usilicKindOf(e) == kind) entries.push_back(e);
+    std::sort(entries.begin(), entries.end());
+    entries.erase(std::unique(entries.begin(), entries.end()), entries.end());
+  }
   usilicLevel_ = UsilicLevel::Group;
   usilicGroupKind_ = kind;
   underlineMode_.show(std::move(entries));
@@ -6051,6 +6306,13 @@ bool Application::openSelectedUnderlineEntry() {
   const std::string *path = underlineMode_.selectedEntry();
   if (!path) return false;
   if (usilicLevel_ == UsilicLevel::Toc) return openUsilicGroup(*path);
+  // PROGRAMの項目: ^J^Pの一覧で選んだ時と同じく、PROGRAMプロンプトに
+  // その文字列を入れる(実行は^Mで確定してから)。
+  if (usilicLevel_ == UsilicLevel::Group && usilicGroupKind_ == kUsilicGroupProgram) {
+    programPromptDirectory_.clear();
+    activatePrompt(PromptKind::ProgramCommand, *path);
+    return true;
+  }
   // 2026-09-21追加: アクセス履歴の"名前 (man)"はmanページとして開き、^Gで
   // このUSILIC一覧へ戻る。
   if (path->size() > 6 && path->compare(path->size() - 6, 6, " (man)") == 0) {
@@ -6077,6 +6339,7 @@ bool Application::openSelectedUnderlineEntry() {
     directoryView_.redraw();
     return true;
   }
+  if (openExternallyIfApplicable(*path)) return true;  // EXEC/画像のクイックルック(2026-09-27)
   if (!fileMode_.loadFile(*path)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Underline;
@@ -6108,9 +6371,22 @@ bool Application::returnToUnderlineResults() {
 
 // UNDER一覧「自体」からのBack専用――returnFromDu()と同型。
 bool Application::returnFromUnderline() {
+  if (usilicLevel_ == UsilicLevel::None && underlineReturn_) {  // 一覧からの^Ou(2026-09-27)
+    UnderlineReturn back = std::move(*underlineReturn_);
+    underlineReturn_.reset();
+    currentMode_ = back.mode;
+    if (back.mode == ApplicationMode::Underline) {
+      usilicLevel_ = back.level;
+      usilicGroupKind_ = back.groupKind;
+      underlineMode_.show(std::move(back.entries), /*cursorAtEnd=*/false, back.cursor);
+    } else {
+      activeView().redraw();
+    }
+    return true;
+  }
   if (usilicLevel_ == UsilicLevel::Group) {
     usilicLevel_ = UsilicLevel::Toc;
-    underlineMode_.show({"MAN", "DIR", "FILE"}, /*cursorAtEnd=*/false, usilicGroupKind_);  // 選んだ種別へカーソルを戻す
+    underlineMode_.show(usilicTocTitles(), /*cursorAtEnd=*/false, usilicGroupKind_);  // 選んだ種別へカーソルを戻す
     return true;
   }
   if (directoryMode_.primaryAnnotations().topKind() == DirectoryMode::DirAnnotationKind::Usilic) {
@@ -7707,9 +7983,8 @@ bool Application::shellInsertBufferContent() {
     // 無条件に作成される.usilic/自体とは異なり――main()自身の
     // usilicDirのmkdir参照)それが既に存在することを他の何も保証しない
     // ため。
-    std::string savedDir = std::filesystem::path(usilicrcPath_).parent_path().string() + "/saved";
-    std::error_code ec;
-    std::filesystem::create_directories(savedDir, ec);
+    // 2026-09-27、saved/からdata/へ改名(dataDirectory()自身の宣言コメント参照)。
+    std::string savedDir = dataDirectory();
     savePath = savedDir + "/" + modeName;
     // 2026-09-09追加、直接のユーザー報告("^X^D→履歴リストに
     // /Users/haa15030/.usilic/saved/が無い。SHELLでcatする際、同
@@ -7744,6 +8019,13 @@ bool Application::shellInsertBufferContent() {
   return true;
 }
 
+std::string Application::dataDirectory() const {
+  std::string dir = std::filesystem::path(usilicrcPath_).parent_path().string() + "/data";
+  std::error_code ec;
+  std::filesystem::create_directories(dir, ec);
+  return dir;
+}
+
 // allocateWorkFilePath()/allocateArcDirectory()自身の宣言コメント
 // (application.hpp)参照。
 std::string Application::allocateWorkFilePath() {
@@ -7764,6 +8046,49 @@ bool Application::executeShowErrorLog() {
   if (!fileMode_.loadFile(errorLogPath_)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;  // それ自身の宣言コメント参照
+  return true;
+}
+
+// ^M等でファイルを開く前に、外部のプログラムへ渡すべきものならそうして
+// trueを返す(2026-09-27に括り出し、DU/USILIC/^X^Fにも適用):
+//   - usilicrcのEXEC(従来どおり)。
+//   - 2026-09-27追加、直接のユーザー提案("pdf、jpg、bmp、tiff等はバイナリだと
+//     判定されるファイルでもあるので...file(1)で画像ファイルだと判定された
+//     ファイルはusilic画面にその旨表示する代わりにクイックルック行き"):
+//     usilicrcのCODEでバイナリと判定され、かつfile(1)のMIMEタイプが画像
+//     (image/*)かPDFなら、「(^X) 種類」の1行を表示する代わりにクイックルック
+//     (qlmanage -p)で開く。qlmanageがある環境(macOS)だけ。
+bool Application::openExternallyIfApplicable(const std::string &path) {
+  if (configuration_.isExec(path)) {
+    if (auto command = configuration_.programForSuffix(path)) execMode_.run(*command, path);
+    activeView().redraw();
+    return true;
+  }
+  if (::access("/usr/bin/qlmanage", X_OK) != 0 || !fileMode_.isBinaryFile(path)) return false;
+  ChildProcess::Result result = ChildProcess::run({"file", "-b", "--mime-type", path});
+  if (!result.ok) return false;
+  std::string mime = result.output.substr(0, result.output.find('\n'));
+  if (mime.compare(0, 6, "image/") != 0 && mime != "application/pdf") return false;
+  return runQuickLook({path});
+}
+
+// K-96(^J^Od、2026-09-27): dataDirectory()自身の宣言コメント参照。
+bool Application::executeOpenDataDirectory() {
+  if (!directoryMode_.enterDirectory(dataDirectory() + "/")) return false;
+  currentMode_ = ApplicationMode::Directory;
+  display_.hideVisibleCursor();
+  directoryView_.redraw();
+  return true;
+}
+
+// K-97(^J^Ow、2026-09-27): ^[uの目次の「WORK」を直接開く。^Gで目次へ、
+// もう一度^Gで(ls)へ戻る(目次から入った時と同じ)。
+bool Application::executeOpenWorkList() {
+  underlineReturn_.reset();
+  underlineOriginDirectory_ = directoryMode_.currentDirectory();
+  usilicLevel_ = UsilicLevel::Toc;
+  if (!openUsilicGroup("WORK")) return false;
+  currentMode_ = ApplicationMode::Underline;
   return true;
 }
 
@@ -8308,7 +8633,9 @@ bool Application::openSelectedBannerEntry() {
 // を「1項目マークされている」と区別が付かなくしてしまい、このゲート
 // の目的全体を台無しにするため)。
 bool Application::startCopyPrompt() {
-  if (currentMode_ != ApplicationMode::Directory) return false;
+  cpMvRmOrigin_ = ApplicationMode::Directory;
+  cpMvRmListTargets_.clear();
+  if (currentMode_ != ApplicationMode::Directory) return startListCpMvRmPrompt(PromptKind::CopyDestination);  // 2026-09-27
   if (directoryMode_.markedCount() == 0) return false;
   if (switchToShellIfBusy()) return true;  // それ自身のコメント参照
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::CopyDestination, directoryMode_.currentDirectory()};
@@ -8342,7 +8669,9 @@ bool Application::startCopyPrompt() {
 }
 
 bool Application::startMovePrompt() {
-  if (currentMode_ != ApplicationMode::Directory) return false;
+  cpMvRmOrigin_ = ApplicationMode::Directory;
+  cpMvRmListTargets_.clear();
+  if (currentMode_ != ApplicationMode::Directory) return startListCpMvRmPrompt(PromptKind::MoveDestination);  // 2026-09-27
   if (directoryMode_.markedCount() == 0) return false;
   if (switchToShellIfBusy()) return true;  // それ自身のコメント参照
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::MoveDestination, directoryMode_.currentDirectory()};
@@ -8360,7 +8689,9 @@ bool Application::startMovePrompt() {
 // 代役、クラスコメント参照)はstartDestinationPrompt()によって表示
 // される。
 bool Application::startRemovePrompt() {
-  if (currentMode_ != ApplicationMode::Directory) return false;
+  cpMvRmOrigin_ = ApplicationMode::Directory;
+  cpMvRmListTargets_.clear();
+  if (currentMode_ != ApplicationMode::Directory) return startListCpMvRmPrompt(PromptKind::RemoveConfirm);  // 2026-09-27
   if (directoryMode_.markedCount() == 0) return false;
   if (switchToShellIfBusy()) return true;  // それ自身のコメント参照
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::RemoveConfirm, directoryMode_.currentDirectory()};
@@ -8524,6 +8855,13 @@ bool Application::runDuOnCurrentFolder() {
     bool isDirectory = std::filesystem::is_directory(*selected, ec) && !ec;
     folder = isDirectory ? *selected : std::filesystem::path(*selected).parent_path().string();
     if (!folder.empty() && folder.back() != '/') folder += '/';
+  } else if (currentMode_ == ApplicationMode::Du) {
+    // 2026-09-27追加、startLocatePrompt()自身の同日のコメント参照(DU中の
+    // ^Jd): ハイライト行がディレクトリならそこを、ファイルならその親を
+    // 集計し直す。戻り先は最初にDUを発動した場所のまま。
+    const DuEntry *entry = duMode_.selectedEntry();
+    if (!entry) return false;
+    folder = duEntryFolder(*entry);
   } else {
     return false;
   }
@@ -8542,7 +8880,8 @@ bool Application::runDuOnCurrentFolder() {
   // すると、まさに今置き換えようとしている「古い」DUセッションへの
   // 参照(fileReturnMode_==Du)をうっかり新しい基点のスナップショットへ
   // 凍結してしまう。
-  bool stillInDuRealm = currentMode_ == ApplicationMode::File && fileReturnMode_ == ApplicationMode::Du;
+  bool stillInDuRealm = currentMode_ == ApplicationMode::Du ||
+                        (currentMode_ == ApplicationMode::File && fileReturnMode_ == ApplicationMode::Du);
   if (!stillInDuRealm) {
     ApplicationMode anchor = nearestFileOrDirectoryAnchor();
     duReturnStack_ = {anchor};
@@ -8899,7 +9238,7 @@ std::vector<std::string> Application::buildArchiveExtractArgv(const std::string 
     // 実在するはずのエントリが「マッチ無し」で静かに展開されなくなる
     // (`abc[1].txt`で実機確認済み: エスケープ無しは成功、
     // `abc\[1\].txt`は"No files to process")。
-    std::vector<std::string> argv = {"7z", "x", archivePath, "-o" + destination, "-y"};
+    std::vector<std::string> argv = {sevenZipCommand(), "x", archivePath, "-o" + destination, "-y"};  // 7z/7zz(2026-09-27)
     for (const auto &m : members) argv.push_back(m);
     return argv;
   }
@@ -8990,6 +9329,27 @@ std::vector<std::string> Application::sortedUniqueRecentEntries(RingCategory cat
 // のmode.c(M_hist/T_histのグループ: `pnp->row = hp->bp->nrow - 1;`)
 // に合わせている。ListBrowserモードの外ではno-op、^Rが当てはまらない
 // 文脈についてのm_list()自身の`echo_mess(S_errf)`に合わせている。
+// EGREPの一覧(2026-09-27、startPromptHistoryRecall()自身のコメント参照):
+// usilicrcのEGREP節の実例をその並びのまま先頭に置き、続けて、それ以外の
+// 過去に検索した正規表現をソート+重複排除して並べる。
+// EGREPの一覧を開いた時のカーソル位置: 最後に使った正規表現の行(無ければ先頭)。
+int Application::egrepListCursorIndex(const std::vector<std::string> &items) const {
+  const auto &recent = history_.recentEntries(RingCategory::RecentEgrepPattern);
+  if (recent.empty()) return 0;
+  auto it = std::find(items.begin(), items.end(), recent.back());
+  return it == items.end() ? 0 : static_cast<int>(it - items.begin());
+}
+
+std::vector<std::string> Application::egrepListItems() const {
+  std::vector<std::string> items;
+  for (const auto &preset : configuration_.grepPresets())
+    if (std::find(items.begin(), items.end(), preset) == items.end()) items.push_back(preset);
+  std::vector<std::string> presets = items;
+  for (const auto &entry : sortedUniqueRecentEntries(RingCategory::RecentEgrepPattern))
+    if (std::find(presets.begin(), presets.end(), entry) == presets.end()) items.push_back(entry);
+  return items;
+}
+
 bool Application::toggleListBrowserHistory() {
   if (currentMode_ != ApplicationMode::ListBrowser) return false;
   // プロンプトから起動される呼び出し(startPromptHistoryRecall())には、
@@ -9047,9 +9407,12 @@ bool Application::toggleListBrowserHistory() {
     // の場合だけconfiguration_.grepSeedPatterns()をマージしていたが、
     // その候補一覧の種自体が(startGrepPrompt()自身のコメント参照の
     // 統一により)廃止されたため、単純にsortedUniqueRecentEntries()の
-    // 結果だけを使う。
-    items = sortedUniqueRecentEntries(listBrowserCategory_);
+    // 結果だけを使う。2026-09-27、EGREPは実例を先頭にした一覧へ
+    // (startPromptHistoryRecall()自身の同日のコメント参照)。
+    items = listBrowserCategory_ == RingCategory::RecentEgrepPattern ? egrepListItems()
+                                                                      : sortedUniqueRecentEntries(listBrowserCategory_);
   }
+  bool egrepList = !listBrowserChronological_ && listBrowserCategory_ == RingCategory::RecentEgrepPattern;
   // archiveHistoryFilterActive()自身のコメント参照――startPromptHistoryRecall()
   // が組み立てた最初のリストだけでなく、^Rの時系列トグルをまたいでも
   // このフィルタを適用したままにする。
@@ -9064,6 +9427,9 @@ bool Application::toggleListBrowserHistory() {
     // 一度再描画済みである――下の「末尾へ動かされた」カーソルを
     // (内部状態だけでなく)画面が実際に反映するよう、再びredraw()する。
     listBrowserView_.setCursorIndex(static_cast<int>(items.size()) - 1);
+    listBrowserView_.redraw();
+  } else if (egrepList && !items.empty()) {
+    listBrowserView_.setCursorIndex(egrepListCursorIndex(items));  // startPromptHistoryRecall()自身の同日のコメント参照
     listBrowserView_.redraw();
   }
   // RecentFile/RecentDirectory(2026-08-18修正、=czの報告――"文字列
@@ -9946,6 +10312,37 @@ bool Application::startProgramPrompt() {
       seed = path.filename().string();
       cursorAtStart = true;
     }
+  } else {
+    // 2026-09-27追加、直接のユーザー依頼("（ls）で可能な...^Jpプロンプトへの
+    // ハイライト行挿入を、LOCATE、DU、FILE、USILIC でも可能にして"): 選択
+    // (無ければハイライト行)のファイル。(ls)と同じくディレクトリは除く。
+    // 全部が同じディレクトリにあればそこへcdして名前だけ、そうでなければ
+    // 絶対パスで入れる。
+    int size = 0;
+    if (activeListMarks(&size)) {
+      std::vector<std::string> files;
+      for (const auto &path : listTargetPaths()) {
+        std::error_code ec;
+        if (!std::filesystem::is_directory(path, ec)) files.push_back(path);
+      }
+      if (!files.empty()) {
+        std::string dir = std::filesystem::path(files.front()).parent_path().string();
+        bool sameDir = true;
+        std::vector<std::string> names;
+        for (const auto &file : files) {
+          std::filesystem::path fp(file);
+          if (fp.parent_path().string() != dir) sameDir = false;
+          names.push_back(fp.filename().string());
+        }
+        if (sameDir) {
+          programPromptDirectory_ = dir;
+          seed = names.size() == 1 ? names.front() : shellQuoteArgv(names);
+        } else {
+          seed = shellQuoteArgv(files);
+        }
+        cursorAtStart = true;
+      }
+    }
   }
 
   activatePrompt(PromptKind::ProgramCommand, seed, "", cursorAtStart);
@@ -9977,7 +10374,11 @@ bool Application::startProgramList() { return startRegexPromptList(PromptKind::P
 // なく前回の結果を再表示する(これのもう半分についてはexecuteLocate()
 // 自身のコメント参照)。
 bool Application::startLocatePrompt() {
-  if (currentMode_ == ApplicationMode::Locate) return false;
+  // 2026-09-27、LOCATE中の^J^Lのガード(m_locate()自身のis_name()から移植)を
+  // 外した――直接のユーザー依頼("モード中のモード発動キーを有効にして
+  // 欲しい（LOCATE中の^J^L等。モードスタッククリアのうえ再発動）"): 下の
+  // stillInLocateRealmにLOCATE自身も含め、戻り先は最初にLOCATEを発動した
+  // 場所のまま(中間の履歴は残さない)で、新しいクエリを入力し直す。
   // 2026-09-19再訂正、startManPrompt()自身のコメント参照――2026-09-15
   // の「常に基点のDirectory」という判断を撤回する。nearestFileOrDirectoryAnchor()
   // で「通常ファイルかディレクトリ」を発動元から遡る。
@@ -10003,7 +10404,8 @@ bool Application::startLocatePrompt() {
   // 中間のFile自体はスタックに一切載らず、^Gの連打は最初のLOCATEを
   // 呼び出した場所まで一直線に戻る――ユーザーの明示的な依頼通り、
   // 中間の履歴は消える。
-  bool stillInLocateRealm = currentMode_ == ApplicationMode::File && fileReturnMode_ == ApplicationMode::Locate;
+  bool stillInLocateRealm = currentMode_ == ApplicationMode::Locate ||
+                            (currentMode_ == ApplicationMode::File && fileReturnMode_ == ApplicationMode::Locate);
   if (!stillInLocateRealm) {
     ApplicationMode anchor = nearestFileOrDirectoryAnchor();
     locateReturnStack_ = {anchor};
@@ -10791,6 +11193,12 @@ void Application::cancelPrompt() {
   if (promptKind_ == PromptKind::CopyDestination || promptKind_ == PromptKind::MoveDestination ||
       promptKind_ == PromptKind::RemoveConfirm) {
     promptKind_ = PromptKind::None;
+    if (cpMvRmOrigin_ != ApplicationMode::Directory) {  // 一覧から発動(2026-09-27)、選択は残す
+      cpMvRmOrigin_ = ApplicationMode::Directory;
+      cpMvRmListTargets_.clear();
+      activeView().redraw();
+      return;
+    }
     directoryView_.setCursorRowAlsoHighlighted(true);
     directoryView_.setMarkedRowUsesUnderline(true);
     directoryView_.redraw();
@@ -11034,26 +11442,23 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
                                               category == RingCategory::RecentDirectory ||
                                               category == RingCategory::ShellCommand ||
                                               category == RingCategory::RecentManPage);
-  listBrowserChronological_ = !sortDirectEntryList;
+  // 2026-09-27、直接のユーザー依頼("EGREPの一覧を復活して欲しい。
+  // usilicrcのGREP（←「EGREP」に変更よろしく）に載せてくれた実例が履歴に
+  // 埋もれるのは惜しい"): 以前(2026-09-25)はusilicrcのEGREP節の実例を
+  // 時系列の履歴の古い側(先頭)へ混ぜていたため、検索するほど実例が
+  // 履歴の奥へ埋もれていった。EGREP/CUT(正規表現)の^Rは、実例がある
+  // 限り、まず「EGREPの一覧」(egrepListItems()、実例をusilicrcの並び
+  // どおり先頭に)を開く。もう一度^Rで純粋な時系列の履歴(HISTORY)。
+  bool egrepList = category == RingCategory::RecentEgrepPattern && !configuration_.grepPresets().empty();
+  listBrowserChronological_ = !sortDirectEntryList && !egrepList;
   std::vector<std::string> items;
-  if (sortDirectEntryList) {
+  if (egrepList) {
+    items = egrepListItems();
+  } else if (sortDirectEntryList) {
     items = sortedUniqueRecentEntries(category);
   } else {
     const std::deque<std::string> &recent = history_.recentEntries(category);
     items.assign(recent.begin(), recent.end());
-    // usilicrcのGREP(Configuration::grepPresets()、2026-09-25再実装):
-    // EGREP/CUT(正規表現)の一覧に常に加える――時系列の一覧なので、まだ
-    // 履歴に無いものを古い側(先頭)にusilicrcの並びどおりに置く。履歴
-    // 自体(~/.usilic/history)には書き込まないので、履歴のある既存の
-    // 環境でも、usilicrcを差し替えればその時点から一覧に出る。
-    if (category == RingCategory::RecentEgrepPattern) {
-      std::vector<std::string> presets;
-      for (const auto &preset : configuration_.grepPresets())
-        if (std::find(items.begin(), items.end(), preset) == items.end() &&
-            std::find(presets.begin(), presets.end(), preset) == presets.end())
-          presets.push_back(preset);
-      items.insert(items.begin(), presets.begin(), presets.end());
-    }
   }
   // archiveHistoryFilterActive()自身のコメント参照。
   // promptHistoryRecallKind_/promptHistoryRecallReturnMode_はどちらも
@@ -11068,7 +11473,12 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   listBrowserMode_.show(items, fileHistoryBadges(configuration_, category, items));
   currentMode_ = ApplicationMode::ListBrowser;
   if (!items.empty()) {
-    if (directEntry) {
+    if (egrepList) {
+      // 2026-09-27、直接のユーザー報告("EGREP一覧のカーソル位置が保存され
+      // ない"): 先頭ではなく、最後に使った正規表現(履歴の最新、~/.usilic/
+      // historyに残るので次回の起動後も同じ)の行に置く。
+      listBrowserView_.setCursorIndex(egrepListCursorIndex(items));
+    } else if (directEntry) {
       // 2026-08-11: legacyのmode.cは、本物の^R呼び出し(T_hfgrep/
       // T_hegrep、`row = nrow - 1`)と直接入力(M_fgrep/M_locate/
       // M_cut2、`i = -2`――明示的な行は無く、先頭にフォールバックする)
@@ -11812,7 +12222,7 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   // (反転表示でない)テキストの「穴」として見える。
   if (kind == PromptKind::CopyDestination || kind == PromptKind::MoveDestination ||
       kind == PromptKind::RemoveConfirm) {
-    std::string message = kind == PromptKind::RemoveConfirm ? "Delete ? " : "Destination ? ";
+    std::string message = kind == PromptKind::RemoveConfirm ? "Delete? (y/n) " : "Destination? ";  // 2026-09-27、RMは"Delete? (y/n) "、CP/MVは"Destination? "(直接のユーザー依頼)
     display_.moveCursor(row, labelWidth);
     for (unsigned char c : message) display_.putChar(c);
     labelWidth += static_cast<int>(message.size());
@@ -12632,9 +13042,9 @@ bool Application::executeQuickLook() {
     }
     if (paths.empty()) return false;
   } else if (currentMode_ == ApplicationMode::Locate) {
-    const std::string *result = locateMode_.selectedResult();
-    if (!result) return false;
-    paths.push_back(*result);
+    // 2026-09-27、選択があればその全部(listTargetPaths())。
+    paths = listTargetPaths();
+    if (paths.empty()) return false;
   } else if (currentMode_ == ApplicationMode::Grep && grepReturnMode_ == ApplicationMode::Directory) {
     const GrepMatch *match = grepMode_.selectedMatch();
     const auto &entries = directoryMode_.entries();
@@ -12665,14 +13075,33 @@ bool Application::executeQuickLook() {
     // (feedRegexListByte())ため、スペースを含むパスを打てなくなる
     // Spaceの横取りはしない。PROGRAM/CUT/MAN等、ファイルを指さない
     // 一覧も対象外。
-    const DuEntry *entry = duMode_.selectedEntry();
-    std::error_code ec;
-    if (!entry || !std::filesystem::exists(entry->path, ec)) return false;
-    paths.push_back(entry->path);
+    // 2026-09-27、選択があればその全部(listTargetPaths())。
+    paths = listTargetPaths();
+    if (paths.empty()) return false;
+  } else if (currentMode_ == ApplicationMode::Archive) {
+    // 2026-09-27追加、直接のユーザー依頼("ARCは？ファイル操作は不要だが
+    // クイックルックはどうかな"): ハイライト行のメンバーを一時ディレクトリ
+    // (<workRoot>/ql)へ取り出してから渡す(^Mで開く時と同じextractSelected())。
+    // ディレクトリや、中のアーカイブ(^Mで潜る対象)は対象外。
+    const ArchiveEntry *entry = archiveMode_.selectedEntry();
+    if (!entry || entry->isDirectory) return false;
+    ArchiveKind nestedKind = ArchiveKind::None;
+    if (configuration_.programForSuffix(entry->name, &nestedKind) && nestedKind != ArchiveKind::None) return false;
+    auto content = archiveMode_.extractSelected();
+    if (!content) return false;
+    capBufferContent(*content);
+    std::string tempPath = materializeArchiveTempFile(workRootDirectory_ + "/ql", entry->name, *content);
+    if (tempPath.empty()) return false;
+    paths.push_back(tempPath);
   } else {
     return false;
   }
+  return runQuickLook(paths);
+}
 
+// executeQuickLook()の後半(2026-09-27に括り出した): `paths`を`qlmanage -p`へ
+// 渡し、PROGRAMの履歴へ「qlmanage -p ベース名...」で記録する。
+bool Application::runQuickLook(const std::vector<std::string> &paths) {
   // 分割する前にディレクトリ自身の末尾の"/"(DirectoryEntry::name
   // 自身の慣習)を取り除く、そのため記録されるラベルは"cpmv_a"
   // スタイルのベース名であり、空(末尾がスラッシュのパスに対する
@@ -12804,20 +13233,31 @@ bool Application::executeLocate(const std::string &query) {
 std::string Application::resolveCpMvDestination(const std::string &destination) const {
   if (destination.empty() || destination.front() == '/') return destination;
   std::string base = directoryMode_.currentDirectory();
+  // 一覧から発動した場合(2026-09-27)の相対の宛先は、先頭の対象の親ディレクトリ基準。
+  if (cpMvRmOrigin_ != ApplicationMode::Directory && !cpMvRmListTargets_.empty())
+    base = std::filesystem::path(cpMvRmListTargets_.front()).parent_path().string();
   if (!base.empty() && base.back() != '/') base += '/';
   return base + destination;
+}
+
+// CP/MV/RMの失敗時等の戻り先ディレクトリ。一覧から発動した場合(2026-09-27)は
+// 先頭の対象の親ディレクトリ。
+std::string Application::cpMvRmSourceDirectory() const {
+  if (cpMvRmOrigin_ != ApplicationMode::Directory && !cpMvRmListTargets_.empty())
+    return std::filesystem::path(cpMvRmListTargets_.front()).parent_path().string() + "/";
+  return directoryMode_.currentDirectory();
 }
 
 bool Application::executeCopy(const std::string &destination) {
   std::vector<std::string> targets = collectTargetPaths();
   if (targets.empty() || destination.empty()) {
-    directoryView_.redraw();
+    activeView().redraw();
     return false;
   }
   std::string resolvedDestination = resolveCpMvDestination(destination);
   std::vector<std::string> argv = configuration_.commandFor(ConfiguredRole::Cp).argv;
   if (argv.empty()) {
-    directoryView_.redraw();
+    activeView().redraw();
     return false;
   }
   for (const auto &target : targets) argv.push_back(target);
@@ -12834,21 +13274,21 @@ bool Application::executeCopy(const std::string &destination) {
   targetBasenames.reserve(targets.size());
   for (const auto &target : targets)
     targetBasenames.push_back(stripLsFTypeMarker(std::filesystem::path(target).filename().string()));
-  return startCpMvRmShellRun(argv, resolvedDestination, directoryMode_.currentDirectory(), targetBasenames);
+  return startCpMvRmShellRun(argv, resolvedDestination, cpMvRmSourceDirectory(), targetBasenames);
 }
 
 // executeCopy()と同じ2026-08-22の再設計――それ自身のコメント参照。
 bool Application::executeMove(const std::string &destination) {
   std::vector<std::string> targets = collectTargetPaths();
   if (targets.empty() || destination.empty()) {
-    directoryView_.redraw();
+    activeView().redraw();
     return false;
   }
   if (!checkTargetsWritable(targets)) return false;
   std::string resolvedDestination = resolveCpMvDestination(destination);
   std::vector<std::string> argv = configuration_.commandFor(ConfiguredRole::Mv).argv;
   if (argv.empty()) {
-    directoryView_.redraw();
+    activeView().redraw();
     return false;
   }
   for (const auto &target : targets) argv.push_back(target);
@@ -12858,7 +13298,7 @@ bool Application::executeMove(const std::string &destination) {
   targetBasenames.reserve(targets.size());
   for (const auto &target : targets)
     targetBasenames.push_back(stripLsFTypeMarker(std::filesystem::path(target).filename().string()));
-  return startCpMvRmShellRun(argv, resolvedDestination, directoryMode_.currentDirectory(), targetBasenames);
+  return startCpMvRmShellRun(argv, resolvedDestination, cpMvRmSourceDirectory(), targetBasenames);
 }
 
 // m_dest()のT_rmの分岐から移植: `confirmation`はまさに"y"でなければ
@@ -12872,17 +13312,17 @@ bool Application::executeMove(const std::string &destination) {
 bool Application::executeRemove(const std::string &confirmation) {
   std::vector<std::string> targets = collectTargetPaths();
   if (targets.empty() || confirmation != "y") {
-    directoryView_.redraw();
+    activeView().redraw();
     return false;
   }
   if (!checkTargetsWritable(targets)) return false;
   std::vector<std::string> argv = configuration_.commandFor(ConfiguredRole::Rm).argv;
   if (argv.empty()) {
-    directoryView_.redraw();
+    activeView().redraw();
     return false;
   }
   for (const auto &target : targets) argv.push_back(target);
-  return startCpMvRmShellRun(argv, /*destination=*/"", directoryMode_.currentDirectory());
+  return startCpMvRmShellRun(argv, /*destination=*/"", cpMvRmSourceDirectory());
 }
 
 // executeCopy()/executeMove()/executeRemove()の共有される末尾
@@ -12897,11 +13337,13 @@ bool Application::startCpMvRmShellRun(const std::vector<std::string> &argv, cons
                                        const std::string &sourceDirectory,
                                        std::vector<std::string> targetBasenames) {
   if (!ensureShellActive()) {
-    directoryView_.redraw();
+    activeView().redraw();
     return false;
   }
-  pendingCpMvRmShellRun_ =
-      PendingCpMvRmShellRun{shell_.promptGeneration(), destination, sourceDirectory, std::move(targetBasenames)};
+  pendingCpMvRmShellRun_ = PendingCpMvRmShellRun{shell_.promptGeneration(), destination, sourceDirectory,
+                                                 std::move(targetBasenames), cpMvRmOrigin_};
+  cpMvRmOrigin_ = ApplicationMode::Directory;  // 対象は上のargvに確定済み
+  cpMvRmListTargets_.clear();
   shell_.commandLine().setText(shellQuoteArgv(argv) + "; echo " + kCpMvRmExitMarker + "$?");
   shell_.submitLine();
   return true;
@@ -12950,6 +13392,25 @@ void Application::pollPendingCpMvRmShellRun() {
   // か、既に「絶対」パスである――executeCopy()/executeMove()が、
   // それがそもそもここへ到達する前にそれを解決する(それら自身の
   // 2026-08-27のコメント参照)。
+  // 一覧から発動した場合(2026-09-27): CP/MVが成功して宛先へ入れたら(ls)の
+  // 宛先へ(従来と同じ)。それ以外(RM、失敗)は発動元の一覧へ戻り、選択を
+  // 解く。LOCATEは消えた/動いたファイルが一覧に残らないよう検索し直す。
+  if (run.origin != ApplicationMode::Directory) {
+    if (ok && !run.destination.empty() && directoryMode_.descendTo(run.destination)) {
+      directoryMode_.setTransientMarkedNames(run.targetBasenames);
+      if (run.origin == ApplicationMode::ListBrowser) promptHistoryContext_ = std::nullopt;
+      directoryView_.redraw();
+      return;
+    }
+    currentMode_ = run.origin;
+    if (run.origin == ApplicationMode::Locate && ok && !locateMode_.query().empty()) {
+      locateMode_.search(locateMode_.query());
+    }
+    int size = 0;
+    if (ListMarks *marks = activeListMarks(&size)) marks->clear();
+    activeView().redraw();
+    return;
+  }
   if (!ok || run.destination.empty() || !directoryMode_.descendTo(run.destination)) {
     directoryMode_.enterDirectory(run.sourceDirectory);
   } else {
@@ -13276,6 +13737,15 @@ bool Application::runNestedUsilicProgram(const std::string &command) {
 bool Application::checkTargetsWritable(const std::vector<std::string> &targets) {
   for (const auto &target : targets) {
     if (!CpMvRmMode::isWritable(target)) {
+      if (cpMvRmOrigin_ != ApplicationMode::Directory) {
+        // 一覧から発動した場合(2026-09-27)は、その一覧の位置欄に出す。
+        cpMvRmOrigin_ = ApplicationMode::Directory;
+        cpMvRmListTargets_.clear();
+        showTransientNotice(activeView(), "Permission denied");
+        display_.putChar(0x07);
+        display_.flush();
+        return false;
+      }
       directoryMode_.reportError("Permission denied");
       directoryView_.redraw();
       return false;
@@ -13372,9 +13842,7 @@ bool Application::executeArchiveExtract(const std::string &destination) {
   //     される。
   std::string resolvedDestination = destination;
   if (resolvedDestination.empty()) {
-    resolvedDestination = std::filesystem::path(usilicrcPath_).parent_path().string() + "/saved";
-    std::error_code ec;
-    std::filesystem::create_directories(resolvedDestination, ec);
+    resolvedDestination = dataDirectory();  // 2026-09-27、saved/から改名
   }
   if (!std::filesystem::is_directory(resolvedDestination)) {
     std::string message = resolvedDestination + ": No such directory";
@@ -13534,6 +14002,7 @@ bool Application::executePathInput(const std::string &path) {
     currentMode_ = ApplicationMode::Archive;
     return true;
   }
+  if (openExternallyIfApplicable(resolved.path)) return true;  // EXEC/画像のクイックルック(2026-09-27)
   if (!fileMode_.loadFile(resolved.path)) {
     activeView().redraw();
     return false;

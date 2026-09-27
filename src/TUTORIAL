@@ -351,16 +351,16 @@
 
            ssuuffffiixx を持つファイル引数で _p_r_o_g_r_a_m を実行。
 
-     GREP
+     EGREP
         書式：ssttrriinngg
         用例：\/\*usilic\*\/
         内容：
 
-           EEGGRREEPP または CCUUTT で表示される ssttrriinngg リスト。
+           EEGGRREEPP または CCUUTT(正規表現)の ^^RR で先頭に表示される ssttrriinngg リスト(もう一度 ^^RR で履歴)。節名は以前の GREP も可。
 
      PROGRAM
         書式：_p_r_o_g_r_a_m
-        用例：dviout
+        用例：mg
         内容：
 
            PPRROOGGRRAAMM で表示される _p_r_o_g_r_a_m リスト。
@@ -426,21 +426,21 @@
         用例：cp -rvi
         内容：
 
-           CCPP モードの _c_p(1) 起動オプション。(デフォルト: cp -rvf)
+           CCPP モードの _c_p(1) 起動オプション。(デフォルト: cp -vR)
 
      MV
         書式：_m_v (option)
         用例：mv -vi
         内容：
 
-           MMVV モードの _m_v(1) 起動オプション。(デフォルト: mv -vf)
+           MMVV モードの _m_v(1) 起動オプション。(デフォルト: mv -v)
 
      RM
         書式：_r_m (option)
         用例：rm -rvi
         内容：
 
-           RRMM モードの _r_m(1) 起動オプション。(デフォルト: rm -rvf)
+           RRMM モードの _r_m(1) 起動オプション。(デフォルト: rm -vr)
 
      KEY
         内容：

@@ -516,6 +516,7 @@ class Shell {
   ShellOptions options_;
 
   int masterFd_ = -1;
+  bool handshakeDone_ = false;  // start()のハンドシェイク完了後true(writeToPty()の2026-09-27のコメント参照)
   int childPid_ = -1;
   bool isBash_ = true;
   bool isZsh_ = false;  // これがなぜ単に「bashではない」ではなく自身の分岐を必要とするかについてはisZshProgram()自身のコメント参照

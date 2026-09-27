@@ -543,6 +543,11 @@ enum class Command {
   // executeShowShellLog()自身のコメント参照。
   ShowErrorLog,
   ShowShellLog,
+  // K-96(^J^Od、2026-09-27): ~/.usilic/data/をDIRで開く。K-97(^J^Ow):
+  // ^[uの目次のWORK(^X^Wの作業ファイル、複数あり得る)を直接開く。
+  // Application::executeOpenDataDirectory()/executeOpenWorkList()参照。
+  OpenDataDirectory,
+  OpenWorkList,
   // ESC l("LOG"): Application::executeStartLog()自身のコメント参照。
   StartLog,
   // K-0(^T、M_usilic、「USILIC」): ステータス/バージョン情報画面を表示
@@ -2226,6 +2231,13 @@ class Application {
   ContentView &viewForMode(ApplicationMode mode);
   void layoutViews();
   std::vector<std::string> collectTargetPaths() const;
+  // (ls)以外の一覧の選択(2026-09-27、list_marks.hpp参照)。activeListMarks()は
+  // 現在のモードが選択できる一覧ならその選択の集合と行数を、そうでなければ
+  // nullptrを返す。listTargetPaths()は選択(無ければハイライト行)のうち実在
+  // するものの絶対パス(末尾の'/'は除く)。
+  ListMarks *activeListMarks(int *size);
+  std::vector<std::string> listTargetPaths() const;
+  std::string cpMvRmSourceDirectory() const;
   // Fileモードにいる間のCommand::PagerNextFile/PagerPreviousFile/
   // PagerFirstFile/PagerLastFileと'['/']'で共有される(Command
   // enum自身のコメント参照)――pagerFileList_[newIndex]を読み込み、
@@ -2240,6 +2252,8 @@ class Application {
   // ToggleHistoryView自身のコメント参照。
   bool toggleListBrowserHistory();
   std::vector<std::string> sortedUniqueRecentEntries(RingCategory category) const;
+  std::vector<std::string> egrepListItems() const;  // EGREPの一覧(2026-09-27)
+  int egrepListCursorIndex(const std::vector<std::string> &items) const;
   // isGrepInPlaceEligibleMode()自身のコメント参照(application.cpp、
   // 2026-09-11追加)。
   bool isGrepInPlaceEligibleMode(ApplicationMode mode) const;
@@ -2402,6 +2416,11 @@ class Application {
   // アクション。まだファイルが存在しない(今回のセッションで何も
   // ログされていない)、または開けない場合はfalse。
   bool executeShowErrorLog();
+  bool executeOpenDataDirectory();  // K-96
+  bool openExternallyIfApplicable(const std::string &path);
+  bool openListEntrySpecial(bool raw);  // ^O^M/^[^Mの一覧版(2026-09-27)
+  bool runQuickLook(const std::vector<std::string> &paths);
+  bool executeOpenWorkList();       // K-97
   // K-68(^X^Kl): Shell::scrollback()の「現在の」行をlogFilePath_
   // へ(以前のスナップショットを切り詰めて)書き込み、その後その
   // ファイルをFileモードで開く。これはlegacy自身の
@@ -2452,6 +2471,10 @@ class Application {
   // ドとして「/tmp/.usilic.<pid>/」を漏らすだけだった)。専用の
   // メンバーではなく、usilicrcPath_自身のディレクトリを共有する。
   std::string bannerFilePath() const;
+  // ~/.usilic/data(旧saved、2026-09-27改名、直接のユーザー依頼: ^J^Odの
+  // 'd'に揃えるため)。^X^Wの名前付き保存先・^Oaの既定の展開先・^J^Odが
+  // 開くディレクトリ。無ければ作成する。
+  std::string dataDirectory() const;
   // 2026-09-25追加、直接のユーザー報告("Startup file:のusilicrcは
   // -c起動でも無反応"): INFOの「Startup file」行に出す/開くパス。
   // usilicrcPath_(~/.usilic/usilicrc)は~/.usilic自体の所在(saved/や
@@ -3229,6 +3252,8 @@ class Application {
     // cancelPrompt()自身のShellCommandの分岐参照)。
     ShellCommand
   };
+  // startCopyPrompt()/startMovePrompt()/startRemovePrompt()の一覧版(2026-09-27)。
+  bool startListCpMvRmPrompt(PromptKind kind);
   // ^Xc/^Xm/^Xr(K-52/K-54/K-56)とその^X^K「with SHELL window」の
   // 兄弟(K-51/K-53/K-55)は、以前は移動先/確認プロンプトを即座に
   // 有効化していた――実際のユーザー報告(=ecのスクリーンショット:
@@ -3273,8 +3298,16 @@ class Application {
     // startCpMvRmShellRun()自身のtargetBasenames引数のコメント参照
     // (2026-09-08追加)。
     std::vector<std::string> targetBasenames;
+    // 発動元(2026-09-27、cpMvRmOrigin_自身のコメント参照)。
+    ApplicationMode origin = ApplicationMode::Directory;
   };
   std::optional<PendingCpMvRmShellRun> pendingCpMvRmShellRun_;
+  // CP/MV/RMを(ls)以外の一覧(LOCATE/DU/^X^F・^X^D/USILIC)から発動した場合
+  // (2026-09-27、直接のユーザー依頼、list_marks.hpp参照)の発動元と、発動時に
+  // 確定した対象の絶対パス。Directoryなら従来どおりdirectoryMode_から
+  // 集める(collectTargetPaths())。
+  ApplicationMode cpMvRmOrigin_ = ApplicationMode::Directory;
+  std::vector<std::string> cpMvRmListTargets_;
   // executeArchiveExtract()自身のPendingCpMvRmShellRunのバージョン
   // (2026-08-23、CP/MV/RMのものと同じ再設計、executeCopy()自身の
   // コメント参照)。2026-08-26の追加(直接のユーザー仕様): 今は
@@ -3678,7 +3711,19 @@ class Application {
   // USILIC一覧の階層: None=マーク一覧/時系列、Toc=MAN/DIR/FILE目次、Group=種別ごとの一覧。
   enum class UsilicLevel { None, Toc, Group };
   UsilicLevel usilicLevel_ = UsilicLevel::None;
-  int usilicGroupKind_ = 0;  // 目次で最後に選んだ種別(0=MAN、1=DIR、2=FILE)
+  int usilicGroupKind_ = 0;  // 目次で最後に選んだ種別(usilicTocTitles()の添字: 0=MAN、1=DIR、2=FILE、3=PROGRAM、4=WORK)
+  // ^Ou(閲覧)を(ls)以外の一覧(LOCATE/DU/^X^F・^X^D/USILIC)から発動した時の
+  // 戻り先(2026-09-27、直接のユーザー依頼"（ls）で可能なファイル操作には
+  // 「閲覧」（^Ou）もあるのでよろしく")。^Gで発動元の一覧へ戻す。USILICから
+  // 発動した場合は、その一覧の中身・階層・カーソルも戻す。
+  struct UnderlineReturn {
+    ApplicationMode mode;
+    std::vector<std::string> entries;
+    UsilicLevel level;
+    int groupKind;
+    int cursor;
+  };
+  std::optional<UnderlineReturn> underlineReturn_;
   // DIR一覧(^X^D)から選んで移動する前のディレクトリ。注釈Dirの^Gで
   // 元の位置へ戻した上で一覧を再表示する。
   std::string dirListOriginDirectory_;

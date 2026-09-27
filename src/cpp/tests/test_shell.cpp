@@ -1011,3 +1011,32 @@ TEST_CASE("Shell start(): pagerPath left at its default (empty) omits the PAGER/
   for (const auto &line : shell.scrollback().lines())
     CHECK(line.text.find("--usilic-pager") == std::string::npos);
 }
+
+// 2026-09-27追加、直接のユーザー報告(Shell::writeToPty()自身の同日の
+// コメント参照): 約2KBを超えるコマンドラインが途中で切れてbashへ届き、
+// ">"の継続プロンプトで止まっていた。5000文字の引数が欠けずに届くこと。
+TEST_CASE("submitLine(): a command line longer than the pty's ~2KB buffer reaches bash intact") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  options.argv = {"bash", "--norc", "--noprofile"};
+  options.promptMark = "<usilic-test-mark>";
+  options.programName = "usilictest";
+  options.rows = 24;
+  options.columns = 80;
+  Shell shell(d, options);
+  if (!shell.start()) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(shell, [&] { return !shell.currentDirectory().empty(); }));
+  int generation = shell.promptGeneration();
+  shell.commandLine().setText("printf '%s' '" + std::string(5000, 'x') + "' | wc -c | tr -d ' '; echo done-$?");
+  shell.submitLine();
+  // 5000文字分のエコーを小刻みに読むので、既定の500回では足りない。
+  REQUIRE(pumpUntil(shell, [&] { return shell.promptGeneration() != generation; }, 20000));
+  bool found = false;
+  for (const auto &line : shell.scrollback().lines())
+    if (line.text == "5000") found = true;
+  CHECK(found);
+  shell.terminate();
+}

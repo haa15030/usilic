@@ -1,4 +1,7 @@
 #include "configuration.hpp"
+
+#include <unistd.h>
+#include <cstdlib>
 #include "key_bindings.hpp"
 
 #include <algorithm>
@@ -6,6 +9,31 @@
 #include <sstream>
 
 namespace fm {
+
+// configuration.hpp自身の宣言コメント参照(2026-09-27)。
+std::string sevenZipCommand() {
+  static const std::string name = [] {
+    std::vector<std::string> dirs;
+    if (const char *path = std::getenv("PATH")) {
+      std::string all = path;
+      std::size_t start = 0;
+      while (start <= all.size()) {
+        std::size_t colon = all.find(':', start);
+        std::string dir = all.substr(start, colon == std::string::npos ? std::string::npos : colon - start);
+        if (!dir.empty()) dirs.push_back(dir);
+        if (colon == std::string::npos) break;
+        start = colon + 1;
+      }
+    }
+    dirs.push_back("/opt/homebrew/bin");  // Finderからの起動ではPATHに無い
+    dirs.push_back("/usr/local/bin");
+    for (const char *candidate : {"7z", "7zz"})
+      for (const auto &dir : dirs)
+        if (::access((dir + "/" + candidate).c_str(), X_OK) == 0) return std::string(candidate);
+    return std::string("7z");
+  }();
+  return name;
+}
 
 namespace {
 
@@ -229,9 +257,9 @@ Configuration::Configuration() {
   // 自身の、`ls`出力が`ls -alF`フォーマットであるという文書化された
   // 前提から推測されている(CLAUDE.mdの履歴項目13参照)。
   roleCommands_[ConfiguredRole::Ls] = {{"ls", "-alF"}, std::nullopt};
-  roleCommands_[ConfiguredRole::Cp] = {{"cp", "-vRi"}, std::nullopt};   // config.hのCPデフォルト
-  roleCommands_[ConfiguredRole::Mv] = {{"mv", "-vi"}, std::nullopt};    // config.hのMVデフォルト
-  roleCommands_[ConfiguredRole::Rm] = {{"rm", "-vri"}, std::nullopt};   // config.hのRMデフォルト
+  roleCommands_[ConfiguredRole::Cp] = {{"cp", "-vR"}, std::nullopt};   // config.hのCPデフォルト(2026-09-27、-iを外した: 直接のユーザー依頼)
+  roleCommands_[ConfiguredRole::Mv] = {{"mv", "-v"}, std::nullopt};    // config.hのMVデフォルト(同上)
+  roleCommands_[ConfiguredRole::Rm] = {{"rm", "-vr"}, std::nullopt};   // config.hのRMデフォルト(同上)
   // groffの実際のlegacyデフォルトは、実行時のgroffバージョンの探り
   // (-Rか-Tutf8スタイルのフラグかを選ぶための)を含んでおり、ここ
   // では再現されていない。これは妥当な固定のデフォルトであり、
@@ -324,7 +352,7 @@ Configuration::Configuration() {
   // ければ実際に展開されるバイト列と混ぜてしまうエントリごとの進捗
   // テキストを抑制する。
   roleCommands_[ConfiguredRole::RarExtract] = {{"unar", "-f", "-o", "-", "-q"}, std::nullopt};
-  roleCommands_[ConfiguredRole::SevenZipExtract] = {{"7z", "x", "-so"}, std::nullopt};
+  roleCommands_[ConfiguredRole::SevenZipExtract] = {{sevenZipCommand(), "x", "-so"}, std::nullopt};
 
   // str.cの組み込みARCHIVE[]テーブルからの移植、逐語的な
   // suffix->commandの対応付け。
@@ -377,7 +405,7 @@ Configuration::Configuration() {
   // (The Unarchiverのコマンドラインツール)。理由についてはRarReader
   // /ConfiguredRole::RarExtract自身のコメント参照。
   addBuiltinArchive(".rar", ArchiveKind::Rar, {{"lsar", "-l"}, std::nullopt});
-  addBuiltinArchive(".7z", ArchiveKind::SevenZip, {{"7z", "l"}, std::nullopt});
+  addBuiltinArchive(".7z", ArchiveKind::SevenZip, {{sevenZipCommand(), "l"}, std::nullopt});
 
   // 2026-09-25追加、直接のユーザー依頼(ARCHIVEの要否の検討で): それまで
   // 同梱のusilicrcのARCHIVE節に頼っていた定番の別名を組み込みにした――
@@ -434,6 +462,10 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
     if (i >= lines.size()) break;
 
     std::string keyword = firstToken(lines[i]);
+    // 2026-09-27、直接のユーザー依頼("usilicrcのGREP（←「EGREP」に変更
+    // よろしく）"): 節名はEGREPが正式。以前のusilicrcのGREPも同じ節として
+    // 受け付ける(内部の添字は元のGREPのまま)。
+    if (keyword == "EGREP") keyword = "GREP";
     auto it = std::find(keywords.begin(), keywords.end(), keyword);
     if (it == keywords.end()) {
       errors_.push_back("unrecognized directive: " + lines[i]);

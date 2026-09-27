@@ -81,7 +81,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {50, "F-2 C-c"},   // ^O^C  COPY
       {51, "F-2 C-y"},   // ^O^Y  ペースト
       {52, "F-4 e"},     // ^J^Oe ERROR
-      {53, "F-4 l"},     // ^J^Ol SHELLのログ
+      {53, "F-4 s"},     // ^J^Os SHELLのログ(2026-09-27、^J^Olから)
       {54, "ESC l"},     // ^[l   SHELLのログ
       {55, "ESC s"},     // ^[s   SHELLへ
       {56, "F-1 ."},     // ^J.   SHELL: カレントディレクトリへcd
@@ -124,6 +124,8 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {93, "F-0 ("},     // ^X(   マクロの記録開始
       {94, "F-0 )"},     // ^X)   マクロの記録終了
       {95, "F-0 e"},     // ^Xe   マクロの実行
+      {96, "F-4 d"},     // ^J^Od ~/.usilic/data/
+      {97, "F-4 w"},     // ^J^Ow WORK
   };
   return entries;
 }

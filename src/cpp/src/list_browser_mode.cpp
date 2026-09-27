@@ -16,10 +16,15 @@ namespace fm {
 // クラスからApplicationへ逆に手を伸ばすかのどちらかになり、どちらも
 // 「既に全ての文脈を持っている唯一の呼び出し元にそのまま持たせる」
 // より劣る。
-ListBrowserMode::ListBrowserMode(ContentView &view) : view_(view) {}
+ListBrowserMode::ListBrowserMode(ContentView &view) : view_(view) {
+  // 選択行の見た目は(ls)と同じ(2026-09-27、list_marks.hpp参照)。
+  view_.setMarkedPredicate([this](int index) { return marks_.isMarked(index); });
+  view_.setMarkedRowUsesUnderline(true);
+}
 
 void ListBrowserMode::show(const std::vector<std::string> &items, const std::vector<std::string> &badges) {
   items_ = items;
+  marks_.clear();
   std::vector<ContentView::Line> lines;
   lines.reserve(items_.size());
   for (std::size_t i = 0; i < items_.size(); i++) {

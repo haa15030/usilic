@@ -7,6 +7,7 @@
 
 #include "configuration.hpp"
 #include "content_view.hpp"
+#include "list_marks.hpp"
 
 namespace fm {
 
@@ -80,6 +81,10 @@ class LocateMode {
   const std::string &query() const;
   const std::vector<std::string> &results() const;
   const std::string *selectedResult() const;
+  // 選択(2026-09-27、list_marks.hpp自身のコメント参照)。一覧を作り直すと
+  // 消える。
+  ListMarks &marks() { return marks_; }
+  const ListMarks &marks() const { return marks_; }
 
  private:
   ContentView &view_;
@@ -87,6 +92,7 @@ class LocateMode {
 
   std::string query_;
   std::vector<std::string> results_;
+  ListMarks marks_;
 };
 
 }  // namespace fm

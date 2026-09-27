@@ -1875,22 +1875,46 @@ std::string findExecutable(const std::string &name) { return findExecutableIn(na
 // コマンドは入力欄に置くだけで実行はしない(returnを押すかどうかは
 // ユーザーが決める)。通常のディレクトリ起動の時だけ(ページャ起動には
 // 割り込まない)。
+// 2026-09-27拡張、直接のユーザー依頼("PROGRAM：...mg、infoを追加。最初の
+// 起動時、「brew install groff mg info」でインストール"): groffに加えて、
+// usilicrcのPROGRAMに載せたmg/infoのうち見つからないものもまとめて1回で
+// 提示する。Homebrewではinfoはtexinfoに入っている(`brew install info`という
+// formulaは無い)。macOSはmgを/usr/bin/mgとして標準で持っている。印は
+// ~/.usilic/install-offered(以前のgroff-offeredで既にgroffを提示済みの
+// 環境でも、mg/infoの分は1回出す)。
 void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
-  if (!findExecutable("groff").empty()) return;
-  std::string marker = usilicDir + "groff-offered";
+  std::string marker = usilicDir + "install-offered";
   std::error_code ec;
   if (std::filesystem::exists(marker, ec)) return;
+  // {コマンド名, パッケージ名}
+#ifdef __APPLE__
+  // 2026-09-27追加、直接のユーザー提案("brew install groff mg texinfo 7zz"):
+  // 7-Zip(ARCの.7z)も。Homebrewのformula名はsevenzip(コマンド名は7zz、
+  // `7zz`というformulaは無い)。fm::sevenZipCommand()が7zの代わりに7zzを使う。
+  const std::vector<std::pair<std::string, std::string>> tools = {
+      {"groff", "groff"}, {"mg", "mg"}, {"info", "texinfo"}, {"7zz", "sevenzip"}};
+#else
+  const std::vector<std::pair<std::string, std::string>> tools = {
+      {"groff", "groff"}, {"mg", "mg"}, {"info", "info"}, {"7z", "p7zip-full"}};
+#endif
+  std::string packages;
+  for (const auto &tool : tools) {
+    bool found = !findExecutable(tool.first).empty();
+    if (tool.first == "7zz" || tool.first == "7z") found = !findExecutable("7z").empty() || !findExecutable("7zz").empty();
+    if (!found) packages += " " + tool.second;
+  }
+  if (packages.empty()) return;
   std::ofstream(marker) << "";
 #ifdef __APPLE__
   std::string brew = findExecutable("brew");
   // brewがPATH上に無い(Finderからの起動でHomebrewの既定の場所だけで
   // 見つかった)場合は、SHELLでもそのまま実行できるようフルパスで書く。
   std::string command;
-  if (brew.empty()) command = "open https://brew.sh  # Homebrew未インストール: 導入後に brew install groff";
-  else if (brew == findExecutableOnPathOnly("brew")) command = "brew install groff";
-  else command = brew + " install groff";
+  if (brew.empty()) command = "open https://brew.sh  # Homebrew未インストール: 導入後に brew install" + packages;
+  else if (brew == findExecutableOnPathOnly("brew")) command = "brew install" + packages;
+  else command = brew + " install" + packages;
 #else
-  std::string command = "sudo apt install groff";
+  std::string command = "sudo apt install -y" + packages;  // -y: aptの確認(Y/n)を省く(2026-09-27)
 #endif
   app.offerShellCommand(command);
 }

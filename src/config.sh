@@ -51,9 +51,9 @@ CHARSET="utf-8"
 DU="du -ab"
 
 # CP/MV/RM mode.
-CP="cp -vRi"
-MV="mv -vi"
-RM="rm -vri"
+CP="cp -vR"
+MV="mv -v"
+RM="rm -vr"
 
 echo "Creating $CSRC/Makefile:"
 if [ `uname` = Linux ]; then	# Linux

@@ -2063,7 +2063,7 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^J^W (SHELL: insert buffer content) 
   // 2026-08-18 REDESIGN: no longer w.N -- see shellInsertBufferContent()'s
   // own comment. Directory mode's own current directory's basename
   // (the Fixture's own temp root dir's name here).
-  std::string savePath = (root / ".usilic" / "saved" / root.filename()).string();
+  std::string savePath = (root / ".usilic" / "data" / root.filename()).string();
   // Single-quoted (2026-08-27 fix, a real report + repro: a real
   // archive entry's own basename can contain shell glob metacharacters
   // like "[...]", which zsh/bash otherwise try to expand -- "no matches
@@ -5665,7 +5665,10 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a result for an EXEC-mapped suffix 
   CHECK(content.find("EXECRAN") != std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "LOCATE: starting a nested search from within locate results fails") {
+// 2026-09-27変更、直接のユーザー依頼("モード中のモード発動キーを有効にして
+// 欲しい（LOCATE中の^J^L等）"): 以前はLOCATEの結果画面からのLOCATEを拒否して
+// いた(m_locate()自身のis_name()のガード)が、今は再度プロンプトを開く。
+TEST_CASE_FIXTURE(Fixture, "LOCATE: starting a nested search from within locate results opens the prompt again") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartLocate));
   feedText("/");
@@ -5675,8 +5678,8 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: starting a nested search from within locate 
   }
   REQUIRE(app.currentMode() == ApplicationMode::Locate);
 
-  CHECK_FALSE(app.handleCommand(Command::StartLocate));
-  CHECK_FALSE(app.promptActive());
+  CHECK(app.handleCommand(Command::StartLocate));
+  CHECK(app.promptActive());
 }
 
 // 2026-09-20追加、直接のユーザー報告(実際の再現手順):
@@ -6561,7 +6564,7 @@ TEST_CASE_FIXTURE(Fixture, "FILE: a real CJK filename long enough to crowd the m
 // existing directory (see executeArchiveExtract()'s own comment) --
 // both were previously silent no-ops ("何も起きない").
 
-TEST_CASE_FIXTURE(Fixture, "ARC extract: an empty destination defaults to <homeDirectory>/.usilic/saved/, "
+TEST_CASE_FIXTURE(Fixture, "ARC extract: an empty destination defaults to <homeDirectory>/.usilic/data/, "
                            "auto-created if missing") {
   REQUIRE(app.start(path()));
   int idx = indexOf("archive.tar");
@@ -6577,14 +6580,14 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract: an empty destination defaults to <homeD
   REQUIRE(app.archiveMode().selectedEntry() != nullptr);
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
-  REQUIRE_FALSE(fs::exists(root / ".usilic" / "saved"));  // doesn't exist yet -- must be auto-created
+  REQUIRE_FALSE(fs::exists(root / ".usilic" / "data"));  // doesn't exist yet -- must be auto-created
   REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
   REQUIRE(app.feedByte('a', std::nullopt));   // a
   REQUIRE(app.promptActive());
   CHECK(app.feedByte(0x0d, std::nullopt));  // ^M alone -- no destination typed at all
   REQUIRE(pumpArchiveExtractToCompletion(app));
 
-  CHECK(fs::exists(root / ".usilic" / "saved" / "arcsrc" / "inner.txt"));
+  CHECK(fs::exists(root / ".usilic" / "data" / "arcsrc" / "inner.txt"));
   CHECK(app.currentMode() == ApplicationMode::Directory);
   // "ARC: " prefix only -- see the ^O a test's own identical 2026-08-27
   // comment above.
@@ -6698,7 +6701,7 @@ TEST_CASE_FIXTURE(Fixture, "ERROR (^J^Oe, K-67): a failed CP does NOT land in er
   CHECK_FALSE(app.handleCommand(Command::ShowErrorLog));  // nothing was ever captured to errorLogPath_
 }
 
-TEST_CASE_FIXTURE(Fixture, "LOG (^J^Ol, K-68): refused when Shell was never started") {
+TEST_CASE_FIXTURE(Fixture, "LOG (^J^Os, K-68): refused when Shell was never started") {
   REQUIRE(app.start(path()));
   CHECK_FALSE(app.handleCommand(Command::ShowShellLog));
 }
@@ -7447,7 +7450,7 @@ TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W, K-64): writes the bu
   // Directory mode's own current directory's basename (the Fixture's
   // own temp root dir's name here) -- see shellInsertBufferContent()'s
   // own comment for why "usilic"/"CLAUDE.md"-style basenames, not w.N.
-  std::string savePath = (root / ".usilic" / "saved" / root.filename()).string();
+  std::string savePath = (root / ".usilic" / "data" / root.filename()).string();
   // Single-quoted -- see the ^J^S candidate-list test above's own
   // 2026-08-27 comment.
   CHECK(app.shell().commandLine().text() == "cat '" + savePath + "'");
@@ -7468,7 +7471,7 @@ TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W, K-64): writes the bu
 // there via DirectoryMode::enterDirectory() -- register it into
 // RingCategory::RecentDirectory here too, matching enterDirectory()'s
 // own existing pushRecent() convention (trailing "/").
-TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W) registers <homeDirectory>/.usilic/saved/ into "
+TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W) registers <homeDirectory>/.usilic/data/ into "
                            "RingCategory::RecentDirectory, even though DirectoryMode::enterDirectory() was "
                            "never called for it") {
   REQUIRE(app.start(path()));
@@ -7479,7 +7482,7 @@ TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W) registers <homeDirec
   }
   CHECK(app.currentMode() == ApplicationMode::Shell);
 
-  std::string savedDir = (root / ".usilic" / "saved").string() + "/";
+  std::string savedDir = (root / ".usilic" / "data").string() + "/";
   const auto &ring = history.recentEntries(RingCategory::RecentDirectory);
   CHECK(std::find(ring.begin(), ring.end(), savedDir) != ring.end());
 }
@@ -9355,7 +9358,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: entering from Cut mode shows \"CUT\
 // 2026-09-08、直接のユーザー依頼によるキー再編で^X^Klから^J^Olへ移行
 // (旧^X^Kサブリーダーが廃止され、ERROR/LOGは^J^O自体をネストした新設
 // のサブリーダーへ引っ越した)。
-TEST_CASE_FIXTURE(Fixture, "LOG (^J^Ol, K-68): snapshots Shell's scrollback to logFilePath_, viewable via File mode") {
+TEST_CASE_FIXTURE(Fixture, "LOG (^J^Os, K-68): snapshots Shell's scrollback to logFilePath_, viewable via File mode") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {
     MESSAGE("bash not available or handshake failed -- skipping");
@@ -9381,7 +9384,7 @@ TEST_CASE_FIXTURE(Fixture, "LOG (^J^Ol, K-68): snapshots Shell's scrollback to l
 
   REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
   REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
-  CHECK(app.feedByte('l', std::nullopt));     // l
+  CHECK(app.feedByte('s', std::nullopt));     // s (2026-09-27、^J^Olから^J^Osへ)
   CHECK(app.currentMode() == ApplicationMode::File);
 
   bool found = false;
@@ -9646,7 +9649,7 @@ TEST_CASE_FIXTURE(Fixture, "^Om/^Or with one entry marked: also show their own p
 
   REQUIRE(app.handleCommand(Command::StartRemove));  // the SAME still-standing mark, not re-marked
   CHECK(app.promptActive());
-  CHECK(display.rowText(23).find("Delete ? ") != std::string::npos);
+  CHECK(display.rowText(23).find("Delete? (y/n) ") != std::string::npos);
 }
 
 // 2026-08-24 fix: cancelling an ARMED CP/MV/RM used to clear any marks
@@ -9794,7 +9797,7 @@ TEST_CASE_FIXTURE(Fixture, "'.' is a no-op outside Directory/Archive mode") {
 // "RM" label jumping straight to the right-aligned source-path field,
 // easy to misread as "nothing happened" since there was no legible
 // prompt text at all.
-TEST_CASE_FIXTURE(Fixture, "CP's destination prompt shows plain (non-Standout) \"Destination ? \" text "
+TEST_CASE_FIXTURE(Fixture, "CP's destination prompt shows plain (non-Standout) \"Destination? \" text "
                            "after the reversed \"CP\"/position fields, matching legacy") {
   REQUIRE(app.start(path()));
   int idx = indexOf("cpmv_a.txt");
@@ -9803,22 +9806,22 @@ TEST_CASE_FIXTURE(Fixture, "CP's destination prompt shows plain (non-Standout) \
   REQUIRE(app.handleCommand(Command::StartCopy));  // shows the destination prompt immediately (2026-08-27 redesign)
 
   std::string row = display.rowText(23);
-  std::size_t pos = row.find("Destination ? ");
+  std::size_t pos = row.find("Destination? ");
   REQUIRE(pos != std::string::npos);
   CHECK_FALSE(display.standoutAt(23, static_cast<int>(pos)));  // plain, not reversed -- see drawPromptLabel()'s own comment
   CHECK(display.standoutAt(23, 0));                            // "CP" itself is still reversed
 }
 
 // Same fix, RM's own "Delete ? " wording (legacy key.c's T_rm branch).
-TEST_CASE_FIXTURE(Fixture, "RM's confirm prompt shows \"Delete ? \" for RM, not \"Destination ? \"") {
+TEST_CASE_FIXTURE(Fixture, "RM's confirm prompt shows \"Delete? (y/n) \" for RM, not \"Destination? \"") {
   REQUIRE(app.start(path()));
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
   REQUIRE(app.handleCommand(Command::StartRemove));  // shows the confirm prompt immediately (2026-08-27 redesign)
 
-  CHECK(display.rowText(23).find("Delete ? ") != std::string::npos);
-  CHECK(display.rowText(23).find("Destination ? ") == std::string::npos);
+  CHECK(display.rowText(23).find("Delete? (y/n) ") != std::string::npos);
+  CHECK(display.rowText(23).find("Destination? ") == std::string::npos);
 }
 
 // docs/HISTORY.md's own real report continued: marking (^Space) itself
@@ -15439,7 +15442,7 @@ TEST_CASE_FIXTURE(Fixture, "^J^U/^Ju: FILE/DIR/MAN accesses are mirrored into th
   }
   REQUIRE(app.handleCommand(Command::Back));
   REQUIRE(app.handleCommand(Command::StartUsilicToc));
-  CHECK(app.underlineMode().entries() == std::vector<std::string>{"MAN", "DIR", "FILE"});
+  CHECK(app.underlineMode().entries() == std::vector<std::string>{"MAN", "DIR", "FILE", "PROGRAM", "WORK"});
   REQUIRE(app.handleCommand(Command::MoveDown));
   REQUIRE(app.handleCommand(Command::MoveDown));
   REQUIRE(app.handleCommand(Command::Enter));
@@ -15449,7 +15452,7 @@ TEST_CASE_FIXTURE(Fixture, "^J^U/^Ju: FILE/DIR/MAN accesses are mirrored into th
   CHECK(pos("ls (man)") == static_cast<long>(files.size()));
   CHECK(pos("/tmp/aaa/") == static_cast<long>(files.size()));
   REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.underlineMode().entries().size() == 3);
+  CHECK(app.underlineMode().entries().size() == 5);
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
@@ -15658,4 +15661,187 @@ TEST_CASE_FIXTURE(Fixture, "feedShellByte: ESC f/b/d/DEL and ^_ edit the SHELL c
   REQUIRE(app.feedByte(0x1f, std::nullopt));
   CHECK(app.shell().commandLine().text() == "cp foo/bar baz");
   CHECK(app.currentMode() == ApplicationMode::Shell);
+}
+
+// 2026-09-27追加、直接のユーザー依頼("（ls）で可能なファイル操作（.[]）
+// および^Jpプロンプトへのハイライト行挿入を、LOCATE、DU、FILE、USILIC
+// でも可能にして"): LOCATEの結果を'.'で選択し、^Jpに選択したファイルが
+// (別々のディレクトリなので絶対パスで)入る。^Onで選択が消える。
+TEST_CASE_FIXTURE(Fixture, "LOCATE: '.' selects results, ^Jp seeds the selected files, ^On clears") {
+  fs::create_directory(root / "la");
+  fs::create_directory(root / "lb");
+  fs::path a = root / "la" / "one.txt";
+  fs::path b = root / "lb" / "two.txt";
+  { std::ofstream(a) << "x"; }
+  { std::ofstream(b) << "y"; }
+  fs::path fakeLocate = root / "fake_locate_marks.sh";
+  {
+    std::ofstream script(fakeLocate);
+    script << "#!/bin/sh\necho '" << a.string() << "'\necho '" << b.string() << "'\n";
+  }
+  std::filesystem::permissions(fakeLocate, std::filesystem::perms::owner_all, std::filesystem::perm_options::add);
+  configuration.setCommandForTest(ConfiguredRole::Locate, {{fakeLocate.string()}, std::nullopt});
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("anything");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+
+  REQUIRE(app.feedByte(']', std::nullopt));  // 1行目を選択して下へ
+  REQUIRE(app.feedByte('.', std::nullopt));  // 2行目も選択
+  CHECK(app.locateMode().marks().count() == 2);
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  CHECK(app.promptText() == "'" + a.string() + "' '" + b.string() + "'");
+  app.feedByte(0x07, std::nullopt);  // ^G
+
+  REQUIRE(app.handleCommand(Command::ClearAllMarks));
+  CHECK(app.locateMode().marks().count() == 0);
+  // 選択が無ければハイライト行(2行目)、ディレクトリへcdして名前だけ。
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  CHECK(app.promptText() == "two.txt");
+}
+
+// 同日、"モード中のモード発動キーを有効にして欲しい（LOCATE中の^J^L等）"。
+TEST_CASE_FIXTURE(Fixture, "LOCATE: ^J^L inside LOCATE opens the LOCATE prompt again") {
+  fs::path target = root / "relocate.txt";
+  { std::ofstream(target) << "x"; }
+  fs::path fakeLocate = root / "fake_locate_again.sh";
+  {
+    std::ofstream script(fakeLocate);
+    script << "#!/bin/sh\necho '" << target.string() << "'\n";
+  }
+  std::filesystem::permissions(fakeLocate, std::filesystem::perms::owner_all, std::filesystem::perm_options::add);
+  configuration.setCommandForTest(ConfiguredRole::Locate, {{fakeLocate.string()}, std::nullopt});
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("q1");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  CHECK(app.handleCommand(Command::StartLocate));
+  CHECK(app.promptText() == "q1");
+}
+
+// 同日、^[uの目次にPROGRAM/WORK、^J^Ow(K-97)でWORKを直接開く。
+TEST_CASE_FIXTURE(Fixture, "^J^Ow opens the WORK group of the USILIC table of contents") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::OpenWorkList));
+  CHECK(app.currentMode() == ApplicationMode::Underline);
+  CHECK(app.underlineMode().entries().empty());  // まだ^X^Wしていない
+  REQUIRE(app.handleCommand(Command::Back));  // 目次へ
+  CHECK(app.underlineMode().entries() == std::vector<std::string>{"MAN", "DIR", "FILE", "PROGRAM", "WORK"});
+}
+
+// 同日、"EGREPの一覧を復活して欲しい": usilicrcのEGREP節(旧GREP)の実例が
+// ^Rの一覧の先頭に、その並びのまま出る。
+TEST_CASE_FIXTURE(Fixture, "EGREP: ^R opens the EGREP list with usilicrc's examples first, in order") {
+  REQUIRE(configuration.loadRcText("EGREP\n \"z b\"\n a.c\n", true));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  const auto &items = app.listBrowserMode().items();
+  REQUIRE(items.size() >= 2);
+  CHECK(items[0] == "z b");
+  CHECK(items[1] == "a.c");
+  CHECK(*app.listBrowserMode().selectedItem() == "z b");
+}
+
+// 2026-09-27追加、直接のユーザー依頼("（ls）で可能なファイル操作には「閲覧」
+// （^Ou）もあるのでよろしく"): LOCATEの選択を^Ouで閲覧し、^GでLOCATEへ戻る。
+TEST_CASE_FIXTURE(Fixture, "LOCATE: ^Ou views the selected results, ^G returns to LOCATE") {
+  fs::path a = root / "ou_one.txt";
+  fs::path b = root / "ou_two.txt";
+  { std::ofstream(a) << "x"; }
+  { std::ofstream(b) << "y"; }
+  fs::path fakeLocate = root / "fake_locate_ou.sh";
+  {
+    std::ofstream script(fakeLocate);
+    script << "#!/bin/sh\necho '" << a.string() << "'\necho '" << b.string() << "'\n";
+  }
+  std::filesystem::permissions(fakeLocate, std::filesystem::perms::owner_all, std::filesystem::perm_options::add);
+  configuration.setCommandForTest(ConfiguredRole::Locate, {{fakeLocate.string()}, std::nullopt});
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("anything");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  REQUIRE(app.handleCommand(Command::MoveDown));
+  REQUIRE(app.handleCommand(Command::ToggleMark));  // 2行目だけ選択
+
+  REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  CHECK(app.currentMode() == ApplicationMode::Underline);
+  CHECK(app.underlineMode().entries() == std::vector<std::string>{b.string()});
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Locate);
+}
+
+// 同日、"EGREP一覧のカーソル位置が保存されない": 最後に使った正規表現の行。
+TEST_CASE_FIXTURE(Fixture, "EGREP: the EGREP list opens on the most recently used pattern") {
+  REQUIRE(configuration.loadRcText("EGREP\n p1\n p2\n p3\n", true));
+  history.pushRecent(RingCategory::RecentEgrepPattern, "p2");
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  REQUIRE(app.listBrowserMode().selectedItem() != nullptr);
+  CHECK(*app.listBrowserMode().selectedItem() == "p2");
+}
+
+// 2026-09-27追加、直接のユーザー依頼("^O^M、^[^MをLOCATE、DU、FILE、USILIC
+// へもよろしく"): LOCATEのハイライト行を^O^M/^[^Mで開き、^GでLOCATEへ戻る。
+TEST_CASE_FIXTURE(Fixture, "LOCATE: ^O^M and ^[^M open the highlighted result, ^G returns to LOCATE") {
+  fs::path target = root / "om_target.txt";
+  { std::ofstream(target) << "line one\nline two\n"; }
+  fs::path fakeLocate = root / "fake_locate_om.sh";
+  {
+    std::ofstream script(fakeLocate);
+    script << "#!/bin/sh\necho '" << target.string() << "'\n";
+  }
+  std::filesystem::permissions(fakeLocate, std::filesystem::perms::owner_all, std::filesystem::perm_options::add);
+  configuration.setCommandForTest(ConfiguredRole::Locate, {{fakeLocate.string()}, std::nullopt});
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("anything");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+
+  REQUIRE(app.handleCommand(Command::ReadFileNoWrap));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Locate);
+
+  REQUIRE(app.handleCommand(Command::ReadFileRaw));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == target.string());
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Locate);
+}
+
+// 2026-09-27追加、直接のユーザー依頼("ARCは？ファイル操作は不要だがクイック
+// ルックはどうかな"): ARCのメンバーを一時ファイルへ取り出してクイックルック。
+TEST_CASE_FIXTURE(Fixture, "Space (Archive mode): Quick Look on the highlighted member, extracted to a temp file") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  if (app.currentMode() != ApplicationMode::Archive) waitForArchiveLoad(app);
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+  while (app.archiveMode().selectedEntry() && app.archiveMode().selectedEntry()->isDirectory)
+    REQUIRE(app.handleCommand(Command::MoveDown));
+  REQUIRE(app.archiveMode().selectedEntry() != nullptr);
+
+  std::string receivedCommand;
+  app.programMode().setForegroundLauncher([&](const std::string &command) {
+    receivedCommand = command;
+    return true;
+  });
+  CHECK(app.feedByte(' ', std::nullopt));
+  CHECK(receivedCommand.find("qlmanage -p") == 0);
+  CHECK(receivedCommand.find("inner.txt") != std::string::npos);
+  CHECK(app.currentMode() == ApplicationMode::Archive);
 }

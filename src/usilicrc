@@ -4,7 +4,7 @@
 # 行頭が以下の見出しの行が節の始まりで、節の中身の行はタブ(または空白)で
 # 始めます。それ以外の文字で始まる行はエラーになります。
 #
-# ARCHIVE, FILE, EXEC, GREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
+# ARCHIVE, FILE, EXEC, EGREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
 # HISTORY, WAIT, LS, SCROLL, CP, MV, RM, KEY
 #
 # 英語のコメント付きの同じ内容のファイルが usilicrc.en です。
@@ -47,8 +47,10 @@ FILE
 
 	.gz	gzip	-dc
 	.bz2	bzip2	-dc
-	.z	gzip	-dc			
-#	.dvi	dvi2tty
+	.z	gzip	-dc
+	.xz	xz	-dc
+	.lzma	xz	-dc
+	.zst	zstd	-dc
 
 EXEC
 # 書式: suffix  program  (option)
@@ -56,20 +58,25 @@ EXEC
 # suffix を持つ file を引数にして program を起動します。
 #
 # macOS の注意: アプリ名だけ(例: IINA)は $PATH 上のコマンドではないので
-# 起動できません。open -a を使います(下の .mp4 の例)。
+# 起動できません。open を使います(下の .mp4 の例)。open -a の直後には
+# アプリ名が要るので、`open -a ファイル` はファイルをアプリ名とみなして
+# エラーになります。既定のアプリで開くなら -a を付けずに open だけです。
+# info は Homebrew では texinfo に入っています(brew install texinfo)。
+#
+# macOS では、ここに無い suffix のファイルでも、CODE でバイナリと判定され、
+# file(1) で画像か PDF と判定されたもの(.jpg .png .bmp .tiff .pdf など)は、
+# その旨を表示する代わりにクイックルック(qlmanage -p)で開きます。
 
+#	.mp4	open
 #	.mp4	open	-a	IINA
-	.html	lynx
-	.htm	lynx
 	.info	info	-f
 	.info.gz info	-f
-	.dvi	xdvi
-#	.dvi	dviout
 
-GREP
+EGREP
 # 書式: 文字列
 #
-# EGREP と CUT(正規表現)の一覧に、最初から載せておく検索文字列。
+# EGREP と CUT(正規表現)の ^R の一覧の先頭に、この順で載せておく検索文字列
+# (もう一度 ^R で履歴)。以前の節名 GREP も使えます。
 # (空白を含む文字列は "" で囲みます。)
 #
 # TUTORIAL の EGREP の章の正規表現一覧と同じ順に、TUTORIAL 自身の本文に
@@ -109,17 +116,11 @@ PROGRAM
 # PROGRAM で起動する program の一覧。
 
 	jed
-	emacs
-	emacs -nw
-	xemacs
+	mg
 	vi
 	less
 	man
-	dviout
-	xdvi
 	lynx
-	mule
-	mule -nw
 	info
 	top
 	lv
@@ -206,26 +207,26 @@ SCROLL
 CP
 # 書式: cp  (option)
 #
-# CP のコマンド。(既定: cp -vRi)
+# CP のコマンド。(既定: cp -vR)
 #
 
-#	cp -vR
+#	cp -vRi
 
 MV
 # 書式: mv  (option)
 #
-# MV のコマンド。(既定: mv -vi)
+# MV のコマンド。(既定: mv -v)
 #
 
-#	mv -v
+#	mv -vi
 
 RM
 # 書式: rm  (option)
 #
-# RM のコマンド。(既定: rm -vri)
+# RM のコマンド。(既定: rm -vr)
 #
 
-#	rm -vr
+#	rm -vri
 
 KEY
 # キーの割り当て。
@@ -312,7 +313,7 @@ KEY
 	K-50	F-2 C-c     # ^O^C   COPY
 	K-51	F-2 C-y     # ^O^Y   ペースト
 	K-52	F-4 e       # ^J^Oe  ERROR
-	K-53	F-4 l       # ^J^Ol  SHELLのログ
+	K-53	F-4 s       # ^J^Os  SHELLのログ
 	K-54	ESC l       # ^[l    SHELLのログ
 	K-55	ESC s       # ^[s    SHELLへ
 	K-56	F-1 .       # ^J.    SHELL: カレントディレクトリへcd
@@ -355,3 +356,5 @@ KEY
 	K-93	F-0 (       # ^X(    マクロの記録開始
 	K-94	F-0 )       # ^X)    マクロの記録終了
 	K-95	F-0 e       # ^Xe    マクロの実行
+	K-96	F-4 d       # ^J^Od  ~/.usilic/data/
+	K-97	F-4 w       # ^J^Ow  WORK

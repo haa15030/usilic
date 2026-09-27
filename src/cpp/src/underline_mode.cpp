@@ -34,15 +34,14 @@ const std::string *UnderlineMode::selectedEntry() const {
 }
 
 void UnderlineMode::toggleMark(int index) {
-  if (index < 0 || index >= static_cast<int>(entries_.size())) return;
-  if (!markedIndices_.erase(index)) markedIndices_.insert(index);
+  markedIndices_.toggle(index, static_cast<int>(entries_.size()));
 }
 
-bool UnderlineMode::isMarked(int index) const { return markedIndices_.count(index) > 0; }
+bool UnderlineMode::isMarked(int index) const { return markedIndices_.isMarked(index); }
 
 std::vector<std::string> UnderlineMode::targetEntries() const {
   std::vector<std::string> result;
-  for (int index : markedIndices_) result.push_back(entries_[index]);
+  for (int index : markedIndices_.indices()) result.push_back(entries_[index]);
   if (result.empty())
     if (const std::string *entry = selectedEntry()) result.push_back(*entry);
   return result;

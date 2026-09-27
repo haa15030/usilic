@@ -6,6 +6,7 @@
 #include "configuration.hpp"
 #include "content_view.hpp"
 #include "history.hpp"
+#include "list_marks.hpp"
 
 namespace fm {
 
@@ -67,6 +68,10 @@ class DuMode {
   const std::string &currentPath() const;
   const std::vector<DuEntry> &entries() const;
   const DuEntry *selectedEntry() const;
+  // 選択(2026-09-27、list_marks.hpp自身のコメント参照)。一覧を作り直すと
+  // 消える。
+  ListMarks &marks() { return marks_; }
+  const ListMarks &marks() const { return marks_; }
 
   void saveCursorPosition();
 
@@ -85,6 +90,7 @@ class DuMode {
 
   std::string currentPath_;
   std::vector<DuEntry> entries_;
+  ListMarks marks_;
 };
 
 }  // namespace fm

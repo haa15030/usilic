@@ -9,7 +9,11 @@
 namespace fm {
 
 DuMode::DuMode(ContentView &view, History &history, const Configuration &configuration)
-    : view_(view), history_(history), configuration_(configuration) {}
+    : view_(view), history_(history), configuration_(configuration) {
+  // 選択行の見た目は(ls)と同じ(2026-09-27、list_marks.hpp参照)。
+  view_.setMarkedPredicate([this](int index) { return marks_.isMarked(index); });
+  view_.setMarkedRowUsesUnderline(true);
+}
 
 std::string DuMode::formatEntryLine(const DuEntry &entry, int sizeWidth) {
   std::string sizeText = std::to_string(entry.sizeKb) + "K";
@@ -112,6 +116,7 @@ bool DuMode::loadUsageFromOutput(const std::string &path, const std::string &out
 
   currentPath_ = path;
   entries_ = std::move(entries);
+  marks_.clear();
   view_.setLines(std::move(lines));
 
   if (auto pos = history_.positionFor(PositionCategory::Screen, currentPath_)) {

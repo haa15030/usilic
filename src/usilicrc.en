@@ -5,7 +5,7 @@
 # section; the lines inside a section begin with a tab (or spaces).  Any
 # other line is an error.
 #
-# ARCHIVE, FILE, EXEC, GREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
+# ARCHIVE, FILE, EXEC, EGREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
 # HISTORY, WAIT, LS, SCROLL, CP, MV, RM, KEY
 #
 # usilicrc is the same file with Japanese comments.
@@ -49,8 +49,10 @@ FILE
 
 	.gz	gzip	-dc
 	.bz2	bzip2	-dc
-	.z	gzip	-dc			
-#	.dvi	dvi2tty
+	.z	gzip	-dc
+	.xz	xz	-dc
+	.lzma	xz	-dc
+	.zst	zstd	-dc
 
 EXEC
 # Format: `suffix' `program' (option)
@@ -58,21 +60,26 @@ EXEC
 # The `program' is launched with a file that has the `suffix'.
 #
 # macOS note: a bare app name (e.g. IINA) is not a command on $PATH, so
-# it cannot be launched.  Use `open -a' (the .mp4 example below).
+# it cannot be launched.  Use `open' (the .mp4 examples below).  `open -a'
+# needs an app name right after it, so `open -a file' takes the file as the
+# app name and fails; to open with the default app, use plain `open'.
+# On Homebrew, info comes with texinfo (brew install texinfo).
+#
+# On macOS, a file with no suffix here that CODE finds binary and file(1)
+# finds to be an image or a PDF (.jpg .png .bmp .tiff .pdf etc.) is opened
+# with Quick Look (qlmanage -p) instead of showing its type.
 
+#	.mp4	open
 #	.mp4	open	-a	IINA
-	.html	lynx
-	.htm	lynx
 	.info	info	-f
 	.info.gz info	-f
-	.dvi	xdvi
-#	.dvi	dviout
 
-GREP
+EGREP
 # Format: `string'
 #
-# Search strings listed from the start in the EGREP and CUT (regular
-# expression) lists.  (Enclose a string containing a space in "".)
+# Search strings listed first, in this order, in the ^R list of EGREP and
+# CUT (regular expression); ^R again shows the history.  The old section
+# name GREP is also accepted.  (Enclose a string containing a space in "".)
 #
 # TUTORIAL's EGREP chapter examples, in the same order as its regular-
 # expression list -- each one matches some text in TUTORIAL itself.
@@ -112,17 +119,11 @@ PROGRAM
 # The programs launched by PROGRAM.
 
 	jed
-	emacs
-	emacs -nw
-	xemacs
+	mg
 	vi
 	less
 	man
-	dviout
-	xdvi
 	lynx
-	mule
-	mule -nw
 	info
 	top
 	lv
@@ -212,26 +213,26 @@ SCROLL
 CP
 # Format: `cp' (option)
 #
-# Command of CP.  (default: cp -vRi)
+# Command of CP.  (default: cp -vR)
 #
 
-#	cp -vR
+#	cp -vRi
 
 MV
 # Format: `mv' (option)
 #
-# Command of MV.  (default: mv -vi)
+# Command of MV.  (default: mv -v)
 #
 
-#	mv -v
+#	mv -vi
 
 RM
 # Format: `rm' (option)
 #
-# Command of RM.  (default: rm -vri)
+# Command of RM.  (default: rm -vr)
 #
 
-#	rm -vr
+#	rm -vri
 
 KEY
 # Key assignments.
@@ -319,7 +320,7 @@ KEY
 	K-50	F-2 C-c     # ^O^C   COPY
 	K-51	F-2 C-y     # ^O^Y   Paste
 	K-52	F-4 e       # ^J^Oe  ERROR
-	K-53	F-4 l       # ^J^Ol  SHELL log
+	K-53	F-4 s       # ^J^Os  SHELL log
 	K-54	ESC l       # ^[l    SHELL log
 	K-55	ESC s       # ^[s    Go to SHELL
 	K-56	F-1 .       # ^J.    SHELL: cd to current directory
@@ -362,3 +363,5 @@ KEY
 	K-93	F-0 (       # ^X(    Begin macro
 	K-94	F-0 )       # ^X)    End macro
 	K-95	F-0 e       # ^Xe    Execute macro
+	K-96	F-4 d       # ^J^Od  ~/.usilic/data/
+	K-97	F-4 w       # ^J^Ow  WORK

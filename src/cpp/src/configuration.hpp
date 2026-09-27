@@ -10,6 +10,11 @@
 
 namespace fm {
 
+// 7-Zipのコマンド名(2026-09-27): p7zipの`7z`が無く、Homebrewのsevenzip
+// (`brew install sevenzip`)の`7zz`があればそちら。引数(l、x、-so、-o、-y)は
+// 同じ。main.cppの初回のインストール提案もsevenzipを勧める。
+std::string sevenZipCommand();
+
 // ARCHIVEディレクティブの拡張子が、具体的にどの展開器へマッピング
 // されるか――is_chp()のプログラム名分類(legacyの番号ではtar=5、
 // lha=4、zip=3、bzip2=2、rpm=8、deb=9)からの移植。ここでは列挙型へ

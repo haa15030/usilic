@@ -142,7 +142,13 @@ class LineEditor {
   void redraw();
 
  private:
-  static constexpr int kMaxLength = 1024;  // legacyのCにおけるN_line
+  // legacyのCにおけるN_line(1024)だった。2026-09-27、64KBへ拡大――直接の
+  // ユーザー報告("~/.usilic/data/の._ファイル群を削除しようとするとSHELLで
+  // 止まる"): CP/MV/RM(やARC展開、^J^W)は組み立てたコマンドをSHELLの
+  // コマンドライン(このクラス)へsetText()してから送信するので、長い
+  // ファイル名を複数選ぶと1023バイト目以降が黙って切り捨てられ、閉じて
+  // いない引用符のままbashへ届いて">"の継続プロンプトで止まっていた。
+  static constexpr int kMaxLength = 65536;
 
   // selfInsertは1文字ずつの入力(insertByte())――undoのまとまりに使う。
   void insertText(const std::string &bytes, bool selfInsert = false);
