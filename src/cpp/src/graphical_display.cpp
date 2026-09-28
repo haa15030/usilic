@@ -1318,10 +1318,21 @@ void GraphicalDisplay::renderCell(int row, int col) {
   unsigned int codepoint = decodeUtf8Codepoint(cell.glyph);
   // Display::setVerticalTextHint()参照: 縦書きでは「ー」(epub_vertical.cppが「｜」に
   // したもの)とダッシュ(︱)を、セルの高さいっぱいの縦線にして上下の字とつなげる。
+  // 2026-09-28修正、直接のユーザー報告("「ループ」のハイフンが細くて長すぎる"):
+  // 線を太くし、上下いっぱいに伸ばすのは上/下のマスも縦線(「ーー」「――」)の
+  // 時だけにした(単独の「ー」は上下に余白を残す)。
   if (impl_->verticalText && (codepoint == 0xFF5C || codepoint == 0xFE31)) {
+    auto barAt = [&](int r) {
+      if (r < 0 || r >= impl_->rows) return false;
+      unsigned int cp = decodeUtf8Codepoint(impl_->cellAt(r, col).glyph);
+      return cp == 0xFF5C || cp == 0xFE31;
+    };
     int boxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
-    int lineW = std::max(1, impl_->cellWidth / 5);
-    SDL_Rect bar{box.x + (boxW - lineW) / 2, box.y, lineW, impl_->cellHeight};
+    int lineW = std::max(2, impl_->cellWidth * 2 / 7);
+    int margin = impl_->cellHeight / 6;
+    int top = box.y + (barAt(row - 1) ? 0 : margin);
+    int bottom = box.y + impl_->cellHeight - (barAt(row + 1) ? 0 : margin);
+    SDL_Rect bar{box.x + (boxW - lineW) / 2, top, lineW, bottom - top};
     SDL_SetRenderDrawColor(impl_->renderer, fg.r, fg.g, fg.b, fg.a);
     SDL_RenderFillRect(impl_->renderer, &bar);
     return;
@@ -1383,8 +1394,9 @@ void GraphicalDisplay::renderCell(int row, int col) {
       static const std::set<unsigned int> kSmallKana = {
           0x3041, 0x3043, 0x3045, 0x3047, 0x3049, 0x3063, 0x3083, 0x3085, 0x3087, 0x308E, 0x3095, 0x3096,
           0x30A1, 0x30A3, 0x30A5, 0x30A7, 0x30A9, 0x30C3, 0x30E3, 0x30E5, 0x30E7, 0x30EE, 0x30F5, 0x30F6};
-      static const std::set<unsigned int> kRotated = {0xFF1A, 0xFF1B, 0xFF1D, 0x301C, 0xFF5E, 0x2212, 0xFF0D,
-                                                      ':',    ';',    '=',    '-',    '~'};
+      // 〝〟(U+301D〜301F)も回す(2026-09-28、直接のユーザー報告"〝〟がおかしい")
+      static const std::set<unsigned int> kRotated = {0xFF1A, 0xFF1B, 0xFF1D, 0x301C, 0xFF5E, 0x2212, 0xFF0D, 0x301D,
+                                                      0x301E, 0x301F, ':',    ';',    '=',    '-',    '~'};
       if (kSmallKana.count(codepoint)) {
         dst.x += maxW / 8;  // 小書きの仮名は右上へ
         dst.y -= impl_->cellHeight / 8;
