@@ -361,6 +361,7 @@ class BodyConverter {
     listStack_.clear();
     for (const auto &t : tokenizeXml(xhtml)) handle(t);
     endLine(false);
+    flushDeferredLabel();
     if (pendingLabel_) emitLabelLine();
   }
 
@@ -401,13 +402,16 @@ class BodyConverter {
     if (heading) {
       if (open) {
         endLine(false);
+        flushDeferredLabel();
         ensureBlankLine();
         if (name == "h1") changeStyle(underline_, +1, "u");
         changeStyle(bold_, +1, "b");
       }
       if (close) {
-        // 画像だけの見出し(<h2 id="toc_id_1"></h2>等)は目次のラベルを見出しにする
-        if (!lineVisible_ && pendingLabel_) text(*pendingLabel_);
+        // 空の見出し(<h2 id="toc_id_1"></h2>+次の段落に画像だけ、等)は目次の
+        // ラベルを章の名前にする。次の行が画像だけならその行とまとめて
+        // 「表紙 [image: title.jpg]」の1行にする(endLine()参照)。
+        if (!lineVisible_ && pendingLabel_) deferredLabel_ = *pendingLabel_;
         pendingLabel_.reset();
         changeStyle(bold_, -1, "b");
         if (name == "h1") changeStyle(underline_, -1, "u");
@@ -418,18 +422,22 @@ class BodyConverter {
     } else if (name == "hr") {
       if (open) {
         endLine(false);
+        flushDeferredLabel();
         out_ += "----------------------------------------\n";
       }
     } else if (name == "img" || name == "image") {
       if (open) {
-        std::string alt = trimAsciiSpace(attr(t, "alt"));
-        if (alt.empty()) {
-          std::string src = attr(t, "src");
-          if (src.empty()) src = attr(t, "href");
-          std::size_t slash = src.find_last_of('/');
-          alt = (slash == std::string::npos) ? src : src.substr(slash + 1);
-        }
-        text("[image: " + alt + "]");
+        // altではなくファイル名: 同じalt("title")の画像が何枚もある本が実際に
+        // あり、CUTの一覧から[Enter]でクイックルックする時にzip内のどの
+        // メンバーか特定できなくなる(findEpubImageMember()参照)。
+        std::string src = attr(t, "src");
+        if (src.empty()) src = attr(t, "href");
+        src = percentDecode(src);
+        std::size_t slash = src.find_last_of('/');
+        std::string name = (slash == std::string::npos) ? src : src.substr(slash + 1);
+        bool wasEmpty = !lineVisible_;
+        text("[image: " + name + "]");
+        if (wasEmpty) lineImageOnly_ = true;
       }
     } else if (name == "rt") {
       if (open) text("《");
@@ -507,6 +515,7 @@ class BodyConverter {
       pendingSpace_ = pendingNewline_ = false;
       line_ += c;
       lineVisible_ = true;
+      lineImageOnly_ = false;
       lastNonAscii_ = nonAscii;
     }
   }
@@ -524,6 +533,13 @@ class BodyConverter {
       line_.clear();
       return;
     }
+    if (deferredLabel_ && lineImageOnly_) {
+      line_ = "<b>" + *deferredLabel_ + "</b> " + line_;
+      deferredLabel_.reset();
+      chapter = true;
+    }
+    flushDeferredLabel();
+    lineImageOnly_ = false;
     closeStylesAtLineEnd();
     out_ += line_;
     if (chapter) out_ += '\t';
@@ -546,6 +562,12 @@ class BodyConverter {
     out_ += '\n';
   }
 
+  void flushDeferredLabel() {
+    if (!deferredLabel_) return;
+    if (!deferredLabel_->empty()) out_ += "<b>" + *deferredLabel_ + "</b>\t\n";
+    deferredLabel_.reset();
+  }
+
   void emitLabelLine() {
     std::string label = *pendingLabel_;
     pendingLabel_.reset();
@@ -556,6 +578,8 @@ class BodyConverter {
   std::string &out_;
   const std::vector<TocEntry> *tocEntries_ = nullptr;
   std::optional<std::string> pendingLabel_;
+  std::optional<std::string> deferredLabel_;  // 空の見出しの章の名前、heading closeのコメント参照
+  bool lineImageOnly_ = false;                 // 今の行は画像の"[image: ...]"だけ
   int pendingDepth_ = 0;
   std::string line_;
   bool lineVisible_ = false;
@@ -567,19 +591,38 @@ class BodyConverter {
   std::vector<int> listStack_;  // olは次の番号、ulは0
 };
 
-}  // namespace
-
-std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember) {
+// container.xmlが指すOPFのzip内のパスと中身。
+std::optional<std::string> readOpf(const EpubMemberReader &readMember, std::string *opfPath) {
   auto container = readMember("META-INF/container.xml");
   if (!container) return std::nullopt;
-  std::string opfPath;
+  opfPath->clear();
   for (const auto &t : tokenizeXml(*container))
     if ((t.kind == XmlToken::SelfClose || t.kind == XmlToken::Open) && t.name == "rootfile") {
-      opfPath = resolveHref("", attr(t, "full-path"));
+      *opfPath = resolveHref("", attr(t, "full-path"));
       break;
     }
-  if (opfPath.empty()) return std::nullopt;
-  auto opf = readMember(opfPath);
+  if (opfPath->empty()) return std::nullopt;
+  return readMember(*opfPath);
+}
+
+}  // namespace
+
+std::optional<std::string> findEpubImageMember(const EpubMemberReader &readMember, const std::string &fileName) {
+  std::string opfPath;
+  auto opf = readOpf(readMember, &opfPath);
+  if (!opf) return std::nullopt;
+  for (const auto &t : tokenizeXml(*opf)) {
+    if ((t.kind != XmlToken::SelfClose && t.kind != XmlToken::Open) || t.name != "item") continue;
+    std::string path = resolveHref(directoryOf(opfPath), attr(t, "href"));
+    std::size_t slash = path.find_last_of('/');
+    if ((slash == std::string::npos ? path : path.substr(slash + 1)) == fileName) return path;
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember) {
+  std::string opfPath;
+  auto opf = readOpf(readMember, &opfPath);
   if (!opf) return std::nullopt;
 
   struct ManifestItem {

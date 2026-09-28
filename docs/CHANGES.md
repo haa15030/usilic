@@ -26970,3 +26970,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      は既存のFILE履歴がそのまま効く。usilicrcのARCHIVE節で.epubの別名を有効に
      するとアーカイブとして開く(従来どおり)旨をusilicrc/usilicrc.enに追記。
      ユーザーの実EPUB(~/Kbt.epub、~/Public/*.epub、EPUB2/3計24冊)で変換を確認。
+
+489. **2026-09-28(項目488の続き): EPUBの画像だけの章は「表紙 [image: title.jpg]」、
+    CUTの一覧から[Enter]でクイックルック**
+   - **経緯**: 直接のユーザー提案("CUTで出る目次だが、「表紙」を「表紙 [image:
+     title]」にして returnでクイックルックというのは？")。
+   - **変換**: 画像の表記をaltからファイル名へ(`[image: title1.jpg]`)。ユーザーの
+     実EPUBは表紙6枚が全てalt="title"で、altでは画像を特定できないため。空の見出し
+     (目次のラベルを使う)の次の行が画像だけなら、1行の章の行にまとめる。
+   - **[Enter]**: openSelectedSegment()の先頭で、EPUBの章の一覧かつラベルに
+     `[image: ...]`があれば、findEpubImageMember()(OPFのmanifestからファイル名で
+     zip内のパスを探す)→`unzip -p`で一時ディレクトリ(allocateArcDirectory())へ
+     取り出し→runQuickLook()。qlmanageが無い環境(Linux)では従来どおり章の中身を表示。

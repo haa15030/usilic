@@ -55,8 +55,7 @@ TEST_CASE("epubToHelpMarkup: EPUB3 -- title/creator header, spine order, ruby, n
         "<u><b>本の名前</b></u>\n"
         "著者\n"
         "\n"
-        "<b>表紙</b>\t\n"  // 画像だけの見出しは目次のラベル
-        "[image: title]\n"
+        "<b>表紙</b> [image: title.jpg]\t\n"  // 空の見出し+画像だけの段落は1行にまとめる
         "\n"
         "　燈の章\t\n"  // 目次が指す段落そのものが章の行
         "　燈《ひ》色の場&<b>太字</b>\n"  // 和文の間の改行は詰める
@@ -93,4 +92,23 @@ TEST_CASE("epubToHelpMarkup: EPUB2 ncx labels, headings are chapters, linear=no 
         "1. y\n"
         "2. z\n"
         "\n");
+}
+
+TEST_CASE("epubToHelpMarkup: empty heading followed by text keeps the TOC label as its own line; "
+          "findEpubImageMember() maps a file name to its zip path") {
+  std::map<std::string, std::string> files = {
+      {"META-INF/container.xml", kContainer},
+      {"OEBPS/content.opf", R"(<package><manifest>
+  <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+  <item id="a" href="Text/a.xhtml" media-type="application/xhtml+xml"/>
+  <item id="i" href="Image/title%201.jpg" media-type="image/jpeg"/>
+</manifest><spine><itemref idref="a"/></spine></package>)"},
+      {"OEBPS/nav.xhtml", R"(<nav epub:type="toc"><a href="Text/a.xhtml#x">章</a></nav>)"},
+      {"OEBPS/Text/a.xhtml", R"(<body><h2 id="x"></h2><p>本文<img src="../Image/title%201.jpg"/></p></body>)"},
+  };
+  auto out = fm::epubToHelpMarkup(readerFor(files));
+  REQUIRE(out);
+  CHECK(*out == "<b>章</b>\t\n本文[image: title 1.jpg]\n\n");
+  CHECK(fm::findEpubImageMember(readerFor(files), "title 1.jpg") == std::optional<std::string>("OEBPS/Image/title 1.jpg"));
+  CHECK_FALSE(fm::findEpubImageMember(readerFor(files), "none.jpg"));
 }

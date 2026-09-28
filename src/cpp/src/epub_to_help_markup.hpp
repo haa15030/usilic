@@ -17,11 +17,17 @@ using EpubMemberReader = std::function<std::optional<std::string>(const std::str
 // 2026-09-28追加、直接のユーザー依頼("EPUBファイルの縦書き表示とかCUIでも
 // できる？"→docs/ideas/IDEAS.mdの「EPUBビューア」段階1"1をよろしく")。
 // .steering/20260928-epub-viewer-stage1/design.md自身の対応表参照:
-//   - rubyは青空文庫式の「漢字《かんじ》」、画像は"[image: alt]"。
+//   - rubyは青空文庫式の「漢字《かんじ》」、画像は"[image: <ファイル名>]"。画像だけの
+//     章は「表紙 [image: title.jpg]」の1行にまとめる。
 //   - 章の行(目次(nav/ncx)の項目が指す位置と、h1〜h6)は行末にタブを付ける
 //     (QUICK.txtと同じ印。本文中のASCII空白は全て1個のスペースへ正規化する
 //     ので、タブは章の行にしか現れない)――CUTの固定文字列"\t"で章の一覧になる。
 // container.xml/OPFが読めなければstd::nullopt(呼び出し側は従来の表示へ戻る)。
 std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember);
+
+// 本文の"[image: <ファイル名>]"のファイル名から、OPFのmanifestにあるzip内の
+// パスを探す(2026-09-28追加、直接のユーザー提案"CUTで出る目次だが、「表紙」を
+// 「表紙 [image: title]」にして returnでクイックルックというのは？")。
+std::optional<std::string> findEpubImageMember(const EpubMemberReader &readMember, const std::string &fileName);
 
 }  // namespace fm

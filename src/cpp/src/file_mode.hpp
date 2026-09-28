@@ -10,6 +10,7 @@
 #include "charset.hpp"
 #include "configuration.hpp"
 #include "content_view.hpp"
+#include "epub_to_help_markup.hpp"
 #include "grep_mode.hpp"
 #include "history.hpp"
 #include "pipe_buffer.hpp"
@@ -511,6 +512,13 @@ class FileMode {
   // usilicrcのCODEで見てバイナリか(先頭64KBだけ読む、binaryTypeText()と同じ
   // 判定)。2026-09-27追加、Application::openExternallyIfApplicable()用。
   bool isBinaryFile(const std::string &path) const;
+
+  // 2026-09-28追加: EPUB(zip)のメンバーを`unzip -p`(ConfiguredRole::
+  // UnzipExtract)で取り出す関数。unzipはメンバー名をglobとして解釈するので
+  // Application::escapeArchiveMemberPattern()と同じ文字をエスケープする。
+  // 本文の変換(loadAndTransformContent())と、CUTの一覧からの画像の
+  // クイックルック(Application::openSelectedSegment())が使う。
+  EpubMemberReader epubMemberReader(const std::string &epubPath) const;
 
  private:
   // loadFile()/loadFileNoWrap()/loadFileRaw()が共有する本体――呼び出し元が

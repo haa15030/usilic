@@ -6425,6 +6425,7 @@ bool Application::returnFromUnderline() {
 bool Application::openSelectedSegment() {
   const CutSegment *segment = cutMode_.selectedSegment();
   if (!segment) return false;
+  if (openEpubSegmentImage(*segment)) return true;
 
   std::vector<StyledLine> content = cutMode_.segmentContent(*segment);
   std::vector<ContentView::Line> lines;
@@ -6446,6 +6447,37 @@ bool Application::openSelectedSegment() {
   cutContentView_.syncVisibleCursor();
   currentMode_ = ApplicationMode::CutContent;
   return true;
+}
+
+// 2026-09-28追加、直接のユーザー提案("CUTで出る目次だが、「表紙」を「表紙
+// [image: title]」にして returnでクイックルックというのは？"): EPUBの章の一覧
+// (executeCut()自身の2026-09-28のコメント参照)で、画像だけの章(epubToHelpMarkup()
+// が「表紙 [image: title.jpg]」の1行にまとめたもの)を選んだら、その章の中身
+// ("[image: ...]"1行だけ)を見せる代わりに、画像をzipから一時ディレクトリへ
+// 取り出してクイックルックで開く。クイックルックが無い環境(Linux)では従来どおり。
+bool Application::openEpubSegmentImage(const CutSegment &segment) {
+  if (cutOrigin_ != CutOrigin::File || !isEpubFile(fileMode_.currentFile())) return false;
+  if (::access("/usr/bin/qlmanage", X_OK) != 0) return false;
+  const std::string marker = "[image: ";
+  std::size_t open = segment.label.find(marker);
+  if (open == std::string::npos) return false;
+  std::size_t close = segment.label.find(']', open);
+  if (close == std::string::npos) return false;
+  std::string name = segment.label.substr(open + marker.size(), close - open - marker.size());
+  EpubMemberReader reader = fileMode_.epubMemberReader(fileMode_.currentFile());
+  auto member = findEpubImageMember(reader, name);
+  if (!member) return false;
+  auto data = reader(*member);
+  if (!data) return false;
+  std::string dir = allocateArcDirectory();
+  std::error_code ec;
+  std::filesystem::create_directories(dir, ec);
+  std::string imagePath = dir + "/" + name;
+  std::ofstream out(imagePath, std::ios::binary);
+  if (!out) return false;
+  out.write(data->data(), static_cast<std::streamsize>(data->size()));
+  out.close();
+  return runQuickLook({imagePath});
 }
 
 bool Application::returnToDirectory() {

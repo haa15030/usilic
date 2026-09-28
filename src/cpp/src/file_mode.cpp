@@ -450,6 +450,25 @@ std::optional<std::string> FileMode::binaryTypeText(const std::string &path, con
   return bold + "\n";
 }
 
+// file_mode.hpp自身の宣言コメント参照。
+EpubMemberReader FileMode::epubMemberReader(const std::string &epubPath) const {
+  ProgramCommand unzip = configuration_.commandFor(ConfiguredRole::UnzipExtract);
+  return [unzip, epubPath](const std::string &member) -> std::optional<std::string> {
+    if (unzip.argv.empty()) return std::nullopt;
+    std::string escaped;
+    for (char c : member) {
+      if (c == '\\' || c == '*' || c == '?' || c == '[' || c == ']' || c == '{' || c == '}') escaped += '\\';
+      escaped += c;
+    }
+    std::vector<std::string> argv = unzip.argv;
+    argv.push_back(epubPath);
+    argv.push_back(escaped);
+    ChildProcess::Result result = ChildProcess::run(argv);
+    if (!result.ok) return std::nullopt;
+    return result.output;
+  };
+}
+
 std::string FileMode::loadAndTransformContent(const std::string &path) const {
   // 2026-09-28追加(isEpubFile()自身の宣言コメント参照): EPUBはzipなので、
   // バイナリ判定より前に本文のテキストへ変換する。zip内の各メンバーは
@@ -457,22 +476,7 @@ std::string FileMode::loadAndTransformContent(const std::string &path) const {
   // globとして解釈するので、Application::escapeArchiveMemberPattern()と同じ
   // 文字をエスケープする。変換できなければ従来どおり(バイナリの種類表示)。
   if (!rawControlCodesMode_ && isEpubFile(path)) {
-    ProgramCommand unzip = configuration_.commandFor(ConfiguredRole::UnzipExtract);
-    auto readMember = [&](const std::string &member) -> std::optional<std::string> {
-      if (unzip.argv.empty()) return std::nullopt;
-      std::string escaped;
-      for (char c : member) {
-        if (c == '\\' || c == '*' || c == '?' || c == '[' || c == ']' || c == '{' || c == '}') escaped += '\\';
-        escaped += c;
-      }
-      std::vector<std::string> argv = unzip.argv;
-      argv.push_back(path);
-      argv.push_back(escaped);
-      ChildProcess::Result result = ChildProcess::run(argv);
-      if (!result.ok) return std::nullopt;
-      return result.output;
-    };
-    if (auto markup = epubToHelpMarkup(readMember)) return expandHelpMarkup(*markup);
+    if (auto markup = epubToHelpMarkup(epubMemberReader(path))) return expandHelpMarkup(*markup);
   }
   std::ifstream in(path, std::ios::binary);
   if (!in) return {};
