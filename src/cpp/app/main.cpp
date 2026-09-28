@@ -2487,10 +2487,11 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       if (app.currentMode() == fm::ApplicationMode::Shell || app.awaitingSequenceOrPromptByte()) continue;
       // 2026-09-28追加: EPUBの縦書き(Application::scrollEpubVertical())は、ホイール/
       // トラックパッドを1列単位の横スクロールにする(慣性スクロールは使わない)。
-      // 縦のホイールは下で先へ(下の縦スクロールと同じ向き)、横は右へで戻る
-      // (右から左へ読むので)。
+      // 縦のホイールは下で先へ(下の縦スクロールと同じ向き)。横(トラックパッド)は
+      // 当初「右へで戻る」にしたが、実機で逆とのユーザー報告("トラップパッドは
+      // 方向が逆")により、deltaXが正で先へ。
       if (app.epubVerticalScrollActive()) {
-        int delta = wheel->deltaY != 0 ? (wheel->deltaY > 0 ? -1 : 1) : (wheel->deltaX > 0 ? -1 : 1);
+        int delta = wheel->deltaY != 0 ? (wheel->deltaY > 0 ? -1 : 1) : (wheel->deltaX > 0 ? 1 : -1);
         app.scrollEpubVertical(delta);
         continue;
       }

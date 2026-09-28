@@ -1394,9 +1394,10 @@ void GraphicalDisplay::renderCell(int row, int col) {
       static const std::set<unsigned int> kSmallKana = {
           0x3041, 0x3043, 0x3045, 0x3047, 0x3049, 0x3063, 0x3083, 0x3085, 0x3087, 0x308E, 0x3095, 0x3096,
           0x30A1, 0x30A3, 0x30A5, 0x30A7, 0x30A9, 0x30C3, 0x30E3, 0x30E5, 0x30E7, 0x30EE, 0x30F5, 0x30F6};
-      // 〝〟(U+301D〜301F)も回す(2026-09-28、直接のユーザー報告"〝〟がおかしい")
-      static const std::set<unsigned int> kRotated = {0xFF1A, 0xFF1B, 0xFF1D, 0x301C, 0xFF5E, 0x2212, 0xFF0D, 0x301D,
-                                                      0x301E, 0x301F, ':',    ';',    '=',    '-',    '~'};
+      // 〝〟は回さない(2026-09-28、一度回したが直接のユーザー指定"〝〟は回転させずに
+      // 「〝」「〟」をそのまま入ればいい"で戻した)
+      static const std::set<unsigned int> kRotated = {0xFF1A, 0xFF1B, 0xFF1D, 0x301C, 0xFF5E, 0x2212, 0xFF0D,
+                                                      ':',    ';',    '=',    '-',    '~'};
       if (kSmallKana.count(codepoint)) {
         dst.x += maxW / 8;  // 小書きの仮名は右上へ
         dst.y -= impl_->cellHeight / 8;
@@ -2199,7 +2200,15 @@ bool GraphicalDisplay::pumpEvents() {
           // Shiftも押した状態がSDLK_EQUALSではなくSDLK_PLUSとして
           // 届いている(macOS側がShift修飾を先に文字へ反映してから
           // SDLへ渡していると見られる)ため。
-          if (sym == SDLK_EQUALS || sym == SDLK_PLUS || sym == SDLK_KP_PLUS || sym == SDLK_KP_EQUALS) adjustFontSize(1);
+          // 2026-09-28追加、直接のユーザー報告("'='が入らなくて文字が大きくならない。
+          // command + shift + - →文字が小さくなる"): JISキーボードでは"="はShift+"-"、
+          // "+"はShift+";"の位置にあり、SDLにはそれぞれSDLK_MINUS/SDLK_SEMICOLON
+          // (+Shift)として届く。Shift付きの"-"と";"(Shift無しの";"も、JISで
+          // "+"の刻印のあるキーなので)は大きくする側に数える。
+          bool shift = (event.key.keysym.mod & KMOD_SHIFT) != 0;
+          if (sym == SDLK_EQUALS || sym == SDLK_PLUS || sym == SDLK_KP_PLUS || sym == SDLK_KP_EQUALS ||
+              sym == SDLK_SEMICOLON || (sym == SDLK_MINUS && shift))
+            adjustFontSize(1);
           else if (sym == SDLK_MINUS || sym == SDLK_KP_MINUS) adjustFontSize(-1);
           else if (sym == SDLK_0 || sym == SDLK_KP_0) adjustFontSize(0);
           else if (sym == SDLK_k) cycleColorPreset();
