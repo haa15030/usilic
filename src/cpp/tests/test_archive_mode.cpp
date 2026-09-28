@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include "archive_mode.hpp"
+#include "configuration.hpp"
 #include "content_view.hpp"
 #include "doctest.h"
 #include "recording_display.hpp"
@@ -56,7 +57,7 @@ struct Fixture {
     // fixture here follows the exact same "build it live with the real
     // CLI" convention as tar/zip just above.
     std::string sevenZipPath = (root / "archive.7z").string();
-    std::string sevenZipCmd = "cd '" + root.string() + "' && 7z a -bd -bb0 archive.7z src >/dev/null";
+    std::string sevenZipCmd = "cd '" + root.string() + "' && " + fm::sevenZipCommand() + " a -bd -bb0 archive.7z src >/dev/null";  // 7z/7zz(2026-09-29)
     REQUIRE(std::system(sevenZipCmd.c_str()) == 0);
   }
 
