@@ -27,19 +27,20 @@ TEST_CASE("renderEpubVerticalWindow: columns run right to left from `first`, one
   CHECK(fm::renderEpubVerticalWindow(cols, 0, 2, 9)[0].neverHighlighted);
 }
 
-// 2026-09-29: -cの傍線(下線の字の右の行間に"|")と、列カーソルの反転表示(画面の高さいっぱい)
-TEST_CASE("renderEpubVerticalWindow: side line to the right of underlined text, full-height cursor column") {
+// 2026-09-29: -cの傍線(下線の字の右の行間に"|")と、リンクの列の反転表示
+TEST_CASE("renderEpubVerticalWindow: side line to the right of underlined text, highlighted column") {
   std::vector<fm::AttributeRun> link = {{0, 6, fm::Display::Attribute::Underline}};
   auto cols = fm::layoutEpubVerticalColumns({{"あい", link, 1}, {"う", {}, 2}}, 3);
   auto lines = fm::renderEpubVerticalWindow(cols, 0, 3, 9, /*sideLineMarker=*/true);
   CHECK(lines[0].text == "   う あ|");
   CHECK(lines[1].text == "      い|");
   CHECK(lines[0].attributes.empty());
-  auto cursor = fm::renderEpubVerticalWindow(cols, 0, 3, 9, false, /*cursorColumn=*/1);
-  CHECK(cursor[2].text == "     ");  // 字の無い段も列カーソルの2桁は反転
-  REQUIRE(cursor[2].attributes.size() == 1);
-  CHECK(cursor[2].attributes[0].start == 3);
-  CHECK(cursor[2].attributes[0].attribute == fm::Display::Attribute::Standout);
+  auto highlighted = fm::renderEpubVerticalWindow(cols, 0, 3, 9, false, /*highlightColumn=*/1);
+  REQUIRE(highlighted[0].attributes.size() == 2);  // 「う」(列1)は反転、「あ」(列0)は下線のまま
+  CHECK(highlighted[0].attributes[0].start == 3);
+  CHECK(highlighted[0].attributes[0].attribute == fm::Display::Attribute::Standout);
+  CHECK(highlighted[0].attributes[1].attribute == fm::Display::Attribute::Underline);
+  CHECK(fm::epubVerticalScreenColumn(1, 9) == 3);
 }
 
 TEST_CASE("layoutEpubVerticalColumns: vertical forms, tate-chu-yoko for up to 2 digits, ！？ kept, chapter mark dropped") {

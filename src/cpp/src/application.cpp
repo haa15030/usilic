@@ -1016,6 +1016,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // DirectoryModeと同様、選択可能なリストで「ある」)には正しいが、
   // cutContentView_には間違っている。
   cutContentView_.setCursorHighlightEnabled(false);
+  // 縦書き(setEpubVerticalView()参照)も横書きの本文と同じく、ふだんはブロックカーソル
+  epubVerticalView_.setCursorHighlightEnabled(false);
   // CutContent向けのモードラインのフィールド: cutOrigin_がHelpの時は
   // 左側に固定の"HELP"(legacy自身のhelp splitに対するリテラルな名前
   // に合わせている、上のShell自身のフィールドが固定のリテラル
@@ -6720,9 +6722,12 @@ void Application::setEpubVerticalFirst(int first) {
 }
 
 // 2026-09-29追加、直接のユーザー依頼("画面右端がタグジャンプエリア、というのは
-// いかにも分かりにくい。...まずは手始めに右方向へのカーソル移動をサポートしてほしい"):
-// 横書きのカーソル行にあたる列カーソル。画面の高さいっぱいの反転表示で示し、
-// [Enter]・クリックの2回目(activateEpubVerticalColumn())はこの列に対して働く。
+// いかにも分かりにくい。...まずは手始めに右方向へのカーソル移動をサポートしてほしい"、
+// 同日の補足"「列」ではなく「ブロック」カーソルを左右に動かせる。つまり横書き
+// (選択行が無い画面では左端にブロックカーソル)仕様。傍線エリアに来たらハイライトに
+// 変わる"): 横書きのカーソル行にあたる列カーソル。ふだんはその列の頭(一番上)に
+// ブロックカーソル、リンク/画像の列ではその字を反転表示。[Enter]・クリックの2回目
+// (activateEpubVerticalColumn())はこの列に対して働く。
 // cursorが画面の外なら、見える所まで画面をずらす。モードラインの位置欄は
 // 「列カーソルの列/列の数 %」。
 void Application::setEpubVerticalView(int first, int cursor) {
@@ -6735,11 +6740,14 @@ void Application::setEpubVerticalView(int first, int cursor) {
   if (cursor >= first + perScreen) first = cursor - perScreen + 1;
   epubVerticalFirst_ = std::clamp(first, 0, last);
   epubVerticalCursor_ = cursor;
+  bool actionable = total > 0 && epubVerticalColumnTarget(epubVerticalCursor_).has_value();
   epubVerticalView_.setLines(renderEpubVerticalWindow(epubVerticalCols_, epubVerticalFirst_, epubVerticalRows(),
                                                       display_.columns(), !display_.isGraphical(),
-                                                      total > 0 ? epubVerticalCursor_ : -1));
+                                                      actionable ? epubVerticalCursor_ : -1));
   epubVerticalView_.setCursorIndex(0);
   epubVerticalView_.setTopIndex(0);
+  epubVerticalView_.setContentCursorColumn(
+      std::max(0, epubVerticalScreenColumn(epubVerticalCursor_ - epubVerticalFirst_, display_.columns())));
   char position[64];
   std::snprintf(position, sizeof(position), "%05d/%05d %3d%%", epubVerticalCursor_ + 1, std::max(total, 1),
                 total > 0 ? static_cast<int>(100L * (epubVerticalCursor_ + 1) / total) : 100);
