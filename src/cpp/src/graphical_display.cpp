@@ -1316,26 +1316,29 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // 済みで、実際の報告にあった(項目72以降も続く)まさにこれらの文字
   // まわりの文字化けはここに由来する。
   unsigned int codepoint = decodeUtf8Codepoint(cell.glyph);
-  // Display::setVerticalTextHint()参照: 縦書きでは「ー」(epub_vertical.cppが「｜」に
-  // したもの)とダッシュ(︱)を、セルの高さいっぱいの縦線にして上下の字とつなげる。
-  // 2026-09-28修正、直接のユーザー報告("「ループ」のハイフンが細くて長すぎる"):
-  // 線を太くし、上下いっぱいに伸ばすのは上/下のマスも縦線(「ーー」「――」)の
-  // 時だけにした(単独の「ー」は上下に余白を残す)。
-  if (impl_->verticalText && (codepoint == 0xFF5C || codepoint == 0xFE31)) {
-    auto barAt = [&](int r) {
-      if (r < 0 || r >= impl_->rows) return false;
-      unsigned int cp = decodeUtf8Codepoint(impl_->cellAt(r, col).glyph);
-      return cp == 0xFF5C || cp == 0xFE31;
-    };
-    int boxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
-    int lineW = std::max(2, impl_->cellWidth * 2 / 7);
-    int margin = impl_->cellHeight / 6;
-    int top = box.y + (barAt(row - 1) ? 0 : margin);
-    int bottom = box.y + impl_->cellHeight - (barAt(row + 1) ? 0 : margin);
-    SDL_Rect bar{box.x + (boxW - lineW) / 2, top, lineW, bottom - top};
-    SDL_SetRenderDrawColor(impl_->renderer, fg.r, fg.g, fg.b, fg.a);
-    SDL_RenderFillRect(impl_->renderer, &bar);
-    return;
+  // Display::setVerticalTextHint()参照。2026-09-28改訂、直接のユーザー報告("ハイフンが
+  // 太すぎる"、"「タクシー」の「ー」が太すぎる"、その前の"細くて長すぎる"): 自前の
+  // 縦線をやめ、フォント自身の「ー」「―」を90度回して描く(太さ・長さがフォントの
+  // 字と揃う)。「〝」「〟」は縦書きの約物の位置(Kinoppy等の表示と見比べた、ユーザー
+  // 提示のスクリーンショット): どちらも「〞」(″)の形で、開きは右上、閉じは左下。
+  std::string substituteGlyph;
+  double rotation = 0.0;
+  int shiftX = 0, shiftY = 0;
+  if (impl_->verticalText) {
+    if (codepoint == 0xFF5C) {
+      substituteGlyph = "\xE3\x83\xBC";  // ー
+      rotation = 90.0;
+    } else if (codepoint == 0xFE31) {
+      substituteGlyph = "\xE2\x80\x95";  // ―
+      rotation = 90.0;
+    } else if (codepoint == 0x301D) {
+      substituteGlyph = "\xE3\x80\x9E";  // 〞(右上)
+    } else if (codepoint == 0x301F) {
+      substituteGlyph = "\xE3\x80\x9E";  // 〞を左下へ
+      shiftX = -impl_->cellWidth;
+      shiftY = impl_->cellHeight / 2;
+    }
+    if (!substituteGlyph.empty()) codepoint = decodeUtf8Codepoint(substituteGlyph);
   }
   TTF_Font *renderFont = impl_->font;
   bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
@@ -1374,7 +1377,8 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // が何も無い、幅ゼロのサーフェスを生成してしまう――下線を描く対象
   // となる実際のセル幅分の走りができるよう、本物のスペースに置き
   // 換える。
-  const std::string &renderGlyph = cell.glyph.empty() ? std::string(" ") : cell.glyph;
+  const std::string &renderGlyph =
+      !substituteGlyph.empty() ? substituteGlyph : cell.glyph.empty() ? std::string(" ") : cell.glyph;
   int w = 0, h = 0;
   SDL_Texture *texture = cachedGlyphTexture(*impl_, renderFont, renderGlyph, style, hinting, fg, !isWide, w, h);
   if (texture) {
@@ -1404,8 +1408,11 @@ void GraphicalDisplay::renderCell(int row, int col) {
       } else if (!isWide && codepoint > 0x20 && codepoint < 0x7F && blankAt(col + 1) && blankAt(col - 1)) {
         dst.x += impl_->cellWidth / 2;  // 1字だけの半角は2セルの中央へ(縦中横の2字はそのまま)
       }
-      if (kRotated.count(codepoint)) {
-        SDL_RenderCopyEx(impl_->renderer, texture, nullptr, &dst, 90.0, nullptr, SDL_FLIP_NONE);
+      dst.x += shiftX;
+      dst.y += shiftY;
+      if (kRotated.count(codepoint)) rotation = 90.0;
+      if (rotation != 0.0) {
+        SDL_RenderCopyEx(impl_->renderer, texture, nullptr, &dst, rotation, nullptr, SDL_FLIP_NONE);
         return;
       }
     }

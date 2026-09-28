@@ -1460,10 +1460,10 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments(bool t
   if (fit.showName && !fields.name.empty()) {
     segments.push_back({fields.name, true});
     segments.push_back({" ", false});
-    drawnLen += static_cast<int>(fields.name.size()) + 1;
+    drawnLen += totalDisplayWidth(fields.name) + 1;
   }
   segments.push_back({positionText, true});
-  drawnLen += static_cast<int>(positionText.size());
+  drawnLen += totalDisplayWidth(positionText);
   // 2026-08-11の修正: renderModeLine()自身の同一の修正参照――各
   // フィールド自身の空かどうかは今やそれ自身だけをゲートするので、
   // trailingが空だからといってtrailing2がもはや黙って消えなく
@@ -1479,11 +1479,11 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments(bool t
       // renderModeLine()自身の同一のパディング参照――平坦な文字列
       // バージョンと同様、それを望むモードにおいて、ハイライトが
       // 画面の右端に到達するのを保つ。
-      int remaining = cols - drawnLen - static_cast<int>(trailing.size());
+      int remaining = cols - drawnLen - totalDisplayWidth(trailing);
       if (remaining > 0) trailing += std::string(remaining, ' ');
     }
     segments.push_back({trailing, !fields.trailingPlain});  // ModeLineFields::trailingPlain自身のコメント参照
-    drawnLen += static_cast<int>(trailing.size());
+    drawnLen += totalDisplayWidth(trailing);
   }
   if (fit.showTrailing2 && !fields.trailing2.empty()) {
     segments.push_back({" ", false});
@@ -1495,11 +1495,11 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments(bool t
     // パディングをtrailing3自身に譲る――そうしないとtrailing2がここで
     // 行の残り全てを食べてしまい、trailing3の描画余地が無くなる。
     if (fields.fillTrailingToEdge && fields.trailing3.empty()) {
-      int remaining = cols - drawnLen - static_cast<int>(trailing2.size());
+      int remaining = cols - drawnLen - totalDisplayWidth(trailing2);
       if (remaining > 0) trailing2 += std::string(remaining, ' ');
     }
     segments.push_back({trailing2, !fields.trailing2Plain});  // ModeLineFields::trailing2Plain自身のコメント参照
-    drawnLen += static_cast<int>(trailing2.size());
+    drawnLen += totalDisplayWidth(trailing2);
   }
   // 2026-08-30、直接のユーザー報告(GUI、実際のドラッグ中はモードライン
   // の戻り値(ARCのアーカイブパス等)が表示されない件): 以前はここに
@@ -1510,16 +1510,16 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments(bool t
   // 落とす」。
   if (!fields.trailing3.empty()) {
     std::string trailing3 = fields.trailing3;
-    int candidateLen = 1 + static_cast<int>(trailing3.size());
+    int candidateLen = 1 + totalDisplayWidth(trailing3);
     if (cols > 0 && drawnLen + candidateLen <= cols) {
       segments.push_back({" ", false});
       drawnLen += 1;
       if (fields.fillTrailingToEdge) {
-        int remaining = (cols - 1) - drawnLen - static_cast<int>(trailing3.size());
+        int remaining = (cols - 1) - drawnLen - totalDisplayWidth(trailing3);
         if (remaining > 0) trailing3 += std::string(remaining, ' ');
       }
       segments.push_back({trailing3, true});
-      drawnLen += static_cast<int>(trailing3.size());
+      drawnLen += totalDisplayWidth(trailing3);
     }
   }
   // 2026-09-03追加、直接のユーザー報告("右下透かしも消えたままなので
@@ -2062,10 +2062,10 @@ void ContentView::renderModeLine() {
     if (fields.nameUnderlined) drawUnderlineSegment(fields.name);
     else drawSegment(fields.name);
     display_.putChar(' ');
-    drawnLen += static_cast<int>(fields.name.size()) + 1;
+    drawnLen += totalDisplayWidth(fields.name) + 1;
   }
   drawPositionText(positionText);
-  drawnLen += static_cast<int>(positionText.size());
+  drawnLen += totalDisplayWidth(positionText);
   // 2026-08-11の修正: trailing2は以前`!fields.trailing.empty()`の
   // 中にネストされており、trailing自体が空の時はそれを黙って落とし
   // ていた(例えば^J^C候補一覧自身のプロバイダ、その`trailing`
@@ -2127,7 +2127,7 @@ void ContentView::renderModeLine() {
       // ことは、この関数が新たに考案したものではなく、renderLine()
       // が既に意図的に行った同じ実用的なトレードオフである(自身の
       // コメント参照)。
-      int remaining = (cols - 1) - drawnLen - static_cast<int>(trailing.size());
+      int remaining = (cols - 1) - drawnLen - totalDisplayWidth(trailing);
       if (remaining > 0) trailing += std::string(remaining, ' ');
     }
     // ModeLineFields::trailingPlain自身のコメント参照。2026-08-12の
@@ -2170,7 +2170,7 @@ void ContentView::renderModeLine() {
     } else {
       drawSegment(trailing);
     }
-    drawnLen += static_cast<int>(trailing.size());
+    drawnLen += totalDisplayWidth(trailing);
     // setCursorAtModeLineTrailingEnd()自身のコメント参照: ここで
     // キャッシュされる(syncVisibleCursor()自体によって再計算され
     // ない)ので、常に実際に描画されたものと「正確に」一致する
@@ -2192,7 +2192,7 @@ void ContentView::renderModeLine() {
     // 依然としてデフォルトの挙動)は、端に固定されたままである
     // 代わりに、それと一緒に左右に漂ってしまう。
     if (fields.trailing2RightJustified) {
-      display_.moveCursor(modeLineRow, cols - static_cast<int>(trailing2.size()));
+      display_.moveCursor(modeLineRow, cols - totalDisplayWidth(trailing2));
       if (fields.trailing2Plain) drawPlainSegment(trailing2); else drawSegment(trailing2);
       drawnLen = cols;
     } else {
@@ -2214,11 +2214,11 @@ void ContentView::renderModeLine() {
       // 経由でパスを依然として報告していたが、実際のrenderModeLine()
       // の行は決してそれを表示していなかった)。
       if (fields.fillTrailingToEdge && fields.trailing3.empty()) {
-        int remaining = cols - drawnLen - static_cast<int>(trailing2.size());
+        int remaining = cols - drawnLen - totalDisplayWidth(trailing2);
         if (remaining > 0) trailing2 += std::string(remaining, ' ');
       }
       if (fields.trailing2Plain) drawPlainSegment(trailing2); else drawSegment(trailing2);
-      drawnLen += static_cast<int>(trailing2.size());
+      drawnLen += totalDisplayWidth(trailing2);
     }
   }
   // ModeLineFields::trailing3自身のコメント参照。(上のtrailing/
@@ -2235,16 +2235,16 @@ void ContentView::renderModeLine() {
   // その2つと同じcols-1の上限)。
   if (!fields.trailing3.empty()) {
     std::string trailing3 = fields.trailing3;
-    int candidateLen = 1 + static_cast<int>(trailing3.size());
+    int candidateLen = 1 + totalDisplayWidth(trailing3);
     if (cols > 0 && drawnLen + candidateLen <= cols) {
       display_.putChar(' ');
       drawnLen += 1;
       if (fields.fillTrailingToEdge) {
-        int remaining = (cols - 1) - drawnLen - static_cast<int>(trailing3.size());
+        int remaining = (cols - 1) - drawnLen - totalDisplayWidth(trailing3);
         if (remaining > 0) trailing3 += std::string(remaining, ' ');
       }
       drawSegment(trailing3);
-      drawnLen += static_cast<int>(trailing3.size());
+      drawnLen += totalDisplayWidth(trailing3);
     }
   }
 
