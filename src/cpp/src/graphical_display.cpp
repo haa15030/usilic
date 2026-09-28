@@ -1323,20 +1323,17 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // 提示のスクリーンショット): どちらも「〞」(″)の形で、開きは右上、閉じは左下。
   std::string substituteGlyph;
   double rotation = 0.0;
-  int shiftX = 0, shiftY = 0;
+  unsigned int cornerMark = 0;
   if (impl_->verticalText) {
+    if (codepoint == 0x301D || codepoint == 0x301F) cornerMark = codepoint;
     if (codepoint == 0xFF5C) {
       substituteGlyph = "\xE3\x83\xBC";  // ー
       rotation = 90.0;
     } else if (codepoint == 0xFE31) {
       substituteGlyph = "\xE2\x80\x95";  // ―
       rotation = 90.0;
-    } else if (codepoint == 0x301D) {
-      substituteGlyph = "\xE3\x80\x9E";  // 〞(右上)
-    } else if (codepoint == 0x301F) {
-      substituteGlyph = "\xE3\x80\x9E";  // 〞を左下へ
-      shiftX = -impl_->cellWidth;
-      shiftY = impl_->cellHeight / 2;
+    } else if (codepoint == 0x301D || codepoint == 0x301F) {
+      substituteGlyph = "\xE3\x80\x9E";  // 〞(開きは右上、閉じは左下、下のcornerMark参照)
     }
     if (!substituteGlyph.empty()) codepoint = decodeUtf8Codepoint(substituteGlyph);
   }
@@ -1408,8 +1405,25 @@ void GraphicalDisplay::renderCell(int row, int col) {
       } else if (!isWide && codepoint > 0x20 && codepoint < 0x7F && blankAt(col + 1) && blankAt(col - 1)) {
         dst.x += impl_->cellWidth / 2;  // 1字だけの半角は2セルの中央へ(縦中横の2字はそのまま)
       }
-      dst.x += shiftX;
-      dst.y += shiftY;
+      // 2026-09-29修正、直接のユーザー報告(iBooksのスクリーンショット=hh): 〞を丸ごと
+      // ずらすと、フォントの字の中での点の位置次第で隣の列へはみ出していた。点そのもの
+      // (インクの範囲)だけを切り出し、開きはマスの右上、閉じは左下に置く。
+      int minx = 0, maxx = 0, miny = 0, maxy = 0;
+      if (cornerMark && TTF_GlyphMetrics32(renderFont, codepoint, &minx, &maxx, &miny, &maxy, nullptr) == 0 &&
+          maxx > minx && maxy > miny) {
+        int ascent = TTF_FontAscent(renderFont);
+        SDL_Rect src{std::max(0, minx), std::max(0, ascent - maxy), maxx - minx, maxy - miny};
+        src.w = std::min(src.w, w - src.x);
+        src.h = std::min(src.h, h - src.y);
+        double scale = static_cast<double>(dst.w) / std::max(w, 1);
+        int inkW = static_cast<int>(src.w * scale), inkH = static_cast<int>(src.h * scale);
+        int margin = impl_->cellHeight / 10;
+        SDL_Rect ink{cornerMark == 0x301D ? box.x + maxW - inkW - margin : box.x + margin,
+                     cornerMark == 0x301D ? box.y + margin : box.y + impl_->cellHeight - inkH - margin, inkW,
+                     inkH};
+        SDL_RenderCopy(impl_->renderer, texture, &src, &ink);
+        return;
+      }
       if (kRotated.count(codepoint)) rotation = 90.0;
       if (rotation != 0.0) {
         SDL_RenderCopyEx(impl_->renderer, texture, nullptr, &dst, rotation, nullptr, SDL_FLIP_NONE);
