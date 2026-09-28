@@ -344,6 +344,14 @@ class Display {
   // 使うため。
   virtual void leaveForExternalProgram() = 0;
   virtual void reenterFromExternalProgram() = 0;
+  // 2026-09-28追加、直接のユーザー報告("^Zを投入するとその場サスペンド
+  // なので画面が煩雑...画面最下行でよろしく(これは旧がお手本)"):
+  // ^Z(Application::handleSuspend())でシェルへ戻る直前に呼ぶ。legacyの
+  // vt_init(-2)(key.cのM_susp)と同じく、スクロール領域を全画面へ戻し、
+  // カーソルを最下行の先頭へ移してその行を消す――画面の内容自体は
+  // 消さない(leaveForExternalProgram()との違い)。スクロール領域も
+  // カーソルも持たない表示(GraphicalDisplay等)では何もしない。
+  virtual void leaveForSuspend() {}
 
   // モードライン行の1要素――ハイライトされた(反転表示/「standout」)
   // フィールド(ファイル名、位置インジケータ、末尾のパス)か、2つの

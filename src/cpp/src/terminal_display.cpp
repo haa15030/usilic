@@ -584,6 +584,16 @@ void TerminalDisplay::leaveForExternalProgram() {
 // まさにそれを計算している。
 void TerminalDisplay::reenterFromExternalProgram() { applyScrollRegion(); }
 
+// Display::leaveForSuspend()自身のコメント参照(legacyのvt_init(-2)):
+// leaveForExternalProgram()と違い画面はクリアしない。
+void TerminalDisplay::leaveForSuspend() {
+  if (!outputEnabled_) return;
+  if (!caps_.changeScrollRegion.empty()) tputs(tgoto(caps_.changeScrollRegion.c_str(), rows_ - 1, 0), 1, outc);
+  moveCursor(rows_ - 1, 0);
+  clearToEndOfLine();
+  flush();
+}
+
 // ContentView::renderLine()自身の同一のバイト範囲ロジック
 // (col < run.start || col >= run.end)参照――このクラス自身の慣習
 // (バイトオフセット == 画面の列、ContentView自身のクラスコメント

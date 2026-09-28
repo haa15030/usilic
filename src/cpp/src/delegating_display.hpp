@@ -90,6 +90,7 @@ class DelegatingDisplay : public Display {
 
   void leaveForExternalProgram() override;
   void reenterFromExternalProgram() override;
+  void leaveForSuspend() override;
 
   void renderScrolled(const std::vector<ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                        const std::vector<ModeLineSegment> &modeLineSegments) override;

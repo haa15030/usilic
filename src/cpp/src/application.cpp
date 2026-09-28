@@ -4772,6 +4772,22 @@ bool Application::openSelectedEntry() {
     if (entry->name != "./") clearListReturnAnnotations();  // `./`は再読込のみで移動ではない
     return directoryMode_.openSelected();
   }
+  // 2026-09-28追加、直接のユーザー報告("シムリンクが開かない。「pt3 ->
+  // /var/www/html/epgrec/video/」の行をクリックしても空白"): `ls -l`の
+  // 行頭が'l'のシンボリックリンクはisDirectoryにならないため、参照先が
+  // ディレクトリでもファイルとして開こうとして空白になっていた。参照先を
+  // 実際にstatし、ディレクトリならリンク自身のパスのまま(`cd`と同じく
+  // 論理パスで、"../"はリンクの置かれたディレクトリへ戻る)降りる。
+  if (!entry->lsLine.empty() && entry->lsLine[0] == 'l') {
+    std::string target = directoryMode_.currentDirectory();
+    if (!target.empty() && target.back() != '/') target += '/';
+    target += entry->name;
+    std::error_code ec;
+    if (std::filesystem::is_directory(target, ec) && !ec) {
+      clearListReturnAnnotations();
+      return directoryMode_.descendTo(target + "/");
+    }
+  }
 
   // 2026-08-27追加、実際の報告("^J^K→カーソル位置が「usilicrc」
   // じゃない"): このディレクトリを離れる他の「全ての」方法
@@ -8252,8 +8268,10 @@ std::string Application::bannerFilePath() const {
 // legacyには存在しなかったGUIモードにも拡張したもの。
 bool Application::handleSuspend() {
   if (display_.isGraphical()) return false;
-  std::cout << "\n";
-  std::cout.flush();
+  // 2026-09-28修正(Display::leaveForSuspend()自身のコメント参照): 以前は
+  // カーソルのあった位置(画面の途中)で改行を出すだけだったため、
+  // シェルの「Stopped」やプロンプトが一覧の途中に割り込んでいた。
+  display_.leaveForSuspend();
   keyInput_.leaveRawMode();
   ::kill(::getpid(), SIGTSTP);
   // ここへ戻ってくるのはSIGCONTで再開された後――key_input.cpp自身の
@@ -8263,6 +8281,7 @@ bool Application::handleSuspend() {
   // 復帰する(legacy自身のvt_winsize()+条件付きkey_winch(0)を、この
   // 移植では単純化した形)。
   keyInput_.consumeResizeSignal();
+  display_.reenterFromExternalProgram();
   handleResize();
   return true;
 }

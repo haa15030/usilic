@@ -1435,12 +1435,18 @@ void Shell::submitLine() {
     }
     if (!handled) {
       pendingEchoFilter_ = trimmed;  // 自身のコメント参照――flushNewScrollbackLines()によって消費される
-      writeToPty(trimmed + "\n");
+      // 2026-09-28修正、直接のユーザー報告("sudo apt install...でパスワード
+      // (スペース1文字)待ちになるものの入力してもはねられる"): 既に動いて
+      // いるプログラムへの入力(パスワード等)は、先頭の空白も含めて打った
+      // ままを送る――空白を削るのは新しいコマンドを起動する時だけ。
+      writeToPty((wasAlreadyBusy ? line : trimmed) + "\n");
       if (!wasAlreadyBusy && historyRecorder_) historyRecorder_(trimmed);
       awaitingRealPrompt_ = true;
     }
   } else {
-    writeToPty("\n");
+    // 上の2026-09-28修正参照: 空白だけの行(スペース1文字のパスワード等)も
+    // 動いているプログラムへはそのまま送る。
+    writeToPty((wasAlreadyBusy ? line : std::string()) + "\n");
     awaitingRealPrompt_ = true;
   }
 

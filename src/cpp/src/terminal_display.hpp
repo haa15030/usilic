@@ -151,6 +151,7 @@ class TerminalDisplay : public Display {
 
   void leaveForExternalProgram() override;
   void reenterFromExternalProgram() override;
+  void leaveForSuspend() override;
 
   // Display::renderScrolled()自身のコメント参照: 本物の、行単位の
   // 実装(端末にはサブ行アドレス指定が無いため、pixelOffsetYはその
