@@ -7762,16 +7762,20 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): from HELP (no cu
 TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): from the ^X^D directory-history "
                            "ListBrowser, goes to the PARENT of the highlighted (already-a-directory) "
                            "entry -- only ONE parent_path(), not two like the File/Archive branches") {
-  history.pushRecent(RingCategory::RecentDirectory, "/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Resources/");
-  REQUIRE(app.start(path()));
+  // 2026-09-29: 実在の/Applications/Adobe Acrobat DC/に頼らず、同じ形をrootの下に作る
+  fs::create_directories(root / "Adobe Acrobat DC" / "Adobe Acrobat.app" / "Contents" / "Resources");
+  std::string app_ = path() + "Adobe Acrobat DC/Adobe Acrobat.app/";
+  REQUIRE(app.start(path()));  // start()自身がrootを履歴に積むので、その後に積む
+  history.pushRecent(RingCategory::RecentDirectory, app_ + "Contents/Resources/");
   REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  REQUIRE(*app.listBrowserMode().selectedItem() ==
-          "/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Resources/");
+  REQUIRE(app.listBrowserMode().items().size() == 2);  // 辞書順でroot自身が先頭
+  REQUIRE(app.handleCommand(Command::MoveDown));
+  REQUIRE(*app.listBrowserMode().selectedItem() == app_ + "Contents/Resources/");
 
   CHECK(app.handleCommand(Command::GoToParentDirectory));
   CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK(app.directoryMode().currentDirectory() == "/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/");
+  CHECK(app.directoryMode().currentDirectory() == app_ + "Contents/");
 }
 
 // Contrast case: the SAME ListBrowser mode, but RecentFile candidates are
@@ -7782,14 +7786,17 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): from the ^X^F fi
                            "goes to the PARENT of the highlighted file's own containing directory -- "
                            "TWO parent_path() calls, matching the File/Archive branches (the candidate "
                            "itself is a file, not a directory)") {
-  history.pushRecent(RingCategory::RecentFile, "/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Info.plist");
+  fs::create_directories(root / "Adobe Acrobat DC" / "Adobe Acrobat.app" / "Contents");  // 上のテスト参照
+  std::string app_ = path() + "Adobe Acrobat DC/Adobe Acrobat.app/";
+  { std::ofstream(app_ + "Contents/Info.plist") << "plist\n"; }
+  history.pushRecent(RingCategory::RecentFile, app_ + "Contents/Info.plist");
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFileHistory));
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
 
   CHECK(app.handleCommand(Command::GoToParentDirectory));
   CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK(app.directoryMode().currentDirectory() == "/Applications/Adobe Acrobat DC/Adobe Acrobat.app/");
+  CHECK(app.directoryMode().currentDirectory() == app_);
 }
 
 // Du: DuEntry::isDirectory is already stat-computed (du_mode.cpp), so
