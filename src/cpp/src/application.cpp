@@ -4128,7 +4128,7 @@ bool Application::handleCommandImpl(Command command) {
       // 見られているファイルが^Tのバナーでない限りno-op(falseを
       // 返す)なので、これは通常のファイル閲覧についてはno-opである。
       if (currentMode_ == ApplicationMode::File) {
-        if (epubVerticalActive()) return activateEpubVerticalColumn(epubVerticalFirst_);  // 右端の列(自身のコメント参照)
+        if (epubVerticalActive()) return activateEpubVerticalColumn(epubVerticalCursor_);  // 列カーソル(setEpubVerticalView()参照)
         return openSelectedBannerEntry() || fileMode_.followEpubLink() || openEpubLineImage(fileView_);
       }
       if (currentMode_ == ApplicationMode::CutContent) return openEpubLineImage(cutContentView_);
@@ -6707,32 +6707,51 @@ void Application::showEpubVerticalRaw(int rawLine) {
       first = static_cast<int>(c);
       break;
     }
-  setEpubVerticalFirst(first);
+  setEpubVerticalView(first, first);
 }
 
-// 右端の列をfirstにして描き直す(範囲外は端で止める)。モードラインの位置欄は
-// 「右端の列/列の数 %」。
+// 右端の列をfirstにして描き直す(範囲外は端で止める)。列カーソルは画面の外へ出る
+// なら画面の端へ引き寄せる(ホイール等のスクロール用)。
 void Application::setEpubVerticalFirst(int first) {
+  int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+  int last = std::max(0, static_cast<int>(epubVerticalCols_.size()) - perScreen);
+  first = std::clamp(first, 0, last);
+  setEpubVerticalView(first, std::clamp(epubVerticalCursor_, first, first + perScreen - 1));
+}
+
+// 2026-09-29追加、直接のユーザー依頼("画面右端がタグジャンプエリア、というのは
+// いかにも分かりにくい。...まずは手始めに右方向へのカーソル移動をサポートしてほしい"):
+// 横書きのカーソル行にあたる列カーソル。画面の高さいっぱいの反転表示で示し、
+// [Enter]・クリックの2回目(activateEpubVerticalColumn())はこの列に対して働く。
+// cursorが画面の外なら、見える所まで画面をずらす。モードラインの位置欄は
+// 「列カーソルの列/列の数 %」。
+void Application::setEpubVerticalView(int first, int cursor) {
   int total = static_cast<int>(epubVerticalCols_.size());
-  int last = std::max(0, total - epubVerticalColumnsPerScreen(display_.columns()));
+  int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+  int last = std::max(0, total - perScreen);
+  cursor = std::clamp(cursor, 0, std::max(0, total - 1));
+  first = std::clamp(first, 0, last);
+  if (cursor < first) first = cursor;
+  if (cursor >= first + perScreen) first = cursor - perScreen + 1;
   epubVerticalFirst_ = std::clamp(first, 0, last);
-  bool actionable = epubVerticalFirst_ < total && epubVerticalColumnTarget(epubVerticalFirst_).has_value();
+  epubVerticalCursor_ = cursor;
   epubVerticalView_.setLines(renderEpubVerticalWindow(epubVerticalCols_, epubVerticalFirst_, epubVerticalRows(),
-                                                      display_.columns(), !display_.isGraphical(), actionable));
+                                                      display_.columns(), !display_.isGraphical(),
+                                                      total > 0 ? epubVerticalCursor_ : -1));
   epubVerticalView_.setCursorIndex(0);
   epubVerticalView_.setTopIndex(0);
   char position[64];
-  std::snprintf(position, sizeof(position), "%05d/%05d %3d%%", epubVerticalFirst_ + 1, std::max(total, 1),
-                total > 0 ? static_cast<int>(100L * (epubVerticalFirst_ + 1) / total) : 100);
+  std::snprintf(position, sizeof(position), "%05d/%05d %3d%%", epubVerticalCursor_ + 1, std::max(total, 1),
+                total > 0 ? static_cast<int>(100L * (epubVerticalCursor_ + 1) / total) : 100);
   epubVerticalView_.setPositionTextOverride(std::string(position));
 }
 
 int Application::epubVerticalCurrentRaw() const {
-  if (epubVerticalFirst_ < 0 || epubVerticalFirst_ >= static_cast<int>(epubVerticalCols_.size())) return 1;
-  return epubVerticalCols_[epubVerticalFirst_].rawLineNumber;
+  if (epubVerticalCursor_ < 0 || epubVerticalCursor_ >= static_cast<int>(epubVerticalCols_.size())) return 1;
+  return epubVerticalCols_[epubVerticalCursor_].rawLineNumber;
 }
 
-// 縦書きの右端の列の行へ、横書きのfileView_のカーソルを合わせる
+// 縦書きの列カーソルの列の行へ、横書きのfileView_のカーソルを合わせる
 // (位置の記録・章の一覧・横書きへの切り替えは、fileView_の側で行うため)。
 void Application::syncEpubVerticalToFile() {
   int raw = epubVerticalCurrentRaw();
@@ -6750,40 +6769,44 @@ void Application::syncEpubVerticalToFile() {
 // 先頭/末尾、^X^Xで大きく移動する前の列と行き来。それ以外はnullopt(通常の処理へ)。
 std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
   int perScreen = epubVerticalColumnsPerScreen(display_.columns());
-  int target;
+  int first = epubVerticalFirst_, cursor = epubVerticalCursor_;
   switch (command) {
-    case Command::MoveDown:
-    case Command::ScrollLineDown:
-      target = epubVerticalFirst_ + 1;
+    case Command::MoveDown:  // 列カーソルを1列先(左)へ(setEpubVerticalView()参照)
+      setEpubVerticalView(first, cursor + 1);
       break;
-    case Command::MoveUp:
+    case Command::MoveUp:  // 1列戻る(右へ)
+      setEpubVerticalView(first, cursor - 1);
+      break;
+    case Command::ScrollLineDown:
+      setEpubVerticalFirst(first + 1);
+      break;
     case Command::ScrollLineUp:
-      target = epubVerticalFirst_ - 1;
+      setEpubVerticalFirst(first - 1);
       break;
     case Command::PageDown:
-      target = epubVerticalFirst_ + perScreen;
+      setEpubVerticalView(first + perScreen, cursor + perScreen);
       break;
     case Command::PageUp:
-      target = epubVerticalFirst_ - perScreen;
+      setEpubVerticalView(first - perScreen, cursor - perScreen);
       break;
     case Command::GoToTop:
-      epubVerticalMark_ = epubVerticalFirst_;
-      target = 0;
+      epubVerticalMark_ = cursor;
+      setEpubVerticalView(0, 0);
       break;
     case Command::GoToBottom:
-      epubVerticalMark_ = epubVerticalFirst_;
-      target = static_cast<int>(epubVerticalCols_.size());
+      epubVerticalMark_ = cursor;
+      setEpubVerticalView(static_cast<int>(epubVerticalCols_.size()), static_cast<int>(epubVerticalCols_.size()));
       break;
     case Command::ExchangeJumpMark: {
       if (!epubVerticalMark_) return true;
-      target = *epubVerticalMark_;
-      epubVerticalMark_ = epubVerticalFirst_;
+      int target = *epubVerticalMark_;
+      epubVerticalMark_ = cursor;
+      setEpubVerticalView(target, target);
       break;
     }
     default:
       return std::nullopt;
   }
-  setEpubVerticalFirst(target);
   epubVerticalView_.redraw();
   return true;
 }
@@ -6812,14 +6835,18 @@ bool Application::toggleEpubVertical() {
   return true;
 }
 
-// 縦書きの本文のクリック: クリックした列の行にリンクがあればリンク先へ(^X^Xで
-// 戻れる)、画像("[image: ...]")があればクイックルック。キーボードでは右端の列を
-// [Enter](activateEpubVerticalColumn()参照)。
+// 縦書きの本文のクリック: 1回目はその列へ列カーソルを動かし、列カーソルの列を
+// もう一度クリックするとactivateEpubVerticalColumn()(横書きのリンク行と同じ
+// 「1回目で選択、2回目で開く」)。
 bool Application::clickEpubVertical(int row, int column) {
   (void)row;
   int k = epubVerticalColumnAt(column, display_.columns());
-  if (k < 0) return false;
-  return activateEpubVerticalColumn(epubVerticalFirst_ + k);
+  long c = static_cast<long>(epubVerticalFirst_) + k;
+  if (k < 0 || c >= static_cast<long>(epubVerticalCols_.size())) return false;
+  if (c == epubVerticalCursor_) return activateEpubVerticalColumn(c);
+  setEpubVerticalView(epubVerticalFirst_, static_cast<int>(c));  // 1回目は列カーソルを動かすだけ
+  epubVerticalView_.redraw();
+  return true;
 }
 
 // 列cのリンク先の行(EpubVerticalTarget::link)か画像の行のテキスト(image)。どちらも
@@ -6836,13 +6863,13 @@ std::optional<Application::EpubVerticalTarget> Application::epubVerticalColumnTa
 
 // 2026-09-29追加、直接のユーザー報告("-c起動では「まえがき」へ到達できず選べない"):
 // -cはマウスを追わない(app/main.cppのsyncMouseTracking())ので、縦書きのリンク/画像は
-// キーボードでも選べるようにする。右端の列が横書きのカーソル行の代わりで、そこが
-// リンク/画像の列なら反転表示(setEpubVerticalFirst())、[Enter]で開く。
+// キーボードでも選べるようにする。列カーソル(setEpubVerticalView())の列にリンクが
+// あればリンク先へ(^X^Xで戻れる)、画像("[image: ...]")があればクイックルック。
 bool Application::activateEpubVerticalColumn(long c) {
   auto target = epubVerticalColumnTarget(c);
   if (!target) return false;
   if (target->link) {
-    epubVerticalMark_ = epubVerticalFirst_;
+    epubVerticalMark_ = epubVerticalCursor_;
     showEpubVerticalRaw(*target->link);
     epubVerticalView_.redraw();
     return true;

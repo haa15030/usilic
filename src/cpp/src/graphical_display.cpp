@@ -1288,10 +1288,17 @@ void GraphicalDisplay::renderCell(int row, int col) {
   bool blank = cell.glyph.empty() || cell.glyph == " ";
   // 2026-09-29追加、直接のユーザー報告("アンダーラインが細切れ"): 縦書きの下線
   // (リンク)は字ごとの横線ではなく、字の左の行間のセルにセルの高さいっぱいの縦線
-  // (傍線)として描く――行間のセル自身が、右隣のセルの下線を見て描く。
+  // (傍線)として描く――行間のセル自身が、左隣の字の下線を見て描く(同日訂正、直接の
+  // ユーザー指定"Kindle、Kinoppy、ブックは皆、日本語は右側...メジャーな側に合わせて":
+  // 字の右側。行間の桁の位置はepub_vertical.hppのrenderEpubVerticalWindow()参照)。
   bool underline = cell.underline && !impl_->verticalText;
-  if (impl_->verticalText && blank && !cell.continuation && col + 1 < impl_->columns &&
-      impl_->cellAt(row, col + 1).underline && !impl_->cellAt(row, col + 1).continuation) {
+  auto underlinedGlyphAt = [&](int c) {
+    if (c < 0) return false;
+    const Cell &left = impl_->cellAt(row, c);
+    if (left.continuation) return c >= 1 && impl_->cellAt(row, c - 1).underline;
+    return left.underline;
+  };
+  if (impl_->verticalText && blank && !cell.continuation && !cell.underline && underlinedGlyphAt(col - 1)) {
     int lineW = std::max(1, impl_->cellWidth / 8);
     SDL_Rect side{box.x + (impl_->cellWidth - lineW) / 2, box.y, lineW, impl_->cellHeight};
     SDL_SetRenderDrawColor(impl_->renderer, fg.r, fg.g, fg.b, fg.a);

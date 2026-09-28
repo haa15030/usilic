@@ -2455,6 +2455,7 @@ class Application {
   void rebuildEpubVertical(int rawLine);
   void showEpubVerticalRaw(int rawLine);
   void setEpubVerticalFirst(int first);
+  void setEpubVerticalView(int first, int cursor);
   int epubVerticalRows() const;
   int epubVerticalCurrentRaw() const;
   void syncEpubVerticalToFile();
@@ -2471,6 +2472,7 @@ class Application {
   bool epubOpenVerticalNext_ = false;  // ^J^Eの一覧から開く本は縦書き
   std::vector<EpubVerticalColumn> epubVerticalCols_;  // 組んだ列の並び(右から左へ読む順)
   int epubVerticalFirst_ = 0;                         // 右端に置いている列
+  int epubVerticalCursor_ = 0;                        // 列カーソル(setEpubVerticalView()参照)
   std::optional<int> epubVerticalMark_;               // ^X^Xの行き来先の列
   bool openEpubTocEntry(const CutSegment &segment);       // 同上
   bool returnToEpubToc();                                 // 同上

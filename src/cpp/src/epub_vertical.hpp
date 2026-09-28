@@ -53,13 +53,16 @@ int epubVerticalColumnsPerScreen(int columns);
 
 // columns[first]を右端に置いて、画面1枚分(rows行)を描く。行はカーソル行の
 // ハイライトの対象外(neverHighlighted、横一列がハイライトされる――ユーザー報告)。
-// sideLineMarker(-c用、2026-09-29): 下線(リンク)の字は下線を外し、その列の左の
-// 行間の桁に"|"を置いて傍線にする(端末の下線は字ごとの横線で細切れになるため)。
-// -gは下線のまま渡し、GraphicalDisplay側が縦線として描く。highlightFirst: 右端の
-// 列(first)を反転表示にする(キーボードで[Enter]を押した時の対象、リンク/画像の列だけ)。
+// 列の並び(2026-09-29改訂): 右からk番目の列は桁[screenColumns-3-3k, screenColumns-2-3k]、
+// その右の桁screenColumns-1-3kが行間(傍線の置き場所)。
+// sideLineMarker(-c用、2026-09-29): 下線(リンク)の字は下線を外し、その列の右の
+// 行間の桁に"|"を置いて傍線にする(端末の下線は字ごとの横線で細切れになるため。
+// Kindle/Kinoppy/ブックと同じく日本語の傍線は右側)。-gは下線のまま渡し、
+// GraphicalDisplay側が縦線として描く。cursorColumn: 反転表示にする列(列カーソル、
+// 列の番号、-1で無し)。画面の高さいっぱいに反転する(空行の列でも見えるように)。
 std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVerticalColumn> &columns, int first,
                                                         int rows, int screenColumns, bool sideLineMarker = false,
-                                                        bool highlightFirst = false);
+                                                        int cursorColumn = -1);
 
 // 画面の桁(0始まり)が、右から何番目の列か。列の上でなければ-1。
 int epubVerticalColumnAt(int screenColumn, int screenColumns);

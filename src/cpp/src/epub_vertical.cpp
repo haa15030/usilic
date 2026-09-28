@@ -161,11 +161,11 @@ std::vector<EpubVerticalColumn> layoutEpubVerticalColumns(const std::vector<Epub
   return cols;
 }
 
-int epubVerticalColumnsPerScreen(int columns) { return std::max(1, (columns + 1) / kColumnPitch); }
+int epubVerticalColumnsPerScreen(int columns) { return std::max(1, columns / kColumnPitch); }
 
 std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVerticalColumn> &cols, int first,
                                                         int rows, int columns, bool sideLineMarker,
-                                                        bool highlightFirst) {
+                                                        int cursorColumn) {
   int perScreen = epubVerticalColumnsPerScreen(columns);
   std::vector<ContentView::Line> out;
   for (int r = 0; r < std::max(1, rows); r++) {
@@ -174,9 +174,14 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
     std::vector<std::optional<Display::Attribute>> attrs(std::max(0, columns));
     for (int k = 0; k < perScreen; k++) {
       long c = static_cast<long>(first) + k;
-      if (c < 0 || c >= static_cast<long>(cols.size()) || r >= static_cast<int>(cols[c].cells.size())) continue;
-      int x = columns - 2 - k * kColumnPitch;
+      int x = columns - 3 - k * kColumnPitch;
       if (x < 0) continue;
+      bool cursor = c == cursorColumn;
+      if (cursor) {
+        attrs[x] = Display::Attribute::Standout;
+        if (x + 1 < columns) attrs[x + 1] = Display::Attribute::Standout;
+      }
+      if (c < 0 || c >= static_cast<long>(cols.size()) || r >= static_cast<int>(cols[c].cells.size())) continue;
       const Cell &cell = cols[c].cells[r];
       std::size_t firstLen = Utf8::sequence_length(static_cast<unsigned char>(cell.glyph[0]));
       bool wide = Utf8::display_width(reinterpret_cast<const unsigned char *>(cell.glyph.data()),
@@ -191,9 +196,9 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
       std::optional<Display::Attribute> attribute = cell.attribute;
       if (sideLineMarker && attribute == Display::Attribute::Underline) {
         attribute.reset();
-        if (x - 1 >= 0) screen[x - 1] = "|";
+        if (x + 2 < columns) screen[x + 2] = "|";
       }
-      if (highlightFirst && k == 0) attribute = Display::Attribute::Standout;
+      if (cursor) attribute = Display::Attribute::Standout;
       attrs[x] = attribute;
       if (x + 1 < columns) attrs[x + 1] = attribute;
     }
@@ -210,7 +215,9 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
           line.attributes.push_back({start, end, *attrs[x]});
       }
     }
-    while (!line.text.empty() && line.text.back() == ' ') line.text.pop_back();
+    // 末尾の空白は落とす(反転表示の列カーソルの空白は残す)
+    int minKeep = line.attributes.empty() ? 0 : line.attributes.back().end;
+    while (static_cast<int>(line.text.size()) > minKeep && line.text.back() == ' ') line.text.pop_back();
     for (auto &run : line.attributes) run.end = std::min<int>(run.end, static_cast<int>(line.text.size()));
     line.attributes.erase(std::remove_if(line.attributes.begin(), line.attributes.end(),
                                          [](const AttributeRun &run) { return run.end <= run.start; }),
@@ -222,10 +229,10 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
 }
 
 int epubVerticalColumnAt(int screenColumn, int columns) {
-  // 右からk番目の列は桁[columns-2-k*pitch, columns-1-k*pitch]
+  // 右からk番目の列は桁[columns-3-k*pitch, columns-2-k*pitch](renderEpubVerticalWindow()の宣言参照)
   int fromRight = columns - 1 - screenColumn;
   if (fromRight < 0) return -1;
-  if (fromRight % kColumnPitch == 2) return -1;  // 行間
+  if (fromRight % kColumnPitch == 0) return -1;  // 行間
   int k = fromRight / kColumnPitch;
   return k < epubVerticalColumnsPerScreen(columns) ? k : -1;
 }
