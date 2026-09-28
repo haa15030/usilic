@@ -347,7 +347,19 @@ class BodyConverter {
  public:
   explicit BodyConverter(std::string &out) : out_(out) {}
 
-  void convert(const std::string &xhtml, const std::vector<TocEntry> *tocEntries) {
+  // 本文中のリンク(行番号→リンク先の"ファイル#フラグメント")と、各アンカーの
+  // 行番号("ファイル#フラグメント"、ファイル先頭は"ファイル#")。行番号は
+  // out_の1始まりの行。epubToHelpMarkup()が全ファイルの変換後に突き合わせる。
+  struct LinkRecord {
+    int line;
+    std::string target;
+  };
+  const std::vector<LinkRecord> &links() const { return links_; }
+  const std::map<std::string, int> &anchors() const { return anchorLines_; }
+
+  void convert(const std::string &xhtml, const std::string &path, const std::vector<TocEntry> *tocEntries) {
+    path_ = path;
+    pendingAnchors_.push_back(path + "#");
     tocEntries_ = tocEntries;
     pendingLabel_.reset();
     if (tocEntries_)
@@ -389,6 +401,7 @@ class BodyConverter {
 
     if (open) {
       std::string id = attr(t, "id");
+      if (!id.empty()) pendingAnchors_.push_back(path_ + "#" + id);
       if (!id.empty() && tocEntries_)
         for (const auto &e : *tocEntries_)
           if (e.fragment == id) {
@@ -404,7 +417,6 @@ class BodyConverter {
         endLine(false);
         flushDeferredLabel();
         ensureBlankLine();
-        if (name == "h1") changeStyle(underline_, +1, "u");
         changeStyle(bold_, +1, "b");
       }
       if (close) {
@@ -414,7 +426,6 @@ class BodyConverter {
         if (!lineVisible_ && pendingLabel_) deferredLabel_ = *pendingLabel_;
         pendingLabel_.reset();
         changeStyle(bold_, -1, "b");
-        if (name == "h1") changeStyle(underline_, -1, "u");
         endLine(true);
       }
     } else if (name == "br") {
@@ -446,8 +457,26 @@ class BodyConverter {
       changeStyle(bold_, open ? +1 : -1, "b");
     } else if (name == "i" || name == "em" || name == "cite") {
       changeStyle(italic_, open ? +1 : -1, "i");
-    } else if (name == "u") {
-      changeStyle(underline_, open ? +1 : -1, "u");
+    } else if (name == "a") {
+      // 2026-09-28追加、直接のユーザー提案("選択できる章はタグジャンプとしての
+      // アンダーラインを付加し returnで当該行へ飛んではどうか"): 本の中へのリンク
+      // だけに下線を付け、リンク先の行を記録する(外部URLは飛べないので対象外)。
+      // 下線はリンク専用にするため、h1と<u>には付けない。
+      if (t.kind == XmlToken::Open) {
+        std::string href = attr(t, "href");
+        bool external = href.find("://") != std::string::npos || href.compare(0, 7, "mailto:") == 0;
+        if (!href.empty() && !external) {
+          std::string fragment;
+          std::string file = resolveHref(directoryOf(path_), href, &fragment);
+          if (href[0] == '#') file = path_;
+          linkTarget_ = file + "#" + fragment;
+          linkLineRecorded_ = false;
+          changeStyle(underline_, +1, "u");
+        }
+      } else if (t.kind == XmlToken::Close && linkTarget_) {
+        linkTarget_.reset();
+        changeStyle(underline_, -1, "u");
+      }
     } else if (name == "td" || name == "th") {
       if (close) pendingSpace_ = true;
     } else if (kBlockElements.count(name)) {
@@ -507,6 +536,11 @@ class BodyConverter {
         if (c == '\n') pendingNewline_ = true;
         continue;
       }
+      resolveAnchorsHere();
+      if (linkTarget_ && !linkLineRecorded_) {
+        links_.push_back({currentLineNumber(), *linkTarget_});
+        linkLineRecorded_ = true;
+      }
       openStylesAtLineStart();
       // CSS Text 3の改行の変換と同じく、和文(非ASCII)どうしの間のソース上の
       // 改行はスペースにしない(「色の\n   場」→「色の場」)。
@@ -534,6 +568,7 @@ class BodyConverter {
       return;
     }
     if (deferredLabel_ && lineImageOnly_) {
+      // この行(画像)に割り当て済みのアンカーは、まとめた後もこの行のまま
       line_ = "<b>" + *deferredLabel_ + "</b> " + line_;
       deferredLabel_.reset();
       chapter = true;
@@ -562,8 +597,24 @@ class BodyConverter {
     out_ += '\n';
   }
 
+  // 行番号: out_の改行を前回数えた所から数え足す(毎回全体を数えない)。
+  int currentLineNumber() {
+    for (; counted_ < out_.size(); counted_++)
+      if (out_[counted_] == '\n') newlines_++;
+    return newlines_ + 1;
+  }
+
+  // 保留中のアンカー(id、ファイル先頭)を、これから文字が出る行に割り当てる。
+  void resolveAnchorsHere() {
+    if (pendingAnchors_.empty()) return;
+    int line = currentLineNumber();
+    for (const auto &a : pendingAnchors_) anchorLines_.emplace(a, line);
+    pendingAnchors_.clear();
+  }
+
   void flushDeferredLabel() {
     if (!deferredLabel_) return;
+    resolveAnchorsHere();
     if (!deferredLabel_->empty()) out_ += "<b>" + *deferredLabel_ + "</b>\t\n";
     deferredLabel_.reset();
   }
@@ -572,10 +623,19 @@ class BodyConverter {
     std::string label = *pendingLabel_;
     pendingLabel_.reset();
     if (label.empty()) return;
+    resolveAnchorsHere();
     out_ += "<b>" + label + "</b>\t\n";
   }
 
   std::string &out_;
+  std::string path_;
+  std::vector<std::string> pendingAnchors_;
+  std::map<std::string, int> anchorLines_;
+  std::vector<LinkRecord> links_;
+  std::optional<std::string> linkTarget_;  // 開いている<a href>のリンク先
+  bool linkLineRecorded_ = false;
+  std::size_t counted_ = 0;
+  int newlines_ = 0;
   const std::vector<TocEntry> *tocEntries_ = nullptr;
   std::optional<std::string> pendingLabel_;
   std::optional<std::string> deferredLabel_;  // 空の見出しの章の名前、heading closeのコメント参照
@@ -620,7 +680,7 @@ std::optional<std::string> findEpubImageMember(const EpubMemberReader &readMembe
   return std::nullopt;
 }
 
-std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember) {
+std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, std::map<int, int> *links) {
   std::string opfPath;
   auto opf = readOpf(readMember, &opfPath);
   if (!opf) return std::nullopt;
@@ -674,7 +734,7 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember) 
   std::string out;
   title = collapseSpace(title);
   creator = collapseSpace(creator);
-  if (!title.empty()) out += "<u><b>" + title + "</b></u>\n";
+  if (!title.empty()) out += "<b>" + title + "</b>\n";  // 下線はリンク専用(BodyConverterの"a"参照)
   if (!creator.empty()) out += creator + "\n";
   if (!out.empty()) out += "\n";
 
@@ -687,8 +747,24 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember) 
     auto xhtml = readMember(item.path);
     if (!xhtml) continue;
     auto tocIt = toc.find(item.path);
-    converter.convert(*xhtml, tocIt == toc.end() ? nullptr : &tocIt->second);
+    converter.convert(*xhtml, item.path, tocIt == toc.end() ? nullptr : &tocIt->second);
     if (!out.empty() && out.compare(out.size() - 2, 2, "\n\n") != 0) out += '\n';
+  }
+  // expandHelpMarkup()は先頭の改行1個を読み飛ばすので、先頭の改行は落として
+  // 行番号をその分ずらす(画面の行のrawLineNumberと一致させるため)。
+  int leading = 0;
+  while (leading < static_cast<int>(out.size()) && out[leading] == '\n') leading++;
+  out.erase(0, leading);
+  if (links) {
+    links->clear();
+    const auto &anchors = converter.anchors();
+    for (const auto &link : converter.links()) {
+      auto it = anchors.find(link.target);
+      if (it == anchors.end()) it = anchors.find(link.target.substr(0, link.target.find('#') + 1));  // 無いフラグメントはファイル先頭へ
+      if (it == anchors.end()) continue;
+      int from = link.line - leading, to = std::max(1, it->second - leading);
+      if (from >= 1) links->emplace(from, to);
+    }
   }
   return out;
 }

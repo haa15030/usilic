@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <map>
 #include <optional>
 #include <string>
 
@@ -23,7 +24,14 @@ using EpubMemberReader = std::function<std::optional<std::string>(const std::str
 //     (QUICK.txtと同じ印。本文中のASCII空白は全て1個のスペースへ正規化する
 //     ので、タブは章の行にしか現れない)――CUTの固定文字列"\t"で章の一覧になる。
 // container.xml/OPFが読めなければstd::nullopt(呼び出し側は従来の表示へ戻る)。
-std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember);
+//
+// links(省略可): 本の中へのリンク(下線付き)がある行の行番号→リンク先の行番号
+// (どちらも返す文字列の1始まりの行、1行に複数あれば最初のリンク)。2026-09-28
+// 追加、直接のユーザー提案("選択できる章はタグジャンプとしてのアンダーラインを
+// 付加し returnで当該行へ飛んではどうか")。下線はリンク専用で、h1や<u>には
+// 付けない。
+std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember,
+                                            std::map<int, int> *links = nullptr);
 
 // 本文の"[image: <ファイル名>]"のファイル名から、OPFのmanifestにあるzip内の
 // パスを探す(2026-09-28追加、直接のユーザー提案"CUTで出る目次だが、「表紙」を

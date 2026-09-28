@@ -469,14 +469,40 @@ EpubMemberReader FileMode::epubMemberReader(const std::string &epubPath) const {
   };
 }
 
+// file_mode.hpp自身の宣言コメント参照。
+bool FileMode::followEpubLink() {
+  if (epubLinks_.empty() || !isEpubFile(currentFile_)) return false;
+  std::optional<int> raw = rawLineNumberAt(view_.cursorIndex());
+  if (!raw) return false;
+  auto link = epubLinks_.find(*raw);
+  if (link == epubLinks_.end()) return false;
+  const auto &lines = view_.lines();
+  for (std::size_t i = 0; i < lines.size(); i++) {
+    if (lines[i].rawLineNumber != link->second) continue;
+    view_.setCursorIndex(static_cast<int>(i));
+    view_.setTopIndex(static_cast<int>(i));
+    view_.redraw();
+    view_.syncVisibleCursor();
+    return true;
+  }
+  return false;
+}
+
+bool FileMode::hasEpubLinkAt(int index) const {
+  if (epubLinks_.empty() || !isEpubFile(currentFile_)) return false;
+  std::optional<int> raw = rawLineNumberAt(index);
+  return raw && epubLinks_.count(*raw);
+}
+
 std::string FileMode::loadAndTransformContent(const std::string &path) const {
   // 2026-09-28追加(isEpubFile()自身の宣言コメント参照): EPUBはzipなので、
   // バイナリ判定より前に本文のテキストへ変換する。zip内の各メンバーは
   // `unzip -p`(ConfiguredRole::UnzipExtract)で取り出す。unzipはメンバー名を
   // globとして解釈するので、Application::escapeArchiveMemberPattern()と同じ
   // 文字をエスケープする。変換できなければ従来どおり(バイナリの種類表示)。
+  epubLinks_.clear();
   if (!rawControlCodesMode_ && isEpubFile(path)) {
-    if (auto markup = epubToHelpMarkup(epubMemberReader(path))) return expandHelpMarkup(*markup);
+    if (auto markup = epubToHelpMarkup(epubMemberReader(path), &epubLinks_)) return expandHelpMarkup(*markup);
   }
   std::ifstream in(path, std::ios::binary);
   if (!in) return {};

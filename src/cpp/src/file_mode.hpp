@@ -520,6 +520,13 @@ class FileMode {
   // クイックルック(Application::openSelectedSegment())が使う。
   EpubMemberReader epubMemberReader(const std::string &epubPath) const;
 
+  // 2026-09-28追加、直接のユーザー提案("選択できる章はタグジャンプとしての
+  // アンダーラインを付加し returnで当該行へ飛んではどうか"): EPUBの本文で、
+  // カーソル行に本の中へのリンク(下線)があれば、リンク先の行へカーソルを
+  // 移してそこを画面の先頭にする。リンクが無ければfalse。
+  bool followEpubLink();
+  bool hasEpubLinkAt(int index) const;  // 画面の行indexにリンクがあるか(クリック用)
+
  private:
   // loadFile()/loadFileNoWrap()/loadFileRaw()が共有する本体――呼び出し元が
   // 先にnoWrapMode_/rawControlCodesMode_をセットしてから呼ぶ。shouldAbort
@@ -584,6 +591,9 @@ class FileMode {
   // loadFile()(通常の読み込み)は毎回両方falseへリセットする。
   bool noWrapMode_ = false;
   bool rawControlCodesMode_ = false;
+  // followEpubLink()用: EPUBの本文のリンクがある行→リンク先の行(どちらも
+  // rawLineNumber)。loadAndTransformContent()(const)が変換のたびに作り直す。
+  mutable std::map<int, int> epubLinks_;
   std::string currentFile_;
   AnnotationStack<FileAnnotationKind> annotations_;
   // pagerMode_(2026-08-25): loadStream()が設定し、loadFile()が

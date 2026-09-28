@@ -52,7 +52,7 @@ TEST_CASE("epubToHelpMarkup: EPUB3 -- title/creator header, spine order, ruby, n
   auto out = fm::epubToHelpMarkup(readerFor(files));
   REQUIRE(out);
   CHECK(*out ==
-        "<u><b>本の名前</b></u>\n"
+        "<b>本の名前</b>\n"
         "著者\n"
         "\n"
         "<b>表紙</b> [image: title.jpg]\t\n"  // 空の見出し+画像だけの段落は1行にまとめる
@@ -111,4 +111,34 @@ TEST_CASE("epubToHelpMarkup: empty heading followed by text keeps the TOC label 
   CHECK(*out == "<b>章</b>\t\n本文[image: title 1.jpg]\n\n");
   CHECK(fm::findEpubImageMember(readerFor(files), "title 1.jpg") == std::optional<std::string>("OEBPS/Image/title 1.jpg"));
   CHECK_FALSE(fm::findEpubImageMember(readerFor(files), "none.jpg"));
+}
+
+TEST_CASE("epubToHelpMarkup: in-book links are underlined and mapped to their target line; "
+          "external links are plain") {
+  std::map<std::string, std::string> files = {
+      {"META-INF/container.xml", kContainer},
+      {"OEBPS/content.opf", R"(<package><manifest>
+  <item id="a" href="a.xhtml" media-type="application/xhtml+xml"/>
+  <item id="b" href="b.xhtml" media-type="application/xhtml+xml"/>
+</manifest><spine><itemref idref="a"/><itemref idref="b"/></spine></package>)"},
+      {"OEBPS/a.xhtml", R"(<body><h2>目次</h2><p><a href="b.xhtml#c1">第一章</a></p><p>第二章</p>
+<p><a href="http://example.com/">外</a></p><p>　<a href="b.xhtml">先頭</a></p></body>)"},
+      {"OEBPS/b.xhtml", R"(<body><p>前</p><h2 id="c1">第一章</h2><p>本文</p></body>)"},
+  };
+  std::map<int, int> links;
+  auto out = fm::epubToHelpMarkup(readerFor(files), &links);
+  REQUIRE(out);
+  CHECK(*out ==
+        "<b>目次</b>\t\n"
+        "<u>第一章</u>\n"
+        "第二章\n"
+        "外\n"
+        "　<u>先頭</u>\n"
+        "\n"
+        "前\n"
+        "\n"
+        "<b>第一章</b>\t\n"
+        "本文\n"
+        "\n");
+  CHECK(links == std::map<int, int>{{2, 9}, {5, 7}});
 }
