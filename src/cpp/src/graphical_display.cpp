@@ -1286,7 +1286,19 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // が、まさに下のunderlineスタイルのコードへ到達する前に、それを
   // 黙って落としていた。
   bool blank = cell.glyph.empty() || cell.glyph == " ";
-  if (cell.continuation || (blank && !cell.underline)) return;
+  // 2026-09-29追加、直接のユーザー報告("アンダーラインが細切れ"): 縦書きの下線
+  // (リンク)は字ごとの横線ではなく、字の左の行間のセルにセルの高さいっぱいの縦線
+  // (傍線)として描く――行間のセル自身が、右隣のセルの下線を見て描く。
+  bool underline = cell.underline && !impl_->verticalText;
+  if (impl_->verticalText && blank && !cell.continuation && col + 1 < impl_->columns &&
+      impl_->cellAt(row, col + 1).underline && !impl_->cellAt(row, col + 1).continuation) {
+    int lineW = std::max(1, impl_->cellWidth / 8);
+    SDL_Rect side{box.x + (impl_->cellWidth - lineW) / 2, box.y, lineW, impl_->cellHeight};
+    SDL_SetRenderDrawColor(impl_->renderer, fg.r, fg.g, fg.b, fg.a);
+    SDL_RenderFillRect(impl_->renderer, &side);
+    return;
+  }
+  if (cell.continuation || (blank && !underline)) return;
 
   // このグリフが1セル分か2セル分か(CJK/全角文字、commitGlyph()の
   // 継続セルの規約参照)。
@@ -1294,7 +1306,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
 
   int style = TTF_STYLE_NORMAL;
   if (cell.bold) style |= TTF_STYLE_BOLD;
-  if (cell.underline) style |= TTF_STYLE_UNDERLINE;
+  if (underline) style |= TTF_STYLE_UNDERLINE;
   if (cell.italic) style |= TTF_STYLE_ITALIC;
 
   // メインフォントに欠けているグリフについては、CJK対応フォント

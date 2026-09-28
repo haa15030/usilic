@@ -164,7 +164,8 @@ std::vector<EpubVerticalColumn> layoutEpubVerticalColumns(const std::vector<Epub
 int epubVerticalColumnsPerScreen(int columns) { return std::max(1, (columns + 1) / kColumnPitch); }
 
 std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVerticalColumn> &cols, int first,
-                                                        int rows, int columns) {
+                                                        int rows, int columns, bool sideLineMarker,
+                                                        bool highlightFirst) {
   int perScreen = epubVerticalColumnsPerScreen(columns);
   std::vector<ContentView::Line> out;
   for (int r = 0; r < std::max(1, rows); r++) {
@@ -187,8 +188,14 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
         screen[x] = cell.glyph.substr(0, firstLen);
         if (x + 1 < columns) screen[x + 1] = cell.glyph.substr(firstLen);
       }
-      attrs[x] = cell.attribute;
-      if (x + 1 < columns) attrs[x + 1] = cell.attribute;
+      std::optional<Display::Attribute> attribute = cell.attribute;
+      if (sideLineMarker && attribute == Display::Attribute::Underline) {
+        attribute.reset();
+        if (x - 1 >= 0) screen[x - 1] = "|";
+      }
+      if (highlightFirst && k == 0) attribute = Display::Attribute::Standout;
+      attrs[x] = attribute;
+      if (x + 1 < columns) attrs[x + 1] = attribute;
     }
     ContentView::Line line;
     for (int x = 0; x < columns; x++) {

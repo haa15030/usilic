@@ -27157,3 +27157,17 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      "1"/"0")として保存する(Application::currentResumableEpubVertical())。
    - **テスト**: 履歴関連(*istory*)を絞って実行。失敗した3件は環境依存
      (/Applications/Adobe Acrobat DC、7z)で今回の変更とは無関係。
+
+501. **2026-09-29: 縦書きのリンクの下線を傍線に、キーボードで右端の列のリンク/画像を開く**
+   - **経緯**: 直接のユーザー報告("アンダーラインが細切れ、しかも-c起動では
+     「まえがき」へ到達できず選べない"、-cの縦書きの目次のスクリーンショット=hk)。
+   - **下線**: 端末の下線は字ごとの横線なので、縦書きでは細切れに見えた。
+     renderEpubVerticalWindow()にsideLineMarkerを足し、-cでは下線を外して、その字の
+     左の行間の桁に"|"を置く(傍線)。-gは下線のまま渡し、GraphicalDisplay::
+     renderCell()が縦書きの時だけ、行間のセルに右隣の下線を見てセルの高さいっぱいの
+     縦線を描く(字自身には横の下線を描かない)。
+   - **キーボード**: -cはCOPYモード以外ではマウスを追わない(app/main.cppの
+     syncMouseTracking())ため、縦書きのリンク/画像はクリックでしか開けない作りでは
+     -cから選べなかった。右端の列を横書きのカーソル行の代わりとし、そこがリンク/
+     画像の列なら反転表示(highlightFirst)、[Enter]で開く
+     (Application::activateEpubVerticalColumn()、クリックもこれを通る)。

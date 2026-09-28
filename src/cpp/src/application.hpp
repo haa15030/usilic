@@ -2461,6 +2461,12 @@ class Application {
   std::optional<bool> handleEpubVerticalCommand(Command command);
   bool toggleEpubVertical();  // K-100(^Oe)
   bool clickEpubVertical(int row, int column);
+  struct EpubVerticalTarget {
+    std::optional<int> link;  // リンク先の元の行番号
+    std::string imageLine;    // "[image: ...]"の行(linkが無い時)
+  };
+  std::optional<EpubVerticalTarget> epubVerticalColumnTarget(long column) const;
+  bool activateEpubVerticalColumn(long column);
   bool epubVertical_ = false;
   bool epubOpenVerticalNext_ = false;  // ^J^Eの一覧から開く本は縦書き
   std::vector<EpubVerticalColumn> epubVerticalCols_;  // 組んだ列の並び(右から左へ読む順)

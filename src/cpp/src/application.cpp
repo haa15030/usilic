@@ -4128,7 +4128,7 @@ bool Application::handleCommandImpl(Command command) {
       // 見られているファイルが^Tのバナーでない限りno-op(falseを
       // 返す)なので、これは通常のファイル閲覧についてはno-opである。
       if (currentMode_ == ApplicationMode::File) {
-        if (epubVerticalActive()) return false;  // 縦書きではリンク/画像はクリックで(clickEpubVertical())
+        if (epubVerticalActive()) return activateEpubVerticalColumn(epubVerticalFirst_);  // 右端の列(自身のコメント参照)
         return openSelectedBannerEntry() || fileMode_.followEpubLink() || openEpubLineImage(fileView_);
       }
       if (currentMode_ == ApplicationMode::CutContent) return openEpubLineImage(cutContentView_);
@@ -6716,8 +6716,9 @@ void Application::setEpubVerticalFirst(int first) {
   int total = static_cast<int>(epubVerticalCols_.size());
   int last = std::max(0, total - epubVerticalColumnsPerScreen(display_.columns()));
   epubVerticalFirst_ = std::clamp(first, 0, last);
-  epubVerticalView_.setLines(
-      renderEpubVerticalWindow(epubVerticalCols_, epubVerticalFirst_, epubVerticalRows(), display_.columns()));
+  bool actionable = epubVerticalFirst_ < total && epubVerticalColumnTarget(epubVerticalFirst_).has_value();
+  epubVerticalView_.setLines(renderEpubVerticalWindow(epubVerticalCols_, epubVerticalFirst_, epubVerticalRows(),
+                                                      display_.columns(), !display_.isGraphical(), actionable));
   epubVerticalView_.setCursorIndex(0);
   epubVerticalView_.setTopIndex(0);
   char position[64];
@@ -6812,23 +6813,41 @@ bool Application::toggleEpubVertical() {
 }
 
 // 縦書きの本文のクリック: クリックした列の行にリンクがあればリンク先へ(^X^Xで
-// 戻れる)、画像("[image: ...]")があればクイックルック。キーボードでは列を
-// 選べないので、縦書きのリンク/画像はクリックだけ。
+// 戻れる)、画像("[image: ...]")があればクイックルック。キーボードでは右端の列を
+// [Enter](activateEpubVerticalColumn()参照)。
 bool Application::clickEpubVertical(int row, int column) {
   (void)row;
   int k = epubVerticalColumnAt(column, display_.columns());
-  long c = static_cast<long>(epubVerticalFirst_) + k;
-  if (k < 0 || c >= static_cast<long>(epubVerticalCols_.size())) return false;
+  if (k < 0) return false;
+  return activateEpubVerticalColumn(epubVerticalFirst_ + k);
+}
+
+// 列cのリンク先の行(EpubVerticalTarget::link)か画像の行のテキスト(image)。どちらも
+// 無ければnullopt。
+std::optional<Application::EpubVerticalTarget> Application::epubVerticalColumnTarget(long c) const {
+  if (c < 0 || c >= static_cast<long>(epubVerticalCols_.size())) return std::nullopt;
   int raw = epubVerticalCols_[c].rawLineNumber;
-  if (auto target = fileMode_.epubLinkTargetForRawLine(raw)) {
+  if (auto target = fileMode_.epubLinkTargetForRawLine(raw)) return EpubVerticalTarget{*target, {}};
+  for (const auto &line : fileView_.lines())
+    if (line.rawLineNumber == raw && line.text.find("[image: ") != std::string::npos)
+      return EpubVerticalTarget{std::nullopt, line.text};
+  return std::nullopt;
+}
+
+// 2026-09-29追加、直接のユーザー報告("-c起動では「まえがき」へ到達できず選べない"):
+// -cはマウスを追わない(app/main.cppのsyncMouseTracking())ので、縦書きのリンク/画像は
+// キーボードでも選べるようにする。右端の列が横書きのカーソル行の代わりで、そこが
+// リンク/画像の列なら反転表示(setEpubVerticalFirst())、[Enter]で開く。
+bool Application::activateEpubVerticalColumn(long c) {
+  auto target = epubVerticalColumnTarget(c);
+  if (!target) return false;
+  if (target->link) {
     epubVerticalMark_ = epubVerticalFirst_;
-    showEpubVerticalRaw(*target);
+    showEpubVerticalRaw(*target->link);
     epubVerticalView_.redraw();
     return true;
   }
-  for (const auto &line : fileView_.lines())
-    if (line.rawLineNumber == raw && line.text.find("[image: ") != std::string::npos) return openEpubImageIn(line.text);
-  return false;
+  return openEpubImageIn(target->imageLine);
 }
 
 // K-98(^Je、2026-09-28): EPUBのパスを入力して開く(openEpub())。(ls)で.epubを
