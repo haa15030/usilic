@@ -12771,7 +12771,22 @@ bool Application::executeGrep(const std::string &pattern) {
   return true;
 }
 
-bool Application::executeCut(const std::string &pattern) {
+bool Application::executeCut(const std::string &requestedPattern) {
+  // 2026-09-28追加(.steering/20260928-epub-viewer-stage1/参照): EPUBを表示中、
+  // またはDirectoryでEPUBを選んで^Jc(^Jb)した時に何も入力せず[Enter]すると、
+  // 章の行(epubToHelpMarkup()が行末にタブを付けた行、QUICK.txtと同じ印)で
+  // 分割する――目次からの章移動。この自動のパターンは履歴には積まない。
+  std::string pattern = requestedPattern;
+  bool epubChapters = false;
+  if (pattern.empty()) {
+    const std::string &target = !cutFileSourcePath_.empty() ? cutFileSourcePath_
+                                : currentMode_ == ApplicationMode::File ? fileMode_.currentFile()
+                                                                        : std::string();
+    if (isEpubFile(target)) {
+      pattern = kHelpPattern;
+      epubChapters = true;
+    }
+  }
   // 下の結果/ネストの深さに関わらず記録される――なぜこれが専用の
   // ringではなくRecentFgrepPattern/RecentEgrepPatternを再利用する
   // のかについてはstartPromptHistoryRecall()自身のコメント参照
@@ -12789,9 +12804,10 @@ bool Application::executeCut(const std::string &pattern) {
   // そうならないと混乱する。ここでC++側へ移植された、そして
   // legacyのCソース自体(menu.c)へも「戻って」移植された――その修正
   // 自身のコメント参照。
-  history_.pushRecent(cutSyntax_ == GrepSyntax::Fixed ? RingCategory::RecentFgrepPattern
-                                                       : RingCategory::RecentEgrepPattern,
-                       pattern);
+  if (!epubChapters)
+    history_.pushRecent(cutSyntax_ == GrepSyntax::Fixed ? RingCategory::RecentFgrepPattern
+                                                         : RingCategory::RecentEgrepPattern,
+                         pattern);
   bool ok;
   std::string fileSourcePath = std::move(cutFileSourcePath_);
   cutFileSourcePath_.clear();  // 下のどちらの分岐が実行されるか、その結果に関わらず正確に一度消費される

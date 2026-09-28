@@ -16,6 +16,7 @@
 
 #include "charset.hpp"
 #include "child_process.hpp"
+#include "epub_to_help_markup.hpp"
 #include "help_text.hpp"
 #include "markdown_to_help_markup.hpp"
 #include "pipe_buffer.hpp"
@@ -52,6 +53,13 @@ bool isMarkdownFile(const std::string &path) {
   std::string ext = std::filesystem::path(path).extension().string();
   for (char &c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
   return ext == ".md" || ext == ".markdown";
+}
+
+// file_mode.hpp自身の宣言コメント参照。
+bool isEpubFile(const std::string &path) {
+  std::string ext = std::filesystem::path(path).extension().string();
+  for (char &c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return ext == ".epub";
 }
 
 // old/src/code.cのis_man()から移植: `man[0]`が'.'で、続く1〜2文字が
@@ -397,6 +405,7 @@ bool FileMode::looksBinary(const std::string &content) const {
 }
 
 bool FileMode::isBinaryFile(const std::string &path) const {
+  if (isEpubFile(path)) return false;  // isEpubFile()自身の宣言コメント参照
   std::ifstream in(path, std::ios::binary);
   if (!in) return false;
   std::string head(0x10000, '\0');
@@ -442,6 +451,29 @@ std::optional<std::string> FileMode::binaryTypeText(const std::string &path, con
 }
 
 std::string FileMode::loadAndTransformContent(const std::string &path) const {
+  // 2026-09-28追加(isEpubFile()自身の宣言コメント参照): EPUBはzipなので、
+  // バイナリ判定より前に本文のテキストへ変換する。zip内の各メンバーは
+  // `unzip -p`(ConfiguredRole::UnzipExtract)で取り出す。unzipはメンバー名を
+  // globとして解釈するので、Application::escapeArchiveMemberPattern()と同じ
+  // 文字をエスケープする。変換できなければ従来どおり(バイナリの種類表示)。
+  if (!rawControlCodesMode_ && isEpubFile(path)) {
+    ProgramCommand unzip = configuration_.commandFor(ConfiguredRole::UnzipExtract);
+    auto readMember = [&](const std::string &member) -> std::optional<std::string> {
+      if (unzip.argv.empty()) return std::nullopt;
+      std::string escaped;
+      for (char c : member) {
+        if (c == '\\' || c == '*' || c == '?' || c == '[' || c == ']' || c == '{' || c == '}') escaped += '\\';
+        escaped += c;
+      }
+      std::vector<std::string> argv = unzip.argv;
+      argv.push_back(path);
+      argv.push_back(escaped);
+      ChildProcess::Result result = ChildProcess::run(argv);
+      if (!result.ok) return std::nullopt;
+      return result.output;
+    };
+    if (auto markup = epubToHelpMarkup(readMember)) return expandHelpMarkup(*markup);
+  }
   std::ifstream in(path, std::ios::binary);
   if (!in) return {};
   // 2026-09-27修正、直接のユーザー報告("CODE: なんかバイナリ判定に時間が

@@ -74,6 +74,11 @@ bool isHelpMarkupPagerFile(const std::string &path);
 // markdownToHelpMarkup()+expandHelpMarkup()の二段展開を発動する。
 bool isMarkdownFile(const std::string &path);
 
+// 2026-09-28追加(.steering/20260928-epub-viewer-stage1/参照): 拡張子.epub(大小無視)。
+// FileMode::loadAndTransformContent()はバイナリ判定より前にepubToHelpMarkup()で
+// 本文のテキストへ変換し、isBinaryFile()はfalseを返す(クイックルックへ渡さない)。
+bool isEpubFile(const std::string &path);
+
 // 2026-09-20追加、直接のユーザー依頼("usilic -m src/QUICK.txt > .../
 // usilic.man...HELPは同ファイルを「C-j b」でCUTする"): legacy自身の
 // is_man()(old/src/code.cから移植、readAndWrap()自身のコメント参照)

@@ -1,0 +1,96 @@
+#include <map>
+
+#include "doctest.h"
+#include "epub_to_help_markup.hpp"
+
+// 2026-09-28追加(.steering/20260928-epub-viewer-stage1/参照): epubToHelpMarkup()の
+// 単体テスト。zipの代わりに連想配列からメンバーを返す。
+
+namespace {
+
+fm::EpubMemberReader readerFor(const std::map<std::string, std::string> &files) {
+  return [files](const std::string &member) -> std::optional<std::string> {
+    auto it = files.find(member);
+    if (it == files.end()) return std::nullopt;
+    return it->second;
+  };
+}
+
+const char *kContainer =
+    R"(<?xml version="1.0"?><container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>)";
+
+}  // namespace
+
+TEST_CASE("epubToHelpMarkup: no container.xml or OPF means not convertible") {
+  CHECK_FALSE(fm::epubToHelpMarkup(readerFor({})));
+  CHECK_FALSE(fm::epubToHelpMarkup(readerFor({{"META-INF/container.xml", kContainer}})));
+}
+
+TEST_CASE("epubToHelpMarkup: EPUB3 -- title/creator header, spine order, ruby, nav chapters") {
+  std::map<std::string, std::string> files = {
+      {"META-INF/container.xml", kContainer},
+      {"OEBPS/content.opf", R"(<package><metadata xmlns:dc="x"><dc:title>本の名前</dc:title><dc:creator>著者</dc:creator></metadata>
+<manifest>
+  <item id="a" href="Text/a.xhtml" media-type="application/xhtml+xml"/>
+  <item id="b" href="Text/b%20c.xhtml" media-type="application/xhtml+xml"/>
+  <item id="nav" href="Text/nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+</manifest>
+<spine><itemref idref="b"/><itemref idref="a"/></spine></package>)"},
+      {"OEBPS/Text/nav.xhtml", R"(<html><body><nav epub:type="toc"><h2>目次</h2><ol>
+<li><a href="../Text/a.xhtml#t1"><ruby>燈<rt>ひ</rt></ruby>の章</a></li>
+<li><a href="b%20c.xhtml">表紙</a></li></ol></nav></body></html>)"},
+      {"OEBPS/Text/b c.xhtml", R"(<html><head><title>x</title></head><body>
+<h2 id="toc_id_1"></h2>
+<p><img alt="title" src="../Image/title.jpg"/></p></body></html>)"},
+      {"OEBPS/Text/a.xhtml", R"(<html><body>
+<p class="title" id="t1">　燈の章</p>
+<p>　<ruby>燈<rp>(</rp><rt>ひ</rt><rp>)</rp></ruby>色の
+   場&amp;<b>太字</b></p>
+<p><br/></p>
+<p>次の行</p></body></html>)"},
+  };
+  auto out = fm::epubToHelpMarkup(readerFor(files));
+  REQUIRE(out);
+  CHECK(*out ==
+        "<u><b>本の名前</b></u>\n"
+        "著者\n"
+        "\n"
+        "<b>表紙</b>\t\n"  // 画像だけの見出しは目次のラベル
+        "[image: title]\n"
+        "\n"
+        "　燈の章\t\n"  // 目次が指す段落そのものが章の行
+        "　燈《ひ》色の場&<b>太字</b>\n"  // 和文の間の改行は詰める
+        "\n"
+        "次の行\n"
+        "\n");
+}
+
+TEST_CASE("epubToHelpMarkup: EPUB2 ncx labels, headings are chapters, linear=no skipped") {
+  std::map<std::string, std::string> files = {
+      {"META-INF/container.xml", kContainer},
+      {"OEBPS/content.opf", R"(<package><manifest>
+  <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+  <item id="s" href="Text/s.xhtml" media-type="application/xhtml+xml"/>
+  <item id="c" href="Text/c.xhtml" media-type="application/xhtml+xml"/>
+</manifest><spine toc="ncx"><itemref idref="c" linear="no"/><itemref idref="s"/></spine></package>)"},
+      {"OEBPS/toc.ncx", R"(<ncx><navMap><navPoint><navLabel><text>Start</text></navLabel>
+<content src="Text/s.xhtml"/></navPoint></navMap></ncx>)"},
+      {"OEBPS/Text/c.xhtml", "<html><body><p>cover</p></body></html>"},
+      {"OEBPS/Text/s.xhtml", R"(<html><body><p>〓題〓</p><h2>　目次</h2><p>a	b</p>
+<h3>第<i>一</i>章</h3><p><b>強<strong>調</strong></b></p><ul><li>x</li></ul><ol><li>y</li><li>z</li></ol></body></html>)"},
+  };
+  auto out = fm::epubToHelpMarkup(readerFor(files));
+  REQUIRE(out);
+  CHECK(*out ==
+        "〓題〓\t\n"  // ncxの"Start"(フラグメント無し)はファイル先頭の段落
+        "\n"
+        "<b>　目次</b>\t\n"
+        "a b\n"  // 本文中のタブは章の印にならない
+        "\n"
+        "<b>第<i>一</i>章</b>\t\n"
+        "<b>強調</b>\n"  // 太字の入れ子はトグルなので外側の1組だけ
+        "・x\n"
+        "1. y\n"
+        "2. z\n"
+        "\n");
+}

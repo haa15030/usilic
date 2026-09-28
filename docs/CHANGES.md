@@ -26951,3 +26951,22 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      参照先がディレクトリでもファイルとして開いて空白になっていた。
      openSelectedEntry()で参照先をstatし、ディレクトリならリンク自身のパス
      (論理パス、"../"はリンクの置かれた側へ戻る)へ降りる。
+
+488. **2026-09-28: EPUBビューア段階1 ―― .epubを本文のテキストとしてFILE表示、
+    ^Jc[Enter]で章の一覧**
+   - **経緯**: 直接のユーザー依頼("EPUBファイルの縦書き表示とかCUIでもできる？"
+     →Bibiを目標像にCUIでの実現範囲を検討(docs/ideas/IDEAS.md)→"1をよろしく")。
+     `.steering/20260928-epub-viewer-stage1/`参照。
+   - **変換**: 新規`epub_to_help_markup.cpp`。container.xml→OPF→spine順にXHTMLを
+     つなげ、Markdownと同じく<b>/<u>/<i>タグ→expandHelpMarkup()の二段構成。
+     zip内のメンバーは`unzip -p`で1つずつ取り出す。整形式XML前提の自前の簡易
+     スキャナ。rubyは青空文庫式「漢字《かんじ》」、画像は`[image: alt]`、和文
+     どうしの間のソース上の改行はスペースにしない(CSS Text 3と同じ)。
+   - **章**: 目次(EPUB3のnav、無ければEPUB2のncx)が指す位置とh1〜h6を章の行とし、
+     QUICK.txtと同じく行末にタブを付ける(本文中のASCII空白は正規化するので
+     タブは章の行にしか出ない)。画像だけの見出しは目次のラベルを出す。
+     executeCut()で、パターンが空かつ対象がEPUBならタブで分割(履歴には積まない)。
+   - **その他**: isBinaryFile()は.epubでfalse(クイックルックへ渡さない)。前回位置
+     は既存のFILE履歴がそのまま効く。usilicrcのARCHIVE節で.epubの別名を有効に
+     するとアーカイブとして開く(従来どおり)旨をusilicrc/usilicrc.enに追記。
+     ユーザーの実EPUB(~/Kbt.epub、~/Public/*.epub、EPUB2/3計24冊)で変換を確認。
