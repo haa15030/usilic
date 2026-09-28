@@ -13,12 +13,7 @@ namespace {
 
 constexpr int kColumnPitch = 3;  // 全角2セル+行間1セル
 
-// 縦書きの1マス。glyphは画面上2セル(半角1字なら右に空白を足して2セルにする)。
-struct Cell {
-  std::string glyph;
-  char32_t original = 0;  // 置き換え前のコードポイント(禁則の判定用)
-  std::optional<Display::Attribute> attribute;
-};
+using Cell = EpubVerticalCell;
 
 void appendUtf8(std::string &out, char32_t cp) {
   if (cp < 0x80) {
@@ -49,8 +44,8 @@ char32_t decode(const std::string &s, std::size_t pos, int len) {
 // 縦書き用字形への置き換え。
 const std::map<char32_t, char32_t> &verticalForms() {
   static const std::map<char32_t, char32_t> table = {
-      {0x3001, 0xFE11}, {0x3002, 0xFE12}, {0xFF0C, 0xFE10}, {0xFF1A, 0xFE13}, {0xFF1B, 0xFE14},
-      {0xFF01, 0xFE15}, {0xFF1F, 0xFE16}, {0x2026, 0xFE19}, {0x2025, 0xFE30}, {0x2014, 0xFE31},
+      {0x3001, 0xFE11}, {0x3002, 0xFE12}, {0xFF0C, 0xFE10}, {0x2026, 0xFE19}, {0x2025, 0xFE30},
+      {0x2014, 0xFE31},
       {0x2015, 0xFE31}, {0x300C, 0xFE41}, {0x300D, 0xFE42}, {0x300E, 0xFE43}, {0x300F, 0xFE44},
       {0xFF08, 0xFE35}, {0xFF09, 0xFE36}, {0xFF5B, 0xFE37}, {0xFF5D, 0xFE38}, {0x3014, 0xFE39},
       {0x3015, 0xFE3A}, {0x3010, 0xFE3B}, {0x3011, 0xFE3C}, {0x300A, 0xFE3D}, {0x300B, 0xFE3E},
@@ -142,20 +137,13 @@ std::vector<Cell> toCells(const EpubVerticalSourceLine &line) {
 
 }  // namespace
 
-EpubVerticalLayout layoutEpubVertical(const std::vector<EpubVerticalSourceLine> &lines, int rows, int columns) {
-  EpubVerticalLayout layout;
+std::vector<EpubVerticalColumn> layoutEpubVerticalColumns(const std::vector<EpubVerticalSourceLine> &lines, int rows) {
   int height = std::max(1, rows);
-  layout.rowsPerPage = height;
-  layout.columnsPerPage = std::max(1, (columns + 1) / kColumnPitch);
-
-  // 列へ分ける(1論理行が複数の列になり得る。空行は空の列1本)。
-  std::vector<std::vector<Cell>> cols;
-  std::vector<int> colRaw;
+  std::vector<EpubVerticalColumn> cols;
   for (const auto &line : lines) {
     std::vector<Cell> cells = toCells(line);
     if (cells.empty()) {
-      cols.emplace_back();
-      colRaw.push_back(line.rawLineNumber);
+      cols.push_back({{}, line.rawLineNumber});
       continue;
     }
     std::size_t i = 0;
@@ -166,78 +154,73 @@ EpubVerticalLayout layoutEpubVertical(const std::vector<EpubVerticalSourceLine> 
         for (int k = 0; k < 2 && count > 1 && isNoStart(cells[i + count].original); k++) count--;
         if (count > 1 && isNoEnd(cells[i + count - 1].original)) count--;
       }
-      cols.emplace_back(cells.begin() + i, cells.begin() + i + count);
-      colRaw.push_back(line.rawLineNumber);
+      cols.push_back({std::vector<Cell>(cells.begin() + i, cells.begin() + i + count), line.rawLineNumber});
       i += count;
     }
   }
-
-  int perPage = layout.columnsPerPage;
-  std::size_t pages = cols.empty() ? 1 : (cols.size() + perPage - 1) / perPage;
-  for (std::size_t p = 0; p < pages; p++) {
-    std::vector<int> pageRaw;
-    for (int k = 0; k < perPage; k++) {
-      std::size_t c = p * perPage + k;
-      if (c < cols.size()) pageRaw.push_back(colRaw[c]);
-    }
-    int firstRaw = pageRaw.empty() ? 0 : pageRaw.front();
-    for (int r = 0; r < height; r++) {
-      // 画面の桁ごとの中身(2セル幅の字の右半分は空文字)
-      std::vector<std::string> screen(std::max(0, columns), " ");
-      std::vector<std::optional<Display::Attribute>> attrs(std::max(0, columns));
-      for (int k = 0; k < perPage; k++) {
-        std::size_t c = p * perPage + k;
-        if (c >= cols.size() || r >= static_cast<int>(cols[c].size())) continue;
-        int x = columns - 2 - k * kColumnPitch;
-        if (x < 0) continue;
-        const Cell &cell = cols[c][r];
-        // glyphは2セル分: 全角1字か、半角2字(縦中横、半角+空白)
-        std::size_t first = Utf8::sequence_length(static_cast<unsigned char>(cell.glyph[0]));
-        bool wide = Utf8::display_width(reinterpret_cast<const unsigned char *>(cell.glyph.data()),
-                                        static_cast<int>(first)) >= 2;
-        if (wide) {
-          screen[x] = cell.glyph;
-          if (x + 1 < columns) screen[x + 1] = "";
-        } else {
-          screen[x] = cell.glyph.substr(0, first);
-          if (x + 1 < columns) screen[x + 1] = cell.glyph.substr(first);
-        }
-        attrs[x] = cell.attribute;
-        if (x + 1 < columns) attrs[x + 1] = cell.attribute;
-      }
-      ContentView::Line line;
-      for (int x = 0; x < columns; x++) {
-        int start = static_cast<int>(line.text.size());
-        line.text += screen[x];
-        int end = static_cast<int>(line.text.size());
-        if (attrs[x] && end > start) {
-          if (!line.attributes.empty() && line.attributes.back().end == start &&
-              line.attributes.back().attribute == *attrs[x])
-            line.attributes.back().end = end;
-          else
-            line.attributes.push_back({start, end, *attrs[x]});
-        }
-      }
-      while (!line.text.empty() && line.text.back() == ' ') line.text.pop_back();
-      for (auto &run : line.attributes) run.end = std::min<int>(run.end, static_cast<int>(line.text.size()));
-      line.attributes.erase(std::remove_if(line.attributes.begin(), line.attributes.end(),
-                                           [](const AttributeRun &run) { return run.end <= run.start; }),
-                            line.attributes.end());
-      line.rawLineNumber = firstRaw;
-      layout.rows.push_back(std::move(line));
-    }
-    layout.pageColumnRawLines.push_back(std::move(pageRaw));
-  }
-  return layout;
+  return cols;
 }
 
-int epubVerticalColumnAt(int screenColumn, int columns, int columnsPerPage) {
-  // 列kは桁[columns-2-k*pitch, columns-1-k*pitch]
+int epubVerticalColumnsPerScreen(int columns) { return std::max(1, (columns + 1) / kColumnPitch); }
+
+std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVerticalColumn> &cols, int first,
+                                                        int rows, int columns) {
+  int perScreen = epubVerticalColumnsPerScreen(columns);
+  std::vector<ContentView::Line> out;
+  for (int r = 0; r < std::max(1, rows); r++) {
+    // 画面の桁ごとの中身(2セル幅の字の右半分は空文字)
+    std::vector<std::string> screen(std::max(0, columns), " ");
+    std::vector<std::optional<Display::Attribute>> attrs(std::max(0, columns));
+    for (int k = 0; k < perScreen; k++) {
+      long c = static_cast<long>(first) + k;
+      if (c < 0 || c >= static_cast<long>(cols.size()) || r >= static_cast<int>(cols[c].cells.size())) continue;
+      int x = columns - 2 - k * kColumnPitch;
+      if (x < 0) continue;
+      const Cell &cell = cols[c].cells[r];
+      std::size_t firstLen = Utf8::sequence_length(static_cast<unsigned char>(cell.glyph[0]));
+      bool wide = Utf8::display_width(reinterpret_cast<const unsigned char *>(cell.glyph.data()),
+                                      static_cast<int>(firstLen)) >= 2;
+      if (wide) {
+        screen[x] = cell.glyph;
+        if (x + 1 < columns) screen[x + 1] = "";
+      } else {
+        screen[x] = cell.glyph.substr(0, firstLen);
+        if (x + 1 < columns) screen[x + 1] = cell.glyph.substr(firstLen);
+      }
+      attrs[x] = cell.attribute;
+      if (x + 1 < columns) attrs[x + 1] = cell.attribute;
+    }
+    ContentView::Line line;
+    for (int x = 0; x < columns; x++) {
+      int start = static_cast<int>(line.text.size());
+      line.text += screen[x];
+      int end = static_cast<int>(line.text.size());
+      if (attrs[x] && end > start) {
+        if (!line.attributes.empty() && line.attributes.back().end == start &&
+            line.attributes.back().attribute == *attrs[x])
+          line.attributes.back().end = end;
+        else
+          line.attributes.push_back({start, end, *attrs[x]});
+      }
+    }
+    while (!line.text.empty() && line.text.back() == ' ') line.text.pop_back();
+    for (auto &run : line.attributes) run.end = std::min<int>(run.end, static_cast<int>(line.text.size()));
+    line.attributes.erase(std::remove_if(line.attributes.begin(), line.attributes.end(),
+                                         [](const AttributeRun &run) { return run.end <= run.start; }),
+                          line.attributes.end());
+    line.neverHighlighted = true;
+    out.push_back(std::move(line));
+  }
+  return out;
+}
+
+int epubVerticalColumnAt(int screenColumn, int columns) {
+  // 右からk番目の列は桁[columns-2-k*pitch, columns-1-k*pitch]
   int fromRight = columns - 1 - screenColumn;
   if (fromRight < 0) return -1;
-  int k = fromRight / kColumnPitch;
   if (fromRight % kColumnPitch == 2) return -1;  // 行間
-  return k < columnsPerPage ? k : -1;
+  int k = fromRight / kColumnPitch;
+  return k < epubVerticalColumnsPerScreen(columns) ? k : -1;
 }
 
 }  // namespace fm

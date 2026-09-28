@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <deque>
 #include <map>
+#include <set>
 #include <tuple>
 #include <vector>
 
@@ -631,6 +632,7 @@ struct GraphicalDisplay::Impl {
 
   bool outputEnabled = true;
   bool smoothScroll = false;
+  bool verticalText = false;  // setVerticalTextHint()参照
   // 2026-09-12追加、項目⑫: display.hpp自身のmodeLineVisible()宣言
   // コメント参照。GraphicalDisplayには独立したモードライン専用の
   // 描画要素が無い(ContentViewが渡す行データをそのままセルグリッド
@@ -1314,6 +1316,16 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // 済みで、実際の報告にあった(項目72以降も続く)まさにこれらの文字
   // まわりの文字化けはここに由来する。
   unsigned int codepoint = decodeUtf8Codepoint(cell.glyph);
+  // Display::setVerticalTextHint()参照: 縦書きでは「ー」(epub_vertical.cppが「｜」に
+  // したもの)とダッシュ(︱)を、セルの高さいっぱいの縦線にして上下の字とつなげる。
+  if (impl_->verticalText && (codepoint == 0xFF5C || codepoint == 0xFE31)) {
+    int boxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
+    int lineW = std::max(1, impl_->cellWidth / 5);
+    SDL_Rect bar{box.x + (boxW - lineW) / 2, box.y, lineW, impl_->cellHeight};
+    SDL_SetRenderDrawColor(impl_->renderer, fg.r, fg.g, fg.b, fg.a);
+    SDL_RenderFillRect(impl_->renderer, &bar);
+    return;
+  }
   TTF_Font *renderFont = impl_->font;
   bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
   if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
@@ -1361,6 +1373,29 @@ void GraphicalDisplay::renderCell(int row, int col) {
     // 自身のコメント参照。
     int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
     SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h, cell.italic || cell.bold);
+    if (impl_->verticalText) {
+      // Display::setVerticalTextHint()参照。
+      auto blankAt = [&](int c) {
+        if (c < 0 || c >= impl_->columns) return true;
+        const Cell &other = impl_->cellAt(row, c);
+        return !other.continuation && (other.glyph.empty() || other.glyph == " ");
+      };
+      static const std::set<unsigned int> kSmallKana = {
+          0x3041, 0x3043, 0x3045, 0x3047, 0x3049, 0x3063, 0x3083, 0x3085, 0x3087, 0x308E, 0x3095, 0x3096,
+          0x30A1, 0x30A3, 0x30A5, 0x30A7, 0x30A9, 0x30C3, 0x30E3, 0x30E5, 0x30E7, 0x30EE, 0x30F5, 0x30F6};
+      static const std::set<unsigned int> kRotated = {0xFF1A, 0xFF1B, 0xFF1D, 0x301C, 0xFF5E, 0x2212, 0xFF0D,
+                                                      ':',    ';',    '=',    '-',    '~'};
+      if (kSmallKana.count(codepoint)) {
+        dst.x += maxW / 8;  // 小書きの仮名は右上へ
+        dst.y -= impl_->cellHeight / 8;
+      } else if (!isWide && codepoint > 0x20 && codepoint < 0x7F && blankAt(col + 1) && blankAt(col - 1)) {
+        dst.x += impl_->cellWidth / 2;  // 1字だけの半角は2セルの中央へ(縦中横の2字はそのまま)
+      }
+      if (kRotated.count(codepoint)) {
+        SDL_RenderCopyEx(impl_->renderer, texture, nullptr, &dst, 90.0, nullptr, SDL_FLIP_NONE);
+        return;
+      }
+    }
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
   }
 }
@@ -1812,6 +1847,7 @@ void GraphicalDisplay::setOutputEnabled(bool enabled) { impl_->outputEnabled = e
 
 bool GraphicalDisplay::smoothScrollEnabled() const { return impl_->smoothScroll; }
 void GraphicalDisplay::setSmoothScrollEnabled(bool enabled) { impl_->smoothScroll = enabled; }
+void GraphicalDisplay::setVerticalTextHint(bool vertical) { impl_->verticalText = vertical; }
 
 bool GraphicalDisplay::modeLineVisible() const { return impl_->modeLineVisible; }
 void GraphicalDisplay::setModeLineVisible(bool visible) { impl_->modeLineVisible = visible; }
@@ -2223,8 +2259,12 @@ bool GraphicalDisplay::pumpEvents() {
         // 方向設定が言う「上」に一致させるには、この符号反転は任意
         // ではなく必須である。
         int deltaY = event.wheel.y;
-        if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) deltaY = -deltaY;
-        if (deltaY != 0) impl_->wheelQueue.push_back(WheelEvent{deltaY});
+        int deltaX = event.wheel.x;
+        if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) {
+          deltaY = -deltaY;
+          deltaX = -deltaX;
+        }
+        if (deltaY != 0 || deltaX != 0) impl_->wheelQueue.push_back(WheelEvent{deltaY, deltaX});
         break;
       }
       default:

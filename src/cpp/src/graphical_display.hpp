@@ -216,6 +216,7 @@ class GraphicalDisplay : public Display {
   // きちんと実装されている。
   bool smoothScrollEnabled() const override;
   void setSmoothScrollEnabled(bool enabled) override;
+  void setVerticalTextHint(bool vertical) override;  // Display::setVerticalTextHint()参照
 
   bool modeLineVisible() const override;
   void setModeLineVisible(bool visible) override;
@@ -401,6 +402,10 @@ class GraphicalDisplay : public Display {
   // ここではなくそのコメント参照。
   struct WheelEvent {
     int deltaY = 0;
+    // 2026-09-28追加: 横方向(トラックパッドの左右、正で右)。EPUBの縦書きの横
+    // スクロール(Application::scrollEpubVertical())だけが使う。deltaYが0で
+    // これだけが非0のイベントもあるので、縦のスクロールはdeltaY==0を無視する。
+    int deltaX = 0;
   };
   std::optional<WheelEvent> consumeWheelEvent();
 

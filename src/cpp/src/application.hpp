@@ -12,6 +12,7 @@
 #include "content_view.hpp"
 #include "cp_mv_rm_mode.hpp"
 #include "cut_mode.hpp"
+#include "epub_vertical.hpp"
 #include "directory_mode.hpp"
 #include "du_mode.hpp"
 #include "display.hpp"
@@ -1953,6 +1954,10 @@ class Application {
   // 判明した(.steering/20260829-copy-mode/内のrequirements.md自身
   // のC++移植側の該当構造の調査結果参照)。
   ContentView &activeContentView();
+  // EPUBの縦書き(Application::rebuildEpubVertical()参照): -gのホイール/トラック
+  // パッドを列単位の横スクロールにするためにapp/main.cppから使う。
+  bool epubVerticalScrollActive() const;
+  bool scrollEpubVertical(int delta);
   // 2026-09-25追加: 長い同期処理(^[^Mの「そのまま読む」)の途中で、
   // GUIウィンドウ側にキー入力が届いたかを問い合わせる関数。GUIでは
   // キーがSDL経由で届き起動元ターミナル(keyInput_)には来ないため。
@@ -2444,15 +2449,18 @@ class Application {
   int fileRawLineAtCursor() const;
   void rebuildEpubVertical(int rawLine);
   void showEpubVerticalRaw(int rawLine);
+  void setEpubVerticalFirst(int first);
+  int epubVerticalRows() const;
   int epubVerticalCurrentRaw() const;
   void syncEpubVerticalToFile();
+  std::optional<bool> handleEpubVerticalCommand(Command command);
   bool toggleEpubVertical();  // K-100(^Oe)
   bool clickEpubVertical(int row, int column);
   bool epubVertical_ = false;
   bool epubOpenVerticalNext_ = false;  // ^J^Eの一覧から開く本は縦書き
-  std::vector<std::vector<int>> epubVerticalColumns_;  // ページごと、右からの列ごとの元の行番号
-  int epubVerticalRowsPerPage_ = 1;
-  int epubVerticalColumnsPerPage_ = 1;
+  std::vector<EpubVerticalColumn> epubVerticalCols_;  // 組んだ列の並び(右から左へ読む順)
+  int epubVerticalFirst_ = 0;                         // 右端に置いている列
+  std::optional<int> epubVerticalMark_;               // ^X^Xの行き来先の列
   bool openEpubTocEntry(const CutSegment &segment);       // 同上
   bool returnToEpubToc();                                 // 同上
   bool startEpubPrompt();                                 // K-98(^Je)

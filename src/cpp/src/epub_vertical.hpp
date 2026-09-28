@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -10,13 +11,20 @@ namespace fm {
 // EPUBモードの縦書き表示(2026-09-28追加、直接のユーザー依頼"縦書きもよろしく"、
 // docs/ideas/IDEAS.mdの「EPUBビューア」段階2)の組版。本文の論理行(横書きの
 // FileModeの行を元の行番号でつなぎ直したもの)を、1行=1列(全角2セル幅+行間
-// 1セル)で右から左へ並べ、画面1枚分(rows行)ずつのページにして、ページを縦に
-// 積んだ「画面の行」の列として返す――ContentViewにそのまま渡せば、既存の
-// ページ送り(pageDown()はちょうど画面の高さずつ動く)・再描画・モードラインが
-// そのまま使える(Application::rebuildEpubVertical()参照)。
+// 1セル)にして右から左へ並べる。
+//
+// 2026-09-28改訂、直接のユーザー要望("Bibiのように横方向へもスクロールが
+// できればいいけどね"→"まずは1列ずつから始めよう"): 当初はページ(画面1枚分)を
+// 縦に積んでContentViewの縦スクロールで送っていたが、それでは1列ずつ横へ
+// ずらせない。列の並びを組んでおき(layoutEpubVerticalColumns())、「右端に
+// どの列を置くか」を決めて画面1枚分だけ描く(renderEpubVerticalWindow())形に
+// した。
 //
 //   - 句読点・括弧・ダッシュ・三点リーダー等は、Unicodeの縦書き用字形
-//     (U+FE10〜、U+FE30〜)へ置き換える。長音「ー」は「｜」。
+//     (U+FE10〜、U+FE30〜)へ置き換える。長音「ー」は「｜」。！？：；は
+//     置き換えない(縦書き用の字形を持たないフォントがあり、-gで「・」の
+//     ような代わりの字になった――ユーザー報告)。回転が要る「：」等は-gの
+//     描画側で回す(GraphicalDisplay::setVerticalTextHint()参照)。
 //   - 半角の数字は2桁までを1マスに横に並べる(縦中横)。他の半角文字は1字1マス。
 //   - 行頭禁則(、。」等で列を始めない)と行末禁則(「（等で列を終えない)は、
 //     前の列の最後の字を次の列へ送る(追い出し)。
@@ -26,16 +34,29 @@ struct EpubVerticalSourceLine {
   int rawLineNumber = 0;
 };
 
-struct EpubVerticalLayout {
-  std::vector<ContentView::Line> rows;             // ページ×rows行。rawLineNumberはそのページの最初の列の行
-  std::vector<std::vector<int>> pageColumnRawLines;  // ページごと、右から数えた列ごとの元の行番号
-  int rowsPerPage = 0;
-  int columnsPerPage = 0;
+struct EpubVerticalCell {
+  std::string glyph;  // 画面上2セル分(全角1字、または半角2字/半角+空白)
+  char32_t original = 0;
+  std::optional<Display::Attribute> attribute;
 };
 
-EpubVerticalLayout layoutEpubVertical(const std::vector<EpubVerticalSourceLine> &lines, int rows, int columns);
+struct EpubVerticalColumn {
+  std::vector<EpubVerticalCell> cells;  // 上から。空行は空
+  int rawLineNumber = 0;
+};
 
-// 画面の列(0始まりの桁)が、そのページの右から何番目の列か。列の上でなければ-1。
-int epubVerticalColumnAt(int screenColumn, int columns, int columnsPerPage);
+// 1列の高さ`rows`で、論理行を列の並びへ組む。
+std::vector<EpubVerticalColumn> layoutEpubVerticalColumns(const std::vector<EpubVerticalSourceLine> &lines, int rows);
+
+// 画面の幅`columns`に並ぶ列の数。
+int epubVerticalColumnsPerScreen(int columns);
+
+// columns[first]を右端に置いて、画面1枚分(rows行)を描く。行はカーソル行の
+// ハイライトの対象外(neverHighlighted、横一列がハイライトされる――ユーザー報告)。
+std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVerticalColumn> &columns, int first,
+                                                        int rows, int screenColumns);
+
+// 画面の桁(0始まり)が、右から何番目の列か。列の上でなければ-1。
+int epubVerticalColumnAt(int screenColumn, int screenColumns);
 
 }  // namespace fm

@@ -352,6 +352,13 @@ class Display {
   // 消さない(leaveForExternalProgram()との違い)。スクロール領域も
   // カーソルも持たない表示(GraphicalDisplay等)では何もしない。
   virtual void leaveForSuspend() {}
+  // 2026-09-28追加(Application::activeView()から、EPUBの縦書き(Application::
+  // rebuildEpubVertical())を見せている間だけtrue): 字を自前で描くGraphicalDisplay
+  // は、縦書き向けに小書きの仮名を右上へ、1字だけの半角を2セルの中央へ寄せ、
+  // 「ー」(縦書きでは「｜」)とダッシュをセルの高さいっぱいの縦線にしてつなげ、
+  // 「：」等を90度回して描く(直接のユーザー報告"-gなので改善を期待")。端末は
+  // 字の置き方を変えられないので何もしない。
+  virtual void setVerticalTextHint(bool) {}
 
   // モードライン行の1要素――ハイライトされた(反転表示/「standout」)
   // フィールド(ファイル名、位置インジケータ、末尾のパス)か、2つの

@@ -49,6 +49,7 @@ void DelegatingDisplay::close() { backend_->close(); }
 void DelegatingDisplay::leaveForExternalProgram() { backend_->leaveForExternalProgram(); }
 void DelegatingDisplay::reenterFromExternalProgram() { backend_->reenterFromExternalProgram(); }
 void DelegatingDisplay::leaveForSuspend() { backend_->leaveForSuspend(); }
+void DelegatingDisplay::setVerticalTextHint(bool vertical) { backend_->setVerticalTextHint(vertical); }
 
 void DelegatingDisplay::renderScrolled(const std::vector<ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                                         const std::vector<ModeLineSegment> &modeLineSegments) {

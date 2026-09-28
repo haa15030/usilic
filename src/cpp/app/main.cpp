@@ -2485,6 +2485,16 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     while (auto wheel = gui.consumeWheelEvent()) {
       anyEventThisFrame = true;
       if (app.currentMode() == fm::ApplicationMode::Shell || app.awaitingSequenceOrPromptByte()) continue;
+      // 2026-09-28追加: EPUBの縦書き(Application::scrollEpubVertical())は、ホイール/
+      // トラックパッドを1列単位の横スクロールにする(慣性スクロールは使わない)。
+      // 縦のホイールは下で先へ(下の縦スクロールと同じ向き)、横は右へで戻る
+      // (右から左へ読むので)。
+      if (app.epubVerticalScrollActive()) {
+        int delta = wheel->deltaY != 0 ? (wheel->deltaY > 0 ? -1 : 1) : (wheel->deltaX > 0 ? -1 : 1);
+        app.scrollEpubVertical(delta);
+        continue;
+      }
+      if (wheel->deltaY == 0) continue;  // 横だけのイベント(WheelEvent::deltaX参照)
       dragging = false;
       gui.setHandCursor(false);
       gui.setPointingCursor(false);
