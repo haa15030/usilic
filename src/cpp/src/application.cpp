@@ -459,10 +459,6 @@ std::optional<std::tuple<std::string, std::string, GrepSyntax>> parseCutFileHist
   std::string filePath = entry.substr(0, openPos);
   std::string pattern = entry.substr(openPos + 2, entry.size() - (openPos + 2) - 1);
   if (filePath.empty() || pattern.empty()) return std::nullopt;
-  // 2026-09-28追加: EPUBの章の一覧はタブ(章の印)を"^I"と表示して積んでいる
-  // (executeCut()のepubChapters参照)。正規表現の"^I"(Iで始まる行)とは
-  // EPUBに限って区別しない。
-  if (pattern == "^I" && isEpubFile(filePath)) pattern = "\t";
   return std::make_tuple(filePath, pattern, GrepSyntax::Regex);  // 2026-09-27、CUTは拡張正規表現(startCutPrompt()の呼び出し元参照)
 }
 
@@ -941,19 +937,19 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
                                           : previousModeName(grepReturnMode_);
         if (!destinationName.empty()) {
           // 2026-09-27: ソート側(EGREPの一覧等)は"HISTORY"ではなく"EGREP"/"FGREP"。
-          return {listBrowserChronological_ ? "HISTORY" : ringCategoryLabel(listBrowserCategory_), trailing,
+          return {listBrowserChronological_ ? "HISTORY" : listBrowserCategoryLabel(), trailing,
                   /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                   truncatedTrailingPath(destinationName), /*trailingPlain=*/true, /*trailing2RightJustified=*/true};
         }
       }
-      return {listBrowserChronological_ ? "HISTORY" : ringCategoryLabel(listBrowserCategory_), trailing,
+      return {listBrowserChronological_ ? "HISTORY" : listBrowserCategoryLabel(), trailing,
               /*fillTrailingToEdge=*/false,
               /*rightWatermark=*/promptLabelText(promptHistoryContext_->kind), /*trailing2=*/"",
               /*trailingPlain=*/false, /*trailing2RightJustified=*/false,
               /*trailing2Kind=*/ContentView::TrailingKind::QueryEcho,
               /*trailingKind=*/ContentView::TrailingKind::PathMiddle};
     }
-    std::string name = listBrowserChronological_ ? "HISTORY" : ringCategoryLabel(listBrowserCategory_);
+    std::string name = listBrowserChronological_ ? "HISTORY" : listBrowserCategoryLabel();
     // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
     // 反映してほしい"): ManMode等自身の同じ分岐のコメント参照。他の
     // 3つの分岐(promptHistoryContext_が設定されている間)は、いずれも
@@ -1163,7 +1159,14 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
                         : (cutOrigin_ == CutOrigin::Man)    ? "MAN"
                         : (cutOrigin_ == CutOrigin::Locate) ? "LOCATE"
                         : (cutOrigin_ == CutOrigin::Du)     ? "DU"
+                        : (cutOrigin_ == CutOrigin::Epub)   ? "EPUB"
                                                              : "CUT";
+    if (cutOrigin_ == CutOrigin::Epub && !cutMode_.parentPattern()) {  // openEpub()参照
+      ContentView::ModeLineFields fields{name, std::to_string(contentByteCount(fileView_)), /*fillTrailingToEdge=*/true,
+                                          /*rightWatermark=*/"", ""};
+      fields.trailing3 = fileMode_.currentFile();
+      return fields;
+    }
     // HELP自身の最上位(ネストしていない)モードライン(2026-08-23
     // 修正、実際の報告+参照: "HELP" "01/26 TOP" "<バイト数>"
     // "/Users/.../    ")――このプロバイダが元々出荷していた「まだ
@@ -2843,6 +2846,10 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // startPromptHistoryRecall(directEntry=true))、EGREP/CUT-regex
       // 向けにstartRegexPromptList()が既に確立したまさに同じ仕組みを
       // 複製するのではなく再利用する。
+      case 'e':   // ^J e : EPUB: 入力(K-98、2026-09-28)
+        return handleCommand(Command::StartEpubPrompt);
+      case 0x05:  // ^J ^E : EPUB: 一覧(K-99、2026-09-28)
+        return handleCommand(Command::StartEpubList);
       case 'm':  // ^J m : MAN(K-43、「Input manual page」)
         return handleCommand(Command::StartMan);
       case kCarriageReturn:  // ^J ^M : MAN(K-44、「Select manual page」;ここでの2番目のバイトは^Mであり、素のEnterとは無関係)
@@ -4177,6 +4184,7 @@ bool Application::handleCommandImpl(Command command) {
         // を直接開いた場合、すぐ上のLocateの前例と同じく、まずDU自身の
         // 結果リストへ戻る。
         if (fileReturnMode_ == ApplicationMode::Du) return returnToDuResults();
+        if (fileReturnMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Epub) return returnToEpubToc();
         // FILE一覧(^X^F)から開いたファイル: 元のディレクトリへ戻した上で一覧を再表示する。
         // 注釈のゲート(Grepと同じ理屈): 別のファイルを開くと注釈が消え、この分岐は働かない。
         if (fileReturnsToFileList_ && !fileMode_.annotations().empty()) {
@@ -4463,6 +4471,10 @@ bool Application::handleCommandImpl(Command command) {
       return executeOpenDataDirectory();
     case Command::OpenWorkList:
       return executeOpenWorkList();
+    case Command::StartEpubPrompt:
+      return startEpubPrompt();
+    case Command::StartEpubList:
+      return startEpubList();
     case Command::ShowShellLog:
       return executeShowShellLog();
     case Command::StartLog:
@@ -4845,6 +4857,7 @@ bool Application::openSelectedEntry() {
   // にしている)。完全に引き渡して、PROGRAM/EDITと同じ形で、
   // Directoryモードへ変わらず戻る。
   if (openExternallyIfApplicable(path)) return true;  // EXEC/画像のクイックルック(2026-09-27)
+  if (isEpubFile(path)) return openEpub(path);  // openEpub()自身のコメント参照
 
   // 2026-09-20修正、直接のユーザー報告("debian-keyring...tar.xzを
   // 踏んだら反応が無くなった。LOCATE同様、^Gで読み込みを中断できる
@@ -5935,6 +5948,7 @@ bool Application::openRecentFileEntry(const std::string &path) {
     currentMode_ = ApplicationMode::Cut;
     return true;
   }
+  if (isEpubFile(path) && !configuration_.isExec(path)) return openEpub(path);  // openEpub()自身のコメント参照
   if (archiveMode_.loadArchive(path)) {
     archiveParentStack_.clear();
     currentMode_ = ApplicationMode::Archive;
@@ -6431,7 +6445,7 @@ bool Application::returnFromUnderline() {
 bool Application::openSelectedSegment() {
   const CutSegment *segment = cutMode_.selectedSegment();
   if (!segment) return false;
-  if (openEpubSegmentImage(*segment)) return true;
+  if (cutOrigin_ == CutOrigin::Epub) return openEpubSegmentImage(*segment) || openEpubTocEntry(*segment);
 
   std::vector<StyledLine> content = cutMode_.segmentContent(*segment);
   std::vector<ContentView::Line> lines;
@@ -6462,7 +6476,7 @@ bool Application::openSelectedSegment() {
 // ("[image: ...]"1行だけ)を見せる代わりに、画像をzipから一時ディレクトリへ
 // 取り出してクイックルックで開く。クイックルックが無い環境(Linux)では従来どおり。
 bool Application::openEpubSegmentImage(const CutSegment &segment) {
-  if (cutOrigin_ != CutOrigin::File) return false;
+  if (cutOrigin_ != CutOrigin::Epub) return false;
   return openEpubImageIn(segment.label);
 }
 
@@ -6503,6 +6517,112 @@ bool Application::openEpubImageIn(const std::string &text) {
   out.write(data->data(), static_cast<std::streamsize>(data->size()));
   out.close();
   return runQuickLook({imagePath});
+}
+
+// 2026-09-28追加、直接のユーザー提案("EPUBモード新設はどうかな。.epubファイルを
+// 選ぶとCUT風一覧画面が立ち上がる。モード名がCUTからEPUBに変わり、タグジャンプ
+// 機能を備えている点が違う。FILE履歴には"^I"も不要"、+"1. 本全体 2. ...最初に
+// 開いた時以外は履歴に残ってる行で開けばいい"): EPUBモードは、章の一覧(CUTの
+// 仕組みを流用、cutOrigin_ == CutOrigin::Epub、モード名"EPUB")と、本全体の
+// 本文(FileMode、fileReturnMode_ == Cut)の2画面。章の一覧は本文の章の印
+// (epubToHelpMarkup()が行末に付けるタブ、QUICK.txtと同じ)で分割したもの。
+//   - 初めて開く本(FILEの位置の記録が無い)は章の一覧から、2回目以降は記録の行
+//     から本文を開く。
+//   - 章の一覧で[Enter]→本全体の本文のその章の頭へ(画像だけの章はクイック
+//     ルック)。本文で^G→章の一覧(今読んでいる章にカーソル)。章の一覧で^G→
+//     (ls)(returnFromCut())。
+//   - 本文ではリンク(下線)で[Enter]→リンク先、^X^Xで戻る(followEpubLink())。
+// 入口は(ls)の[Enter]、FILE履歴、^Xf、^Je/^J^E。EXEC節で.epubに外部
+// プログラムを割り当てていればそちらが優先(openExternallyIfApplicable())。
+bool Application::openEpub(const std::string &path) {
+  bool firstTime = !history_.positionFor(PositionCategory::File, path);
+  if (!fileMode_.loadFile(path, [this]() { return keyInterruptRequested(); })) return false;
+  fileMode_.annotations().clear();
+  fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, path, "EPUB");
+  std::vector<StyledLine> sourceLines;
+  sourceLines.reserve(fileView_.lines().size());
+  for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
+  cutOrigin_ = CutOrigin::Epub;
+  cutSyntax_ = GrepSyntax::Fixed;
+  cutReturnMode_ = ApplicationMode::Directory;
+  if (!cutMode_.split(sourceLines, kHelpPattern, GrepSyntax::Fixed)) {
+    // 章の印が1つも無い本: 本文だけ(^Gで(ls)へ)
+    fileMode_.annotations().clear();
+    currentMode_ = ApplicationMode::File;
+    fileReturnMode_ = ApplicationMode::Directory;
+    fileView_.redraw();
+    return true;
+  }
+  if (firstTime) {
+    currentMode_ = ApplicationMode::Cut;
+    cutView_.redraw();
+  } else {
+    currentMode_ = ApplicationMode::File;
+    fileReturnMode_ = ApplicationMode::Cut;
+    fileView_.redraw();
+    fileView_.syncVisibleCursor();
+  }
+  return true;
+}
+
+// openEpub()自身のコメント参照: 章の一覧から本全体の本文のその章の頭へ。
+bool Application::openEpubTocEntry(const CutSegment &segment) {
+  const auto &lines = fileView_.lines();
+  if (segment.startLine < 0 || segment.startLine >= static_cast<int>(lines.size())) return false;
+  fileView_.setCursorIndex(segment.startLine);
+  fileView_.setTopIndex(segment.startLine);
+  currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Cut;
+  fileView_.redraw();
+  fileView_.syncVisibleCursor();
+  return true;
+}
+
+// openEpub()自身のコメント参照: 本文から章の一覧へ。本文の表示中にリサイズで
+// 折り返しが変わっていても合うよう、今の本文から章の一覧を作り直し、今読んで
+// いる行を含む章にカーソルを置く。
+bool Application::returnToEpubToc() {
+  fileMode_.saveCursorPosition();
+  int cursor = fileView_.cursorIndex();
+  std::vector<StyledLine> sourceLines;
+  sourceLines.reserve(fileView_.lines().size());
+  for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
+  if (!cutMode_.split(sourceLines, kHelpPattern, GrepSyntax::Fixed)) return returnToDirectory();
+  const auto &segments = cutMode_.segments();
+  int selected = 0;
+  for (std::size_t i = 0; i < segments.size(); i++)
+    if (segments[i].startLine <= cursor) selected = static_cast<int>(i);
+  cutView_.setCursorIndex(selected);
+  currentMode_ = ApplicationMode::Cut;
+  cutView_.redraw();
+  return true;
+}
+
+// K-98(^Je、2026-09-28): EPUBのパスを入力して開く(openEpub())。(ls)で.epubを
+// 選んでいればその名前を入れておく。K-99(^J^E): FILE履歴のうちEPUBだけの一覧
+// (選ぶとopenRecentFileEntry()→openEpub())。縦書き(^Je/^J^Eから開いた時は
+// 縦書き、^Oeで切り替え)は段階2で足す。
+bool Application::startEpubPrompt() {
+  std::string seed;
+  if (currentMode_ == ApplicationMode::Directory)
+    if (const DirectoryEntry *entry = directoryMode_.selectedEntry(); entry && isEpubFile(entry->name))
+      seed = entry->name;
+  epubPathPending_ = true;
+  activatePrompt(PromptKind::PathInput, seed);
+  return true;
+}
+
+bool Application::startEpubList() {
+  epubListPending_ = true;
+  bool ok = startRegexPromptList(PromptKind::RecentFile);
+  epubListPending_ = false;
+  return ok;
+}
+
+// ringCategoryLabel(listBrowserCategory_)に、^J^E(EPUBだけのFILE履歴)の"EPUB"を足したもの。
+std::string Application::listBrowserCategoryLabel() const {
+  if (promptHistoryContext_ && promptHistoryContext_->epubOnly) return "EPUB";
+  return ringCategoryLabel(listBrowserCategory_);
 }
 
 bool Application::returnToDirectory() {
@@ -6991,6 +7111,7 @@ bool Application::returnFromCutContent() {
 // returnFromGrep()が防がなければならなかったような古い注釈の危険は
 // 無い。
 bool Application::returnFromCut() {
+  if (cutOrigin_ == CutOrigin::Epub) fileMode_.annotations().clear();  // openEpub()の"EPUB"注釈
   // 2026-08-11修正: returnFromGrep()自身のgrepReturnsToCandidateList_
   // チェックと同じLIFOスタックの理屈――そのコメント参照。上の「候補
   // リストとCutモードの間には何も無い」というコメント自身の、常に
@@ -7002,10 +7123,6 @@ bool Application::returnFromCut() {
     return startRegexPromptList(PromptKind::CutPattern);
   }
   currentMode_ = cutReturnMode_;
-  // executeCut()自身の2026-09-28のepubChaptersのコメント参照: EPUBの本文へ
-  // 戻ったら、FILE履歴の先頭を素のパス(「ベタ表示で終えた」形)に戻す。
-  if (cutReturnMode_ == ApplicationMode::File && isEpubFile(fileMode_.currentFile()))
-    history_.pushRecent(RingCategory::RecentFile, fileMode_.currentFile());
   // cutResultsResumed_(2026-08-24修正、それ自身の宣言コメント参照):
   // 「再開された」結果画面(returnToCutResults()経由で到達、つまり
   // ユーザーが既に注釈付きのDirectory一覧の「中へ」クリックして戻った)
@@ -9542,6 +9659,9 @@ bool Application::toggleListBrowserHistory() {
                                 [](const std::string &item) { return !hasArchiveCompatibleSuffix(item); }),
                 items.end());
   }
+  if (promptHistoryContext_ && promptHistoryContext_->epubOnly)  // ^J^E: EPUBだけ(startEpubList()参照)
+    items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item); }),
+                items.end());
   listBrowserMode_.show(items, fileHistoryBadges(configuration_, listBrowserCategory_, items));
   if (listBrowserChronological_ && !items.empty()) {
     // show()自体は既に、cursorIndex_を新たに0へリセットした状態で
@@ -11196,6 +11316,15 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
         activatePrompt(PromptKind::CutPattern, "");
         return true;
       }
+      if (epubPathPending_) {  // ^Je(startEpubPrompt()参照)
+        epubPathPending_ = false;
+        ResolvedPath resolved = pathResolver_.resolve(text, directoryMode_.currentDirectory());
+        if (!resolved.exists || resolved.isDirectory || !isEpubFile(resolved.path)) {
+          activeView().redraw();
+          return false;
+        }
+        return openEpub(resolved.path);
+      }
       return executePathInput(text);
     // K-46/K-48自身の投入: PathInput(K-45/K-47)と同一のパスの検証
     // ――legacy自身のkey.cは、T_hfile/T_hdirを、M_lfile/M_ldir
@@ -11267,6 +11396,7 @@ void Application::cancelPrompt() {
   // ^Xf等が起動された時に誤って引き継がれないよう無条件にクリアする
   // (このフローの外では常にnulloptなので、これは常に安全なno-op)。
   cutFilePendingSyntax_.reset();
+  epubPathPending_ = false;  // ^Je(startEpubPrompt())も同じ理由
   // 2026-09-10追加、incrementalGrepActive_自身の宣言コメント参照:
   // ^Gはemacs自身のisearchの慣習(C-gで検索開始前の位置へ戻す)に
   // 合わせ、ライブ中に既に適用されていたハイライト/ジャンプ/
@@ -11502,6 +11632,8 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
     suspendedPromptHistoryContext_ = promptHistoryContext_;
   }
   promptHistoryContext_ = PromptHistoryContext{promptKind_, historyReturnMode, promptEditor_.text(), directEntry};
+  promptHistoryContext_->epubOnly = epubListPending_;  // ^J^E(startEpubList()参照)
+  epubListPending_ = false;
   promptKind_ = PromptKind::None;
   listBrowserCategory_ = category;
   // 2026-08-12修正: ContentView::setCursorAtModeLineTrailingEnd()
@@ -11591,6 +11723,9 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
                                 [](const std::string &item) { return !hasArchiveCompatibleSuffix(item); }),
                 items.end());
   }
+  if (promptHistoryContext_ && promptHistoryContext_->epubOnly)  // ^J^E: EPUBだけ(startEpubList()参照)
+    items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item); }),
+                items.end());
   listBrowserMode_.show(items, fileHistoryBadges(configuration_, category, items));
   currentMode_ = ApplicationMode::ListBrowser;
   if (!items.empty()) {
@@ -12837,22 +12972,7 @@ bool Application::executeGrep(const std::string &pattern) {
   return true;
 }
 
-bool Application::executeCut(const std::string &requestedPattern) {
-  // 2026-09-28追加(.steering/20260928-epub-viewer-stage1/参照): EPUBを表示中、
-  // またはDirectoryでEPUBを選んで^Jc(^Jb)した時に何も入力せず[Enter]すると、
-  // 章の行(epubToHelpMarkup()が行末にタブを付けた行、QUICK.txtと同じ印)で
-  // 分割する――目次からの章移動。この自動のパターンは履歴には積まない。
-  std::string pattern = requestedPattern;
-  bool epubChapters = false;
-  if (pattern.empty()) {
-    const std::string &target = !cutFileSourcePath_.empty() ? cutFileSourcePath_
-                                : currentMode_ == ApplicationMode::File ? fileMode_.currentFile()
-                                                                        : std::string();
-    if (isEpubFile(target)) {
-      pattern = kHelpPattern;
-      epubChapters = true;
-    }
-  }
+bool Application::executeCut(const std::string &pattern) {
   // 下の結果/ネストの深さに関わらず記録される――なぜこれが専用の
   // ringではなくRecentFgrepPattern/RecentEgrepPatternを再利用する
   // のかについてはstartPromptHistoryRecall()自身のコメント参照
@@ -12870,10 +12990,9 @@ bool Application::executeCut(const std::string &requestedPattern) {
   // そうならないと混乱する。ここでC++側へ移植された、そして
   // legacyのCソース自体(menu.c)へも「戻って」移植された――その修正
   // 自身のコメント参照。
-  if (!epubChapters)
-    history_.pushRecent(cutSyntax_ == GrepSyntax::Fixed ? RingCategory::RecentFgrepPattern
-                                                         : RingCategory::RecentEgrepPattern,
-                         pattern);
+  history_.pushRecent(cutSyntax_ == GrepSyntax::Fixed ? RingCategory::RecentFgrepPattern
+                                                       : RingCategory::RecentEgrepPattern,
+                       pattern);
   bool ok;
   std::string fileSourcePath = std::move(cutFileSourcePath_);
   cutFileSourcePath_.clear();  // 下のどちらの分岐が実行されるか、その結果に関わらず正確に一度消費される
@@ -12924,10 +13043,7 @@ bool Application::executeCut(const std::string &requestedPattern) {
     // 既に無条件に積んでいる)とは別に、「パス "パターン"」という
     // 合成形のエントリも積む――openRecentFileEntry()自身のコメント
     // 参照、この形をFILE履歴から選び直すとCUT自体を再実行する。
-    // 2026-09-28、EPUBの章の一覧(epubChapters)は"^I"と表示する(parseCutFileHistoryEntry()参照)
-    if (ok)
-      history_.pushRecent(RingCategory::RecentFile,
-                          buildCutFileHistoryEntry(fileSourcePath, epubChapters ? "^I" : pattern, cutSyntax_));
+    if (ok) history_.pushRecent(RingCategory::RecentFile, buildCutFileHistoryEntry(fileSourcePath, pattern, cutSyntax_));
   } else if (cutOrigin_ == CutOrigin::File && !fileMode_.currentFile().empty()) {
     // 2026-08-24修正、実際の報告+直接の追跡質問("戻り値が正常化
     // さえ実現すれば直る問題じゃないの？"――^Gが正しく再びDirectory
@@ -12956,12 +13072,6 @@ bool Application::executeCut(const std::string &requestedPattern) {
     sourceLines.reserve(fileView_.lines().size());
     for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
     ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
-    // 2026-09-28追加、直接のユーザー指定("FILEでは前者[ベタ表示]で終えると""無し
-    // (「Kbt.epub」)後者[CUT]だと"^I"が付加される(「Kbt.epub "^I"」)"): EPUBの
-    // 本文から章の一覧へ入った時も、FILE履歴の先頭を「CUTで終えた」形にする
-    // (本文へ戻った時はreturnFromCut()が素のパスを積み直す)。
-    if (ok && epubChapters)
-      history_.pushRecent(RingCategory::RecentFile, buildCutFileHistoryEntry(fileMode_.currentFile(), "^I", cutSyntax_));
   } else if (currentMode_ == ApplicationMode::Directory) {
     // 2026-08-11: ディレクトリ一覧に対して直接実行されたCUT
     // (Directoryモードからの^J^C、startCutPrompt()自身のコメント
@@ -14144,6 +14254,7 @@ bool Application::executePathInput(const std::string &path) {
   // 流れ落ちていた。openSelectedEntry()自身の「アーカイブを先に、
   // ファイルをフォールバックとして」という順序に合わせ、まず
   // archiveMode_.loadArchive()を試す。
+  if (isEpubFile(resolved.path) && !configuration_.isExec(resolved.path)) return openEpub(resolved.path);  // openEpub()参照
   if (archiveMode_.loadArchive(resolved.path)) {
     archiveParentStack_.clear();
     currentMode_ = ApplicationMode::Archive;

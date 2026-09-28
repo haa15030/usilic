@@ -549,6 +549,9 @@ enum class Command {
   // Application::executeOpenDataDirectory()/executeOpenWorkList()参照。
   OpenDataDirectory,
   OpenWorkList,
+  // K-98(^Je)/K-99(^J^E、2026-09-28): EPUB: 入力/一覧。Application::openEpub()参照。
+  StartEpubPrompt,
+  StartEpubList,
   // ESC l("LOG"): Application::executeStartLog()自身のコメント参照。
   StartLog,
   // K-0(^T、M_usilic、「USILIC」): ステータス/バージョン情報画面を表示
@@ -2432,6 +2435,14 @@ class Application {
   bool openEpubSegmentImage(const CutSegment &segment);  // 自身のコメント(application.cpp)参照
   bool openEpubLineImage(const ContentView &view);       // 同上
   bool openEpubImageIn(const std::string &text);          // 同上
+  bool openEpub(const std::string &path);                 // EPUBモード、自身のコメント(application.cpp)参照
+  bool openEpubTocEntry(const CutSegment &segment);       // 同上
+  bool returnToEpubToc();                                 // 同上
+  bool startEpubPrompt();                                 // K-98(^Je)
+  bool startEpubList();                                   // K-99(^J^E)
+  std::string listBrowserCategoryLabel() const;           // startEpubList()参照
+  bool epubPathPending_ = false;  // ^Jeのパス入力中(PathInputの投入をopenEpub()へ回す)
+  bool epubListPending_ = false;  // ^J^E: 次のstartPromptHistoryRecall()をEPUBだけにする
   bool executeOpenWorkList();       // K-97
   // K-68(^X^Kl): Shell::scrollback()の「現在の」行をlogFilePath_
   // へ(以前のスナップショットを切り詰めて)書き込み、その後その
@@ -3119,7 +3130,7 @@ class Application {
   // DU等に]関与（検索）できる"): Directory起点(directoryView_.lines()
   // を分割する)と全く同じ発想で、manView_/locateView_/duView_.lines()
   // を分割する――executeCut()自身の新設の分岐参照。
-  enum class CutOrigin { File, Help, Directory, Log, Man, Locate, Du };
+  enum class CutOrigin { File, Help, Directory, Log, Man, Locate, Du, Epub };  // Epub: openEpub()参照
   CutOrigin cutOrigin_ = CutOrigin::File;
 
   bool recordingMacro_ = false;
@@ -3582,6 +3593,7 @@ class Application {
     // 明示的に`row = nrow - 1`を設定するが、M_fgrep/M_locate/
     // M_cut2は単に`i = -2`を設定し、上端をデフォルトにする)。
     bool isDirectEntry = false;
+    bool epubOnly = false;  // ^J^E(Application::startEpubList())
   };
   std::optional<PromptHistoryContext> promptHistoryContext_;
   // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装(design.md参照)。

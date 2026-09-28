@@ -126,6 +126,8 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {95, "F-0 e"},     // ^Xe   マクロの実行
       {96, "F-4 d"},     // ^J^Od ~/.usilic/data/
       {97, "F-4 w"},     // ^J^Ow WORK
+      {98, "F-1 e"},     // ^Je   EPUB: 入力
+      {99, "F-1 C-e"},   // ^J^E  EPUB: 一覧
   };
   return entries;
 }

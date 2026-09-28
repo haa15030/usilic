@@ -20,9 +20,8 @@ ARCHIVE
 # here.  It only works for files whose content is an existing format, like
 # .epub or .cbz.  An alias added here works everywhere in ARC mode
 # (opening, listing, extracting, ^Oa, archives inside archives).
-# Without an alias, .epub opens as the book's text, and ^Jc with an empty
-# pattern [Enter] lists its chapters.  Enabling the .epub example below
-# opens it as an archive instead.
+# Regardless of this section, .epub opens in EPUB mode (chapter list and
+# text), and ^Oa in (ls) extracts it as an archive.
 #
 # Built-in suffixes:
 #  .tar        tar tvf
@@ -370,3 +369,5 @@ KEY
 	K-95	F-0 e       # ^Xe    Execute macro
 	K-96	F-4 d       # ^J^Od  ~/.usilic/data/
 	K-97	F-4 w       # ^J^Ow  WORK
+	K-98	F-1 e       # ^Je    EPUB: input
+	K-99	F-1 C-e     # ^J^E   EPUB: list
