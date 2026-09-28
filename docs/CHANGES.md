@@ -27013,3 +27013,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      終えたか」になる)。parseCutFileHistoryEntry()はEPUBに限って"^I"をタブに戻す。
    - **^Oa**: startArchivePrompt()/executeArchiveExtract()で、ARCHIVE節に別名が
      無くても.epubはzipとして展開する。
+
+492. **2026-09-28(項目491の続き): EPUBのリンクで飛んだ後、^X^Xでリンク元へ戻る**
+   - **経緯**: 直接のユーザー要望("^X^Xで元の場所に戻る機能が欲しい")。既存の
+     ^X^X(K-80、大きく移動する前の行と行き来、ContentView::markJumpOrigin()/
+     exchangeJumpMark())に、followEpubLink()が飛ぶ直前のmarkJumpOrigin()を足した
+     だけ。連打でリンク元とリンク先を行き来する。
