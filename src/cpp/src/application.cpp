@@ -1860,8 +1860,12 @@ std::string Application::currentResumableName() const {
   return directoryMode_.currentDirectory();
 }
 
+bool Application::currentResumableEpubVertical() const {
+  return currentMode_ == ApplicationMode::File && epubVerticalActive();
+}
+
 bool Application::startResumingSession(const std::string &lastOpenName, const std::string &fallbackDirectory,
-                                        bool consultHistory) {
+                                        bool consultHistory, bool epubVertical) {
   // 2026-09-25追加、直接のユーザー報告("INFOで^X^C^Mすると次回起動時
   // INFOではなく~/.usilic/usilic（平文テキスト）が表示される"): INFOは
   // bannerFilePath()へ書き出した合成ファイルをFILEモードで見せている
@@ -1886,6 +1890,11 @@ bool Application::startResumingSession(const std::string &lastOpenName, const st
       if (archiveMode_.loadArchive(lastOpenName)) {
         archiveParentStack_.clear();  // openSelectedEntry()自身のコメント参照――全く新しいトップレベルの入場
         currentMode_ = ApplicationMode::Archive;
+        return true;
+      }
+      // .epubはEPUBモードで(openEpub()、startResumingSession()の宣言コメント参照)
+      if (isEpubFile(lastOpenName) && !configuration_.isExec(lastOpenName)) {
+        if (!openEpub(lastOpenName, epubVertical)) currentMode_ = ApplicationMode::Directory;
         return true;
       }
       if (fileMode_.loadFile(lastOpenName)) {

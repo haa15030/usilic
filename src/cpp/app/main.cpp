@@ -4756,7 +4756,7 @@ int main(int argc, char **argv) {
     // history経由で行いたいため)。
     bool started = positionalArgs.empty()
                        ? app.startResumingSession(history.sessionState().lastOpenName, startDirectory,
-                                                   consultHistoryOnStart)
+                                                   consultHistoryOnStart, history.sessionState().epubVertical)
                        : app.start(startDirectory, consultHistoryOnStart);
     if (!started) {
       display.close();
@@ -4875,6 +4875,7 @@ int main(int argc, char **argv) {
     {
       fm::History::SessionState state = history.sessionState();
       state.lastOpenName = app.currentResumableName();
+      state.epubVertical = app.currentResumableEpubVertical();
       history.setSessionState(state);
     }
     history.setSavedCharset(app.encoding());  // so a future session with no explicit override resumes in this one's charset

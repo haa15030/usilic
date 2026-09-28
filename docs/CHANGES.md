@@ -27144,3 +27144,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **追記(同日)**: 直接のユーザー報告("「〟」の向きが上下逆じゃない？ 上下とも離れすぎ"、
      スクリーンショット=hi)。閉じ〟の点は180度回して描く。上下の位置は字の側へ寄せる:
      開き〝はマスの右下寄り(続く字の側)、閉じ〟は左上寄り(前の字の側)。
+
+500. **2026-09-29: EPUBを見たまま終えると、次の起動でEPUBモード・縦書きのまま再開**
+   - **経緯**: 直接のユーザー報告("-c/-g共通だが、縦書き画面で終えたのに次の-c/-g
+     起動では横書き、しかも一旦（ls）と行き来しないと^Oeが利かない")。
+   - **原因**: 引数無し起動の再開(Application::startResumingSession())が、.epubも
+     普通のファイルとしてfileMode_.loadFile()で開いていた。openEpub()を通らない
+     ため、cutOrigin_がEpubにならずtoggleEpubVertical()(^Oe)が断っていた。縦書き
+     だったかどうかも保存していなかった。
+   - **修正**: .epub(EXEC節の割り当てが無いもの)はopenEpub()で開き直す。
+     History::SessionStateにepubVerticalを足し、「Current buffer」行の末尾(9番目の欄、
+     "1"/"0")として保存する(Application::currentResumableEpubVertical())。
+   - **テスト**: 履歴関連(*istory*)を絞って実行。失敗した3件は環境依存
+     (/Applications/Adobe Acrobat DC、7z)で今回の変更とは無関係。

@@ -1461,8 +1461,11 @@ class Application {
   // パス等、それ以外での終了はこの対象外(currentResumableName()
   // 自身のコメント参照、ユーザー自身の要求の範囲を超えるため意図的に
   // 追わない)。
+  // 2026-09-29追記、直接のユーザー報告("縦書き画面で終えたのに次の-c/-g起動では横書き、
+  // しかも一旦（ls）と行き来しないと^Oeが利かない"): .epubはopenEpub()で開き直し
+  // (EPUBモードになる)、epubVertical(SessionState::epubVertical)なら縦書きで開く。
   bool startResumingSession(const std::string &lastOpenName, const std::string &fallbackDirectory,
-                             bool consultHistory = true);
+                             bool consultHistory = true, bool epubVertical = false);
 
   // 現在のモードに応じて、SessionState::lastOpenNameへ保存すべき単一の
   // パスを返す(main.cpp自身の終了時の呼び出し参照)。startResumingSession()
@@ -1470,6 +1473,8 @@ class Application {
   // いない)Archiveモードだけを扱い、それ以外は単にDirectoryMode::
   // currentDirectory()を返す。
   std::string currentResumableName() const;
+  // SessionState::epubVertical用: EPUBの本文を縦書きで見ている間だけtrue。
+  bool currentResumableEpubVertical() const;
 
   // 2026-08-25(直接のユーザー依頼): `paths`をDirectoryモードの
   // Enterキーフローを完全に迂回して直接Fileモードで開く――1つ以上

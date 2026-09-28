@@ -418,6 +418,7 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     // 込み、読み取り時に捨てる予約フィールド――保存されない。
     if (toks.size() > 6) state.pendingCutBuffer = decodeField(toks[6]);
     if (toks.size() > 7) state.pendingCutProgram = decodeField(toks[7]);
+    if (toks.size() > 8) state.epubVertical = toks[8] == "1";
     sessionState_ = std::move(state);
   }
   i++;
@@ -594,7 +595,7 @@ std::string History::serialize(const std::string &programName, const std::string
          " " + encodeField(sessionState_.modeLineArg) + " " +
          encodeField(sessionState_.previousScreenMarker) + " " + encodeField(sessionState_.lastOpenName) +
          " 0 " + encodeField(sessionState_.pendingCutBuffer) + " " +
-         encodeField(sessionState_.pendingCutProgram) + "\n";
+         encodeField(sessionState_.pendingCutProgram) + (sessionState_.epubVertical ? " 1" : " 0") + "\n";
 
   auto writePositionSection = [&](const std::string &label, PositionCategory category) {
     out += std::string(1, kFormFeed) + label + "\n";

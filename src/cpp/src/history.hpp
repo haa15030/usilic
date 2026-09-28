@@ -150,6 +150,7 @@ class History {
     std::string lastOpenName;         // セッション終了時に閲覧していた名前
     std::string pendingCutBuffer;     // CUT::str -- 進行中のCUTモード抽出テキスト
     std::string pendingCutProgram;    // CUT::chpのプログラム名、未解決(クラスコメント参照)
+    bool epubVertical = false;        // lastOpenNameのEPUBを縦書きで見ていた(2026-09-29、legacyに無い)
   };
 
   // retentionCount: 種類ごとの保持数。0は無制限(2026-09-25から既定、直接の
