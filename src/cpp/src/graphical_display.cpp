@@ -1418,10 +1418,13 @@ void GraphicalDisplay::renderCell(int row, int col) {
         double scale = static_cast<double>(dst.w) / std::max(w, 1);
         int inkW = static_cast<int>(src.w * scale), inkH = static_cast<int>(src.h * scale);
         int margin = impl_->cellHeight / 10;
-        SDL_Rect ink{cornerMark == 0x301D ? box.x + maxW - inkW - margin : box.x + margin,
-                     cornerMark == 0x301D ? box.y + margin : box.y + impl_->cellHeight - inkH - margin, inkW,
-                     inkH};
-        SDL_RenderCopy(impl_->renderer, texture, &src, &ink);
+        // 2026-09-29追記、直接のユーザー報告("「〟」の向きが上下逆じゃない？ 上下とも
+        // 離れすぎ"、スクリーンショット=hi): 閉じは180度回し、上下の位置は字の側へ寄せる
+        // (開きはマスの下寄り=続く字の側、閉じは上寄り=前の字の側。左右は右/左のまま)。
+        bool open = cornerMark == 0x301D;
+        SDL_Rect ink{open ? box.x + maxW - inkW - margin : box.x + margin,
+                     open ? box.y + impl_->cellHeight - inkH - margin : box.y + margin, inkW, inkH};
+        SDL_RenderCopyEx(impl_->renderer, texture, &src, &ink, open ? 0.0 : 180.0, nullptr, SDL_FLIP_NONE);
         return;
       }
       if (kRotated.count(codepoint)) rotation = 90.0;
