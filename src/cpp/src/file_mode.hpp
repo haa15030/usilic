@@ -526,6 +526,7 @@ class FileMode {
   // 移してそこを画面の先頭にする。リンクが無ければfalse。
   bool followEpubLink();
   bool hasEpubLinkAt(int index) const;  // 画面の行indexにリンクがあるか(クリック用)
+  std::optional<int> epubLinkTargetForRawLine(int rawLine) const;  // 縦書きのクリック用
 
  private:
   // loadFile()/loadFileNoWrap()/loadFileRaw()が共有する本体――呼び出し元が

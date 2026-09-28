@@ -489,6 +489,12 @@ bool FileMode::followEpubLink() {
   return false;
 }
 
+std::optional<int> FileMode::epubLinkTargetForRawLine(int rawLine) const {
+  auto it = epubLinks_.find(rawLine);
+  if (it == epubLinks_.end()) return std::nullopt;
+  return it->second;
+}
+
 bool FileMode::hasEpubLinkAt(int index) const {
   if (epubLinks_.empty() || !isEpubFile(currentFile_)) return false;
   std::optional<int> raw = rawLineNumberAt(index);

@@ -552,6 +552,8 @@ enum class Command {
   // K-98(^Je)/K-99(^J^E、2026-09-28): EPUB: 入力/一覧。Application::openEpub()参照。
   StartEpubPrompt,
   StartEpubList,
+  // K-100(^Oe、2026-09-28): EPUBの縦書き/横書きの切り替え。Application::toggleEpubVertical()参照。
+  ToggleEpubVertical,
   // ESC l("LOG"): Application::executeStartLog()自身のコメント参照。
   StartLog,
   // K-0(^T、M_usilic、「USILIC」): ステータス/バージョン情報画面を表示
@@ -2099,6 +2101,7 @@ class Application {
   bool goToParentFromFileOrArchive();
   bool jumpToPathPrefix();
   bool openSelectedListEntry();
+  bool openSelectedListEntryImpl();  // openSelectedListEntry()の本体(^J^Eの縦書きの受け渡し)
   // openSelectedListEntry()自身のRecentFile分岐とgoToRecentFile()
   // (^J^J)で共有される――それら自身のコメント参照。
   bool openRecentFileEntry(const std::string &path);
@@ -2435,7 +2438,21 @@ class Application {
   bool openEpubSegmentImage(const CutSegment &segment);  // 自身のコメント(application.cpp)参照
   bool openEpubLineImage(const ContentView &view);       // 同上
   bool openEpubImageIn(const std::string &text);          // 同上
-  bool openEpub(const std::string &path);                 // EPUBモード、自身のコメント(application.cpp)参照
+  bool openEpub(const std::string &path, bool vertical = false);  // EPUBモード、自身のコメント(application.cpp)参照
+  // 縦書き(rebuildEpubVertical()自身のコメント参照)
+  bool epubVerticalActive() const;
+  int fileRawLineAtCursor() const;
+  void rebuildEpubVertical(int rawLine);
+  void showEpubVerticalRaw(int rawLine);
+  int epubVerticalCurrentRaw() const;
+  void syncEpubVerticalToFile();
+  bool toggleEpubVertical();  // K-100(^Oe)
+  bool clickEpubVertical(int row, int column);
+  bool epubVertical_ = false;
+  bool epubOpenVerticalNext_ = false;  // ^J^Eの一覧から開く本は縦書き
+  std::vector<std::vector<int>> epubVerticalColumns_;  // ページごと、右からの列ごとの元の行番号
+  int epubVerticalRowsPerPage_ = 1;
+  int epubVerticalColumnsPerPage_ = 1;
   bool openEpubTocEntry(const CutSegment &segment);       // 同上
   bool returnToEpubToc();                                 // 同上
   bool startEpubPrompt();                                 // K-98(^Je)
@@ -2799,6 +2816,7 @@ class Application {
   // ^O^C(COPY): CopyMode自身の凍結されたスナップショットの裏付け
   // となるビュー――startCopy()自身のコメント参照。
   ContentView copyView_;
+  ContentView epubVerticalView_;  // EPUBの縦書き(rebuildEpubVertical()参照)
   // feedCopyByte()自身のコメント参照: ApplicationMode::Copyの間だけ
   // 有効な、"^[w"/"^[p"(confirmMark()、2026-09-07に'p'追加)用の
   // 1バイト先読み状態。resolveCommand()側のescPending_とは意図的に

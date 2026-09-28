@@ -1,5 +1,7 @@
 #include "application.hpp"
 
+#include "epub_vertical.hpp"
+
 #include <poll.h>
 
 #include <algorithm>
@@ -537,6 +539,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       underlineView_(display),
       listBrowserView_(display),
       copyView_(display),
+      epubVerticalView_(display),
       promptEditor_(display, encoding),
       directoryMode_(directoryView_, modeStack_, history, configuration),
       fileMode_(fileView_, history, configuration, encoding, width),
@@ -1269,6 +1272,13 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // (他の全てのモード自身の"(<program>)"という慣習に合っている)
   // なので、削除するのではなくtrailing3(それ自身のコメント参照)へ
   // 移す。
+  // 縦書き(rebuildEpubVertical()参照): 名前欄は本のファイル名、戻り値欄は"EPUB 縦書き"。
+  epubVerticalView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    return {std::filesystem::path(fileMode_.currentFile()).filename().string(),
+            std::to_string(contentByteCount(fileView_)), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
+            "EPUB 縦書き"};
+  });
+
   grepView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     std::string name = grepSyntaxLabel(grepSyntax_);
     const auto &cmd = configuration_.commandFor(grepSyntaxRole(grepSyntax_));
@@ -1799,6 +1809,7 @@ void Application::layoutViews() {
   underlineView_.setViewport(0, contentHeight);
   listBrowserView_.setViewport(0, contentHeight);
   copyView_.setViewport(0, contentHeight);
+  epubVerticalView_.setViewport(0, contentHeight);
   promptEditor_.setField(display_.rows() - 1, 0, std::max(1, display_.columns()));
 }
 
@@ -3071,6 +3082,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 済みファイル/ディレクトリの一覧(旧^J^Y)をここへ戻した。
       case 'u':  // ^O u : USILIC、マークしたファイル/ディレクトリの一覧
         return handleCommand(Command::StartUnderlineView);
+      case 'e':  // ^O e : EPUBの縦書き/横書きの切り替え(K-100、2026-09-28)
+        return handleCommand(Command::ToggleEpubVertical);
       case 'a':  // ^O a : ARC展開(旧^X a、K-58)――^O aはここへ移る
                  // 前にHELP/KEYの表示言語切り替えが占めていたが、
                  // それは^J aへ先に移した(kKeyTable自身の"^Ja"コメント
@@ -3829,7 +3842,7 @@ ContentView &Application::activeView() { return viewForMode(currentMode_); }
 ContentView &Application::viewForMode(ApplicationMode mode) {
   switch (mode) {
     case ApplicationMode::File:
-      return fileView_;
+      return epubVerticalActive() ? epubVerticalView_ : fileView_;  // 縦書き、rebuildEpubVertical()参照
     case ApplicationMode::Grep:
       return grepView_;
     case ApplicationMode::Cut:
@@ -4093,8 +4106,10 @@ bool Application::handleCommandImpl(Command command) {
       // Enterの挙動は無い――openSelectedBannerEntry()自体は、実際に
       // 見られているファイルが^Tのバナーでない限りno-op(falseを
       // 返す)なので、これは通常のファイル閲覧についてはno-opである。
-      if (currentMode_ == ApplicationMode::File)
+      if (currentMode_ == ApplicationMode::File) {
+        if (epubVerticalActive()) return false;  // 縦書きではリンク/画像はクリックで(clickEpubVertical())
         return openSelectedBannerEntry() || fileMode_.followEpubLink() || openEpubLineImage(fileView_);
+      }
       if (currentMode_ == ApplicationMode::CutContent) return openEpubLineImage(cutContentView_);
       return false;
     case Command::ReadFileNoWrap:
@@ -4475,6 +4490,8 @@ bool Application::handleCommandImpl(Command command) {
       return startEpubPrompt();
     case Command::StartEpubList:
       return startEpubList();
+    case Command::ToggleEpubVertical:
+      return toggleEpubVertical();
     case Command::ShowShellLog:
       return executeShowShellLog();
     case Command::StartLog:
@@ -5785,7 +5802,16 @@ bool Application::jumpToPathPrefix() {
 // するか(Shellのコマンドラインを事前に埋めるのか?Shellが既に開始
 // されている必要があるのか?)を決めることは、当てずっぽうにする
 // のではなく意図的に未着手のままにしてあるため。
+// ^J^E(EPUBだけのFILE履歴)から選んだ本は縦書きで開く(ユーザー指定)。一覧の
+// 文脈(promptHistoryContext_)は選択の途中で片付けられるので、先に控えておく。
 bool Application::openSelectedListEntry() {
+  epubOpenVerticalNext_ = promptHistoryContext_ && promptHistoryContext_->epubOnly;
+  bool ok = openSelectedListEntryImpl();
+  epubOpenVerticalNext_ = false;
+  return ok;
+}
+
+bool Application::openSelectedListEntryImpl() {
   const std::string *item = listBrowserMode_.selectedItem();
   if (!item) return false;
   // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装――他の全ての分岐
@@ -6534,7 +6560,9 @@ bool Application::openEpubImageIn(const std::string &text) {
 //   - 本文ではリンク(下線)で[Enter]→リンク先、^X^Xで戻る(followEpubLink())。
 // 入口は(ls)の[Enter]、FILE履歴、^Xf、^Je/^J^E。EXEC節で.epubに外部
 // プログラムを割り当てていればそちらが優先(openExternallyIfApplicable())。
-bool Application::openEpub(const std::string &path) {
+bool Application::openEpub(const std::string &path, bool vertical) {
+  vertical = vertical || epubOpenVerticalNext_;  // ^J^Eの一覧から(openSelectedListEntry()参照)
+  epubOpenVerticalNext_ = false;
   bool firstTime = !history_.positionFor(PositionCategory::File, path);
   if (!fileMode_.loadFile(path, [this]() { return keyInterruptRequested(); })) return false;
   fileMode_.annotations().clear();
@@ -6545,12 +6573,14 @@ bool Application::openEpub(const std::string &path) {
   cutOrigin_ = CutOrigin::Epub;
   cutSyntax_ = GrepSyntax::Fixed;
   cutReturnMode_ = ApplicationMode::Directory;
+  epubVertical_ = vertical;
+  if (vertical) rebuildEpubVertical(fileRawLineAtCursor());
   if (!cutMode_.split(sourceLines, kHelpPattern, GrepSyntax::Fixed)) {
     // 章の印が1つも無い本: 本文だけ(^Gで(ls)へ)
     fileMode_.annotations().clear();
     currentMode_ = ApplicationMode::File;
     fileReturnMode_ = ApplicationMode::Directory;
-    fileView_.redraw();
+    activeView().redraw();
     return true;
   }
   if (firstTime) {
@@ -6559,8 +6589,8 @@ bool Application::openEpub(const std::string &path) {
   } else {
     currentMode_ = ApplicationMode::File;
     fileReturnMode_ = ApplicationMode::Cut;
-    fileView_.redraw();
-    fileView_.syncVisibleCursor();
+    activeView().redraw();
+    activeView().syncVisibleCursor();
   }
   return true;
 }
@@ -6573,8 +6603,9 @@ bool Application::openEpubTocEntry(const CutSegment &segment) {
   fileView_.setTopIndex(segment.startLine);
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Cut;
-  fileView_.redraw();
-  fileView_.syncVisibleCursor();
+  if (epubVerticalActive()) rebuildEpubVertical(fileRawLineAtCursor());  // 一覧にいる間のリサイズにも追従
+  activeView().redraw();
+  activeView().syncVisibleCursor();
   return true;
 }
 
@@ -6582,6 +6613,7 @@ bool Application::openEpubTocEntry(const CutSegment &segment) {
 // 折り返しが変わっていても合うよう、今の本文から章の一覧を作り直し、今読んで
 // いる行を含む章にカーソルを置く。
 bool Application::returnToEpubToc() {
+  if (epubVerticalActive()) syncEpubVerticalToFile();
   fileMode_.saveCursorPosition();
   int cursor = fileView_.cursorIndex();
   std::vector<StyledLine> sourceLines;
@@ -6596,6 +6628,117 @@ bool Application::returnToEpubToc() {
   currentMode_ = ApplicationMode::Cut;
   cutView_.redraw();
   return true;
+}
+
+// 2026-09-28追加、直接のユーザー依頼("縦書きもよろしく"、"^Jeでファイルを選ぶと
+// EPUBモードへ移行して縦書きになる"、"モード内での縦横切り替えは^Oeで"): EPUBの
+// 本文の縦書き。layoutEpubVertical()(epub_vertical.cpp)が本文を画面1枚分ずつの
+// ページに組み、ページを縦に積んだ行をepubVerticalView_へ渡す。縦書きの間は
+// viewForMode(File)がfileView_の代わりにこれを返すので、ページ送り(SPC/^V等、
+// pageDown()はちょうど画面の高さずつ動く)・再描画・モードライン・^X^Xは既存の
+// ものがそのまま効く。横書きのfileView_は裏で持ち続け、位置の記録(FILE履歴)・
+// 章の一覧との行き来・縦横の切り替えは、元の行番号(rawLineNumber)で両者を
+// 対応させる(syncEpubVerticalToFile())。
+bool Application::epubVerticalActive() const { return epubVertical_ && isEpubFile(fileMode_.currentFile()); }
+
+int Application::fileRawLineAtCursor() const {
+  const auto &lines = fileView_.lines();
+  int idx = fileView_.cursorIndex();
+  if (idx < 0 || idx >= static_cast<int>(lines.size())) return 1;
+  return lines[idx].rawLineNumber.value_or(1);
+}
+
+void Application::rebuildEpubVertical(int rawLine) {
+  // 横書きの画面の行(折り返し済み)を、元の行番号ごとに論理行へつなぎ直す
+  std::vector<EpubVerticalSourceLine> logical;
+  for (const auto &line : fileView_.lines()) {
+    int raw = line.rawLineNumber.value_or(-1);
+    if (logical.empty() || raw < 0 || logical.back().rawLineNumber != raw) {
+      logical.push_back({line.text, line.attributes, raw});
+      continue;
+    }
+    int offset = static_cast<int>(logical.back().text.size());
+    logical.back().text += line.text;
+    for (auto run : line.attributes) {
+      run.start += offset;
+      run.end += offset;
+      logical.back().attributes.push_back(run);
+    }
+  }
+  int height = display_.modeLineVisible() ? std::max(1, display_.rows() - 1) : std::max(1, display_.rows());
+  EpubVerticalLayout layout = layoutEpubVertical(logical, height, display_.columns());
+  epubVerticalColumns_ = std::move(layout.pageColumnRawLines);
+  epubVerticalRowsPerPage_ = layout.rowsPerPage;
+  epubVerticalColumnsPerPage_ = layout.columnsPerPage;
+  epubVerticalView_.setLines(std::move(layout.rows));
+  showEpubVerticalRaw(rawLine);
+}
+
+// rawLineを含むページ(そのページの最初の列の行がrawLine以下の最後のページ)を表示する。
+void Application::showEpubVerticalRaw(int rawLine) {
+  int page = 0;
+  for (std::size_t p = 0; p < epubVerticalColumns_.size(); p++)
+    if (!epubVerticalColumns_[p].empty() && epubVerticalColumns_[p].front() <= rawLine) page = static_cast<int>(p);
+  epubVerticalView_.setCursorIndex(page * epubVerticalRowsPerPage_);
+  epubVerticalView_.setTopIndex(page * epubVerticalRowsPerPage_);
+}
+
+int Application::epubVerticalCurrentRaw() const {
+  std::size_t page = static_cast<std::size_t>(epubVerticalView_.topIndex() / std::max(1, epubVerticalRowsPerPage_));
+  if (page >= epubVerticalColumns_.size() || epubVerticalColumns_[page].empty()) return 1;
+  return epubVerticalColumns_[page].front();
+}
+
+// 縦書きの今のページの最初の行へ、横書きのfileView_のカーソルを合わせる
+// (位置の記録・章の一覧・横書きへの切り替えは、fileView_の側で行うため)。
+void Application::syncEpubVerticalToFile() {
+  int raw = epubVerticalCurrentRaw();
+  const auto &lines = fileView_.lines();
+  for (std::size_t i = 0; i < lines.size(); i++) {
+    if (lines[i].rawLineNumber.value_or(0) < raw) continue;
+    fileView_.setCursorIndex(static_cast<int>(i));
+    fileView_.setTopIndex(static_cast<int>(i));
+    return;
+  }
+}
+
+// K-100(^Oe): EPUBモード(章の一覧・本文)の中で縦書きと横書きを切り替える。
+bool Application::toggleEpubVertical() {
+  if (cutOrigin_ != CutOrigin::Epub || !isEpubFile(fileMode_.currentFile())) return false;
+  if (currentMode_ != ApplicationMode::File && currentMode_ != ApplicationMode::Cut) return false;
+  if (epubVertical_) {
+    if (currentMode_ == ApplicationMode::File) syncEpubVerticalToFile();
+    epubVertical_ = false;
+  } else {
+    epubVertical_ = true;
+    rebuildEpubVertical(fileRawLineAtCursor());
+  }
+  activeView().redraw();
+  activeView().syncVisibleCursor();
+  return true;
+}
+
+// 縦書きの本文のクリック: クリックした列の行にリンクがあればリンク先のページへ
+// (^X^Xで戻れる)、画像("[image: ...]")があればクイックルック。キーボードでは
+// 列を選べないので、縦書きのリンク/画像はクリックだけ。
+bool Application::clickEpubVertical(int row, int column) {
+  int idx = epubVerticalView_.lineIndexAtRow(row);
+  if (idx < 0) return false;
+  std::size_t page = static_cast<std::size_t>(idx / std::max(1, epubVerticalRowsPerPage_));
+  int k = epubVerticalColumnAt(column, display_.columns(), epubVerticalColumnsPerPage_);
+  if (page >= epubVerticalColumns_.size() || k < 0 || k >= static_cast<int>(epubVerticalColumns_[page].size()))
+    return false;
+  int raw = epubVerticalColumns_[page][k];
+  if (auto target = fileMode_.epubLinkTargetForRawLine(raw)) {
+    epubVerticalView_.markJumpOrigin();
+    showEpubVerticalRaw(*target);
+    epubVerticalView_.redraw();
+    epubVerticalView_.syncVisibleCursor();
+    return true;
+  }
+  for (const auto &line : fileView_.lines())
+    if (line.rawLineNumber == raw && line.text.find("[image: ") != std::string::npos) return openEpubImageIn(line.text);
+  return false;
 }
 
 // K-98(^Je、2026-09-28): EPUBのパスを入力して開く(openEpub())。(ls)で.epubを
@@ -7111,7 +7254,10 @@ bool Application::returnFromCutContent() {
 // returnFromGrep()が防がなければならなかったような古い注釈の危険は
 // 無い。
 bool Application::returnFromCut() {
-  if (cutOrigin_ == CutOrigin::Epub) fileMode_.annotations().clear();  // openEpub()の"EPUB"注釈
+  if (cutOrigin_ == CutOrigin::Epub) {
+    fileMode_.annotations().clear();  // openEpub()の"EPUB"注釈
+    epubVertical_ = false;
+  }
   // 2026-08-11修正: returnFromGrep()自身のgrepReturnsToCandidateList_
   // チェックと同じLIFOスタックの理屈――そのコメント参照。上の「候補
   // リストとCutモードの間には何も無い」というコメント自身の、常に
@@ -11323,7 +11469,7 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
           activeView().redraw();
           return false;
         }
-        return openEpub(resolved.path);
+        return openEpub(resolved.path, /*vertical=*/true);  // ^Jeは縦書き(ユーザー指定)
       }
       return executePathInput(text);
     // K-46/K-48自身の投入: PathInput(K-45/K-47)と同一のパスの検証
@@ -14537,7 +14683,10 @@ void Application::handleResize() {
   // 実際に再描画する。
   fileMode_.setWidth(display_.columns());
   manMode_.setWidth(display_.columns());
+  std::optional<int> epubRaw;  // 縦書きは、今のページの最初の行を保って組み直す
+  if (currentMode_ == ApplicationMode::File && epubVerticalActive()) epubRaw = epubVerticalCurrentRaw();
   if (currentMode_ == ApplicationMode::File) fileMode_.reflow(display_.columns());
+  if (epubRaw) rebuildEpubVertical(*epubRaw);
   if (currentMode_ == ApplicationMode::Man) manMode_.reflow(display_.columns());
   // DirectoryMode::applyColumnAutoDisplay()自身のコメント参照
   // (2026-09-12追加、直接のユーザー依頼): 端末幅が変わり得た、まさに
@@ -14731,6 +14880,7 @@ bool Application::handleMouseClickImpl(int row, int column) {
     fileView_.redraw();
     return true;
   }
+  if (currentMode_ == ApplicationMode::File && epubVerticalActive()) return clickEpubVertical(row, column);
   // 2026-09-28追加(FileMode::followEpubLink()自身の宣言コメント参照): EPUBの本文
   // でも、リンク(下線)か画像("[image: ...]")のある行だけは、バナーと同じ
   // 「1回目で選択、2回目で開く」。他の行のクリックは従来どおり。

@@ -128,6 +128,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {97, "F-4 w"},     // ^J^Ow WORK
       {98, "F-1 e"},     // ^Je   EPUB: 入力
       {99, "F-1 C-e"},   // ^J^E  EPUB: 一覧
+      {100, "F-2 e"},    // ^Oe   EPUB: 縦書き/横書き
   };
   return entries;
 }

@@ -107,6 +107,7 @@ int Utf8::display_width(const unsigned char *cp, int len) {
       || (cpt >= 0x2e80 && cpt <= 0xa4cf && cpt != 0x303f)
       || (cpt >= 0xac00 && cpt <= 0xd7a3)
       || (cpt >= 0xf900 && cpt <= 0xfaff)
+      || (cpt >= 0xfe10 && cpt <= 0xfe19)  // 縦書き用の句読点(、。等、2026-09-28、epub_vertical.cpp)
       || (cpt >= 0xfe30 && cpt <= 0xfe4f)
       || (cpt >= 0xff00 && cpt <= 0xff60)
       || (cpt >= 0xffe0 && cpt <= 0xffe6)

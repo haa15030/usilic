@@ -371,3 +371,4 @@ KEY
 	K-97	F-4 w       # ^J^Ow  WORK
 	K-98	F-1 e       # ^Je    EPUB: input
 	K-99	F-1 C-e     # ^J^E   EPUB: list
+	K-100	F-2 e       # ^Oe    EPUB: vertical/horizontal
