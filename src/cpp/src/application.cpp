@@ -4082,7 +4082,8 @@ bool Application::handleCommandImpl(Command command) {
       // Enterの挙動は無い――openSelectedBannerEntry()自体は、実際に
       // 見られているファイルが^Tのバナーでない限りno-op(falseを
       // 返す)なので、これは通常のファイル閲覧についてはno-opである。
-      if (currentMode_ == ApplicationMode::File) return openSelectedBannerEntry();
+      if (currentMode_ == ApplicationMode::File) return openSelectedBannerEntry() || openEpubLineImage(fileView_);
+      if (currentMode_ == ApplicationMode::CutContent) return openEpubLineImage(cutContentView_);
       return false;
     case Command::ReadFileNoWrap:
       if (currentMode_ != ApplicationMode::Directory) return openListEntrySpecial(/*raw=*/false);
@@ -6456,14 +6457,33 @@ bool Application::openSelectedSegment() {
 // ("[image: ...]"1行だけ)を見せる代わりに、画像をzipから一時ディレクトリへ
 // 取り出してクイックルックで開く。クイックルックが無い環境(Linux)では従来どおり。
 bool Application::openEpubSegmentImage(const CutSegment &segment) {
-  if (cutOrigin_ != CutOrigin::File || !isEpubFile(fileMode_.currentFile())) return false;
+  if (cutOrigin_ != CutOrigin::File) return false;
+  return openEpubImageIn(segment.label);
+}
+
+// 2026-09-28追加、直接のユーザー依頼(本文の`[image: ...]`の行で[Enter]したら
+// クイックルック、"それでよろしく"): EPUBの本文(File)と章の中身(CutContent)で、
+// カーソル行の画像を開く。File画面の[Enter]はusilicバナー画面の時しか使って
+// いない(openSelectedBannerEntry())ので、そちらが失敗した時だけここへ来る。
+bool Application::openEpubLineImage(const ContentView &view) {
+  const auto &lines = view.lines();
+  int idx = view.cursorIndex();
+  if (idx < 0 || idx >= static_cast<int>(lines.size())) return false;
+  return openEpubImageIn(lines[idx].text);
+}
+
+// `text`中の最初の"[image: <ファイル名>]"の画像を、表示中のEPUBのzipから
+// 一時ディレクトリへ取り出してクイックルックで開く。クイックルックが無い
+// 環境(Linux)や、EPUBでない・画像が見つからない場合はfalse。
+bool Application::openEpubImageIn(const std::string &text) {
+  if (!isEpubFile(fileMode_.currentFile())) return false;
   if (::access("/usr/bin/qlmanage", X_OK) != 0) return false;
   const std::string marker = "[image: ";
-  std::size_t open = segment.label.find(marker);
+  std::size_t open = text.find(marker);
   if (open == std::string::npos) return false;
-  std::size_t close = segment.label.find(']', open);
+  std::size_t close = text.find(']', open);
   if (close == std::string::npos) return false;
-  std::string name = segment.label.substr(open + marker.size(), close - open - marker.size());
+  std::string name = text.substr(open + marker.size(), close - open - marker.size());
   EpubMemberReader reader = fileMode_.epubMemberReader(fileMode_.currentFile());
   auto member = findEpubImageMember(reader, name);
   if (!member) return false;

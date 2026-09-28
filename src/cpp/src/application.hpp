@@ -2430,6 +2430,8 @@ class Application {
   bool openListEntrySpecial(bool raw);  // ^O^M/^[^Mの一覧版(2026-09-27)
   bool runQuickLook(const std::vector<std::string> &paths);
   bool openEpubSegmentImage(const CutSegment &segment);  // 自身のコメント(application.cpp)参照
+  bool openEpubLineImage(const ContentView &view);       // 同上
+  bool openEpubImageIn(const std::string &text);          // 同上
   bool executeOpenWorkList();       // K-97
   // K-68(^X^Kl): Shell::scrollback()の「現在の」行をlogFilePath_
   // へ(以前のスナップショットを切り詰めて)書き込み、その後その

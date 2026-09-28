@@ -26982,3 +26982,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      `[image: ...]`があれば、findEpubImageMember()(OPFのmanifestからファイル名で
      zip内のパスを探す)→`unzip -p`で一時ディレクトリ(allocateArcDirectory())へ
      取り出し→runQuickLook()。qlmanageが無い環境(Linux)では従来どおり章の中身を表示。
+
+490. **2026-09-28(項目489の続き): EPUBの本文の`[image: ...]`の行で[Enter]→クイックルック**
+   - **経緯**: 直接のユーザー依頼(ファイル内容表示の画面でクイックルックを開くキーが
+     無い件を受け、本文の画像の行で[Enter]を提案→"それでよろしく")。
+   - **実装**: ファイル内容表示(ApplicationMode::File)の[Enter]はusilicバナー画面
+     (openSelectedBannerEntry())でしか使っていなかったので、それが失敗した時に
+     openEpubLineImage()でカーソル行の`[image: <ファイル名>]`を項目489と同じ手順
+     (openEpubImageIn()に共通化)で開く。CUTで開いた章の中身(CutContent)でも同じ。
+     折り返しで`[image: ...]`が2行に分かれた場合は開けない(既知の限界)。
