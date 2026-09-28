@@ -6816,6 +6816,7 @@ std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
       return std::nullopt;
   }
   epubVerticalView_.redraw();
+  epubVerticalView_.syncVisibleCursor();  // -cの端末のカーソルを列カーソルの頭へ(setEpubVerticalView()参照)
   return true;
 }
 
@@ -6824,6 +6825,7 @@ bool Application::scrollEpubVertical(int delta) {
   if (!epubVerticalScrollActive()) return false;
   setEpubVerticalFirst(epubVerticalFirst_ + delta);
   epubVerticalView_.redraw();
+  epubVerticalView_.syncVisibleCursor();  // -cの端末のカーソルを列カーソルの頭へ(setEpubVerticalView()参照)
   return true;
 }
 
@@ -6854,6 +6856,7 @@ bool Application::clickEpubVertical(int row, int column) {
   if (c == epubVerticalCursor_) return activateEpubVerticalColumn(c);
   setEpubVerticalView(epubVerticalFirst_, static_cast<int>(c));  // 1回目は列カーソルを動かすだけ
   epubVerticalView_.redraw();
+  epubVerticalView_.syncVisibleCursor();  // -cの端末のカーソルを列カーソルの頭へ(setEpubVerticalView()参照)
   return true;
 }
 
@@ -6880,6 +6883,7 @@ bool Application::activateEpubVerticalColumn(long c) {
     epubVerticalMark_ = epubVerticalCursor_;
     showEpubVerticalRaw(*target->link);
     epubVerticalView_.redraw();
+    epubVerticalView_.syncVisibleCursor();  // -cの端末のカーソルを列カーソルの頭へ(setEpubVerticalView()参照)
     return true;
   }
   return openEpubImageIn(target->imageLine);
