@@ -657,7 +657,9 @@ struct GraphicalDisplay::Impl {
   // setContentOffsetX()参照。
   int contentOffsetX = 0;
   int contentOffsetRows = 0;
-  int offsetXForRow(int row) const { return row < contentOffsetRows ? contentOffsetX : 0; }
+  // 縦書きを描いている間だけ(左右の慣性の途中で横書きの範囲へ入った瞬間に、横書きの画面が
+  // ずれて描かれないように)。
+  int offsetXForRow(int row) const { return (verticalText && row < contentOffsetRows) ? contentOffsetX : 0; }
   int fgColorActive = Display::kDefaultColor, bgColorActive = Display::kDefaultColor;  // setColor()
 
   // renderCursor()が実際に描く「論理的な」カーソル位置――上の

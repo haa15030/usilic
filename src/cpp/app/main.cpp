@@ -1971,6 +1971,20 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   int epubCoastLevel = 0;
   int epubCoastDirection = 0;
   std::deque<std::pair<std::chrono::steady_clock::time_point, int>> epubRecentMotion;
+  // 1列の幅を越えた時に列を1列動かす(dirは+1で先へ)。2026-09-29、直接のユーザー報告
+  // ("スクロール中に画面のちらつきがある。モードラインは正常"): Application::
+  // scrollEpubVertical()の描き直し(ContentView::redraw())はその場で画面へ出す(flush)ので、
+  // 以前のように「列を動かす→ずれを1列分戻す」の順だと、ずれを戻す前の(1列分余計にずれた)
+  // 絵が一瞬出ていた。先にずれを戻してから動かす(動けなければ元に戻してfalse)。
+  auto shiftEpubColumn = [&](int dir) {
+    int pitch = std::max(1, gui.cellWidthPixels() * fm::epubVerticalColumnPitch());
+    epubDragOffset -= dir * pitch;
+    gui.setContentOffsetX(epubDragOffset, std::max(gui.rows() - 1, 0));
+    if (app.scrollEpubVertical(dir)) return true;
+    epubDragOffset += dir * pitch;
+    gui.setContentOffsetX(epubDragOffset, std::max(gui.rows() - 1, 0));
+    return false;
+  };
   // 2026-08-30、直接のユーザー報告(GUI、ARCモードで再現させたスクリー
   // ンショット付き――ただし根本原因はモードを問わない): マウスボタンを
   // 押した「だけ」で(実際には全く動かしていなくても)dragging=trueに
@@ -2853,18 +2867,16 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
                    epubRecentMotion.front().first < std::chrono::steady_clock::now() - kReleaseWindow)
               epubRecentMotion.pop_front();
             while (epubDragOffset >= pitch) {
-              if (!app.scrollEpubVertical(1)) {
+              if (!shiftEpubColumn(1)) {
                 epubDragOffset = 0;
                 break;
               }
-              epubDragOffset -= pitch;
             }
             while (epubDragOffset <= -pitch) {
-              if (!app.scrollEpubVertical(-1)) {
+              if (!shiftEpubColumn(-1)) {
                 epubDragOffset = 0;
                 break;
               }
-              epubDragOffset += pitch;
             }
             gui.setContentOffsetX(epubDragOffset, std::max(gui.rows() - 1, 0));
             gui.flush();
@@ -3204,13 +3216,9 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         auto frameDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(16);
         do {
           epubDragOffset += epubCoastDirection;
-          if (epubDragOffset >= pitch) {
-            if (!app.scrollEpubVertical(1)) stop = true;
-            else epubDragOffset -= pitch;
-          } else if (epubDragOffset <= -pitch) {
-            if (!app.scrollEpubVertical(-1)) stop = true;
-            else epubDragOffset += pitch;
-          }
+          if (epubDragOffset >= pitch) stop = !shiftEpubColumn(1);
+          else if (epubDragOffset <= -pitch) stop = !shiftEpubColumn(-1);
+          if (!app.epubVerticalDragActive()) stop = true;  // 横書きの範囲へ入った(下で上下の慣性へ)
           if (stop) break;
           performScrollStepDelay(step);
         } while (std::chrono::steady_clock::now() < frameDeadline);
