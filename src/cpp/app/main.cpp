@@ -1965,6 +1965,12 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   // 越えるたびにApplication::scrollEpubVertical()で1列動かす。離したら近い列にそろえる。
   bool epubDragging = false;
   int epubDragOffset = 0;
+  // 左右ドラッグの慣性(2026-09-29、直接のユーザー依頼"左右ドラッグにも慣性スクロールを付けて"):
+  // 上下のcoastLevel/coastDirection/recentMotionと同じ規則(離す直前kReleaseWindowの移動量で
+  // 速さの段階を決め、一定の速さで1ドットずつ流し続ける。本の端か、ボタンを押すと止まる)。
+  int epubCoastLevel = 0;
+  int epubCoastDirection = 0;
+  std::deque<std::pair<std::chrono::steady_clock::time_point, int>> epubRecentMotion;
   // 2026-08-30、直接のユーザー報告(GUI、ARCモードで再現させたスクリー
   // ンショット付き――ただし根本原因はモードを問わない): マウスボタンを
   // 押した「だけ」で(実際には全く動かしていなくても)dragging=trueに
@@ -2681,6 +2687,12 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       }
       switch (drag->type) {
         case fm::GraphicalDisplay::DragEventType::ButtonDown:
+          if (epubCoastLevel > 0) {  // 左右の慣性の途中でつかむと、その場で止めてドラッグを続ける
+            epubCoastLevel = 0;
+            epubCoastDirection = 0;
+            epubDragging = true;
+          }
+          epubRecentMotion.clear();
           // dragging自体はまだ立てない――buttonHeldPendingDrag自身の
           // コメント参照。coastLevel/coastDirection/recentMotion/
           // setHandCursor(true)は、以前と同じくボタンが押された時点
@@ -2699,6 +2711,19 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         case fm::GraphicalDisplay::DragEventType::ButtonUp: {
           if (epubDragging) {  // epubDragging自身のコメント参照
             int pitch = std::max(1, gui.cellWidthPixels() * fm::epubVerticalColumnPitch());
+            auto cutoff = std::chrono::steady_clock::now() - kReleaseWindow;
+            int releaseDistance = 0;
+            for (auto &sample : epubRecentMotion)
+              if (sample.first >= cutoff) releaseDistance += sample.second;
+            epubCoastLevel =
+                resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, std::max(gui.cellHeightPixels(), 1)));
+            if (epubCoastLevel > 0) {  // 慣性で流す(ずれはそのまま、下のフレームごとの処理)
+              epubCoastDirection = releaseDistance > 0 ? 1 : -1;
+              epubDragging = false;
+              buttonHeldPendingDrag = false;
+              gui.setHandCursor(false);
+              break;
+            }
             if (epubDragOffset >= pitch / 2) app.scrollEpubVertical(1);
             else if (epubDragOffset <= -pitch / 2) app.scrollEpubVertical(-1);
             epubDragging = false;
@@ -2771,6 +2796,10 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
             epubDragging = true;
             int pitch = std::max(1, gui.cellWidthPixels() * fm::epubVerticalColumnPitch());
             epubDragOffset += drag->deltaX;
+            epubRecentMotion.push_back({std::chrono::steady_clock::now(), drag->deltaX});
+            while (!epubRecentMotion.empty() &&
+                   epubRecentMotion.front().first < std::chrono::steady_clock::now() - kReleaseWindow)
+              epubRecentMotion.pop_front();
             while (epubDragOffset >= pitch) {
               if (!app.scrollEpubVertical(1)) {
                 epubDragOffset = 0;
@@ -3090,6 +3119,40 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // /commitRowCrossings()経由)を起こしたフレームを直接特定できる
     // よう、ブロックの直後・レンダ経路の分岐より前に置いてある。
     // 上のhoverダンプ自身のコメント参照。
+    // 左右ドラッグの慣性(epubCoastLevel自身のコメント参照)。上の上下の慣性と同じく、この
+    // フレームの約16msの間、段階ごとの間隔で1ドットずつ横にずらし、1列の幅を越えたら列を
+    // 動かす(空の列は飛ばす、Application::stepEpubVerticalFirst())。本の端で止まったら、
+    // ずれを0にして列にそろえる。
+    if (epubCoastLevel > 0) {
+      bool stop = !app.epubVerticalDragActive();
+      if (!stop) {
+        const fm::ScrollStep &step = fm::kScrollSpeedLevels[epubCoastLevel];
+        int pitch = std::max(1, gui.cellWidthPixels() * fm::epubVerticalColumnPitch());
+        auto frameDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(16);
+        do {
+          epubDragOffset += epubCoastDirection;
+          if (epubDragOffset >= pitch) {
+            if (!app.scrollEpubVertical(1)) stop = true;
+            else epubDragOffset -= pitch;
+          } else if (epubDragOffset <= -pitch) {
+            if (!app.scrollEpubVertical(-1)) stop = true;
+            else epubDragOffset += pitch;
+          }
+          if (stop) break;
+          performScrollStepDelay(step);
+        } while (std::chrono::steady_clock::now() < frameDeadline);
+      }
+      if (stop) {
+        epubCoastLevel = 0;
+        epubCoastDirection = 0;
+        epubDragOffset = 0;
+        gui.setContentOffsetX(0, 0);
+      } else {
+        gui.setContentOffsetX(epubDragOffset, std::max(gui.rows() - 1, 0));
+      }
+      gui.flush();
+    }
+
     if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
       FILE *f = std::fopen(dbg, "a");
       if (f) {
