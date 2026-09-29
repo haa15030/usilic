@@ -2223,6 +2223,16 @@ class Application {
   // ^X^C等で終える直前に呼ぶ: ファイルCUTの一覧/区間の中身を見ていたら、
   // その位置を保存する(startResumingSession()が同じ画面を作り直す)。
   void saveResumableCutState();
+  // 1回のキー/コマンドの処理でファイルCUTの一覧・区間の中身から別の画面へ
+  // 移ったら(^G^G以外、例えば^J^Kで(ls)へ)、離れる前の位置を保存する――
+  // ^J^J等で開き直すと区間の中身まで戻る(openRecentFileEntry())。
+  struct CutLeaveSnapshot {
+    ApplicationMode mode;
+    std::string key;
+    int contentCursor;
+  };
+  CutLeaveSnapshot cutLeaveSnapshot() const;
+  void saveCutPositionIfLeft(const CutLeaveSnapshot &before);
   // ファイルCUT(^Cfとその履歴)の^Gの戻り先: (ls)かFILEから起動した
   // 場合は(ls)(FILEの中身はCUTしたファイルに差し替わっているため)、
   // それ以外(^T画面等)は起動元。

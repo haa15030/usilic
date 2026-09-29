@@ -1904,15 +1904,7 @@ bool Application::startResumingSession(const std::string &lastOpenName, const st
       if (parent.empty()) parent = fallbackDirectory;
       if (directoryMode_.enterDirectory(parent, consultHistory)) {
         currentMode_ = ApplicationMode::Directory;
-        auto saved = history_.positionFor(PositionCategory::Screen, lastOpenName);
-        if (!openRecentFileEntry(lastOpenName)) return true;  // 開けなければ(ls)のまま
-        if (saved && saved->lineNumber > 0 && openSelectedSegment()) {
-          int last = static_cast<int>(cutContentView_.lines().size()) - 1;
-          cutContentView_.setCursorIndex(std::max(0, std::min(saved->lineNumber - 1, last)));
-          cutContentView_.centerOnCursor();
-          cutContentView_.redraw();
-          cutContentView_.syncVisibleCursor();
-        }
+        if (!openRecentFileEntry(lastOpenName)) currentMode_ = ApplicationMode::Directory;  // 開けなければ(ls)のまま
         return true;
       }
     }
@@ -3301,9 +3293,11 @@ bool Application::feedUntranslatedByte(int byte, std::optional<KeyInput::Special
   bool outermost = stdinPagerCheckDepth_ == 0;
   bool wasStdin = outermost && stdinPagerActive();
   bool wasReturnsToShell = wasStdin && fileMode_.pagerReturnsToShell();
+  CutLeaveSnapshot cutBefore = cutLeaveSnapshot();
   ++stdinPagerCheckDepth_;
   bool result = feedByteImpl(byte, special);
   --stdinPagerCheckDepth_;
+  if (outermost) saveCutPositionIfLeft(cutBefore);
   if (wasStdin && currentMode_ != ApplicationMode::File) discardStdinPager(wasReturnsToShell);
   if (outermost) showBufferLimitNoticeIfHit();
   return result;
@@ -3936,9 +3930,11 @@ bool Application::handleCommand(Command command) {
   bool outermost = stdinPagerCheckDepth_ == 0;
   bool wasStdin = outermost && stdinPagerActive();
   bool wasReturnsToShell = wasStdin && fileMode_.pagerReturnsToShell();
+  CutLeaveSnapshot cutBefore = cutLeaveSnapshot();
   ++stdinPagerCheckDepth_;
   bool result = handleCommandImpl(command);
   --stdinPagerCheckDepth_;
+  if (outermost) saveCutPositionIfLeft(cutBefore);
   if (wasStdin && currentMode_ != ApplicationMode::File) discardStdinPager(wasReturnsToShell);
   if (outermost) showBufferLimitNoticeIfHit();
   return result;
@@ -6003,8 +5999,10 @@ bool Application::openRecentFileEntry(const std::string &path) {
     fileMode_.saveCursorPosition();
   } else if (currentMode_ == ApplicationMode::Archive || currentMode_ == ApplicationMode::ArchiveContent) {
     archiveMode_.saveCursorPosition();
-  } else if (currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) {
+  } else if (currentMode_ == ApplicationMode::Cut) {
     saveCutFilePosition();
+  } else if (currentMode_ == ApplicationMode::CutContent) {
+    saveCutFilePosition(cutContentView_.cursorIndex());
   }
   // 2026-09-20追加、直接のユーザー依頼(QUICK.txt自身のC-j bの説明
   // "後述[FILE]によるアクセス履歴一覧では「ファイル名 "文字列"」で
@@ -6043,8 +6041,20 @@ bool Application::openRecentFileEntry(const std::string &path) {
     // "^<"が無い"): loadFile()がパス単体を積んで合成エントリより新しくして
     // しまうので、executeCut()のファイルの分岐と同じく、その後で積み直す。
     history_.pushRecent(RingCategory::RecentFile, path);
+    auto saved = history_.positionFor(PositionCategory::Screen, path);
     restoreCutFilePosition(path);
     currentMode_ = ApplicationMode::Cut;
+    // 2026-09-29追加、直接のユーザー依頼("^J^Jでも区間まで開くようにして"):
+    // 区間の中身を見たまま離れていた(saveCutPositionIfLeft()/終了時の
+    // saveResumableCutState()が行+1を入れた)なら、その区間を開いてその行へ。
+    // ^G^Gで閉じていれば(returnFromCut()が-1を入れる)一覧のまま。
+    if (saved && saved->lineNumber > 0 && openSelectedSegment()) {
+      int last = static_cast<int>(cutContentView_.lines().size()) - 1;
+      cutContentView_.setCursorIndex(std::max(0, std::min(saved->lineNumber - 1, last)));
+      cutContentView_.centerOnCursor();
+      cutContentView_.redraw();
+      cutContentView_.syncVisibleCursor();
+    }
     return true;
   }
   if (isEpubFile(path) && !configuration_.isExec(path)) return openEpub(path);  // openEpub()自身のコメント参照
@@ -7519,6 +7529,18 @@ void Application::saveCutFilePosition(int contentCursor) {
   pos.totalRows = static_cast<int>(cutMode_.segments().size());
   pos.lineNumber = contentCursor >= 0 ? contentCursor + 1 : -1;
   history_.setPosition(PositionCategory::Screen, cutPositionKey_, pos);
+}
+
+Application::CutLeaveSnapshot Application::cutLeaveSnapshot() const {
+  return {currentMode_, cutPositionKey_,
+          currentMode_ == ApplicationMode::CutContent ? cutContentView_.cursorIndex() : -1};
+}
+
+void Application::saveCutPositionIfLeft(const CutLeaveSnapshot &before) {
+  bool wasCut = before.mode == ApplicationMode::Cut || before.mode == ApplicationMode::CutContent;
+  bool isCut = currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent;
+  if (!wasCut || isCut || before.key.empty() || before.key != cutPositionKey_) return;
+  saveCutFilePosition(before.contentCursor);
 }
 
 void Application::saveResumableCutState() {

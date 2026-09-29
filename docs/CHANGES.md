@@ -27280,3 +27280,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **再開**: startResumingSession()は合成エントリなら、ファイルのディレクトリへ
      入ってからopenRecentFileEntry()で一覧を作り直し、中身を見ていた場合は
      openSelectedSegment()で開いてその行へ(センタリング)。^Gは一覧、もう一度^Gで(ls)。
+508. **2026-09-29(項目507の続き): ^J^J/FILE履歴でもファイルCUTの区間の中身まで開く**
+   - **経緯**: 直接のユーザー依頼("^J^Jでも区間まで開くようにして")。
+   - **保存**: 区間の中身の行は、項目507では終了時にしか保存していなかった。
+     feedUntranslatedByte()/handleCommand()の前後でcutLeaveSnapshot()を取り、1回の
+     処理でファイルCUTの一覧・区間の中身から別の画面へ移ったら(^J^Kで(ls)へ等)、
+     saveCutPositionIfLeft()が離れる前の位置を保存する(中身を見ていたら行+1)。
+     ^G^Gで閉じた場合はreturnFromCut()が-1を入れるので一覧のまま。
+     openRecentFileEntry()自体を区間の中身から呼んだ場合(^J^J/^X^F)も行を保存する。
+   - **再開**: 区間を開き直す処理をstartResumingSession()からopenRecentFileEntry()の
+     合成エントリの分岐へ移し、^J^J・^X^FのFILE履歴・次回起動の再開で共通にした。
