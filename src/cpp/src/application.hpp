@@ -2476,8 +2476,6 @@ class Application {
   bool openEpub(const std::string &path, bool vertical = false);  // EPUBモード、自身のコメント(application.cpp)参照
   // 縦書き(rebuildEpubVertical()自身のコメント参照)
   bool epubVerticalActive() const;
-  // 今のFILEがEPUBモードで見ている本か(.epub、またはepubPlainFile_)。
-  bool epubModeFileShown() const;
   int fileRawLineAtCursor() const;
   void rebuildEpubVertical(int rawLine);
   void showEpubVerticalRaw(int rawLine);
@@ -2496,11 +2494,6 @@ class Application {
   std::optional<EpubVerticalTarget> epubVerticalColumnTarget(long column) const;
   bool activateEpubVerticalColumn(long column);
   bool epubVertical_ = false;
-  // 2026-09-29追加、直接のユーザー依頼("「(ls)から^Jeでファイルを選ぶとEPUBモードへ
-  // 移行して縦書きになる」、.epubファイル以外では常時縦書き"): ^Jeで開いた.epub以外の
-  // ファイル。EPUBモードの画面(縦書き・^Oe)の対象になるのはこれを見ている間だけで、
-  // (ls)へ戻ると空にする(次に普通に開けば通常のFILE)。
-  std::string epubPlainFile_;
   bool epubOpenVerticalNext_ = false;  // ^J^Eの一覧から開く本は縦書き
   std::vector<EpubVerticalColumn> epubVerticalCols_;  // 組んだ列の並び(右から左へ読む順)
   int epubVerticalFirst_ = 0;                         // 右端に置いている列
