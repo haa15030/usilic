@@ -27299,3 +27299,17 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **試して分かったこと**: openEpub()の章の一覧は、kHelpPattern(タブ)での分割が
      「タブを含む行」を全部拾うため、.epub以外(HISTORY.md等)ではただのタブ入りの行が
      章の一覧に並んだ。縦書きは引き続き.epubだけ、^Jeも.epubだけ。
+510. **2026-09-29: EPUBの縦書きでは章の一覧も縦書きに**
+   - **経緯**: 直接のユーザー依頼("EPUBで縦書きになったらCUT一覧も縦書きにして
+     欲しいんだが")。
+   - **表示**: 縦書きの間(epubTocVerticalActive()、cutOrigin_ == Epubでネストして
+     いない章の一覧)は、viewForMode(Cut)が専用のepubTocVerticalView_を返す。
+     refreshEpubTocVertical()がcutView_の章の見出しを1つずつ論理行(rawLineNumber =
+     章の番号+1)として本文と同じlayoutEpubVerticalColumns()で列に組み、選んでいる章
+     (cutView_のカーソル)の最初の列を反転表示する。モードラインは名前"EPUB"、
+     "縦書き"、戻り値欄は本のパス、位置欄は「章/章の数」。
+   - **操作**: 本文の縦書きと同じ向き(←/^N/↓で次の章(左)、→/^P/↑で前の章、
+     ESC >/ESC <で先頭/末尾、PageDown/PageUpは1画面分の列の先の章)。クリックは
+     1回目で選択、2回目で開く。-gのホイールは1章ずつ。[Enter]・^G・^Oeは横書きの
+     一覧と同じ(cutView_を裏で持ち続けるため)。開いたとき・本文から^Gで戻ったとき・
+     ^Oe・リサイズで組み直す。

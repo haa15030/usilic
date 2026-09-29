@@ -2499,6 +2499,17 @@ class Application {
   int epubVerticalFirst_ = 0;                         // 右端に置いている列
   int epubVerticalCursor_ = 0;                        // 列カーソル(setEpubVerticalView()参照)
   std::optional<int> epubVerticalMark_;               // ^X^Xの行き来先の列
+  // 2026-09-29追加、直接のユーザー依頼("EPUBで縦書きになったらCUT一覧も縦書きに
+  // して欲しい"): 縦書きの間の章の一覧。章の見出し1つを論理行1つ(rawLineNumber =
+  // 章の番号+1)として本文と同じ組版で列に並べ、選んでいる章(cutView_のカーソル)の
+  // 最初の列を反転表示する。cutView_は裏で持ち続け、[Enter]・^G等はそのまま働く。
+  bool epubTocVerticalActive() const;
+  void refreshEpubTocVertical();
+  void selectEpubTocVertical(int segment);
+  std::optional<bool> handleEpubTocVerticalCommand(Command command);
+  bool clickEpubTocVertical(int row, int column);
+  std::vector<EpubVerticalColumn> epubTocCols_;
+  int epubTocFirst_ = 0;  // 右端に置いている列
   bool openEpubTocEntry(const CutSegment &segment);       // 同上
   bool returnToEpubToc();                                 // 同上
   bool startEpubPrompt();                                 // K-98(^Je)
@@ -2863,6 +2874,7 @@ class Application {
   // となるビュー――startCopy()自身のコメント参照。
   ContentView copyView_;
   ContentView epubVerticalView_;  // EPUBの縦書き(rebuildEpubVertical()参照)
+  ContentView epubTocVerticalView_;  // 縦書きの章の一覧(refreshEpubTocVertical()参照)
   // feedCopyByte()自身のコメント参照: ApplicationMode::Copyの間だけ
   // 有効な、"^[w"/"^[p"(confirmMark()、2026-09-07に'p'追加)用の
   // 1バイト先読み状態。resolveCommand()側のescPending_とは意図的に
