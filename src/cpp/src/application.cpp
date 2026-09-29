@@ -1171,7 +1171,10 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     if (cutOrigin_ == CutOrigin::Epub && !cutMode_.parentPattern()) {  // openEpub()参照
       ContentView::ModeLineFields fields{name, std::to_string(contentByteCount(fileView_)), /*fillTrailingToEdge=*/true,
                                           /*rightWatermark=*/"", ""};
-      fields.trailing3 = fileMode_.currentFile();
+      // 2026-09-29修正、直接のユーザー報告("CUT一覧の戻り値が(ls)じゃない"): 戻り値欄は
+      // ^Gの戻り先。章の一覧の^Gは(ls)へ戻る(returnFromCut())ので、本のパスではなく
+      // (ls)のディレクトリを出す。
+      fields.trailing3 = directoryMode_.currentDirectory();
       return fields;
     }
     // HELP自身の最上位(ネストしていない)モードライン(2026-08-23
@@ -1290,11 +1293,11 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   });
 
   // 縦書きの章の一覧(refreshEpubTocVertical()参照): 横書きの章の一覧と同じ"EPUB"、
-  // 戻り値欄は本のパス。
+  // 戻り値欄は^Gの戻り先の(ls)のディレクトリ。
   epubTocVerticalView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     ContentView::ModeLineFields fields{"EPUB", std::to_string(contentByteCount(fileView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", "縦書き"};
-    fields.trailing3 = fileMode_.currentFile();
+    fields.trailing3 = directoryMode_.currentDirectory();  // 戻り値欄は^Gの戻り先の(ls)(cutView_の同じ欄参照)
     return fields;
   });
 
@@ -3888,7 +3891,8 @@ void Application::moveDisplayCursorToShellHistoryLine() {
 ContentView &Application::activeView() {
   // -gの縦書き用の描き方(小書きの仮名・半角の位置、「ー」の縦線、「：」の回転)を、
   // 今見せている画面が縦書きの間だけ有効にする(GraphicalDisplay::setVerticalTextHint())
-  display_.setVerticalTextHint(currentMode_ == ApplicationMode::File && epubVerticalActive());
+  display_.setVerticalTextHint((currentMode_ == ApplicationMode::File && epubVerticalActive()) ||
+                               (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive()));
   return viewForMode(currentMode_);
 }
 
