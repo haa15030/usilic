@@ -508,8 +508,10 @@ std::string FileMode::loadAndTransformContent(const std::string &path) const {
   // globとして解釈するので、Application::escapeArchiveMemberPattern()と同じ
   // 文字をエスケープする。変換できなければ従来どおり(バイナリの種類表示)。
   epubLinks_.clear();
+  epubLayoutHints_ = {};
   if (!rawControlCodesMode_ && isEpubFile(path)) {
-    if (auto markup = epubToHelpMarkup(epubMemberReader(path), &epubLinks_)) return expandHelpMarkup(*markup);
+    if (auto markup = epubToHelpMarkup(epubMemberReader(path), &epubLinks_, &epubLayoutHints_))
+      return expandHelpMarkup(*markup);
   }
   std::ifstream in(path, std::ios::binary);
   if (!in) return {};

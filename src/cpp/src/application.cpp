@@ -6680,6 +6680,7 @@ bool Application::openEpub(const std::string &path) {
   // cssファイルに設定してあるはずなのでそれで判断する"): 縦書きかどうかは本が決める
   // (epubIsRightToLeft()、OPFのpage-progression-direction="rtl")。
   bool vertical = epubIsRightToLeft(fileMode_.epubMemberReader(path));
+  epubHorizontalSection_.reset();
   bool firstTime = !history_.positionFor(PositionCategory::File, path);
   if (!fileMode_.loadFile(path, [this]() { return keyInterruptRequested(); })) return false;
   fileMode_.annotations().clear();
@@ -6761,7 +6762,79 @@ bool Application::returnToEpubToc() {
 // キーはhandleEpubVerticalCommand()が列単位の横スクロールに読み替える。横書きの
 // fileView_は裏で持ち続け、位置の記録(FILE履歴)・章の一覧との行き来・縦横の
 // 切り替えは、元の行番号(rawLineNumber)で両者を対応させる(syncEpubVerticalToFile())。
-bool Application::epubVerticalActive() const { return epubVertical_ && isEpubFile(fileMode_.currentFile()); }
+bool Application::epubVerticalActive() const { return epubBookVertical() && !epubHorizontalSection_; }
+
+bool Application::epubBookVertical() const { return epubVertical_ && isEpubFile(fileMode_.currentFile()); }
+
+std::optional<std::pair<int, int>> Application::epubHorizontalRangeAt(int rawLine) const {
+  for (const auto &range : fileMode_.epubLayoutHints().horizontal)
+    if (rawLine >= range.first && rawLine <= range.second) return range;
+  return std::nullopt;
+}
+
+// 横書きの範囲へ入る: fileView_のカーソルをrawLineの行(範囲の外なら端)に置く。
+// 描き直しは呼び出し元(activeView()はもうfileView_)。
+void Application::enterEpubHorizontal(const std::pair<int, int> &range, int rawLine) {
+  epubHorizontalSection_ = range;
+  rawLine = std::clamp(rawLine, range.first, range.second);
+  const auto &lines = fileView_.lines();
+  for (std::size_t i = 0; i < lines.size(); i++) {
+    if (lines[i].rawLineNumber.value_or(0) < rawLine) continue;
+    fileView_.setCursorIndex(static_cast<int>(i));
+    fileView_.centerOnCursor();
+    return;
+  }
+}
+
+// 縦書きで先へ(forward)/前へ動いた後: 動く前の列(fromRaw)と今の列の間に横書きの範囲が
+// あれば(縦書きの列には横書きの範囲の行が無いので、越える時は間に挟まる)、そこへ入る。
+// 本の端でそれ以上動けない時も、その先に横書きの範囲があれば入る(奥付は本の最後)。
+bool Application::maybeEnterEpubHorizontal(int fromRaw, bool forward) {
+  const auto &ranges = fileMode_.epubLayoutHints().horizontal;
+  int now = epubVerticalCurrentRaw();
+  int last = static_cast<int>(epubVerticalCols_.size()) - 1;
+  if (forward) {
+    for (const auto &range : ranges)
+      if (range.first > fromRaw && (now >= range.first || epubVerticalCursor_ >= last)) {
+        enterEpubHorizontal(range, range.first);
+        return true;
+      }
+  } else {
+    for (auto it = ranges.rbegin(); it != ranges.rend(); ++it)
+      if (it->second < fromRaw && (now <= it->second || epubVerticalCursor_ <= 0)) {
+        enterEpubHorizontal(*it, it->second);
+        return true;
+      }
+  }
+  return false;
+}
+
+// 横書きの範囲で、カーソルが範囲の外へ出ていたら縦書きへ戻る(前へ出たらその行の最後の
+// 列、先へ出たらその行の最初の列)。EPUBの本文の外へ出ていたら(章の一覧等)範囲を忘れる。
+void Application::leaveEpubHorizontalIfOutside() {
+  if (!epubHorizontalSection_) return;
+  if (currentMode_ != ApplicationMode::File || !epubBookVertical()) {
+    epubHorizontalSection_.reset();
+    if (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive()) {
+      refreshEpubTocVertical();
+      activeView().redraw();
+    }
+    return;
+  }
+  int raw = fileRawLineAtCursor();
+  if (raw >= epubHorizontalSection_->first && raw <= epubHorizontalSection_->second) return;
+  bool before = raw < epubHorizontalSection_->first;
+  epubHorizontalSection_.reset();
+  rebuildEpubVertical(raw);  // リサイズで組み直しが要る場合もあるので、組み直してから置く
+  if (before && !epubHorizontalSection_) {
+    int col = 0;
+    for (std::size_t c = 0; c < epubVerticalCols_.size(); c++)
+      if (epubVerticalCols_[c].rawLineNumber <= raw) col = static_cast<int>(c);
+    setEpubVerticalView(col, col);
+  }
+  activeView().redraw();
+  activeView().syncVisibleCursor();
+}
 
 bool Application::epubVerticalScrollActive() const {
   return ((currentMode_ == ApplicationMode::File && epubVerticalActive()) ||
@@ -6785,6 +6858,7 @@ void Application::rebuildEpubVertical(int rawLine) {
   std::vector<EpubVerticalSourceLine> logical;
   for (const auto &line : fileView_.lines()) {
     int raw = line.rawLineNumber.value_or(-1);
+    if (raw >= 0 && epubHorizontalRangeAt(raw)) continue;  // 横書きの範囲(epubHorizontalSection_参照)
     if (logical.empty() || raw < 0 || logical.back().rawLineNumber != raw) {
       logical.push_back({line.text, line.attributes, raw});
       continue;
@@ -6798,12 +6872,42 @@ void Application::rebuildEpubVertical(int rawLine) {
     }
   }
   epubVerticalCols_ = layoutEpubVerticalColumns(logical, epubVerticalRows(), display_.isGraphical());
+  // 扉(EpubLayoutHints::centered): 横書きの中に置かれた縦書きの箱は、両側に空の列を足して
+  // 1画面の中央に置く(その範囲の最初の行へ飛ぶと、右端が左の空の列の頭になり中央に見える)。
+  const auto &centered = fileMode_.epubLayoutHints().centered;
+  if (!centered.empty()) {
+    int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+    std::vector<EpubVerticalColumn> padded;
+    for (std::size_t c = 0; c < epubVerticalCols_.size();) {
+      int raw = epubVerticalCols_[c].rawLineNumber;
+      auto range = std::find_if(centered.begin(), centered.end(),
+                                [raw](const auto &r) { return raw >= r.first && raw <= r.second; });
+      if (range == centered.end()) {
+        padded.push_back(std::move(epubVerticalCols_[c++]));
+        continue;
+      }
+      std::size_t end = c;
+      while (end < epubVerticalCols_.size() && epubVerticalCols_[end].rawLineNumber >= range->first &&
+             epubVerticalCols_[end].rawLineNumber <= range->second)
+        end++;
+      int pad = std::max(0, perScreen - static_cast<int>(end - c));
+      for (int k = 0; k < pad / 2; k++) padded.push_back({{}, range->first});
+      for (; c < end; c++) padded.push_back(std::move(epubVerticalCols_[c]));
+      for (int k = 0; k < pad - pad / 2; k++) padded.push_back({{}, range->second});
+    }
+    epubVerticalCols_ = std::move(padded);
+  }
   epubVerticalMark_.reset();
   showEpubVerticalRaw(rawLine);
 }
 
 // rawLineの最初の列を右端に置く。
 void Application::showEpubVerticalRaw(int rawLine) {
+  if (auto range = epubHorizontalRangeAt(rawLine)) {  // 横書きの範囲の行(リンク・章の一覧・開いた位置)
+    enterEpubHorizontal(*range, rawLine);
+    return;
+  }
+  epubHorizontalSection_.reset();
   int first = 0;
   for (std::size_t c = 0; c < epubVerticalCols_.size(); c++)
     if (epubVerticalCols_[c].rawLineNumber >= rawLine) {
@@ -6879,12 +6983,22 @@ void Application::syncEpubVerticalToFile() {
 std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
   int perScreen = epubVerticalColumnsPerScreen(display_.columns());
   int first = epubVerticalFirst_, cursor = epubVerticalCursor_;
+  int fromRaw = epubVerticalCurrentRaw();
+  // 先へ/前へ進む移動は、間に横書きの範囲があればそこへ入る(maybeEnterEpubHorizontal())
+  auto crossing = [&](bool forward) {
+    if (!maybeEnterEpubHorizontal(fromRaw, forward)) return false;
+    activeView().redraw();
+    activeView().syncVisibleCursor();
+    return true;
+  };
   switch (command) {
     case Command::MoveDown:  // 列カーソルを1列先(左)へ(setEpubVerticalView()参照)
       setEpubVerticalView(first, cursor + 1);
+      if (crossing(true)) return true;
       break;
     case Command::MoveUp:  // 1列戻る(右へ)
       setEpubVerticalView(first, cursor - 1);
+      if (crossing(false)) return true;
       break;
     case Command::ScrollLineDown:
       setEpubVerticalFirst(first + 1);
@@ -6894,9 +7008,11 @@ std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
       break;
     case Command::PageDown:
       setEpubVerticalView(first + perScreen, cursor + perScreen);
+      if (crossing(true)) return true;
       break;
     case Command::PageUp:
       setEpubVerticalView(first - perScreen, cursor - perScreen);
+      if (crossing(false)) return true;
       break;
     // 2026-09-29、直接のユーザー指定("^[<`/`^[>`は、機能を逆にしたほうが明らかに
     // しっくりくる(末尾へは左で<、冒頭へは右方向で>)"): 縦書きでは向きが逆。
@@ -6938,7 +7054,7 @@ bool Application::scrollEpubVertical(int delta) {
 
 // application.hpp自身のepubTocCols_の宣言コメント参照。ネストした再分割の中は横書きのまま。
 bool Application::epubTocVerticalActive() const {
-  return cutOrigin_ == CutOrigin::Epub && epubVerticalActive() && !cutMode_.parentPattern();
+  return cutOrigin_ == CutOrigin::Epub && epubBookVertical() && !cutMode_.parentPattern();
 }
 
 // cutView_の章の見出しを列に組み直し、選んでいる章が見える所に画面を置いて描く
@@ -7692,6 +7808,7 @@ Application::CutLeaveSnapshot Application::cutLeaveSnapshot() const {
 }
 
 void Application::saveCutPositionIfLeft(const CutLeaveSnapshot &before) {
+  leaveEpubHorizontalIfOutside();  // epubHorizontalSection_参照(キー/コマンドの処理の後の見直しを相乗り)
   bool wasCut = before.mode == ApplicationMode::Cut || before.mode == ApplicationMode::CutContent;
   bool isCut = currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent;
   if (!wasCut || isCut || before.key.empty() || before.key != cutPositionKey_) return;

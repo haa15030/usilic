@@ -527,6 +527,8 @@ class FileMode {
   bool followEpubLink();
   bool hasEpubLinkAt(int index) const;  // 画面の行indexにリンクがあるか(クリック用)
   std::optional<int> epubLinkTargetForRawLine(int rawLine) const;  // 縦書きのクリック用
+  // 縦書きの本の中の横書き/扉の行の範囲(rawLineNumber、EpubLayoutHints参照)。
+  const EpubLayoutHints &epubLayoutHints() const { return epubLayoutHints_; }
 
  private:
   // loadFile()/loadFileNoWrap()/loadFileRaw()が共有する本体――呼び出し元が
@@ -595,6 +597,7 @@ class FileMode {
   // followEpubLink()用: EPUBの本文のリンクがある行→リンク先の行(どちらも
   // rawLineNumber)。loadAndTransformContent()(const)が変換のたびに作り直す。
   mutable std::map<int, int> epubLinks_;
+  mutable EpubLayoutHints epubLayoutHints_;  // epubLinks_と同じく変換のたびに作り直す
   std::string currentFile_;
   AnnotationStack<FileAnnotationKind> annotations_;
   // pagerMode_(2026-08-25): loadStream()が設定し、loadFile()が

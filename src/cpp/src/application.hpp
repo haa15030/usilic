@@ -2474,6 +2474,17 @@ class Application {
   bool openEpub(const std::string &path);  // EPUBモード、自身のコメント(application.cpp)参照
   // 縦書き(rebuildEpubVertical()自身のコメント参照)
   bool epubVerticalActive() const;
+  // 2026-09-29追加、直接のユーザー依頼(EPUBの段階3、"扉...や奥付(横書き)等、章毎の
+  // 縦横使い分け"): 縦書きの本(epubBookVertical())の中の、横書きの範囲
+  // (EpubLayoutHints::horizontal、奥付等)。その範囲を読んでいる間(epubHorizontalSection_)は
+  // 横書きのfileView_で見せ、epubVerticalActive()はfalse。範囲の外へ出たら
+  // (leaveEpubHorizontalIfOutside()、キー/コマンドの処理の後)縦書きへ戻る。
+  bool epubBookVertical() const;
+  std::optional<std::pair<int, int>> epubHorizontalRangeAt(int rawLine) const;
+  void enterEpubHorizontal(const std::pair<int, int> &range, int rawLine);
+  bool maybeEnterEpubHorizontal(int fromRaw, bool forward);
+  void leaveEpubHorizontalIfOutside();
+  std::optional<std::pair<int, int>> epubHorizontalSection_;
   int fileRawLineAtCursor() const;
   void rebuildEpubVertical(int rawLine);
   void showEpubVerticalRaw(int rawLine);

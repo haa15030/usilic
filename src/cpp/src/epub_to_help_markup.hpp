@@ -4,6 +4,8 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace fm {
 
@@ -30,8 +32,21 @@ using EpubMemberReader = std::function<std::optional<std::string>(const std::str
 // 追加、直接のユーザー提案("選択できる章はタグジャンプとしてのアンダーラインを
 // 付加し returnで当該行へ飛んではどうか")。下線はリンク専用で、h1や<u>には
 // 付けない。
+// 2026-09-29追加、直接のユーザー依頼(EPUBの段階3、"扉(タイトルが画面中央に来るための
+// 裏技)や奥付(横書き)等、章毎の縦横使い分け"): 縦書きの本の中で、縦書きで描かない行の
+// 範囲(返り値の行番号、両端を含む)。
+//   horizontal: CSSのwriting-modeで横書き(horizontal-tb)と明示された所の行(奥付等)。
+//   centered: 横書きの中に置かれた縦書きの箱の行――横書きのbodyの中に左右autoの縦書きの
+//             divを置いて、書名を画面の中央へ寄せる扉の作り方(Kbt.epubのSection001等)。
+// writing-modeの指定が無い行は本全体の向きに従う(どちらにも入らない)。
+struct EpubLayoutHints {
+  std::vector<std::pair<int, int>> horizontal;
+  std::vector<std::pair<int, int>> centered;
+};
+
 std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember,
-                                            std::map<int, int> *links = nullptr);
+                                            std::map<int, int> *links = nullptr,
+                                            EpubLayoutHints *layoutHints = nullptr);
 
 // 本文の"[image: <ファイル名>]"のファイル名から、OPFのmanifestにあるzip内の
 // パスを探す(2026-09-28追加、直接のユーザー提案"CUTで出る目次だが、「表紙」を

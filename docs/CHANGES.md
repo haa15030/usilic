@@ -27366,3 +27366,26 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      serifFontFor())で描く(3つの描画経路、フォントの大きさの変更にも追従)。端末(-c)は
      何もしない。縦書き(epub_vertical.cpp)は、明朝体をEpubVerticalCell::serifとして
      下線等の装飾とは別に持ち、画面の行へ別のランとして戻す。
+515. **2026-09-29: 縦書きの本の中の横書きのページ(奥付等)と扉の中央寄せ(EPUBの段階3)**
+   - **経緯**: 直接のユーザー依頼("可能なら扉(タイトルが画面中央に来るための裏技)や
+     奥付(横書き)等、章毎の縦横使い分けを可能に"、"第3段階も進めて")。
+   - **変換**: CSSの規則からwriting-mode(-epub-/-webkit-付きも、知らない値は無視)も読み、
+     要素ごとに縦横を持つ。出した行ごとに「横書き」(writing-modeが横)、「扉」(外側が
+     横書きで自分が縦書き――Kbt.epubの扉はbody.horizontalの中の左右autoのdiv.vertical)、
+     「普通」を記録し、epubToHelpMarkup()がEpubLayoutHints(horizontal/centeredの行の
+     範囲)として返す。FileModeが持つ(epubLayoutHints())。Kbt.epubでは奥付(306〜382行)が
+     横書き、扉7か所が中央寄せ(スクラッチの変換で確認)。
+   - **修正(CSSの読み込み順)**: <link>/<style>は<head>の中で<html>の開始より後に来るため、
+     html自身に掛かる規則(フォント・縦横)が当たっていなかった(項目514の抜け)。
+     convert()で本文の処理の前にまとめて読む。
+   - **横書きの範囲**: 縦書きの列(rebuildEpubVertical())には横書きの範囲の行を入れない。
+     縦書きで先へ/前へ動いて(^N/^P/PageDown/PageUp、本の端でそれ以上動けない時も)
+     間に横書きの範囲があれば、そこで横書きのfileView_に切り替える
+     (maybeEnterEpubHorizontal()、epubHorizontalSection_の間はepubVerticalActive()が
+     false)。リンク・章の一覧・開いた位置が横書きの範囲の行でも同じ
+     (showEpubVerticalRaw())。横書きの画面でカーソルが範囲の外へ出たら、キー/コマンドの
+     処理の後(leaveEpubHorizontalIfOutside())で縦書きへ戻る。章の一覧の縦書きは本全体の
+     向き(epubBookVertical())で決める。
+   - **扉**: 縦書きの列で、扉の範囲の列の両側に空の列を足し、1画面の中央に置く。
+   - **未対応**: 扉の書名を列の中で上下の中央へ寄せること、-gのホイールでの横書きの
+     範囲への出入り(キーでだけ切り替わる)。

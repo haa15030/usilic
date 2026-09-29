@@ -343,11 +343,21 @@ void parseNcx(const std::string &xml, const std::string &ncxPath, TocMap &toc) {
 // 決める(Display::Attribute::Serif、<serif>タグ)。読むのは「タグ」「.クラス」
 // 「タグ.クラス」だけの単純なセレクタで、子孫・子などの組み合わせのセレクタは誤って
 // 広く当てはまらないよう読み飛ばす。
+// 2026-09-29(段階3): writing-mode(EpubLayoutHints参照)も同じ規則から読む。
 struct CssFontRule {
   std::string tag;                   // 空なら任意
   std::vector<std::string> classes;  // すべて要素のclassにあること
-  bool serif = true;
+  std::optional<bool> serif;         // font-family(明朝体ならtrue)
+  std::optional<bool> vertical;      // writing-mode(縦書きならtrue)
 };
+
+// writing-mode(-epub-/-webkit-付きも)の値。vertical-*は縦、horizontal-tbは横、
+// 知らない値(Kbt.epubの"hirozontal-tb"のような綴り違いを含む)は無視。
+std::optional<bool> classifyWritingMode(const std::string &value) {
+  if (value.find("vertical") != std::string::npos) return true;
+  if (value.find("horizontal") != std::string::npos) return false;
+  return std::nullopt;
+}
 
 // font-familyの値が明朝体(true)かゴシック体(false)か。総称名(serif/sans-serif/
 // monospace)を優先する(Kbt.epubのゴシックの指定にも"BIZ UD明朝"が混ざっている)。
@@ -408,17 +418,23 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
         for (auto &inner : parseCssFontRules(body)) rules.push_back(std::move(inner));
       continue;
     }
-    std::optional<bool> serif;
-    std::size_t fp = 0;
-    while ((fp = body.find("font-family", fp)) != std::string::npos) {
-      std::size_t colon = body.find(':', fp);
-      if (colon == std::string::npos) break;
-      std::size_t end = body.find(';', colon);
-      std::string value = body.substr(colon + 1, end == std::string::npos ? std::string::npos : end - colon - 1);
-      if (auto v = classifyFontFamily(value)) serif = v;  // 同じ規則の中では後が勝つ
-      fp = colon;
-    }
-    if (!serif) continue;
+    // 同じ規則の中では後の宣言が勝つ
+    auto readProperty = [&](const std::string &property, auto classify) {
+      std::optional<bool> result;
+      std::size_t fp = 0;
+      while ((fp = body.find(property, fp)) != std::string::npos) {
+        std::size_t colon = body.find(':', fp);
+        if (colon == std::string::npos) break;
+        std::size_t end = body.find(';', colon);
+        std::string value = body.substr(colon + 1, end == std::string::npos ? std::string::npos : end - colon - 1);
+        if (auto v = classify(value)) result = v;
+        fp = colon;
+      }
+      return result;
+    };
+    std::optional<bool> serif = readProperty("font-family", classifyFontFamily);
+    std::optional<bool> vertical = readProperty("writing-mode", classifyWritingMode);
+    if (!serif && !vertical) continue;
     std::string one;
     for (char c : selectors + ",") {
       if (c != ',') {
@@ -429,7 +445,8 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
       one.clear();
       if (sel.empty() || sel.find_first_of(" \t\n>+~:[#") != std::string::npos) continue;  // 単純なセレクタだけ
       CssFontRule rule;
-      rule.serif = *serif;
+      rule.serif = serif;
+      rule.vertical = vertical;
       std::size_t dot = sel.find('.');
       rule.tag = sel.substr(0, dot);
       if (rule.tag == "*") rule.tag.clear();
@@ -462,6 +479,9 @@ class BodyConverter {
   };
   const std::vector<LinkRecord> &links() const { return links_; }
   const std::map<std::string, int> &anchors() const { return anchorLines_; }
+  // 出した行(out_の1始まりの行)ごとの縦横(EpubLayoutHints参照)。空行は入らない。
+  enum class LineKind { Normal, Horizontal, Centered };
+  const std::map<int, LineKind> &lineKinds() const { return lineKinds_; }
 
   void convert(const std::string &xhtml, const std::string &path, const std::vector<TocEntry> *tocEntries) {
     path_ = path;
@@ -480,8 +500,23 @@ class BodyConverter {
     fontRules_.clear();  // 本文のファイルごとに、そのファイルが読み込むCSSだけ
     fontStack_.clear();
     serif_ = true;  // CSSの指定が無ければ明朝体(読書アプリの既定に合わせる)
+    vertical_.reset();
+    horizontalOutside_ = false;
     inStyle_ = false;
-    for (const auto &t : tokenizeXml(xhtml)) handle(t);
+    std::vector<XmlToken> tokens = tokenizeXml(xhtml);
+    // CSS(fontRules_参照)は<head>の中にあり、<html>の開始より後に来るので、先に
+    // まとめて読んでおく(そうしないとhtml自身に掛かる規則が当たらない――Kbt.epubの
+    // 奥付はhtmlのwriting-modeだけで横書きにしている)。
+    bool inStyle = false;
+    for (const auto &t : tokens) {
+      bool open = (t.kind == XmlToken::Open || t.kind == XmlToken::SelfClose);
+      if (t.name == "link" && open && attr(t, "rel").find("stylesheet") != std::string::npos)
+        loadStylesheet(attr(t, "href"));
+      if (t.name == "style" && t.kind != XmlToken::Text) inStyle = (t.kind == XmlToken::Open);
+      if (inStyle && t.kind == XmlToken::Text)
+        for (auto &rule : parseCssFontRules(t.text)) fontRules_.push_back(std::move(rule));
+    }
+    for (const auto &t : tokens) handle(t);
     endLine(false);
     flushDeferredLabel();
     if (pendingLabel_) emitLabelLine();
@@ -491,19 +526,13 @@ class BodyConverter {
   void handle(const XmlToken &t) {
     const std::string &name = t.name;
     if (t.kind == XmlToken::Text) {
-      if (inStyle_) {
-        for (auto &rule : parseCssFontRules(t.text)) fontRules_.push_back(std::move(rule));
-        return;
-      }
+      if (inStyle_) return;  // convert()が先に読んでいる
       if (skipDepth_ == 0) text(t.text);
       return;
     }
     bool open = (t.kind == XmlToken::Open || t.kind == XmlToken::SelfClose);
     bool close = (t.kind == XmlToken::Close || t.kind == XmlToken::SelfClose);
-    // CSS(fontRules_参照): <link rel="stylesheet">と<style>はheadの中なので、
-    // headを読み飛ばす前に拾う。
-    if (name == "link" && open && attr(t, "rel").find("stylesheet") != std::string::npos) loadStylesheet(attr(t, "href"));
-    if (name == "style") inStyle_ = (t.kind == XmlToken::Open);
+    if (name == "style") inStyle_ = (t.kind == XmlToken::Open);  // 中身はconvert()が先に読む
     if (open && t.kind == XmlToken::Open) depth_++;
 
     if (name == "head" || name == "script" || name == "style" || name == "rp" || name == "title") {
@@ -622,11 +651,18 @@ class BodyConverter {
     // 明朝体/ゴシック体(fontRules_参照): 要素の中身の間だけ、その要素に当てはまる
     // 規則(無ければ親のまま)にする。ブロックの開き・閉じの改行(上のendLine())の
     // 後で切り替えるので、変わり目は行の途中か行頭になる。
+    // 縦横(EpubLayoutHints参照)も同じく要素ごと。horizontalOutside_は「外側の要素が
+    // 横書き」(扉の縦書きの箱の見分けに使う)。
     if (t.kind == XmlToken::Open) {
-      fontStack_.push_back(serif_);
-      setSerif(fontFor(name, attr(t, "class")).value_or(serif_));
+      fontStack_.push_back({serif_, vertical_, horizontalOutside_});
+      std::string classes = attr(t, "class");
+      setSerif(ruleFor(name, classes, &CssFontRule::serif).value_or(serif_));
+      horizontalOutside_ = horizontalOutside_ || vertical_ == false;
+      if (auto vertical = ruleFor(name, classes, &CssFontRule::vertical)) vertical_ = vertical;
     } else if (t.kind == XmlToken::Close && !fontStack_.empty()) {
-      setSerif(fontStack_.back());
+      setSerif(fontStack_.back().serif);
+      vertical_ = fontStack_.back().vertical;
+      horizontalOutside_ = fontStack_.back().horizontalOutside;
       fontStack_.pop_back();
     }
     if (t.kind == XmlToken::Close) depth_--;
@@ -643,9 +679,10 @@ class BodyConverter {
     fontRules_.insert(fontRules_.end(), cached->second.begin(), cached->second.end());
   }
 
-  // 要素に当てはまる規則のうち、詳しさ(クラスの数、次にタグの有無)が最も高いもの、
-  // 同じなら後に書かれたもの。当てはまる規則が無ければnullopt(親のまま)。
-  std::optional<bool> fontFor(const std::string &tag, const std::string &classAttr) const {
+  // 要素に当てはまり、`field`(serif/vertical)を指定している規則のうち、詳しさ(クラスの
+  // 数、次にタグの有無)が最も高いもの、同じなら後に書かれたもの。無ければnullopt(親のまま)。
+  std::optional<bool> ruleFor(const std::string &tag, const std::string &classAttr,
+                              std::optional<bool> CssFontRule::*field) const {
     std::vector<std::string> classes;
     std::string cur;
     for (char c : classAttr + " ") {
@@ -659,6 +696,7 @@ class BodyConverter {
     std::optional<bool> best;
     int bestScore = -1;
     for (const auto &rule : fontRules_) {
+      if (!(rule.*field)) continue;
       if (!rule.tag.empty() && rule.tag != tag) continue;
       bool all = true;
       for (const auto &c : rule.classes)
@@ -667,10 +705,16 @@ class BodyConverter {
       int score = static_cast<int>(rule.classes.size()) * 10 + (rule.tag.empty() ? 0 : 1);
       if (score >= bestScore) {
         bestScore = score;
-        best = rule.serif;
+        best = rule.*field;
       }
     }
     return best;
+  }
+
+  LineKind currentKind() const {
+    if (vertical_ == false) return LineKind::Horizontal;
+    if (vertical_ == true && horizontalOutside_) return LineKind::Centered;
+    return LineKind::Normal;
   }
 
   // changeStyle()の明朝体版(カウンタではなくオン/オフ)。
@@ -724,6 +768,7 @@ class BodyConverter {
       bool nonAscii = static_cast<unsigned char>(c) >= 0x80;
       if (pendingSpace_ && lineVisible_ && !(pendingNewline_ && nonAscii && lastNonAscii_)) line_ += ' ';
       pendingSpace_ = pendingNewline_ = false;
+      if (!lineVisible_) lineKind_ = currentKind();
       line_ += c;
       lineVisible_ = true;
       lineImageOnly_ = false;
@@ -754,6 +799,7 @@ class BodyConverter {
     flushDeferredLabel();
     lineImageOnly_ = false;
     closeStylesAtLineEnd();
+    lineKinds_[currentLineNumber()] = lineKind_;
     out_ += line_;
     if (chapter) out_ += '\t';
     out_ += '\n';
@@ -793,7 +839,10 @@ class BodyConverter {
   void flushDeferredLabel() {
     if (!deferredLabel_) return;
     resolveAnchorsHere();
-    if (!deferredLabel_->empty()) out_ += "<b>" + *deferredLabel_ + "</b>\t\n";
+    if (!deferredLabel_->empty()) {
+      lineKinds_[currentLineNumber()] = currentKind();
+      out_ += "<b>" + *deferredLabel_ + "</b>\t\n";
+    }
     deferredLabel_.reset();
   }
 
@@ -802,6 +851,7 @@ class BodyConverter {
     pendingLabel_.reset();
     if (label.empty()) return;
     resolveAnchorsHere();
+    lineKinds_[currentLineNumber()] = currentKind();
     out_ += "<b>" + label + "</b>\t\n";
   }
 
@@ -809,8 +859,17 @@ class BodyConverter {
   const EpubMemberReader &readMember_;
   std::map<std::string, std::vector<CssFontRule>> cssCache_;  // CSSのファイルごと(本文の各ファイルで共有)
   std::vector<CssFontRule> fontRules_;                       // 今のファイルが読み込むCSSの規則
-  std::vector<bool> fontStack_;                              // 開いている要素ごとの、その外側の明朝体/ゴシック体
+  struct Frame {
+    bool serif;
+    std::optional<bool> vertical;
+    bool horizontalOutside;
+  };
+  std::vector<Frame> fontStack_;  // 開いている要素ごとの、その外側の状態
   bool serif_ = true;
+  std::optional<bool> vertical_;    // writing-mode(指定が無ければnullopt、本全体の向きに従う)
+  bool horizontalOutside_ = false;  // 外側の要素のどれかが横書き
+  LineKind lineKind_ = LineKind::Normal;
+  std::map<int, LineKind> lineKinds_;
   bool inStyle_ = false;
   std::string path_;
   std::vector<std::string> pendingAnchors_;
@@ -874,7 +933,8 @@ bool epubIsRightToLeft(const EpubMemberReader &readMember) {
   return false;
 }
 
-std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, std::map<int, int> *links) {
+std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, std::map<int, int> *links,
+                                            EpubLayoutHints *layoutHints) {
   std::string opfPath;
   auto opf = readOpf(readMember, &opfPath);
   if (!opf) return std::nullopt;
@@ -949,6 +1009,34 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
   int leading = 0;
   while (leading < static_cast<int>(out.size()) && out[leading] == '\n') leading++;
   out.erase(0, leading);
+  if (layoutHints) {
+    // 同じ種類の行が(空行をはさんでも)続く所を1つの範囲にする。
+    *layoutHints = {};
+    using Kind = BodyConverter::LineKind;
+    std::optional<std::pair<int, int>> run;
+    Kind runKind = Kind::Normal;
+    auto flush = [&]() {
+      if (!run) return;
+      if (run->second >= 1) {
+        std::pair<int, int> range{std::max(1, run->first), run->second};
+        (runKind == Kind::Horizontal ? layoutHints->horizontal : layoutHints->centered).push_back(range);
+      }
+      run.reset();
+    };
+    for (const auto &[line, kind] : converter.lineKinds()) {
+      int at = line - leading;
+      if (run && kind == runKind) {
+        run->second = at;
+        continue;
+      }
+      flush();
+      if (kind != Kind::Normal) {
+        run = std::make_pair(at, at);
+        runKind = kind;
+      }
+    }
+    flush();
+  }
   if (links) {
     links->clear();
     const auto &anchors = converter.anchors();
