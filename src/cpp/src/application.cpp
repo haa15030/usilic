@@ -1857,6 +1857,13 @@ bool Application::start(const std::string &directory, bool consultHistory) {
 
 std::string Application::currentResumableName() const {
   if (currentMode_ == ApplicationMode::File) return fileMode_.currentFile();
+  // 2026-09-29追加、直接のユーザー報告("同ファイル参照中(戻り値は「CUT: ^<」)
+  // そのまま^X^C^Mでusilicを再起動しても同じ画面にならない"): ファイルCUT
+  // (^Cf/FILE履歴の「パス "パターン"」)の一覧・区間の中身なら、その合成
+  // エントリを保存する――startResumingSession()が開き直す。
+  if ((currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
+      cutOrigin_ == CutOrigin::File && !cutPositionKey_.empty())
+    return cutPositionKey_;
   // archiveParentStack_.empty()の場合だけ保存する理由:
   // ArchiveMode::currentArchive()は、ネストしたアーカイブへ降下した
   // 後は本物の実在パスではなく使い捨てのmkdtemp()一時パス(次回起動
@@ -1887,6 +1894,29 @@ bool Application::startResumingSession(const std::string &lastOpenName, const st
     return true;
   }
   std::error_code ec;
+  // currentResumableName()自身の同日のコメント参照: ファイルCUTは、ファイルの
+  // ディレクトリの(ls)からFILE履歴で開き直したのと同じ形で作り直し、区間の
+  // 中身を見ていたならそれも開く(saveResumableCutState()が保存した行へ)。
+  if (auto composite = parseCutFileHistoryEntry(lastOpenName)) {
+    const std::string &cutFile = std::get<0>(*composite);
+    if (std::filesystem::is_regular_file(cutFile, ec) && !ec) {
+      std::string parent = std::filesystem::path(cutFile).parent_path().string();
+      if (parent.empty()) parent = fallbackDirectory;
+      if (directoryMode_.enterDirectory(parent, consultHistory)) {
+        currentMode_ = ApplicationMode::Directory;
+        auto saved = history_.positionFor(PositionCategory::Screen, lastOpenName);
+        if (!openRecentFileEntry(lastOpenName)) return true;  // 開けなければ(ls)のまま
+        if (saved && saved->lineNumber > 0 && openSelectedSegment()) {
+          int last = static_cast<int>(cutContentView_.lines().size()) - 1;
+          cutContentView_.setCursorIndex(std::max(0, std::min(saved->lineNumber - 1, last)));
+          cutContentView_.centerOnCursor();
+          cutContentView_.redraw();
+          cutContentView_.syncVisibleCursor();
+        }
+        return true;
+      }
+    }
+  }
   if (!lastOpenName.empty() && std::filesystem::is_regular_file(lastOpenName, ec) && !ec) {
     std::string parent = std::filesystem::path(lastOpenName).parent_path().string();
     if (parent.empty()) parent = fallbackDirectory;
@@ -7482,12 +7512,18 @@ bool Application::returnFromCut() {
 // 自身のコメント参照。cutView_自身のlines/segmentsはDirectoryへ戻る
 // ことによって触れられないので、(Grepのケースと同様)これはsplitを
 // 再実行する必要が無い。
-void Application::saveCutFilePosition() {
+void Application::saveCutFilePosition(int contentCursor) {
   if (cutPositionKey_.empty() || cutOrigin_ != CutOrigin::File || cutMode_.canGoBack()) return;
   History::CursorPosition pos;
   pos.row = cutView_.cursorIndex();
   pos.totalRows = static_cast<int>(cutMode_.segments().size());
+  pos.lineNumber = contentCursor >= 0 ? contentCursor + 1 : -1;
   history_.setPosition(PositionCategory::Screen, cutPositionKey_, pos);
+}
+
+void Application::saveResumableCutState() {
+  if (currentMode_ == ApplicationMode::CutContent) saveCutFilePosition(cutContentView_.cursorIndex());
+  else if (currentMode_ == ApplicationMode::Cut) saveCutFilePosition();
 }
 
 void Application::restoreCutFilePosition(const std::string &key) {
@@ -14374,6 +14410,7 @@ bool Application::executeExit(const std::string &confirmation) {
     activeView().redraw();
     return false;
   }
+  saveResumableCutState();
   wantsExit_ = true;
   return true;
 }
@@ -14950,7 +14987,10 @@ void Application::relayoutForModeLineVisibilityChange() {
 }
 
 bool Application::wantsExit() const { return wantsExit_; }
-void Application::requestImmediateExit() { wantsExit_ = true; }
+void Application::requestImmediateExit() {
+  saveResumableCutState();
+  wantsExit_ = true;
+}
 
 bool Application::consumeGuiModeToggleRequest() {
   bool requested = guiModeToggleRequested_;

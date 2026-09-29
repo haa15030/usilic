@@ -2215,8 +2215,14 @@ class Application {
   // 2026-09-29追加、cutPositionKey_自身のコメント参照。ファイルCUTの
   // 一覧のカーソル位置を、「パス "パターン"」をキーに履歴(MODE章)へ
   // 保存/復元する。
-  void saveCutFilePosition();
+  // contentCursor >= 0: 区間の中身(CutContent)を見ている時のそのカーソル行。
+  // 終了時だけ渡し(saveResumableCutState())、CursorPosition::lineNumberへ
+  // +1して入れる(0/-1は「中身は開いていない」)――次回起動の再開で使う。
+  void saveCutFilePosition(int contentCursor = -1);
   void restoreCutFilePosition(const std::string &key);
+  // ^X^C等で終える直前に呼ぶ: ファイルCUTの一覧/区間の中身を見ていたら、
+  // その位置を保存する(startResumingSession()が同じ画面を作り直す)。
+  void saveResumableCutState();
   // ファイルCUT(^Cfとその履歴)の^Gの戻り先: (ls)かFILEから起動した
   // 場合は(ls)(FILEの中身はCUTしたファイルに差し替わっているため)、
   // それ以外(^T画面等)は起動元。

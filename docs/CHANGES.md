@@ -27266,3 +27266,17 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **FILE履歴の順**: openRecentFileEntry()の「パス "パターン"」の分岐では、
      loadFile()がパス単体を積むため、合成エントリより新しくなっていた。split()の後で
      合成エントリを積み直す(executeCut()のファイルの分岐と同じ順)。
+507. **2026-09-29(項目506の続き): ファイルCUTの一覧・区間の中身を見たまま終えると、次の起動で同じ画面から**
+   - **経緯**: 直接のユーザー報告("同ファイル参照中(戻り値は「CUT: ^<」)そのまま
+     ^X^C^Mでusilicを再起動しても同じ画面にならない。^J^Jで一覧にはなるが選択後の
+     画面じゃない")。あわせて「戻り値も(ls)」の真意は「ディレクトリへ戻る」との補足。
+   - **原因**: 終了時に保存する名前(currentResumableName())はFILE/トップレベルの
+     ARC以外ではディレクトリだけで、CUT/CutContentは対象外だった。
+   - **保存**: ファイルCUT(cutOrigin_ == File、cutPositionKey_あり)の一覧・区間の中身
+     なら「パス "パターン"」を保存する。終了の直前(executeExit()/
+     requestImmediateExit()のsaveResumableCutState())に一覧の位置を保存し、区間の
+     中身を見ていればそのカーソル行も入れる(履歴のMODE章、CursorPosition::
+     lineNumberに行+1)。
+   - **再開**: startResumingSession()は合成エントリなら、ファイルのディレクトリへ
+     入ってからopenRecentFileEntry()で一覧を作り直し、中身を見ていた場合は
+     openSelectedSegment()で開いてその行へ(センタリング)。^Gは一覧、もう一度^Gで(ls)。
