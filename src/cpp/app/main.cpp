@@ -3182,6 +3182,9 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         epubCoastLevel = coastLevel;
         epubCoastDirection = coastDirection < 0 ? 1 : -1;
         epubDragOffset = 0;
+        // 前へ出た時は前の章の最後の列を左端に(直接のユーザー報告"前の章の最後ではなく章の冒頭
+        // からの横スクロールになる")
+        if (epubCoastDirection < 0) app.alignEpubVerticalCursorToLeftEdge();
       }
       coastLevel = 0;
       coastDirection = 0;

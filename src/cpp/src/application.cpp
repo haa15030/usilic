@@ -6849,13 +6849,21 @@ bool Application::leaveEpubHorizontalIfOutside() {
   if (before && !epubHorizontalSection_) {
     int col = 0;
     for (std::size_t c = 0; c < epubVerticalCols_.size(); c++)
-      if (epubVerticalCols_[c].rawLineNumber <= raw) col = static_cast<int>(c);
+      if (!epubVerticalCols_[c].padding && epubVerticalCols_[c].rawLineNumber <= raw) col = static_cast<int>(c);
     int perScreen = epubVerticalColumnsPerScreen(display_.columns());
     setEpubVerticalView((col / perScreen) * perScreen, col);  // 前の章の最後のページ
   }
   activeView().redraw();
   activeView().syncVisibleCursor();
   return true;
+}
+
+void Application::alignEpubVerticalCursorToLeftEdge() {
+  if (!epubVerticalActive()) return;
+  int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+  setEpubVerticalView(std::max(0, epubVerticalCursor_ - perScreen + 1), epubVerticalCursor_);
+  epubVerticalView_.redraw();
+  epubVerticalView_.syncVisibleCursor();
 }
 
 std::optional<Application::EpubScrollbar> Application::epubVerticalScrollbar() const {
@@ -7082,11 +7090,14 @@ std::pair<int, int> Application::epubVerticalStep(int cursor, bool forward) cons
 bool Application::enterEpubHorizontalAtEdge(int delta) {
   // 2026-09-29(同じ報告"慣性スクロールは奥付の前の章で止まる"): 縦書きの列の端で、その先に
   // 横書きの範囲(奥付等)があればそこへ入る(k/jのmaybeEnterEpubHorizontal()と同じ)。
+  // 2026-09-29訂正、直接のユーザー報告("jだと奥付の手前で止まる。スクロールも同じ"): 以前は
+  // 縦書きの列全体の最後(最初)の列の行と比べていたが、本の最後の空行は奥付の範囲の外なので
+  // 縦書きの列の最後に残り、「その先に範囲は無い」と判定されていた。今いる位置(画面の右端の
+  // 列の行――スクロールで動くのは右端の列で、列カーソルは最後のページの空の列へ押し出されて
+  // いることがある)と比べる。
   const auto &ranges = fileMode_.epubLayoutHints().horizontal;
-  int edgeRaw = -1;
-  for (const auto &col : epubVerticalCols_)
-    if (!col.padding && (edgeRaw < 0 || delta > 0)) edgeRaw = col.rawLineNumber;  // 先へ: 最後/前へ: 最初の本文の列
-  if (edgeRaw < 0) return false;
+  if (epubVerticalFirst_ < 0 || epubVerticalFirst_ >= static_cast<int>(epubVerticalCols_.size())) return false;
+  int edgeRaw = epubVerticalCols_[epubVerticalFirst_].rawLineNumber;
   std::optional<std::pair<int, int>> target;
   if (delta > 0) {
     for (const auto &range : ranges)
