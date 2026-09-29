@@ -349,7 +349,15 @@ struct CssFontRule {
   std::vector<std::string> classes;  // すべて要素のclassにあること
   std::optional<bool> serif;         // font-family(明朝体ならtrue)
   std::optional<bool> vertical;      // writing-mode(縦書きならtrue)
+  std::optional<bool> alignEnd;      // text-align(right/endならtrue、EpubLayoutHints::alignEnd)
 };
+
+std::optional<bool> classifyTextAlign(const std::string &value) {
+  if (value.find("right") != std::string::npos || value.find("end") != std::string::npos) return true;
+  for (const char *v : {"left", "start", "center", "justify"})
+    if (value.find(v) != std::string::npos) return false;
+  return std::nullopt;
+}
 
 // writing-mode(-epub-/-webkit-付きも)の値。vertical-*は縦、horizontal-tbは横、
 // 知らない値(Kbt.epubの"hirozontal-tb"のような綴り違いを含む)は無視。
@@ -434,7 +442,8 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
     };
     std::optional<bool> serif = readProperty("font-family", classifyFontFamily);
     std::optional<bool> vertical = readProperty("writing-mode", classifyWritingMode);
-    if (!serif && !vertical) continue;
+    std::optional<bool> alignEnd = readProperty("text-align", classifyTextAlign);
+    if (!serif && !vertical && !alignEnd) continue;
     std::string one;
     for (char c : selectors + ",") {
       if (c != ',') {
@@ -447,6 +456,7 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
       CssFontRule rule;
       rule.serif = serif;
       rule.vertical = vertical;
+      rule.alignEnd = alignEnd;
       std::size_t dot = sel.find('.');
       rule.tag = sel.substr(0, dot);
       if (rule.tag == "*") rule.tag.clear();
@@ -482,6 +492,7 @@ class BodyConverter {
   // 出した行(out_の1始まりの行)ごとの縦横(EpubLayoutHints参照)。空行は入らない。
   enum class LineKind { Normal, Horizontal, Centered };
   const std::map<int, LineKind> &lineKinds() const { return lineKinds_; }
+  const std::vector<int> &alignEndLines() const { return alignEndLines_; }
 
   void convert(const std::string &xhtml, const std::string &path, const std::vector<TocEntry> *tocEntries) {
     path_ = path;
@@ -502,6 +513,7 @@ class BodyConverter {
     serif_ = true;  // CSSの指定が無ければ明朝体(読書アプリの既定に合わせる)
     vertical_.reset();
     horizontalOutside_ = false;
+    alignEnd_ = false;
     inStyle_ = false;
     std::vector<XmlToken> tokens = tokenizeXml(xhtml);
     // CSS(fontRules_参照)は<head>の中にあり、<html>の開始より後に来るので、先に
@@ -654,15 +666,17 @@ class BodyConverter {
     // 縦横(EpubLayoutHints参照)も同じく要素ごと。horizontalOutside_は「外側の要素が
     // 横書き」(扉の縦書きの箱の見分けに使う)。
     if (t.kind == XmlToken::Open) {
-      fontStack_.push_back({serif_, vertical_, horizontalOutside_});
+      fontStack_.push_back({serif_, vertical_, horizontalOutside_, alignEnd_});
       std::string classes = attr(t, "class");
       setSerif(ruleFor(name, classes, &CssFontRule::serif).value_or(serif_));
       horizontalOutside_ = horizontalOutside_ || vertical_ == false;
       if (auto vertical = ruleFor(name, classes, &CssFontRule::vertical)) vertical_ = vertical;
+      if (auto alignEnd = ruleFor(name, classes, &CssFontRule::alignEnd)) alignEnd_ = *alignEnd;
     } else if (t.kind == XmlToken::Close && !fontStack_.empty()) {
       setSerif(fontStack_.back().serif);
       vertical_ = fontStack_.back().vertical;
       horizontalOutside_ = fontStack_.back().horizontalOutside;
+      alignEnd_ = fontStack_.back().alignEnd;
       fontStack_.pop_back();
     }
     if (t.kind == XmlToken::Close) depth_--;
@@ -768,7 +782,10 @@ class BodyConverter {
       bool nonAscii = static_cast<unsigned char>(c) >= 0x80;
       if (pendingSpace_ && lineVisible_ && !(pendingNewline_ && nonAscii && lastNonAscii_)) line_ += ' ';
       pendingSpace_ = pendingNewline_ = false;
-      if (!lineVisible_) lineKind_ = currentKind();
+      if (!lineVisible_) {
+        lineKind_ = currentKind();
+        lineAlignEnd_ = alignEnd_;
+      }
       line_ += c;
       lineVisible_ = true;
       lineImageOnly_ = false;
@@ -800,6 +817,7 @@ class BodyConverter {
     lineImageOnly_ = false;
     closeStylesAtLineEnd();
     lineKinds_[currentLineNumber()] = lineKind_;
+    if (lineAlignEnd_) alignEndLines_.push_back(currentLineNumber());
     out_ += line_;
     if (chapter) out_ += '\t';
     out_ += '\n';
@@ -863,12 +881,16 @@ class BodyConverter {
     bool serif;
     std::optional<bool> vertical;
     bool horizontalOutside;
+    bool alignEnd;
   };
   std::vector<Frame> fontStack_;  // 開いている要素ごとの、その外側の状態
   bool serif_ = true;
   std::optional<bool> vertical_;    // writing-mode(指定が無ければnullopt、本全体の向きに従う)
   bool horizontalOutside_ = false;  // 外側の要素のどれかが横書き
   LineKind lineKind_ = LineKind::Normal;
+  bool alignEnd_ = false;      // text-alignがright/end(EpubLayoutHints::alignEnd)
+  bool lineAlignEnd_ = false;  // 今の行の最初の字の時点のalignEnd_
+  std::vector<int> alignEndLines_;
   std::map<int, LineKind> lineKinds_;
   bool inStyle_ = false;
   std::string path_;
@@ -1037,6 +1059,8 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
       }
     }
     flush();
+    for (int line : converter.alignEndLines())
+      if (line - leading >= 1) layoutHints->alignEnd.push_back(line - leading);
   }
   if (links) {
     links->clear();

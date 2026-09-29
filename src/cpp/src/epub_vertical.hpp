@@ -33,6 +33,7 @@ struct EpubVerticalSourceLine {
   std::string text;
   std::vector<AttributeRun> attributes;
   int rawLineNumber = 0;
+  bool alignEnd = false;  // 1列に収まれば列の下端に寄せる(EpubLayoutHints::alignEnd、著者名等)
 };
 
 struct EpubVerticalCell {
@@ -45,6 +46,10 @@ struct EpubVerticalCell {
 struct EpubVerticalColumn {
   std::vector<EpubVerticalCell> cells;  // 上から。空行は空
   int rawLineNumber = 0;
+  // 2026-09-29追加(Application::rebuildEpubVertical()参照): 章の頭を画面の右端に揃えるため
+  // 等に足した空の列(padding)と、扉の1ページ分の列(titlePage、その空の列も含む)。
+  bool padding = false;
+  bool titlePage = false;
 };
 
 // 1列の高さ`rows`で、論理行を列の並びへ組む。

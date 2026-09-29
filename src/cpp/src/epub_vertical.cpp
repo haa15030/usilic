@@ -178,6 +178,12 @@ std::vector<EpubVerticalColumn> layoutEpubVerticalColumns(const std::vector<Epub
       cols.push_back({{}, line.rawLineNumber});
       continue;
     }
+    if (line.alignEnd && static_cast<int>(cells.size()) < height) {  // 下端に寄せる(著者名等)
+      Cell blank;
+      blank.glyph = "  ";
+      blank.original = ' ';
+      cells.insert(cells.begin(), height - cells.size(), blank);
+    }
     std::size_t i = 0;
     while (i < cells.size()) {
       std::size_t count = std::min<std::size_t>(height, cells.size() - i);

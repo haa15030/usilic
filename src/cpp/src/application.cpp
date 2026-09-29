@@ -6781,7 +6781,11 @@ void Application::enterEpubHorizontal(const std::pair<int, int> &range, int rawL
   for (std::size_t i = 0; i < lines.size(); i++) {
     if (lines[i].rawLineNumber.value_or(0) < rawLine) continue;
     fileView_.setCursorIndex(static_cast<int>(i));
-    fileView_.centerOnCursor();
+    // 2026-09-29(章の頭は画面の頭から、直接のユーザー報告"奥付が画面途中からのスタート"):
+    // 範囲の最初の行を画面の一番上にする。範囲の途中/最後へ入る時はその行が見える所まで。
+    int startIndex = static_cast<int>(i);
+    while (startIndex > 0 && lines[startIndex - 1].rawLineNumber.value_or(0) >= range.first) startIndex--;
+    fileView_.setTopIndex(std::max(startIndex, static_cast<int>(i) - std::max(1, fileView_.height()) + 1));
     return;
   }
 }
@@ -6830,7 +6834,8 @@ void Application::leaveEpubHorizontalIfOutside() {
     int col = 0;
     for (std::size_t c = 0; c < epubVerticalCols_.size(); c++)
       if (epubVerticalCols_[c].rawLineNumber <= raw) col = static_cast<int>(c);
-    setEpubVerticalView(col, col);
+    int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+    setEpubVerticalView((col / perScreen) * perScreen, col);  // 前の章の最後のページ
   }
   activeView().redraw();
   activeView().syncVisibleCursor();
@@ -6855,12 +6860,16 @@ int Application::epubVerticalRows() const {
 
 void Application::rebuildEpubVertical(int rawLine) {
   // 横書きの画面の行(折り返し済み)を、元の行番号ごとに論理行へつなぎ直す
+  const EpubLayoutHints &hints = fileMode_.epubLayoutHints();
+  std::set<int> alignEnd(hints.alignEnd.begin(), hints.alignEnd.end());
+  std::set<int> chapterStarts;  // 章の印(行末のタブ、PipeBufferがU+2060にしたもの)のある行
   std::vector<EpubVerticalSourceLine> logical;
   for (const auto &line : fileView_.lines()) {
     int raw = line.rawLineNumber.value_or(-1);
     if (raw >= 0 && epubHorizontalRangeAt(raw)) continue;  // 横書きの範囲(epubHorizontalSection_参照)
+    if (line.text.find("\xE2\x81\xA0") != std::string::npos) chapterStarts.insert(raw);
     if (logical.empty() || raw < 0 || logical.back().rawLineNumber != raw) {
-      logical.push_back({line.text, line.attributes, raw});
+      logical.push_back({line.text, line.attributes, raw, alignEnd.count(raw) > 0});
       continue;
     }
     int offset = static_cast<int>(logical.back().text.size());
@@ -6871,31 +6880,51 @@ void Application::rebuildEpubVertical(int rawLine) {
       logical.back().attributes.push_back(run);
     }
   }
-  epubVerticalCols_ = layoutEpubVerticalColumns(logical, epubVerticalRows(), display_.isGraphical());
-  // 扉(EpubLayoutHints::centered): 横書きの中に置かれた縦書きの箱は、両側に空の列を足して
-  // 1画面の中央に置く(その範囲の最初の行へ飛ぶと、右端が左の空の列の頭になり中央に見える)。
-  const auto &centered = fileMode_.epubLayoutHints().centered;
-  if (!centered.empty()) {
-    int perScreen = epubVerticalColumnsPerScreen(display_.columns());
-    std::vector<EpubVerticalColumn> padded;
-    for (std::size_t c = 0; c < epubVerticalCols_.size();) {
-      int raw = epubVerticalCols_[c].rawLineNumber;
-      auto range = std::find_if(centered.begin(), centered.end(),
-                                [raw](const auto &r) { return raw >= r.first && raw <= r.second; });
-      if (range == centered.end()) {
-        padded.push_back(std::move(epubVerticalCols_[c++]));
-        continue;
-      }
-      std::size_t end = c;
-      while (end < epubVerticalCols_.size() && epubVerticalCols_[end].rawLineNumber >= range->first &&
-             epubVerticalCols_[end].rawLineNumber <= range->second)
-        end++;
-      int pad = std::max(0, perScreen - static_cast<int>(end - c));
-      for (int k = 0; k < pad / 2; k++) padded.push_back({{}, range->first});
-      for (; c < end; c++) padded.push_back(std::move(epubVerticalCols_[c]));
-      for (int k = 0; k < pad - pad / 2; k++) padded.push_back({{}, range->second});
+  std::vector<EpubVerticalColumn> laid = layoutEpubVerticalColumns(logical, epubVerticalRows(), display_.isGraphical());
+  // 2026-09-29、直接のユーザー依頼("Kindle、iBook、Kinoppy風の章管理...章の開始は必ず画面
+  // 右端から始まるだけ"): 章の頭の列が画面1枚分(perScreen列)の区切りに来るよう、その前に
+  // 空の列(padding)を足す――先頭から1画面ずつ送れば、章は必ず右端から始まる(章をまたぐ
+  // 移動は区切りに揃える、handleEpubVerticalCommand()参照)。
+  // 扉(EpubLayoutHints::centered): 横書きの中に置かれた縦書きの箱は1ページとし、両側に
+  // 空の列を足して中央に置く(titlePage、^Nで次のページへ)。
+  int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+  const auto &centered = hints.centered;
+  epubVerticalCols_.clear();
+  auto padToPage = [&]() {
+    int raw = epubVerticalCols_.empty() ? 0 : epubVerticalCols_.back().rawLineNumber;
+    while (epubVerticalCols_.size() % perScreen != 0) {
+      epubVerticalCols_.push_back({{}, raw});
+      epubVerticalCols_.back().padding = true;
     }
-    epubVerticalCols_ = std::move(padded);
+  };
+  for (std::size_t c = 0; c < laid.size();) {
+    int raw = laid[c].rawLineNumber;
+    bool lineStart = c == 0 || laid[c - 1].rawLineNumber != raw;
+    auto range = std::find_if(centered.begin(), centered.end(),
+                              [raw](const auto &r) { return raw >= r.first && raw <= r.second; });
+    if (range == centered.end()) {
+      if (lineStart && chapterStarts.count(raw)) padToPage();
+      epubVerticalCols_.push_back(std::move(laid[c++]));
+      continue;
+    }
+    padToPage();
+    std::size_t end = c;
+    while (end < laid.size() && laid[end].rawLineNumber >= range->first && laid[end].rawLineNumber <= range->second)
+      end++;
+    int pad = std::max(0, perScreen - static_cast<int>(end - c));
+    auto pushPadding = [&](int count, int padRaw) {
+      for (int k = 0; k < count; k++) {
+        epubVerticalCols_.push_back({{}, padRaw});
+        epubVerticalCols_.back().padding = true;
+        epubVerticalCols_.back().titlePage = true;
+      }
+    };
+    pushPadding(pad / 2, range->first);
+    for (; c < end; c++) {
+      epubVerticalCols_.push_back(std::move(laid[c]));
+      epubVerticalCols_.back().titlePage = true;
+    }
+    pushPadding(pad - pad / 2, range->second);
   }
   epubVerticalMark_.reset();
   showEpubVerticalRaw(rawLine);
@@ -6914,7 +6943,11 @@ void Application::showEpubVerticalRaw(int rawLine) {
       first = static_cast<int>(c);
       break;
     }
-  setEpubVerticalView(first, first);
+  int cursor = first;  // 扉のページなら書名の列へ(列の頭はページの頭のまま)
+  while (cursor + 1 < static_cast<int>(epubVerticalCols_.size()) && epubVerticalCols_[cursor].titlePage &&
+         epubVerticalCols_[cursor].padding)
+    cursor++;
+  setEpubVerticalView(first, cursor);
 }
 
 // 右端の列をfirstにして描き直す(範囲外は端で止める)。列カーソルは画面の外へ出る
@@ -6977,6 +7010,56 @@ void Application::syncEpubVerticalToFile() {
   }
 }
 
+// 1列の送り(forward)/戻り。空の列(章の頭を右端に揃えるためのもの)は飛ばし、扉の
+// ページ(titlePage)は1列の送り/戻りでページごと越える(2026-09-29、直接のユーザー依頼
+// "扉ページは画像ページ同様、一行送りがページ送りとなる")。空の列や扉を越えた時は、
+// 着いた列のページ(perScreen列ごとの区切り)の頭を右端にする。
+std::pair<int, int> Application::epubVerticalStep(int cursor, bool forward) const {
+  int n = static_cast<int>(epubVerticalCols_.size());
+  int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+  if (n == 0) return {-1, cursor};
+  cursor = std::clamp(cursor, 0, n - 1);
+  int dir = forward ? 1 : -1;
+  int t = cursor + dir;
+  bool jumped = false;
+  if (epubVerticalCols_[cursor].titlePage) {
+    while (t >= 0 && t < n && epubVerticalCols_[t].titlePage) t += dir;
+    jumped = true;
+  }
+  while (t >= 0 && t < n && epubVerticalCols_[t].padding && !epubVerticalCols_[t].titlePage) {
+    t += dir;
+    jumped = true;
+  }
+  if (t < 0 || t >= n) return {-1, cursor};  // 本の端(横書きの範囲へはmaybeEnterEpubHorizontal())
+  if (epubVerticalCols_[t].titlePage) {
+    int pageStart = t;
+    while (pageStart > 0 && epubVerticalCols_[pageStart - 1].titlePage) pageStart--;
+    int title = pageStart;
+    while (title < n && epubVerticalCols_[title].titlePage && epubVerticalCols_[title].padding) title++;
+    if (title >= n || !epubVerticalCols_[title].titlePage) title = pageStart;
+    return {pageStart, title};
+  }
+  return {jumped ? (t / perScreen) * perScreen : -1, t};
+}
+
+void Application::snapEpubVerticalToPage(bool forward) {
+  int n = static_cast<int>(epubVerticalCols_.size());
+  int c = epubVerticalCursor_;
+  if (c < 0 || c >= n) return;
+  if (epubVerticalCols_[c].titlePage) {  // 扉: ページの頭を右端に、カーソルは書名の列
+    int pageStart = c;
+    while (pageStart > 0 && epubVerticalCols_[pageStart - 1].titlePage) pageStart--;
+    int title = pageStart;
+    while (title + 1 < n && epubVerticalCols_[title].titlePage && epubVerticalCols_[title].padding) title++;
+    setEpubVerticalView(pageStart, title);
+    return;
+  }
+  if (!epubVerticalCols_[c].padding) return;
+  // 空の列: その先(前)の本文の列へ、1列動いたのと同じ規則で(ページの区切りに揃う)
+  auto [first, cursor] = epubVerticalStep(c, forward);
+  setEpubVerticalView(first < 0 ? epubVerticalFirst_ : first, cursor);
+}
+
 // 縦書きの本文での移動: ←/^N/j/↓/ホイール下で1列先(左)へ、→/^P/k/↑で1列戻る、
 // SPC/^V等(PageDown)で1画面先、ESC v等(PageUp)で1画面戻る、ESC >/ESC <で
 // 先頭/末尾(横書きと逆)、^X^Xで大きく移動する前の列と行き来。それ以外はnullopt(通常の処理へ)。
@@ -6992,14 +7075,18 @@ std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
     return true;
   };
   switch (command) {
-    case Command::MoveDown:  // 列カーソルを1列先(左)へ(setEpubVerticalView()参照)
-      setEpubVerticalView(first, cursor + 1);
+    case Command::MoveDown: {  // 列カーソルを1列先(左)へ(setEpubVerticalView()、epubVerticalStep()参照)
+      auto [nextFirst, next] = epubVerticalStep(cursor, true);
+      setEpubVerticalView(nextFirst < 0 ? first : nextFirst, next);
       if (crossing(true)) return true;
       break;
-    case Command::MoveUp:  // 1列戻る(右へ)
-      setEpubVerticalView(first, cursor - 1);
+    }
+    case Command::MoveUp: {  // 1列戻る(右へ)
+      auto [nextFirst, next] = epubVerticalStep(cursor, false);
+      setEpubVerticalView(nextFirst < 0 ? first : nextFirst, next);
       if (crossing(false)) return true;
       break;
+    }
     case Command::ScrollLineDown:
       setEpubVerticalFirst(first + 1);
       break;
@@ -7008,10 +7095,12 @@ std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
       break;
     case Command::PageDown:
       setEpubVerticalView(first + perScreen, cursor + perScreen);
+      snapEpubVerticalToPage(true);
       if (crossing(true)) return true;
       break;
     case Command::PageUp:
       setEpubVerticalView(first - perScreen, cursor - perScreen);
+      snapEpubVerticalToPage(false);
       if (crossing(false)) return true;
       break;
     // 2026-09-29、直接のユーザー指定("^[<`/`^[>`は、機能を逆にしたほうが明らかに

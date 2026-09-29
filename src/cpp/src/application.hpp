@@ -2483,6 +2483,12 @@ class Application {
   std::optional<std::pair<int, int>> epubHorizontalRangeAt(int rawLine) const;
   void enterEpubHorizontal(const std::pair<int, int> &range, int rawLine);
   bool maybeEnterEpubHorizontal(int fromRaw, bool forward);
+  // 縦書きの1列の送り/戻り(rebuildEpubVertical()の空の列・扉のページ参照)。返り値は
+  // {右端の列(-1なら今のまま), 列カーソル}。
+  std::pair<int, int> epubVerticalStep(int cursor, bool forward) const;
+  // 列cが空の列/扉のページなら、その後の(forward)/前の本文の列、または扉の書名の列へ
+  // 寄せ、右端を画面の区切りに揃える(ページ送り・飛び先用)。
+  void snapEpubVerticalToPage(bool forward);
   void leaveEpubHorizontalIfOutside();
   std::optional<std::pair<int, int>> epubHorizontalSection_;
   int fileRawLineAtCursor() const;

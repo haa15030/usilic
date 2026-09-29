@@ -39,9 +39,12 @@ using EpubMemberReader = std::function<std::optional<std::string>(const std::str
 //   centered: 横書きの中に置かれた縦書きの箱の行――横書きのbodyの中に左右autoの縦書きの
 //             divを置いて、書名を画面の中央へ寄せる扉の作り方(Kbt.epubのSection001等)。
 // writing-modeの指定が無い行は本全体の向きに従う(どちらにも入らない)。
+//   alignEnd: CSSのtext-alignがright/endの行(2026-09-29、直接のユーザー依頼"著者名は画面
+//             最下行で"――縦書きでは列の下端に寄せる)。
 struct EpubLayoutHints {
   std::vector<std::pair<int, int>> horizontal;
   std::vector<std::pair<int, int>> centered;
+  std::vector<int> alignEnd;
 };
 
 std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember,
