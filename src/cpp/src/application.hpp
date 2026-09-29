@@ -2505,7 +2505,17 @@ class Application {
   // epubVerticalStep()と同じ(空の列を飛ばして章の頭を右端に、扉はページごと)。描き直し
   // はしない。右端の列が動いたらtrue。
   bool stepEpubVerticalFirst(int delta);
-  void leaveEpubHorizontalIfOutside();
+  bool leaveEpubHorizontalIfOutside();  // 縦書きへ戻ったらtrue
+
+ public:
+  // 2026-09-29追加、直接のユーザー報告("奥付...ホイールを回すと縦方向の慣性スクロールに
+  // なる。逆方向へスクロールを継続させると、奥付の前の章以前も横書きのまま...jかkを押すと
+  // 縦書きへ切り替わる"): GUIの毎フレームでも横書きの範囲から出たかを確かめる(慣性・
+  // ホイール・ドラッグはキー/コマンドを通らない)。縦書きへ戻ったらtrue(呼び出し元は上下の
+  // 慣性を止める)。
+  bool syncEpubHorizontalSection() { return leaveEpubHorizontalIfOutside(); }
+
+ private:
   std::optional<std::pair<int, int>> epubHorizontalSection_;
   int fileRawLineAtCursor() const;
   void rebuildEpubVertical(int rawLine);

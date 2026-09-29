@@ -3171,6 +3171,16 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // /commitRowCrossings()経由)を起こしたフレームを直接特定できる
     // よう、ブロックの直後・レンダ経路の分岐より前に置いてある。
     // 上のhoverダンプ自身のコメント参照。
+    // 2026-09-29: EPUBの縦書きの本の中の横書きの範囲(奥付等)で、上下の慣性・ホイールで範囲の
+    // 外へ出たら縦書きへ戻す(Application::syncEpubHorizontalSection()参照)。戻ったら上下の
+    // 慣性は止める(縦書きの画面は上下には動かない)。
+    if (app.syncEpubHorizontalSection()) {
+      coastLevel = 0;
+      coastDirection = 0;
+      pixelOffset = 0;
+      dragging = false;
+    }
+
     // 左右ドラッグの慣性(epubCoastLevel自身のコメント参照)。上の上下の慣性と同じく、この
     // フレームの約16msの間、段階ごとの間隔で1ドットずつ横にずらし、1列の幅を越えたら列を
     // 動かす(空の列は飛ばす、Application::stepEpubVerticalFirst())。本の端で止まったら、

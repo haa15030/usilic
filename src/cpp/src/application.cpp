@@ -6820,19 +6820,26 @@ bool Application::maybeEnterEpubHorizontal(int fromRaw, bool forward) {
 
 // 横書きの範囲で、カーソルが範囲の外へ出ていたら縦書きへ戻る(前へ出たらその行の最後の
 // 列、先へ出たらその行の最初の列)。EPUBの本文の外へ出ていたら(章の一覧等)範囲を忘れる。
-void Application::leaveEpubHorizontalIfOutside() {
-  if (!epubHorizontalSection_) return;
+bool Application::leaveEpubHorizontalIfOutside() {
+  if (!epubHorizontalSection_) return false;
   if (currentMode_ != ApplicationMode::File || !epubBookVertical()) {
     epubHorizontalSection_.reset();
     if (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive()) {
       refreshEpubTocVertical();
       activeView().redraw();
     }
-    return;
+    return false;
   }
+  // カーソルの行に加えて画面の先頭の行も見る(ホイールの慣性等はカーソルを動かさずに
+  // 画面だけを送ることがある)。前へ出たら範囲の直前の行、先へ出たらカーソルの行へ。
   int raw = fileRawLineAtCursor();
-  if (raw >= epubHorizontalSection_->first && raw <= epubHorizontalSection_->second) return;
-  bool before = raw < epubHorizontalSection_->first;
+  const auto &lines = fileView_.lines();
+  int top = fileView_.topIndex();
+  int topRaw = (top >= 0 && top < static_cast<int>(lines.size())) ? lines[top].rawLineNumber.value_or(raw) : raw;
+  bool before = raw < epubHorizontalSection_->first || topRaw < epubHorizontalSection_->first;
+  bool after = raw > epubHorizontalSection_->second;
+  if (!before && !after) return false;
+  if (before) raw = epubHorizontalSection_->first - 1;
   epubHorizontalSection_.reset();
   rebuildEpubVertical(raw);  // リサイズで組み直しが要る場合もあるので、組み直してから置く
   if (before && !epubHorizontalSection_) {
@@ -6844,6 +6851,7 @@ void Application::leaveEpubHorizontalIfOutside() {
   }
   activeView().redraw();
   activeView().syncVisibleCursor();
+  return true;
 }
 
 std::optional<Application::EpubScrollbar> Application::epubVerticalScrollbar() const {
@@ -7174,7 +7182,34 @@ bool Application::scrollEpubVertical(int delta) {
     selectEpubTocVertical(cutView_.cursorIndex() + delta);
     return true;
   }
-  if (!stepEpubVerticalFirst(delta)) return false;
+  if (!stepEpubVerticalFirst(delta)) {
+    // 2026-09-29(同じ報告"慣性スクロールは奥付の前の章で止まる"): 縦書きの列の端で、その先に
+    // 横書きの範囲(奥付等)があればそこへ入る(k/jのmaybeEnterEpubHorizontal()と同じ)。
+    const auto &ranges = fileMode_.epubLayoutHints().horizontal;
+    int edgeRaw = -1;
+    for (const auto &col : epubVerticalCols_)
+      if (!col.padding && (edgeRaw < 0 || delta > 0)) edgeRaw = col.rawLineNumber;  // 先へ: 最後/前へ: 最初の本文の列
+    if (edgeRaw < 0) return false;
+    std::optional<std::pair<int, int>> target;
+    if (delta > 0) {
+      for (const auto &range : ranges)
+        if (range.first > edgeRaw) {
+          target = range;
+          break;
+        }
+    } else {
+      for (auto it = ranges.rbegin(); it != ranges.rend(); ++it)
+        if (it->second < edgeRaw) {
+          target = *it;
+          break;
+        }
+    }
+    if (!target) return false;
+    enterEpubHorizontal(*target, delta > 0 ? target->first : target->second);
+    activeView().redraw();
+    activeView().syncVisibleCursor();
+    return true;
+  }
   epubVerticalView_.redraw();
   epubVerticalView_.syncVisibleCursor();  // -cの端末のカーソルを列カーソルの頭へ(setEpubVerticalView()参照)
   return true;
