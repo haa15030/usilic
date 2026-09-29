@@ -60,3 +60,15 @@ TEST_CASE("epubVerticalColumnAt: maps a screen column to the column counted from
   CHECK(fm::epubVerticalColumnAt(4, 9) == 1);
   CHECK(fm::epubVerticalColumnAt(0, 9) == 2);
 }
+
+// 2026-09-29: 半角英数2字までは縦中横、-g(sideways)では3字以上の半角を2字ずつ1マスに、矢印は回した向きに
+TEST_CASE("layoutEpubVerticalColumns: 2 alnum tate-chu-yoko, 3+ half-width packed in pairs when sideways, arrows") {
+  CHECK(window({{"あOKい", {}, 1}}, 4, 3, 0) == std::vector<std::string>{"あ", "OK", "い", ""});
+  auto cols = fm::layoutEpubVerticalColumns({{"abcde", {}, 1}}, 9, /*sideways=*/true);
+  REQUIRE(cols.size() == 1);
+  REQUIRE(cols[0].cells.size() == 3);
+  CHECK(cols[0].cells[0].glyph == "ab");
+  CHECK(cols[0].cells[2].glyph == "e ");
+  CHECK(fm::layoutEpubVerticalColumns({{"abcde", {}, 1}}, 9)[0].cells.size() == 5);  // -cは1字1マス
+  CHECK(window({{"→←", {}, 1}}, 2, 3, 0) == std::vector<std::string>{"↓", "↑"});
+}

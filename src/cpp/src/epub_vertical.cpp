@@ -51,6 +51,9 @@ const std::map<char32_t, char32_t> &verticalForms() {
       {0x3015, 0xFE3A}, {0x3010, 0xFE3B}, {0x3011, 0xFE3C}, {0x300A, 0xFE3D}, {0x300B, 0xFE3E},
       {0x3008, 0xFE3F}, {0x3009, 0xFE40}, {0xFF3B, 0xFE47}, {0xFF3D, 0xFE48}, {0x30FC, 0xFF5C},
       {0x2500, 0xFF5C}, {'(', 0xFE35},   {')', 0xFE36},   {'[', 0xFE47},   {']', 0xFE48},
+      // 矢印は90度回した向きに(2026-09-29、直接のユーザー報告"本文の→が横向き"、=hl)
+      {0x2192, 0x2193}, {0x2190, 0x2191}, {0x2193, 0x2190}, {0x2191, 0x2192},
+      {0x21D2, 0x21D3}, {0x21D0, 0x21D1}, {0x21D3, 0x21D0}, {0x21D1, 0x21D2},
   };
   return table;
 }
@@ -79,9 +82,11 @@ std::optional<Display::Attribute> attributeAt(const std::vector<AttributeRun> &r
 }
 
 bool isAsciiDigit(char32_t cp) { return cp >= '0' && cp <= '9'; }
+bool isAsciiAlnum(char32_t cp) { return isAsciiDigit(cp) || (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z'); }
+bool isAsciiGraphic(char32_t cp) { return cp > 0x20 && cp < 0x7F; }
 
 // 論理行を縦書きのマスへ。
-std::vector<Cell> toCells(const EpubVerticalSourceLine &line) {
+std::vector<Cell> toCells(const EpubVerticalSourceLine &line, bool sideways) {
   const std::string &s = line.text;
   struct Glyph {
     char32_t cp;
@@ -101,18 +106,37 @@ std::vector<Cell> toCells(const EpubVerticalSourceLine &line) {
   }
   while (!glyphs.empty() && glyphs.back().cp == ' ') glyphs.pop_back();
 
+  // 半角(空白以外)の続く長さ。runLength[i]はglyphs[i]を含む並びの長さ。
+  std::vector<std::size_t> runLength(glyphs.size(), 0);
+  for (std::size_t i = 0; i < glyphs.size();) {
+    std::size_t j = i;
+    while (j < glyphs.size() && isAsciiGraphic(glyphs[j].cp)) j++;
+    for (std::size_t k = i; k < j; k++) runLength[k] = j - i;
+    i = std::max(j, i + 1);
+  }
+
   std::vector<Cell> cells;
   for (std::size_t i = 0; i < glyphs.size(); i++) {
     const Glyph &g = glyphs[i];
     Cell cell;
     cell.original = g.cp;
     cell.attribute = attributeAt(line.attributes, g.byte);
-    // 縦中横: 半角数字2桁まで、"!!" "!?" "?!" "??"
+    // 横倒し(sideways、-gのみ、2026-09-29): 3字以上続く半角は2字ずつ1マスに詰める
+    // (GraphicalDisplayが90度回して描く、layoutEpubVerticalColumns()の宣言参照)
+    if (sideways && runLength[i] > 2) {
+      cell.glyph = g.bytes;
+      if (i + 1 < glyphs.size() && isAsciiGraphic(glyphs[i + 1].cp)) {
+        cell.glyph += glyphs[++i].bytes;
+      } else {
+        cell.glyph += ' ';
+      }
+      cells.push_back(cell);
+      continue;
+    }
+    // 縦中横: 半角英数2字まで(2026-09-29、数字だけから英字にも広げた)、"!!" "!?" "?!" "??"
     if (i + 1 < glyphs.size()) {
       const Glyph &h = glyphs[i + 1];
-      bool digits = isAsciiDigit(g.cp) && isAsciiDigit(h.cp) &&
-                    (i + 2 >= glyphs.size() || !isAsciiDigit(glyphs[i + 2].cp)) &&
-                    (i == 0 || !isAsciiDigit(glyphs[i - 1].cp));
+      bool digits = isAsciiAlnum(g.cp) && isAsciiAlnum(h.cp) && runLength[i] == 2;
       bool marks = (g.cp == '!' || g.cp == '?') && (h.cp == '!' || h.cp == '?');
       if (digits || marks) {
         cell.glyph = g.bytes + h.bytes;
@@ -137,11 +161,12 @@ std::vector<Cell> toCells(const EpubVerticalSourceLine &line) {
 
 }  // namespace
 
-std::vector<EpubVerticalColumn> layoutEpubVerticalColumns(const std::vector<EpubVerticalSourceLine> &lines, int rows) {
+std::vector<EpubVerticalColumn> layoutEpubVerticalColumns(const std::vector<EpubVerticalSourceLine> &lines, int rows,
+                                                         bool sideways) {
   int height = std::max(1, rows);
   std::vector<EpubVerticalColumn> cols;
   for (const auto &line : lines) {
-    std::vector<Cell> cells = toCells(line);
+    std::vector<Cell> cells = toCells(line, sideways);
     if (cells.empty()) {
       cols.push_back({{}, line.rawLineNumber});
       continue;

@@ -1393,6 +1393,43 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // が何も無い、幅ゼロのサーフェスを生成してしまう――下線を描く対象
   // となる実際のセル幅分の走りができるよう、本物のスペースに置き
   // 換える。
+  // 横倒し(epub_vertical.hppのlayoutEpubVerticalColumns()のsideways参照、2026-09-29):
+  // 縦書きで、上下にも半角が続く半角2字のマス(行間の右、桁x/x+1)は、2字を1枚に
+  // して90度回し、マス(2セル×1行)に収めて描く。2字目のセルは1字目が描く。
+  if (impl_->verticalText) {
+    auto asciiAt = [&](int r, int c) {
+      if (r < 0 || r >= impl_->rows || c < 0 || c >= impl_->columns) return false;
+      const Cell &o = impl_->cellAt(r, c);
+      return !o.continuation && o.glyph.size() == 1 && o.glyph[0] > 0x20 && o.glyph[0] < 0x7F;
+    };
+    auto halfAt = [&](int r, int c) {
+      if (c < 0 || c >= impl_->columns) return false;
+      const Cell &o = impl_->cellAt(r, c);
+      return !o.continuation && o.glyph.size() == 1;
+    };
+    auto gapAt = [&](int r, int c) {
+      if (c < 0) return true;
+      const Cell &o = impl_->cellAt(r, c);
+      return !o.continuation && (o.glyph.empty() || o.glyph == " ");
+    };
+    auto pairStart = [&](int c) {
+      return asciiAt(row, c) && halfAt(row, c + 1) && gapAt(row, c - 1) && (asciiAt(row - 1, c) || asciiAt(row + 1, c));
+    };
+    if (pairStart(col - 1)) return;
+    if (pairStart(col)) {
+      std::string pair = cell.glyph + impl_->cellAt(row, col + 1).glyph;
+      int pw = 0, ph = 0;
+      SDL_Texture *pairTexture = cachedGlyphTexture(*impl_, renderFont, pair, style, hinting, fg, true, pw, ph);
+      if (!pairTexture) return;
+      int boxW = impl_->cellWidth * 2, boxH = impl_->cellHeight;
+      // 回した後の幅はph、高さはpw
+      double scale = std::min({1.0, static_cast<double>(boxW) / std::max(ph, 1), static_cast<double>(boxH) / std::max(pw, 1)});
+      int dw = static_cast<int>(pw * scale), dh = static_cast<int>(ph * scale);
+      SDL_Rect dst{box.x + boxW / 2 - dw / 2, box.y + boxH / 2 - dh / 2, dw, dh};
+      SDL_RenderCopyEx(impl_->renderer, pairTexture, nullptr, &dst, 90.0, nullptr, SDL_FLIP_NONE);
+      return;
+    }
+  }
   const std::string &renderGlyph =
       !substituteGlyph.empty() ? substituteGlyph : cell.glyph.empty() ? std::string(" ") : cell.glyph;
   int w = 0, h = 0;

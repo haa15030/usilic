@@ -6696,7 +6696,7 @@ void Application::rebuildEpubVertical(int rawLine) {
       logical.back().attributes.push_back(run);
     }
   }
-  epubVerticalCols_ = layoutEpubVerticalColumns(logical, epubVerticalRows());
+  epubVerticalCols_ = layoutEpubVerticalColumns(logical, epubVerticalRows(), display_.isGraphical());
   epubVerticalMark_.reset();
   showEpubVerticalRaw(rawLine);
 }
@@ -6773,8 +6773,8 @@ void Application::syncEpubVerticalToFile() {
 }
 
 // 縦書きの本文での移動: ←/^N/j/↓/ホイール下で1列先(左)へ、→/^P/k/↑で1列戻る、
-// SPC/^V等(PageDown)で1画面先、ESC v等(PageUp)で1画面戻る、ESC </ESC >で
-// 先頭/末尾、^X^Xで大きく移動する前の列と行き来。それ以外はnullopt(通常の処理へ)。
+// SPC/^V等(PageDown)で1画面先、ESC v等(PageUp)で1画面戻る、ESC >/ESC <で
+// 先頭/末尾(横書きと逆)、^X^Xで大きく移動する前の列と行き来。それ以外はnullopt(通常の処理へ)。
 std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
   int perScreen = epubVerticalColumnsPerScreen(display_.columns());
   int first = epubVerticalFirst_, cursor = epubVerticalCursor_;
@@ -6797,11 +6797,13 @@ std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
     case Command::PageUp:
       setEpubVerticalView(first - perScreen, cursor - perScreen);
       break;
-    case Command::GoToTop:
+    // 2026-09-29、直接のユーザー指定("^[<`/`^[>`は、機能を逆にしたほうが明らかに
+    // しっくりくる(末尾へは左で<、冒頭へは右方向で>)"): 縦書きでは向きが逆。
+    case Command::GoToBottom:
       epubVerticalMark_ = cursor;
       setEpubVerticalView(0, 0);
       break;
-    case Command::GoToBottom:
+    case Command::GoToTop:
       epubVerticalMark_ = cursor;
       setEpubVerticalView(static_cast<int>(epubVerticalCols_.size()), static_cast<int>(epubVerticalCols_.size()));
       break;

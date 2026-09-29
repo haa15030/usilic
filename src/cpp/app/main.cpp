@@ -1931,6 +1931,8 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
   app.offerShellCommand(command, installCommand, /*retries=*/2);
 }
 
+bool stopBackgroundQuickLook();  // 自身のコメント参照
+
 void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   // 2026-09-25追加、Application::setInterruptPeeker()自身の宣言コメント
   // 参照: ^[^Mの読み込み中にGUIウィンドウ側で押されたキーで中断できる
@@ -2400,6 +2402,13 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // try with the naive Up=+1 mapping, so this is intentionally
       // the opposite of what "Up should obviously mean +1" reasoning
       // alone would suggest), Up is -1.
+      // runProgramInLaunchingTerminal()のクイックルック(2026-09-29)参照: 裏で動いている
+      // qlmanageは^[/^G/^Cで閉じる(そのキーはusilicへは渡さない)。
+      if (!key->special && (key->byte == 0x1b || key->byte == 0x07 || key->byte == 0x03) &&
+          stopBackgroundQuickLook()) {
+        consecutiveEscapes = 0;
+        continue;
+      }
       bool upKey = key->special == fm::Display::Key::Up;
       bool downKey = key->special == fm::Display::Key::Down;
       bool arrowSpeedControl = (upKey || downKey) && coastLevel > 0;
@@ -3325,57 +3334,49 @@ bool raiseLaunchingTerminalWindow() {
 // carries over here for free.
 // 2026-09-29追加、直接のユーザー報告("-gのクイックルックでは^Cで戻れる時もあるが
 // そうでないときもある模様。タイミングの問題かと。^Cに加え^[と^Gでも戻れるように
-// して"): `qlmanage -p`はプレビューのパネルを閉じても終わらないことがあり、その間
-// GUIの窓は隠れたまま(下のrunProgramInLaunchingTerminal()は子の終了を待つだけ)。
-// クイックルックに限り、端末をrawにして自分でキーを見張り、^[/^G/^Cのどれかが
-// 来たら子を止めて戻る(^Cも端末のSIGINTに頼らない――子がちょうど起動中だと
-// 取りこぼすことがあった)。子が自分で終われば(パネルを閉じて終わる場合)そのまま戻る。
-void runQuickLookWatchingKeys(const std::string &command) {
-  std::printf("\x1b[H\x1b[2J(Quick Look: ESC / ^G / ^C でusilicへ戻る)\r\n");
-  std::fflush(stdout);
-  termios saved{};
-  bool haveTty = ::tcgetattr(STDIN_FILENO, &saved) == 0;
-  if (haveTty) {
-    termios raw = saved;
-    raw.c_lflag &= ~static_cast<tcflag_t>(ICANON | ECHO | ISIG);
-    raw.c_cc[VMIN] = 0;
-    raw.c_cc[VTIME] = 0;
-    ::tcsetattr(STDIN_FILENO, TCSANOW, &raw);
-  }
+// して"、続けて"クイックルックの際、裏のCUI画面が表になりさえしなければうまく行き
+// そうな気もするんだが"): `qlmanage -p`はプレビューのパネルを閉じても終わらない
+// ことがあり、下のrunProgramInLaunchingTerminal()のように端末を前に出してGUIを
+// 隠したまま終了を待つと、GUIへ戻れなくなっていた。クイックルックに限り端末には
+// 触れず、GUIを出したまま裏で起動して待たない。GUIの窓で^[/^G/^Cを打つと
+// stopBackgroundQuickLook()で止める(runGuiPhase()のキー処理)。次のクイックルックの
+// 前にも前のものを止める。
+pid_t gBackgroundQuickLookPid = -1;
+
+bool stopBackgroundQuickLook() {
+  if (gBackgroundQuickLookPid <= 0) return false;
+  int status = 0;
+  pid_t pid = gBackgroundQuickLookPid;
+  gBackgroundQuickLookPid = -1;
+  if (::waitpid(pid, &status, WNOHANG) == pid) return false;  // もう自分で終わっていた
+  ::kill(pid, SIGTERM);
+  ::waitpid(pid, &status, 0);
+  return true;
+}
+
+void startBackgroundQuickLook(const std::string &command) {
+  stopBackgroundQuickLook();
   pid_t pid = ::fork();
   if (pid == 0) {
-    int devnull = ::open("/dev/null", O_RDONLY);
-    if (devnull >= 0) ::dup2(devnull, STDIN_FILENO);  // キーは親が読む
+    int devnull = ::open("/dev/null", O_RDWR);
+    if (devnull >= 0) {
+      ::dup2(devnull, STDIN_FILENO);
+      ::dup2(devnull, STDOUT_FILENO);
+      ::dup2(devnull, STDERR_FILENO);
+    }
     ::execl("/bin/sh", "sh", "-c", ("exec " + command).c_str(), static_cast<char *>(nullptr));
     ::_exit(127);
   }
-  if (pid > 0) {
-    for (;;) {
-      int status = 0;
-      if (::waitpid(pid, &status, WNOHANG) == pid) break;
-      struct pollfd fd{STDIN_FILENO, POLLIN, 0};
-      if (::poll(&fd, 1, 100) <= 0 || !(fd.revents & POLLIN)) continue;
-      unsigned char byte = 0;
-      if (::read(STDIN_FILENO, &byte, 1) != 1) continue;
-      if (byte == 0x1b || byte == 0x07 || byte == 0x03) {
-        ::kill(pid, SIGTERM);
-        ::waitpid(pid, &status, 0);
-        break;
-      }
-    }
-  }
-  if (haveTty) ::tcsetattr(STDIN_FILENO, TCSANOW, &saved);
+  if (pid > 0) gBackgroundQuickLookPid = pid;
 }
 
 bool runProgramInLaunchingTerminal(const std::string &command, fm::GraphicalDisplay &gui) {
-  if (!raiseLaunchingTerminalWindow()) return false;  // falls back to ProgramMode::run()'s own default path
-  gui.setVisible(false);
-  if (command.rfind("qlmanage -p ", 0) == 0) {  // runQuickLookWatchingKeys()参照
-    runQuickLookWatchingKeys(command);
-    gui.setVisible(true);
-    gui.raise();
+  if (command.rfind("qlmanage -p ", 0) == 0) {  // startBackgroundQuickLook()参照
+    startBackgroundQuickLook(command);
     return true;
   }
+  if (!raiseLaunchingTerminalWindow()) return false;  // falls back to ProgramMode::run()'s own default path
+  gui.setVisible(false);
   // `clear; ` prefix (2026-08-17 follow-up): the terminal is raised
   // INSTANTLY, but `command` itself (fork/exec/its own startup, e.g.
   // `less` opening the file and entering its alternate screen) still

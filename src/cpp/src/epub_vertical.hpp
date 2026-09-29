@@ -25,7 +25,8 @@ namespace fm {
 //     置き換えない(縦書き用の字形を持たないフォントがあり、-gで「・」の
 //     ような代わりの字になった――ユーザー報告)。回転が要る「：」等は-gの
 //     描画側で回す(GraphicalDisplay::setVerticalTextHint()参照)。
-//   - 半角の数字は2桁までを1マスに横に並べる(縦中横)。他の半角文字は1字1マス。
+//   - 半角の英数は2字までを1マスに横に並べる(縦中横)。他の半角文字は1字1マス(-gでは
+//     3字以上続けば横倒し、layoutEpubVerticalColumns()参照)。
 //   - 行頭禁則(、。」等で列を始めない)と行末禁則(「（等で列を終えない)は、
 //     前の列の最後の字を次の列へ送る(追い出し)。
 struct EpubVerticalSourceLine {
@@ -46,7 +47,13 @@ struct EpubVerticalColumn {
 };
 
 // 1列の高さ`rows`で、論理行を列の並びへ組む。
-std::vector<EpubVerticalColumn> layoutEpubVerticalColumns(const std::vector<EpubVerticalSourceLine> &lines, int rows);
+// sideways(-g用、2026-09-29、直接のユーザー依頼"2文字以下の半角英数を縦中横は
+// いいとしてそれ以上の文字数では横倒しにしないと文字幅が半分しかなくハイライトも
+// 左半分となって不自然。CUTでは無理でもGUIではよろしく"): 3字以上続く半角(空白以外)
+// は2字ずつ1マスに詰める。GraphicalDisplay::renderCell()が、上下にも半角が続く
+// 半角2字のマスを90度回して描く。-cは従来どおり1字1マス。
+std::vector<EpubVerticalColumn> layoutEpubVerticalColumns(const std::vector<EpubVerticalSourceLine> &lines, int rows,
+                                                         bool sideways = false);
 
 // 画面の幅`columns`に並ぶ列の数。
 int epubVerticalColumnsPerScreen(int columns);
