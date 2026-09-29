@@ -39,6 +39,7 @@ struct EpubVerticalCell {
   std::string glyph;  // 画面上2セル分(全角1字、または半角2字/半角+空白)
   char32_t original = 0;
   std::optional<Display::Attribute> attribute;
+  bool serif = false;  // 明朝体(Display::Attribute::Serif、attributeとは別に持つ――下線等と重なるため)
 };
 
 struct EpubVerticalColumn {

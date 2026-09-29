@@ -77,8 +77,14 @@ bool isNoEnd(char32_t cp) {
 
 std::optional<Display::Attribute> attributeAt(const std::vector<AttributeRun> &runs, int byte) {
   for (const auto &run : runs)
-    if (byte >= run.start && byte < run.end) return run.attribute;
+    if (byte >= run.start && byte < run.end && run.attribute != Display::Attribute::Serif) return run.attribute;
   return std::nullopt;
+}
+
+bool serifAt(const std::vector<AttributeRun> &runs, int byte) {
+  for (const auto &run : runs)
+    if (byte >= run.start && byte < run.end && run.attribute == Display::Attribute::Serif) return true;
+  return false;
 }
 
 bool isAsciiDigit(char32_t cp) { return cp >= '0' && cp <= '9'; }
@@ -121,6 +127,7 @@ std::vector<Cell> toCells(const EpubVerticalSourceLine &line, bool sideways) {
     Cell cell;
     cell.original = g.cp;
     cell.attribute = attributeAt(line.attributes, g.byte);
+    cell.serif = serifAt(line.attributes, g.byte);
     // 横倒し(sideways、-gのみ、2026-09-29): 3字以上続く半角は2字ずつ1マスに詰める
     // (GraphicalDisplayが90度回して描く、layoutEpubVerticalColumns()の宣言参照)
     if (sideways && runLength[i] > 2) {
@@ -199,6 +206,7 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
     // 画面の桁ごとの中身(2セル幅の字の右半分は空文字)
     std::vector<std::string> screen(std::max(0, columns), " ");
     std::vector<std::optional<Display::Attribute>> attrs(std::max(0, columns));
+    std::vector<bool> serifs(std::max(0, columns), false);
     for (int k = 0; k < perScreen; k++) {
       long c = static_cast<long>(first) + k;
       int x = epubVerticalScreenColumn(k, columns);
@@ -224,6 +232,8 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
       if (highlight) attribute = Display::Attribute::Standout;
       attrs[x] = attribute;
       if (x + 1 < columns) attrs[x + 1] = attribute;
+      serifs[x] = cell.serif;
+      if (x + 1 < columns) serifs[x + 1] = cell.serif;
     }
     ContentView::Line line;
     for (int x = 0; x < columns; x++) {
@@ -237,6 +247,21 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
         else
           line.attributes.push_back({start, end, *attrs[x]});
       }
+    }
+    // 明朝体(EpubVerticalCell::serif)は他の装飾と別のランにする(重ねて持てるように)
+    for (int x = 0, pos = 0; x < columns; pos += static_cast<int>(screen[x].size()), x++) {
+      int end = pos + static_cast<int>(screen[x].size());
+      if (!serifs[x] || end <= pos) continue;
+      bool extend = false;
+      for (auto it = line.attributes.rbegin(); it != line.attributes.rend(); ++it)
+        if (it->attribute == Display::Attribute::Serif) {
+          if (it->end == pos) {
+            it->end = end;
+            extend = true;
+          }
+          break;
+        }
+      if (!extend) line.attributes.push_back({pos, end, Display::Attribute::Serif});
     }
     while (!line.text.empty() && line.text.back() == ' ') line.text.pop_back();
     for (auto &run : line.attributes) run.end = std::min<int>(run.end, static_cast<int>(line.text.size()));

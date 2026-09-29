@@ -255,6 +255,8 @@ void TerminalDisplay::setAttribute(Attribute attr) {
     case Attribute::UnderlineOff: underlineOn_ = false; break;
     case Attribute::Italic: italicOn_ = true; break;
     case Attribute::ItalicOff: italicOn_ = false; break;
+    case Attribute::Serif:
+    case Attribute::SerifOff: break;  // 端末ではフォントを選べない(Display::Attribute::Serif参照)
     case Attribute::Standout: standoutOn_ = true; break;
     case Attribute::StandoutOff: standoutOn_ = false; break;
     case Attribute::Highlight: highlightVariant_ = Attribute::Highlight; break;
@@ -323,6 +325,9 @@ std::string TerminalDisplay::attributeEscape(Attribute attr) const {
       return caps_.italicOn;
     case Attribute::ItalicOff:
       return caps_.italicOff;
+    case Attribute::Serif:
+    case Attribute::SerifOff:
+      return "";
     // Display::Attribute::Highlight/HighlightCurrent自身の宣言コメント
     // 参照: terminfoのパラメータ付きcapability(setaf)経由ではなく、
     // 生のANSI SGRコードを直接返す。2026-09-10三度目の改訂、直接の

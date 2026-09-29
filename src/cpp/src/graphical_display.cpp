@@ -28,6 +28,7 @@ struct Cell {
   bool underline = false;
   bool standout = false;
   bool italic = false;  // 2026-09-04追加、直接のユーザー依頼("<i>プログラム名</i>")
+  bool serif = false;   // 明朝体で描く(Display::Attribute::Serif参照)
   // 2026-09-10追加、直接のユーザー依頼("マッチ文字列をboldの代わりに
   // ハイライトでやってみて。色は変えられない？薄めの色とか。"):
   // GREPマッチ表示専用の色付き前景(他の属性と同じく独立、standout等
@@ -409,6 +410,26 @@ constexpr double kNarrowGlyphAlphaGamma = 0.65;
 // バックが無い(impl_->fallbackFontはnullptrのまま)ことを意味する
 // だけで、起動の失敗ではない。通常のASCIIテキストはどちらにせよ
 // 全く影響を受けない。
+// 2026-09-29追加(Display::Attribute::Serif参照): 明朝体のフォント。候補を順に試し、
+// 仮名を持つ最初のものを使う(loadCjkFallbackFont()と同じ考え方)。
+TTF_Font *loadSerifFont(int pointSize) {
+  static const char *const candidates[] = {
+      "/System/Library/Fonts/ヒラギノ明朝 ProN.ttc",
+      "/System/Library/Fonts/Supplemental/Hiragino Mincho ProN.ttc",
+      "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
+      "/usr/share/fonts/truetype/noto/NotoSerifCJK-Regular.ttc",
+      "/usr/share/fonts/opentype/ipaexfont-mincho/ipaexm.ttf",
+      "/usr/share/fonts/truetype/fonts-japanese-mincho.ttf",
+  };
+  for (const char *path : candidates) {
+    TTF_Font *candidate = TTF_OpenFont(path, std::max(pointSize, 1));
+    if (!candidate) continue;
+    if (glyphProvidedByFont(candidate, 0x3042)) return candidate;
+    TTF_CloseFont(candidate);
+  }
+  return nullptr;
+}
+
 TTF_Font *loadCjkFallbackFont(int pointSize) {
   static const char *const candidates[] = {
       "/System/Library/Fonts/ヒラギノ角ゴシック W4.ttc",
@@ -612,7 +633,11 @@ struct GraphicalDisplay::Impl {
   int cursorRow = 0, cursorCol = 0;
   int savedRow = 0, savedCol = 0;
   bool standoutActive = false, boldActive = false, underlineActive = false, italicActive = false,
-       highlightActive = false, highlightCurrentActive = false;
+       highlightActive = false, highlightCurrentActive = false, serifActive = false;
+  // 明朝体(Display::Attribute::Serif参照)。最初に明朝の字を描く時にloadSerifFont()で
+  // 読み込む(見つからなければserifFontMissingを立て、以後はふだんのフォントで描く)。
+  TTF_Font *serifFont = nullptr;
+  bool serifFontMissing = false;
   int fgColorActive = Display::kDefaultColor, bgColorActive = Display::kDefaultColor;  // setColor()
 
   // renderCursor()が実際に描く「論理的な」カーソル位置――上の
@@ -801,6 +826,19 @@ namespace {
 // に対して操作できる標準的な方法である――アクセス制御は、プライ
 // ベートなメンバーを明示的に「名指しする」ことに適用され、推論
 // されたテンプレートパラメータには適用されない。
+// 明朝体で描く字(Cell::serif)のフォント。明朝体のフォントが無い、またはその字を
+// 持たなければnullptr(ふだんのフォントで描く)。Implを要するのでcachedGlyphTexture()と
+// 同じくテンプレートにしてある。
+template <typename ImplT>
+TTF_Font *serifFontFor(ImplT &impl, unsigned int codepoint) {
+  if (!impl.serifFont && !impl.serifFontMissing) {
+    impl.serifFont = loadSerifFont(impl.currentFontPointSize);
+    impl.serifFontMissing = impl.serifFont == nullptr;
+  }
+  if (!impl.serifFont || !glyphProvidedByFont(impl.serifFont, codepoint)) return nullptr;
+  return impl.serifFont;
+}
+
 template <typename ImplT>
 SDL_Texture *cachedGlyphTexture(ImplT &impl, TTF_Font *font, const std::string &glyph, int style, int hinting,
                                  SDL_Color color, bool narrow, int &outW, int &outH) {
@@ -1066,6 +1104,7 @@ GraphicalDisplay::~GraphicalDisplay() {
   clearGlyphCache(*impl_);  // impl_->rendererがまだ有効なうちに実行する必要がある――それ自身のコメント参照
   if (impl_->renderer) SDL_DestroyRenderer(impl_->renderer);
   if (impl_->window) SDL_DestroyWindow(impl_->window);
+  if (impl_->serifFont) TTF_CloseFont(impl_->serifFont);
   if (impl_->fallbackFont) TTF_CloseFont(impl_->fallbackFont);
   if (impl_->font) TTF_CloseFont(impl_->font);
   TTF_Quit();
@@ -1183,6 +1222,7 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
   cell.underline = impl_->underlineActive;
   cell.standout = impl_->standoutActive;
   cell.italic = impl_->italicActive;
+  cell.serif = impl_->serifActive;
   cell.highlight = impl_->highlightActive;
   cell.highlightCurrent = impl_->highlightCurrentActive;
   cell.fgColor = impl_->fgColorActive;
@@ -1197,6 +1237,7 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
     shadow.underline = cell.underline;
     shadow.standout = cell.standout;
     shadow.italic = cell.italic;
+    shadow.serif = cell.serif;
     shadow.highlight = cell.highlight;
     shadow.highlightCurrent = cell.highlightCurrent;
     shadow.fgColor = cell.fgColor;
@@ -1360,6 +1401,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
   bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
   if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
     renderFont = impl_->fallbackFont;
+  if (TTF_Font *serif = cell.serif ? serifFontFor(*impl_, codepoint) : nullptr) renderFont = serif;  // 明朝体
   // 2026-08-11: TTF_HINTING_LIGHT(項目263)もフォント依存だと判明した
   // ――実際の報告により、デフォルトプロファイルの「MS Gothic」の組み
   // 合わせでは完全に直る(fontTools経由で確認済み: msgothic.ttcのgasp
@@ -1570,6 +1612,7 @@ void GraphicalDisplay::renderCursor() {
   bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
   if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
     renderFont = impl_->fallbackFont;
+  if (TTF_Font *serif = cell.serif ? serifFontFor(*impl_, codepoint) : nullptr) renderFont = serif;  // 明朝体
   // renderCell()と同じ半角用ヒンティングの調整――それ自身のコメント
   // 参照。(TTF_SetFontStyle()/TTF_SetFontHinting()自体は、下で呼ばれる
   // cachedGlyphTexture()の中へ移動した――それ自身のコメント参照。)
@@ -1764,6 +1807,12 @@ void GraphicalDisplay::setAttribute(Attribute attr) {
     case Attribute::ItalicOff:
       impl_->italicActive = false;
       break;
+    case Attribute::Serif:
+      impl_->serifActive = true;
+      break;
+    case Attribute::SerifOff:
+      impl_->serifActive = false;
+      break;
     case Attribute::Highlight:
       impl_->highlightActive = true;
       break;
@@ -1862,6 +1911,7 @@ void GraphicalDisplay::adjustFontSize(int deltaPoints) {
   if (newPointSize == impl_->currentFontPointSize) return;
   TTF_SetFontSize(impl_->font, newPointSize);
   if (impl_->fallbackFont) TTF_SetFontSize(impl_->fallbackFont, newPointSize);
+  if (impl_->serifFont) TTF_SetFontSize(impl_->serifFont, newPointSize);
   // 今リサイズされたばかりのフォントから再計測する、create()自身の
   // 「M」+CJKフォールバックグリフの計測に倣う(両方が必要な理由に
   // ついてはそれ自身のコメント参照)――TTF_SetFontSize()はフォント
@@ -1873,6 +1923,7 @@ void GraphicalDisplay::adjustFontSize(int deltaPoints) {
     // 食い違ったままにするのではなく、巻き戻す。
     TTF_SetFontSize(impl_->font, impl_->currentFontPointSize);
     if (impl_->fallbackFont) TTF_SetFontSize(impl_->fallbackFont, impl_->currentFontPointSize);
+    if (impl_->serifFont) TTF_SetFontSize(impl_->serifFont, impl_->currentFontPointSize);
     return;
   }
   cellHeight = std::max(cellHeight, TTF_FontHeight(impl_->font));
@@ -2768,6 +2819,7 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
         1, (impl_->baseFontPointSize * cellHeight + impl_->baseFontMetricCellHeight / 2) / impl_->baseFontMetricCellHeight);
     TTF_SetFontSize(impl_->font, newPointSize);
     if (impl_->fallbackFont) TTF_SetFontSize(impl_->fallbackFont, newPointSize);
+    if (impl_->serifFont) TTF_SetFontSize(impl_->serifFont, newPointSize);
     // fontPointSize()自身の読み戻し(項目427、セッション終了時に
     // 実行中のGUI状態をHistory::GuiPreferencesへ永続化するのに使わ
     // れる)を、この起動経路についても正確に保つ――以前は、ここでは
@@ -2951,11 +3003,12 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
     // (このように装飾される唯一のコンテンツ)についてはバイト
     // オフセット==画面上の列である)。
     bool wantBold = false, wantUnderline = false, wantStandout = false, wantItalic = false,
-         wantHighlight = false, wantHighlightCurrent = false;
+         wantHighlight = false, wantHighlightCurrent = false, wantSerif = false;
     int wantFg = Display::kDefaultColor, wantBg = Display::kDefaultColor;
     for (const auto &run : attributes) {
       if (static_cast<int>(pos) < run.start || static_cast<int>(pos) >= run.end) continue;
-      if (run.attribute == Display::Attribute::Bold) wantBold = true;
+      if (run.attribute == Display::Attribute::Serif) wantSerif = true;
+      else if (run.attribute == Display::Attribute::Bold) wantBold = true;
       else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;
       else if (run.attribute == Display::Attribute::Standout) wantStandout = true;
       else if (run.attribute == Display::Attribute::Italic) wantItalic = true;
@@ -3033,6 +3086,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
       if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
         renderFont = impl_->fallbackFont;
+      if (TTF_Font *serif = wantSerif ? serifFontFor(*impl_, codepoint) : nullptr) renderFont = serif;  // 明朝体
       // renderCell()自身のもの(`if (cell.bold) style |= TTF_STYLE_BOLD;`
       // 等)と同じスタイルの計算――この関数は以前は`attributes`に
       // 関わらず常にTTF_STYLE_NORMALをレンダリングしていた(この関数

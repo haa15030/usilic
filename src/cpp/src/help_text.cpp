@@ -184,6 +184,21 @@ std::string expandHelpMarkup(const std::string &text) {
       i += boldClosePlain.size();
       continue;
     }
+    // 2026-09-29追加: <serif>...</serif>、明朝体(Display::Attribute::Serif参照)。
+    // \x05+数字1桁、<i>と同じトグル式。
+    const std::string serifOpen = "<serif>", serifClose = "</serif>";
+    if (text.compare(i, serifOpen.size(), serifOpen) == 0) {
+      out += '\x05';
+      out += '1';
+      i += serifOpen.size();
+      continue;
+    }
+    if (text.compare(i, serifClose.size(), serifClose) == 0) {
+      out += '\x05';
+      out += '0';
+      i += serifClose.size();
+      continue;
+    }
     if (text.compare(i, underlineOpen.size(), underlineOpen) == 0) {
       out += '\x04';
       out += '1';

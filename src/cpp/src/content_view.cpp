@@ -873,6 +873,8 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
   auto setItalic = [&](bool on) {
     setAttr(italicOn, on, Display::Attribute::Italic, Display::Attribute::ItalicOff);
   };
+  bool serifOn = false;  // Display::Attribute::Serif参照
+  auto setSerif = [&](bool on) { setAttr(serifOn, on, Display::Attribute::Serif, Display::Attribute::SerifOff); };
   // Display::Attribute::Highlight自身の宣言コメント参照(2026-09-10
   // 追加、直接のユーザー依頼: "マッチ文字列をboldの代わりにハイ
   // ライトでやってみて")――setBold()/setItalic()と全く同じ形…
@@ -1176,11 +1178,12 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
       // しては位置がずれてしまう`col`とは異なる)。
       if (!renderedAttributes->empty()) {
         bool wantBold = false, wantUnderline = false, wantStandout = false, wantItalic = false,
-             wantHighlight = false, wantHighlightCurrent = false;
+             wantHighlight = false, wantHighlightCurrent = false, wantSerif = false;
         int wantFg = Display::kDefaultColor, wantBg = Display::kDefaultColor;
         for (const AttributeRun &run : *renderedAttributes) {
           if (static_cast<int>(idx) < run.start || static_cast<int>(idx) >= run.end) continue;
-          if (run.attribute == Display::Attribute::Bold) wantBold = true;
+          if (run.attribute == Display::Attribute::Serif) wantSerif = true;
+          else if (run.attribute == Display::Attribute::Bold) wantBold = true;
           else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;
           else if (run.attribute == Display::Attribute::Standout) wantStandout = true;
           else if (run.attribute == Display::Attribute::Italic) wantItalic = true;
@@ -1195,6 +1198,7 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
         setBold(wantBold);
         setUnderline(wantUnderline);
         setItalic(wantItalic);
+        setSerif(wantSerif);
         setHighlightState(wantHighlightCurrent  ? HighlightState::Current
                            : wantHighlight       ? HighlightState::Regular
                                                   : HighlightState::Off);
@@ -1284,6 +1288,7 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
     setBold(false);
     setUnderline(false);
     setItalic(false);
+    setSerif(false);
     setHighlightState(HighlightState::Off);
     setColor(Display::kDefaultColor, Display::kDefaultColor);
   }

@@ -338,6 +338,112 @@ void parseNcx(const std::string &xml, const std::string &ncxPath, TocMap &toc) {
 
 // ---- 本文 ---------------------------------------------------------------
 
+// 2026-09-29追加、直接のユーザー依頼(EPUBの段階2、"sans-serif(ゴシック体)とserif
+// (明朝体)をページ内に混在"): CSSのfont-familyから、要素ごとに明朝体かゴシック体かを
+// 決める(Display::Attribute::Serif、<serif>タグ)。読むのは「タグ」「.クラス」
+// 「タグ.クラス」だけの単純なセレクタで、子孫・子などの組み合わせのセレクタは誤って
+// 広く当てはまらないよう読み飛ばす。
+struct CssFontRule {
+  std::string tag;                   // 空なら任意
+  std::vector<std::string> classes;  // すべて要素のclassにあること
+  bool serif = true;
+};
+
+// font-familyの値が明朝体(true)かゴシック体(false)か。総称名(serif/sans-serif/
+// monospace)を優先する(Kbt.epubのゴシックの指定にも"BIZ UD明朝"が混ざっている)。
+std::optional<bool> classifyFontFamily(const std::string &value) {
+  std::vector<std::string> names;
+  std::string cur;
+  for (char c : value + ",") {
+    if (c == ',') {
+      std::string name;
+      for (char d : cur)
+        if (d != '"' && d != '\'') name += static_cast<char>(std::tolower(static_cast<unsigned char>(d)));
+      names.push_back(trimAsciiSpace(name));
+      cur.clear();
+    } else {
+      cur += c;
+    }
+  }
+  for (const auto &n : names) {
+    if (n == "sans-serif" || n == "monospace") return false;
+    if (n == "serif") return true;
+  }
+  for (const auto &n : names) {
+    if (n.find("明朝") != std::string::npos || n.find("mincho") != std::string::npos) return true;
+    if (n.find("ゴシック") != std::string::npos || n.find("角ゴ") != std::string::npos ||
+        n.find("gothic") != std::string::npos || n.find("kaku") != std::string::npos ||
+        n.find("sans") != std::string::npos || n.find("メイリオ") != std::string::npos ||
+        n.find("meiryo") != std::string::npos)
+      return false;
+  }
+  return std::nullopt;
+}
+
+std::vector<CssFontRule> parseCssFontRules(std::string css) {
+  // コメントを除く
+  for (std::size_t a; (a = css.find("/*")) != std::string::npos;) {
+    std::size_t b = css.find("*/", a + 2);
+    css.erase(a, b == std::string::npos ? std::string::npos : b + 2 - a);
+  }
+  std::vector<CssFontRule> rules;
+  std::size_t pos = 0;
+  while (pos < css.size()) {
+    std::size_t open = css.find('{', pos);
+    if (open == std::string::npos) break;
+    std::string selectors = trimAsciiSpace(css.substr(pos, open - pos));
+    std::size_t semicolonAt = selectors.rfind(';');  // "@charset ...;"等の文を読み飛ばす
+    if (semicolonAt != std::string::npos) selectors = trimAsciiSpace(selectors.substr(semicolonAt + 1));
+    // 対応する'}'(@mediaの入れ子にも耐える)
+    int depth = 1;
+    std::size_t close = open + 1;
+    for (; close < css.size() && depth > 0; close++) {
+      if (css[close] == '{') depth++;
+      if (css[close] == '}') depth--;
+    }
+    std::string body = css.substr(open + 1, close - open - 2);
+    pos = close;
+    if (!selectors.empty() && selectors[0] == '@') {
+      if (selectors.compare(0, 6, "@media") == 0)
+        for (auto &inner : parseCssFontRules(body)) rules.push_back(std::move(inner));
+      continue;
+    }
+    std::optional<bool> serif;
+    std::size_t fp = 0;
+    while ((fp = body.find("font-family", fp)) != std::string::npos) {
+      std::size_t colon = body.find(':', fp);
+      if (colon == std::string::npos) break;
+      std::size_t end = body.find(';', colon);
+      std::string value = body.substr(colon + 1, end == std::string::npos ? std::string::npos : end - colon - 1);
+      if (auto v = classifyFontFamily(value)) serif = v;  // 同じ規則の中では後が勝つ
+      fp = colon;
+    }
+    if (!serif) continue;
+    std::string one;
+    for (char c : selectors + ",") {
+      if (c != ',') {
+        one += c;
+        continue;
+      }
+      std::string sel = trimAsciiSpace(one);
+      one.clear();
+      if (sel.empty() || sel.find_first_of(" \t\n>+~:[#") != std::string::npos) continue;  // 単純なセレクタだけ
+      CssFontRule rule;
+      rule.serif = *serif;
+      std::size_t dot = sel.find('.');
+      rule.tag = sel.substr(0, dot);
+      if (rule.tag == "*") rule.tag.clear();
+      while (dot != std::string::npos) {
+        std::size_t next = sel.find('.', dot + 1);
+        rule.classes.push_back(sel.substr(dot + 1, next == std::string::npos ? std::string::npos : next - dot - 1));
+        dot = next;
+      }
+      rules.push_back(std::move(rule));
+    }
+  }
+  return rules;
+}
+
 const std::set<std::string> kBlockElements = {
     "p",       "div",     "li",     "blockquote", "dd",     "dt",      "tr",   "section", "article",
     "aside",   "header",  "footer", "nav",        "figure", "figcaption", "table", "ul", "ol",
@@ -345,7 +451,7 @@ const std::set<std::string> kBlockElements = {
 
 class BodyConverter {
  public:
-  explicit BodyConverter(std::string &out) : out_(out) {}
+  BodyConverter(std::string &out, const EpubMemberReader &readMember) : out_(out), readMember_(readMember) {}
 
   // 本文中のリンク(行番号→リンク先の"ファイル#フラグメント")と、各アンカーの
   // 行番号("ファイル#フラグメント"、ファイル先頭は"ファイル#")。行番号は
@@ -371,6 +477,10 @@ class BodyConverter {
         }
     depth_ = skipDepth_ = preDepth_ = 0;
     listStack_.clear();
+    fontRules_.clear();  // 本文のファイルごとに、そのファイルが読み込むCSSだけ
+    fontStack_.clear();
+    serif_ = true;  // CSSの指定が無ければ明朝体(読書アプリの既定に合わせる)
+    inStyle_ = false;
     for (const auto &t : tokenizeXml(xhtml)) handle(t);
     endLine(false);
     flushDeferredLabel();
@@ -381,11 +491,19 @@ class BodyConverter {
   void handle(const XmlToken &t) {
     const std::string &name = t.name;
     if (t.kind == XmlToken::Text) {
+      if (inStyle_) {
+        for (auto &rule : parseCssFontRules(t.text)) fontRules_.push_back(std::move(rule));
+        return;
+      }
       if (skipDepth_ == 0) text(t.text);
       return;
     }
     bool open = (t.kind == XmlToken::Open || t.kind == XmlToken::SelfClose);
     bool close = (t.kind == XmlToken::Close || t.kind == XmlToken::SelfClose);
+    // CSS(fontRules_参照): <link rel="stylesheet">と<style>はheadの中なので、
+    // headを読み飛ばす前に拾う。
+    if (name == "link" && open && attr(t, "rel").find("stylesheet") != std::string::npos) loadStylesheet(attr(t, "href"));
+    if (name == "style") inStyle_ = (t.kind == XmlToken::Open);
     if (open && t.kind == XmlToken::Open) depth_++;
 
     if (name == "head" || name == "script" || name == "style" || name == "rp" || name == "title") {
@@ -501,7 +619,65 @@ class BodyConverter {
         }
       }
     }
+    // 明朝体/ゴシック体(fontRules_参照): 要素の中身の間だけ、その要素に当てはまる
+    // 規則(無ければ親のまま)にする。ブロックの開き・閉じの改行(上のendLine())の
+    // 後で切り替えるので、変わり目は行の途中か行頭になる。
+    if (t.kind == XmlToken::Open) {
+      fontStack_.push_back(serif_);
+      setSerif(fontFor(name, attr(t, "class")).value_or(serif_));
+    } else if (t.kind == XmlToken::Close && !fontStack_.empty()) {
+      setSerif(fontStack_.back());
+      fontStack_.pop_back();
+    }
     if (t.kind == XmlToken::Close) depth_--;
+  }
+
+  void loadStylesheet(const std::string &href) {
+    if (href.empty()) return;
+    std::string path = resolveHref(directoryOf(path_), href);
+    auto cached = cssCache_.find(path);
+    if (cached == cssCache_.end()) {
+      auto css = readMember_(path);
+      cached = cssCache_.emplace(path, css ? parseCssFontRules(*css) : std::vector<CssFontRule>{}).first;
+    }
+    fontRules_.insert(fontRules_.end(), cached->second.begin(), cached->second.end());
+  }
+
+  // 要素に当てはまる規則のうち、詳しさ(クラスの数、次にタグの有無)が最も高いもの、
+  // 同じなら後に書かれたもの。当てはまる規則が無ければnullopt(親のまま)。
+  std::optional<bool> fontFor(const std::string &tag, const std::string &classAttr) const {
+    std::vector<std::string> classes;
+    std::string cur;
+    for (char c : classAttr + " ") {
+      if (c == ' ' || c == '\t' || c == '\n') {
+        if (!cur.empty()) classes.push_back(cur);
+        cur.clear();
+      } else {
+        cur += c;
+      }
+    }
+    std::optional<bool> best;
+    int bestScore = -1;
+    for (const auto &rule : fontRules_) {
+      if (!rule.tag.empty() && rule.tag != tag) continue;
+      bool all = true;
+      for (const auto &c : rule.classes)
+        if (std::find(classes.begin(), classes.end(), c) == classes.end()) all = false;
+      if (!all) continue;
+      int score = static_cast<int>(rule.classes.size()) * 10 + (rule.tag.empty() ? 0 : 1);
+      if (score >= bestScore) {
+        bestScore = score;
+        best = rule.serif;
+      }
+    }
+    return best;
+  }
+
+  // changeStyle()の明朝体版(カウンタではなくオン/オフ)。
+  void setSerif(bool serif) {
+    if (serif == serif_) return;
+    serif_ = serif;
+    if (!line_.empty()) line_ += serif ? "<serif>" : "</serif>";
   }
 
   // 太字等はトグル式の制御バイトへ展開されるので(markdown_to_help_markup.cpp
@@ -516,6 +692,7 @@ class BodyConverter {
 
   void openStylesAtLineStart() {
     if (!line_.empty()) return;
+    if (serif_) line_ += "<serif>";
     if (underline_) line_ += "<u>";
     if (bold_) line_ += "<b>";
     if (italic_) line_ += "<i>";
@@ -558,6 +735,7 @@ class BodyConverter {
     if (italic_) line_ += "</i>";
     if (bold_) line_ += "</b>";
     if (underline_) line_ += "</u>";
+    if (serif_) line_ += "</serif>";
   }
 
   // 文字のある行を出す(chapter: 行末にタブ)。文字が無ければ何もしない。
@@ -628,6 +806,12 @@ class BodyConverter {
   }
 
   std::string &out_;
+  const EpubMemberReader &readMember_;
+  std::map<std::string, std::vector<CssFontRule>> cssCache_;  // CSSのファイルごと(本文の各ファイルで共有)
+  std::vector<CssFontRule> fontRules_;                       // 今のファイルが読み込むCSSの規則
+  std::vector<bool> fontStack_;                              // 開いている要素ごとの、その外側の明朝体/ゴシック体
+  bool serif_ = true;
+  bool inStyle_ = false;
   std::string path_;
   std::vector<std::string> pendingAnchors_;
   std::map<std::string, int> anchorLines_;
@@ -748,7 +932,7 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
   if (!creator.empty()) out += creator + "\n";
   if (!out.empty()) out += "\n";
 
-  BodyConverter converter(out);
+  BodyConverter converter(out, readMember);
   for (const auto &idref : spine) {
     auto it = manifest.find(idref);
     if (it == manifest.end()) continue;

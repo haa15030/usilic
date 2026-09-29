@@ -463,7 +463,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
         }
       }
       unsigned char value = static_cast<unsigned char>(convertedLine[pos + 1]);
-      if ((mc == '\x02' || mc == '\x03' || mc == '\x04') && value >= '0' && value <= '9') {
+      if ((mc == '\x02' || mc == '\x03' || mc == '\x04' || mc == '\x05') && value >= '0' && value <= '9') {
         // ゼロ幅マーカー、位置だけ進める(状態の更新は本物の消費パス側の責務)。
       } else {
         break;
@@ -511,6 +511,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       if (mc == '\x02') currentItalic_ = std::max(0, currentItalic_ + delta);
       else if (mc == '\x03') currentBold_ = std::max(0, currentBold_ + delta);
       else if (mc == '\x04') currentUnderline_ = std::max(0, currentUnderline_ + delta);
+      else if (mc == '\x05') currentSerif_ = std::max(0, currentSerif_ + delta);
       else break;
       pos += 2;
     }
@@ -559,6 +560,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     if (currentItalic_ || sgrItalic_) push(Display::Attribute::Italic);
     if (currentBold_ || sgrBold_) push(Display::Attribute::Bold);
     if (currentUnderline_ || sgrUnderline_) push(Display::Attribute::Underline);
+    if (currentSerif_) push(Display::Attribute::Serif);
     if (sgrReverse_) push(Display::Attribute::Standout);
     if (sgrFg_ != Display::kDefaultColor || sgrBg_ != Display::kDefaultColor) {
       wrapAttrs_.push_back({start, start + bytes, Display::Attribute::Color, sgrFg_, sgrBg_});
@@ -615,6 +617,14 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       unsigned char digit = static_cast<unsigned char>(convertedLine[i + 1]);
       if (digit == '0' || digit == '1') {
         currentBold_ = std::max(0, currentBold_ + (digit == '1' ? 1 : -1));
+        i += 2;
+        continue;
+      }
+    }
+    if (c == '\x05' && i + 1 < n) {  // <serif>(currentSerif_参照)
+      unsigned char digit = static_cast<unsigned char>(convertedLine[i + 1]);
+      if (digit == '0' || digit == '1') {
+        currentSerif_ = std::max(0, currentSerif_ + (digit == '1' ? 1 : -1));
         i += 2;
         continue;
       }

@@ -173,6 +173,9 @@ class PipeBuffer {
   // 同じ理由で合わせてカウンタ化した。
   int currentBold_ = 0;
   int currentUnderline_ = 0;
+  // 2026-09-29追加: <serif>(\x05+数字1桁)、Display::Attribute::Serif参照。
+  // currentItalic_と同じトグル式のカウンタ。
+  int currentSerif_ = 0;
 
   // escapeLengthAt()自身のコメント参照。SGRで指定された現在の状態――
   // 本物の端末と同じく、改行や折り返しをまたいで次のSGRまで持続する。

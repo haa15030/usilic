@@ -27349,3 +27349,20 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      書式のため残し常にfalse)は廃止。
    - **usilicrc/usilicrc.en**: K-100の説明、ARCHIVE節の.epubの説明を直し、.epubの記入例を
      外した。
+514. **2026-09-29: EPUBの明朝体とゴシック体を-gで描き分ける(EPUBの段階2)**
+   - **経緯**: 直接のユーザー依頼("sans-serif(ゴシック体)とserif(明朝体)をページ内に
+     混在できるかどうかを分岐点としたい"、"第2段階も進めて")。
+   - **変換**: epubToHelpMarkup()のBodyConverterが、本文の各ファイルが読み込むCSS
+     (<link rel="stylesheet">と<style>)のfont-familyを読み(parseCssFontRules()、
+     classifyFontFamily()は総称名serif/sans-serif/monospaceを優先し、無ければ名前の
+     明朝/ゴシック等で判断)、要素ごとに明朝体かゴシック体かを決めて(fontFor()、
+     単純なセレクタ「タグ」「.クラス」「タグ.クラス」だけ、詳しさの高い方、同じなら
+     後の規則)、明朝体の間を<serif>...</serif>で囲む。CSSの指定が無ければ明朝体。
+     Kbt.epubでは本文が明朝体、章の見出し(h2.chapter)・著者名(p.author)等がゴシック体
+     (スクラッチの変換で確認)。
+   - **表示**: <serif>はexpandHelpMarkup()で\x05+数字1桁(<i>と同じトグル式)、PipeBufferの
+     currentSerif_でDisplay::Attribute::Serif(新設)のランになる。GraphicalDisplayは
+     Cell::serifの字を明朝体のフォント(ヒラギノ明朝 ProN等、最初に要る時に読み込む、
+     serifFontFor())で描く(3つの描画経路、フォントの大きさの変更にも追従)。端末(-c)は
+     何もしない。縦書き(epub_vertical.cpp)は、明朝体をEpubVerticalCell::serifとして
+     下線等の装飾とは別に持ち、画面の行へ別のランとして戻す。
