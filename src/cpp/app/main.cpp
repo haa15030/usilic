@@ -160,6 +160,7 @@
 #include "delegating_display.hpp"
 #include "drag_scroll_speed.hpp"
 #include "gnome_terminal_appearance.hpp"
+#include "epub_vertical.hpp"
 #include "graphical_display.hpp"
 #include "history.hpp"
 #include "key_input.hpp"
@@ -1956,6 +1957,14 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     return anyKey;
   });
   bool dragging = false;
+  // 2026-09-29追加、直接のユーザー依頼("左右方向の画面ドラッグを実装で"): EPUBの縦書きの
+  // 本文の左右ドラッグ(Application::epubVerticalDragActive())。上下のドラッグ
+  // (dragging/renderScrolled())とは別に持つ――縦書きの画面は横倒し等をマスの描画
+  // (GraphicalDisplay::renderCell())で行うので、行単位のrenderScrolled()は通さず、
+  // 本文をepubDragOffsetピクセルだけ横にずらして描き(setContentOffsetX())、1列の幅を
+  // 越えるたびにApplication::scrollEpubVertical()で1列動かす。離したら近い列にそろえる。
+  bool epubDragging = false;
+  int epubDragOffset = 0;
   // 2026-08-30、直接のユーザー報告(GUI、ARCモードで再現させたスクリー
   // ンショット付き――ただし根本原因はモードを問わない): マウスボタンを
   // 押した「だけ」で(実際には全く動かしていなくても)dragging=trueに
@@ -2175,7 +2184,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       //     DragEvent::ButtonUpは、このmouseQueue消費より後(すぐ下)
       //     で処理されるため、ここではまだ「直前のフレームまでに
       //     本物のドラッグが確定していたかどうか」を正しく読める。
-      if (!click->rightButton && !dragging) {
+      if (!click->rightButton && !dragging && !epubDragging) {  // 左右ドラッグの離しはクリックにしない
         // clickInterruptedCoast自身の宣言コメント参照、直接のユーザー
         // 提案("スクロールのさなかに見つけた目的のファイル上で
         // クリックすればその時点で内容が表示されるってのはどう？"):
@@ -2688,6 +2697,18 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           gui.setHandCursor(true);
           break;
         case fm::GraphicalDisplay::DragEventType::ButtonUp: {
+          if (epubDragging) {  // epubDragging自身のコメント参照
+            int pitch = std::max(1, gui.cellWidthPixels() * fm::epubVerticalColumnPitch());
+            if (epubDragOffset >= pitch / 2) app.scrollEpubVertical(1);
+            else if (epubDragOffset <= -pitch / 2) app.scrollEpubVertical(-1);
+            epubDragging = false;
+            epubDragOffset = 0;
+            buttonHeldPendingDrag = false;
+            gui.setContentOffsetX(0, 0);
+            gui.setHandCursor(false);
+            gui.flush();
+            break;
+          }
           // 2026-09-02 fix, a direct user report (=fg/=fh, confirmed via
           // a real USILICGUIDEBUG capture): the comment this replaces
           // assumed "if Motion never arrived, pixelOffset/coastLevel is
@@ -2743,6 +2764,31 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           break;
         }
         case fm::GraphicalDisplay::DragEventType::Motion: {
+          if ((buttonHeldPendingDrag || epubDragging) && !dragging && app.epubVerticalDragActive()) {
+            // epubDragging自身のコメント参照。右へのドラッグで先へ(本文が右へ動き、左から
+            // 次の列が出てくる)。本の端で動けなければずらさない。
+            buttonHeldPendingDrag = false;
+            epubDragging = true;
+            int pitch = std::max(1, gui.cellWidthPixels() * fm::epubVerticalColumnPitch());
+            epubDragOffset += drag->deltaX;
+            while (epubDragOffset >= pitch) {
+              if (!app.scrollEpubVertical(1)) {
+                epubDragOffset = 0;
+                break;
+              }
+              epubDragOffset -= pitch;
+            }
+            while (epubDragOffset <= -pitch) {
+              if (!app.scrollEpubVertical(-1)) {
+                epubDragOffset = 0;
+                break;
+              }
+              epubDragOffset += pitch;
+            }
+            gui.setContentOffsetX(epubDragOffset, std::max(gui.rows() - 1, 0));
+            gui.flush();
+            break;
+          }
           // buttonHeldPendingDrag自身のコメント参照: 実際にMotionが
           // 届いた時点で初めて「本物のドラッグ」と確定させる。
           if (buttonHeldPendingDrag && !dragging) {

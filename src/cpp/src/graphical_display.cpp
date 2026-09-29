@@ -654,6 +654,10 @@ struct GraphicalDisplay::Impl {
   // 読み込む(見つからなければserifFontMissingを立て、以後はふだんのフォントで描く)。
   TTF_Font *serifFont = nullptr;
   bool serifFontMissing = false;
+  // setContentOffsetX()参照。
+  int contentOffsetX = 0;
+  int contentOffsetRows = 0;
+  int offsetXForRow(int row) const { return row < contentOffsetRows ? contentOffsetX : 0; }
   int fgColorActive = Display::kDefaultColor, bgColorActive = Display::kDefaultColor;  // setColor()
 
   // renderCursor()が実際に描く「論理的な」カーソル位置――上の
@@ -1282,11 +1286,16 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
 // 影響を受けない)が同一の内容を正しくレンダリングしていることに気づく
 // ことで発見された、マウスをクリックして押さえている間は文字化けが
 // 「直る」という実際の報告に基づく。
+void GraphicalDisplay::setContentOffsetX(int pixels, int rowCount) {
+  impl_->contentOffsetX = pixels;
+  impl_->contentOffsetRows = rowCount;
+}
+
 void GraphicalDisplay::renderCellBackground(int row, int col) {
   if (!impl_->outputEnabled) return;
   const Cell &cell = impl_->cellAt(row, col);
-  SDL_Rect box{Impl::kMarginX + col * impl_->cellWidth, Impl::kMarginY + row * impl_->cellHeight, impl_->cellWidth,
-               impl_->cellHeight};
+  SDL_Rect box{Impl::kMarginX + col * impl_->cellWidth + impl_->offsetXForRow(row),
+               Impl::kMarginY + row * impl_->cellHeight, impl_->cellWidth, impl_->cellHeight};
   // 2026-09-26: ANSIの色(Cell::fgColor/bgColor)を反映。反転表示なら入れ替える。
   SDL_Color bg = cell.bgColor != Display::kDefaultColor ? ansiColorToSdl(cell.bgColor) : impl_->bg;
   if (cell.standout) bg = cell.fgColor != Display::kDefaultColor ? ansiColorToSdl(cell.fgColor) : impl_->fg;
@@ -1303,8 +1312,8 @@ void GraphicalDisplay::renderCellBackground(int row, int col) {
 void GraphicalDisplay::renderCell(int row, int col) {
   if (!impl_->outputEnabled) return;
   const Cell &cell = impl_->cellAt(row, col);
-  SDL_Rect box{Impl::kMarginX + col * impl_->cellWidth, Impl::kMarginY + row * impl_->cellHeight, impl_->cellWidth,
-               impl_->cellHeight};
+  SDL_Rect box{Impl::kMarginX + col * impl_->cellWidth + impl_->offsetXForRow(row),
+               Impl::kMarginY + row * impl_->cellHeight, impl_->cellWidth, impl_->cellHeight};
 
   SDL_Color fg = cell.fgColor != Display::kDefaultColor ? ansiColorToSdl(cell.fgColor) : impl_->fg;
   SDL_Color bg = cell.bgColor != Display::kDefaultColor ? ansiColorToSdl(cell.bgColor) : impl_->bg;
@@ -1630,7 +1639,7 @@ void GraphicalDisplay::renderCursor() {
   if (impl_->cellAt(row, col).continuation && col > 0) homeCol = col - 1;
   bool isWide = (homeCol + 1 < impl_->columns) && impl_->cellAt(row, homeCol + 1).continuation;
 
-  SDL_Rect box{Impl::kMarginX + homeCol * impl_->cellWidth, Impl::kMarginY + row * impl_->cellHeight,
+  SDL_Rect box{Impl::kMarginX + homeCol * impl_->cellWidth + impl_->offsetXForRow(row), Impl::kMarginY + row * impl_->cellHeight,
                impl_->cellWidth * (isWide ? 2 : 1), impl_->cellHeight};
   SDL_SetRenderDrawColor(impl_->renderer, impl_->fg.r, impl_->fg.g, impl_->fg.b, 255);
   SDL_RenderFillRect(impl_->renderer, &box);
@@ -2288,7 +2297,8 @@ bool GraphicalDisplay::pumpEvents() {
           // 参照): 下のhover分岐と全く同じピクセル→セル変換。
           int dragCol = std::max(0, event.motion.x - Impl::kMarginX) / std::max(impl_->cellWidth, 1);
           int dragRow = std::max(0, event.motion.y - Impl::kMarginY) / std::max(impl_->cellHeight, 1);
-          impl_->dragQueue.push_back(DragEvent{DragEventType::Motion, event.motion.yrel, dragRow, dragCol});
+          impl_->dragQueue.push_back(
+              DragEvent{DragEventType::Motion, event.motion.yrel, dragRow, dragCol, event.motion.xrel});
         } else if (SDL_GetWindowFlags(impl_->window) & SDL_WINDOW_INPUT_FOCUS) {
           // キーボード/入力フォーカスで判定している(SDL_WINDOW_MOUSE_
           // FOCUSでは「ない」、それだと、アクティブかどうかに関わらず、
@@ -2522,6 +2532,8 @@ std::optional<GraphicalDisplay::ScrollbarEvent> GraphicalDisplay::consumeScrollb
   impl_->scrollbarQueue.pop_front();
   return event;
 }
+
+int GraphicalDisplay::cellWidthPixels() const { return impl_->cellWidth; }
 
 int GraphicalDisplay::cellHeightPixels() const { return impl_->cellHeight; }
 int GraphicalDisplay::marginYPixels() const { return Impl::kMarginY; }

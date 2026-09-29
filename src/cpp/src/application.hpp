@@ -1960,7 +1960,10 @@ class Application {
   // EPUBの縦書き(Application::rebuildEpubVertical()参照): -gのホイール/トラック
   // パッドを列単位の横スクロールにするためにapp/main.cppから使う。
   bool epubVerticalScrollActive() const;
-  bool scrollEpubVertical(int delta);
+  bool scrollEpubVertical(int delta);  // 右端の列が実際に動いたらtrue
+  // 2026-09-29追加、直接のユーザー依頼("左右方向の画面ドラッグを実装で"): 縦書きの本文で
+  // 左右ドラッグを受け付けるか(app/main.cpp、GraphicalDisplay::setContentOffsetX()参照)。
+  bool epubVerticalDragActive() const;
   // 2026-09-25追加: 長い同期処理(^[^Mの「そのまま読む」)の途中で、
   // GUIウィンドウ側にキー入力が届いたかを問い合わせる関数。GUIでは
   // キーがSDL経由で届き起動元ターミナル(keyInput_)には来ないため。

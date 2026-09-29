@@ -382,8 +382,14 @@ class GraphicalDisplay : public Display {
     // 見ないので、それらの既存の呼び出し元には影響しない。
     int row = 0;
     int column = 0;
+    int deltaX = 0;  // Motionに対して有効(2026-09-29、EPUBの縦書きの左右ドラッグ用)
   };
   std::optional<DragEvent> consumeDragEvent();
+
+  // 2026-09-29追加、直接のユーザー依頼("左右方向の画面ドラッグを実装で"): 上から
+  // `rowCount`行(本文、モードラインは含めない)を右へ`pixels`ずらして描く(負なら左)。
+  // EPUBの縦書きの左右ドラッグの途中で使い、離したら0に戻す(app/main.cpp参照)。
+  void setContentOffsetX(int pixels, int rowCount);
 
   // SDL_MOUSEWHEELからキューに入れられる、マウスのスクロール
   // ホイールのティック――これが何に使われるかについてはapp/main.cpp
@@ -483,6 +489,7 @@ class GraphicalDisplay : public Display {
                        const std::vector<Display::ModeLineSegment> &modeLineSegments) override;
 
   int cellHeightPixels() const;
+  int cellWidthPixels() const;  // 2026-09-29、EPUBの縦書きの左右ドラッグ用
 
   // ウィンドウのカーソルを、デフォルトの矢印と、本物のmacOSの
   // 開いた手のカーソルのピクセル(mac_cursor.hpp経由でNSCursor.

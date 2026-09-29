@@ -211,6 +211,8 @@ std::vector<EpubVerticalColumn> layoutEpubVerticalColumns(const std::vector<Epub
 
 int epubVerticalColumnsPerScreen(int columns) { return std::max(1, columns / kColumnPitch); }
 
+int epubVerticalColumnPitch() { return kColumnPitch; }
+
 int epubVerticalScreenColumn(int k, int columns) { return columns - 3 - k * kColumnPitch; }
 
 std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVerticalColumn> &cols, int first,

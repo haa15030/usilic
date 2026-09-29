@@ -64,6 +64,9 @@ std::vector<EpubVerticalColumn> layoutEpubVerticalColumns(const std::vector<Epub
 // 画面の幅`columns`に並ぶ列の数。
 int epubVerticalColumnsPerScreen(int columns);
 
+// 1列の幅(桁、全角2セル+行間1セル)。
+int epubVerticalColumnPitch();
+
 // columns[first]を右端に置いて、画面1枚分(rows行)を描く。行はカーソル行の
 // ハイライトの対象外(neverHighlighted、横一列がハイライトされる――ユーザー報告)。
 // 列の並び(2026-09-29改訂): 右からk番目の列は桁[screenColumns-3-3k, screenColumns-2-3k]、

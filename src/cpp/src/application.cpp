@@ -6841,6 +6841,10 @@ void Application::leaveEpubHorizontalIfOutside() {
   activeView().syncVisibleCursor();
 }
 
+bool Application::epubVerticalDragActive() const {
+  return currentMode_ == ApplicationMode::File && epubVerticalActive() && !promptActive();
+}
+
 bool Application::epubVerticalScrollActive() const {
   return ((currentMode_ == ApplicationMode::File && epubVerticalActive()) ||
           (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive())) &&
@@ -7135,7 +7139,9 @@ bool Application::scrollEpubVertical(int delta) {
     selectEpubTocVertical(cutView_.cursorIndex() + delta);
     return true;
   }
+  int before = epubVerticalFirst_;
   setEpubVerticalFirst(epubVerticalFirst_ + delta);
+  if (epubVerticalFirst_ == before) return false;
   epubVerticalView_.redraw();
   epubVerticalView_.syncVisibleCursor();  // -cの端末のカーソルを列カーソルの頭へ(setEpubVerticalView()参照)
   return true;

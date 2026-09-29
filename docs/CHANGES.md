@@ -27440,3 +27440,19 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      たまたま正しかった。
    - **修正**: 縦書きの列の桁は決まっている(epubVerticalScreenColumn()、右端から3桁ごと)ので、
      その桁かどうかで見る。空のセルも空白として扱う。
+520. **2026-09-29: -gのEPUBの縦書きの本文を左右ドラッグでドット単位に動かす**
+   - **経緯**: 直接のユーザー依頼("横方向のドットスクロールはできる？"→"左右方向の画面
+     ドラッグを実装で")。
+   - **仕組み**: 上下のドラッグ(dragging/renderScrolled()、行単位の描画)とは別に、
+     app/main.cppにepubDragging/epubDragOffsetを持つ。縦書きの本文
+     (Application::epubVerticalDragActive())でボタンを押して動かすと、DragEventの新設の
+     deltaX(SDLのxrel)をためて、本文の行だけをGraphicalDisplay::setContentOffsetX()
+     (新設、renderCellBackground()/renderCell()/カーソルの描画の桁の位置をずらす)で横に
+     ずらして描く。1列の幅(epubVerticalColumnPitch()×cellWidthPixels()、ともに新設)を
+     越えるたびにApplication::scrollEpubVertical()で1列動かし(右へで先へ、本文が右へ動き
+     左から次の列が出る)、ずれを1列分戻す。本の端で動けなければずらさない。離すと、半列
+     以上ずれていればその向きに1列動かしてから、ずれを0にする。ドラッグの離しはクリック
+     (列の選択)にしない。scrollEpubVertical()は右端の列が実際に動いた時だけtrueを返す。
+   - **未対応**: ずらしている間、ずれの反対側の端に1列分までの空きが見える(画面の外の列は
+     描かないため)。慣性(離した後の惰性)は無し。ドラッグでは章の頭の揃え・扉のページ・
+     横書きの範囲への出入りをしない(1列ずつの横スクロールと同じ)。
