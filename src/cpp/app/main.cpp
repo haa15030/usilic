@@ -2517,7 +2517,32 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // 方向が逆")により、deltaXが正で先へ。
       if (app.epubVerticalScrollActive()) {
         int delta = wheel->deltaY != 0 ? (wheel->deltaY > 0 ? -1 : 1) : (wheel->deltaX > 0 ? 1 : -1);
-        app.scrollEpubVertical(delta);
+        if (!app.epubVerticalDragActive()) {  // 縦書きの章の一覧: 従来どおり1章ずつ
+          app.scrollEpubVertical(delta);
+          continue;
+        }
+        // 2026-09-29、直接のユーザー依頼("ホイールでスクロール開始と速度調整を実装よろしく"):
+        // 縦書きの本文では、下の上下のホイールと同じ規則で左右の慣性(epubCoastLevel)を
+        // 動かす――止まっていれば段階1でその向きに流し始め、同じ向きならもう1段速く、
+        // 逆向きなら1段遅く、0になったら止めて近い列にそろえる。
+        if (epubCoastLevel == 0) {
+          epubCoastDirection = delta;
+          epubCoastLevel = resolveCoastLevel(1);
+        } else if (delta == epubCoastDirection) {
+          epubCoastLevel =
+              resolveCoastLevel(std::min(epubCoastLevel + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1));
+        } else if (epubCoastLevel - 1 <= 0) {
+          int pitch = std::max(1, gui.cellWidthPixels() * fm::epubVerticalColumnPitch());
+          if (epubDragOffset >= pitch / 2) app.scrollEpubVertical(1);
+          else if (epubDragOffset <= -pitch / 2) app.scrollEpubVertical(-1);
+          epubCoastLevel = 0;
+          epubCoastDirection = 0;
+          epubDragOffset = 0;
+          gui.setContentOffsetX(0, 0);
+          gui.flush();
+        } else {
+          epubCoastLevel = resolveCoastLevel(epubCoastLevel - 1);
+        }
         continue;
       }
       if (wheel->deltaY == 0) continue;  // 横だけのイベント(WheelEvent::deltaX参照)
