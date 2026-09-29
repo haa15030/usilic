@@ -1052,11 +1052,19 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
         run->second = at;
         continue;
       }
+      // 横書きの範囲は、後ろに続く空行等(記録の無い行)も次の行の手前まで含める(2026-09-29、
+      // 直接のユーザー報告――本の最後の空行が奥付の範囲の外にあり、奥付の最下行から先へ進むと
+      // 範囲の後ろへ出た扱いになって縦書きへ戻っていた)。扉は空の列の数が変わるので広げない。
+      if (run && runKind == Kind::Horizontal) run->second = at - 1;
       flush();
       if (kind != Kind::Normal) {
         run = std::make_pair(at, at);
         runKind = kind;
       }
+    }
+    if (run && runKind == Kind::Horizontal) {  // 本の最後まで
+      int total = static_cast<int>(std::count(out.begin(), out.end(), '\n'));
+      run->second = std::max(run->second, total);
     }
     flush();
     for (int line : converter.alignEndLines())
