@@ -1,5 +1,7 @@
 #include "graphical_display.hpp"
 
+#include "epub_vertical.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -1457,19 +1459,27 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // 他のマスは何もしない(背景は全マス描いた後に字を描くので上書きされない)。
   // 1マスだけなら縦中横(立てたまま、下の通常の描画)。
   if (impl_->verticalText) {
-    auto halfAt = [&](int r, int c) {
+    // 2026-09-29訂正、直接のユーザー報告("閉じブラケットが行方不明。CUT一覧ではバッチリ"
+    // =ho/=hp): マスの位置(列の左の桁)を中身(左隣が空いているか)から推し量っていたため、
+    // 左隣が空の列(章の頭を揃える空の列等)だと1桁ずれた所を2字のマスと取り違え、":"
+    // "]"を含む行が消えていた。縦書きの列の桁は決まっている(epubVerticalScreenColumn())
+    // ので、それで見る。行末の空白は描く前に切り詰められて空のセルになるので、空も
+    // 空白として扱う。
+    auto columnStart = [&](int c) {
+      int k = epubVerticalColumnAt(c, impl_->columns);
+      return k >= 0 && epubVerticalScreenColumn(k, impl_->columns) == c;
+    };
+    auto halfAt = [&](int r, int c) {  // 半角1字(空白・空を含む)
       if (r < 0 || r >= impl_->rows || c < 0 || c >= impl_->columns) return false;
       const Cell &o = impl_->cellAt(r, c);
-      return !o.continuation && o.glyph.size() == 1 && o.glyph[0] >= 0x20 && o.glyph[0] < 0x7F;
+      return !o.continuation && (o.glyph.empty() || (o.glyph.size() == 1 && o.glyph[0] >= 0x20 && o.glyph[0] < 0x7F));
     };
-    auto gapAt = [&](int r, int c) {
-      if (c < 0) return true;
-      const Cell &o = impl_->cellAt(r, c);
-      return !o.continuation && (o.glyph.empty() || o.glyph == " ");
+    auto blank = [&](int r, int c) {
+      const std::string &g = impl_->cellAt(r, c).glyph;
+      return g.empty() || g == " ";
     };
     auto pairAt = [&](int r, int c) {
-      return halfAt(r, c) && halfAt(r, c + 1) && gapAt(r, c - 1) &&
-             (impl_->cellAt(r, c).glyph != " " || impl_->cellAt(r, c + 1).glyph != " ");
+      return columnStart(c) && halfAt(r, c) && halfAt(r, c + 1) && (!blank(r, c) || !blank(r, c + 1));
     };
     int runColumn = pairAt(row, col) ? col : pairAt(row, col - 1) ? col - 1 : -1;
     if (runColumn >= 0) {
@@ -1480,7 +1490,10 @@ void GraphicalDisplay::renderCell(int row, int col) {
         if (row != top || col != runColumn) return;
         std::string run;
         for (int r = top; r <= bottom; r++)
-          run += impl_->cellAt(r, runColumn).glyph + impl_->cellAt(r, runColumn + 1).glyph;
+          for (int c : {runColumn, runColumn + 1}) {
+            const std::string &g = impl_->cellAt(r, c).glyph;
+            run += g.empty() ? std::string(" ") : g;
+          }
         while (!run.empty() && run.back() == ' ') run.pop_back();
         int pw = 0, ph = 0;
         SDL_Texture *runTexture = cachedGlyphTexture(*impl_, renderFont, run, style, hinting, fg, true, pw, ph);
