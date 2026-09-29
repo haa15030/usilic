@@ -430,6 +430,10 @@ Configuration::Configuration() {
   addBuiltinAlias(".tbz2", ".tar.bz2");
   addBuiltinAlias(".txz", ".tar.xz");
   addBuiltinAlias(".tzst", ".tar.zst");
+  // 2026-09-29追加、直接のユーザー依頼("(ls)で^OeならARC"): .epubの中身はzip。
+  // (ls)の[Enter]・FILE履歴等はApplication側でEPUBモードを優先し、ARCで開くのは
+  // ^Oe(Application::openEpubAsArchive())だけ。
+  addBuiltinAlias(".epub", ".zip");
 }
 
 std::optional<ProgramCommand> Configuration::findBuiltinArchiveAlias(const std::string &searchText) const {

@@ -553,8 +553,9 @@ enum class Command {
   // K-98(^Je)/K-99(^J^E、2026-09-28): EPUB: 入力/一覧。Application::openEpub()参照。
   StartEpubPrompt,
   StartEpubList,
-  // K-100(^Oe、2026-09-28): EPUBの縦書き/横書きの切り替え。Application::toggleEpubVertical()参照。
-  ToggleEpubVertical,
+  // K-100(^Oe): (ls)で選んでいる.epubをARCで開く(2026-09-29、縦書き/横書きの切り替え
+  // から変更)。Application::openEpubAsArchive()参照。
+  OpenEpubAsArchive,
   // ESC l("LOG"): Application::executeStartLog()自身のコメント参照。
   StartLog,
   // K-0(^T、M_usilic、「USILIC」): ステータス/バージョン情報画面を表示
@@ -1461,11 +1462,10 @@ class Application {
   // パス等、それ以外での終了はこの対象外(currentResumableName()
   // 自身のコメント参照、ユーザー自身の要求の範囲を超えるため意図的に
   // 追わない)。
-  // 2026-09-29追記、直接のユーザー報告("縦書き画面で終えたのに次の-c/-g起動では横書き、
-  // しかも一旦（ls）と行き来しないと^Oeが利かない"): .epubはopenEpub()で開き直し
-  // (EPUBモードになる)、epubVertical(SessionState::epubVertical)なら縦書きで開く。
+  // 2026-09-29追記: .epubはopenEpub()で開き直す(EPUBモード、縦横は本が決める)。
+  // ARCで見ていた.epubは「パス/」(openEpubAsArchive()参照)。
   bool startResumingSession(const std::string &lastOpenName, const std::string &fallbackDirectory,
-                             bool consultHistory = true, bool epubVertical = false);
+                             bool consultHistory = true);
 
   // 現在のモードに応じて、SessionState::lastOpenNameへ保存すべき単一の
   // パスを返す(main.cpp自身の終了時の呼び出し参照)。startResumingSession()
@@ -1473,8 +1473,6 @@ class Application {
   // いない)Archiveモードだけを扱い、それ以外は単にDirectoryMode::
   // currentDirectory()を返す。
   std::string currentResumableName() const;
-  // SessionState::epubVertical用: EPUBの本文を縦書きで見ている間だけtrue。
-  bool currentResumableEpubVertical() const;
 
   // 2026-08-25(直接のユーザー依頼): `paths`をDirectoryモードの
   // Enterキーフローを完全に迂回して直接Fileモードで開く――1つ以上
@@ -2473,7 +2471,7 @@ class Application {
   bool openEpubSegmentImage(const CutSegment &segment);  // 自身のコメント(application.cpp)参照
   bool openEpubLineImage(const ContentView &view);       // 同上
   bool openEpubImageIn(const std::string &text);          // 同上
-  bool openEpub(const std::string &path, bool vertical = false);  // EPUBモード、自身のコメント(application.cpp)参照
+  bool openEpub(const std::string &path);  // EPUBモード、自身のコメント(application.cpp)参照
   // 縦書き(rebuildEpubVertical()自身のコメント参照)
   bool epubVerticalActive() const;
   int fileRawLineAtCursor() const;
@@ -2485,13 +2483,11 @@ class Application {
   int epubVerticalCurrentRaw() const;
   void syncEpubVerticalToFile();
   std::optional<bool> handleEpubVerticalCommand(Command command);
-  bool toggleEpubVertical();  // K-100(^Oe)
-  // 2026-09-29追加、直接のユーザー依頼("縦書きで(ls)へ戻った時は^J^J、再起動時も
-  // 含めて縦書きに戻って欲しい"): 本ごとに最後が縦書きだったかを履歴のMODE章へ
-  // (キーは「パス+"\t縦書き"」、rowが1なら縦書き)。openEpub()が読み、開いた時と
-  // ^Oeで書く。
-  bool rememberedEpubVertical(const std::string &path) const;
-  void rememberEpubVertical(const std::string &path, bool vertical);
+  // K-100(^Oe、2026-09-29): .epubをARCで開く。FILE履歴には「パス/」で積み、
+  // バッジは"(unzip)"(EPUBモードで開いた「パス」は"(epub)")――履歴の一覧から
+  // どちらのモードで開いたか分かるように(直接のユーザー依頼)。
+  bool openEpubAsArchive(const std::string &path);
+  bool openSelectedEpubAsArchive();
   bool clickEpubVertical(int row, int column);
   struct EpubVerticalTarget {
     std::optional<int> link;  // リンク先の元の行番号
@@ -2500,7 +2496,6 @@ class Application {
   std::optional<EpubVerticalTarget> epubVerticalColumnTarget(long column) const;
   bool activateEpubVerticalColumn(long column);
   bool epubVertical_ = false;
-  bool epubOpenVerticalNext_ = false;  // ^J^Eの一覧から開く本は縦書き
   std::vector<EpubVerticalColumn> epubVerticalCols_;  // 組んだ列の並び(右から左へ読む順)
   int epubVerticalFirst_ = 0;                         // 右端に置いている列
   int epubVerticalCursor_ = 0;                        // 列カーソル(setEpubVerticalView()参照)

@@ -20,8 +20,9 @@ ARCHIVE
 # here.  It only works for files whose content is an existing format, like
 # .epub or .cbz.  An alias added here works everywhere in ARC mode
 # (opening, listing, extracting, ^Oa, archives inside archives).
-# Regardless of this section, .epub opens in EPUB mode (chapter list and
-# text), and ^Oa in (ls) extracts it as an archive.
+# .epub is a built-in alias of .zip.  [Enter] in (ls) opens it in EPUB mode
+# (chapter list and text, vertical or horizontal as the book specifies);
+# ^Oe lists its contents in ARC mode, and ^Oa extracts it.
 #
 # Built-in suffixes:
 #  .tar        tar tvf
@@ -38,7 +39,6 @@ ARCHIVE
 #
 # Examples:
 
-#	.epub	.zip
 #	.cbz	.zip
 #	.apk	.zip
 #	.cbr	.rar
@@ -371,4 +371,4 @@ KEY
 	K-97	F-4 w       # ^J^Ow  WORK
 	K-98	F-1 e       # ^Je    EPUB: input
 	K-99	F-1 C-e     # ^J^E   EPUB: list
-	K-100	F-2 e       # ^Oe    EPUB: vertical/horizontal
+	K-100	F-2 e       # ^Oe    ARC: contents of .epub

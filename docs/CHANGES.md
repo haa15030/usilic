@@ -27332,3 +27332,20 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      状態を、toggleEpubVertical()(^Oe)は切り替えた後の状態を書き
      (rememberEpubVertical()、変わらなければ書かない)、openEpub()は覚えていれば
      縦書きで開く(rememberedEpubVertical())。^OeでEPUBを横書きに戻せば次からは横書き。
+513. **2026-09-29: ^Oeで.epubをARCで開く、履歴に(unzip)/(epub)、縦横は本が決める(切り替えは廃止)**
+   - **経緯**: 直接のユーザー依頼("(ls)で^OeならARC、FILE履歴にも(unzip)付きで残る。^Mで
+     選んだらEPUB、FILE履歴には(epub)付きにすれば履歴一覧からモード種別を判断できる。
+     キー操作での縦横切り替えは廃止。著者は、いずれかをcssファイルに設定してあるはず
+     なのでそれで判断する")。本全体の向きは、Kbt.epubで確かめた結果、OPFの
+     page-progression-direction="rtl"で判断することにした(章ごとの縦横はこの後の段階)。
+   - **ARC**: .epubを組み込みの.zipの別名にした(Configuration)。(ls)の[Enter]・FILE履歴・
+     再開ではEPUBモードを優先し、K-100(^Oe、Command::OpenEpubAsArchive)だけが
+     openEpubAsArchive()でARCで開く。FILE履歴には「パス/」で積み、openRecentFileEntry()/
+     startResumingSession()/currentResumableName()/goToRecentFile()はこの形をARCとして扱う。
+   - **バッジ**: fileHistoryBadges()は、.epubの「パス」に"(epub)"、「パス/」に"(unzip)"。
+   - **縦横**: openEpub()はepubIsRightToLeft()(epub_to_help_markup.cpp)がtrueなら縦書き。
+     ^Oeの切り替え(toggleEpubVertical())、^Je/^J^Eの縦書きの強制(epubOpenVerticalNext_)、
+     本ごとの縦横の記憶(項目512)、再開時のSessionState::epubVertical(項目500、欄は
+     書式のため残し常にfalse)は廃止。
+   - **usilicrc/usilicrc.en**: K-100の説明、ARCHIVE節の.epubの説明を直し、.epubの記入例を
+     外した。

@@ -38,4 +38,9 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember,
 // 「表紙 [image: title]」にして returnでクイックルックというのは？")。
 std::optional<std::string> findEpubImageMember(const EpubMemberReader &readMember, const std::string &fileName);
 
+// 2026-09-29追加、直接のユーザー依頼("キー操作での縦横切り替えは廃止。著者は、いずれかを
+// cssファイルに設定してあるはずなのでそれで判断する"): 本全体の向き。OPFの
+// <spine page-progression-direction="rtl">(右から左へめくる=縦書きの和書)ならtrue。
+bool epubIsRightToLeft(const EpubMemberReader &readMember);
+
 }  // namespace fm

@@ -680,6 +680,16 @@ std::optional<std::string> findEpubImageMember(const EpubMemberReader &readMembe
   return std::nullopt;
 }
 
+bool epubIsRightToLeft(const EpubMemberReader &readMember) {
+  std::string opfPath;
+  auto opf = readOpf(readMember, &opfPath);
+  if (!opf) return false;
+  for (const auto &t : tokenizeXml(*opf))
+    if ((t.kind == XmlToken::Open || t.kind == XmlToken::SelfClose) && t.name == "spine")
+      return attr(t, "page-progression-direction") == "rtl";
+  return false;
+}
+
 std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, std::map<int, int> *links) {
   std::string opfPath;
   auto opf = readOpf(readMember, &opfPath);

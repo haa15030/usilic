@@ -19,8 +19,9 @@ ARCHIVE
 # 使えるのは、.epub や .cbz のように中身が既存の形式であるファイルだけ
 # です。ここで足した別名は、ARC モード(開く、一覧、取り出し、^Oa、
 # アーカイブの中のアーカイブ)の全てで効きます。
-# .epub はここでの設定に関わらず EPUB モード(章の一覧と本文)で開き、
-# (ls) の ^Oa でアーカイブとして展開できます。
+# .epub は組み込みで .zip の別名です。(ls) の [Enter] では EPUB モード(章の
+# 一覧と本文、縦横は本の指定どおり)で開き、^Oe で ARC として中身を一覧、
+# ^Oa で展開できます。
 #
 # 組み込みの suffix:
 #  .tar        tar tvf
@@ -37,7 +38,6 @@ ARCHIVE
 #
 # 例:
 
-#	.epub	.zip
 #	.cbz	.zip
 #	.apk	.zip
 #	.cbr	.rar
@@ -363,4 +363,4 @@ KEY
 	K-97	F-4 w       # ^J^Ow  WORK
 	K-98	F-1 e       # ^Je    EPUB: 入力
 	K-99	F-1 C-e     # ^J^E   EPUB: 一覧
-	K-100	F-2 e       # ^Oe    EPUB: 縦書き/横書き
+	K-100	F-2 e       # ^Oe    ARC: .epubの中身

@@ -369,7 +369,14 @@ std::vector<std::string> fileHistoryBadges(const Configuration &configuration, R
   std::vector<std::string> badges;
   if (category != RingCategory::RecentFile) return badges;
   badges.reserve(items.size());
-  for (const auto &item : items) badges.push_back(archiveBadgeFor(configuration, item));
+  // 2026-09-29: .epubは開き方で分ける――EPUBモードの「パス」は"(epub)"、ARCで開いた
+  // 「パス/」は"(unzip)"(Application::openEpubAsArchive()参照)。
+  for (const auto &item : items) {
+    bool epubArchive = item.size() > 1 && item.back() == '/' && isEpubFile(item.substr(0, item.size() - 1));
+    if (epubArchive) badges.push_back(archiveBadgeFor(configuration, item.substr(0, item.size() - 1)));
+    else if (isEpubFile(item)) badges.push_back("(epub)");
+    else badges.push_back(archiveBadgeFor(configuration, item));
+  }
   return badges;
 }
 
@@ -1886,16 +1893,15 @@ std::string Application::currentResumableName() const {
   // 自身のコメント参照。ネストしていない(トップレベルのアーカイブを
   // 見ている)間だけ、currentArchive()は最初にloadArchive()へ渡した
   // 本物のファイルパスと一致し続け、そのまま安全に保存・復元できる。
-  if (currentMode_ == ApplicationMode::Archive && archiveParentStack_.empty()) return archiveMode_.currentArchive();
+  if (currentMode_ == ApplicationMode::Archive && archiveParentStack_.empty()) {
+    const std::string &archive = archiveMode_.currentArchive();
+    return isEpubFile(archive) ? archive + "/" : archive;  // ARCで見ていた.epub(openEpubAsArchive()参照)
+  }
   return directoryMode_.currentDirectory();
 }
 
-bool Application::currentResumableEpubVertical() const {
-  return currentMode_ == ApplicationMode::File && epubVerticalActive();
-}
-
 bool Application::startResumingSession(const std::string &lastOpenName, const std::string &fallbackDirectory,
-                                        bool consultHistory, bool epubVertical) {
+                                        bool consultHistory) {
   // 2026-09-25追加、直接のユーザー報告("INFOで^X^C^Mすると次回起動時
   // INFOではなく~/.usilic/usilic（平文テキスト）が表示される"): INFOは
   // bannerFilePath()へ書き出した合成ファイルをFILEモードで見せている
@@ -1924,10 +1930,24 @@ bool Application::startResumingSession(const std::string &lastOpenName, const st
       }
     }
   }
+  // ARCで見ていた.epub(「パス/」、openEpubAsArchive()参照)
+  if (lastOpenName.size() > 1 && lastOpenName.back() == '/' && isEpubFile(lastOpenName.substr(0, lastOpenName.size() - 1))) {
+    std::string epub = lastOpenName.substr(0, lastOpenName.size() - 1);
+    if (std::filesystem::is_regular_file(epub, ec) && !ec &&
+        directoryMode_.enterDirectory(std::filesystem::path(epub).parent_path().string(), consultHistory)) {
+      if (!openEpubAsArchive(epub)) currentMode_ = ApplicationMode::Directory;
+      return true;
+    }
+  }
   if (!lastOpenName.empty() && std::filesystem::is_regular_file(lastOpenName, ec) && !ec) {
     std::string parent = std::filesystem::path(lastOpenName).parent_path().string();
     if (parent.empty()) parent = fallbackDirectory;
     if (directoryMode_.enterDirectory(parent, consultHistory)) {
+      // .epubはEPUBモードで(ARCHIVEの別名で.zip扱いなので、loadArchive()より先に)
+      if (isEpubFile(lastOpenName) && !configuration_.isExec(lastOpenName)) {
+        if (!openEpub(lastOpenName)) currentMode_ = ApplicationMode::Directory;
+        return true;
+      }
       // loadArchive()を先に試す(loadFile()より先): アーカイブファイル
       // 自身もstd::filesystem::is_regular_file()には該当するので、
       // openSelectedEntry()自身の判定順序(アーカイブ判定が通常
@@ -1935,11 +1955,6 @@ bool Application::startResumingSession(const std::string &lastOpenName, const st
       if (archiveMode_.loadArchive(lastOpenName)) {
         archiveParentStack_.clear();  // openSelectedEntry()自身のコメント参照――全く新しいトップレベルの入場
         currentMode_ = ApplicationMode::Archive;
-        return true;
-      }
-      // .epubはEPUBモードで(openEpub()、startResumingSession()の宣言コメント参照)
-      if (isEpubFile(lastOpenName) && !configuration_.isExec(lastOpenName)) {
-        if (!openEpub(lastOpenName, epubVertical)) currentMode_ = ApplicationMode::Directory;
         return true;
       }
       if (fileMode_.loadFile(lastOpenName)) {
@@ -3142,8 +3157,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 済みファイル/ディレクトリの一覧(旧^J^Y)をここへ戻した。
       case 'u':  // ^O u : USILIC、マークしたファイル/ディレクトリの一覧
         return handleCommand(Command::StartUnderlineView);
-      case 'e':  // ^O e : EPUBの縦書き/横書きの切り替え(K-100、2026-09-28)
-        return handleCommand(Command::ToggleEpubVertical);
+      case 'e':  // ^O e : (ls)の.epubをARCで開く(K-100、2026-09-29)
+        return handleCommand(Command::OpenEpubAsArchive);
       case 'a':  // ^O a : ARC展開(旧^X a、K-58)――^O aはここへ移る
                  // 前にHELP/KEYの表示言語切り替えが占めていたが、
                  // それは^J aへ先に移した(kKeyTable自身の"^Ja"コメント
@@ -4564,8 +4579,8 @@ bool Application::handleCommandImpl(Command command) {
       return startEpubPrompt();
     case Command::StartEpubList:
       return startEpubList();
-    case Command::ToggleEpubVertical:
-      return toggleEpubVertical();
+    case Command::OpenEpubAsArchive:
+      return openSelectedEpubAsArchive();
     case Command::ShowShellLog:
       return executeShowShellLog();
     case Command::StartLog:
@@ -5876,14 +5891,7 @@ bool Application::jumpToPathPrefix() {
 // するか(Shellのコマンドラインを事前に埋めるのか?Shellが既に開始
 // されている必要があるのか?)を決めることは、当てずっぽうにする
 // のではなく意図的に未着手のままにしてあるため。
-// ^J^E(EPUBだけのFILE履歴)から選んだ本は縦書きで開く(ユーザー指定)。一覧の
-// 文脈(promptHistoryContext_)は選択の途中で片付けられるので、先に控えておく。
-bool Application::openSelectedListEntry() {
-  epubOpenVerticalNext_ = promptHistoryContext_ && promptHistoryContext_->epubOnly;
-  bool ok = openSelectedListEntryImpl();
-  epubOpenVerticalNext_ = false;
-  return ok;
-}
+bool Application::openSelectedListEntry() { return openSelectedListEntryImpl(); }
 
 bool Application::openSelectedListEntryImpl() {
   const std::string *item = listBrowserMode_.selectedItem();
@@ -6076,6 +6084,8 @@ bool Application::openRecentFileEntry(const std::string &path) {
     }
     return true;
   }
+  if (path.size() > 1 && path.back() == '/' && isEpubFile(path.substr(0, path.size() - 1)))
+    return openEpubAsArchive(path.substr(0, path.size() - 1));  // ARCで開いた.epub(openEpubAsArchive()参照)
   if (isEpubFile(path) && !configuration_.isExec(path)) return openEpub(path);  // openEpub()自身のコメント参照
   if (archiveMode_.loadArchive(path)) {
     archiveParentStack_.clear();
@@ -6113,8 +6123,10 @@ bool Application::goToRecentFile() {
   // ArchiveContentの外(比較対象となる「現在開いている」ものが無い)
   // ではこれは変わらない――常にring自身の最後のエントリ。
   std::string current;
-  if (currentMode_ == ApplicationMode::Archive || currentMode_ == ApplicationMode::ArchiveContent)
+  if (currentMode_ == ApplicationMode::Archive || currentMode_ == ApplicationMode::ArchiveContent) {
     current = archiveMode_.currentArchive();
+    if (isEpubFile(current)) current += "/";  // ARCで開いた.epubの履歴の形(openEpubAsArchive()参照)
+  }
   else if (currentMode_ == ApplicationMode::File)
     current = fileMode_.currentFile();
   // 現在と同じものだけでなく、「失敗した」エントリも越えてたどり続け
@@ -6663,10 +6675,11 @@ bool Application::openEpubImageIn(const std::string &text) {
 //   - 本文ではリンク(下線)で[Enter]→リンク先、^X^Xで戻る(followEpubLink())。
 // 入口は(ls)の[Enter]、FILE履歴、^Xf、^Je/^J^E。EXEC節で.epubに外部
 // プログラムを割り当てていればそちらが優先(openExternallyIfApplicable())。
-bool Application::openEpub(const std::string &path, bool vertical) {
-  vertical = vertical || epubOpenVerticalNext_;  // ^J^Eの一覧から(openSelectedListEntry()参照)
-  vertical = vertical || rememberedEpubVertical(path);  // 前回縦書きで離れた本(^J^J・FILE履歴・再起動)
-  epubOpenVerticalNext_ = false;
+bool Application::openEpub(const std::string &path) {
+  // 2026-09-29、直接のユーザー依頼("キー操作での縦横切り替えは廃止。著者は、いずれかを
+  // cssファイルに設定してあるはずなのでそれで判断する"): 縦書きかどうかは本が決める
+  // (epubIsRightToLeft()、OPFのpage-progression-direction="rtl")。
+  bool vertical = epubIsRightToLeft(fileMode_.epubMemberReader(path));
   bool firstTime = !history_.positionFor(PositionCategory::File, path);
   if (!fileMode_.loadFile(path, [this]() { return keyInterruptRequested(); })) return false;
   fileMode_.annotations().clear();
@@ -6679,7 +6692,6 @@ bool Application::openEpub(const std::string &path, bool vertical) {
   cutSyntax_ = GrepSyntax::Fixed;
   cutReturnMode_ = ApplicationMode::Directory;
   epubVertical_ = vertical;
-  rememberEpubVertical(path, vertical);
   if (vertical) rebuildEpubVertical(fileRawLineAtCursor());
   if (!cutMode_.split(sourceLines, kHelpPattern, GrepSyntax::Fixed)) {
     // 章の印が1つも無い本: 本文だけ(^Gで(ls)へ)
@@ -7028,38 +7040,29 @@ bool Application::clickEpubTocVertical(int row, int column) {
   return true;
 }
 
-namespace {
-std::string epubVerticalHistoryKey(const std::string &path) { return path + "\t縦書き"; }
-}  // namespace
-
-bool Application::rememberedEpubVertical(const std::string &path) const {
-  auto pos = history_.positionFor(PositionCategory::Screen, epubVerticalHistoryKey(path));
-  return pos && pos->row == 1;
-}
-
-void Application::rememberEpubVertical(const std::string &path, bool vertical) {
-  if (rememberedEpubVertical(path) == vertical) return;  // 変わらなければ履歴を書かない
-  History::CursorPosition pos;
-  pos.row = vertical ? 1 : 0;
-  history_.setPosition(PositionCategory::Screen, epubVerticalHistoryKey(path), pos);
-}
-
-// K-100(^Oe): EPUBモード(章の一覧・本文)の中で縦書きと横書きを切り替える。
-bool Application::toggleEpubVertical() {
-  if (cutOrigin_ != CutOrigin::Epub || !isEpubFile(fileMode_.currentFile())) return false;
-  if (currentMode_ != ApplicationMode::File && currentMode_ != ApplicationMode::Cut) return false;
-  if (epubVertical_) {
-    if (currentMode_ == ApplicationMode::File) syncEpubVerticalToFile();
-    epubVertical_ = false;
-  } else {
-    epubVertical_ = true;
-    rebuildEpubVertical(fileRawLineAtCursor());
-  }
-  if (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive()) refreshEpubTocVertical();
-  rememberEpubVertical(fileMode_.currentFile(), epubVertical_);
-  activeView().redraw();
-  activeView().syncVisibleCursor();
+// K-100(^Oe、2026-09-29、直接のユーザー依頼"(ls)で^OeならARC、FILE履歴にも(unzip)付きで
+// 残る。^Mで選んだらEPUB、FILE履歴には(epub)付きにすれば履歴一覧からモード種別を判断
+// できる"): .epubをzipとしてARCで開く(.epubはConfigurationの組み込みの別名で.zip)。
+// FILE履歴にはEPUBモードの「パス」と区別するため「パス/」で積む(fileHistoryBadges()が
+// "(unzip)"を付け、openRecentFileEntry()/startResumingSession()がARCで開き直す)。
+bool Application::openEpubAsArchive(const std::string &path) {
+  if (currentMode_ == ApplicationMode::File) fileMode_.saveCursorPosition();
+  if (!archiveMode_.loadArchive(path)) return false;
+  archiveParentStack_.clear();
+  currentMode_ = ApplicationMode::Archive;
+  history_.pushRecent(RingCategory::RecentFile, path + "/");
   return true;
+}
+
+bool Application::openSelectedEpubAsArchive() {
+  if (currentMode_ != ApplicationMode::Directory) return false;
+  const DirectoryEntry *entry = directoryMode_.selectedEntry();
+  if (!entry || entry->isDirectory || !isEpubFile(entry->name)) return false;
+  std::string path = directoryMode_.currentDirectory();
+  if (!path.empty() && path.back() != '/') path += '/';
+  path += entry->name;
+  directoryMode_.primaryAnnotations().pop();  // openSelectedEntry()と同じく、開いた時点で(ls)の注釈を消す
+  return openEpubAsArchive(path);
 }
 
 // 縦書きの本文のクリック: 1回目はその列へ列カーソルを動かし、列カーソルの列を
@@ -7108,8 +7111,7 @@ bool Application::activateEpubVerticalColumn(long c) {
 
 // K-98(^Je、2026-09-28): EPUBのパスを入力して開く(openEpub())。(ls)で.epubを
 // 選んでいればその名前を入れておく。K-99(^J^E): FILE履歴のうちEPUBだけの一覧
-// (選ぶとopenRecentFileEntry()→openEpub())。縦書き(^Je/^J^Eから開いた時は
-// 縦書き、^Oeで切り替え)は段階2で足す。
+// (選ぶとopenRecentFileEntry()→openEpub())。縦横は本が決める(openEpub()参照)。
 bool Application::startEpubPrompt() {
   std::string seed;
   if (currentMode_ == ApplicationMode::Directory)
@@ -11875,7 +11877,7 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
           activeView().redraw();
           return false;
         }
-        return openEpub(resolved.path, /*vertical=*/true);  // ^Jeは縦書き(ユーザー指定)
+        return openEpub(resolved.path);
       }
       return executePathInput(text);
     // K-46/K-48自身の投入: PathInput(K-45/K-47)と同一のパスの検証
