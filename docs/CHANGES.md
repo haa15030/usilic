@@ -27252,3 +27252,17 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (PositionCategory::Screen)へ保存し(saveCutFilePosition()、^Gで戻る時・区間を
      開く時・FILE履歴から別のものを開く時)、同じものを開き直すと復元する
      (restoreCutFilePosition())。ネストした再分割の中では保存しない。
+506. **2026-09-29(項目505の続き): CUT一覧の位置をセンタリング、^Cfの戻り値を(ls)に、FILE履歴の直近に"^<"**
+   - **経緯**: 直接のユーザー報告("以前の行をセンタリングして欲しい(^Lの時と同じ)"、
+     "戻り値がHISTORY.mdのまま。FILE履歴で"^<"付きのはすべて^Cfで選んだはずで^Cfは
+     (ls)からしか発動できない。なので戻り値も(ls)でないと"、"参照後、(ls)へ戻った後
+     ^X^F^Rの直近に"^<"が無い")。
+   - **センタリング**: restoreCutFilePosition()で、復元した行をcenterOnCursor()で
+     画面中央へ(^Lと同じ)。
+   - **戻り値**: 項目505で^Gの戻り先自体は(ls)になったが、CUTのモードラインの戻り値欄
+     (trailing3)はcutOrigin_ == Fileなら常にCUTしたファイルのパスを出していた。
+     cutReturnMode_ == Directoryの時は(ls)のディレクトリを出す(^Cbは従来どおり
+     ファイル)。
+   - **FILE履歴の順**: openRecentFileEntry()の「パス "パターン"」の分岐では、
+     loadFile()がパス単体を積むため、合成エントリより新しくなっていた。split()の後で
+     合成エントリを積み直す(executeCut()のファイルの分岐と同じ順)。

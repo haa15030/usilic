@@ -1213,7 +1213,13 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // フィールドの形を保っている――どちらについても確認済みの参照は
     // まだ無い。
     if (!cutMode_.parentPattern() && (cutOrigin_ == CutOrigin::File || cutOrigin_ == CutOrigin::Directory)) {
-      std::string path = (cutOrigin_ == CutOrigin::File) ? fileMode_.currentFile() : directoryMode_.currentDirectory();
+      // 2026-09-29修正、直接のユーザー報告("戻り値がHISTORY.mdのまま...^Cfは(ls)
+      // からしか発動できない。なので戻り値も(ls)でないと"): 戻り値欄は^Gの戻り先
+      // なので、ファイルCUT(^Cf、cutReturnMode_ == Directory)ではCUTした
+      // ファイルではなく(ls)のディレクトリを出す。^Cb(FILEへ戻る)は従来どおり。
+      std::string path = (cutOrigin_ == CutOrigin::File && cutReturnMode_ != ApplicationMode::Directory)
+                             ? fileMode_.currentFile()
+                             : directoryMode_.currentDirectory();
       std::size_t bytes = contentByteCount(cutOrigin_ == CutOrigin::File ? fileView_ : directoryView_);
       // 2026-09-27追加、直接のユーザー依頼("CUTのモードライン、検索結果一覧の
       // 画面では(EGREP)があるほうがいい"): in-place GREPと同じ並び(バッジ、
@@ -6003,6 +6009,10 @@ bool Application::openRecentFileEntry(const std::string &path) {
     cutOrigin_ = CutOrigin::File;
     cutSyntax_ = syntax;
     if (!cutMode_.split(sourceLines, pattern, cutSyntax_)) return false;
+    // 2026-09-29修正、直接のユーザー報告("参照後、(ls)へ戻った後^X^F^Rの直近に
+    // "^<"が無い"): loadFile()がパス単体を積んで合成エントリより新しくして
+    // しまうので、executeCut()のファイルの分岐と同じく、その後で積み直す。
+    history_.pushRecent(RingCategory::RecentFile, path);
     restoreCutFilePosition(path);
     currentMode_ = ApplicationMode::Cut;
     return true;
@@ -7486,6 +7496,7 @@ void Application::restoreCutFilePosition(const std::string &key) {
   if (!pos) return;
   int last = static_cast<int>(cutMode_.segments().size()) - 1;
   cutView_.setCursorIndex(std::max(0, std::min(pos->row, last)));
+  cutView_.centerOnCursor();  // ^Lと同じく画面中央へ(2026-09-29、直接のユーザー依頼)
   cutView_.redraw();
 }
 
