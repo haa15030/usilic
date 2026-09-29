@@ -3175,6 +3175,14 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // 外へ出たら縦書きへ戻す(Application::syncEpubHorizontalSection()参照)。戻ったら上下の
     // 慣性は止める(縦書きの画面は上下には動かない)。
     if (app.syncEpubHorizontalSection()) {
+      // 2026-09-29、直接のユーザー依頼("空白行のスキップと同時に方向を変えてそのまま縦方向に
+      // 継続してほしい"の逆向き): 上下の慣性で横書きの範囲から出たら、同じ段階の左右の慣性
+      // として続ける(前へ出たら前へ=右へ)。coastDirectionは-1で先へ(下の上下の慣性参照)。
+      if (coastLevel > 0 && app.epubVerticalDragActive()) {
+        epubCoastLevel = coastLevel;
+        epubCoastDirection = coastDirection < 0 ? 1 : -1;
+        epubDragOffset = 0;
+      }
       coastLevel = 0;
       coastDirection = 0;
       pixelOffset = 0;
@@ -3203,6 +3211,14 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           if (stop) break;
           performScrollStepDelay(step);
         } while (std::chrono::steady_clock::now() < frameDeadline);
+      }
+      // 2026-09-29、直接のユーザー依頼("慣性スクロールについては、空白行のスキップと同時に方向を
+      // 変えてそのまま縦方向に継続してほしい"): 左右の慣性で横書きの範囲(奥付等)へ入ったら
+      // (scrollEpubVertical()が入る)、同じ段階の上下の慣性として続ける(先へなら下へ)。
+      if (stop && app.epubHorizontalSectionActive() && app.currentMode() == fm::ApplicationMode::File) {
+        coastLevel = epubCoastLevel;
+        coastDirection = epubCoastDirection > 0 ? -1 : 1;
+        pixelOffset = 0;
       }
       if (stop) {
         epubCoastLevel = 0;

@@ -2505,6 +2505,8 @@ class Application {
   // epubVerticalStep()と同じ(空の列を飛ばして章の頭を右端に、扉はページごと)。描き直し
   // はしない。右端の列が動いたらtrue。
   bool stepEpubVerticalFirst(int delta);
+  // 縦書きの列の端(deltaの向き)の先(前)に横書きの範囲があればそこへ入る(描き直す)。
+  bool enterEpubHorizontalAtEdge(int delta);
   bool leaveEpubHorizontalIfOutside();  // 縦書きへ戻ったらtrue
 
  public:
@@ -2514,6 +2516,9 @@ class Application {
   // ホイール・ドラッグはキー/コマンドを通らない)。縦書きへ戻ったらtrue(呼び出し元は上下の
   // 慣性を止める)。
   bool syncEpubHorizontalSection() { return leaveEpubHorizontalIfOutside(); }
+  // 縦書きの本の中の横書きの範囲(奥付等)を見ている間true(app/main.cppが慣性を縦横の間で
+  // 引き継ぐのに使う)。
+  bool epubHorizontalSectionActive() const { return epubHorizontalSection_.has_value(); }
 
  private:
   std::optional<std::pair<int, int>> epubHorizontalSection_;

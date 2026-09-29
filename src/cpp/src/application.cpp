@@ -2427,7 +2427,11 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // 意味は無い)。
   if (byte == ' ' && !special && handleCommand(Command::QuickLook)) return true;
 
-  if (special && ((currentMode_ == ApplicationMode::File && epubVerticalActive()) ||
+  // 縦書きの本の中の横書きの範囲(奥付等)でも同じ(2026-09-29、直接のユーザー報告"←なら
+  // カーソルは移動するが奥付ページに変わった後はさっきの画面との間で行き来ループ"――横書きの
+  // ←は「上へ」なので範囲の前へ出て縦書きへ戻り、次の←でまた入っていた。右から左へ読む
+  // 本なのでKindle等と同じく←で先へ)。
+  if (special && ((currentMode_ == ApplicationMode::File && (epubVerticalActive() || epubHorizontalSection_)) ||
                   (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive()))) {
     // 縦書き(handleEpubVerticalCommand()参照)は右から左へ読むので、←で先へ、→で戻る
     if (*special == KeyInput::SpecialKey::Left) return handleCommand(Command::MoveDown);
@@ -7075,6 +7079,35 @@ std::pair<int, int> Application::epubVerticalStep(int cursor, bool forward) cons
   return {jumped ? (t / perScreen) * perScreen : -1, t};
 }
 
+bool Application::enterEpubHorizontalAtEdge(int delta) {
+  // 2026-09-29(同じ報告"慣性スクロールは奥付の前の章で止まる"): 縦書きの列の端で、その先に
+  // 横書きの範囲(奥付等)があればそこへ入る(k/jのmaybeEnterEpubHorizontal()と同じ)。
+  const auto &ranges = fileMode_.epubLayoutHints().horizontal;
+  int edgeRaw = -1;
+  for (const auto &col : epubVerticalCols_)
+    if (!col.padding && (edgeRaw < 0 || delta > 0)) edgeRaw = col.rawLineNumber;  // 先へ: 最後/前へ: 最初の本文の列
+  if (edgeRaw < 0) return false;
+  std::optional<std::pair<int, int>> target;
+  if (delta > 0) {
+    for (const auto &range : ranges)
+      if (range.first > edgeRaw) {
+        target = range;
+        break;
+      }
+  } else {
+    for (auto it = ranges.rbegin(); it != ranges.rend(); ++it)
+      if (it->second < edgeRaw) {
+        target = *it;
+        break;
+      }
+  }
+  if (!target) return false;
+  enterEpubHorizontal(*target, delta > 0 ? target->first : target->second);
+  activeView().redraw();
+  activeView().syncVisibleCursor();
+  return true;
+}
+
 // 2026-09-29追加、直接のユーザー依頼("k/jによる行送りでは章の最終行の次行は次の章になる
 // (画面左端までの空行をスキップ)。同じ動きをスクロールにも実装して")。
 bool Application::stepEpubVerticalFirst(int delta) {
@@ -7134,11 +7167,11 @@ std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
       if (crossing(false)) return true;
       break;
     }
-    case Command::ScrollLineDown:
-      stepEpubVerticalFirst(1);
+    case Command::ScrollLineDown:  // j(2026-09-29、本の端では奥付等の横書きの範囲へ)
+      if (!stepEpubVerticalFirst(1) && enterEpubHorizontalAtEdge(1)) return true;
       break;
-    case Command::ScrollLineUp:
-      stepEpubVerticalFirst(-1);
+    case Command::ScrollLineUp:  // k
+      if (!stepEpubVerticalFirst(-1) && enterEpubHorizontalAtEdge(-1)) return true;
       break;
     case Command::PageDown:
       setEpubVerticalView(first + perScreen, cursor + perScreen);
@@ -7182,34 +7215,7 @@ bool Application::scrollEpubVertical(int delta) {
     selectEpubTocVertical(cutView_.cursorIndex() + delta);
     return true;
   }
-  if (!stepEpubVerticalFirst(delta)) {
-    // 2026-09-29(同じ報告"慣性スクロールは奥付の前の章で止まる"): 縦書きの列の端で、その先に
-    // 横書きの範囲(奥付等)があればそこへ入る(k/jのmaybeEnterEpubHorizontal()と同じ)。
-    const auto &ranges = fileMode_.epubLayoutHints().horizontal;
-    int edgeRaw = -1;
-    for (const auto &col : epubVerticalCols_)
-      if (!col.padding && (edgeRaw < 0 || delta > 0)) edgeRaw = col.rawLineNumber;  // 先へ: 最後/前へ: 最初の本文の列
-    if (edgeRaw < 0) return false;
-    std::optional<std::pair<int, int>> target;
-    if (delta > 0) {
-      for (const auto &range : ranges)
-        if (range.first > edgeRaw) {
-          target = range;
-          break;
-        }
-    } else {
-      for (auto it = ranges.rbegin(); it != ranges.rend(); ++it)
-        if (it->second < edgeRaw) {
-          target = *it;
-          break;
-        }
-    }
-    if (!target) return false;
-    enterEpubHorizontal(*target, delta > 0 ? target->first : target->second);
-    activeView().redraw();
-    activeView().syncVisibleCursor();
-    return true;
-  }
+  if (!stepEpubVerticalFirst(delta)) return enterEpubHorizontalAtEdge(delta);
   epubVerticalView_.redraw();
   epubVerticalView_.syncVisibleCursor();  // -cの端末のカーソルを列カーソルの頭へ(setEpubVerticalView()参照)
   return true;
