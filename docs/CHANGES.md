@@ -27290,3 +27290,19 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      openRecentFileEntry()自体を区間の中身から呼んだ場合(^J^J/^X^F)も行を保存する。
    - **再開**: 区間を開き直す処理をstartResumingSession()からopenRecentFileEntry()の
      合成エントリの分岐へ移し、^J^J・^X^FのFILE履歴・次回起動の再開で共通にした。
+509. **2026-09-29: ^Jeで.epub以外のファイルも、EPUBモードの縦書きで開く**
+   - **経緯**: 直接のユーザー依頼("HISTORY.md:21607の最後、「(ls)から^Jeでファイルを
+     選ぶとEPUBモードへ移行して縦書きになる」、.epubファイル以外では常時縦書き、を
+     実装してほしい"。元の提案は2026-09-28のEPUBモード新設案、4.の回答".epub以外は
+     一律縦書きでいいのでは？でないとここへ来る意味がない。モード内での縦横切り替えは
+     ^Oeで")。
+   - **^Je**: 入力欄の初期値を(ls)で選んでいるファイル(.epubに限らない)にし、.epub
+     以外のファイルも受け付けてopenEpub()で開く。.epub以外は常に縦書きで開く。
+     章の印(行末のタブ、QUICK.txt/Markdown等)があれば章の一覧から、無ければ本文だけ。
+   - **縦書きの対象**: 縦書き・^Oeの判定(epubVerticalActive()/toggleEpubVertical())は
+     isEpubFile(今のファイル)だったのを、epubModeFileShown()(.epub、または^Jeで開いた
+     .epub以外のファイルepubPlainFile_)にした。epubPlainFile_は(ls)へ戻ると空にする
+     (saveCutPositionIfLeft()の中)ので、同じファイルを(ls)の[Enter]等で開けば通常の
+     FILE。リンク・画像(zipから取り出す)は.epubだけのまま。
+   - **既知の制限**: .epub以外を縦書きで見たまま終えると、次の起動の再開は通常のFILE
+     (横書き)で開く。

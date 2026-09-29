@@ -6647,6 +6647,8 @@ bool Application::openEpubImageIn(const std::string &text) {
 bool Application::openEpub(const std::string &path, bool vertical) {
   vertical = vertical || epubOpenVerticalNext_;  // ^J^Eの一覧から(openSelectedListEntry()参照)
   epubOpenVerticalNext_ = false;
+  epubPlainFile_ = isEpubFile(path) ? "" : path;  // epubPlainFile_自身のコメント参照
+  if (!epubPlainFile_.empty()) vertical = true;    // .epub以外は常に縦書きで開く
   bool firstTime = !history_.positionFor(PositionCategory::File, path);
   if (!fileMode_.loadFile(path, [this]() { return keyInterruptRequested(); })) return false;
   fileMode_.annotations().clear();
@@ -6724,7 +6726,12 @@ bool Application::returnToEpubToc() {
 // キーはhandleEpubVerticalCommand()が列単位の横スクロールに読み替える。横書きの
 // fileView_は裏で持ち続け、位置の記録(FILE履歴)・章の一覧との行き来・縦横の
 // 切り替えは、元の行番号(rawLineNumber)で両者を対応させる(syncEpubVerticalToFile())。
-bool Application::epubVerticalActive() const { return epubVertical_ && isEpubFile(fileMode_.currentFile()); }
+bool Application::epubVerticalActive() const { return epubVertical_ && epubModeFileShown(); }
+
+bool Application::epubModeFileShown() const {
+  const std::string &file = fileMode_.currentFile();
+  return isEpubFile(file) || (!epubPlainFile_.empty() && file == epubPlainFile_);
+}
 
 bool Application::epubVerticalScrollActive() const {
   return currentMode_ == ApplicationMode::File && epubVerticalActive() && !promptActive();
@@ -6895,7 +6902,7 @@ bool Application::scrollEpubVertical(int delta) {
 
 // K-100(^Oe): EPUBモード(章の一覧・本文)の中で縦書きと横書きを切り替える。
 bool Application::toggleEpubVertical() {
-  if (cutOrigin_ != CutOrigin::Epub || !isEpubFile(fileMode_.currentFile())) return false;
+  if (cutOrigin_ != CutOrigin::Epub || !epubModeFileShown()) return false;
   if (currentMode_ != ApplicationMode::File && currentMode_ != ApplicationMode::Cut) return false;
   if (epubVertical_) {
     if (currentMode_ == ApplicationMode::File) syncEpubVerticalToFile();
@@ -6960,8 +6967,8 @@ bool Application::activateEpubVerticalColumn(long c) {
 bool Application::startEpubPrompt() {
   std::string seed;
   if (currentMode_ == ApplicationMode::Directory)
-    if (const DirectoryEntry *entry = directoryMode_.selectedEntry(); entry && isEpubFile(entry->name))
-      seed = entry->name;
+    if (const DirectoryEntry *entry = directoryMode_.selectedEntry(); entry && !entry->isDirectory)
+      seed = entry->name;  // .epub以外も(epubPlainFile_参照)
   epubPathPending_ = true;
   activatePrompt(PromptKind::PathInput, seed);
   return true;
@@ -7537,6 +7544,7 @@ Application::CutLeaveSnapshot Application::cutLeaveSnapshot() const {
 }
 
 void Application::saveCutPositionIfLeft(const CutLeaveSnapshot &before) {
+  if (currentMode_ == ApplicationMode::Directory) epubPlainFile_.clear();  // epubPlainFile_自身のコメント参照
   bool wasCut = before.mode == ApplicationMode::Cut || before.mode == ApplicationMode::CutContent;
   bool isCut = currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent;
   if (!wasCut || isCut || before.key.empty() || before.key != cutPositionKey_) return;
@@ -11718,7 +11726,7 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
       if (epubPathPending_) {  // ^Je(startEpubPrompt()参照)
         epubPathPending_ = false;
         ResolvedPath resolved = pathResolver_.resolve(text, directoryMode_.currentDirectory());
-        if (!resolved.exists || resolved.isDirectory || !isEpubFile(resolved.path)) {
+        if (!resolved.exists || resolved.isDirectory) {  // .epub以外も縦書きで(epubPlainFile_参照)
           activeView().redraw();
           return false;
         }
