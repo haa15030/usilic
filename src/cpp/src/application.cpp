@@ -6665,6 +6665,7 @@ bool Application::openEpubImageIn(const std::string &text) {
 // プログラムを割り当てていればそちらが優先(openExternallyIfApplicable())。
 bool Application::openEpub(const std::string &path, bool vertical) {
   vertical = vertical || epubOpenVerticalNext_;  // ^J^Eの一覧から(openSelectedListEntry()参照)
+  vertical = vertical || rememberedEpubVertical(path);  // 前回縦書きで離れた本(^J^J・FILE履歴・再起動)
   epubOpenVerticalNext_ = false;
   bool firstTime = !history_.positionFor(PositionCategory::File, path);
   if (!fileMode_.loadFile(path, [this]() { return keyInterruptRequested(); })) return false;
@@ -6678,6 +6679,7 @@ bool Application::openEpub(const std::string &path, bool vertical) {
   cutSyntax_ = GrepSyntax::Fixed;
   cutReturnMode_ = ApplicationMode::Directory;
   epubVertical_ = vertical;
+  rememberEpubVertical(path, vertical);
   if (vertical) rebuildEpubVertical(fileRawLineAtCursor());
   if (!cutMode_.split(sourceLines, kHelpPattern, GrepSyntax::Fixed)) {
     // 章の印が1つも無い本: 本文だけ(^Gで(ls)へ)
@@ -7026,6 +7028,22 @@ bool Application::clickEpubTocVertical(int row, int column) {
   return true;
 }
 
+namespace {
+std::string epubVerticalHistoryKey(const std::string &path) { return path + "\t縦書き"; }
+}  // namespace
+
+bool Application::rememberedEpubVertical(const std::string &path) const {
+  auto pos = history_.positionFor(PositionCategory::Screen, epubVerticalHistoryKey(path));
+  return pos && pos->row == 1;
+}
+
+void Application::rememberEpubVertical(const std::string &path, bool vertical) {
+  if (rememberedEpubVertical(path) == vertical) return;  // 変わらなければ履歴を書かない
+  History::CursorPosition pos;
+  pos.row = vertical ? 1 : 0;
+  history_.setPosition(PositionCategory::Screen, epubVerticalHistoryKey(path), pos);
+}
+
 // K-100(^Oe): EPUBモード(章の一覧・本文)の中で縦書きと横書きを切り替える。
 bool Application::toggleEpubVertical() {
   if (cutOrigin_ != CutOrigin::Epub || !isEpubFile(fileMode_.currentFile())) return false;
@@ -7038,6 +7056,7 @@ bool Application::toggleEpubVertical() {
     rebuildEpubVertical(fileRawLineAtCursor());
   }
   if (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive()) refreshEpubTocVertical();
+  rememberEpubVertical(fileMode_.currentFile(), epubVertical_);
   activeView().redraw();
   activeView().syncVisibleCursor();
   return true;

@@ -2486,6 +2486,12 @@ class Application {
   void syncEpubVerticalToFile();
   std::optional<bool> handleEpubVerticalCommand(Command command);
   bool toggleEpubVertical();  // K-100(^Oe)
+  // 2026-09-29追加、直接のユーザー依頼("縦書きで(ls)へ戻った時は^J^J、再起動時も
+  // 含めて縦書きに戻って欲しい"): 本ごとに最後が縦書きだったかを履歴のMODE章へ
+  // (キーは「パス+"\t縦書き"」、rowが1なら縦書き)。openEpub()が読み、開いた時と
+  // ^Oeで書く。
+  bool rememberedEpubVertical(const std::string &path) const;
+  void rememberEpubVertical(const std::string &path, bool vertical);
   bool clickEpubVertical(int row, int column);
   struct EpubVerticalTarget {
     std::optional<int> link;  // リンク先の元の行番号

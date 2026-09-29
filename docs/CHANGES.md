@@ -27321,3 +27321,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      だけだった。縦書きの章の一覧(epubTocVerticalActive())の間も有効にする。
    - **戻り値**: 章の一覧(横書きのcutView_・縦書きのepubTocVerticalView_とも)の戻り値欄が
      本のパスだった。^Gの戻り先は(ls)(returnFromCut())なので、(ls)のディレクトリを出す。
+512. **2026-09-29: 縦書きで離れたEPUBは、^J^J・FILE履歴・再起動後も縦書きで開く**
+   - **経緯**: 直接のユーザー依頼("縦書きで(ls)へ戻った時は^J^J、再起動時も含めて
+     縦書きに戻って欲しい")。
+   - **原因**: 縦書きかどうかはepubVertical_(実行中だけ)と、終了時にEPUBの本文を
+     見ていた場合のSessionState::epubVertical(項目500)にしか無かった。(ls)へ戻って
+     から^J^Jで開き直す・(ls)で終えて再起動後に開く、ではopenEpub()が横書きで開いた。
+   - **修正**: 本ごとに最後が縦書きだったかを履歴のMODE章(PositionCategory::Screen、
+     キーは「パス+"\t縦書き"」、rowが1なら縦書き)に残す。openEpub()は開いた時の
+     状態を、toggleEpubVertical()(^Oe)は切り替えた後の状態を書き
+     (rememberEpubVertical()、変わらなければ書かない)、openEpub()は覚えていれば
+     縦書きで開く(rememberedEpubVertical())。^OeでEPUBを横書きに戻せば次からは横書き。
