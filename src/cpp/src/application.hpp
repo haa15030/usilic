@@ -1964,6 +1964,15 @@ class Application {
   // 2026-09-29追加、直接のユーザー依頼("左右方向の画面ドラッグを実装で"): 縦書きの本文で
   // 左右ドラッグを受け付けるか(app/main.cpp、GraphicalDisplay::setContentOffsetX()参照)。
   bool epubVerticalDragActive() const;
+  // 2026-09-29追加、直接のユーザー依頼("スクロールバーは出ないの？"→B「右端の縦の
+  // スクロールバーをそのまま使う」): 縦書きの本文の間、右端のスクロールバーに渡す
+  // {右端の列, 列の数, 1画面の列の数}(上端が本の最初、下端が本の最後)。それ以外はnullopt。
+  struct EpubScrollbar {
+    int first, total, perScreen;
+  };
+  std::optional<EpubScrollbar> epubVerticalScrollbar() const;
+  // スクロールバーのクリック/つまみのドラッグ: 本全体の`fraction`(0〜1)の所を右端に。
+  void jumpEpubVerticalToFraction(double fraction);
   // 2026-09-25追加: 長い同期処理(^[^Mの「そのまま読む」)の途中で、
   // GUIウィンドウ側にキー入力が届いたかを問い合わせる関数。GUIでは
   // キーがSDL経由で届き起動元ターミナル(keyInput_)には来ないため。

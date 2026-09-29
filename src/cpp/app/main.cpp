@@ -2629,6 +2629,33 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     };
     while (auto sb = gui.consumeScrollbarEvent()) {
       anyEventThisFrame = true;
+      // 縦書きの本文(Application::epubVerticalScrollbar()参照): 上端が本の最初、下端が本の
+      // 最後。draggingは立てない(立てると行単位のrenderScrolled()で描き、縦書きのマスの
+      // 描画を通らない)。
+      if (app.epubVerticalDragActive()) {
+        auto jumpEpub = [&](int y) {
+          int trackHeight = std::max(gui.rows() - 1, 0) * cellHeight;
+          if (trackHeight <= 0) return;
+          app.jumpEpubVerticalToFraction(static_cast<double>(y - gui.marginYPixels()) / trackHeight);
+        };
+        switch (sb->type) {
+          case fm::GraphicalDisplay::ScrollbarEventType::ButtonDown:
+            epubCoastLevel = 0;  // 左右の慣性を止める
+            epubCoastDirection = 0;
+            epubDragOffset = 0;
+            gui.setContentOffsetX(0, 0);
+            gui.setPointingCursor(true);
+            jumpEpub(sb->y);
+            break;
+          case fm::GraphicalDisplay::ScrollbarEventType::Motion:
+            jumpEpub(sb->y);
+            break;
+          case fm::GraphicalDisplay::ScrollbarEventType::ButtonUp:
+            gui.setPointingCursor(false);
+            break;
+        }
+        continue;
+      }
       switch (sb->type) {
         case fm::GraphicalDisplay::ScrollbarEventType::ButtonDown:
           // 2026-09-02 fix, a direct user report (=fg/=fh): confirmed via
@@ -3225,7 +3252,10 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // real, always-current thumb instead of the removed decorative
     // placeholder. Must run BEFORE the redraw() call below so flush()
     // sees this frame's values, not the previous one's.
-    gui.updateScrollPosition(view.topIndex(), static_cast<int>(view.lines().size()), std::max(gui.rows() - 1, 0));
+    if (auto epubBar = app.epubVerticalScrollbar())  // 縦書きの本文(Application::epubVerticalScrollbar()参照)
+      gui.updateScrollPosition(epubBar->first, epubBar->total, epubBar->perScreen);
+    else
+      gui.updateScrollPosition(view.topIndex(), static_cast<int>(view.lines().size()), std::max(gui.rows() - 1, 0));
 
     if (dragging || coastLevel > 0 || pixelOffset != 0) {
       wasActivelyScrolling = true;

@@ -6846,6 +6846,21 @@ void Application::leaveEpubHorizontalIfOutside() {
   activeView().syncVisibleCursor();
 }
 
+std::optional<Application::EpubScrollbar> Application::epubVerticalScrollbar() const {
+  if (!epubVerticalDragActive()) return std::nullopt;
+  return EpubScrollbar{epubVerticalFirst_, static_cast<int>(epubVerticalCols_.size()),
+                       epubVerticalColumnsPerScreen(display_.columns())};
+}
+
+void Application::jumpEpubVerticalToFraction(double fraction) {
+  if (!epubVerticalDragActive()) return;
+  int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+  int scrollable = std::max(0, static_cast<int>(epubVerticalCols_.size()) - perScreen);
+  setEpubVerticalFirst(static_cast<int>(std::clamp(fraction, 0.0, 1.0) * scrollable));
+  epubVerticalView_.redraw();
+  epubVerticalView_.syncVisibleCursor();
+}
+
 bool Application::epubVerticalDragActive() const {
   return currentMode_ == ApplicationMode::File && epubVerticalActive() && !promptActive();
 }
