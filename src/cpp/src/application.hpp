@@ -2492,6 +2492,10 @@ class Application {
   // 列cが空の列/扉のページなら、その後の(forward)/前の本文の列、または扉の書名の列へ
   // 寄せ、右端を画面の区切りに揃える(ページ送り・飛び先用)。
   void snapEpubVerticalToPage(bool forward);
+  // 右端の列を1列ずつdelta列ずらす(ホイール・ドラッグ・1列スクロール)。1列ずつの規則は
+  // epubVerticalStep()と同じ(空の列を飛ばして章の頭を右端に、扉はページごと)。描き直し
+  // はしない。右端の列が動いたらtrue。
+  bool stepEpubVerticalFirst(int delta);
   void leaveEpubHorizontalIfOutside();
   std::optional<std::pair<int, int>> epubHorizontalSection_;
   int fileRawLineAtCursor() const;

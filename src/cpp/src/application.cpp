@@ -6796,16 +6796,21 @@ void Application::enterEpubHorizontal(const std::pair<int, int> &range, int rawL
 bool Application::maybeEnterEpubHorizontal(int fromRaw, bool forward) {
   const auto &ranges = fileMode_.epubLayoutHints().horizontal;
   int now = epubVerticalCurrentRaw();
-  int last = static_cast<int>(epubVerticalCols_.size()) - 1;
+  // 本の端: カーソルの先(前)に本文の列(空の列以外)が無い
+  auto noTextBeyond = [this](int dir) {
+    for (int c = epubVerticalCursor_ + dir; c >= 0 && c < static_cast<int>(epubVerticalCols_.size()); c += dir)
+      if (!epubVerticalCols_[c].padding) return false;
+    return true;
+  };
   if (forward) {
     for (const auto &range : ranges)
-      if (range.first > fromRaw && (now >= range.first || epubVerticalCursor_ >= last)) {
+      if (range.first > fromRaw && (now >= range.first || noTextBeyond(1))) {
         enterEpubHorizontal(range, range.first);
         return true;
       }
   } else {
     for (auto it = ranges.rbegin(); it != ranges.rend(); ++it)
-      if (it->second < fromRaw && (now <= it->second || epubVerticalCursor_ <= 0)) {
+      if (it->second < fromRaw && (now <= it->second || noTextBeyond(-1))) {
         enterEpubHorizontal(*it, it->second);
         return true;
       }
@@ -6930,6 +6935,7 @@ void Application::rebuildEpubVertical(int rawLine) {
     }
     pushPadding(pad - pad / 2, range->second);
   }
+  padToPage();  // 最後の章も右端から始められるよう(右端に置ける列の上限は列の数-perScreen)
   epubVerticalMark_.reset();
   showEpubVerticalRaw(rawLine);
 }
@@ -7046,6 +7052,20 @@ std::pair<int, int> Application::epubVerticalStep(int cursor, bool forward) cons
   return {jumped ? (t / perScreen) * perScreen : -1, t};
 }
 
+// 2026-09-29追加、直接のユーザー依頼("k/jによる行送りでは章の最終行の次行は次の章になる
+// (画面左端までの空行をスキップ)。同じ動きをスクロールにも実装して")。
+bool Application::stepEpubVerticalFirst(int delta) {
+  bool moved = false;
+  for (int k = 0; k < std::abs(delta); k++) {
+    int before = epubVerticalFirst_;
+    auto [first, target] = epubVerticalStep(epubVerticalFirst_, delta > 0);
+    setEpubVerticalFirst(first < 0 ? target : first);
+    if (epubVerticalFirst_ == before) break;
+    moved = true;
+  }
+  return moved;
+}
+
 void Application::snapEpubVerticalToPage(bool forward) {
   int n = static_cast<int>(epubVerticalCols_.size());
   int c = epubVerticalCursor_;
@@ -7092,10 +7112,10 @@ std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
       break;
     }
     case Command::ScrollLineDown:
-      setEpubVerticalFirst(first + 1);
+      stepEpubVerticalFirst(1);
       break;
     case Command::ScrollLineUp:
-      setEpubVerticalFirst(first - 1);
+      stepEpubVerticalFirst(-1);
       break;
     case Command::PageDown:
       setEpubVerticalView(first + perScreen, cursor + perScreen);
@@ -7139,9 +7159,7 @@ bool Application::scrollEpubVertical(int delta) {
     selectEpubTocVertical(cutView_.cursorIndex() + delta);
     return true;
   }
-  int before = epubVerticalFirst_;
-  setEpubVerticalFirst(epubVerticalFirst_ + delta);
-  if (epubVerticalFirst_ == before) return false;
+  if (!stepEpubVerticalFirst(delta)) return false;
   epubVerticalView_.redraw();
   epubVerticalView_.syncVisibleCursor();  // -cの端末のカーソルを列カーソルの頭へ(setEpubVerticalView()参照)
   return true;
