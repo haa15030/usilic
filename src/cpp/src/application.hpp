@@ -2212,6 +2212,15 @@ class Application {
   bool returnFromCutContent();
   bool returnFromCut();
   bool returnToCutResults();
+  // 2026-09-29追加、cutPositionKey_自身のコメント参照。ファイルCUTの
+  // 一覧のカーソル位置を、「パス "パターン"」をキーに履歴(MODE章)へ
+  // 保存/復元する。
+  void saveCutFilePosition();
+  void restoreCutFilePosition(const std::string &key);
+  // ファイルCUT(^Cfとその履歴)の^Gの戻り先: (ls)かFILEから起動した
+  // 場合は(ls)(FILEの中身はCUTしたファイルに差し替わっているため)、
+  // それ以外(^T画面等)は起動元。
+  static ApplicationMode cutFileReturnModeFor(ApplicationMode origin);
   bool returnFromMan();
   bool returnFromLocate();
   bool returnFromFileToLocate();
@@ -3116,6 +3125,12 @@ class Application {
   // executeCut()によってクリアされるので、まさに次のCUT(どちらの
   // バリアントであれ)が誤って古びたパスを再利用しない。
   std::string cutFileSourcePath_;
+  // 2026-09-29追加、直接のユーザー報告("docs/HISTORY.mdを"^<"付きで
+  // 開いた場合...カーソル位置が保存されず、FILEで再び "^<" 付きを
+  // 開いても冒頭行からになる"): 今表示しているファイルCUTの一覧の
+  // 「パス "パターン"」(buildCutFileHistoryEntry())。ファイルCUT以外
+  // では空。
+  std::string cutPositionKey_;
   // 2026-09-20追加、直接のユーザー依頼("C-j bだが、QUICK.txt記載の
   // ようなFILE履歴にしてほしい"): startCutFilePrompt()(C-j b/C-j C-b、
   // 「指定文字列でファイルを分割」)は元々Directory一覧で選択済みの

@@ -5967,6 +5967,8 @@ bool Application::openRecentFileEntry(const std::string &path) {
     fileMode_.saveCursorPosition();
   } else if (currentMode_ == ApplicationMode::Archive || currentMode_ == ApplicationMode::ArchiveContent) {
     archiveMode_.saveCursorPosition();
+  } else if (currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) {
+    saveCutFilePosition();
   }
   // 2026-09-20追加、直接のユーザー依頼(QUICK.txt自身のC-j bの説明
   // "後述[FILE]によるアクセス履歴一覧では「ファイル名 "文字列"」で
@@ -5986,7 +5988,14 @@ bool Application::openRecentFileEntry(const std::string &path) {
     // Directory以外から呼ばれた場合は、明示的にcutReturnMode_を発動元
     // へ揃えないと、^Gが(デフォルトのDirectoryへではなく)無関係な
     // 前回のCUTセッションが残した古いcutReturnMode_へ戻ってしまう。
-    if (currentMode_ != ApplicationMode::Directory) cutReturnMode_ = currentMode_;
+    //
+    // 2026-09-29修正、直接のユーザー報告("docs/HISTORY.mdを"^<"付きで
+    // 開いた場合、戻り値がHISTORY.mdになっているところを見ると、^Cf
+    // ではなく^Cbと見なされているんじゃない？"): 以前はDirectoryから
+    // 呼ばれた場合にcutReturnMode_へ一切触れず、直前の^Cb(FILEから)が
+    // 残したFileのままになり得た――^GがCUTしたファイル自身のFILE画面へ
+    // 着地していた。cutFileReturnModeFor()で常に明示的に揃える。
+    cutReturnMode_ = cutFileReturnModeFor(currentMode_);
     if (!fileMode_.loadFile(filePath)) return false;
     std::vector<StyledLine> sourceLines;
     sourceLines.reserve(fileView_.lines().size());
@@ -5994,6 +6003,7 @@ bool Application::openRecentFileEntry(const std::string &path) {
     cutOrigin_ = CutOrigin::File;
     cutSyntax_ = syntax;
     if (!cutMode_.split(sourceLines, pattern, cutSyntax_)) return false;
+    restoreCutFilePosition(path);
     currentMode_ = ApplicationMode::Cut;
     return true;
   }
@@ -6495,6 +6505,7 @@ bool Application::openSelectedSegment() {
   const CutSegment *segment = cutMode_.selectedSegment();
   if (!segment) return false;
   if (cutOrigin_ == CutOrigin::Epub) return openEpubSegmentImage(*segment) || openEpubTocEntry(*segment);
+  saveCutFilePosition();  // 中身を見たまま終了しても一覧の位置が残るように
 
   std::vector<StyledLine> content = cutMode_.segmentContent(*segment);
   std::vector<ContentView::Line> lines;
@@ -6594,6 +6605,7 @@ bool Application::openEpub(const std::string &path, bool vertical) {
   sourceLines.reserve(fileView_.lines().size());
   for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
   cutOrigin_ = CutOrigin::Epub;
+  cutPositionKey_.clear();
   cutSyntax_ = GrepSyntax::Fixed;
   cutReturnMode_ = ApplicationMode::Directory;
   epubVertical_ = vertical;
@@ -7404,6 +7416,7 @@ bool Application::returnFromCutContent() {
 // returnFromGrep()が防がなければならなかったような古い注釈の危険は
 // 無い。
 bool Application::returnFromCut() {
+  saveCutFilePosition();
   if (cutOrigin_ == CutOrigin::Epub) {
     fileMode_.annotations().clear();  // openEpub()の"EPUB"注釈
     epubVertical_ = false;
@@ -7459,6 +7472,27 @@ bool Application::returnFromCut() {
 // 自身のコメント参照。cutView_自身のlines/segmentsはDirectoryへ戻る
 // ことによって触れられないので、(Grepのケースと同様)これはsplitを
 // 再実行する必要が無い。
+void Application::saveCutFilePosition() {
+  if (cutPositionKey_.empty() || cutOrigin_ != CutOrigin::File || cutMode_.canGoBack()) return;
+  History::CursorPosition pos;
+  pos.row = cutView_.cursorIndex();
+  pos.totalRows = static_cast<int>(cutMode_.segments().size());
+  history_.setPosition(PositionCategory::Screen, cutPositionKey_, pos);
+}
+
+void Application::restoreCutFilePosition(const std::string &key) {
+  cutPositionKey_ = key;
+  auto pos = history_.positionFor(PositionCategory::Screen, key);
+  if (!pos) return;
+  int last = static_cast<int>(cutMode_.segments().size()) - 1;
+  cutView_.setCursorIndex(std::max(0, std::min(pos->row, last)));
+  cutView_.redraw();
+}
+
+ApplicationMode Application::cutFileReturnModeFor(ApplicationMode origin) {
+  return origin == ApplicationMode::File ? ApplicationMode::Directory : origin;
+}
+
 bool Application::returnToCutResults() {
   currentMode_ = ApplicationMode::Cut;
   cutResultsResumed_ = true;  // それ自身の宣言コメント参照――次のreturnFromCut()で一度だけ消費される
@@ -13292,6 +13326,9 @@ bool Application::executeCut(const std::string &pattern) {
   bool ok;
   std::string fileSourcePath = std::move(cutFileSourcePath_);
   cutFileSourcePath_.clear();  // 下のどちらの分岐が実行されるか、その結果に関わらず正確に一度消費される
+  // saveCutFilePosition()自身のキー: ネストした再分割以外は新しい一覧
+  // なので、下のファイルの分岐が設定し直すまで空にする。
+  if (currentMode_ != ApplicationMode::CutContent && currentMode_ != ApplicationMode::Cut) cutPositionKey_.clear();
 
   if (currentMode_ == ApplicationMode::CutContent || currentMode_ == ApplicationMode::Cut) {
     // ネストした再分割――cutOrigin_には手を付けない、クラスコメント
@@ -13312,6 +13349,12 @@ bool Application::executeCut(const std::string &pattern) {
     // 「一覧自体を分割する」ことから「この選択されたファイルを分割
     // する」ことを区別するものである――どちらもまさに同じ
     // currentMode_から到達可能である。
+    // 2026-09-29修正、openRecentFileEntry()自身の同日のコメント参照:
+    // 以前はcutReturnMode_に手を付けず、FILEから^Cfした場合や直前の
+    // ^Cbの後では、^GがCUTしたファイル自身のFILE画面へ着地していた
+    // (^Cb扱い)。離れるFILE自身の位置もここで保存する。
+    if (currentMode_ == ApplicationMode::File) fileMode_.saveCursorPosition();
+    cutReturnMode_ = cutFileReturnModeFor(currentMode_);
     if (!fileMode_.loadFile(fileSourcePath)) {
       activeView().redraw();
       return false;
@@ -13339,7 +13382,11 @@ bool Application::executeCut(const std::string &pattern) {
     // 既に無条件に積んでいる)とは別に、「パス "パターン"」という
     // 合成形のエントリも積む――openRecentFileEntry()自身のコメント
     // 参照、この形をFILE履歴から選び直すとCUT自体を再実行する。
-    if (ok) history_.pushRecent(RingCategory::RecentFile, buildCutFileHistoryEntry(fileSourcePath, pattern, cutSyntax_));
+    if (ok) {
+      std::string entry = buildCutFileHistoryEntry(fileSourcePath, pattern, cutSyntax_);
+      history_.pushRecent(RingCategory::RecentFile, entry);
+      restoreCutFilePosition(entry);
+    }
   } else if (cutOrigin_ == CutOrigin::File && !fileMode_.currentFile().empty()) {
     // 2026-08-24修正、実際の報告+直接の追跡質問("戻り値が正常化
     // さえ実現すれば直る問題じゃないの？"――^Gが正しく再びDirectory
