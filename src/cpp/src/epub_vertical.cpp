@@ -112,13 +112,23 @@ std::vector<Cell> toCells(const EpubVerticalSourceLine &line, bool sideways) {
   }
   while (!glyphs.empty() && glyphs.back().cp == ' ') glyphs.pop_back();
 
-  // 半角(空白以外)の続く長さ。runLength[i]はglyphs[i]を含む並びの長さ。
+  // 半角の続く長さ。runLength[i]はglyphs[i]を含む並びの長さ。並びは空白以外の半角で
+  // 始まって終わり、途中の半角の空白を含む(2026-09-29、直接のユーザー報告"「image:
+  // title4.jpg」の文字間隔が不揃いで閉じブラケットの向きがそのまま"――空白で並びが切れて、
+  // 別々に横倒しになっていた)。
   std::vector<std::size_t> runLength(glyphs.size(), 0);
   for (std::size_t i = 0; i < glyphs.size();) {
-    std::size_t j = i;
-    while (j < glyphs.size() && isAsciiGraphic(glyphs[j].cp)) j++;
-    for (std::size_t k = i; k < j; k++) runLength[k] = j - i;
-    i = std::max(j, i + 1);
+    if (!isAsciiGraphic(glyphs[i].cp)) {
+      i++;
+      continue;
+    }
+    std::size_t j = i, end = i;
+    while (j < glyphs.size() && (isAsciiGraphic(glyphs[j].cp) || glyphs[j].cp == ' ')) {
+      if (isAsciiGraphic(glyphs[j].cp)) end = j + 1;
+      j++;
+    }
+    for (std::size_t k = i; k < end; k++) runLength[k] = end - i;
+    i = end;
   }
 
   std::vector<Cell> cells;
@@ -132,7 +142,7 @@ std::vector<Cell> toCells(const EpubVerticalSourceLine &line, bool sideways) {
     // (GraphicalDisplayが90度回して描く、layoutEpubVerticalColumns()の宣言参照)
     if (sideways && runLength[i] > 2) {
       cell.glyph = g.bytes;
-      if (i + 1 < glyphs.size() && isAsciiGraphic(glyphs[i + 1].cp)) {
+      if (i + 1 < glyphs.size() && runLength[i + 1] == runLength[i]) {  // 同じ並びの次の字(空白を含む)
         cell.glyph += glyphs[++i].bytes;
       } else {
         cell.glyph += ' ';

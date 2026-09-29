@@ -1450,40 +1450,51 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // となる実際のセル幅分の走りができるよう、本物のスペースに置き
   // 換える。
   // 横倒し(epub_vertical.hppのlayoutEpubVerticalColumns()のsideways参照、2026-09-29):
-  // 縦書きで、上下にも半角が続く半角2字のマス(行間の右、桁x/x+1)は、2字を1枚に
-  // して90度回し、マス(2セル×1行)に収めて描く。2字目のセルは1字目が描く。
+  // 縦書きで、同じ桁に上下2マス以上続く半角2字のマス(行間の右、桁x/x+1)は、全部を
+  // 1つの文字列として90度回し、その並びの上から詰めて描く(2026-09-29改訂、直接の
+  // ユーザー報告"文字間隔が不揃い"――以前はマスごとに2字ずつ回して中央に置いたため、
+  // マスの中とマスの間で字の間隔が違っていた)。並びの一番上のマスがまとめて描き、
+  // 他のマスは何もしない(背景は全マス描いた後に字を描くので上書きされない)。
+  // 1マスだけなら縦中横(立てたまま、下の通常の描画)。
   if (impl_->verticalText) {
-    auto asciiAt = [&](int r, int c) {
+    auto halfAt = [&](int r, int c) {
       if (r < 0 || r >= impl_->rows || c < 0 || c >= impl_->columns) return false;
       const Cell &o = impl_->cellAt(r, c);
-      return !o.continuation && o.glyph.size() == 1 && o.glyph[0] > 0x20 && o.glyph[0] < 0x7F;
-    };
-    auto halfAt = [&](int r, int c) {
-      if (c < 0 || c >= impl_->columns) return false;
-      const Cell &o = impl_->cellAt(r, c);
-      return !o.continuation && o.glyph.size() == 1;
+      return !o.continuation && o.glyph.size() == 1 && o.glyph[0] >= 0x20 && o.glyph[0] < 0x7F;
     };
     auto gapAt = [&](int r, int c) {
       if (c < 0) return true;
       const Cell &o = impl_->cellAt(r, c);
       return !o.continuation && (o.glyph.empty() || o.glyph == " ");
     };
-    auto pairStart = [&](int c) {
-      return asciiAt(row, c) && halfAt(row, c + 1) && gapAt(row, c - 1) && (asciiAt(row - 1, c) || asciiAt(row + 1, c));
+    auto pairAt = [&](int r, int c) {
+      return halfAt(r, c) && halfAt(r, c + 1) && gapAt(r, c - 1) &&
+             (impl_->cellAt(r, c).glyph != " " || impl_->cellAt(r, c + 1).glyph != " ");
     };
-    if (pairStart(col - 1)) return;
-    if (pairStart(col)) {
-      std::string pair = cell.glyph + impl_->cellAt(row, col + 1).glyph;
-      int pw = 0, ph = 0;
-      SDL_Texture *pairTexture = cachedGlyphTexture(*impl_, renderFont, pair, style, hinting, fg, true, pw, ph);
-      if (!pairTexture) return;
-      int boxW = impl_->cellWidth * 2, boxH = impl_->cellHeight;
-      // 回した後の幅はph、高さはpw
-      double scale = std::min({1.0, static_cast<double>(boxW) / std::max(ph, 1), static_cast<double>(boxH) / std::max(pw, 1)});
-      int dw = static_cast<int>(pw * scale), dh = static_cast<int>(ph * scale);
-      SDL_Rect dst{box.x + boxW / 2 - dw / 2, box.y + boxH / 2 - dh / 2, dw, dh};
-      SDL_RenderCopyEx(impl_->renderer, pairTexture, nullptr, &dst, 90.0, nullptr, SDL_FLIP_NONE);
-      return;
+    int runColumn = pairAt(row, col) ? col : pairAt(row, col - 1) ? col - 1 : -1;
+    if (runColumn >= 0) {
+      int top = row, bottom = row;
+      while (pairAt(top - 1, runColumn)) top--;
+      while (pairAt(bottom + 1, runColumn)) bottom++;
+      if (bottom > top) {
+        if (row != top || col != runColumn) return;
+        std::string run;
+        for (int r = top; r <= bottom; r++)
+          run += impl_->cellAt(r, runColumn).glyph + impl_->cellAt(r, runColumn + 1).glyph;
+        while (!run.empty() && run.back() == ' ') run.pop_back();
+        int pw = 0, ph = 0;
+        SDL_Texture *runTexture = cachedGlyphTexture(*impl_, renderFont, run, style, hinting, fg, true, pw, ph);
+        if (!runTexture) return;
+        int boxW = impl_->cellWidth * 2, boxH = impl_->cellHeight * (bottom - top + 1);
+        // 回した後の幅はph、高さはpw
+        double scale =
+            std::min({1.0, static_cast<double>(boxW) / std::max(ph, 1), static_cast<double>(boxH) / std::max(pw, 1)});
+        int dw = static_cast<int>(pw * scale), dh = static_cast<int>(ph * scale);
+        int centerX = box.x + boxW / 2, centerY = box.y + dw / 2;  // 上から詰める
+        SDL_Rect dst{centerX - dw / 2, centerY - dh / 2, dw, dh};
+        SDL_RenderCopyEx(impl_->renderer, runTexture, nullptr, &dst, 90.0, nullptr, SDL_FLIP_NONE);
+        return;
+      }
     }
   }
   const std::string &renderGlyph =
