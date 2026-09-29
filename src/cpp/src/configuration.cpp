@@ -49,6 +49,8 @@ const std::vector<std::string> &directiveKeywords() {
       // legacy str.cのusilicrc[]には対応物が無い――既存の並びの
       // 末尾に追記する(既存インデックスの番号を一切ずらさないため)。
       "COLUMN",
+      // 2026-09-29追加(serifFontCandidates()自身のコメント参照)。
+      "SERIF", "SANS-SERIF",
   };
   return kKeywords;
 }
@@ -663,6 +665,17 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
       }
       case 17: {  // COLUMN(columnThreshold()自身のコメント参照)
         if (auto v = nextDigitToken(lines, i)) columnThreshold_ = std::atoi(v->c_str());
+        break;
+      }
+      case 18:    // SERIF
+      case 19: {  // SANS-SERIF(serifFontCandidates()自身のコメント参照)
+        auto &candidates = (index == 18) ? serifFontCandidates_ : sansSerifFontCandidates_;
+        candidates.clear();
+        while (auto data = nextDataLine(lines, i)) {
+          std::string path = *data;
+          while (!path.empty() && (path.back() == ' ' || path.back() == '\t')) path.pop_back();
+          if (!path.empty()) candidates.push_back(path);  // フォントファイルの絶対パス
+        }
         break;
       }
       default:

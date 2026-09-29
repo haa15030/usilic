@@ -238,6 +238,27 @@ RM
 
 #	rm -vri
 
+SERIF
+# Format: `font file'
+#
+# The serif (Mincho) font for -g.  Characters that CSS specifies as serif,
+# such as EPUB body text, are drawn with it.  Lines are tried from the top
+# and the first usable one is used; otherwise built-in candidates
+# (Hiragino Mincho ProN, Noto Serif CJK, ...) are used.
+
+#	/System/Library/Fonts/ヒラギノ明朝 ProN.ttc
+
+SANS-SERIF
+# Format: `font file'
+#
+# The sans-serif (Gothic) font for Japanese in -g.  Full-width characters on
+# screen (including those that EPUB CSS specifies as sans-serif) are drawn
+# with it.  Lines are tried from the top and the first usable one is used;
+# otherwise built-in candidates (Hiragino Kaku Gothic, Noto Sans CJK, ...)
+# are used.
+
+#	/System/Library/Fonts/ヒラギノ角ゴシック W4.ttc
+
 KEY
 # Key assignments.
 #

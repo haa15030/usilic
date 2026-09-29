@@ -4364,6 +4364,9 @@ int main(int argc, char **argv) {
   if (rcText.empty() && homeEnv) rcText = readFileIfExists(std::string(homeEnv) + "/.local/lib/usilic/usilicrc");
   if (rcText.empty()) rcText = readFileIfExists("/usr/local/lib/usilic/usilicrc");
   if (!rcText.empty()) configuration.loadRcText(rcText, /*fileManagerMode=*/true);
+  // usilicrcのSERIF/SANS-SERIF(2026-09-29、GraphicalDisplay::setFontFamilyCandidates()参照)。
+  fm::GraphicalDisplay::setFontFamilyCandidates(configuration.serifFontCandidates(),
+                                                configuration.sansSerifFontCandidates());
   // usilicrcのHISTORY(History::setRetentionCount()自身のコメント参照、2026-09-25)。
   history.setRetentionCount(configuration.historyRetentionCount());
 

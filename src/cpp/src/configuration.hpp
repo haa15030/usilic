@@ -335,6 +335,10 @@ class Configuration {
   // デフォルト8は暫定(ユーザー自身の言葉:"今後の試用による見極めは
   // 必要")。
   int columnThreshold() const;                     // COLUMN
+  // SERIF/SANS-SERIF(2026-09-29、直接のユーザー依頼"serif、sans-serifの設定を実装して
+  // ほしい"): -gで使う明朝体/ゴシック体(和文)のフォントファイルの候補、書いた順。
+  const std::vector<std::string> &serifFontCandidates() const { return serifFontCandidates_; }
+  const std::vector<std::string> &sansSerifFontCandidates() const { return sansSerifFontCandidates_; }
 
   // -- 文字コードのブートストラップ --
   // これがCLAUDE.mdの作業ログ13番をなぜ直接修正するかについては
@@ -376,6 +380,8 @@ class Configuration {
   int historyRetentionCount_ = 0;  // 0は無制限(History自身のコンストラクタのコメント参照)
   int waitIntervalMicros_ = 100000;  // conf_wait()の静的k_wait初期化値(100000)
   int columnThreshold_ = 8;  // columnThreshold()自身のコメント参照
+  std::vector<std::string> serifFontCandidates_;      // SERIF
+  std::vector<std::string> sansSerifFontCandidates_;  // SANS-SERIF
   bool smoothScrollEnabled_ = false;
   int lsMode_ = 0;
 

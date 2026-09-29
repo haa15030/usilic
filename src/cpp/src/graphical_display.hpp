@@ -88,6 +88,10 @@ class GraphicalDisplay : public Display {
   // 読み込みが失敗した場合(例外を投げたり終了したりするのではなく)
   // nullptrを返すので、呼び出し元はクラッシュする代わりに端末
   // モードに留まることへフォールバックできる。
+  // usilicrcのSERIF/SANS-SERIF(Configuration::serifFontCandidates()参照): create()より
+  // 前に呼ぶ。明朝体(Display::Attribute::Serif)と和文のゴシック体(全角の字を描く
+  // フォント)の候補を、組み込みの候補より先に試す。
+  static void setFontFamilyCandidates(std::vector<std::string> serif, std::vector<std::string> sansSerif);
   static std::unique_ptr<GraphicalDisplay> create(int rows, int columns, const std::string &fontPath,
                                                     int fontPointSize = 16);
 

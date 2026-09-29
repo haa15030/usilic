@@ -988,7 +988,8 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
   std::string out;
   title = collapseSpace(title);
   creator = collapseSpace(creator);
-  if (!title.empty()) out += "<b>" + title + "</b>\n";  // 下線はリンク専用(BodyConverterの"a"参照)
+  // 本のタイトルは明朝体(2026-09-29、直接のユーザー指定)。下線はリンク専用(BodyConverterの"a"参照)
+  if (!title.empty()) out += "<serif><b>" + title + "</b></serif>\n";
   if (!creator.empty()) out += creator + "\n";
   if (!out.empty()) out += "\n";
 

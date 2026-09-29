@@ -27389,3 +27389,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **扉**: 縦書きの列で、扉の範囲の列の両側に空の列を足し、1画面の中央に置く。
    - **未対応**: 扉の書名を列の中で上下の中央へ寄せること、-gのホイールでの横書きの
      範囲への出入り(キーでだけ切り替わる)。
+516. **2026-09-29: usilicrcのSERIF/SANS-SERIF(-gの明朝体/ゴシック体のフォント)、本のタイトルを明朝体に**
+   - **経緯**: 直接のユーザー依頼("serif、sans-serifの設定を実装してほしい。本のタイトルは
+     明朝体なのでよろしく")。
+   - **usilicrc**: SERIF/SANS-SERIF節を新設(Configuration::serifFontCandidates()/
+     sansSerifFontCandidates())。フォントファイルのパスを1行ずつ書き、上から試して使える
+     (仮名を持つ)最初のものを使う。無ければ組み込みの候補。main.cppがusilicrcを読んだ
+     直後にGraphicalDisplay::setFontFamilyCandidates()へ渡し、loadSerifFont()(明朝体、
+     項目514)とloadCjkFallbackFont()(和文のゴシック体、全角の字を描くフォント)が組み込みの
+     候補より先に試す。usilicrc/usilicrc.enに説明と記入例(コメントアウト)を足した。
+   - **本のタイトル**: epubToHelpMarkup()が先頭に出すOPFの書名の行を<serif>で囲む。

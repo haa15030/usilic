@@ -412,6 +412,30 @@ constexpr double kNarrowGlyphAlphaGamma = 0.65;
 // 全く影響を受けない。
 // 2026-09-29追加(Display::Attribute::Serif参照): 明朝体のフォント。候補を順に試し、
 // 仮名を持つ最初のものを使う(loadCjkFallbackFont()と同じ考え方)。
+// GraphicalDisplay::setFontFamilyCandidates()参照(usilicrcのSERIF/SANS-SERIF)。
+std::vector<std::string> &userSerifCandidates() {
+  static std::vector<std::string> candidates;
+  return candidates;
+}
+std::vector<std::string> &userSansSerifCandidates() {
+  static std::vector<std::string> candidates;
+  return candidates;
+}
+
+// `user`(usilicrcの指定)を先に、`builtin`を後に試し、仮名を持つ最初のフォント。
+TTF_Font *openFirstJapaneseFont(const std::vector<std::string> &user, const char *const *builtin, std::size_t count,
+                               int pointSize) {
+  std::vector<std::string> paths = user;
+  for (std::size_t k = 0; k < count; k++) paths.push_back(builtin[k]);
+  for (const auto &path : paths) {
+    TTF_Font *candidate = TTF_OpenFont(path.c_str(), std::max(pointSize, 1));
+    if (!candidate) continue;
+    if (glyphProvidedByFont(candidate, 0x3042)) return candidate;
+    TTF_CloseFont(candidate);
+  }
+  return nullptr;
+}
+
 TTF_Font *loadSerifFont(int pointSize) {
   static const char *const candidates[] = {
       "/System/Library/Fonts/ヒラギノ明朝 ProN.ttc",
@@ -421,13 +445,8 @@ TTF_Font *loadSerifFont(int pointSize) {
       "/usr/share/fonts/opentype/ipaexfont-mincho/ipaexm.ttf",
       "/usr/share/fonts/truetype/fonts-japanese-mincho.ttf",
   };
-  for (const char *path : candidates) {
-    TTF_Font *candidate = TTF_OpenFont(path, std::max(pointSize, 1));
-    if (!candidate) continue;
-    if (glyphProvidedByFont(candidate, 0x3042)) return candidate;
-    TTF_CloseFont(candidate);
-  }
-  return nullptr;
+  return openFirstJapaneseFont(userSerifCandidates(), candidates, sizeof(candidates) / sizeof(candidates[0]),
+                               pointSize);
 }
 
 TTF_Font *loadCjkFallbackFont(int pointSize) {
@@ -440,13 +459,8 @@ TTF_Font *loadCjkFallbackFont(int pointSize) {
       "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
       "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
   };
-  for (const char *path : candidates) {
-    TTF_Font *candidate = TTF_OpenFont(path, std::max(pointSize, 1));
-    if (!candidate) continue;
-    if (glyphProvidedByFont(candidate, 0x3042)) return candidate;
-    TTF_CloseFont(candidate);
-  }
-  return nullptr;
+  return openFirstJapaneseFont(userSansSerifCandidates(), candidates, sizeof(candidates) / sizeof(candidates[0]),
+                               pointSize);
 }
 
 // グリフのテクスチャキャッシュ(2026-08-24、docs/CHANGES.md項目428)
@@ -1779,6 +1793,11 @@ void GraphicalDisplay::scrollReverse() {
   for (int row = impl_->rows - 1; row > 0; row--)
     for (int col = 0; col < impl_->columns; col++) impl_->cellAt(row, col) = impl_->cellAt(row - 1, col);
   for (int col = 0; col < impl_->columns; col++) impl_->cellAt(0, col) = Cell{};
+}
+
+void GraphicalDisplay::setFontFamilyCandidates(std::vector<std::string> serif, std::vector<std::string> sansSerif) {
+  userSerifCandidates() = std::move(serif);
+  userSansSerifCandidates() = std::move(sansSerif);
 }
 
 void GraphicalDisplay::setAttribute(Attribute attr) {
