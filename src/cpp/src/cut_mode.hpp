@@ -25,6 +25,9 @@ struct CutSegment {
   std::string label;
   int startLine = 0;
   int endLine = 0;  // 排他的(この行は含まない)
+  // 2026-09-30追加、直接のユーザー依頼("CUT風EPUB一覧にも...ルビを実装して"): 見出しの行の
+  // ルビの装飾のラン(Display::Attribute::RubyBase/RubyText)だけ。他の装飾は従来どおり落とす。
+  std::vector<AttributeRun> labelAttributes;
 };
 
 // CUTモード(ファイル内容表示中の^Jc/^J^C、ファイルを開かずに

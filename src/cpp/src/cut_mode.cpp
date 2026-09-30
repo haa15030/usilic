@@ -151,13 +151,22 @@ bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::strin
       int start = matchLines[i];
       int end = (i + 1 < matchLines.size()) ? matchLines[i + 1] : total;
       std::string label = (start < total) ? stripTrailingTabPadding(sourceLines_[start].text) : std::string();
-      segments_.push_back({label, start, end});
+      std::vector<AttributeRun> rubies;
+      if (start < total)
+        for (const auto &run : sourceLines_[start].attributes)
+          if ((run.attribute == Display::Attribute::RubyBase || run.attribute == Display::Attribute::RubyText) &&
+              run.start < static_cast<int>(label.size())) {
+            AttributeRun clipped = run;
+            clipped.end = std::min(clipped.end, static_cast<int>(label.size()));
+            rubies.push_back(clipped);
+          }
+      segments_.push_back({label, start, end, std::move(rubies)});
     }
   }
 
   std::vector<ContentView::Line> viewLines;
   viewLines.reserve(segments_.size());
-  for (const auto &seg : segments_) viewLines.push_back({seg.label, std::nullopt, std::nullopt, {}});
+  for (const auto &seg : segments_) viewLines.push_back({seg.label, std::nullopt, std::nullopt, seg.labelAttributes});
   view_.setLines(std::move(viewLines));
   view_.setCursorIndex(0);
   view_.redraw();
@@ -216,7 +225,7 @@ bool CutMode::goBack() {
 
   std::vector<ContentView::Line> viewLines;
   viewLines.reserve(segments_.size());
-  for (const auto &seg : segments_) viewLines.push_back({seg.label, std::nullopt, std::nullopt, {}});
+  for (const auto &seg : segments_) viewLines.push_back({seg.label, std::nullopt, std::nullopt, seg.labelAttributes});
   view_.setLines(std::move(viewLines));
   view_.setCursorIndex(saved->cursorIndex);
   view_.redraw();

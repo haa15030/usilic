@@ -27671,3 +27671,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      戻り先を発動元の一覧にする。あわせてepubBookVertical()は、openEpub()で縦書きを組んだ本
      (epubVerticalPath_)を見ている時だけtrueにする(他の経路で.epubを読んでも前の本の縦書きは
      出ない、横書きになる)。
+537. **2026-09-30: CUT風のEPUBの章の一覧(縦書き)の慣性スクロールとルビ**
+   - **経緯**: 直接のユーザー依頼("CUT風EPUB一覧にも慣性スクロールとルビを実装して")。
+   - **ルビ**: CUTの見出し(CutSegment::label)は装飾を落とした文字列だったので、ルビの印も
+     落ちていた。見出しの行のルビの装飾のラン(RubyBase/RubyText)だけをCutSegment::labelAttributes
+     として残し、一覧の行に付ける(太字等は従来どおり落とす、HELP等のCUTの見た目は変えない)。
+     縦書きの一覧(refreshEpubTocVertical())は本文と同じlayoutEpubVerticalColumns()で組むので、
+     列の右の行間に描かれる。横書きの一覧(横書きの本)でも-gでは親字の上に描く。
+   - **慣性スクロール**: epubVerticalDragActive()に縦書きの章の一覧を含め、本文と同じ左右の
+     ドラッグ・慣性・ホイール(1章ずつだったのをやめ、本文と同じ慣性の段階)にした。
+     scrollEpubVertical()は一覧でも1列ずつ右端の列(epubTocFirst_)を動かし、選ぶ章は送る向きの
+     先頭の列の章(項目535の列カーソルと同じ)。端の列の裏の画面(captureEpubVerticalEdges()、
+     setEpubVerticalView()から括り出して共用)とスクロールバー(epubVerticalScrollbar()/
+     jumpEpubVerticalToFraction())も一覧に対応。キーの移動は従来どおり1章ずつ。

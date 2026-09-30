@@ -6903,20 +6903,36 @@ std::optional<Application::EpubScrollbar> Application::epubVerticalScrollbar() c
     return EpubScrollbar{std::clamp(after, 0, std::max(0, total - perScreen)), total, perScreen};
   }
   if (!epubVerticalDragActive()) return std::nullopt;
+  if (currentMode_ == ApplicationMode::Cut)  // 縦書きの章の一覧
+    return EpubScrollbar{epubTocFirst_, static_cast<int>(epubTocCols_.size()), perScreen};
   return EpubScrollbar{epubVerticalFirst_, total, perScreen};
 }
 
 void Application::jumpEpubVerticalToFraction(double fraction) {
   if (!epubVerticalDragActive()) return;
   int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+  if (currentMode_ == ApplicationMode::Cut) {  // 縦書きの章の一覧: 右端の列を動かし、右端の列の章を選ぶ
+    int total = static_cast<int>(epubTocCols_.size());
+    if (total == 0) return;
+    epubTocFirst_ = static_cast<int>(std::clamp(fraction, 0.0, 1.0) * std::max(0, total - perScreen));
+    int count = static_cast<int>(cutView_.lines().size());
+    cutView_.setCursorIndex(std::clamp(epubTocCols_[epubTocFirst_].rawLineNumber - 1, 0, std::max(0, count - 1)));
+    refreshEpubTocVertical(/*keepFirst=*/true);
+    epubTocVerticalView_.redraw();
+    epubTocVerticalView_.syncVisibleCursor();
+    return;
+  }
   int scrollable = std::max(0, static_cast<int>(epubVerticalCols_.size()) - perScreen);
   setEpubVerticalFirst(static_cast<int>(std::clamp(fraction, 0.0, 1.0) * scrollable));
   epubVerticalView_.redraw();
   epubVerticalView_.syncVisibleCursor();
 }
 
+// 2026-09-30: 縦書きの章の一覧(epubTocVerticalActive())も(scrollEpubVertical()参照)。
 bool Application::epubVerticalDragActive() const {
-  return currentMode_ == ApplicationMode::File && epubVerticalActive() && !promptActive();
+  return ((currentMode_ == ApplicationMode::File && epubVerticalActive()) ||
+          (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive())) &&
+         !promptActive();
 }
 
 bool Application::epubVerticalScrollActive() const {
@@ -7084,22 +7100,8 @@ void Application::setEpubVerticalView(int first, int cursor) {
   epubVerticalView_.setLines(renderEpubVerticalWindow(epubVerticalCols_, epubVerticalFirst_, epubVerticalRows(),
                                                       display_.columns(), !display_.isGraphical(),
                                                       actionable ? epubVerticalCursor_ : -1, shownFrom, shownUntil));
-  // 左右のドラッグ/慣性で端から見えてくる列(Display::beginContentEdgeCapture()参照)。
-  // 本文と同じビューで描くので、描いた後に本文の行へ戻す。
-  if (display_.isGraphical()) {
-    std::vector<ContentView::Line> window = epubVerticalView_.lines();
-    for (int side : {1, -1}) {
-      epubVerticalView_.setLines(renderEpubVerticalWindow(
-          epubVerticalCols_, epubVerticalFirst_ + side * kEpubVerticalEdgeColumns, epubVerticalRows(),
-          display_.columns(), false, actionable ? epubVerticalCursor_ : -1, shownFrom, shownUntil));
-      epubVerticalView_.setCursorIndex(0);
-      epubVerticalView_.setTopIndex(0);
-      display_.beginContentEdgeCapture();
-      epubVerticalView_.renderContentRows();
-      display_.endContentEdgeCapture(side);
-    }
-    epubVerticalView_.setLines(std::move(window));
-  }
+  captureEpubVerticalEdges(epubVerticalView_, epubVerticalCols_, epubVerticalFirst_, actionable ? epubVerticalCursor_ : -1,
+                           shownFrom, shownUntil);
   epubVerticalView_.setCursorIndex(0);
   epubVerticalView_.setTopIndex(0);
   epubVerticalView_.setContentCursorColumn(
@@ -7108,6 +7110,28 @@ void Application::setEpubVerticalView(int first, int cursor) {
   std::snprintf(position, sizeof(position), "%05d/%05d %3d%%", epubVerticalCursor_ + 1, std::max(total, 1),
                 total > 0 ? static_cast<int>(100L * (epubVerticalCursor_ + 1) / total) : 100);
   epubVerticalView_.setPositionTextOverride(std::string(position));
+}
+
+// 左右のドラッグ/慣性で端から見えてくる列(Display::beginContentEdgeCapture()参照)を、
+// kEpubVerticalEdgeColumns列だけ先/前から描いた画面として裏に描く。本文と同じビューで描くので、
+// 描いた後に本文の行へ戻す。縦書きの本文(setEpubVerticalView())と章の一覧
+// (refreshEpubTocVertical())で共用。
+void Application::captureEpubVerticalEdges(ContentView &view, const std::vector<EpubVerticalColumn> &cols, int first,
+                                           int highlight, int shownFrom, int shownUntil) {
+  if (!display_.isGraphical()) return;
+  std::vector<ContentView::Line> window = view.lines();
+  for (int side : {1, -1}) {
+    view.setLines(renderEpubVerticalWindow(cols, first + side * kEpubVerticalEdgeColumns, epubVerticalRows(),
+                                           display_.columns(), false, highlight, shownFrom, shownUntil));
+    view.setCursorIndex(0);
+    view.setTopIndex(0);
+    display_.beginContentEdgeCapture();
+    view.renderContentRows();
+    display_.endContentEdgeCapture(side);
+  }
+  view.setLines(std::move(window));
+  view.setCursorIndex(0);
+  view.setTopIndex(0);
 }
 
 // 右端の列firstの章の列の範囲[from, until)(setEpubVerticalView()参照)。
@@ -7330,8 +7354,22 @@ std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
 // -gのホイール/トラックパッド(app/main.cpp)から: delta列だけ横へ(正で先へ)。
 bool Application::scrollEpubVertical(int delta) {
   if (!epubVerticalScrollActive()) return false;
-  if (currentMode_ == ApplicationMode::Cut) {  // 縦書きの章の一覧: 1章ずつ
-    selectEpubTocVertical(cutView_.cursorIndex() + delta);
+  if (currentMode_ == ApplicationMode::Cut) {
+    // 縦書きの章の一覧: 2026-09-30、直接のユーザー依頼("CUT風EPUB一覧にも慣性スクロールと
+    // ルビを実装して"): 本文と同じく1列ずつ(ドラッグ・慣性・ホイール、app/main.cpp)。選ぶ章は
+    // 本文の列カーソル(stepEpubVerticalFirst())と同じく送る向きの先頭――先へは画面の左端の
+    // 列の章、前へは右端の列の章。キーの移動は従来どおり1章ずつ(handleEpubTocVerticalCommand())。
+    int total = static_cast<int>(epubTocCols_.size());
+    int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+    int first = std::clamp(epubTocFirst_ + delta, 0, std::max(0, total - perScreen));
+    if (first == epubTocFirst_ || total == 0) return false;
+    epubTocFirst_ = first;
+    int col = delta > 0 ? std::min(first + perScreen, total) - 1 : first;
+    int count = static_cast<int>(cutView_.lines().size());
+    cutView_.setCursorIndex(std::clamp(epubTocCols_[col].rawLineNumber - 1, 0, std::max(0, count - 1)));
+    refreshEpubTocVertical(/*keepFirst=*/true);
+    epubTocVerticalView_.redraw();
+    epubTocVerticalView_.syncVisibleCursor();
     return true;
   }
   if (!stepEpubVerticalFirst(delta)) return enterEpubHorizontalAtEdge(delta);
@@ -7347,7 +7385,9 @@ bool Application::epubTocVerticalActive() const {
 
 // cutView_の章の見出しを列に組み直し、選んでいる章が見える所に画面を置いて描く
 // (描き直しは呼び出し元)。組版は安いので毎回組み直す(リサイズ・^Oeにも追従)。
-void Application::refreshEpubTocVertical() {
+// keepFirst(2026-09-30、scrollEpubVertical()の1列送り): 選んでいる章が画面の外へはみ出して
+// いても、右端の列(epubTocFirst_)を動かさない。
+void Application::refreshEpubTocVertical(bool keepFirst) {
   std::vector<EpubVerticalSourceLine> logical;
   const auto &labels = cutView_.lines();
   for (std::size_t i = 0; i < labels.size(); i++)
@@ -7364,11 +7404,12 @@ void Application::refreshEpubTocVertical() {
   int perScreen = epubVerticalColumnsPerScreen(display_.columns());
   int last = std::max(0, total - perScreen);
   int first = epubTocFirst_;
-  if (cursorCol < first) first = cursorCol;
-  if (cursorCol >= first + perScreen) first = cursorCol - perScreen + 1;
+  if (!keepFirst && cursorCol < first) first = cursorCol;
+  if (!keepFirst && cursorCol >= first + perScreen) first = cursorCol - perScreen + 1;
   epubTocFirst_ = std::clamp(first, 0, last);
   epubTocVerticalView_.setLines(renderEpubVerticalWindow(epubTocCols_, epubTocFirst_, epubVerticalRows(),
                                                          display_.columns(), !display_.isGraphical(), cursorCol));
+  captureEpubVerticalEdges(epubTocVerticalView_, epubTocCols_, epubTocFirst_, cursorCol);
   epubTocVerticalView_.setCursorIndex(0);
   epubTocVerticalView_.setTopIndex(0);
   epubTocVerticalView_.setContentCursorColumn(

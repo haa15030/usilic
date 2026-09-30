@@ -2562,7 +2562,9 @@ class Application {
   // 章の番号+1)として本文と同じ組版で列に並べ、選んでいる章(cutView_のカーソル)の
   // 最初の列を反転表示する。cutView_は裏で持ち続け、[Enter]・^G等はそのまま働く。
   bool epubTocVerticalActive() const;
-  void refreshEpubTocVertical();
+  void refreshEpubTocVertical(bool keepFirst = false);
+  void captureEpubVerticalEdges(ContentView &view, const std::vector<EpubVerticalColumn> &cols, int first,
+                                int highlight, int shownFrom = 0, int shownUntil = 1 << 30);
   void selectEpubTocVertical(int segment);
   std::optional<bool> handleEpubTocVerticalCommand(Command command);
   bool clickEpubTocVertical(int row, int column);
