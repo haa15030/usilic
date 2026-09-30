@@ -2585,6 +2585,14 @@ class Application {
   // ^X^Xの戻り先の元の行(縦書きの本で、横書きの範囲との間をリンクで行き来した時。縦書きの列の
   // 戻り先はepubVerticalMark_)。2026-09-30。
   std::optional<int> epubJumpRaw_;
+  // 横書きのリンクから飛ぶ前の、選んでいたリンクと画面の先頭の行(^X^Xでそのまま戻す、
+  // restoreEpubJumpOrigin())。2026-09-30。
+  struct EpubJumpOrigin {
+    EpubHorizontalLink link;
+    int top = 0;
+  };
+  std::optional<EpubJumpOrigin> epubJumpOrigin_;
+  bool restoreEpubJumpOrigin();
   std::string epubVerticalPath_;  // epubBookVertical()参照
   int epubVerticalFirst_ = 0;                         // 右端に置いている列
   int epubVerticalCursor_ = 0;                        // 列カーソル(setEpubVerticalView()参照)
