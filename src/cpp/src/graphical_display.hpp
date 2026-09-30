@@ -463,13 +463,11 @@ class GraphicalDisplay : public Display {
   // パターン――同じ反復で実行されるかもしれないどんなredraw()より
   // も「前に」呼ぶこと。そうすればflush()は実行される時に常に
   // 新鮮な値を見る。
-  void updateScrollPosition(int topIndex, int totalLines, int contentRows);
-  // 2026-09-30追加、直接のユーザー報告("スクロールバーがカオス。文字列エリアと被るうえに
-  // モードラインエリアにまで浸食。奥付ページになったとたんつまみの位置が変わる"、同じく
-  // "スクロールエリアを非表示にすれば解消するかもね"): trueの間はスクロールバー(つまみ・
-  // 張りぼて画像)を描かず、帯のクリックもつまみの操作にしない。縦書きの本を見せている間
-  // (奥付等の横書きの範囲も含む、main.cpp)。
-  void setScrollbarHidden(bool hidden);
+  // trackRows(2026-09-30追加): つまみを動かす範囲の行数(省略時はcontentRows)。縦書きの本文は
+  // 位置を列で測る(contentRowsが画面の列の数)ので、本文の行数を別に渡す――以前は列の数の
+  // 高さで描いていて、つまみがモードラインの行まではみ出していた(直接のユーザー報告
+  // "スクロールバーがカオス...モードラインエリアにまで浸食")。
+  void updateScrollPosition(int topIndex, int totalLines, int contentRows, int trackRows = -1);
 
   // ピクセル単位の固定された上端マージン(Impl::kMarginY自身の
   // コメント参照)――main.cppのScrollbarEvent処理が、
@@ -592,7 +590,7 @@ class GraphicalDisplay : public Display {
   // cellHeightで調整されたtopIndex――つまみが、1行につき1回
   // スナップするだけではなく、行未満のスクロール位置と同期して
   // なめらかに動くようにする。
-  void drawScrollbar(double effectiveTop, int totalLines, int contentRows);
+  void drawScrollbar(double effectiveTop, int totalLines, int contentRows, int trackRows = -1);
   // 埋め込まれた3つの本物の-c端末のスクロールバーの断片
   // (scrollbar_idle_image.hpp自身のクラスコメント――上端キャップ、
   // 伸縮可能なプレーンな中間部、下端キャップ)を予約された帯へ

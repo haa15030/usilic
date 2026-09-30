@@ -6867,9 +6867,22 @@ void Application::alignEpubVerticalCursorToLeftEdge() {
 }
 
 std::optional<Application::EpubScrollbar> Application::epubVerticalScrollbar() const {
+  int total = static_cast<int>(epubVerticalCols_.size());
+  int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+  // 2026-09-30、直接のユーザー報告("奥付ページになったとたんつまみの位置が変わる"): 縦書きの
+  // 本の横書きの範囲(奥付等)では横書きの行で測っていたので、縦書きの列で測った位置から
+  // 飛んでいた。範囲の直後の列(縦書きの列には範囲の行が無い)を右端に置いた位置とする。
+  if (currentMode_ == ApplicationMode::File && epubBookVertical() && epubHorizontalSection_ && !promptActive()) {
+    int after = total;
+    for (int c = 0; c < total; c++)
+      if (epubVerticalCols_[c].rawLineNumber > epubHorizontalSection_->second) {
+        after = c;
+        break;
+      }
+    return EpubScrollbar{std::clamp(after, 0, std::max(0, total - perScreen)), total, perScreen};
+  }
   if (!epubVerticalDragActive()) return std::nullopt;
-  return EpubScrollbar{epubVerticalFirst_, static_cast<int>(epubVerticalCols_.size()),
-                       epubVerticalColumnsPerScreen(display_.columns())};
+  return EpubScrollbar{epubVerticalFirst_, total, perScreen};
 }
 
 void Application::jumpEpubVerticalToFraction(double fraction) {

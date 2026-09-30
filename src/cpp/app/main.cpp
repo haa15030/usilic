@@ -2652,7 +2652,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // 描画を通らない)。
       if (app.epubVerticalDragActive()) {
         auto jumpEpub = [&](int y) {
-          int trackHeight = std::max(gui.rows() - 1, 0) * cellHeight;
+          int trackHeight = epubContentRows() * cellHeight;
           if (trackHeight <= 0) return;
           app.jumpEpubVerticalToFraction(static_cast<double>(y - gui.marginYPixels()) / trackHeight);
         };
@@ -3293,9 +3293,8 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // real, always-current thumb instead of the removed decorative
     // placeholder. Must run BEFORE the redraw() call below so flush()
     // sees this frame's values, not the previous one's.
-    gui.setScrollbarHidden(app.epubVerticalBookShowing());  // GraphicalDisplay::setScrollbarHidden()参照
     if (auto epubBar = app.epubVerticalScrollbar())  // 縦書きの本文(Application::epubVerticalScrollbar()参照)
-      gui.updateScrollPosition(epubBar->first, epubBar->total, epubBar->perScreen);
+      gui.updateScrollPosition(epubBar->first, epubBar->total, epubBar->perScreen, epubContentRows());
     else
       gui.updateScrollPosition(view.topIndex(), static_cast<int>(view.lines().size()), std::max(gui.rows() - 1, 0));
 
