@@ -7708,15 +7708,21 @@ bool Application::epubHorizontalLinksActive() const {
          !promptActive();
 }
 
-// 画面に見えている行のリンク(下線の並び)を上から順に。番号(ordinal)は元の行の頭から数える
-// (折り返した行をまたぐ下線は同じリンク)。
+// 画面に見えている行のリンク(下線の並び)を上から順に(epubHorizontalLinks())。
 std::vector<Application::EpubHorizontalLink> Application::epubHorizontalVisibleLinks() const {
+  int top = fileView_.topIndex();
+  return epubHorizontalLinks(top, top + std::max(1, fileView_.height()));
+}
+
+// fileView_の行[from, to)のリンク(下線の並び)を上から順に。番号(ordinal)は元の行の頭から数える
+// (折り返した行をまたぐ下線は同じリンク)。見せない行(ContentView::setShownIndexRange())は除く。
+std::vector<Application::EpubHorizontalLink> Application::epubHorizontalLinks(int from, int to) const {
   std::vector<EpubHorizontalLink> out;
   const auto &lines = fileView_.lines();
   int total = static_cast<int>(lines.size());
-  int top = fileView_.topIndex();
-  int end = std::min(total, top + std::max(1, fileView_.height()));
-  if (top < 0 || top >= total) return out;
+  int top = std::max(0, from);
+  int end = std::min(total, to);
+  if (top >= total || top >= end) return out;
   auto rawOf = [&](int i) { return lines[i].rawLineNumber.value_or(-1); };
   int start = top;
   while (start > 0 && rawOf(start - 1) == rawOf(top)) start--;
@@ -7753,27 +7759,43 @@ std::vector<Application::EpubHorizontalLink> Application::epubHorizontalVisibleL
   return out;
 }
 
-// 横書きのEPUBの本文で、画面に見えている次(delta>0)/前のリンクを選ぶ(↑↓・^N/^P)。選べなければ
-// false(呼び出し元が従来どおり動かす)。
+// 横書きのEPUBの本文で、次(delta>0)/前のリンクを選ぶ(↑↓・^N/^P)。本文全体で次/前のリンクを
+// 探し、画面に見えていれば選び、見えていなければ1行スクロールする(繰り返せば、先のリンクが画面に
+// 入った所で選ばれる)。2026-09-30訂正、直接のユーザー報告("↓↑でリンク位置は変わるけど画面が
+// スクロールしない"): 以前は画面の中のリンクだけを見て、尽きたら従来の動き(見えないカーソルの
+// 移動)に任せていた――選んだ時にカーソルをリンクの行へ動かしていたので、画面の端に届くまで
+// スクロールしなかった。カーソルは動かさない。本にリンクが1つも無ければfalse(従来どおり)。
 bool Application::selectAdjacentEpubHorizontalLink(int delta) {
-  if (!epubHorizontalLinksActive()) return false;
-  auto links = epubHorizontalVisibleLinks();
-  int position = -1;
+  if (!epubHorizontalLinksActive() || fileMode_.epubLayoutHints().lineLinks.empty()) return false;
+  int total = static_cast<int>(fileView_.lines().size());
+  int top = fileView_.topIndex();
+  int bottom = std::min(total, top + std::max(1, fileView_.height()));
+  auto before = [](const EpubHorizontalLink &a, const EpubHorizontalLink &b) {
+    return a.index < b.index || (a.index == b.index && a.start < b.start);
+  };
+  std::optional<EpubHorizontalLink> current;
   if (epubHorizontalLink_)
-    for (std::size_t i = 0; i < links.size(); i++)
-      if (links[i].index == epubHorizontalLink_->index && links[i].start == epubHorizontalLink_->start)
-        position = static_cast<int>(i);
-  int next = position < 0 ? (delta > 0 ? 0 : -1) : position + delta;
-  if (next < 0 || next >= static_cast<int>(links.size())) {
-    if (epubHorizontalLink_) {
-      epubHorizontalLink_.reset();
-      fileView_.setExtraStandout(std::nullopt);
-    }
-    return false;
+    for (const auto &link : epubHorizontalVisibleLinks())
+      if (link.index == epubHorizontalLink_->index && link.start == epubHorizontalLink_->start) current = link;
+  std::optional<EpubHorizontalLink> target;
+  if (delta > 0) {
+    for (const auto &link : epubHorizontalLinks(current ? current->index : top, total))
+      if (!current || before(*current, link)) {
+        target = link;
+        break;
+      }
+  } else if (current) {
+    for (const auto &link : epubHorizontalLinks(0, current->index + 1))
+      if (before(link, *current)) target = link;
   }
-  epubHorizontalLink_ = links[next];
-  fileView_.setCursorIndex(links[next].index);
-  activeView().redraw();  // syncEpubHorizontalPresentation()が反転を付ける
+  if (target && target->index >= top && target->index < bottom) {
+    epubHorizontalLink_ = target;
+  } else if (delta > 0) {
+    fileView_.scrollLineDown();
+  } else {
+    fileView_.scrollLineUp();
+  }
+  activeView().redraw();  // syncEpubHorizontalPresentation()が反転を付ける(画面から外れたら外す)
   return true;
 }
 

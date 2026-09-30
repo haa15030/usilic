@@ -2515,6 +2515,7 @@ class Application {
     int ordinal = 0;  // 行(元の行)の中での番号(EpubLayoutHints::lineLinks)
   };
   std::vector<EpubHorizontalLink> epubHorizontalVisibleLinks() const;
+  std::vector<EpubHorizontalLink> epubHorizontalLinks(int from, int to) const;
   bool epubHorizontalLinksActive() const;
   bool selectAdjacentEpubHorizontalLink(int delta);
   bool activateEpubHorizontalLink(const EpubHorizontalLink &link);
