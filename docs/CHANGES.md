@@ -27564,3 +27564,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **修正**: epubToHelpMarkup()は、横書きの範囲の後ろに続く記録の無い行(空行・区切り線等)を
      次の記録のある行の手前まで(最後の範囲は本の最後まで)範囲に含める。扉(centered)は
      空の列の数が変わるので広げない。Kbt.epubでは306〜383(スクラッチの変換で確認)。
+530. **2026-09-30: 縦書きの左右の慣性スクロールで端の列が突然現れる件**
+   - **経緯**: 直接のユーザー報告("慣性スクロールの左右の端に行が突然現れる動きが縦方向の時と
+     違うので違和感がある。縦と同じにして")。
+   - **原因**: 左右のドラッグ/慣性は画面1枚分の列だけを描いて横にずらしていたので、ずらして空いた
+     端は空のままで、1列の幅を越えて列を動かした瞬間に次の列が現れていた。縦のスクロール
+     (GraphicalDisplay::renderScrolled())は、現れる側に1行余分に描いている。
+   - **修正**: Application::setEpubVerticalView()が、画面をkEpubVerticalEdgeColumns(2)列だけ
+     先/前から描いた画面も裏に描いておき(Display::beginContentEdgeCapture()/
+     endContentEdgeCapture()、本文の行だけを描くContentView::renderContentRows()を新設)、
+     GraphicalDisplay::flush()がずらしている間、空いた端へその列を描く(renderContentEdge())。

@@ -718,6 +718,10 @@ class ContentView {
 
   // -- 描画 --
   void redraw();
+  // redraw()のうち本文の行だけを描く(モードライン・flush()無し)。2026-09-30追加:
+  // Application::captureEpubVerticalEdges()が、画面の外の列を裏に描くのに使う。
+  // 戻り値は1行でも描いたか。
+  bool renderContentRows();
 
   // このビューが現在、そのモードライン行に表示している、整形済み
   // の「current/total NN%」テキスト(renderModeLine()参照)――

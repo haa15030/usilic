@@ -67,6 +67,10 @@ int epubVerticalColumnsPerScreen(int columns);
 // 1列の幅(桁、全角2セル+行間1セル)。
 int epubVerticalColumnPitch();
 
+// 左右のドラッグ/慣性で画面の端から見えてくる列を裏に描く時(Display::
+// beginContentEdgeCapture()参照)、何列ずらした画面を描くか。
+constexpr int kEpubVerticalEdgeColumns = 2;
+
 // columns[first]を右端に置いて、画面1枚分(rows行)を描く。行はカーソル行の
 // ハイライトの対象外(neverHighlighted、横一列がハイライトされる――ユーザー報告)。
 // 列の並び(2026-09-29改訂): 右からk番目の列は桁[screenColumns-3-3k, screenColumns-2-3k]、

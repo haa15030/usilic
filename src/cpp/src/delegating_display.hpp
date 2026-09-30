@@ -92,6 +92,8 @@ class DelegatingDisplay : public Display {
   void reenterFromExternalProgram() override;
   void leaveForSuspend() override;
   void setVerticalTextHint(bool vertical) override;
+  void beginContentEdgeCapture() override;
+  void endContentEdgeCapture(int side) override;
 
   void renderScrolled(const std::vector<ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                        const std::vector<ModeLineSegment> &modeLineSegments) override;

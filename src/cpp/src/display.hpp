@@ -365,6 +365,15 @@ class Display {
   // 「：」等を90度回して描く(直接のユーザー報告"-gなので改善を期待")。端末は
   // 字の置き方を変えられないので何もしない。
   virtual void setVerticalTextHint(bool) {}
+  // 2026-09-30追加、直接のユーザー報告("慣性スクロールの左右の端に行が突然現れる動きが
+  // 縦方向の時と違うので違和感がある。縦と同じにして"): 縦書きの左右のドラッグ/慣性で
+  // 本文を横にずらした時(GraphicalDisplay::setContentOffsetX())、画面の外にあった列が
+  // 端から少しずつ見えてくるように、その列を含む画面を裏に描いておく。begin〜endの間の
+  // 書き込みは画面ではなく裏の画面へ行き、flush()もしない。sideは+1で先(左、
+  // kEpubVerticalEdgeColumns列だけ先から描いた画面)、-1で前(右、同じだけ前から)。
+  // 端末は横に少しずらせないので何もしない。
+  virtual void beginContentEdgeCapture() {}
+  virtual void endContentEdgeCapture(int side) { (void)side; }
 
   // モードライン行の1要素――ハイライトされた(反転表示/「standout」)
   // フィールド(ファイル名、位置インジケータ、末尾のパス)か、2つの

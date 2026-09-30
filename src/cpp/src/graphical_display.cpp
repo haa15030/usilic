@@ -660,6 +660,14 @@ struct GraphicalDisplay::Impl {
   // 縦書きを描いている間だけ(左右の慣性の途中で横書きの範囲へ入った瞬間に、横書きの画面が
   // ずれて描かれないように)。
   int offsetXForRow(int row) const { return (verticalText && row < contentOffsetRows) ? contentOffsetX : 0; }
+  // Display::beginContentEdgeCapture()参照。edgeGrid[0]が先(左)、[1]が前(右)の裏の画面。
+  // 取り込み中は書き込み先のgridと入れ替え、カーソル位置・属性はsaved*に退避する。
+  std::vector<Cell> edgeGrid[2];
+  std::vector<Cell> edgeSavedGrid;
+  bool edgeCapturing = false;
+  int edgeSavedRow = 0, edgeSavedCol = 0;
+  bool edgeSavedFlags[7] = {};
+  int edgeSavedFg = 0, edgeSavedBg = 0;
   int fgColorActive = Display::kDefaultColor, bgColorActive = Display::kDefaultColor;  // setColor()
 
   // renderCursor()が実際に描く「論理的な」カーソル位置――上の
@@ -1677,7 +1685,7 @@ void GraphicalDisplay::renderCursor() {
 }
 
 void GraphicalDisplay::flush() {
-  if (!impl_->outputEnabled) return;
+  if (!impl_->outputEnabled || impl_->edgeCapturing) return;
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
     FILE *f = std::fopen(dbg, "a");
     if (f) {
@@ -1701,6 +1709,7 @@ void GraphicalDisplay::flush() {
     for (int col = 0; col < impl_->columns; col++) renderCellBackground(row, col);
   for (int row = 0; row < impl_->rows; row++)
     for (int col = 0; col < impl_->columns; col++) renderCell(row, col);
+  renderContentEdge();
 
   // 最初の実際のマウス操作までは静的な参照画像、それ以降は実際の
   // 常に最新のつまみ――Impl::everInteractedそれ自身のコメント参照。
@@ -2046,6 +2055,66 @@ void GraphicalDisplay::setOutputEnabled(bool enabled) { impl_->outputEnabled = e
 bool GraphicalDisplay::smoothScrollEnabled() const { return impl_->smoothScroll; }
 void GraphicalDisplay::setSmoothScrollEnabled(bool enabled) { impl_->smoothScroll = enabled; }
 void GraphicalDisplay::setVerticalTextHint(bool vertical) { impl_->verticalText = vertical; }
+
+void GraphicalDisplay::beginContentEdgeCapture() {
+  Impl &d = *impl_;
+  if (d.edgeCapturing) return;
+  d.edgeCapturing = true;
+  d.edgeSavedGrid = std::move(d.grid);
+  d.grid.assign(d.edgeSavedGrid.size(), Cell{});
+  d.edgeSavedRow = d.cursorRow;
+  d.edgeSavedCol = d.cursorCol;
+  bool *flags[7] = {&d.standoutActive, &d.boldActive,      &d.underlineActive,        &d.italicActive,
+                    &d.highlightActive, &d.highlightCurrentActive, &d.serifActive};
+  for (int i = 0; i < 7; i++) {
+    d.edgeSavedFlags[i] = *flags[i];
+    *flags[i] = false;
+  }
+  d.edgeSavedFg = d.fgColorActive;
+  d.edgeSavedBg = d.bgColorActive;
+  d.fgColorActive = d.bgColorActive = Display::kDefaultColor;
+}
+
+void GraphicalDisplay::endContentEdgeCapture(int side) {
+  Impl &d = *impl_;
+  if (!d.edgeCapturing) return;
+  d.edgeCapturing = false;
+  d.edgeGrid[side > 0 ? 0 : 1] = std::move(d.grid);
+  d.grid = std::move(d.edgeSavedGrid);
+  d.cursorRow = d.edgeSavedRow;
+  d.cursorCol = d.edgeSavedCol;
+  bool *flags[7] = {&d.standoutActive, &d.boldActive,      &d.underlineActive,        &d.italicActive,
+                    &d.highlightActive, &d.highlightCurrentActive, &d.serifActive};
+  for (int i = 0; i < 7; i++) *flags[i] = d.edgeSavedFlags[i];
+  d.fgColorActive = d.edgeSavedFg;
+  d.bgColorActive = d.edgeSavedBg;
+}
+
+// 本文を横にずらして画面の端に空いた所へ、裏の画面(beginContentEdgeCapture())の列を
+// 描く。縦のスクロール(renderScrolled())が現れる側に1行余分に描くのと同じ考え方。裏の
+// 画面はkEpubVerticalEdgeColumns列ずらして描いてあるので、その分(桁)だけ戻して置く。
+// 左の端は、画面の左の余り(列の幅に満たない桁、本文は空)にかかる列も描く。
+void GraphicalDisplay::renderContentEdge() {
+  Impl &d = *impl_;
+  if (!d.verticalText || d.contentOffsetX == 0) return;
+  int side = d.contentOffsetX > 0 ? 0 : 1;
+  if (d.edgeGrid[side].size() != d.grid.size()) return;  // リサイズ後、まだ描き直していない
+  int pitch = epubVerticalColumnPitch();
+  int shift = kEpubVerticalEdgeColumns * pitch;
+  int leftover = d.columns - epubVerticalColumnsPerScreen(d.columns) * pitch;
+  int lo = side == 0 ? 0 : std::max(0, d.columns - shift);
+  int hi = side == 0 ? std::min(d.columns, shift + leftover) : d.columns;
+  int rows = std::min(d.contentOffsetRows, d.rows);
+  int savedOffset = d.contentOffsetX;
+  std::swap(d.grid, d.edgeGrid[side]);
+  d.contentOffsetX += (side == 0 ? -shift : shift) * d.cellWidth;
+  for (int row = 0; row < rows; row++)
+    for (int col = lo; col < hi; col++) renderCellBackground(row, col);
+  for (int row = 0; row < rows; row++)
+    for (int col = lo; col < hi; col++) renderCell(row, col);
+  d.contentOffsetX = savedOffset;
+  std::swap(d.grid, d.edgeGrid[side]);
+}
 
 bool GraphicalDisplay::modeLineVisible() const { return impl_->modeLineVisible; }
 void GraphicalDisplay::setModeLineVisible(bool visible) { impl_->modeLineVisible = visible; }

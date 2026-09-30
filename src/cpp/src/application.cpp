@@ -7027,6 +7027,22 @@ void Application::setEpubVerticalView(int first, int cursor) {
   epubVerticalView_.setLines(renderEpubVerticalWindow(epubVerticalCols_, epubVerticalFirst_, epubVerticalRows(),
                                                       display_.columns(), !display_.isGraphical(),
                                                       actionable ? epubVerticalCursor_ : -1));
+  // 左右のドラッグ/慣性で端から見えてくる列(Display::beginContentEdgeCapture()参照)。
+  // 本文と同じビューで描くので、描いた後に本文の行へ戻す。
+  if (display_.isGraphical()) {
+    std::vector<ContentView::Line> window = epubVerticalView_.lines();
+    for (int side : {1, -1}) {
+      epubVerticalView_.setLines(renderEpubVerticalWindow(
+          epubVerticalCols_, epubVerticalFirst_ + side * kEpubVerticalEdgeColumns, epubVerticalRows(),
+          display_.columns(), false, actionable ? epubVerticalCursor_ : -1));
+      epubVerticalView_.setCursorIndex(0);
+      epubVerticalView_.setTopIndex(0);
+      display_.beginContentEdgeCapture();
+      epubVerticalView_.renderContentRows();
+      display_.endContentEdgeCapture(side);
+    }
+    epubVerticalView_.setLines(std::move(window));
+  }
   epubVerticalView_.setCursorIndex(0);
   epubVerticalView_.setTopIndex(0);
   epubVerticalView_.setContentCursorColumn(

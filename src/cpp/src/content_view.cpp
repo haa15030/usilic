@@ -2415,7 +2415,7 @@ void ContentView::renderSplitModeLine(const ModeLineFields &fields, const std::s
   }
 }
 
-void ContentView::redraw() {
+bool ContentView::renderContentRows() {
   clampViewport();
   int highlighted = hoverIndex_.has_value() ? *hoverIndex_ : cursorIndex_;
   int rowOffset = bottomAnchorRowOffset();
@@ -2450,6 +2450,12 @@ void ContentView::redraw() {
       renderedAny = true;
     }
   }
+  return renderedAny;
+}
+
+void ContentView::redraw() {
+  bool renderedAny = renderContentRows();
+  int rowOffset = bottomAnchorRowOffset();
   // 2026-08-05の修正: 行が0の場合、上のループは全くrenderLine()を
   // 呼ばない(idx < lines_.size()は決してtrueにならない)――実際の
   // ユーザー報告が、これが「空の」ハイライトされた一覧(例えば

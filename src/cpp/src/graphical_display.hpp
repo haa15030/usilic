@@ -221,6 +221,8 @@ class GraphicalDisplay : public Display {
   bool smoothScrollEnabled() const override;
   void setSmoothScrollEnabled(bool enabled) override;
   void setVerticalTextHint(bool vertical) override;  // Display::setVerticalTextHint()参照
+  void beginContentEdgeCapture() override;  // Display::beginContentEdgeCapture()参照
+  void endContentEdgeCapture(int side) override;
 
   bool modeLineVisible() const override;
   void setModeLineVisible(bool visible) override;
@@ -563,6 +565,7 @@ class GraphicalDisplay : public Display {
   void commitGlyph(const std::string &utf8Bytes, int width);
   void renderCellBackground(int row, int col);
   void renderCell(int row, int col);
+  void renderContentEdge();  // Display::beginContentEdgeCapture()参照
   void renderCursor();
   // `startCol`(モードラインセグメントの書き直しのために2026-08-07に
   // 追加――renderScrolled()自身のモードラインブロック参照)は
