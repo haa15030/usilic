@@ -3933,20 +3933,27 @@ void Application::syncEpubHorizontalPresentation() {
   // 2026-09-30、直接のユーザー依頼("「あとがき」ではハイライト表示のリンクがスクロールに追随するので
   // 奥付でもよろしく"): 選んでいるリンクがスクロールで画面から外れたら、見えているリンクのうち
   // 近い方(先へ送ったなら一番上、戻したなら一番下)へ選び直す。見えるリンクが無ければ外す。
+  // 同日の訂正(直接のユーザー指摘"スクロールというのはj/kではなくて慣性のほう。上向きだったら
+  // 最上行で現在地更新だが、行内にアンダーラインがあればハイライト表示される"、"左右方向では
+  // 同カーソルがちゃんとあって、行内のアンダーライン箇所を次々ハイライト表示しながらスクロールに
+  // 追随する"): 縦書きの列カーソルと同じく、カーソルの行(慣性では送る向きの先頭の行)のリンクを
+  // 選ぶ。選んでいるリンクがその行にあればそのまま、無ければその行の最初のリンク、行にリンクが
+  // 無ければ選ばない。
   std::optional<ContentView::ByteSpan> standout;
-  if (epubHorizontalLink_ && epubHorizontalLinksActive()) {
-    auto visible = epubHorizontalVisibleLinks();
-    for (const auto &link : visible)
-      if (link.index == epubHorizontalLink_->index && link.start == epubHorizontalLink_->start)
-        standout = ContentView::ByteSpan{link.index, link.start, link.end};
-    if (!standout && !visible.empty()) {
-      const EpubHorizontalLink &nearest =
-          epubHorizontalLink_->index < fileView_.topIndex() ? visible.front() : visible.back();
-      epubHorizontalLink_ = nearest;
-      standout = ContentView::ByteSpan{nearest.index, nearest.start, nearest.end};
+  if (epubHorizontalLinksActive() && !fileMode_.epubLayoutHints().lineLinks.empty()) {
+    int cursor = fileView_.cursorIndex();
+    std::optional<EpubHorizontalLink> chosen;
+    for (const auto &link : epubHorizontalVisibleLinks()) {
+      if (link.index != cursor) continue;
+      if (!chosen) chosen = link;
+      if (epubHorizontalLink_ && link.index == epubHorizontalLink_->index && link.start == epubHorizontalLink_->start)
+        chosen = link;
     }
+    epubHorizontalLink_ = chosen;
+    if (chosen) standout = ContentView::ByteSpan{chosen->index, chosen->start, chosen->end};
+  } else {
+    epubHorizontalLink_.reset();
   }
-  if (!standout) epubHorizontalLink_.reset();
   fileView_.setExtraStandout(standout);
   if (!epubHorizontalSection_ || !epubBookVertical()) {
     fileView_.setShownIndexRange(std::nullopt);
@@ -4025,12 +4032,12 @@ bool Application::handleCommand(Command command) {
   if (outermost) showBufferLimitNoticeIfHit();
   // 横書きのEPUBの選んでいるリンク(syncEpubHorizontalPresentation())は、スクロールした後の画面で
   // 選び直す(activeView()はコマンドの前に呼ばれるので、j等の後では古いまま)。変わった時だけ描き直す。
-  if (outermost && epubHorizontalLink_ && epubHorizontalLinksActive()) {
+  if (outermost && epubHorizontalLinksActive()) {
     auto before = epubHorizontalLink_;
     syncEpubHorizontalPresentation();
-    if (!epubHorizontalLink_ || epubHorizontalLink_->index != before->index ||
-        epubHorizontalLink_->start != before->start)
-      fileView_.redraw();
+    bool changed = before.has_value() != epubHorizontalLink_.has_value() ||
+                   (before && (before->index != epubHorizontalLink_->index || before->start != epubHorizontalLink_->start));
+    if (changed && &activeView() == &fileView_) fileView_.redraw();
   }
   return result;
 }
@@ -7805,19 +7812,23 @@ bool Application::selectAdjacentEpubHorizontalLink(int delta) {
   if (epubHorizontalLink_)
     for (const auto &link : epubHorizontalVisibleLinks())
       if (link.index == epubHorizontalLink_->index && link.start == epubHorizontalLink_->start) current = link;
+  // カーソルの行(選んでいるリンクがあればそのリンク)から次/前を探す
+  int cursor = fileView_.cursorIndex();
+  EpubHorizontalLink here = current ? *current : EpubHorizontalLink{cursor, delta > 0 ? 1 << 30 : -1, 0, 0, 0};
   std::optional<EpubHorizontalLink> target;
   if (delta > 0) {
-    for (const auto &link : epubHorizontalLinks(current ? current->index : top, total))
-      if (!current || before(*current, link)) {
+    for (const auto &link : epubHorizontalLinks(here.index, total))
+      if (before(here, link)) {
         target = link;
         break;
       }
-  } else if (current) {
-    for (const auto &link : epubHorizontalLinks(0, current->index + 1))
-      if (before(link, *current)) target = link;
+  } else {
+    for (const auto &link : epubHorizontalLinks(0, here.index + 1))
+      if (before(link, here)) target = link;
   }
   if (target && target->index >= top && target->index < bottom) {
     epubHorizontalLink_ = target;
+    fileView_.setCursorIndex(target->index);  // 選ぶリンクはカーソルの行のもの(syncEpubHorizontalPresentation())
   } else if (delta > 0) {
     fileView_.scrollLineDown();
   } else {

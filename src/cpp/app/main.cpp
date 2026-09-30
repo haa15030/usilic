@@ -3388,6 +3388,8 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         if (!view.isIndexShown(i)) continue;  // ContentView::setShownIndexRange()参照(空白のまま)
         const auto &line = view.lines()[i];
         std::vector<fm::Display::AttributeRun> attrs = line.attributes;
+        if (const auto &standout = view.extraStandout(); standout && standout->index == i)  // 選んでいるリンク
+          attrs.push_back({standout->start, standout->end, fm::Display::Attribute::Standout});
         if (auto highlight = view.scrollHighlightForLine(i)) attrs.push_back(*highlight);
         std::string text = line.text;
         if (line.ellipsisEligible && static_cast<int>(text.size()) > ellipsisBudget) {
@@ -3404,6 +3406,12 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // scrollModeLineSegments()自身の宣言コメント参照――GUIのコースト/
       // ドラッグはcursorIndex_を常に追従させ続けているので、キーボード
       // j/k(modeLineText())と一致する表示にする。
+      // GraphicalDisplay::setScrolledCursor()参照: カーソル行のハイライトの無いビュー(FILE等)は、
+      // 静止時と同じブロックカーソルをスクロール中も描く(慣性で送る向きの先頭の行にある)。
+      if (!view.cursorHighlightEnabled() && !app.promptActive())
+        gui.setScrolledCursor(std::make_pair(view.cursorIndex(), view.contentCursorColumn()));
+      else
+        gui.setScrolledCursor(std::nullopt);
       gui.renderScrolled(lines, view.topIndex(), pixelOffset, view.scrollModeLineSegments(/*trackCursorPosition=*/true));
     } else if ((wasActivelyScrolling || anyEventThisFrame) && !app.redrawSensitivePromptOrRecallActive() &&
                !app.awaitingLocateUpdateDb() && !app.awaitingDu() && !app.awaitingArchiveLoad()) {

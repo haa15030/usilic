@@ -574,6 +574,13 @@ class GraphicalDisplay : public Display {
   void renderCellBackground(int row, int col);
   void renderCell(int row, int col);
   void renderContentEdge();  // Display::beginContentEdgeCapture()参照
+ public:
+  // 2026-09-30追加、直接のユーザー報告("選択行の無い上下の慣性スクロールではブロックカーソルが
+  // 表示されない"): renderScrolled()で描くブロックカーソルの(行の添字, 桁)。nulloptで描かない。
+  // 静止時(ContentView::syncVisibleCursor())と同じく、カーソル行のハイライトを持たないビュー
+  // だけ(app/main.cppが毎フレーム設定する)。
+  void setScrolledCursor(std::optional<std::pair<int, int>> lineAndColumn);
+ private:
   void renderCursor();
   // `startCol`(モードラインセグメントの書き直しのために2026-08-07に
   // 追加――renderScrolled()自身のモードラインブロック参照)は

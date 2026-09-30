@@ -515,6 +515,7 @@ class ContentView {
   // キャレット、cursorHighlightEnabled()がfalseの間だけ意味を
   // 持つ)。
   void setContentCursorColumn(int column);
+  int contentCursorColumn() const { return contentCursorColumn_; }
 
   // 他のモードラインの描画経路であればcursorIndex_/lines_.size()
   // から導出する位置フィールド("N/M"/"TOP"/"END")を上書きする
@@ -751,6 +752,7 @@ class ContentView {
     int end = 0;
   };
   void setExtraStandout(std::optional<ByteSpan> span) { extraStandout_ = span; }
+  const std::optional<ByteSpan> &extraStandout() const { return extraStandout_; }
   int maxTopIndex() const;
   bool isIndexShown(int index) const {
     return !shownIndexRange_ || (index >= shownIndexRange_->first && index < shownIndexRange_->second);

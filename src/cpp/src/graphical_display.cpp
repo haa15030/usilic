@@ -610,6 +610,7 @@ struct GraphicalDisplay::Impl {
   // updateScrollPosition()自身のコメント参照。
   int scrollTopIndex = 0, scrollTotalLines = 0, scrollContentRows = 0;
   int scrollTrackRows = -1;  // updateScrollPosition()参照
+  std::optional<std::pair<int, int>> scrolledCursor;  // setScrolledCursor()参照
   // setPendingRuby()参照: 次に書く字のセルに付ける読み。
   std::string pendingRuby;
   int pendingRubySpan = 0;
@@ -2087,6 +2088,10 @@ void GraphicalDisplay::setOutputEnabled(bool enabled) { impl_->outputEnabled = e
 bool GraphicalDisplay::smoothScrollEnabled() const { return impl_->smoothScroll; }
 void GraphicalDisplay::setSmoothScrollEnabled(bool enabled) { impl_->smoothScroll = enabled; }
 void GraphicalDisplay::setVerticalTextHint(bool vertical) { impl_->verticalText = vertical; }
+
+void GraphicalDisplay::setScrolledCursor(std::optional<std::pair<int, int>> lineAndColumn) {
+  impl_->scrolledCursor = lineAndColumn;
+}
 
 void GraphicalDisplay::setPendingRuby(const std::string &reading, int span, bool vertical) {
   impl_->pendingRuby = reading;
@@ -3854,6 +3859,30 @@ void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &
       composed = middleEllipsisTruncateByWidth(composed, std::max(0, impl_->columns - 1));
     }
     renderTextRun(y, composed, Color{impl_->fg.r, impl_->fg.g, impl_->fg.b}, 0, lines[lineIndex].attributes);
+    // ブロックカーソル(setScrolledCursor()): 桁の字を覆う箱を描き、字を背景色で描き直す
+    if (impl_->scrolledCursor && impl_->scrolledCursor->first == lineIndex) {
+      int column = std::max(0, impl_->scrolledCursor->second);
+      std::string glyph = " ";
+      int width = 1;
+      for (std::size_t pos = 0, col = 0; pos < composed.size();) {
+        int len = std::max(1, Utf8::sequence_length(static_cast<unsigned char>(composed[pos])));
+        int w = Utf8::display_width(reinterpret_cast<const unsigned char *>(composed.data()) + pos, len);
+        if (static_cast<int>(col) + std::max(w, 1) > column && w > 0) {
+          if (static_cast<int>(col) == column) {
+            glyph = composed.substr(pos, static_cast<std::size_t>(len));
+            width = std::max(w, 1);
+          }
+          break;
+        }
+        col += static_cast<std::size_t>(std::max(w, 0));
+        pos += static_cast<std::size_t>(len);
+      }
+      SDL_Rect box{Impl::kMarginX + column * impl_->cellWidth, Impl::kMarginY + y, impl_->cellWidth * width,
+                   impl_->cellHeight};
+      SDL_SetRenderDrawColor(impl_->renderer, impl_->fg.r, impl_->fg.g, impl_->fg.b, 255);
+      SDL_RenderFillRect(impl_->renderer, &box);
+      if (glyph != " ") renderTextRun(y, glyph, Color{impl_->bg.r, impl_->bg.g, impl_->bg.b}, column);
+    }
   }
 
   SDL_RenderSetClipRect(impl_->renderer, nullptr);  // 下のモードライン行(と将来のどんなマージン装飾)もこれには縛られない
