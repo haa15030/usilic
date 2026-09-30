@@ -256,7 +256,9 @@ void TerminalDisplay::setAttribute(Attribute attr) {
     case Attribute::Italic: italicOn_ = true; break;
     case Attribute::ItalicOff: italicOn_ = false; break;
     case Attribute::Serif:
-    case Attribute::SerifOff: break;  // 端末ではフォントを選べない(Display::Attribute::Serif参照)
+    case Attribute::SerifOff:
+    case Attribute::RubyBase:
+    case Attribute::RubyText: break;  // 端末ではフォントを選べない(Display::Attribute::Serif参照)
     case Attribute::Standout: standoutOn_ = true; break;
     case Attribute::StandoutOff: standoutOn_ = false; break;
     case Attribute::Highlight: highlightVariant_ = Attribute::Highlight; break;
@@ -327,6 +329,8 @@ std::string TerminalDisplay::attributeEscape(Attribute attr) const {
       return caps_.italicOff;
     case Attribute::Serif:
     case Attribute::SerifOff:
+    case Attribute::RubyBase:
+    case Attribute::RubyText:
       return "";
     // Display::Attribute::Highlight/HighlightCurrent自身の宣言コメント
     // 参照: terminfoのパラメータ付きcapability(setaf)経由ではなく、

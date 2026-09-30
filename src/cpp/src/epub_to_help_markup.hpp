@@ -45,6 +45,9 @@ struct EpubLayoutHints {
   std::vector<std::pair<int, int>> horizontal;
   std::vector<std::pair<int, int>> centered;
   std::vector<int> alignEnd;
+  // 2026-09-30追加、直接のユーザー依頼("奥付ページのセンタリング"): text-alignがcenterの
+  // 行(元の行番号)。横書きの画面で行の中央に置く(FileMode::readAndWrap())。
+  std::vector<int> center;
 };
 
 std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember,

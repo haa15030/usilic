@@ -222,6 +222,10 @@ class GraphicalDisplay : public Display {
   void setSmoothScrollEnabled(bool enabled) override;
   void setVerticalTextHint(bool vertical) override;  // Display::setVerticalTextHint()参照
   void beginContentEdgeCapture() override;  // Display::beginContentEdgeCapture()参照
+  bool drawsRuby() const override { return true; }
+  void setPendingRuby(const std::string &reading, int span, bool vertical) override;  // Display::setPendingRuby()参照
+  void renderRuby(int row, int col);
+  void drawRubyText(int x, int y, const std::string &ruby, int span, bool vertical, Color fg, bool serif);
   void endContentEdgeCapture(int side) override;
 
   bool modeLineVisible() const override;

@@ -77,13 +77,21 @@ bool isNoEnd(char32_t cp) {
 
 std::optional<Display::Attribute> attributeAt(const std::vector<AttributeRun> &runs, int byte) {
   for (const auto &run : runs)
-    if (byte >= run.start && byte < run.end && run.attribute != Display::Attribute::Serif) return run.attribute;
+    if (byte >= run.start && byte < run.end && run.attribute != Display::Attribute::Serif &&
+        run.attribute != Display::Attribute::RubyBase && run.attribute != Display::Attribute::RubyText)
+      return run.attribute;
   return std::nullopt;
 }
 
 bool serifAt(const std::vector<AttributeRun> &runs, int byte) {
   for (const auto &run : runs)
     if (byte >= run.start && byte < run.end && run.attribute == Display::Attribute::Serif) return true;
+  return false;
+}
+
+bool hasRun(const std::vector<AttributeRun> &runs, int byte, Display::Attribute attribute) {
+  for (const auto &run : runs)
+    if (byte >= run.start && byte < run.end && run.attribute == attribute) return true;
   return false;
 }
 
@@ -109,6 +117,32 @@ std::vector<Cell> toCells(const EpubVerticalSourceLine &line, bool sideways) {
     int width = Utf8::display_width(reinterpret_cast<const unsigned char *>(s.data() + pos), len);
     if (width > 0) glyphs.push_back({cp, s.substr(pos, len), width, static_cast<int>(pos)});
     pos += len;
+  }
+  // ルビ(2026-09-30、-gのみ、Display::Attribute::RubyBase参照): 読み(《》を除く)の字を
+  // 並びから抜き、親字の最初の字に読みと親字の字数を持たせる(-gが列の右の行間に描く)。
+  // -cは今までどおり「燈《ひ》」をマスに並べる。
+  std::map<std::size_t, std::pair<std::string, int>> rubyOf;  // 抜いた後のglyphsの添字→(読み, 親字の字数)
+  if (sideways) {
+    std::vector<Glyph> kept;
+    std::optional<std::size_t> baseStart;
+    bool prevBase = false;
+    for (const auto &g : glyphs) {
+      if (hasRun(line.attributes, g.byte, Display::Attribute::RubyText)) {
+        if (baseStart && g.cp != 0x300A && g.cp != 0x300B) rubyOf[*baseStart].first += g.bytes;
+        prevBase = false;
+        continue;
+      }
+      bool base = hasRun(line.attributes, g.byte, Display::Attribute::RubyBase);
+      if (base && !prevBase) {
+        baseStart = kept.size();
+        rubyOf[*baseStart] = {std::string(), 0};
+      }
+      if (base) rubyOf[*baseStart].second++;
+      prevBase = base;
+      kept.push_back(g);
+    }
+    glyphs = std::move(kept);
+    for (auto it = rubyOf.begin(); it != rubyOf.end();) it = it->second.first.empty() ? rubyOf.erase(it) : std::next(it);
   }
   while (!glyphs.empty() && glyphs.back().cp == ' ') glyphs.pop_back();
 
@@ -138,6 +172,10 @@ std::vector<Cell> toCells(const EpubVerticalSourceLine &line, bool sideways) {
     cell.original = g.cp;
     cell.attribute = attributeAt(line.attributes, g.byte);
     cell.serif = serifAt(line.attributes, g.byte);
+    if (auto ruby = rubyOf.find(i); ruby != rubyOf.end()) {
+      cell.ruby = ruby->second.first;
+      cell.rubySpan = ruby->second.second;
+    }
     // 横倒し(sideways、-gのみ、2026-09-29): 3字以上続く半角は2字ずつ1マスに詰める
     // (GraphicalDisplayが90度回して描く、layoutEpubVerticalColumns()の宣言参照)
     if (sideways && runLength[i] > 2) {
@@ -225,6 +263,7 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
     std::vector<std::string> screen(std::max(0, columns), " ");
     std::vector<std::optional<Display::Attribute>> attrs(std::max(0, columns));
     std::vector<bool> serifs(std::max(0, columns), false);
+    std::vector<std::pair<std::string, int>> rubies(std::max(0, columns));  // 桁ごとのルビ(読み, 親字の行数)
     for (int k = 0; k < perScreen; k++) {
       long c = static_cast<long>(first) + k;
       int x = epubVerticalScreenColumn(k, columns);
@@ -251,11 +290,13 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
       attrs[x] = attribute;
       if (x + 1 < columns) attrs[x + 1] = attribute;
       serifs[x] = cell.serif;
+      if (!cell.ruby.empty()) rubies[x] = {cell.ruby, std::min(cell.rubySpan, std::max(1, rows) - r)};
       if (x + 1 < columns) serifs[x + 1] = cell.serif;
     }
     ContentView::Line line;
     for (int x = 0; x < columns; x++) {
       int start = static_cast<int>(line.text.size());
+      if (!rubies[x].first.empty()) line.rubyMarks.push_back({start, rubies[x].first, rubies[x].second, true});
       line.text += screen[x];
       int end = static_cast<int>(line.text.size());
       if (attrs[x] && end > start) {

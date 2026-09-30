@@ -27603,3 +27603,26 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      行の数として渡していたので、モードラインまではみ出していた。
      (3)縦書きの本の横書きの範囲(奥付等)でも、範囲の直後の列を右端に置いた位置でつまみを描く
      (Application::epubVerticalScrollbar()、renderScrolled()もその位置を使う)。
+532. **2026-09-30: EPUBの奥付ページのセンタリング(CSSのtext-align:center)**
+   - **経緯**: 直接のユーザー依頼("奥付ページのセンタリング...を実装してみて")。Kbt.epubの奥付
+     (Section024)はp.title/p.author/p.smallがtext-align:centerだが、左寄せで出ていた(=hr)。
+   - **実装**: epubToHelpMarkup()がtext-alignのcenterも読み(classifyTextCenter())、その行を
+     EpubLayoutHints::centerに入れる。FileMode::readAndWrap()が、折り返した画面の行ごとに頭へ
+     空白を足して中央に置く(幅はルビの読みを除いて測る、-cでは読みの分だけ右へ寄る)。縦書きに
+     組み直す時(rebuildEpubVertical())はその空白を取り除く。縦書きの列の中での中央寄せはしない。
+533. **2026-09-30: -gでのルビ**
+   - **経緯**: 直接のユーザー依頼("-gでのルビを実装してみて")。これまでは-c/-gとも「燈《ひ》」。
+   - **実装**: epubToHelpMarkup()が親字を<rb>、読み(《》ごと)を<rt>で囲み、expandHelpMarkup()/
+     PipeBufferが装飾のラン(Display::Attribute::RubyBase/RubyText、新設)にする。-cは今までどおり
+     「燈《ひ》」。-g(Display::drawsRuby())では:
+     - 横書き: ContentView::renderLine()が読みをマスに書かず、親字の最初の字の前に
+       Display::setPendingRuby()で渡す。GraphicalDisplayはそのセルに読みを持たせ、flush()で親字の
+       上に小さく描く(renderRuby())。行の高さは変えられないので、行の境目をまたいで描く。上下
+       スクロール中(renderTextRun())も同じ。
+     - 縦書き: layoutEpubVerticalColumns()が読みの字を列から抜き、親字の最初のマスに読みと親字の
+       字数を持たせる。renderEpubVerticalWindow()がContentView::Line::rubyMarksで渡し、列の右の
+       行間の桁に1字ずつ縦に並べ、親字の高さの中央に置く。
+     - 横書きの折り返しは読みも幅に数えたまま(行が少し短くなる)。親字と読みが行・列をまたいで
+       分かれると、その読みは描かない。
+   - **テスト**: tests/test_epub_to_help_markup.cppの4件は、2026-09-29の<serif>追加以来の期待値の
+     古さで既に失敗していた(ルビの期待値もこの変更で変わる)。未修正。

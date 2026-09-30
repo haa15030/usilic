@@ -46,6 +46,11 @@ struct Cell {
   int fgColor = Display::kDefaultColor;
   int bgColor = Display::kDefaultColor;
   bool continuation = false;  // 2列幅のグリフの「影」となる2つ目のセル――それ自体では描画されない
+  // 2026-09-30追加(Display::setPendingRuby()参照): 親字の最初の字のセルに、その読みと
+  // 親字の幅(横書きは桁、縦書きは行)。renderRuby()が描く。
+  std::string ruby;
+  int rubySpan = 0;
+  bool rubyVertical = false;
 };
 
 // TerminalDisplay::attributeEscape()のHighlight/HighlightCurrent
@@ -605,6 +610,10 @@ struct GraphicalDisplay::Impl {
   // updateScrollPosition()自身のコメント参照。
   int scrollTopIndex = 0, scrollTotalLines = 0, scrollContentRows = 0;
   int scrollTrackRows = -1;  // updateScrollPosition()参照
+  // setPendingRuby()参照: 次に書く字のセルに付ける読み。
+  std::string pendingRuby;
+  int pendingRubySpan = 0;
+  bool pendingRubyVertical = false;
   // ウィンドウの作成から、何であれ「最初の」マウス操作まではfalse
   // (pumpEvents()でtrueに設定され、決してfalseに戻されない)――
   // 実際の依頼(2026-08-09、1回前のラウンドで削除されたアイドル
@@ -1259,6 +1268,10 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
   cell.fgColor = impl_->fgColorActive;
   cell.bgColor = impl_->bgColorActive;
   cell.continuation = false;
+  cell.ruby = std::move(impl_->pendingRuby);
+  cell.rubySpan = impl_->pendingRubySpan;
+  cell.rubyVertical = impl_->pendingRubyVertical;
+  impl_->pendingRuby.clear();
 
   if (width == 2 && impl_->cursorCol + 1 < impl_->columns) {
     Cell &shadow = impl_->cellAt(impl_->cursorRow, impl_->cursorCol + 1);
@@ -1721,6 +1734,8 @@ void GraphicalDisplay::flush() {
     for (int col = 0; col < impl_->columns; col++) renderCellBackground(row, col);
   for (int row = 0; row < impl_->rows; row++)
     for (int col = 0; col < impl_->columns; col++) renderCell(row, col);
+  for (int row = 0; row < impl_->rows; row++)
+    for (int col = 0; col < impl_->columns; col++) renderRuby(row, col);
   renderContentEdge();
   if (clipShift) SDL_RenderSetClipRect(impl_->renderer, nullptr);
 
@@ -1890,6 +1905,9 @@ void GraphicalDisplay::setAttribute(Attribute attr) {
     case Attribute::SerifOff:
       impl_->serifActive = false;
       break;
+    case Attribute::RubyBase:
+    case Attribute::RubyText:
+      break;  // Display::Attribute::RubyBase参照(setPendingRuby())
     case Attribute::Highlight:
       impl_->highlightActive = true;
       break;
@@ -2070,6 +2088,74 @@ bool GraphicalDisplay::smoothScrollEnabled() const { return impl_->smoothScroll;
 void GraphicalDisplay::setSmoothScrollEnabled(bool enabled) { impl_->smoothScroll = enabled; }
 void GraphicalDisplay::setVerticalTextHint(bool vertical) { impl_->verticalText = vertical; }
 
+void GraphicalDisplay::setPendingRuby(const std::string &reading, int span, bool vertical) {
+  impl_->pendingRuby = reading;
+  impl_->pendingRubySpan = span;
+  impl_->pendingRubyVertical = vertical;
+}
+
+// 2026-09-30追加、直接のユーザー依頼("-gでのルビを実装してみて"): セルに付いた読み
+// (Display::setPendingRuby())を小さい字で描く。横書きは親字の幅の上(行の境目をまたぐ
+// ――行の高さは変えられないので、前の行の字の下の余白と、この行の字の上の余白に
+// かかる)。縦書きは親字の右の行間の桁に、1字ずつ縦に並べて親字の高さの中央に置く。
+void GraphicalDisplay::renderRuby(int row, int col) {
+  if (!impl_->outputEnabled) return;
+  const Cell &cell = impl_->cellAt(row, col);
+  if (cell.ruby.empty() || cell.rubySpan <= 0) return;
+  SDL_Color fg = cell.fgColor != Display::kDefaultColor ? ansiColorToSdl(cell.fgColor) : impl_->fg;
+  drawRubyText(Impl::kMarginX + col * impl_->cellWidth + impl_->offsetXForRow(row),
+               Impl::kMarginY + row * impl_->cellHeight, cell.ruby, cell.rubySpan, cell.rubyVertical,
+               Color{fg.r, fg.g, fg.b}, cell.serif);
+}
+
+// renderRuby()と、スクロール中のrenderTextRun()の共通部分。(x, y)は親字の最初の字のマスの左上。
+void GraphicalDisplay::drawRubyText(int x, int y, const std::string &ruby, int span, bool vertical, Color color,
+                                    bool serif) {
+  SDL_Color fg{color.r, color.g, color.b, 255};
+  int cw = impl_->cellWidth, ch = impl_->cellHeight;
+  auto fontFor = [&](unsigned int codepoint) {
+    TTF_Font *font = impl_->font;
+    if (glyphProvidedByFont(impl_->fallbackFont, codepoint)) font = impl_->fallbackFont;
+    if (TTF_Font *serifFont = serif ? serifFontFor(*impl_, codepoint) : nullptr) font = serifFont;
+    return font;
+  };
+  if (vertical) {
+    std::vector<std::string> chars;
+    for (std::size_t i = 0; i < ruby.size();) {
+      std::size_t len = Utf8::sequence_length(static_cast<unsigned char>(ruby[i]));
+      chars.push_back(ruby.substr(i, std::max<std::size_t>(len, 1)));
+      i += std::max<std::size_t>(len, 1);
+    }
+    int size = cw;  // 1字の大きさ(行間の桁の幅)
+    int top = y + (span * ch - static_cast<int>(chars.size()) * size) / 2;
+    for (std::size_t k = 0; k < chars.size(); k++) {
+      std::string glyph = chars[k];
+      double rotation = 0.0;
+      if (decodeUtf8Codepoint(glyph) == 0x30FC) rotation = 90.0;  // 長音「ー」は縦に
+      int w = 0, h = 0;
+      SDL_Texture *texture = cachedGlyphTexture(*impl_, fontFor(decodeUtf8Codepoint(glyph)), glyph, TTF_STYLE_NORMAL,
+                                                TTF_HINTING_NORMAL, fg, false, w, h);
+      if (!texture || w <= 0 || h <= 0) continue;
+      double scale = std::min(static_cast<double>(size) / w, static_cast<double>(size) / h);
+      int dw = static_cast<int>(w * scale), dh = static_cast<int>(h * scale);
+      SDL_Rect dst{x + 2 * cw + (cw - dw) / 2, top + static_cast<int>(k) * size + (size - dh) / 2, dw, dh};
+      SDL_RenderCopyEx(impl_->renderer, texture, nullptr, &dst, rotation, nullptr, SDL_FLIP_NONE);
+    }
+    return;
+  }
+  int w = 0, h = 0;
+  SDL_Texture *texture = cachedGlyphTexture(*impl_, fontFor(decodeUtf8Codepoint(ruby)), ruby, TTF_STYLE_NORMAL,
+                                            TTF_HINTING_NORMAL, fg, false, w, h);
+  if (!texture || w <= 0 || h <= 0) return;
+  int rubyH = ch * 9 / 20;
+  double scale = static_cast<double>(rubyH) / h;
+  int maxW = span * cw + cw;  // 親字より少しはみ出すのは許す
+  if (w * scale > maxW) scale = static_cast<double>(maxW) / w;
+  int dw = static_cast<int>(w * scale), dh = static_cast<int>(h * scale);
+  SDL_Rect dst{x + (span * cw - dw) / 2, y - dh / 2, dw, dh};
+  SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
+}
+
 void GraphicalDisplay::beginContentEdgeCapture() {
   Impl &d = *impl_;
   if (d.edgeCapturing) return;
@@ -2132,6 +2218,8 @@ void GraphicalDisplay::renderContentEdge() {
       for (int col = lo; col < hi; col++) renderCellBackground(row, col);
     for (int row = 0; row < rows; row++)
       for (int col = lo; col < hi; col++) renderCell(row, col);
+    for (int row = 0; row < rows; row++)
+      for (int col = lo; col < hi; col++) renderRuby(row, col);
     d.contentOffsetX = savedOffset;
     std::swap(d.grid, d.edgeGrid[side]);
   }
@@ -3133,6 +3221,35 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
     if (naturalWidth == 0 && len > 1) {
       pos += len;
       continue;
+    }
+    // ルビ(Display::Attribute::RubyBase参照): 静止時のContentView::renderLine()と同じく、
+    // 読みはマスに書かず、親字の最初の字の所で親字の上に描く。
+    auto rubyRun = [&](std::size_t at, Display::Attribute attribute) {
+      for (const auto &run : attributes)
+        if (run.attribute == attribute && static_cast<int>(at) >= run.start && static_cast<int>(at) < run.end)
+          return true;
+      return false;
+    };
+    if (rubyRun(pos, Display::Attribute::RubyText)) {
+      pos += len;
+      continue;
+    }
+    if (rubyRun(pos, Display::Attribute::RubyBase) && (pos == 0 || !rubyRun(pos - 1, Display::Attribute::RubyBase))) {
+      std::size_t baseEnd = pos;
+      int baseWidth = 0;
+      while (baseEnd < line.size() && rubyRun(baseEnd, Display::Attribute::RubyBase)) {
+        int l = std::max(1, Utf8::sequence_length(static_cast<unsigned char>(line[baseEnd])));
+        baseWidth += Utf8::display_width(reinterpret_cast<const unsigned char *>(line.data() + baseEnd), l);
+        baseEnd += static_cast<std::size_t>(l);
+      }
+      std::size_t readingEnd = baseEnd;
+      while (readingEnd < line.size() && rubyRun(readingEnd, Display::Attribute::RubyText)) readingEnd++;
+      std::string reading = line.substr(baseEnd, readingEnd - baseEnd);
+      for (const char *bracket : {"\xE3\x80\x8A", "\xE3\x80\x8B"})  // 《》
+        for (std::size_t p; (p = reading.find(bracket)) != std::string::npos;) reading.erase(p, 3);
+      if (!reading.empty())
+        drawRubyText(Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y, reading, std::max(baseWidth, 1), false,
+                     fg, rubyRun(pos, Display::Attribute::Serif));
     }
     int width = std::max(1, naturalWidth);
     std::string glyph = line.substr(pos, len);

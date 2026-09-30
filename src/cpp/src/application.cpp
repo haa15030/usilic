@@ -6919,11 +6919,23 @@ void Application::rebuildEpubVertical(int rawLine) {
   // 横書きの画面の行(折り返し済み)を、元の行番号ごとに論理行へつなぎ直す
   const EpubLayoutHints &hints = fileMode_.epubLayoutHints();
   std::set<int> alignEnd(hints.alignEnd.begin(), hints.alignEnd.end());
+  std::set<int> center(hints.center.begin(), hints.center.end());
   std::set<int> chapterStarts;  // 章の印(行末のタブ、PipeBufferがU+2060にしたもの)のある行
   std::vector<EpubVerticalSourceLine> logical;
-  for (const auto &line : fileView_.lines()) {
-    int raw = line.rawLineNumber.value_or(-1);
+  for (const auto &original : fileView_.lines()) {
+    int raw = original.rawLineNumber.value_or(-1);
     if (raw >= 0 && epubHorizontalRangeAt(raw)) continue;  // 横書きの範囲(epubHorizontalSection_参照)
+    // 中央寄せの行(EpubLayoutHints::center)は、FileModeが頭に足した空白を取り除く
+    ContentView::Line line = original;
+    if (center.count(raw)) {
+      std::size_t pad = line.text.find_first_not_of(' ');
+      if (pad == std::string::npos) pad = line.text.size();
+      line.text.erase(0, pad);
+      for (auto &run : line.attributes) {
+        run.start = std::max(0, run.start - static_cast<int>(pad));
+        run.end = std::max(0, run.end - static_cast<int>(pad));
+      }
+    }
     if (line.text.find("\xE2\x81\xA0") != std::string::npos) chapterStarts.insert(raw);
     if (logical.empty() || raw < 0 || logical.back().rawLineNumber != raw) {
       logical.push_back({line.text, line.attributes, raw, alignEnd.count(raw) > 0});

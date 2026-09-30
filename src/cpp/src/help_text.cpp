@@ -186,6 +186,22 @@ std::string expandHelpMarkup(const std::string &text) {
     }
     // 2026-09-29追加: <serif>...</serif>、明朝体(Display::Attribute::Serif参照)。
     // \x05+数字1桁、<i>と同じトグル式。
+    // 2026-09-30追加: <rb>...</rb>(ルビの親字、\x06)と<rt>...</rt>(ルビの読み、\x10)、
+    // Display::Attribute::RubyBase/RubyText参照。<serif>と同じトグル式。
+    bool rubyTagMatched = false;
+    for (const auto &[tag, byte] : {std::pair<const char *, char>{"rb", '\x06'}, {"rt", '\x10'}}) {
+      for (bool closing : {false, true}) {
+        std::string markup = std::string(closing ? "</" : "<") + tag + ">";
+        if (text.compare(i, markup.size(), markup) != 0) continue;
+        out += byte;
+        out += closing ? '0' : '1';
+        i += markup.size();
+        rubyTagMatched = true;
+        break;
+      }
+      if (rubyTagMatched) break;
+    }
+    if (rubyTagMatched) continue;
     const std::string serifOpen = "<serif>", serifClose = "</serif>";
     if (text.compare(i, serifOpen.size(), serifOpen) == 0) {
       out += '\x05';

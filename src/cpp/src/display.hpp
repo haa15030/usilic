@@ -58,6 +58,12 @@ class Display {
     // EPUBの変換(epubToHelpMarkup())がCSSのfont-familyから<serif>を付ける。
     Serif,
     SerifOff,
+    // 2026-09-30追加、直接のユーザー依頼("-gでのルビを実装してみて"): ルビの親字(RubyBase)と
+    // 読み(RubyText、「《ひ》」の《》を含む)。行の装飾のラン(AttributeRun)にだけ現れ、
+    // setAttribute()には渡さない。ContentView::renderLine()が、drawsRuby()の表示では読みを
+    // マスに書かずにsetPendingRuby()で親字に添え、端末では「燈《ひ》」のまま書く。
+    RubyBase,
+    RubyText,
     // 2026-09-10追加、直接のユーザー依頼("マッチ文字列をboldの代わり
     // にハイライトでやってみて。色は変えられない？薄めの色とか")、
     // 同日さらに前景色だけの版(初版)に対する直接の追加依頼("文字色
@@ -365,6 +371,15 @@ class Display {
   // 「：」等を90度回して描く(直接のユーザー報告"-gなので改善を期待")。端末は
   // 字の置き方を変えられないので何もしない。
   virtual void setVerticalTextHint(bool) {}
+  // ルビ(Attribute::RubyBase参照)を親字に添えて描けるか(-gだけ)。
+  virtual bool drawsRuby() const { return false; }
+  // 次に書く字(親字の最初の字)に読みを添える。spanは親字の幅(横書きは桁、verticalなら
+  // 縦書きの行=マスの数)。縦書きは読みを列の右の行間に、横書きは親字の上に描く。
+  virtual void setPendingRuby(const std::string &reading, int span, bool vertical) {
+    (void)reading;
+    (void)span;
+    (void)vertical;
+  }
   // 2026-09-30追加、直接のユーザー報告("慣性スクロールの左右の端に行が突然現れる動きが
   // 縦方向の時と違うので違和感がある。縦と同じにして"): 縦書きの左右のドラッグ/慣性で
   // 本文を横にずらした時(GraphicalDisplay::setContentOffsetX())、画面の外にあった列が

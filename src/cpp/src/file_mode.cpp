@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <set>
 #include <sstream>
 #include <system_error>
 
@@ -611,6 +612,34 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path,
     // (ellipsisEligible/neverHighlightedの後にある)ので、個別に代入。
     line.rawLineNumber = styled.rawLineNumber;
     lines.push_back(std::move(line));
+  }
+  // 2026-09-30追加、直接のユーザー依頼("奥付ページのセンタリング"): EPUBのCSSでtext-alignが
+  // centerの行(EpubLayoutHints::center)は、折り返した画面の行ごとに頭へ空白を足して中央に
+  // 置く。幅はルビの読み(Display::Attribute::RubyText、-gではマスに書かない)を除いて測る。
+  // 縦書きに組み直す時(Application::rebuildEpubVertical())は、この空白を取り除く。
+  if (!epubLayoutHints_.center.empty() && !noWrapMode_) {
+    std::set<int> center(epubLayoutHints_.center.begin(), epubLayoutHints_.center.end());
+    for (auto &line : lines) {
+      if (!line.rawLineNumber || !center.count(*line.rawLineNumber)) continue;
+      int width = 0;
+      for (std::size_t p = 0; p < line.text.size();) {
+        int l = std::max(1, Utf8::sequence_length(static_cast<unsigned char>(line.text[p])));
+        bool reading = false;
+        for (const auto &run : line.attributes)
+          if (run.attribute == Display::Attribute::RubyText && static_cast<int>(p) >= run.start &&
+              static_cast<int>(p) < run.end)
+            reading = true;
+        if (!reading) width += Utf8::display_width(reinterpret_cast<const unsigned char *>(line.text.data()) + p, l);
+        p += static_cast<std::size_t>(l);
+      }
+      int pad = (effectiveWidth - width) / 2;
+      if (pad <= 0) continue;
+      line.text.insert(0, static_cast<std::size_t>(pad), ' ');
+      for (auto &run : line.attributes) {
+        run.start += pad;
+        run.end += pad;
+      }
+    }
   }
   return lines;
 }

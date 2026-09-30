@@ -1153,8 +1153,54 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
   }
   {
     const std::string &text = *renderedText;
+    // 2026-09-30追加、直接のユーザー依頼("-gでのルビを実装してみて"): ルビを親字に添えて
+    // 描ける表示(-g)では、読み(RubyText)をマスに書かず、親字(RubyBase)の最初の字の前に
+    // setPendingRuby()で渡す。端末では「燈《ひ》」のまま書く。
+    bool rubyOn = display_.drawsRuby();
+    auto inRun = [&](std::size_t at, Display::Attribute attribute) -> const AttributeRun * {
+      for (const AttributeRun &run : *renderedAttributes)
+        if (run.attribute == attribute && static_cast<int>(at) >= run.start && static_cast<int>(at) < run.end)
+          return &run;
+      return nullptr;
+    };
+    auto rubyAt = [&](std::size_t at) {
+      for (const auto &mark : line.rubyMarks)
+        if (mark.byte == static_cast<int>(at)) display_.setPendingRuby(mark.reading, mark.span, mark.vertical);
+      const AttributeRun *base = inRun(at, Display::Attribute::RubyBase);
+      if (!base || base->start != static_cast<int>(at)) return;
+      // 親字のランは字ごとに積まれているので、続くランをつないで親字全体と読みを求める
+      int baseEnd = base->end;
+      for (bool extended = true; extended;) {
+        extended = false;
+        if (const AttributeRun *next = inRun(static_cast<std::size_t>(baseEnd), Display::Attribute::RubyBase)) {
+          baseEnd = next->end;
+          extended = true;
+        }
+      }
+      int readingEnd = baseEnd;
+      while (const AttributeRun *next = inRun(static_cast<std::size_t>(readingEnd), Display::Attribute::RubyText))
+        readingEnd = next->end;
+      if (readingEnd <= baseEnd) return;
+      std::string reading = text.substr(static_cast<std::size_t>(baseEnd), static_cast<std::size_t>(readingEnd - baseEnd));
+      for (const char *bracket : {"\xE3\x80\x8A", "\xE3\x80\x8B"})  // 《》
+        for (std::size_t p; (p = reading.find(bracket)) != std::string::npos;) reading.erase(p, 3);
+      int width = 0;
+      for (std::size_t p = at; p < static_cast<std::size_t>(baseEnd);) {
+        int l = std::max(1, Utf8::sequence_length(static_cast<unsigned char>(text[p])));
+        width += Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + p, l);
+        p += static_cast<std::size_t>(l);
+      }
+      if (!reading.empty()) display_.setPendingRuby(reading, std::max(width, 1), false);
+    };
     std::size_t idx = 0;
     while (idx < text.size()) {
+      if (rubyOn && (!line.rubyMarks.empty() || !renderedAttributes->empty())) {
+        if (inRun(idx, Display::Attribute::RubyText)) {
+          idx += static_cast<std::size_t>(std::max(1, Utf8::sequence_length(static_cast<unsigned char>(text[idx]))));
+          continue;
+        }
+        rubyAt(idx);
+      }
       // highlightStartColumn自身の遷移地点(DirectoryModeのls一覧/
       // WORK/arc.Nバナー、この関数自身の上のコメント参照)――
       // `highlightStart`は、実際の全呼び出し元に対して常にプレーン

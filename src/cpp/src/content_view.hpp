@@ -201,6 +201,16 @@ class ContentView {
     // 前面」慣習に合わせている)。他の全ての呼び出し元に対しては
     // デフォルトでfalse(影響なし)。
     bool neverHighlighted = false;
+    // 2026-09-30追加(Display::setPendingRuby()参照): このバイト位置の字に添えるルビ。
+    // 縦書き(renderEpubVerticalWindow())が、列の右の行間に描く読みを渡すのに使う。横書きの
+    // ルビは装飾のラン(Display::Attribute::RubyBase/RubyText)から求める(renderLine())。
+    struct RubyMark {
+      int byte = 0;
+      std::string reading;
+      int span = 0;
+      bool vertical = false;
+    };
+    std::vector<RubyMark> rubyMarks;
 
     // 2026-09-08追加、直接のユーザー報告("usilic画面では98行だった
     // 行が97として表示されている"――幅超過で折り返された1つの生の

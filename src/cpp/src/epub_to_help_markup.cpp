@@ -350,7 +350,16 @@ struct CssFontRule {
   std::optional<bool> serif;         // font-family(明朝体ならtrue)
   std::optional<bool> vertical;      // writing-mode(縦書きならtrue)
   std::optional<bool> alignEnd;      // text-align(right/endならtrue、EpubLayoutHints::alignEnd)
+  std::optional<bool> center;        // text-align(centerならtrue、EpubLayoutHints::center)
 };
+
+// text-alignがcenterか(2026-09-30、EpubLayoutHints::center)。
+std::optional<bool> classifyTextCenter(const std::string &value) {
+  if (value.find("center") != std::string::npos) return true;
+  for (const char *v : {"left", "start", "right", "end", "justify"})
+    if (value.find(v) != std::string::npos) return false;
+  return std::nullopt;
+}
 
 std::optional<bool> classifyTextAlign(const std::string &value) {
   if (value.find("right") != std::string::npos || value.find("end") != std::string::npos) return true;
@@ -443,7 +452,8 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
     std::optional<bool> serif = readProperty("font-family", classifyFontFamily);
     std::optional<bool> vertical = readProperty("writing-mode", classifyWritingMode);
     std::optional<bool> alignEnd = readProperty("text-align", classifyTextAlign);
-    if (!serif && !vertical && !alignEnd) continue;
+    std::optional<bool> center = readProperty("text-align", classifyTextCenter);
+    if (!serif && !vertical && !alignEnd && !center) continue;
     std::string one;
     for (char c : selectors + ",") {
       if (c != ',') {
@@ -457,6 +467,7 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
       rule.serif = serif;
       rule.vertical = vertical;
       rule.alignEnd = alignEnd;
+      rule.center = center;
       std::size_t dot = sel.find('.');
       rule.tag = sel.substr(0, dot);
       if (rule.tag == "*") rule.tag.clear();
@@ -493,6 +504,7 @@ class BodyConverter {
   enum class LineKind { Normal, Horizontal, Centered };
   const std::map<int, LineKind> &lineKinds() const { return lineKinds_; }
   const std::vector<int> &alignEndLines() const { return alignEndLines_; }
+  const std::vector<int> &centerLines() const { return centerLines_; }
 
   void convert(const std::string &xhtml, const std::string &path, const std::vector<TocEntry> *tocEntries) {
     path_ = path;
@@ -514,6 +526,8 @@ class BodyConverter {
     vertical_.reset();
     horizontalOutside_ = false;
     alignEnd_ = false;
+    center_ = false;
+    rubyBase_ = false;
     inStyle_ = false;
     std::vector<XmlToken> tokens = tokenizeXml(xhtml);
     // CSS(fontRules_参照)は<head>の中にあり、<html>の開始より後に来るので、先に
@@ -609,9 +623,30 @@ class BodyConverter {
         text("[image: " + name + "]");
         if (wasEmpty) lineImageOnly_ = true;
       }
+    } else if (name == "ruby") {
+      // 2026-09-30追加、直接のユーザー依頼("-gでのルビを実装してみて"): 親字を<rb>、
+      // 読み(《》ごと)を<rt>で囲む(Display::Attribute::RubyBase/RubyText)。-cは今までどおり
+      // 「燈《ひ》」と見せ、-gは読みをマスに入れずに親字に添えて描く(ContentView::
+      // renderLine()、layoutEpubVerticalColumns())。
+      if (t.kind == XmlToken::Open) {
+        openStylesAtLineStart();
+        line_ += "<rb>";
+        rubyBase_ = true;
+      } else if (close && rubyBase_) {
+        line_ += "</rb>";
+        rubyBase_ = false;
+      }
     } else if (name == "rt") {
-      if (open) text("《");
-      if (close) text("》");
+      if (open) {
+        if (rubyBase_) line_ += "</rb>";
+        rubyBase_ = false;
+        line_ += "<rt>";
+        text("《");
+      }
+      if (close) {
+        text("》");
+        line_ += "</rt>";
+      }
     } else if (name == "b" || name == "strong") {
       changeStyle(bold_, open ? +1 : -1, "b");
     } else if (name == "i" || name == "em" || name == "cite") {
@@ -666,17 +701,19 @@ class BodyConverter {
     // 縦横(EpubLayoutHints参照)も同じく要素ごと。horizontalOutside_は「外側の要素が
     // 横書き」(扉の縦書きの箱の見分けに使う)。
     if (t.kind == XmlToken::Open) {
-      fontStack_.push_back({serif_, vertical_, horizontalOutside_, alignEnd_});
+      fontStack_.push_back({serif_, vertical_, horizontalOutside_, alignEnd_, center_});
       std::string classes = attr(t, "class");
       setSerif(ruleFor(name, classes, &CssFontRule::serif).value_or(serif_));
       horizontalOutside_ = horizontalOutside_ || vertical_ == false;
       if (auto vertical = ruleFor(name, classes, &CssFontRule::vertical)) vertical_ = vertical;
       if (auto alignEnd = ruleFor(name, classes, &CssFontRule::alignEnd)) alignEnd_ = *alignEnd;
+      if (auto center = ruleFor(name, classes, &CssFontRule::center)) center_ = *center;
     } else if (t.kind == XmlToken::Close && !fontStack_.empty()) {
       setSerif(fontStack_.back().serif);
       vertical_ = fontStack_.back().vertical;
       horizontalOutside_ = fontStack_.back().horizontalOutside;
       alignEnd_ = fontStack_.back().alignEnd;
+      center_ = fontStack_.back().center;
       fontStack_.pop_back();
     }
     if (t.kind == XmlToken::Close) depth_--;
@@ -785,6 +822,7 @@ class BodyConverter {
       if (!lineVisible_) {
         lineKind_ = currentKind();
         lineAlignEnd_ = alignEnd_;
+        lineCenter_ = center_;
       }
       line_ += c;
       lineVisible_ = true;
@@ -818,6 +856,7 @@ class BodyConverter {
     closeStylesAtLineEnd();
     lineKinds_[currentLineNumber()] = lineKind_;
     if (lineAlignEnd_) alignEndLines_.push_back(currentLineNumber());
+    if (lineCenter_) centerLines_.push_back(currentLineNumber());
     out_ += line_;
     if (chapter) out_ += '\t';
     out_ += '\n';
@@ -882,6 +921,7 @@ class BodyConverter {
     std::optional<bool> vertical;
     bool horizontalOutside;
     bool alignEnd;
+    bool center;
   };
   std::vector<Frame> fontStack_;  // 開いている要素ごとの、その外側の状態
   bool serif_ = true;
@@ -891,6 +931,11 @@ class BodyConverter {
   bool alignEnd_ = false;      // text-alignがright/end(EpubLayoutHints::alignEnd)
   bool lineAlignEnd_ = false;  // 今の行の最初の字の時点のalignEnd_
   std::vector<int> alignEndLines_;
+  bool center_ = false;      // text-alignがcenter(EpubLayoutHints::center)
+  bool lineCenter_ = false;  // 今の行の最初の字の時点のcenter_
+  std::vector<int> centerLines_;
+  // ルビの親字の中(<rb>を出してから、<rt>か</ruby>で閉じるまで)。
+  bool rubyBase_ = false;
   std::map<int, LineKind> lineKinds_;
   bool inStyle_ = false;
   std::string path_;
@@ -1069,6 +1114,8 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
     flush();
     for (int line : converter.alignEndLines())
       if (line - leading >= 1) layoutHints->alignEnd.push_back(line - leading);
+    for (int line : converter.centerLines())
+      if (line - leading >= 1) layoutHints->center.push_back(line - leading);
   }
   if (links) {
     links->clear();

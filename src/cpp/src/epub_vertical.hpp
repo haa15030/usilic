@@ -41,6 +41,9 @@ struct EpubVerticalCell {
   char32_t original = 0;
   std::optional<Display::Attribute> attribute;
   bool serif = false;  // 明朝体(Display::Attribute::Serif、attributeとは別に持つ――下線等と重なるため)
+  // ルビ(-gのみ、2026-09-30): 親字の最初の字のマスに、読みと親字の字数(マスの数)。
+  std::string ruby;
+  int rubySpan = 0;
 };
 
 struct EpubVerticalColumn {

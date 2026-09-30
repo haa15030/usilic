@@ -51,6 +51,10 @@ void DelegatingDisplay::reenterFromExternalProgram() { backend_->reenterFromExte
 void DelegatingDisplay::leaveForSuspend() { backend_->leaveForSuspend(); }
 void DelegatingDisplay::setVerticalTextHint(bool vertical) { backend_->setVerticalTextHint(vertical); }
 void DelegatingDisplay::beginContentEdgeCapture() { backend_->beginContentEdgeCapture(); }
+bool DelegatingDisplay::drawsRuby() const { return backend_->drawsRuby(); }
+void DelegatingDisplay::setPendingRuby(const std::string &reading, int span, bool vertical) {
+  backend_->setPendingRuby(reading, span, vertical);
+}
 void DelegatingDisplay::endContentEdgeCapture(int side) { backend_->endContentEdgeCapture(side); }
 
 void DelegatingDisplay::renderScrolled(const std::vector<ScrolledLine> &lines, int topIndex, int pixelOffsetY,

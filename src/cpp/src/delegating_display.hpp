@@ -93,6 +93,8 @@ class DelegatingDisplay : public Display {
   void leaveForSuspend() override;
   void setVerticalTextHint(bool vertical) override;
   void beginContentEdgeCapture() override;
+  bool drawsRuby() const override;
+  void setPendingRuby(const std::string &reading, int span, bool vertical) override;
   void endContentEdgeCapture(int side) override;
 
   void renderScrolled(const std::vector<ScrolledLine> &lines, int topIndex, int pixelOffsetY,
