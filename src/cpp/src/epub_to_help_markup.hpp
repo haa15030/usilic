@@ -60,6 +60,10 @@ struct EpubLayoutHints {
   // リンク(下線付き)がある行(元の行番号)→URL。1行に本の中へのリンクもあれば先に出た方だけ。
   // linksを渡した時だけ作る。
   std::map<int, std::string> webLinks;
+  // 2026-09-30追加(直接のユーザー依頼"複数リンクを含む行では^N^Pで選べるようにしたら？"): 行
+  // (元の行番号)→その行のリンク(下線の並び)の行き先を出てくる順に: "line:<行番号>"(本の中)・
+  // "url:<URL>"(Web)・""(行き先が見つからない)。n番目の下線の並びがn番目のリンク。
+  std::map<int, std::vector<std::string>> lineLinks;
 };
 
 std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember,

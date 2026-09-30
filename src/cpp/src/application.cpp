@@ -7193,7 +7193,7 @@ void Application::setEpubVerticalFirst(int first) {
 // (activateEpubVerticalColumn())はこの列に対して働く。
 // cursorが画面の外なら、見える所まで画面をずらす。モードラインの位置欄は
 // 「列カーソルの列/列の数 %」。
-void Application::setEpubVerticalView(int first, int cursor) {
+void Application::setEpubVerticalView(int first, int cursor, std::optional<int> link) {
   int total = static_cast<int>(epubVerticalCols_.size());
   int perScreen = epubVerticalColumnsPerScreen(display_.columns());
   int last = std::max(0, total - perScreen);
@@ -7203,7 +7203,26 @@ void Application::setEpubVerticalView(int first, int cursor) {
   if (cursor >= first + perScreen) first = cursor - perScreen + 1;
   epubVerticalFirst_ = std::clamp(first, 0, last);
   epubVerticalCursor_ = cursor;
+  // 2026-09-30、直接のユーザー依頼("複数リンクを含む行では^N^Pで選べるようにしたら？ -gの時は
+  // 左クリックで選べればいい"): 列カーソルの行の、選んでいるリンク(EpubVerticalCell::link)。
+  // 指定が無ければ列カーソルの列にある最初のリンク(無ければ選ばない――リンクのある段落の、
+  // リンクの無い列で段落全体を反転していた、直接のユーザー報告"行の中にリンクがあると行全体が
+  // ハイライト表示になる")。
+  epubVerticalLink_ = -1;
+  epubVerticalLinkRaw_ = total > 0 ? epubVerticalCols_[cursor].rawLineNumber : -1;
+  if (link) {
+    epubVerticalLink_ = *link;
+  } else if (total > 0) {
+    for (const auto &cell : epubVerticalCols_[cursor].cells)
+      if (cell.link >= 0) {
+        epubVerticalLink_ = cell.link;
+        break;
+      }
+  }
   bool actionable = total > 0 && epubVerticalColumnTarget(epubVerticalCursor_).has_value();
+  int highlightLink = actionable && fileMode_.epubLayoutHints().lineLinks.count(epubVerticalLinkRaw_)
+                          ? epubVerticalLink_
+                          : -1;
   // 2026-09-30、直接のユーザー報告("左スクロール(jの方向)で同じページにタイトルが複数入るのは、
   // 余分なスペースが無意味になるのでバグ...それ以後は章のタイトルが右端に達するまで空行を
   // 吐き続ける。逆方向(kの場合)は...最後の行から始めてタイトルが右端に来るまで待つように
@@ -7212,9 +7231,10 @@ void Application::setEpubVerticalView(int first, int cursor) {
   auto [shownFrom, shownUntil] = epubVerticalShownRange(epubVerticalFirst_);
   epubVerticalView_.setLines(renderEpubVerticalWindow(epubVerticalCols_, epubVerticalFirst_, epubVerticalRows(),
                                                       display_.columns(), !display_.isGraphical(),
-                                                      actionable ? epubVerticalCursor_ : -1, shownFrom, shownUntil));
+                                                      actionable ? epubVerticalCursor_ : -1, shownFrom, shownUntil,
+                                                      highlightLink));
   captureEpubVerticalEdges(epubVerticalView_, epubVerticalCols_, epubVerticalFirst_, actionable ? epubVerticalCursor_ : -1,
-                           shownFrom, shownUntil);
+                           shownFrom, shownUntil, highlightLink);
   epubVerticalView_.setCursorIndex(0);
   epubVerticalView_.setTopIndex(0);
   epubVerticalView_.setContentCursorColumn(
@@ -7230,12 +7250,13 @@ void Application::setEpubVerticalView(int first, int cursor) {
 // 描いた後に本文の行へ戻す。縦書きの本文(setEpubVerticalView())と章の一覧
 // (refreshEpubTocVertical())で共用。
 void Application::captureEpubVerticalEdges(ContentView &view, const std::vector<EpubVerticalColumn> &cols, int first,
-                                           int highlight, int shownFrom, int shownUntil) {
+                                           int highlight, int shownFrom, int shownUntil, int highlightLink) {
   if (!display_.isGraphical()) return;
   std::vector<ContentView::Line> window = view.lines();
   for (int side : {1, -1}) {
     view.setLines(renderEpubVerticalWindow(cols, first + side * kEpubVerticalEdgeColumns, epubVerticalRows(),
-                                           display_.columns(), false, highlight, shownFrom, shownUntil));
+                                           display_.columns(), false, highlight, shownFrom, shownUntil,
+                                           highlightLink));
     view.setCursorIndex(0);
     view.setTopIndex(0);
     display_.beginContentEdgeCapture();
@@ -7412,12 +7433,14 @@ std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
   };
   switch (command) {
     case Command::MoveDown: {  // 列カーソルを1列先(左)へ(setEpubVerticalView()、epubVerticalStep()参照)
+      if (selectAdjacentEpubVerticalLink(+1)) return true;
       auto [nextFirst, next] = epubVerticalStep(cursor, true);
       setEpubVerticalView(nextFirst < 0 ? first : nextFirst, next);
       if (crossing(true)) return true;
       break;
     }
     case Command::MoveUp: {  // 1列戻る(右へ)
+      if (selectAdjacentEpubVerticalLink(-1)) return true;
       auto [nextFirst, next] = epubVerticalStep(cursor, false);
       setEpubVerticalView(nextFirst < 0 ? first : nextFirst, next);
       if (crossing(false)) return true;
@@ -7627,21 +7650,48 @@ bool Application::openSelectedEpubAsArchive() {
 // もう一度クリックするとactivateEpubVerticalColumn()(横書きのリンク行と同じ
 // 「1回目で選択、2回目で開く」)。
 bool Application::clickEpubVertical(int row, int column) {
-  (void)row;
   int k = epubVerticalColumnAt(column, display_.columns());
   long c = static_cast<long>(epubVerticalFirst_) + k;
   if (k < 0 || c >= static_cast<long>(epubVerticalCols_.size())) return false;
-  if (c == epubVerticalCursor_) return activateEpubVerticalColumn(c);
   // 2026-09-30、直接のユーザー依頼("目次一覧ではダブルクリックでないとタグジャンプしない。
-  // シングルでは無理？"): リンクの列は1回目のクリックで飛ぶ(画像は従来どおり2回目で開く)。
-  if (auto target = epubVerticalColumnTarget(c); target && (target->link || !target->url.empty())) {
-    epubVerticalCursor_ = static_cast<int>(c);
+  // シングルでは無理？"、"-gの時は左クリックで選べればいい"): リンク(下線)の字をクリックしたら、
+  // そのリンクを選んで1回目で飛ぶ(画像は従来どおり2回目で開く)。
+  const auto &cells = epubVerticalCols_[c].cells;
+  if (row >= 0 && row < static_cast<int>(cells.size()) && cells[row].link >= 0) {
+    setEpubVerticalView(epubVerticalFirst_, static_cast<int>(c), cells[row].link);
     return activateEpubVerticalColumn(c);
   }
+  if (c == epubVerticalCursor_) return activateEpubVerticalColumn(c);
   setEpubVerticalView(epubVerticalFirst_, static_cast<int>(c));  // 1回目は列カーソルを動かすだけ
   epubVerticalView_.redraw();
   epubVerticalView_.syncVisibleCursor();  // -cの端末のカーソルを列カーソルの頭へ(setEpubVerticalView()参照)
   return true;
+}
+
+// 同じ行の次(delta>0)/前のリンクを選び、そのリンクの最初の字の列へ列カーソルを動かす
+// (setEpubVerticalView()のepubVerticalLink_参照、^N/^P等)。行にリンクが2つ以上あり、次/前が
+// ある時だけtrue(無ければ呼び出し元が従来どおり列を動かす)。
+bool Application::selectAdjacentEpubVerticalLink(int delta) {
+  if (epubVerticalLink_ < 0 || epubVerticalCursor_ < 0 ||
+      epubVerticalCursor_ >= static_cast<int>(epubVerticalCols_.size()))
+    return false;
+  int raw = epubVerticalCols_[epubVerticalCursor_].rawLineNumber;
+  const auto &lineLinks = fileMode_.epubLayoutHints().lineLinks;
+  auto it = lineLinks.find(raw);
+  if (raw != epubVerticalLinkRaw_ || it == lineLinks.end() || it->second.size() < 2) return false;
+  int next = epubVerticalLink_ + delta;
+  if (next < 0 || next >= static_cast<int>(it->second.size())) return false;
+  for (int c = 0; c < static_cast<int>(epubVerticalCols_.size()); c++) {
+    if (epubVerticalCols_[c].rawLineNumber != raw) continue;
+    for (const auto &cell : epubVerticalCols_[c].cells)
+      if (cell.link == next) {
+        setEpubVerticalView(epubVerticalFirst_, c, next);
+        epubVerticalView_.redraw();
+        epubVerticalView_.syncVisibleCursor();
+        return true;
+      }
+  }
+  return false;
 }
 
 // 列cのリンク先の行(EpubVerticalTarget::link)か画像の行のテキスト(image)。どちらも
@@ -7649,8 +7699,16 @@ bool Application::clickEpubVertical(int row, int column) {
 std::optional<Application::EpubVerticalTarget> Application::epubVerticalColumnTarget(long c) const {
   if (c < 0 || c >= static_cast<long>(epubVerticalCols_.size())) return std::nullopt;
   int raw = epubVerticalCols_[c].rawLineNumber;
-  if (auto target = fileMode_.epubLinkTargetForRawLine(raw)) return EpubVerticalTarget{*target, {}, {}};
-  if (auto url = fileMode_.epubWebLinkForRawLine(raw)) return EpubVerticalTarget{std::nullopt, {}, *url};
+  // リンクのある行は、選んでいるリンク(setEpubVerticalView()のepubVerticalLink_)の行き先
+  const auto &lineLinks = fileMode_.epubLayoutHints().lineLinks;
+  if (auto it = lineLinks.find(raw); it != lineLinks.end()) {
+    int selected = raw == epubVerticalLinkRaw_ ? epubVerticalLink_ : -1;
+    if (selected < 0 || selected >= static_cast<int>(it->second.size())) return std::nullopt;
+    const std::string &target = it->second[selected];
+    if (target.compare(0, 5, "line:") == 0) return EpubVerticalTarget{std::atoi(target.c_str() + 5), {}, {}};
+    if (target.compare(0, 4, "url:") == 0) return EpubVerticalTarget{std::nullopt, {}, target.substr(4)};
+    return std::nullopt;
+  }
   for (const auto &line : fileView_.lines())
     if (line.rawLineNumber == raw && line.text.find("[image: ") != std::string::npos)
       return EpubVerticalTarget{std::nullopt, line.text, {}};

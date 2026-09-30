@@ -168,11 +168,22 @@ std::vector<Cell> toCells(const EpubVerticalSourceLine &line, bool sideways) {
   }
 
   std::vector<Cell> cells;
+  int linkRun = -1;
+  bool previousUnderline = false;
   for (std::size_t i = 0; i < glyphs.size(); i++) {
     const Glyph &g = glyphs[i];
     Cell cell;
     cell.original = g.cp;
     cell.attribute = attributeAt(line.attributes, g.byte);
+    // リンク(下線、EpubVerticalCell::link): 太字等と重なっていても下線を優先し(傍線を描く)、
+    // 下線の並びごとに番号を振る。
+    bool underline = hasRun(line.attributes, g.byte, Display::Attribute::Underline);
+    if (underline) {
+      if (!previousUnderline) linkRun++;
+      cell.attribute = Display::Attribute::Underline;
+      cell.link = linkRun;
+    }
+    previousUnderline = underline;
     cell.serif = serifAt(line.attributes, g.byte);
     if (auto ruby = rubyOf.find(i); ruby != rubyOf.end()) {
       cell.ruby = ruby->second.first;
@@ -264,7 +275,11 @@ int epubVerticalScreenColumn(int k, int columns) { return columns - 3 - k * kCol
 
 std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVerticalColumn> &cols, int first,
                                                         int rows, int columns, bool sideLineMarker,
-                                                        int highlightColumn, int shownFrom, int shownUntil) {
+                                                        int highlightColumn, int shownFrom, int shownUntil,
+                                                        int highlightLink) {
+  int highlightRaw = (highlightLink >= 0 && highlightColumn >= 0 && highlightColumn < static_cast<int>(cols.size()))
+                         ? cols[highlightColumn].rawLineNumber
+                         : -1;
   int perScreen = epubVerticalColumnsPerScreen(columns);
   std::vector<ContentView::Line> out;
   for (int r = 0; r < std::max(1, rows); r++) {
@@ -277,13 +292,7 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
       long c = static_cast<long>(first) + k;
       int x = epubVerticalScreenColumn(k, columns);
       if (x < 0) continue;
-      bool highlight = c == highlightColumn;
-      // 2026-09-30、直接のユーザー報告("リンクを含む行全体がハイライト表示。アンダーラインのみで
-      // よろしく"): リンク(下線)のある列は、下線の字だけを反転表示する(画像の列は列ごと)。
-      bool linkColumn = false;
-      if (highlight && c >= 0 && c < static_cast<long>(cols.size()))
-        for (const auto &cell : cols[c].cells)
-          if (cell.attribute == Display::Attribute::Underline) linkColumn = true;
+      bool highlight = c == highlightColumn && highlightLink < 0;
       if (c < shownFrom || c >= shownUntil) continue;
       if (c < 0 || c >= static_cast<long>(cols.size()) || r >= static_cast<int>(cols[c].cells.size())) continue;
       const Cell &cell = cols[c].cells[r];
@@ -302,7 +311,9 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
         attribute.reset();
         if (x + 2 < columns) screen[x + 2] = "|";
       }
-      if (highlight && (!linkColumn || cell.attribute == Display::Attribute::Underline))
+      // 2026-09-30、直接のユーザー報告("リンクを含む行全体がハイライト表示。アンダーラインのみで
+      // よろしく"): リンクは選んでいるリンクの字だけ(highlightLink)、画像の列は列ごと。
+      if (highlight || (highlightRaw >= 0 && cols[c].rawLineNumber == highlightRaw && cell.link == highlightLink))
         attribute = Display::Attribute::Standout;
       attrs[x] = attribute;
       if (x + 1 < columns) attrs[x + 1] = attribute;

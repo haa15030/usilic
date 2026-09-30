@@ -1301,6 +1301,9 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
     links->clear();
     const auto &anchors = converter.anchors();
     for (const auto &link : converter.links()) {
+      if (layoutHints && link.line - leading >= 1)  // 行のリンクすべて(EpubLayoutHints::lineLinks)
+        layoutHints->lineLinks[link.line - leading].push_back(link.target.compare(0, 4, "url:") == 0 ? link.target
+                                                                                                      : std::string());
       if (link.target.compare(0, 4, "url:") == 0) {  // Webのリンク(1行に複数あれば最初のリンク)
         int from = link.line - leading;
         if (from >= 1 && layoutHints && !links->count(from)) layoutHints->webLinks.emplace(from, link.target.substr(4));
@@ -1310,6 +1313,7 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
       if (it == anchors.end()) it = anchors.find(link.target.substr(0, link.target.find('#') + 1));  // 無いフラグメントはファイル先頭へ
       if (it == anchors.end()) continue;
       int from = link.line - leading, to = std::max(1, it->second - leading);
+      if (layoutHints && from >= 1) layoutHints->lineLinks[from].back() = "line:" + std::to_string(to);
       if (from >= 1 && !(layoutHints && layoutHints->webLinks.count(from))) links->emplace(from, to);
     }
   }

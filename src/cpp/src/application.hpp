@@ -2505,6 +2505,7 @@ class Application {
   // epubVerticalStep()と同じ(空の列を飛ばして章の頭を右端に、扉はページごと)。描き直し
   // はしない。右端の列が動いたらtrue。
   bool stepEpubVerticalFirst(int delta);
+  bool selectAdjacentEpubVerticalLink(int delta);
   bool openEpubReturningTo(const std::string &path, ApplicationMode returnMode);
   void syncEpubHorizontalPresentation();
   void applyEpubChapterLabels();
@@ -2536,7 +2537,7 @@ class Application {
   void rebuildEpubVertical(int rawLine);
   void showEpubVerticalRaw(int rawLine);
   void setEpubVerticalFirst(int first);
-  void setEpubVerticalView(int first, int cursor);
+  void setEpubVerticalView(int first, int cursor, std::optional<int> link = std::nullopt);
   int epubVerticalRows() const;
   int epubVerticalCurrentRaw() const;
   void syncEpubVerticalToFile();
@@ -2561,6 +2562,10 @@ class Application {
   // 章(扉のページを含む)の区切りの列(rebuildEpubVertical()のpadToPage()の位置、昇順)。
   // 2026-09-30追加(setEpubVerticalView()参照): 画面には右端の列の章だけを描く。
   std::vector<int> epubVerticalBoundaries_;
+  // 列カーソルの行の選んでいるリンクの番号(EpubVerticalCell::link、-1で無し)と、その行
+  // (setEpubVerticalView()参照)。
+  int epubVerticalLink_ = -1;
+  int epubVerticalLinkRaw_ = -1;
   std::string epubVerticalPath_;  // epubBookVertical()参照
   int epubVerticalFirst_ = 0;                         // 右端に置いている列
   int epubVerticalCursor_ = 0;                        // 列カーソル(setEpubVerticalView()参照)
@@ -2572,7 +2577,7 @@ class Application {
   bool epubTocVerticalActive() const;
   void refreshEpubTocVertical(bool keepFirst = false);
   void captureEpubVerticalEdges(ContentView &view, const std::vector<EpubVerticalColumn> &cols, int first,
-                                int highlight, int shownFrom = 0, int shownUntil = 1 << 30);
+                                int highlight, int shownFrom = 0, int shownUntil = 1 << 30, int highlightLink = -1);
   void selectEpubTocVertical(int segment);
   std::optional<bool> handleEpubTocVerticalCommand(Command command);
   bool clickEpubTocVertical(int row, int column);

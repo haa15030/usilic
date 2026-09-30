@@ -47,6 +47,9 @@ struct EpubVerticalCell {
   // ルビ(-gのみ、2026-09-30): 親字の最初の字のマスに、読みと親字の字数(マスの数)。
   std::string ruby;
   int rubySpan = 0;
+  // リンク(下線の並び)の、行(論理行)の中での番号(0から、下線でなければ-1)。2026-09-30、
+  // EpubLayoutHints::lineLinksのn番目の行き先に対応する。
+  int link = -1;
 };
 
 struct EpubVerticalColumn {
@@ -87,11 +90,13 @@ constexpr int kEpubVerticalEdgeColumns = 2;
 // GraphicalDisplay側が縦線として描く。highlightColumn: 字を反転表示にする列(列
 // カーソルがリンク/画像の列にある時、列の番号、-1で無し)。shownFrom/shownUntil(2026-09-30):
 // 列の番号がこの範囲[shownFrom, shownUntil)の外の列は空にする(右端の列の章だけを描く、
-// Application::setEpubVerticalView()参照)。
+// Application::setEpubVerticalView()参照)。highlightLink(2026-09-30): 0以上なら、列highlightColumn
+// ではなく、その列の行の番号highlightLinkのリンク(EpubVerticalCell::link)の字だけを反転表示する
+// (リンクが列をまたいでも)。
 std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVerticalColumn> &columns, int first,
                                                         int rows, int screenColumns, bool sideLineMarker = false,
                                                         int highlightColumn = -1, int shownFrom = 0,
-                                                        int shownUntil = 1 << 30);
+                                                        int shownUntil = 1 << 30, int highlightLink = -1);
 
 // 右からk番目の列の左の桁(画面に入らなければ負)。
 int epubVerticalScreenColumn(int k, int screenColumns);
