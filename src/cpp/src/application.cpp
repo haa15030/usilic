@@ -3930,11 +3930,21 @@ void Application::syncEpubHorizontalPresentation() {
                        (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive());
   if (!verticalShown || promptActive()) display_.setVerticalTextHint(false);
   // 横書きの選んでいるリンク(selectAdjacentEpubHorizontalLink())は、画面に見えている間だけ反転する
+  // 2026-09-30、直接のユーザー依頼("「あとがき」ではハイライト表示のリンクがスクロールに追随するので
+  // 奥付でもよろしく"): 選んでいるリンクがスクロールで画面から外れたら、見えているリンクのうち
+  // 近い方(先へ送ったなら一番上、戻したなら一番下)へ選び直す。見えるリンクが無ければ外す。
   std::optional<ContentView::ByteSpan> standout;
   if (epubHorizontalLink_ && epubHorizontalLinksActive()) {
-    for (const auto &link : epubHorizontalVisibleLinks())
+    auto visible = epubHorizontalVisibleLinks();
+    for (const auto &link : visible)
       if (link.index == epubHorizontalLink_->index && link.start == epubHorizontalLink_->start)
         standout = ContentView::ByteSpan{link.index, link.start, link.end};
+    if (!standout && !visible.empty()) {
+      const EpubHorizontalLink &nearest =
+          epubHorizontalLink_->index < fileView_.topIndex() ? visible.front() : visible.back();
+      epubHorizontalLink_ = nearest;
+      standout = ContentView::ByteSpan{nearest.index, nearest.start, nearest.end};
+    }
   }
   if (!standout) epubHorizontalLink_.reset();
   fileView_.setExtraStandout(standout);
@@ -4013,6 +4023,15 @@ bool Application::handleCommand(Command command) {
   if (outermost) saveCutPositionIfLeft(cutBefore);
   if (wasStdin && currentMode_ != ApplicationMode::File) discardStdinPager(wasReturnsToShell);
   if (outermost) showBufferLimitNoticeIfHit();
+  // 横書きのEPUBの選んでいるリンク(syncEpubHorizontalPresentation())は、スクロールした後の画面で
+  // 選び直す(activeView()はコマンドの前に呼ばれるので、j等の後では古いまま)。変わった時だけ描き直す。
+  if (outermost && epubHorizontalLink_ && epubHorizontalLinksActive()) {
+    auto before = epubHorizontalLink_;
+    syncEpubHorizontalPresentation();
+    if (!epubHorizontalLink_ || epubHorizontalLink_->index != before->index ||
+        epubHorizontalLink_->start != before->start)
+      fileView_.redraw();
+  }
   return result;
 }
 
