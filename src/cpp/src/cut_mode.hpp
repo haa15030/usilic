@@ -106,6 +106,9 @@ class CutMode {
   const std::string &pattern() const;
   const std::vector<CutSegment> &segments() const;
   const CutSegment *selectedSegment() const;
+  // 2026-09-30追加(EpubLayoutHints::chapterLabel参照): 区間indexの一覧での名前を置き換える
+  // (一覧の行も)。ルビの装飾は落とす。
+  void setSegmentLabel(std::size_t index, const std::string &label);
 
   // `segment`を構成する行群、split()に渡されたsourceLinesから
   // 切り出したもの――属性も含む、split()自身のコメント参照。

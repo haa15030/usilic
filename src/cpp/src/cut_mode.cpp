@@ -176,6 +176,21 @@ bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::strin
 const std::string &CutMode::pattern() const { return pattern_; }
 const std::vector<CutSegment> &CutMode::segments() const { return segments_; }
 
+void CutMode::setSegmentLabel(std::size_t index, const std::string &label) {
+  if (index >= segments_.size()) return;
+  segments_[index].label = label;
+  segments_[index].labelAttributes.clear();
+  std::vector<ContentView::Line> viewLines = view_.lines();
+  if (index < viewLines.size()) {
+    viewLines[index].text = label;
+    viewLines[index].attributes.clear();
+    int cursor = view_.cursorIndex(), top = view_.topIndex();
+    view_.setLines(std::move(viewLines));
+    view_.setCursorIndex(cursor);
+    view_.setTopIndex(top);
+  }
+}
+
 const CutSegment *CutMode::selectedSegment() const {
   int idx = view_.cursorIndex();
   if (idx < 0 || idx >= static_cast<int>(segments_.size())) return nullptr;

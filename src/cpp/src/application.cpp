@@ -6728,7 +6728,30 @@ bool Application::openEpub(const std::string &path) {
   epubVertical_ = vertical;
   epubVerticalPath_ = fileMode_.currentFile();
   if (vertical) rebuildEpubVertical(fileRawLineAtCursor());
-  if (!cutMode_.split(sourceLines, kHelpPattern, GrepSyntax::Fixed)) {
+  bool split = cutMode_.split(sourceLines, kHelpPattern, GrepSyntax::Fixed);
+  // 章の一覧での名前の置き換え(EpubLayoutHints::chapterLabel、display:noneの見出しの字)
+  if (split) {
+    const auto &labels = fileMode_.epubLayoutHints().chapterLabel;
+    const auto &segments = cutMode_.segments();
+    for (std::size_t i = 0; i < segments.size(); i++) {
+      int start = segments[i].startLine;
+      if (start < 0 || start >= static_cast<int>(fileView_.lines().size())) continue;
+      int raw = fileView_.lines()[start].rawLineNumber.value_or(-1);
+      auto it = labels.find(raw);
+      if (it != labels.end()) {
+        cutMode_.setSegmentLabel(i, it->second);
+        continue;
+      }
+      // 中央寄せ・字下げの行(FileModeが画面の行の頭に空白を足す)は、一覧ではその空白を除く
+      const auto &hints = fileMode_.epubLayoutHints();
+      const std::string &label = segments[i].label;
+      bool padded = hints.indent.count(raw) ||
+                    std::find(hints.center.begin(), hints.center.end(), raw) != hints.center.end();
+      std::size_t pad = label.find_first_not_of(' ');
+      if (padded && pad != std::string::npos && pad > 0) cutMode_.setSegmentLabel(i, label.substr(pad));
+    }
+  }
+  if (!split) {
     // 章の印が1つも無い本: 本文だけ(^Gで(ls)へ)
     fileMode_.annotations().clear();
     currentMode_ = ApplicationMode::File;

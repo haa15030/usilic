@@ -52,6 +52,10 @@ struct EpubLayoutHints {
   // (元の行番号)→(最初の行の字下げ, 折り返した行の字下げ)、em(全角の字数)。CSSの行頭側の
   // padding(縦書きはpadding-top、横書きはpadding-left)とtext-indentから。
   std::map<int, std::pair<int, int>> indent;
+  // 2026-09-30追加(直接のユーザー依頼"一覧では「奥付」のままにして"): 章の行(元の行番号)→章の
+  // 一覧での名前。display:noneの見出し(K3t.epubのh2.invisible「奥付」)の字で、見出しは本文に
+  // 出さず、次の章の行の一覧の名前にする(Application::openEpub())。
+  std::map<int, std::string> chapterLabel;
 };
 
 std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember,

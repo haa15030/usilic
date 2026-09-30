@@ -588,6 +588,7 @@ class BodyConverter {
   const std::vector<int> &alignEndLines() const { return alignEndLines_; }
   const std::vector<int> &centerLines() const { return centerLines_; }
   const std::map<int, std::pair<int, int>> &indentLines() const { return indentLines_; }
+  const std::map<int, std::string> &chapterLabels() const { return chapterLabels_; }
   void setBookVertical(bool vertical) { bookVertical_ = vertical; }
 
   void convert(const std::string &xhtml, const std::string &path, const std::vector<TocEntry> *tocEntries) {
@@ -639,6 +640,7 @@ class BodyConverter {
     if (t.kind == XmlToken::Text) {
       if (inStyle_) return;  // convert()が先に読んでいる
       if (skipDepth_ == 0 && hiddenDepth_ == 0) text(t.text);
+      if (skipDepth_ == 0 && hiddenDepth_ > 0 && hiddenHeading_) hiddenHeadingText_ += t.text;
       return;
     }
     bool open = (t.kind == XmlToken::Open || t.kind == XmlToken::SelfClose);
@@ -658,11 +660,22 @@ class BodyConverter {
     }
     // display:none(CssFontRule::hidden)の要素の中は出さない(開いた時のdepth_より浅くなるまで)
     if (hiddenDepth_ > 0) {
-      if (t.kind == XmlToken::Close && --depth_ < hiddenDepth_) hiddenDepth_ = 0;
+      if (t.kind == XmlToken::Close && --depth_ < hiddenDepth_) {
+        hiddenDepth_ = 0;
+        // 2026-09-30、直接のユーザー依頼("一覧では「奥付」のままにして"): 隠した見出しの字は、
+        // 次の章の行の章の一覧での名前にする(EpubLayoutHints::chapterLabel)。
+        std::string label = collapseSpace(hiddenHeadingText_);
+        if (hiddenHeading_ && !label.empty()) hiddenHeadingLabel_ = label;
+        hiddenHeading_ = false;
+      }
       return;
     }
     if (open && ruleFor(name, attr(t, "class"), &CssFontRule::hidden).value_or(false)) {
-      if (t.kind == XmlToken::Open) hiddenDepth_ = depth_;
+      if (t.kind == XmlToken::Open) {
+        hiddenDepth_ = depth_;
+        hiddenHeading_ = name.size() == 2 && name[0] == 'h' && name[1] >= '1' && name[1] <= '6';
+        hiddenHeadingText_.clear();
+      }
       return;
     }
 
@@ -701,6 +714,10 @@ class BodyConverter {
       if (open) {
         endLine(false);
         flushDeferredLabel();
+        // 2026-09-30、直接のユーザー依頼("----------------------------------------のセンタリングも
+        // よろしく"): 区切り線は中央に置く(EpubLayoutHints::center)。縦横は今の要素に従う。
+        centerLines_.push_back(currentLineNumber());
+        lineKinds_[currentLineNumber()] = currentKind();
         out_ += "----------------------------------------\n";
       }
     } else if (name == "img" || name == "image") {
@@ -986,6 +1003,10 @@ class BodyConverter {
     lineImageOnly_ = false;
     closeStylesAtLineEnd();
     lineKinds_[currentLineNumber()] = lineKind_;
+    if (chapter && hiddenHeadingLabel_) {
+      chapterLabels_[currentLineNumber()] = *hiddenHeadingLabel_;
+      hiddenHeadingLabel_.reset();
+    }
     if (lineAlignEnd_) alignEndLines_.push_back(currentLineNumber());
     if (lineCenter_) centerLines_.push_back(currentLineNumber());
     out_ += line_;
@@ -1077,6 +1098,10 @@ class BodyConverter {
   bool pendingRestIndent_ = false;  // 最初の字の後に<indent>(2字目以降の字下げ)を出す
   bool indentOpen_ = false;         // 行末で</indent>を出す
   int hiddenDepth_ = 0;             // display:noneの要素を開いた時のdepth_(0なら中ではない)
+  bool hiddenHeading_ = false;      // 隠している要素が見出し(その字をhiddenHeadingText_に集める)
+  std::string hiddenHeadingText_;
+  std::optional<std::string> hiddenHeadingLabel_;  // 次の章の行の、章の一覧での名前
+  std::map<int, std::string> chapterLabels_;        // 行→章の一覧での名前(EpubLayoutHints::chapterLabel)
   std::map<int, std::pair<int, int>> indentLines_;  // 行→(最初の字下げ, 続く字下げ)(em)
   std::map<int, LineKind> lineKinds_;
   bool inStyle_ = false;
@@ -1261,6 +1286,8 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
       if (line - leading >= 1) layoutHints->center.push_back(line - leading);
     for (const auto &[line, indent] : converter.indentLines())
       if (line - leading >= 1) layoutHints->indent[line - leading] = indent;
+    for (const auto &[line, label] : converter.chapterLabels())
+      if (line - leading >= 1) layoutHints->chapterLabel[line - leading] = label;
   }
   if (links) {
     links->clear();

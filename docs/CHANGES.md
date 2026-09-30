@@ -27725,3 +27725,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **invisible**: parseCssFontRules()がdisplayを読み(noneならCssFontRule::hidden)、その要素の
      中身は出さない(K3t.epubのh2.invisible「奥付」)。章の一覧のこの章の名前は、目次(nav)が指す
      次の行(「過去の末端　３」)になる。
+   - **追加(同日)**: 直接のユーザー依頼("一覧では「奥付」のままにして。
+     ----------------------------------------のセンタリングもよろしく")。
+     - 隠した見出しの字は、次の章の行の章の一覧での名前として記録し
+       (EpubLayoutHints::chapterLabel)、openEpub()がCutMode::setSegmentLabel()(新設)で置き換える。
+       あわせて、中央寄せ・字下げの行が章の行の時は、一覧の名前の頭の空白を除く。
+     - <hr>の区切り線の行を中央寄せの行(EpubLayoutHints::center)にし、縦横の記録(lineKinds_)も
+       付ける。K3t.epubのスクラッチの変換で、2053行が「　奥付」、区切り線の2055行が中央寄せに
+       なることを確認。
