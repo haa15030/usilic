@@ -527,6 +527,8 @@ class FileMode {
   bool followEpubLink();
   bool hasEpubLinkAt(int index) const;  // 画面の行indexにリンクがあるか(クリック用)
   std::optional<int> epubLinkTargetForRawLine(int rawLine) const;  // 縦書きのクリック用
+  // http(s)のリンクのURL(EpubLayoutHints::webLinks、2026-09-30)。
+  std::optional<std::string> epubWebLinkForRawLine(int rawLine) const;
   // 縦書きの本の中の横書き/扉の行の範囲(rawLineNumber、EpubLayoutHints参照)。
   const EpubLayoutHints &epubLayoutHints() const { return epubLayoutHints_; }
 

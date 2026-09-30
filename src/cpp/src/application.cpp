@@ -4244,7 +4244,8 @@ bool Application::handleCommandImpl(Command command) {
       // 返す)なので、これは通常のファイル閲覧についてはno-opである。
       if (currentMode_ == ApplicationMode::File) {
         if (epubVerticalActive()) return activateEpubVerticalColumn(epubVerticalCursor_);  // 列カーソル(setEpubVerticalView()参照)
-        return openSelectedBannerEntry() || fileMode_.followEpubLink() || openEpubLineImage(fileView_);
+        return openSelectedBannerEntry() || fileMode_.followEpubLink() || openEpubWebLinkAtCursor() ||
+               openEpubLineImage(fileView_);
       }
       if (currentMode_ == ApplicationMode::CutContent) return openEpubLineImage(cutContentView_);
       return false;
@@ -6685,6 +6686,37 @@ bool Application::openEpubLineImage(const ContentView &view) {
 // `text`中の最初の"[image: <ファイル名>]"の画像を、表示中のEPUBのzipから
 // 一時ディレクトリへ取り出してクイックルックで開く。クイックルックが無い
 // 環境(Linux)や、EPUBでない・画像が見つからない場合はfalse。
+// 2026-09-30追加、直接のユーザー依頼("webサイトへのリンク...踏んだらクイックルックへ移行して
+// ほしい"): URLをWebの場所のファイル(.webloc)にしてクイックルック(runQuickLook())に渡す。
+bool Application::openEpubWebLink(const std::string &url) {
+  if (::access("/usr/bin/qlmanage", X_OK) != 0) return false;
+  std::string host = url.substr(url.find("://") + 3);
+  host = host.substr(0, host.find('/'));
+  if (host.empty()) host = "link";
+  std::string dir = allocateArcDirectory();
+  std::error_code ec;
+  std::filesystem::create_directories(dir, ec);
+  std::string path = dir + "/" + host + ".webloc";
+  std::ofstream out(path);
+  if (!out) return false;
+  std::string escaped;
+  for (char c : url) escaped += c == '&' ? std::string("&amp;") : c == '<' ? std::string("&lt;") : std::string(1, c);
+  out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+         "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" "
+         "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+         "<plist version=\"1.0\"><dict><key>URL</key><string>"
+      << escaped << "</string></dict></plist>\n";
+  out.close();
+  return runQuickLook({path});
+}
+
+// 横書きの本文のカーソルの行のWebのリンク(openEpubWebLink())。
+bool Application::openEpubWebLinkAtCursor() {
+  if (!isEpubFile(fileMode_.currentFile())) return false;
+  auto url = fileMode_.epubWebLinkForRawLine(fileRawLineAtCursor());
+  return url && openEpubWebLink(*url);
+}
+
 bool Application::openEpubImageIn(const std::string &text) {
   if (!isEpubFile(fileMode_.currentFile())) return false;
   if (::access("/usr/bin/qlmanage", X_OK) != 0) return false;
@@ -7602,7 +7634,7 @@ bool Application::clickEpubVertical(int row, int column) {
   if (c == epubVerticalCursor_) return activateEpubVerticalColumn(c);
   // 2026-09-30、直接のユーザー依頼("目次一覧ではダブルクリックでないとタグジャンプしない。
   // シングルでは無理？"): リンクの列は1回目のクリックで飛ぶ(画像は従来どおり2回目で開く)。
-  if (auto target = epubVerticalColumnTarget(c); target && target->link) {
+  if (auto target = epubVerticalColumnTarget(c); target && (target->link || !target->url.empty())) {
     epubVerticalCursor_ = static_cast<int>(c);
     return activateEpubVerticalColumn(c);
   }
@@ -7617,10 +7649,11 @@ bool Application::clickEpubVertical(int row, int column) {
 std::optional<Application::EpubVerticalTarget> Application::epubVerticalColumnTarget(long c) const {
   if (c < 0 || c >= static_cast<long>(epubVerticalCols_.size())) return std::nullopt;
   int raw = epubVerticalCols_[c].rawLineNumber;
-  if (auto target = fileMode_.epubLinkTargetForRawLine(raw)) return EpubVerticalTarget{*target, {}};
+  if (auto target = fileMode_.epubLinkTargetForRawLine(raw)) return EpubVerticalTarget{*target, {}, {}};
+  if (auto url = fileMode_.epubWebLinkForRawLine(raw)) return EpubVerticalTarget{std::nullopt, {}, *url};
   for (const auto &line : fileView_.lines())
     if (line.rawLineNumber == raw && line.text.find("[image: ") != std::string::npos)
-      return EpubVerticalTarget{std::nullopt, line.text};
+      return EpubVerticalTarget{std::nullopt, line.text, {}};
   return std::nullopt;
 }
 
@@ -7631,6 +7664,7 @@ std::optional<Application::EpubVerticalTarget> Application::epubVerticalColumnTa
 bool Application::activateEpubVerticalColumn(long c) {
   auto target = epubVerticalColumnTarget(c);
   if (!target) return false;
+  if (!target->url.empty()) return openEpubWebLink(target->url);
   if (target->link) {
     epubVerticalMark_ = epubVerticalCursor_;
     showEpubVerticalRaw(*target->link);
@@ -15885,10 +15919,11 @@ bool Application::handleMouseClickImpl(int row, int column) {
     int idx = fileView_.lineIndexAtRow(row);
     if (idx >= 0 && fileView_.isColumnWithinRowText(idx, column) &&
         (fileMode_.hasEpubLinkAt(idx) || fileView_.lines()[idx].text.find("[image: ") != std::string::npos)) {
-      if (idx == fileView_.cursorIndex()) return fileMode_.followEpubLink() || openEpubLineImage(fileView_);
+      if (idx == fileView_.cursorIndex())
+        return fileMode_.followEpubLink() || openEpubWebLinkAtCursor() || openEpubLineImage(fileView_);
       if (fileMode_.hasEpubLinkAt(idx)) {  // リンクは1回目で飛ぶ(clickEpubVertical()の2026-09-30の注記参照)
         fileView_.setCursorIndex(idx);
-        return fileMode_.followEpubLink();
+        return fileMode_.followEpubLink() || openEpubWebLinkAtCursor();
       }
       fileView_.setCursorIndex(idx);
       fileView_.redraw();

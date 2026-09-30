@@ -497,9 +497,15 @@ std::optional<int> FileMode::epubLinkTargetForRawLine(int rawLine) const {
 }
 
 bool FileMode::hasEpubLinkAt(int index) const {
-  if (epubLinks_.empty() || !isEpubFile(currentFile_)) return false;
+  if ((epubLinks_.empty() && epubLayoutHints_.webLinks.empty()) || !isEpubFile(currentFile_)) return false;
   std::optional<int> raw = rawLineNumberAt(index);
-  return raw && epubLinks_.count(*raw);
+  return raw && (epubLinks_.count(*raw) || epubLayoutHints_.webLinks.count(*raw));
+}
+
+std::optional<std::string> FileMode::epubWebLinkForRawLine(int rawLine) const {
+  auto it = epubLayoutHints_.webLinks.find(rawLine);
+  if (it == epubLayoutHints_.webLinks.end()) return std::nullopt;
+  return it->second;
 }
 
 std::string FileMode::loadAndTransformContent(const std::string &path) const {

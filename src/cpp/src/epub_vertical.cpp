@@ -54,6 +54,8 @@ const std::map<char32_t, char32_t> &verticalForms() {
       // 矢印は90度回した向きに(2026-09-29、直接のユーザー報告"本文の→が横向き"、=hl)
       {0x2192, 0x2193}, {0x2190, 0x2191}, {0x2193, 0x2190}, {0x2191, 0x2192},
       {0x21D2, 0x21D3}, {0x21D0, 0x21D1}, {0x21D3, 0x21D0}, {0x21D1, 0x21D2},
+      // ＜＞は〈〉の縦書きの字形(2026-09-30、直接のユーザー報告"＜＞が横倒し"、Kat.epubのあとがき)
+      {0xFF1C, 0xFE3F}, {0xFF1E, 0xFE40},
   };
   return table;
 }
@@ -276,6 +278,12 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
       int x = epubVerticalScreenColumn(k, columns);
       if (x < 0) continue;
       bool highlight = c == highlightColumn;
+      // 2026-09-30、直接のユーザー報告("リンクを含む行全体がハイライト表示。アンダーラインのみで
+      // よろしく"): リンク(下線)のある列は、下線の字だけを反転表示する(画像の列は列ごと)。
+      bool linkColumn = false;
+      if (highlight && c >= 0 && c < static_cast<long>(cols.size()))
+        for (const auto &cell : cols[c].cells)
+          if (cell.attribute == Display::Attribute::Underline) linkColumn = true;
       if (c < shownFrom || c >= shownUntil) continue;
       if (c < 0 || c >= static_cast<long>(cols.size()) || r >= static_cast<int>(cols[c].cells.size())) continue;
       const Cell &cell = cols[c].cells[r];
@@ -294,7 +302,8 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
         attribute.reset();
         if (x + 2 < columns) screen[x + 2] = "|";
       }
-      if (highlight) attribute = Display::Attribute::Standout;
+      if (highlight && (!linkColumn || cell.attribute == Display::Attribute::Underline))
+        attribute = Display::Attribute::Standout;
       attrs[x] = attribute;
       if (x + 1 < columns) attrs[x + 1] = attribute;
       serifs[x] = cell.serif;

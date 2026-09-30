@@ -27773,3 +27773,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ContentView::redraw()が自分を描く前に描き方を切り替える。ContentViewを通らない画面
      (SHELL等)のため、syncEpubHorizontalPresentation()は見せる画面が縦書きでない時(プロンプト中も)
      には縦書きの描き方を切る(入れるのは縦書きのビューの描き直しだけ)。
+544. **2026-09-30: Kat.epubのあとがき: ＜＞の横倒し、リンクの列全体の反転、Webのリンク**
+   - **経緯**: 直接のユーザー報告(src/Kat.epubのSection145.xhtml「あとがき」、"＜＞が横倒し"、
+     "リンクを含む行全体がハイライト表示。アンダーラインのみでよろしく"、"webサイトへのリンクが
+     わかりづらいのでアンダーライン化してほしいのと、踏んだらクイックルックへ移行してほしい")。
+   - **＜＞**: 縦書きの字形の置き換え(verticalForms())に＜→︿、＞→﹀(〈〉の縦書きの字形)を足した。
+   - **反転**: 列カーソルがリンクの列にある時(renderEpubVerticalWindow()のhighlightColumn)、列の字を
+     すべて反転していた。下線(リンク)のある列は下線の字だけを反転する(画像の列は従来どおり)。
+   - **Webのリンク**: epubToHelpMarkup()はhttp(s)のリンクを飛べないので素通りしていた。下線を付け、
+     EpubLayoutHints::webLinks(行→URL、1行に本の中へのリンクもあれば先に出た方だけ)に記録する。
+     踏んだら(縦書きの列・横書きの行とも1回のクリック、[Enter])Application::openEpubWebLink()が
+     URLを.weblocにしてクイックルック(runQuickLook())に渡す。

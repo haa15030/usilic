@@ -2550,7 +2550,10 @@ class Application {
   struct EpubVerticalTarget {
     std::optional<int> link;  // リンク先の元の行番号
     std::string imageLine;    // "[image: ...]"の行(linkが無い時)
+    std::string url;          // http(s)のリンク(2026-09-30、openEpubWebLink())
   };
+  bool openEpubWebLink(const std::string &url);
+  bool openEpubWebLinkAtCursor();
   std::optional<EpubVerticalTarget> epubVerticalColumnTarget(long column) const;
   bool activateEpubVerticalColumn(long column);
   bool epubVertical_ = false;

@@ -56,6 +56,10 @@ struct EpubLayoutHints {
   // 一覧での名前。display:noneの見出し(K3t.epubのh2.invisible「奥付」)の字で、見出しは本文に
   // 出さず、次の章の行の一覧の名前にする(Application::openEpub())。
   std::map<int, std::string> chapterLabel;
+  // 2026-09-30追加(直接のユーザー依頼"webサイトへのリンク...踏んだらクイックルックへ"): http(s)の
+  // リンク(下線付き)がある行(元の行番号)→URL。1行に本の中へのリンクもあれば先に出た方だけ。
+  // linksを渡した時だけ作る。
+  std::map<int, std::string> webLinks;
 };
 
 std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember,

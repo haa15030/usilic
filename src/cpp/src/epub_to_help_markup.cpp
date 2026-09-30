@@ -770,7 +770,15 @@ class BodyConverter {
       if (t.kind == XmlToken::Open) {
         std::string href = attr(t, "href");
         bool external = href.find("://") != std::string::npos || href.compare(0, 7, "mailto:") == 0;
-        if (!href.empty() && !external) {
+        // 2026-09-30、直接のユーザー依頼("webサイトへのリンクがわかりづらいのでアンダーライン化して
+        // ほしいのと、踏んだらクイックルックへ移行してほしい"): http(s)のリンクも下線を付け、
+        // "url:"を付けて記録する(EpubLayoutHints::webLinks、Application::openEpubWebLink())。
+        bool web = href.compare(0, 7, "http://") == 0 || href.compare(0, 8, "https://") == 0;
+        if (web) {
+          linkTarget_ = "url:" + href;
+          linkLineRecorded_ = false;
+          changeStyle(underline_, +1, "u");
+        } else if (!href.empty() && !external) {
           std::string fragment;
           std::string file = resolveHref(directoryOf(path_), href, &fragment);
           if (href[0] == '#') file = path_;
@@ -1293,11 +1301,16 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
     links->clear();
     const auto &anchors = converter.anchors();
     for (const auto &link : converter.links()) {
+      if (link.target.compare(0, 4, "url:") == 0) {  // Webのリンク(1行に複数あれば最初のリンク)
+        int from = link.line - leading;
+        if (from >= 1 && layoutHints && !links->count(from)) layoutHints->webLinks.emplace(from, link.target.substr(4));
+        continue;
+      }
       auto it = anchors.find(link.target);
       if (it == anchors.end()) it = anchors.find(link.target.substr(0, link.target.find('#') + 1));  // 無いフラグメントはファイル先頭へ
       if (it == anchors.end()) continue;
       int from = link.line - leading, to = std::max(1, it->second - leading);
-      if (from >= 1) links->emplace(from, to);
+      if (from >= 1 && !(layoutHints && layoutHints->webLinks.count(from))) links->emplace(from, to);
     }
   }
   return out;
