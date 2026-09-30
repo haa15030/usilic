@@ -2497,14 +2497,14 @@ class Application {
   bool maybeEnterEpubHorizontal(int fromRaw, bool forward);
   // 縦書きの1列の送り/戻り(rebuildEpubVertical()の空の列・扉のページ参照)。返り値は
   // {右端の列(-1なら今のまま), 列カーソル}。
-  std::pair<int, int> epubVerticalStep(int cursor, bool forward, bool skipPadding = true) const;
+  std::pair<int, int> epubVerticalStep(int cursor, bool forward) const;
   // 列cが空の列/扉のページなら、その後の(forward)/前の本文の列、または扉の書名の列へ
   // 寄せ、右端を画面の区切りに揃える(ページ送り・飛び先用)。
   void snapEpubVerticalToPage(bool forward);
   // 右端の列を1列ずつdelta列ずらす(ホイール・ドラッグ・1列スクロール)。1列ずつの規則は
   // epubVerticalStep()と同じ(空の列を飛ばして章の頭を右端に、扉はページごと)。描き直し
   // はしない。右端の列が動いたらtrue。
-  bool stepEpubVerticalFirst(int delta, bool skipPadding = true);
+  bool stepEpubVerticalFirst(int delta);
   // 縦書きの列の端(deltaの向き)の先(前)に横書きの範囲があればそこへ入る(描き直す)。
   bool enterEpubHorizontalAtEdge(int delta);
   bool leaveEpubHorizontalIfOutside();  // 縦書きへ戻ったらtrue
