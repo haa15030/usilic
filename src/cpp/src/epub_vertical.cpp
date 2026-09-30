@@ -255,7 +255,7 @@ int epubVerticalScreenColumn(int k, int columns) { return columns - 3 - k * kCol
 
 std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVerticalColumn> &cols, int first,
                                                         int rows, int columns, bool sideLineMarker,
-                                                        int highlightColumn) {
+                                                        int highlightColumn, int shownFrom, int shownUntil) {
   int perScreen = epubVerticalColumnsPerScreen(columns);
   std::vector<ContentView::Line> out;
   for (int r = 0; r < std::max(1, rows); r++) {
@@ -269,6 +269,7 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
       int x = epubVerticalScreenColumn(k, columns);
       if (x < 0) continue;
       bool highlight = c == highlightColumn;
+      if (c < shownFrom || c >= shownUntil) continue;
       if (c < 0 || c >= static_cast<long>(cols.size()) || r >= static_cast<int>(cols[c].cells.size())) continue;
       const Cell &cell = cols[c].cells[r];
       std::size_t firstLen = Utf8::sequence_length(static_cast<unsigned char>(cell.glyph[0]));

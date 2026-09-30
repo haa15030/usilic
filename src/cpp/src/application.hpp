@@ -2497,14 +2497,14 @@ class Application {
   bool maybeEnterEpubHorizontal(int fromRaw, bool forward);
   // 縦書きの1列の送り/戻り(rebuildEpubVertical()の空の列・扉のページ参照)。返り値は
   // {右端の列(-1なら今のまま), 列カーソル}。
-  std::pair<int, int> epubVerticalStep(int cursor, bool forward) const;
+  std::pair<int, int> epubVerticalStep(int cursor, bool forward, bool skipPadding = true) const;
   // 列cが空の列/扉のページなら、その後の(forward)/前の本文の列、または扉の書名の列へ
   // 寄せ、右端を画面の区切りに揃える(ページ送り・飛び先用)。
   void snapEpubVerticalToPage(bool forward);
   // 右端の列を1列ずつdelta列ずらす(ホイール・ドラッグ・1列スクロール)。1列ずつの規則は
   // epubVerticalStep()と同じ(空の列を飛ばして章の頭を右端に、扉はページごと)。描き直し
   // はしない。右端の列が動いたらtrue。
-  bool stepEpubVerticalFirst(int delta);
+  bool stepEpubVerticalFirst(int delta, bool skipPadding = true);
   // 縦書きの列の端(deltaの向き)の先(前)に横書きの範囲があればそこへ入る(描き直す)。
   bool enterEpubHorizontalAtEdge(int delta);
   bool leaveEpubHorizontalIfOutside();  // 縦書きへ戻ったらtrue
@@ -2548,6 +2548,9 @@ class Application {
   bool activateEpubVerticalColumn(long column);
   bool epubVertical_ = false;
   std::vector<EpubVerticalColumn> epubVerticalCols_;  // 組んだ列の並び(右から左へ読む順)
+  // 章(扉のページを含む)の区切りの列(rebuildEpubVertical()のpadToPage()の位置、昇順)。
+  // 2026-09-30追加(setEpubVerticalView()参照): 画面には右端の列の章だけを描く。
+  std::vector<int> epubVerticalBoundaries_;
   int epubVerticalFirst_ = 0;                         // 右端に置いている列
   int epubVerticalCursor_ = 0;                        // 列カーソル(setEpubVerticalView()参照)
   std::optional<int> epubVerticalMark_;               // ^X^Xの行き来先の列

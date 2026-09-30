@@ -6959,12 +6959,16 @@ void Application::rebuildEpubVertical(int rawLine) {
   int perScreen = epubVerticalColumnsPerScreen(display_.columns());
   const auto &centered = hints.centered;
   epubVerticalCols_.clear();
+  epubVerticalBoundaries_.clear();
   auto padToPage = [&]() {
     int raw = epubVerticalCols_.empty() ? 0 : epubVerticalCols_.back().rawLineNumber;
     while (epubVerticalCols_.size() % perScreen != 0) {
       epubVerticalCols_.push_back({{}, raw});
       epubVerticalCols_.back().padding = true;
     }
+    int at = static_cast<int>(epubVerticalCols_.size());
+    if (at > 0 && (epubVerticalBoundaries_.empty() || epubVerticalBoundaries_.back() != at))
+      epubVerticalBoundaries_.push_back(at);
   };
   for (std::size_t c = 0; c < laid.size();) {
     int raw = laid[c].rawLineNumber;
@@ -6994,6 +6998,7 @@ void Application::rebuildEpubVertical(int rawLine) {
       epubVerticalCols_.back().titlePage = true;
     }
     pushPadding(pad - pad / 2, range->second);
+    padToPage();  // 扉のページの後(区切りを記録する)
   }
   padToPage();  // 最後の章も右端から始められるよう(右端に置ける列の上限は列の数-perScreen)
   epubVerticalMark_.reset();
@@ -7049,9 +7054,24 @@ void Application::setEpubVerticalView(int first, int cursor) {
   epubVerticalFirst_ = std::clamp(first, 0, last);
   epubVerticalCursor_ = cursor;
   bool actionable = total > 0 && epubVerticalColumnTarget(epubVerticalCursor_).has_value();
+  // 2026-09-30、直接のユーザー報告("左スクロール(jの方向)で同じページにタイトルが複数入るのは、
+  // 余分なスペースが無意味になるのでバグ...それ以後は章のタイトルが右端に達するまで空行を
+  // 吐き続ける。逆方向(kの場合)は...最後の行から始めてタイトルが右端に来るまで待つように
+  // したら？"): 画面には右端の列の章(区切りepubVerticalBoundaries_の間)だけを描き、前後の章の
+  // 列は空にする。ホイール・ドラッグ・慣性は章の間の空の列も1列ずつ送る(scrollEpubVertical())
+  // ので、先へは章の最後の列が右へ抜けた後は空の列が続き、次の章の頭が右端に来た所で次の章が
+  // 出る。前へは前の章の最後の列から現れ、章の頭が右端に来るまで遡れる。
+  int shownFrom = 0, shownUntil = total;
+  for (int boundary : epubVerticalBoundaries_) {
+    if (boundary <= epubVerticalFirst_) shownFrom = boundary;
+    else {
+      shownUntil = boundary;
+      break;
+    }
+  }
   epubVerticalView_.setLines(renderEpubVerticalWindow(epubVerticalCols_, epubVerticalFirst_, epubVerticalRows(),
                                                       display_.columns(), !display_.isGraphical(),
-                                                      actionable ? epubVerticalCursor_ : -1));
+                                                      actionable ? epubVerticalCursor_ : -1, shownFrom, shownUntil));
   // 左右のドラッグ/慣性で端から見えてくる列(Display::beginContentEdgeCapture()参照)。
   // 本文と同じビューで描くので、描いた後に本文の行へ戻す。
   if (display_.isGraphical()) {
@@ -7059,7 +7079,7 @@ void Application::setEpubVerticalView(int first, int cursor) {
     for (int side : {1, -1}) {
       epubVerticalView_.setLines(renderEpubVerticalWindow(
           epubVerticalCols_, epubVerticalFirst_ + side * kEpubVerticalEdgeColumns, epubVerticalRows(),
-          display_.columns(), false, actionable ? epubVerticalCursor_ : -1));
+          display_.columns(), false, actionable ? epubVerticalCursor_ : -1, shownFrom, shownUntil));
       epubVerticalView_.setCursorIndex(0);
       epubVerticalView_.setTopIndex(0);
       display_.beginContentEdgeCapture();
@@ -7100,7 +7120,9 @@ void Application::syncEpubVerticalToFile() {
 // ページ(titlePage)は1列の送り/戻りでページごと越える(2026-09-29、直接のユーザー依頼
 // "扉ページは画像ページ同様、一行送りがページ送りとなる")。空の列や扉を越えた時は、
 // 着いた列のページ(perScreen列ごとの区切り)の頭を右端にする。
-std::pair<int, int> Application::epubVerticalStep(int cursor, bool forward) const {
+// skipPadding(2026-09-30): falseなら章の間の空の列も1列ずつ(ホイール・ドラッグ・慣性、
+// setEpubVerticalView()参照)。扉のページはどちらでもページごと。
+std::pair<int, int> Application::epubVerticalStep(int cursor, bool forward, bool skipPadding) const {
   int n = static_cast<int>(epubVerticalCols_.size());
   int perScreen = epubVerticalColumnsPerScreen(display_.columns());
   if (n == 0) return {-1, cursor};
@@ -7112,7 +7134,7 @@ std::pair<int, int> Application::epubVerticalStep(int cursor, bool forward) cons
     while (t >= 0 && t < n && epubVerticalCols_[t].titlePage) t += dir;
     jumped = true;
   }
-  while (t >= 0 && t < n && epubVerticalCols_[t].padding && !epubVerticalCols_[t].titlePage) {
+  while (skipPadding && t >= 0 && t < n && epubVerticalCols_[t].padding && !epubVerticalCols_[t].titlePage) {
     t += dir;
     jumped = true;
   }
@@ -7162,11 +7184,11 @@ bool Application::enterEpubHorizontalAtEdge(int delta) {
 
 // 2026-09-29追加、直接のユーザー依頼("k/jによる行送りでは章の最終行の次行は次の章になる
 // (画面左端までの空行をスキップ)。同じ動きをスクロールにも実装して")。
-bool Application::stepEpubVerticalFirst(int delta) {
+bool Application::stepEpubVerticalFirst(int delta, bool skipPadding) {
   bool moved = false;
   for (int k = 0; k < std::abs(delta); k++) {
     int before = epubVerticalFirst_;
-    auto [first, target] = epubVerticalStep(epubVerticalFirst_, delta > 0);
+    auto [first, target] = epubVerticalStep(epubVerticalFirst_, delta > 0, skipPadding);
     setEpubVerticalFirst(first < 0 ? target : first);
     if (epubVerticalFirst_ == before) break;
     moved = true;
@@ -7267,7 +7289,7 @@ bool Application::scrollEpubVertical(int delta) {
     selectEpubTocVertical(cutView_.cursorIndex() + delta);
     return true;
   }
-  if (!stepEpubVerticalFirst(delta)) return enterEpubHorizontalAtEdge(delta);
+  if (!stepEpubVerticalFirst(delta, /*skipPadding=*/false)) return enterEpubHorizontalAtEdge(delta);
   epubVerticalView_.redraw();
   epubVerticalView_.syncVisibleCursor();  // -cの端末のカーソルを列カーソルの頭へ(setEpubVerticalView()参照)
   return true;

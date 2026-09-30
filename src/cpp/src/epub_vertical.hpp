@@ -82,10 +82,13 @@ constexpr int kEpubVerticalEdgeColumns = 2;
 // 行間の桁に"|"を置いて傍線にする(端末の下線は字ごとの横線で細切れになるため。
 // Kindle/Kinoppy/ブックと同じく日本語の傍線は右側)。-gは下線のまま渡し、
 // GraphicalDisplay側が縦線として描く。highlightColumn: 字を反転表示にする列(列
-// カーソルがリンク/画像の列にある時、列の番号、-1で無し)。
+// カーソルがリンク/画像の列にある時、列の番号、-1で無し)。shownFrom/shownUntil(2026-09-30):
+// 列の番号がこの範囲[shownFrom, shownUntil)の外の列は空にする(右端の列の章だけを描く、
+// Application::setEpubVerticalView()参照)。
 std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVerticalColumn> &columns, int first,
                                                         int rows, int screenColumns, bool sideLineMarker = false,
-                                                        int highlightColumn = -1);
+                                                        int highlightColumn = -1, int shownFrom = 0,
+                                                        int shownUntil = 1 << 30);
 
 // 右からk番目の列の左の桁(画面に入らなければ負)。
 int epubVerticalScreenColumn(int k, int screenColumns);
