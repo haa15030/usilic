@@ -2508,6 +2508,9 @@ class Application {
   bool openEpubReturningTo(const std::string &path, ApplicationMode returnMode);
   void syncEpubHorizontalPresentation();
   void applyEpubChapterLabels();
+  ContentView &grepViewForMode(ApplicationMode mode);
+  std::vector<ContentView *> grepModeLineViews(ApplicationMode mode);
+  bool redrawEpubVerticalForGrep(ContentView &target);
   std::pair<int, int> epubVerticalShownRange(int first) const;
   // 縦書きの列の端(deltaの向き)の先(前)に横書きの範囲があればそこへ入る(描き直す)。
   bool enterEpubHorizontalAtEdge(int delta);

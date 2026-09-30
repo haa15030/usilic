@@ -7917,9 +7917,11 @@ bool Application::activateGrepInPlace() {
     // 正しいラベル("FGREP"/"EGREP"/"GREP")にする。
     // 2026-09-12追加、同じ理由でtrailing2欄のバッジも(ContentView::
     // setGrepInPlaceBadge()自身のコメント参照)。
-    viewForMode(grepInPlaceOriginMode_).setGrepInPlaceLabel(grepSyntaxLabel(grepSyntax_));
-    viewForMode(grepInPlaceOriginMode_).setGrepInPlaceBadge(grepSyntaxBadge(grepSyntax_));
-    viewForMode(grepInPlaceOriginMode_).reportGrepNoMatchMessage(message);
+    for (ContentView *view : grepModeLineViews(grepInPlaceOriginMode_)) {
+      view->setGrepInPlaceLabel(grepSyntaxLabel(grepSyntax_));
+      view->setGrepInPlaceBadge(grepSyntaxBadge(grepSyntax_));
+      view->reportGrepNoMatchMessage(message);
+    }
     activeView().redraw();
     return false;
   }
@@ -7952,7 +7954,7 @@ bool Application::activateGrepInPlace() {
   // 2026-09-11、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも反映して
   // ほしい")によりDirectory/Fileの二択からviewForMode()経由の汎用呼び
   // 出しへ一般化した(ContentView自身のGREP関連メソッド参照)。
-  ContentView &target = viewForMode(grepInPlaceOriginMode_);
+  ContentView &target = grepViewForMode(grepInPlaceOriginMode_);
   // grepInPlaceShellWasBrowsing_自身の宣言コメント参照――最初の
   // activationでだけ、下のtarget.setCursorIndex()等で上書きされる
   // 「前」の、検索開始時点そのままのShellの状態を退避する。
@@ -7966,14 +7968,16 @@ bool Application::activateGrepInPlace() {
   // ラベル("FGREP"/"EGREP"/"GREP")にする。
   // 2026-09-12追加、同じ理由でtrailing2欄のバッジも(ContentView::
   // setGrepInPlaceBadge()自身のコメント参照)。
-  target.setGrepInPlaceLabel(grepSyntaxLabel(grepSyntax_));
-  target.setGrepInPlaceBadge(grepSyntaxBadge(grepSyntax_));
-  target.setGrepInPlaceOverlay(true);
+  for (ContentView *view : grepModeLineViews(grepInPlaceOriginMode_)) {
+    view->setGrepInPlaceLabel(grepSyntaxLabel(grepSyntax_));
+    view->setGrepInPlaceBadge(grepSyntaxBadge(grepSyntax_));
+    view->setGrepInPlaceOverlay(true);
+  }
   target.setGrepMatchHighlight(toHighlightMatches(grepInPlaceMatches_), grepInPlaceOccurrences_[0].sourceLineIndex,
                                 grepInPlaceOccurrences_[0].span);
   target.setCursorIndex(grepInPlaceOccurrences_[0].sourceLineIndex);
   target.centerOnCursor();
-  target.redraw();
+  if (!redrawEpubVerticalForGrep(target)) target.redraw();
   // syncVisibleCursor()自身の宣言コメント参照: cursorHighlightEnabled()
   // がfalseのモード(File/Man/Shell等、行全体の反転表示によるカーソル
   // 表現を持たない)だけで必要――2026-09-11、Directory/Fileの二択判定
@@ -7992,9 +7996,11 @@ bool Application::activateGrepInPlace() {
 void Application::deactivateGrepInPlace() {
   if (!grepInPlaceActive_) return;
   grepInPlaceActive_ = false;
-  ContentView &target = viewForMode(grepInPlaceOriginMode_);
-  target.setGrepInPlaceOverlay(false);
+  ContentView &target = grepViewForMode(grepInPlaceOriginMode_);
+  for (ContentView *view : grepModeLineViews(grepInPlaceOriginMode_)) view->setGrepInPlaceOverlay(false);
   target.clearGrepMatchHighlight();
+  if (&target == &fileView_ && currentMode_ == ApplicationMode::File && epubVerticalActive())
+    rebuildEpubVertical(fileRawLineAtCursor());  // 縦書きの字の強調も消す(redrawEpubVerticalForGrep()参照)
   // grepInPlaceShellWasBrowsing_自身の宣言コメント参照: Shell起点の
   // 場合、検索開始前の状態へ正確に戻す――生きたプロンプトだったなら
   // ここでexitHistoryBrowsing()まで済ませてしまう(activateGrepInPlace()
@@ -8039,6 +8045,34 @@ std::string Application::grepInPlaceMatchLabel() const {
   return std::to_string(grepInPlaceIndex_ + 1) + "/" + std::to_string(grepInPlaceOccurrences_.size());
 }
 
+// 2026-09-30、直接のユーザー質問("縦書きでは検索できない？"): FILEのin-place GREPは、見せている
+// 画面(viewForMode())の行を検索して一致を強調していたので、EPUBの縦書き(epubVerticalView_、
+// 画面1枚分の行)では本文が検索されなかった。GREPの行・強調・カーソルは常に本文の行(fileView_)
+// で扱い、縦書きはredrawEpubVerticalForGrep()で組み直して見せる。
+ContentView &Application::grepViewForMode(ApplicationMode mode) {
+  return mode == ApplicationMode::File ? fileView_ : viewForMode(mode);
+}
+
+// モードラインのGREPの表示(ラベル・バッジ・一致なしの知らせ)を付けるビュー: GREPの対象と、
+// 縦書きならその画面も。
+std::vector<ContentView *> Application::grepModeLineViews(ApplicationMode mode) {
+  std::vector<ContentView *> views{&grepViewForMode(mode)};
+  if (&viewForMode(mode) != views.front()) views.push_back(&viewForMode(mode));
+  return views;
+}
+
+// targetがfileView_で縦書きを見せている時は、本文のカーソルの行(一致の行)を右端に置いて縦書きを
+// 組み直し(一致の強調、Display::Attribute::Highlight/HighlightCurrentは本文の行の装飾として
+// 縦書きの字にも付く)、縦書きを描いてtrue。そうでなければ何もしないでfalse。
+bool Application::redrawEpubVerticalForGrep(ContentView &target) {
+  if (&target != &fileView_ || currentMode_ != ApplicationMode::File || !epubVerticalActive()) return false;
+  rebuildEpubVertical(fileRawLineAtCursor());
+  if (grepInPlaceActive_) updateGrepInPlacePositionText();
+  activeView().redraw();
+  activeView().syncVisibleCursor();
+  return true;
+}
+
 void Application::updateGrepInPlacePositionText() {
   activeView().setPositionTextOverride(grepInPlaceMatchLabel());
 }
@@ -8048,7 +8082,7 @@ bool Application::jumpToGrepInPlaceMatch(int delta) {
   int count = static_cast<int>(grepInPlaceOccurrences_.size());
   grepInPlaceIndex_ = ((grepInPlaceIndex_ + delta) % count + count) % count;  // 循環(wrap)
   const GrepOccurrence &occurrence = grepInPlaceOccurrences_[grepInPlaceIndex_];
-  ContentView &target = activeView();
+  ContentView &target = grepViewForMode(grepInPlaceOriginMode_);
   target.setCursorIndex(occurrence.sourceLineIndex);
   // activateGrepInPlace()自身の2026-09-19追記コメント参照: 現在位置が
   // 出現単位で動くようになったので、^N/^Pのたびにハイライトも呼び
@@ -8056,7 +8090,7 @@ bool Application::jumpToGrepInPlaceMatch(int delta) {
   target.setGrepMatchHighlight(toHighlightMatches(grepInPlaceMatches_), occurrence.sourceLineIndex, occurrence.span);
   updateGrepInPlacePositionText();
   target.centerOnCursor();
-  target.redraw();
+  if (!redrawEpubVerticalForGrep(target)) target.redraw();
   // activateGrepInPlace()自身のsyncVisibleCursor()呼び出しのコメント
   // 参照(2026-09-11、Directory/Fileの二択から汎用フラグ判定へ一般化)。
   if (!target.cursorHighlightEnabled()) target.syncVisibleCursor();
@@ -11319,7 +11353,7 @@ void Application::liveIncrementalGrepSearch() {
   if (pattern.empty()) {
     if (grepInPlaceActive_) deactivateGrepInPlace();
   } else {
-    ContentView &source = viewForMode(grepReturnMode_);
+    ContentView &source = grepViewForMode(grepReturnMode_);
     std::vector<std::string> sourceLines;
     sourceLines.reserve(source.lines().size());
     for (const auto &line : source.lines()) sourceLines.push_back(line.text);
@@ -13995,7 +14029,7 @@ bool Application::executeGrep(const std::string &pattern) {
   // 再描画してモードラインを文字化けさせていたことが判明した。
   // viewForMode()(まさにこのために括り出された)は、File/Directory
   // だけでなく、どんなgrepReturnMode_についても正しいビューを選ぶ。
-  ContentView &source = viewForMode(grepReturnMode_);
+  ContentView &source = grepViewForMode(grepReturnMode_);
   std::vector<std::string> sourceLines;
   // 2026-09-11追加、直接のユーザー報告("^X^F^J^S^Uusilic^M→検索結果は
   // usilicが一件だけ"――62件あるはずのRecentFileの中に"usilic"を含む
@@ -14023,7 +14057,7 @@ bool Application::executeGrep(const std::string &pattern) {
   }
 
   if (!grepMode_.search(sourceLines, pattern, grepSyntax_)) {
-    source.redraw();
+    if (!redrawEpubVerticalForGrep(source)) source.redraw();
     return false;
   }
   // 2026-09-09追加、直接のユーザー提案(.steering/20260909-grep-inline-
