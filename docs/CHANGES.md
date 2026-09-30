@@ -27684,3 +27684,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      先頭の列の章(項目535の列カーソルと同じ)。端の列の裏の画面(captureEpubVerticalEdges()、
      setEpubVerticalView()から括り出して共用)とスクロールバー(epubVerticalScrollbar()/
      jumpEpubVerticalToFraction())も一覧に対応。キーの移動は従来どおり1章ずつ。
+538. **2026-09-30: src/K3t.epubの奥付が横書きにならない件**
+   - **経緯**: 直接のユーザー報告("src/K3t.epubを^Oeで開くとOEBPS/Text/以下がsortされてないんだが。
+     zipの仕様？"、"同ファイルをEPUBで開くと奥付が横書きにならない")。前者はzipの格納順
+     (`unzip -l`でも同じ並び、ARCは格納順のまま出す)で、変更していない。
+   - **原因**: K3t.epubのbasic_h.cssは横書きを"html body { writing-mode: horizontal-tb }"と書いて
+     いる(Kbt.epubは"html { ... }")。parseCssFontRules()は組み合わせのセレクタを誤って広く
+     当てはめないよう読み飛ばしていたので、奥付の横書きの指定が読まれていなかった。
+   - **修正**: 先頭がhtml/bodyだけの子孫・子のセレクタ("html body"、"html > body p"等)は、どの
+     要素もその中にあるので、先頭のhtml/bodyを除いた最後の部分として読む。

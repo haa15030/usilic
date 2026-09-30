@@ -1,6 +1,7 @@
 #include "epub_to_help_markup.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <cctype>
 #include <cstdlib>
 #include <map>
@@ -462,6 +463,21 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
       }
       std::string sel = trimAsciiSpace(one);
       one.clear();
+      // 2026-09-30、直接のユーザー報告("同ファイル(src/K3t.epub)をEPUBで開くと奥付が横書きに
+      // ならない"): K3t.epubの横書きの指定は"html body { writing-mode: horizontal-tb }"。先頭が
+      // html/bodyだけの子孫・子のセレクタは、どの要素もその中にあるので最後の部分と同じ
+      // (以前は組み合わせのセレクタとしてまとめて読み飛ばしていた)。
+      for (bool stripped = true; stripped;) {
+        stripped = false;
+        for (const char *outer : {"html", "body"}) {
+          std::size_t len = std::strlen(outer);
+          if (sel.compare(0, len, outer) != 0 || sel.size() <= len) continue;
+          std::size_t next = sel.find_first_not_of(" \t\n>", len);
+          if (next == len || next == std::string::npos) continue;  // "html.x"・"body"だけ等はそのまま
+          sel = sel.substr(next);
+          stripped = true;
+        }
+      }
       if (sel.empty() || sel.find_first_of(" \t\n>+~:[#") != std::string::npos) continue;  // 単純なセレクタだけ
       CssFontRule rule;
       rule.serif = serif;
