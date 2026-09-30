@@ -1026,6 +1026,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   cutContentView_.setCursorHighlightEnabled(false);
   // 縦書き(setEpubVerticalView()参照)も横書きの本文と同じく、ふだんはブロックカーソル
   epubVerticalView_.setCursorHighlightEnabled(false);
+  epubTocVerticalView_.setVerticalText(true);  // ContentView::setVerticalText()参照
+  epubVerticalView_.setVerticalText(true);
   epubTocVerticalView_.setCursorHighlightEnabled(false);  // 選んでいる章は列の反転表示(refreshEpubTocVertical())
   // CutContent向けのモードラインのフィールド: cutOrigin_がHelpの時は
   // 左側に固定の"HELP"(legacy自身のhelp splitに対するリテラルな名前
@@ -3921,8 +3923,11 @@ ContentView &Application::activeView() {
 // 奥付は画面を送れる上限で引き戻されて前の章の本文が上に見えていた。範囲に出入りする所
 // (enterEpubHorizontal()等)からも呼ぶ。
 void Application::syncEpubHorizontalPresentation() {
-  display_.setVerticalTextHint((currentMode_ == ApplicationMode::File && epubVerticalActive()) ||
-                               (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive()));
+  // 描き方の切り替えは2026-09-30から各ビューが自分を描く時に行う(ContentView::setVerticalText())。
+  // ContentViewを通らずに描く画面(SHELL等)のため、見せる画面が縦書きでなければここでも戻す。
+  bool verticalShown = (currentMode_ == ApplicationMode::File && epubVerticalActive()) ||
+                       (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive());
+  if (!verticalShown || promptActive()) display_.setVerticalTextHint(false);
   if (!epubHorizontalSection_ || !epubBookVertical()) {
     fileView_.setShownIndexRange(std::nullopt);
     return;

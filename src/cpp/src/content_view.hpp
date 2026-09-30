@@ -737,6 +737,12 @@ class ContentView {
   // 上限(maxTop)を範囲の頭まで広げる。EPUBの縦書きの本の横書きの範囲(奥付等、
   // Application::syncEpubHorizontalPresentation())だけが使う。
   void setShownIndexRange(std::optional<std::pair<int, int>> range) { shownIndexRange_ = range; }
+  // 2026-09-30追加、直接のユーザー報告(=hv、src/K3t.epubの縦書きの閲覧中に^X^Dの一覧が縦書きの
+  // 描き方で崩れた): -gの縦書き用の描き方(Display::setVerticalTextHint())は、ビューが自分を描く
+  // たび(redraw())に自分のこの値で切り替える。縦書きの本文・章の一覧のビューだけがtrue。以前は
+  // Application::activeView()が「今のモード」から決めていたので、縦書きのままの状態で他の一覧・
+  // プロンプトの画面を描くと縦書きの描き方が残っていた。
+  void setVerticalText(bool vertical) { verticalText_ = vertical; }
   int maxTopIndex() const;
   bool isIndexShown(int index) const {
     return !shownIndexRange_ || (index >= shownIndexRange_->first && index < shownIndexRange_->second);
@@ -1451,6 +1457,7 @@ class ContentView {
   std::function<bool(int)> markedPredicate_;
   bool cursorRowAlsoHighlighted_ = true;
   std::optional<std::pair<int, int>> shownIndexRange_;  // setShownIndexRange()参照
+  bool verticalText_ = false;  // setVerticalText()参照
   bool markedRowUsesUnderline_ = false;
 
   int row0_ = 0, height_ = 0;

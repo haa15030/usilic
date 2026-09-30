@@ -2506,6 +2506,7 @@ bool ContentView::renderContentRows() {
 }
 
 void ContentView::redraw() {
+  display_.setVerticalTextHint(verticalText_);  // setVerticalText()参照
   bool renderedAny = renderContentRows();
   int rowOffset = bottomAnchorRowOffset();
   // 2026-08-05の修正: 行が0の場合、上のループは全くrenderLine()を
