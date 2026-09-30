@@ -604,6 +604,7 @@ struct GraphicalDisplay::Impl {
   // 常に最新のつまみを描画できるようにする――
   // updateScrollPosition()自身のコメント参照。
   int scrollTopIndex = 0, scrollTotalLines = 0, scrollContentRows = 0;
+  bool scrollbarHidden = false;  // setScrollbarHidden()参照
   // ウィンドウの作成から、何であれ「最初の」マウス操作まではfalse
   // (pumpEvents()でtrueに設定され、決してfalseに戻されない)――
   // 実際の依頼(2026-08-09、1回前のラウンドで削除されたアイドル
@@ -1744,7 +1745,9 @@ void GraphicalDisplay::flush() {
   // 2026-09-25追加、直接のユーザー要望("-g起動ではスクロールバーが
   // フルの時は張りぼて復活"): 内容が1画面に収まっている(つまみが全長に
   // なる)間は、一度操作した後でも張りぼて画像へ戻す。
-  if (!impl_->everInteracted || impl_->scrollTotalLines <= impl_->scrollContentRows) {
+  if (impl_->scrollbarHidden) {
+    // setScrollbarHidden()参照
+  } else if (!impl_->everInteracted || impl_->scrollTotalLines <= impl_->scrollContentRows) {
     drawIdleScrollbarImage();
   } else {
     drawScrollbar(static_cast<double>(impl_->scrollTopIndex), impl_->scrollTotalLines, impl_->scrollContentRows);
@@ -2298,7 +2301,7 @@ bool GraphicalDisplay::pumpEvents() {
         // 右クリックの挙動は定義されていない;これは単にイベントを
         // 黙って落とすのを避けているだけ)。
         int scrollbarStripX = scrollbarStripLeft() - Impl::kMarginX;
-        if (event.button.button == SDL_BUTTON_LEFT && event.button.x >= scrollbarStripX) {
+        if (event.button.button == SDL_BUTTON_LEFT && event.button.x >= scrollbarStripX && !impl_->scrollbarHidden) {
           impl_->scrollbarDragActive = true;
           SDL_CaptureMouse(SDL_TRUE);
           impl_->scrollbarQueue.push_back(ScrollbarEvent{ScrollbarEventType::ButtonDown, event.button.y});
@@ -3419,6 +3422,8 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
 // にし(ユーザー自身の言葉、1ラウンド後にこの画像を復元しながら:
 // "「実はすでにGUI」が意味を持つのは最初だけ")、その後は二度と
 // 戻らない。
+void GraphicalDisplay::setScrollbarHidden(bool hidden) { impl_->scrollbarHidden = hidden; }
+
 void GraphicalDisplay::updateScrollPosition(int topIndex, int totalLines, int contentRows) {
   impl_->scrollTopIndex = topIndex;
   impl_->scrollTotalLines = totalLines;
@@ -3731,7 +3736,9 @@ void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &
   // 現在の行内の副次的なpixelOffsetYで補正されたtopIndexである。
   double effectiveTop = topIndex - static_cast<double>(pixelOffsetY) / std::max(impl_->cellHeight, 1);
   // flush()自身の同じ分岐参照(収まっている間は張りぼて)。
-  if (static_cast<int>(lines.size()) <= contentRows) drawIdleScrollbarImage();
+  if (impl_->scrollbarHidden) {
+    // setScrollbarHidden()参照
+  } else if (static_cast<int>(lines.size()) <= contentRows) drawIdleScrollbarImage();
   else drawScrollbar(effectiveTop, static_cast<int>(lines.size()), contentRows);
 
   if (impl_->rows > 0 && impl_->modeLineVisible) {

@@ -1976,13 +1976,17 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   // scrollEpubVertical()の描き直し(ContentView::redraw())はその場で画面へ出す(flush)ので、
   // 以前のように「列を動かす→ずれを1列分戻す」の順だと、ずれを戻す前の(1列分余計にずれた)
   // 絵が一瞬出ていた。先にずれを戻してから動かす(動けなければ元に戻してfalse)。
+  // 横にずらす行(モードラインの行を除く)。2026-09-30、直接のユーザー報告("^Oh後はさらに
+  // カオス"): rows()-1に決め打ちしていたので、^Ohでモードラインを隠すと最下行だけずれずに
+  // 残っていた。
+  auto epubContentRows = [&]() { return gui.modeLineVisible() ? std::max(gui.rows() - 1, 0) : gui.rows(); };
   auto shiftEpubColumn = [&](int dir) {
     int pitch = std::max(1, gui.cellWidthPixels() * fm::epubVerticalColumnPitch());
     epubDragOffset -= dir * pitch;
-    gui.setContentOffsetX(epubDragOffset, std::max(gui.rows() - 1, 0));
+    gui.setContentOffsetX(epubDragOffset, epubContentRows());
     if (app.scrollEpubVertical(dir)) return true;
     epubDragOffset += dir * pitch;
-    gui.setContentOffsetX(epubDragOffset, std::max(gui.rows() - 1, 0));
+    gui.setContentOffsetX(epubDragOffset, epubContentRows());
     return false;
   };
   // 2026-08-30、直接のユーザー報告(GUI、ARCモードで再現させたスクリー
@@ -2878,7 +2882,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
                 break;
               }
             }
-            gui.setContentOffsetX(epubDragOffset, std::max(gui.rows() - 1, 0));
+            gui.setContentOffsetX(epubDragOffset, epubContentRows());
             gui.flush();
             break;
           }
@@ -3237,7 +3241,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         epubDragOffset = 0;
         gui.setContentOffsetX(0, 0);
       } else {
-        gui.setContentOffsetX(epubDragOffset, std::max(gui.rows() - 1, 0));
+        gui.setContentOffsetX(epubDragOffset, epubContentRows());
       }
       gui.flush();
     }
@@ -3289,6 +3293,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // real, always-current thumb instead of the removed decorative
     // placeholder. Must run BEFORE the redraw() call below so flush()
     // sees this frame's values, not the previous one's.
+    gui.setScrollbarHidden(app.epubVerticalBookShowing());  // GraphicalDisplay::setScrollbarHidden()参照
     if (auto epubBar = app.epubVerticalScrollbar())  // 縦書きの本文(Application::epubVerticalScrollbar()参照)
       gui.updateScrollPosition(epubBar->first, epubBar->total, epubBar->perScreen);
     else

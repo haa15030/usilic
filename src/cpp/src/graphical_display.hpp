@@ -464,6 +464,12 @@ class GraphicalDisplay : public Display {
   // も「前に」呼ぶこと。そうすればflush()は実行される時に常に
   // 新鮮な値を見る。
   void updateScrollPosition(int topIndex, int totalLines, int contentRows);
+  // 2026-09-30追加、直接のユーザー報告("スクロールバーがカオス。文字列エリアと被るうえに
+  // モードラインエリアにまで浸食。奥付ページになったとたんつまみの位置が変わる"、同じく
+  // "スクロールエリアを非表示にすれば解消するかもね"): trueの間はスクロールバー(つまみ・
+  // 張りぼて画像)を描かず、帯のクリックもつまみの操作にしない。縦書きの本を見せている間
+  // (奥付等の横書きの範囲も含む、main.cpp)。
+  void setScrollbarHidden(bool hidden);
 
   // ピクセル単位の固定された上端マージン(Impl::kMarginY自身の
   // コメント参照)――main.cppのScrollbarEvent処理が、

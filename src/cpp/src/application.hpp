@@ -2519,6 +2519,11 @@ class Application {
   // 縦書きの本の中の横書きの範囲(奥付等)を見ている間true(app/main.cppが慣性を縦横の間で
   // 引き継ぐのに使う)。
   bool epubHorizontalSectionActive() const { return epubHorizontalSection_.has_value(); }
+  // 縦書きの本(奥付等の横書きの範囲も含む)をFILEで見せているか(-gのスクロールバーを隠す、
+  // GraphicalDisplay::setScrollbarHidden()参照)。
+  bool epubVerticalBookShowing() const {
+    return currentMode_ == ApplicationMode::File && epubBookVertical() && !promptActive();
+  }
   // 上下の慣性で横書きの範囲から前へ出て左右の慣性に引き継ぐ時(app/main.cpp): 前の章の
   // 最後の列(今の列カーソル)を画面の左端に置き、そこから右へ遡れるようにする。
   void alignEpubVerticalCursorToLeftEdge();
