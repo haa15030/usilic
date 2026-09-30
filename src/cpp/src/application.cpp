@@ -5368,6 +5368,7 @@ bool Application::openSelectedDuEntry() {
     return true;
   }
   if (openExternallyIfApplicable(entry->path)) return true;  // EXEC/画像のクイックルック(2026-09-27)
+  if (isEpubFile(entry->path)) return openEpubReturningTo(entry->path, ApplicationMode::Du);
   if (!fileMode_.loadFile(entry->path)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Du;
@@ -5473,6 +5474,7 @@ bool Application::openSelectedLocateResult() {
   // はなく、完全に引き渡して、Directoryモードから(ls)へ変わらず
   // 戻るEXECと同様に、LOCATEの結果リストへ変わらず戻る。
   if (openExternallyIfApplicable(*path)) return true;  // EXEC/画像のクイックルック(2026-09-27)
+  if (isEpubFile(*path)) return openEpubReturningTo(*path, ApplicationMode::Locate);
   if (!fileMode_.loadFile(*path)) return false;
   currentMode_ = ApplicationMode::File;
   // 2026-08-14修正(ここでの以前の版に対する2つの直接のユーザーの
@@ -6520,6 +6522,7 @@ bool Application::openSelectedUnderlineEntry() {
     return true;
   }
   if (openExternallyIfApplicable(*path)) return true;  // EXEC/画像のクイックルック(2026-09-27)
+  if (isEpubFile(*path)) return openEpubReturningTo(*path, ApplicationMode::Underline);
   if (!fileMode_.loadFile(*path)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Underline;
@@ -6697,6 +6700,7 @@ bool Application::openEpub(const std::string &path) {
   cutSyntax_ = GrepSyntax::Fixed;
   cutReturnMode_ = ApplicationMode::Directory;
   epubVertical_ = vertical;
+  epubVerticalPath_ = fileMode_.currentFile();
   if (vertical) rebuildEpubVertical(fileRawLineAtCursor());
   if (!cutMode_.split(sourceLines, kHelpPattern, GrepSyntax::Fixed)) {
     // 章の印が1つも無い本: 本文だけ(^Gで(ls)へ)
@@ -6717,6 +6721,19 @@ bool Application::openEpub(const std::string &path) {
     activeView().redraw();
     activeView().syncVisibleCursor();
   }
+  return true;
+}
+
+// 2026-09-30追加、直接のユーザー報告("LOCATEから.epubファイルを選ぶと変わるのはファイル名
+// だけで内容は今と同じなんだが"): LOCATE/DU/USILIC(下線の一覧)の結果の.epubは、ふつうの
+// ファイルとしてfileMode_.loadFile()で読むだけで、縦書きの列(rebuildEpubVertical())を組み
+// 直していなかった――前の本の縦書きが残り、名前欄だけが変わっていた。openEpub()で開き、
+// ^Gの戻り先(章の一覧/本文から)を発動元の一覧にする。
+bool Application::openEpubReturningTo(const std::string &path, ApplicationMode returnMode) {
+  if (!openEpub(path)) return false;
+  cutReturnMode_ = returnMode;
+  if (currentMode_ == ApplicationMode::File && fileReturnMode_ == ApplicationMode::Directory)
+    fileReturnMode_ = returnMode;
   return true;
 }
 
@@ -6768,7 +6785,11 @@ bool Application::returnToEpubToc() {
 // 切り替えは、元の行番号(rawLineNumber)で両者を対応させる(syncEpubVerticalToFile())。
 bool Application::epubVerticalActive() const { return epubBookVertical() && !epubHorizontalSection_; }
 
-bool Application::epubBookVertical() const { return epubVertical_ && isEpubFile(fileMode_.currentFile()); }
+// 縦書きの列を組んだ本(openEpub()のepubVerticalPath_)を見ている時だけ(2026-09-30、openEpubReturningTo()
+// 参照――openEpub()を通らずに別の.epubを読むと、前の本の縦書きが残っていた)。
+bool Application::epubBookVertical() const {
+  return epubVertical_ && isEpubFile(fileMode_.currentFile()) && fileMode_.currentFile() == epubVerticalPath_;
+}
 
 std::optional<std::pair<int, int>> Application::epubHorizontalRangeAt(int rawLine) const {
   for (const auto &range : fileMode_.epubLayoutHints().horizontal)

@@ -27659,3 +27659,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      扉のページは従来どおり。
    - **リンク**: 本文のリンク(縦書きの列・横書きの行とも)は、1回目のクリックで飛ぶ。画像は従来
      どおり1回目で選択、2回目でクイックルック。CUTの章の一覧は従来どおり。
+536. **2026-09-30: LOCATEから.epubを選ぶと名前欄だけ変わって中身が前の本のままの件**
+   - **経緯**: 直接のユーザー報告("LOCATEから.epubファイルを選ぶと変わるのはファイル名だけで
+     内容は今と同じなんだが")。
+   - **原因**: LOCATE/DU/USILIC(下線の一覧)の結果を開く処理(openSelectedLocateResult()/
+     openSelectedDuEntry()/openSelectedUnderlineEntry())は、.epubもふつうのファイルとして
+     fileMode_.loadFile()で読むだけで、openEpub()(縦書きの列の組み直し・章の一覧)を通らなかった。
+     縦書きかどうか(epubBookVertical())は「今のファイルが.epubか」だけを見ていたので、前の本の
+     縦書きの列がそのまま見えていた。
+   - **修正**: 3つの結果から.epubを開く時はopenEpubReturningTo()(新設)でopenEpub()を通し、^Gの
+     戻り先を発動元の一覧にする。あわせてepubBookVertical()は、openEpub()で縦書きを組んだ本
+     (epubVerticalPath_)を見ている時だけtrueにする(他の経路で.epubを読んでも前の本の縦書きは
+     出ない、横書きになる)。
