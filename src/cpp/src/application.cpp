@@ -4031,6 +4031,19 @@ void Application::clearTransientNotice() {
 
 bool Application::handleCommandImpl(Command command) {
   clearTransientNotice();  // showTransientNotice()自身の宣言コメント参照
+  // 2026-09-30、直接のユーザー報告(同上、"「第20章」を選んで^X^Xしても目次に戻らない"): 縦書きの
+  // リンクで横書きの範囲(奥付等)へ飛んだ後の^X^Xは、飛ぶ前の縦書きの列(epubVerticalMark_)へ戻る。
+  if (command == Command::ExchangeJumpMark && currentMode_ == ApplicationMode::File && epubBookVertical() &&
+      epubHorizontalSection_ && epubVerticalMark_) {
+    int target = *epubVerticalMark_;
+    epubVerticalMark_.reset();
+    epubHorizontalSection_.reset();
+    syncEpubHorizontalPresentation();
+    setEpubVerticalView(target, target);
+    activeView().redraw();
+    activeView().syncVisibleCursor();
+    return true;
+  }
   if (currentMode_ == ApplicationMode::File && epubVerticalActive())  // 縦書き(handleEpubVerticalCommand()参照)
     if (auto handled = handleEpubVerticalCommand(command)) return *handled;
   if (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive())  // 縦書きの章の一覧
@@ -6729,28 +6742,7 @@ bool Application::openEpub(const std::string &path) {
   epubVerticalPath_ = fileMode_.currentFile();
   if (vertical) rebuildEpubVertical(fileRawLineAtCursor());
   bool split = cutMode_.split(sourceLines, kHelpPattern, GrepSyntax::Fixed);
-  // 章の一覧での名前の置き換え(EpubLayoutHints::chapterLabel、display:noneの見出しの字)
-  if (split) {
-    const auto &labels = fileMode_.epubLayoutHints().chapterLabel;
-    const auto &segments = cutMode_.segments();
-    for (std::size_t i = 0; i < segments.size(); i++) {
-      int start = segments[i].startLine;
-      if (start < 0 || start >= static_cast<int>(fileView_.lines().size())) continue;
-      int raw = fileView_.lines()[start].rawLineNumber.value_or(-1);
-      auto it = labels.find(raw);
-      if (it != labels.end()) {
-        cutMode_.setSegmentLabel(i, it->second);
-        continue;
-      }
-      // 中央寄せ・字下げの行(FileModeが画面の行の頭に空白を足す)は、一覧ではその空白を除く
-      const auto &hints = fileMode_.epubLayoutHints();
-      const std::string &label = segments[i].label;
-      bool padded = hints.indent.count(raw) ||
-                    std::find(hints.center.begin(), hints.center.end(), raw) != hints.center.end();
-      std::size_t pad = label.find_first_not_of(' ');
-      if (padded && pad != std::string::npos && pad > 0) cutMode_.setSegmentLabel(i, label.substr(pad));
-    }
-  }
+  if (split) applyEpubChapterLabels();
   if (!split) {
     // 章の印が1つも無い本: 本文だけ(^Gで(ls)へ)
     fileMode_.annotations().clear();
@@ -6786,6 +6778,30 @@ bool Application::openEpubReturningTo(const std::string &path, ApplicationMode r
   return true;
 }
 
+// 章の一覧(cutMode_)の名前の置き換え(openEpub()・returnToEpubToc()の分割の後): display:noneの
+// 見出しの字(EpubLayoutHints::chapterLabel)と、中央寄せ・字下げの行の頭の空白。
+void Application::applyEpubChapterLabels() {
+  const auto &labels = fileMode_.epubLayoutHints().chapterLabel;
+  const auto &segments = cutMode_.segments();
+  for (std::size_t i = 0; i < segments.size(); i++) {
+    int start = segments[i].startLine;
+    if (start < 0 || start >= static_cast<int>(fileView_.lines().size())) continue;
+    int raw = fileView_.lines()[start].rawLineNumber.value_or(-1);
+    auto it = labels.find(raw);
+    if (it != labels.end()) {
+      cutMode_.setSegmentLabel(i, it->second);
+      continue;
+    }
+    // 中央寄せ・字下げの行(FileModeが画面の行の頭に空白を足す)は、一覧ではその空白を除く
+    const auto &hints = fileMode_.epubLayoutHints();
+    const std::string &label = segments[i].label;
+    bool padded = hints.indent.count(raw) ||
+                  std::find(hints.center.begin(), hints.center.end(), raw) != hints.center.end();
+    std::size_t pad = label.find_first_not_of(' ');
+    if (padded && pad != std::string::npos && pad > 0) cutMode_.setSegmentLabel(i, label.substr(pad));
+  }
+}
+
 // openEpub()自身のコメント参照: 章の一覧から本全体の本文のその章の頭へ。
 bool Application::openEpubTocEntry(const CutSegment &segment) {
   const auto &lines = fileView_.lines();
@@ -6811,6 +6827,7 @@ bool Application::returnToEpubToc() {
   sourceLines.reserve(fileView_.lines().size());
   for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
   if (!cutMode_.split(sourceLines, kHelpPattern, GrepSyntax::Fixed)) return returnToDirectory();
+  applyEpubChapterLabels();
   const auto &segments = cutMode_.segments();
   int selected = 0;
   for (std::size_t i = 0; i < segments.size(); i++)
@@ -7612,8 +7629,11 @@ bool Application::activateEpubVerticalColumn(long c) {
   if (target->link) {
     epubVerticalMark_ = epubVerticalCursor_;
     showEpubVerticalRaw(*target->link);
-    epubVerticalView_.redraw();
-    epubVerticalView_.syncVisibleCursor();  // -cの端末のカーソルを列カーソルの頭へ(setEpubVerticalView()参照)
+    // 2026-09-30、直接のユーザー報告("目次一覧の「第20章」の隣「奥付」を^Mしても何も起きない"):
+    // リンク先が横書きの範囲(奥付等)なら見せる画面はfileView_になるので、epubVerticalView_では
+    // なく今の画面を描く。
+    activeView().redraw();
+    activeView().syncVisibleCursor();  // -cの端末のカーソルを列カーソルの頭へ(setEpubVerticalView()参照)
     return true;
   }
   return openEpubImageIn(target->imageLine);

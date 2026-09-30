@@ -3293,6 +3293,17 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // real, always-current thumb instead of the removed decorative
     // placeholder. Must run BEFORE the redraw() call below so flush()
     // sees this frame's values, not the previous one's.
+    // 2026-09-30、直接のユーザー報告("-gの奥付でマウスホイールを一段前(右スクロール)すると上へ
+    // 数ドット上がったところで右スクロールへ切り替わるさなか、一瞬...見える画面がカオスのまま"
+    // =hu): このフレームの途中で見せる画面が替わった(EPUBの縦書きの本の横書きの範囲への出入り、
+    // syncEpubHorizontalSection()等)時は、フレームの頭でつかんだ古いviewを描かない――縦書きへ
+    // 戻った後に横書きのfileView_を縦書きの描き方で描き直していた。新しい画面は替わった所で
+    // 描いてある。
+    if (&view != &app.activeContentView()) {
+      wasActivelyScrolling = false;
+      usleep(16000);
+      continue;
+    }
     if (auto epubBar = app.epubVerticalScrollbar())  // 縦書きの本文(Application::epubVerticalScrollbar()参照)
       gui.updateScrollPosition(epubBar->first, epubBar->total, epubBar->perScreen, epubContentRows());
     else
