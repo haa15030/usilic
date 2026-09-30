@@ -477,9 +477,13 @@ bool FileMode::followEpubLink() {
   if (!raw) return false;
   auto link = epubLinks_.find(*raw);
   if (link == epubLinks_.end()) return false;
+  return jumpToEpubRawLine(link->second);
+}
+
+bool FileMode::jumpToEpubRawLine(int rawLine) {
   const auto &lines = view_.lines();
   for (std::size_t i = 0; i < lines.size(); i++) {
-    if (lines[i].rawLineNumber != link->second) continue;
+    if (lines[i].rawLineNumber != rawLine) continue;
     view_.markJumpOrigin();  // ^X^X(K-80)でリンク元へ戻れるように、ContentView::markJumpOrigin()参照
     view_.setCursorIndex(static_cast<int>(i));
     view_.setTopIndex(static_cast<int>(i));

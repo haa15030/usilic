@@ -27801,3 +27801,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
        列カーソルを動かす(selectAdjacentEpubVerticalLink())。無ければ従来どおり列を動かす。
      - -gのクリックは、下線の字をクリックしたらそのリンクを選んで飛ぶ(clickEpubVertical())。
    - **未対応**: 横書きの本文(横書きの本・奥付)は従来どおり行の最初のリンクだけ。
+546. **2026-09-30: 横書きのEPUBの本文(奥付等)でも↑↓でリンクを選ぶ**
+   - **経緯**: 直接のユーザー依頼("奥付でも↑↓でリンクを選べるようにしてよ")。あわせて
+     "^X^Xだが読書に特化したモードなのでbookmarkも必要かと。いずれは必要かと"――
+     docs/ideas/IDEAS.mdのEPUBビューアの4.に記録(未実装)。
+   - **実装**: 横書きのEPUBの本文(横書きの本、縦書きの本の横書きの範囲)で、MoveDown/MoveUp
+     (↓↑・^N/^P)は画面に見えている次/前のリンク(下線の並び)を選び、無ければ従来どおり動く
+     (Application::selectAdjacentEpubHorizontalLink())。見えているリンクは
+     epubHorizontalVisibleLinks()が上から順に並べ、元の行の中での番号(折り返しをまたぐ下線は同じ
+     リンク)でEpubLayoutHints::lineLinksの行き先に対応させる。選んでいるリンクの字だけを反転表示
+     する(ContentView::setExtraStandout()、新設。画面から外れたら選択を外す、
+     syncEpubHorizontalPresentation())。[Enter]は選んでいるリンクへ(本の中は飛び、^X^Xで戻れる
+     ――縦書きの本なら縦書きへ、Webはクイックルック、activateEpubHorizontalLink())。-gで下線の字を
+     クリックしたら、そのリンクを選んで飛ぶ(clickEpubHorizontalLink())。

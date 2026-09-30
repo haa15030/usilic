@@ -2494,10 +2494,17 @@ bool ContentView::renderContentRows() {
       // Underlineのみ、Standoutは無し。無効な場合(デフォルト)、
       // これは2026-08-25より前のまさに単一のboolean呼び出しに
       // 戻る。
+      const Line *line = &lines_[idx];
+      Line withStandout;
+      if (extraStandout_ && extraStandout_->index == idx) {  // setExtraStandout()参照
+        withStandout = lines_[idx];
+        withStandout.attributes.push_back({extraStandout_->start, extraStandout_->end, Display::Attribute::Standout});
+        line = &withStandout;
+      }
       if (markedRowUsesUnderline_) {
-        renderLine(lines_[idx], cursorRow && !markedRow, markedRow);
+        renderLine(*line, cursorRow && !markedRow, markedRow);
       } else {
-        renderLine(lines_[idx], cursorRow || markedRow);
+        renderLine(*line, cursorRow || markedRow);
       }
       renderedAny = true;
     }

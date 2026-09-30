@@ -743,6 +743,14 @@ class ContentView {
   // Application::activeView()が「今のモード」から決めていたので、縦書きのままの状態で他の一覧・
   // プロンプトの画面を描くと縦書きの描き方が残っていた。
   void setVerticalText(bool vertical) { verticalText_ = vertical; }
+  // 2026-09-30追加(Application::selectAdjacentEpubHorizontalLink()): 行indexの[start, end)バイトを
+  // 反転表示する(横書きのEPUBの選んでいるリンク)。nulloptで消す。
+  struct ByteSpan {
+    int index = 0;
+    int start = 0;
+    int end = 0;
+  };
+  void setExtraStandout(std::optional<ByteSpan> span) { extraStandout_ = span; }
   int maxTopIndex() const;
   bool isIndexShown(int index) const {
     return !shownIndexRange_ || (index >= shownIndexRange_->first && index < shownIndexRange_->second);
@@ -1458,6 +1466,7 @@ class ContentView {
   bool cursorRowAlsoHighlighted_ = true;
   std::optional<std::pair<int, int>> shownIndexRange_;  // setShownIndexRange()参照
   bool verticalText_ = false;  // setVerticalText()参照
+  std::optional<ByteSpan> extraStandout_;  // setExtraStandout()参照
   bool markedRowUsesUnderline_ = false;
 
   int row0_ = 0, height_ = 0;

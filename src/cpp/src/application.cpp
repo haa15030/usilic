@@ -29,6 +29,7 @@
 #include "help_text.hpp"
 #include "mode_line.hpp"
 #include "pipe_buffer.hpp"
+#include "utf8.hpp"
 
 namespace fm {
 
@@ -3928,6 +3929,15 @@ void Application::syncEpubHorizontalPresentation() {
   bool verticalShown = (currentMode_ == ApplicationMode::File && epubVerticalActive()) ||
                        (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive());
   if (!verticalShown || promptActive()) display_.setVerticalTextHint(false);
+  // 横書きの選んでいるリンク(selectAdjacentEpubHorizontalLink())は、画面に見えている間だけ反転する
+  std::optional<ContentView::ByteSpan> standout;
+  if (epubHorizontalLink_ && epubHorizontalLinksActive()) {
+    for (const auto &link : epubHorizontalVisibleLinks())
+      if (link.index == epubHorizontalLink_->index && link.start == epubHorizontalLink_->start)
+        standout = ContentView::ByteSpan{link.index, link.start, link.end};
+  }
+  if (!standout) epubHorizontalLink_.reset();
+  fileView_.setExtraStandout(standout);
   if (!epubHorizontalSection_ || !epubBookVertical()) {
     fileView_.setShownIndexRange(std::nullopt);
     return;
@@ -4036,6 +4046,9 @@ void Application::clearTransientNotice() {
 
 bool Application::handleCommandImpl(Command command) {
   clearTransientNotice();  // showTransientNotice()自身の宣言コメント参照
+  if ((command == Command::MoveDown || command == Command::MoveUp) &&
+      selectAdjacentEpubHorizontalLink(command == Command::MoveDown ? 1 : -1))
+    return true;
   // 2026-09-30、直接のユーザー報告(同上、"「第20章」を選んで^X^Xしても目次に戻らない"): 縦書きの
   // リンクで横書きの範囲(奥付等)へ飛んだ後の^X^Xは、飛ぶ前の縦書きの列(epubVerticalMark_)へ戻る。
   if (command == Command::ExchangeJumpMark && currentMode_ == ApplicationMode::File && epubBookVertical() &&
@@ -4244,8 +4257,8 @@ bool Application::handleCommandImpl(Command command) {
       // 返す)なので、これは通常のファイル閲覧についてはno-opである。
       if (currentMode_ == ApplicationMode::File) {
         if (epubVerticalActive()) return activateEpubVerticalColumn(epubVerticalCursor_);  // 列カーソル(setEpubVerticalView()参照)
-        return openSelectedBannerEntry() || fileMode_.followEpubLink() || openEpubWebLinkAtCursor() ||
-               openEpubLineImage(fileView_);
+        return openSelectedBannerEntry() || activateSelectedEpubHorizontalLink() || fileMode_.followEpubLink() ||
+               openEpubWebLinkAtCursor() || openEpubLineImage(fileView_);
       }
       if (currentMode_ == ApplicationMode::CutContent) return openEpubLineImage(cutContentView_);
       return false;
@@ -7666,6 +7679,130 @@ bool Application::clickEpubVertical(int row, int column) {
   epubVerticalView_.redraw();
   epubVerticalView_.syncVisibleCursor();  // -cの端末のカーソルを列カーソルの頭へ(setEpubVerticalView()参照)
   return true;
+}
+
+// 横書きのEPUBの本文を見せているか(縦書きの本の横書きの範囲を含む)。
+bool Application::epubHorizontalLinksActive() const {
+  return currentMode_ == ApplicationMode::File && isEpubFile(fileMode_.currentFile()) && !epubVerticalActive() &&
+         !promptActive();
+}
+
+// 画面に見えている行のリンク(下線の並び)を上から順に。番号(ordinal)は元の行の頭から数える
+// (折り返した行をまたぐ下線は同じリンク)。
+std::vector<Application::EpubHorizontalLink> Application::epubHorizontalVisibleLinks() const {
+  std::vector<EpubHorizontalLink> out;
+  const auto &lines = fileView_.lines();
+  int total = static_cast<int>(lines.size());
+  int top = fileView_.topIndex();
+  int end = std::min(total, top + std::max(1, fileView_.height()));
+  if (top < 0 || top >= total) return out;
+  auto rawOf = [&](int i) { return lines[i].rawLineNumber.value_or(-1); };
+  int start = top;
+  while (start > 0 && rawOf(start - 1) == rawOf(top)) start--;
+  int currentRaw = -2, ordinal = -1;
+  bool previousUnderline = false;
+  for (int i = start; i < end; i++) {
+    int raw = rawOf(i);
+    if (raw != currentRaw) {
+      currentRaw = raw;
+      ordinal = -1;
+      previousUnderline = false;
+    }
+    std::vector<std::pair<int, int>> runs;
+    for (const auto &run : lines[i].attributes)
+      if (run.attribute == Display::Attribute::Underline && run.end > run.start) runs.push_back({run.start, run.end});
+    std::sort(runs.begin(), runs.end());
+    std::vector<std::pair<int, int>> merged;
+    for (const auto &run : runs) {
+      if (!merged.empty() && run.first <= merged.back().second) merged.back().second = std::max(merged.back().second, run.second);
+      else merged.push_back(run);
+    }
+    const std::string &text = lines[i].text;
+    std::size_t firstVisible = text.find_first_not_of(' ');
+    int firstByte = firstVisible == std::string::npos ? 0 : static_cast<int>(firstVisible);
+    for (std::size_t k = 0; k < merged.size(); k++) {
+      bool continues = k == 0 && previousUnderline && merged[k].first <= firstByte;
+      if (!continues) ordinal++;
+      if (i >= top && fileView_.isIndexShown(i)) out.push_back({i, merged[k].first, merged[k].second, raw, ordinal});
+    }
+    std::size_t lastVisible = text.find_last_not_of(' ');
+    int endByte = lastVisible == std::string::npos ? 0 : static_cast<int>(lastVisible) + 1;
+    previousUnderline = !merged.empty() && merged.back().second >= endByte;
+  }
+  return out;
+}
+
+// 横書きのEPUBの本文で、画面に見えている次(delta>0)/前のリンクを選ぶ(↑↓・^N/^P)。選べなければ
+// false(呼び出し元が従来どおり動かす)。
+bool Application::selectAdjacentEpubHorizontalLink(int delta) {
+  if (!epubHorizontalLinksActive()) return false;
+  auto links = epubHorizontalVisibleLinks();
+  int position = -1;
+  if (epubHorizontalLink_)
+    for (std::size_t i = 0; i < links.size(); i++)
+      if (links[i].index == epubHorizontalLink_->index && links[i].start == epubHorizontalLink_->start)
+        position = static_cast<int>(i);
+  int next = position < 0 ? (delta > 0 ? 0 : -1) : position + delta;
+  if (next < 0 || next >= static_cast<int>(links.size())) {
+    if (epubHorizontalLink_) {
+      epubHorizontalLink_.reset();
+      fileView_.setExtraStandout(std::nullopt);
+    }
+    return false;
+  }
+  epubHorizontalLink_ = links[next];
+  fileView_.setCursorIndex(links[next].index);
+  activeView().redraw();  // syncEpubHorizontalPresentation()が反転を付ける
+  return true;
+}
+
+// リンクの行き先(EpubLayoutHints::lineLinks)へ: 本の中なら飛び(^X^Xで戻れる)、Webならクイックルック。
+bool Application::activateEpubHorizontalLink(const EpubHorizontalLink &link) {
+  const auto &lineLinks = fileMode_.epubLayoutHints().lineLinks;
+  auto it = lineLinks.find(link.raw);
+  if (it == lineLinks.end() || link.ordinal < 0 || link.ordinal >= static_cast<int>(it->second.size())) return false;
+  const std::string &target = it->second[link.ordinal];
+  if (target.compare(0, 4, "url:") == 0) return openEpubWebLink(target.substr(4));
+  if (target.compare(0, 5, "line:") != 0) return false;
+  int raw = std::atoi(target.c_str() + 5);
+  epubHorizontalLink_.reset();
+  if (epubBookVertical()) {  // 縦書きの本の奥付等から: 縦書き(か横書きの範囲)へ
+    showEpubVerticalRaw(raw);
+    activeView().redraw();
+    activeView().syncVisibleCursor();
+    return true;
+  }
+  return fileMode_.jumpToEpubRawLine(raw);
+}
+
+bool Application::activateSelectedEpubHorizontalLink() {
+  if (!epubHorizontalLink_ || !epubHorizontalLinksActive()) return false;
+  EpubHorizontalLink link = *epubHorizontalLink_;
+  return activateEpubHorizontalLink(link);
+}
+
+// 行indexの画面の桁columnが下線の字なら、そのリンクを選んで飛ぶ(-gのクリック)。
+bool Application::clickEpubHorizontalLink(int index, int column) {
+  if (!epubHorizontalLinksActive()) return false;
+  const std::string &text = fileView_.lines()[index].text;
+  int byte = -1;
+  for (std::size_t pos = 0, col = 0; pos < text.size();) {
+    int len = std::max(1, Utf8::sequence_length(static_cast<unsigned char>(text[pos])));
+    int width = Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + pos, len);
+    if (column >= static_cast<int>(col) && column < static_cast<int>(col) + std::max(width, 1)) {
+      byte = static_cast<int>(pos);
+      break;
+    }
+    col += static_cast<std::size_t>(std::max(width, 0));
+    pos += static_cast<std::size_t>(len);
+  }
+  if (byte < 0) return false;
+  for (const auto &link : epubHorizontalVisibleLinks())
+    if (link.index == index && byte >= link.start && byte < link.end) {
+      epubHorizontalLink_ = link;
+      return activateEpubHorizontalLink(link);
+    }
+  return false;
 }
 
 // 同じ行の次(delta>0)/前のリンクを選び、そのリンクの最初の字の列へ列カーソルを動かす
@@ -15975,6 +16112,7 @@ bool Application::handleMouseClickImpl(int row, int column) {
   // 「1回目で選択、2回目で開く」。他の行のクリックは従来どおり。
   if (currentMode_ == ApplicationMode::File && isEpubFile(fileMode_.currentFile())) {
     int idx = fileView_.lineIndexAtRow(row);
+    if (idx >= 0 && clickEpubHorizontalLink(idx, column)) return true;  // 下線の字のクリック
     if (idx >= 0 && fileView_.isColumnWithinRowText(idx, column) &&
         (fileMode_.hasEpubLinkAt(idx) || fileView_.lines()[idx].text.find("[image: ") != std::string::npos)) {
       if (idx == fileView_.cursorIndex())

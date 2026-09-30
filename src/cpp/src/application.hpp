@@ -2506,6 +2506,20 @@ class Application {
   // はしない。右端の列が動いたらtrue。
   bool stepEpubVerticalFirst(int delta);
   bool selectAdjacentEpubVerticalLink(int delta);
+  // 横書きのEPUBの本文(横書きの本・縦書きの本の奥付等)のリンク(下線の並び)。2026-09-30、
+  // 直接のユーザー依頼("奥付でも↑↓でリンクを選べるようにしてよ")。
+  struct EpubHorizontalLink {
+    int index = 0;  // fileView_の行
+    int start = 0, end = 0;  // バイト
+    int raw = 0;
+    int ordinal = 0;  // 行(元の行)の中での番号(EpubLayoutHints::lineLinks)
+  };
+  std::vector<EpubHorizontalLink> epubHorizontalVisibleLinks() const;
+  bool epubHorizontalLinksActive() const;
+  bool selectAdjacentEpubHorizontalLink(int delta);
+  bool activateEpubHorizontalLink(const EpubHorizontalLink &link);
+  bool activateSelectedEpubHorizontalLink();
+  bool clickEpubHorizontalLink(int index, int column);
   bool openEpubReturningTo(const std::string &path, ApplicationMode returnMode);
   void syncEpubHorizontalPresentation();
   void applyEpubChapterLabels();
@@ -2566,6 +2580,7 @@ class Application {
   // (setEpubVerticalView()参照)。
   int epubVerticalLink_ = -1;
   int epubVerticalLinkRaw_ = -1;
+  std::optional<EpubHorizontalLink> epubHorizontalLink_;  // 横書きの選んでいるリンク
   std::string epubVerticalPath_;  // epubBookVertical()参照
   int epubVerticalFirst_ = 0;                         // 右端に置いている列
   int epubVerticalCursor_ = 0;                        // 列カーソル(setEpubVerticalView()参照)
