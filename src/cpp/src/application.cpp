@@ -4052,9 +4052,20 @@ bool Application::handleCommandImpl(Command command) {
   // 2026-09-30、直接のユーザー報告(同上、"「第20章」を選んで^X^Xしても目次に戻らない"): 縦書きの
   // リンクで横書きの範囲(奥付等)へ飛んだ後の^X^Xは、飛ぶ前の縦書きの列(epubVerticalMark_)へ戻る。
   if (command == Command::ExchangeJumpMark && currentMode_ == ApplicationMode::File && epubBookVertical() &&
-      epubHorizontalSection_ && epubVerticalMark_) {
+      epubHorizontalSection_ && (epubVerticalMark_ || epubJumpRaw_)) {
+    // 戻った先から^X^Xでまたここへ来られるよう、今の行を覚える(epubJumpRaw_)
+    int here = fileRawLineAtCursor();
+    if (!epubVerticalMark_) {
+      int raw = *epubJumpRaw_;
+      epubJumpRaw_ = here;
+      showEpubVerticalRaw(raw);
+      activeView().redraw();
+      activeView().syncVisibleCursor();
+      return true;
+    }
     int target = *epubVerticalMark_;
     epubVerticalMark_.reset();
+    epubJumpRaw_ = here;
     epubHorizontalSection_.reset();
     syncEpubHorizontalPresentation();
     setEpubVerticalView(target, target);
@@ -6775,6 +6786,7 @@ bool Application::openEpub(const std::string &path) {
   // cssファイルに設定してあるはずなのでそれで判断する"): 縦書きかどうかは本が決める
   // (epubIsRightToLeft()、OPFのpage-progression-direction="rtl")。
   bool vertical = epubIsRightToLeft(fileMode_.epubMemberReader(path));
+  epubJumpRaw_.reset();  // ^X^Xの戻り先は本ごと
   epubHorizontalSection_.reset();
   syncEpubHorizontalPresentation();
   bool firstTime = !history_.positionFor(PositionCategory::File, path);
@@ -7486,6 +7498,15 @@ std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
       setEpubVerticalView(static_cast<int>(epubVerticalCols_.size()), static_cast<int>(epubVerticalCols_.size()));
       break;
     case Command::ExchangeJumpMark: {
+      // 横書きの範囲(奥付等)のリンクから飛んで来た時は、元の行(epubJumpRaw_)へ戻る
+      if (!epubVerticalMark_ && epubJumpRaw_) {
+        int raw = *epubJumpRaw_;
+        epubJumpRaw_ = epubVerticalCurrentRaw();
+        showEpubVerticalRaw(raw);
+        activeView().redraw();
+        activeView().syncVisibleCursor();
+        return true;
+      }
       if (!epubVerticalMark_) return true;
       int target = *epubVerticalMark_;
       epubVerticalMark_ = cursor;
@@ -7767,11 +7788,17 @@ bool Application::activateEpubHorizontalLink(const EpubHorizontalLink &link) {
   int raw = std::atoi(target.c_str() + 5);
   epubHorizontalLink_.reset();
   if (epubBookVertical()) {  // 縦書きの本の奥付等から: 縦書き(か横書きの範囲)へ
+    // 2026-09-30、直接のユーザー報告("リンクへ飛んだ先から^X^Xで戻れないので飛ぶ前に位置を保存
+    // して"): 飛ぶ前のリンクの行を覚え、^X^Xで戻る(epubJumpRaw_、縦書きの列のepubVerticalMark_は
+    // 横書きの範囲の位置を表せない)。
+    epubJumpRaw_ = link.raw;
+    epubVerticalMark_.reset();
     showEpubVerticalRaw(raw);
     activeView().redraw();
     activeView().syncVisibleCursor();
     return true;
   }
+  fileView_.setCursorIndex(link.index);  // ^X^X(ContentView::markJumpOrigin())で戻るのはリンクの行
   return fileMode_.jumpToEpubRawLine(raw);
 }
 
@@ -7862,6 +7889,7 @@ bool Application::activateEpubVerticalColumn(long c) {
   if (!target->url.empty()) return openEpubWebLink(target->url);
   if (target->link) {
     epubVerticalMark_ = epubVerticalCursor_;
+    epubJumpRaw_.reset();
     showEpubVerticalRaw(*target->link);
     // 2026-09-30、直接のユーザー報告("目次一覧の「第20章」の隣「奥付」を^Mしても何も起きない"):
     // リンク先が横書きの範囲(奥付等)なら見せる画面はfileView_になるので、epubVerticalView_では

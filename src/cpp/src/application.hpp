@@ -2581,6 +2581,9 @@ class Application {
   int epubVerticalLink_ = -1;
   int epubVerticalLinkRaw_ = -1;
   std::optional<EpubHorizontalLink> epubHorizontalLink_;  // 横書きの選んでいるリンク
+  // ^X^Xの戻り先の元の行(縦書きの本で、横書きの範囲との間をリンクで行き来した時。縦書きの列の
+  // 戻り先はepubVerticalMark_)。2026-09-30。
+  std::optional<int> epubJumpRaw_;
   std::string epubVerticalPath_;  // epubBookVertical()参照
   int epubVerticalFirst_ = 0;                         // 右端に置いている列
   int epubVerticalCursor_ = 0;                        // 列カーソル(setEpubVerticalView()参照)
