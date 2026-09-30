@@ -2505,6 +2505,7 @@ class Application {
   // epubVerticalStep()と同じ(空の列を飛ばして章の頭を右端に、扉はページごと)。描き直し
   // はしない。右端の列が動いたらtrue。
   bool stepEpubVerticalFirst(int delta);
+  std::pair<int, int> epubVerticalShownRange(int first) const;
   // 縦書きの列の端(deltaの向き)の先(前)に横書きの範囲があればそこへ入る(描き直す)。
   bool enterEpubHorizontalAtEdge(int delta);
   bool leaveEpubHorizontalIfOutside();  // 縦書きへ戻ったらtrue

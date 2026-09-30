@@ -7059,14 +7059,7 @@ void Application::setEpubVerticalView(int first, int cursor) {
   // 吐き続ける。逆方向(kの場合)は...最後の行から始めてタイトルが右端に来るまで待つように
   // したら？"): 画面には右端の列の章(区切りepubVerticalBoundaries_の間)だけを描き、前後の章の
   // 列は空にする。章の間の空の列は飛ばす(stepEpubVerticalFirst()参照)。
-  int shownFrom = 0, shownUntil = total;
-  for (int boundary : epubVerticalBoundaries_) {
-    if (boundary <= epubVerticalFirst_) shownFrom = boundary;
-    else {
-      shownUntil = boundary;
-      break;
-    }
-  }
+  auto [shownFrom, shownUntil] = epubVerticalShownRange(epubVerticalFirst_);
   epubVerticalView_.setLines(renderEpubVerticalWindow(epubVerticalCols_, epubVerticalFirst_, epubVerticalRows(),
                                                       display_.columns(), !display_.isGraphical(),
                                                       actionable ? epubVerticalCursor_ : -1, shownFrom, shownUntil));
@@ -7094,6 +7087,19 @@ void Application::setEpubVerticalView(int first, int cursor) {
   std::snprintf(position, sizeof(position), "%05d/%05d %3d%%", epubVerticalCursor_ + 1, std::max(total, 1),
                 total > 0 ? static_cast<int>(100L * (epubVerticalCursor_ + 1) / total) : 100);
   epubVerticalView_.setPositionTextOverride(std::string(position));
+}
+
+// 右端の列firstの章の列の範囲[from, until)(setEpubVerticalView()参照)。
+std::pair<int, int> Application::epubVerticalShownRange(int first) const {
+  int from = 0, until = static_cast<int>(epubVerticalCols_.size());
+  for (int boundary : epubVerticalBoundaries_) {
+    if (boundary <= first) from = boundary;
+    else {
+      until = boundary;
+      break;
+    }
+  }
+  return {from, until};
 }
 
 int Application::epubVerticalCurrentRaw() const {
@@ -7194,6 +7200,20 @@ bool Application::stepEpubVerticalFirst(int delta) {
     bool titlePage = target >= 0 && target < static_cast<int>(epubVerticalCols_.size()) &&
                      epubVerticalCols_[target].titlePage;
     setEpubVerticalFirst(titlePage && first >= 0 ? first : target);
+    // 2026-09-30、直接のユーザー依頼("ブロックカーソルはスクロールの末尾ではなく先頭なので
+    // 反映してほしい(縦スクロールの仕様)"): 横書きのj/k(ContentView::scrollLineDown()/
+    // scrollLineUp())と同じく、列カーソルは送る向きの先頭――先へは画面の左端の、今の章の
+    // 最後の本文の列(空の列は除く)、前へは右端の列。
+    if (!titlePage && epubVerticalFirst_ != before) {
+      int cursor = epubVerticalFirst_;
+      if (delta > 0) {
+        int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+        int until = epubVerticalShownRange(epubVerticalFirst_).second;
+        cursor = std::min(epubVerticalFirst_ + perScreen, until) - 1;
+        while (cursor > epubVerticalFirst_ && epubVerticalCols_[cursor].padding) cursor--;
+      }
+      setEpubVerticalView(epubVerticalFirst_, cursor);
+    }
     if (epubVerticalFirst_ == before) break;
     moved = true;
   }
@@ -7437,6 +7457,12 @@ bool Application::clickEpubVertical(int row, int column) {
   long c = static_cast<long>(epubVerticalFirst_) + k;
   if (k < 0 || c >= static_cast<long>(epubVerticalCols_.size())) return false;
   if (c == epubVerticalCursor_) return activateEpubVerticalColumn(c);
+  // 2026-09-30、直接のユーザー依頼("目次一覧ではダブルクリックでないとタグジャンプしない。
+  // シングルでは無理？"): リンクの列は1回目のクリックで飛ぶ(画像は従来どおり2回目で開く)。
+  if (auto target = epubVerticalColumnTarget(c); target && target->link) {
+    epubVerticalCursor_ = static_cast<int>(c);
+    return activateEpubVerticalColumn(c);
+  }
   setEpubVerticalView(epubVerticalFirst_, static_cast<int>(c));  // 1回目は列カーソルを動かすだけ
   epubVerticalView_.redraw();
   epubVerticalView_.syncVisibleCursor();  // -cの端末のカーソルを列カーソルの頭へ(setEpubVerticalView()参照)
@@ -15680,6 +15706,10 @@ bool Application::handleMouseClickImpl(int row, int column) {
     if (idx >= 0 && fileView_.isColumnWithinRowText(idx, column) &&
         (fileMode_.hasEpubLinkAt(idx) || fileView_.lines()[idx].text.find("[image: ") != std::string::npos)) {
       if (idx == fileView_.cursorIndex()) return fileMode_.followEpubLink() || openEpubLineImage(fileView_);
+      if (fileMode_.hasEpubLinkAt(idx)) {  // リンクは1回目で飛ぶ(clickEpubVertical()の2026-09-30の注記参照)
+        fileView_.setCursorIndex(idx);
+        return fileMode_.followEpubLink();
+      }
       fileView_.setCursorIndex(idx);
       fileView_.redraw();
       return true;
