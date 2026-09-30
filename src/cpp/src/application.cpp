@@ -6962,9 +6962,11 @@ void Application::rebuildEpubVertical(int rawLine) {
   for (const auto &original : fileView_.lines()) {
     int raw = original.rawLineNumber.value_or(-1);
     if (raw >= 0 && epubHorizontalRangeAt(raw)) continue;  // 横書きの範囲(epubHorizontalSection_参照)
-    // 中央寄せの行(EpubLayoutHints::center)は、FileModeが頭に足した空白を取り除く
+    // 中央寄せの行(EpubLayoutHints::center)は、FileModeが頭に足した空白を取り除く。字下げの行
+    // (EpubLayoutHints::indent、横書きの<indentN>が画面の行の頭に空白を入れる)も同じく取り除き、
+    // 縦書きでは列の頭を空ける(EpubVerticalSourceLine::indentFirst/indentRest)。
     ContentView::Line line = original;
-    if (center.count(raw)) {
+    if (center.count(raw) || hints.indent.count(raw)) {
       std::size_t pad = line.text.find_first_not_of(' ');
       if (pad == std::string::npos) pad = line.text.size();
       line.text.erase(0, pad);
@@ -6976,6 +6978,10 @@ void Application::rebuildEpubVertical(int rawLine) {
     if (line.text.find("\xE2\x81\xA0") != std::string::npos) chapterStarts.insert(raw);
     if (logical.empty() || raw < 0 || logical.back().rawLineNumber != raw) {
       logical.push_back({line.text, line.attributes, raw, alignEnd.count(raw) > 0});
+      if (auto indent = hints.indent.find(raw); indent != hints.indent.end()) {
+        logical.back().indentFirst = indent->second.first;
+        logical.back().indentRest = indent->second.second;
+      }
       continue;
     }
     int offset = static_cast<int>(logical.back().text.size());

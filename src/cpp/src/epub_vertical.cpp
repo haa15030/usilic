@@ -233,14 +233,21 @@ std::vector<EpubVerticalColumn> layoutEpubVerticalColumns(const std::vector<Epub
       cells.insert(cells.begin(), height - cells.size(), blank);
     }
     std::size_t i = 0;
+    Cell blank;
+    blank.glyph = "  ";
+    blank.original = ' ';
     while (i < cells.size()) {
-      std::size_t count = std::min<std::size_t>(height, cells.size() - i);
+      // 字下げ(EpubVerticalSourceLine::indentFirst/indentRest): 列の頭を空けて、その分だけ短く
+      int indent = std::clamp(i == 0 ? line.indentFirst : line.indentRest, 0, height - 1);
+      std::size_t count = std::min<std::size_t>(height - indent, cells.size() - i);
       if (i + count < cells.size()) {
         // 追い出し: 次の列の頭が行頭禁則の字なら、この列の最後の字も次の列へ(2字まで)
         for (int k = 0; k < 2 && count > 1 && isNoStart(cells[i + count].original); k++) count--;
         if (count > 1 && isNoEnd(cells[i + count - 1].original)) count--;
       }
-      cols.push_back({std::vector<Cell>(cells.begin() + i, cells.begin() + i + count), line.rawLineNumber});
+      std::vector<Cell> column(static_cast<std::size_t>(indent), blank);
+      column.insert(column.end(), cells.begin() + i, cells.begin() + i + count);
+      cols.push_back({std::move(column), line.rawLineNumber});
       i += count;
     }
   }

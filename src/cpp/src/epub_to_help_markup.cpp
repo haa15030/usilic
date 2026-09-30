@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <map>
 #include <set>
@@ -352,7 +353,25 @@ struct CssFontRule {
   std::optional<bool> vertical;      // writing-mode(縦書きならtrue)
   std::optional<bool> alignEnd;      // text-align(right/endならtrue、EpubLayoutHints::alignEnd)
   std::optional<bool> center;        // text-align(centerならtrue、EpubLayoutHints::center)
+  // 字下げ(2026-09-30、EpubLayoutHints::indent): emの値だけ読む。paddingTopは縦書き、
+  // paddingLeftは横書きの行頭側の余白(ブロックの中の行すべて)、textIndentは段落の最初の行の
+  // ずれ(負ならぶら下げ、継承する)。
+  std::optional<double> paddingTop;
+  std::optional<double> paddingLeft;
+  std::optional<double> textIndent;
 };
+
+// "1em"・"-1em"・"0"の値(emか0だけ、他の単位は読まない)。
+std::optional<double> parseEmLength(const std::string &value) {
+  std::string v = trimAsciiSpace(value);
+  if (v == "0") return 0.0;
+  if (v.size() < 3 || v.compare(v.size() - 2, 2, "em") != 0) return std::nullopt;
+  char *end = nullptr;
+  std::string number = v.substr(0, v.size() - 2);
+  double d = std::strtod(number.c_str(), &end);
+  if (!end || *end != '\0' || number.empty()) return std::nullopt;
+  return d;
+}
 
 // text-alignがcenterか(2026-09-30、EpubLayoutHints::center)。
 std::optional<bool> classifyTextCenter(const std::string &value) {
@@ -454,7 +473,28 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
     std::optional<bool> vertical = readProperty("writing-mode", classifyWritingMode);
     std::optional<bool> alignEnd = readProperty("text-align", classifyTextAlign);
     std::optional<bool> center = readProperty("text-align", classifyTextCenter);
-    if (!serif && !vertical && !alignEnd && !center) continue;
+    auto readLength = [&](const std::string &property) {
+      std::optional<double> result;
+      std::size_t fp = 0;
+      while ((fp = body.find(property, fp)) != std::string::npos) {
+        std::size_t colon = body.find(':', fp);
+        if (colon == std::string::npos) break;
+        // "padding-top"を探して"-webkit-padding-top"等に当たらないよう、直前が名前の字でない所だけ
+        bool nameStart = fp == 0 || !(std::isalnum(static_cast<unsigned char>(body[fp - 1])) || body[fp - 1] == '-');
+        bool nameEnd = trimAsciiSpace(body.substr(fp + property.size(), colon - fp - property.size())).empty();
+        std::size_t end = body.find(';', colon);
+        if (nameStart && nameEnd)
+          if (auto v = parseEmLength(
+                  body.substr(colon + 1, end == std::string::npos ? std::string::npos : end - colon - 1)))
+            result = v;
+        fp = colon;
+      }
+      return result;
+    };
+    std::optional<double> paddingTop = readLength("padding-top");
+    std::optional<double> paddingLeft = readLength("padding-left");
+    std::optional<double> textIndent = readLength("text-indent");
+    if (!serif && !vertical && !alignEnd && !center && !paddingTop && !paddingLeft && !textIndent) continue;
     std::string one;
     for (char c : selectors + ",") {
       if (c != ',') {
@@ -484,6 +524,9 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
       rule.vertical = vertical;
       rule.alignEnd = alignEnd;
       rule.center = center;
+      rule.paddingTop = paddingTop;
+      rule.paddingLeft = paddingLeft;
+      rule.textIndent = textIndent;
       std::size_t dot = sel.find('.');
       rule.tag = sel.substr(0, dot);
       if (rule.tag == "*") rule.tag.clear();
@@ -521,6 +564,8 @@ class BodyConverter {
   const std::map<int, LineKind> &lineKinds() const { return lineKinds_; }
   const std::vector<int> &alignEndLines() const { return alignEndLines_; }
   const std::vector<int> &centerLines() const { return centerLines_; }
+  const std::map<int, std::pair<int, int>> &indentLines() const { return indentLines_; }
+  void setBookVertical(bool vertical) { bookVertical_ = vertical; }
 
   void convert(const std::string &xhtml, const std::string &path, const std::vector<TocEntry> *tocEntries) {
     path_ = path;
@@ -543,6 +588,7 @@ class BodyConverter {
     horizontalOutside_ = false;
     alignEnd_ = false;
     center_ = false;
+    paddingTopEm_ = paddingLeftEm_ = textIndentEm_ = 0;
     rubyBase_ = false;
     inStyle_ = false;
     std::vector<XmlToken> tokens = tokenizeXml(xhtml);
@@ -717,19 +763,26 @@ class BodyConverter {
     // 縦横(EpubLayoutHints参照)も同じく要素ごと。horizontalOutside_は「外側の要素が
     // 横書き」(扉の縦書きの箱の見分けに使う)。
     if (t.kind == XmlToken::Open) {
-      fontStack_.push_back({serif_, vertical_, horizontalOutside_, alignEnd_, center_});
+      fontStack_.push_back({serif_, vertical_, horizontalOutside_, alignEnd_, center_, paddingTopEm_, paddingLeftEm_,
+                            textIndentEm_});
       std::string classes = attr(t, "class");
       setSerif(ruleFor(name, classes, &CssFontRule::serif).value_or(serif_));
       horizontalOutside_ = horizontalOutside_ || vertical_ == false;
       if (auto vertical = ruleFor(name, classes, &CssFontRule::vertical)) vertical_ = vertical;
       if (auto alignEnd = ruleFor(name, classes, &CssFontRule::alignEnd)) alignEnd_ = *alignEnd;
       if (auto center = ruleFor(name, classes, &CssFontRule::center)) center_ = *center;
+      paddingTopEm_ += ruleFor(name, classes, &CssFontRule::paddingTop).value_or(0.0);
+      paddingLeftEm_ += ruleFor(name, classes, &CssFontRule::paddingLeft).value_or(0.0);
+      if (auto indent = ruleFor(name, classes, &CssFontRule::textIndent)) textIndentEm_ = *indent;
     } else if (t.kind == XmlToken::Close && !fontStack_.empty()) {
       setSerif(fontStack_.back().serif);
       vertical_ = fontStack_.back().vertical;
       horizontalOutside_ = fontStack_.back().horizontalOutside;
       alignEnd_ = fontStack_.back().alignEnd;
       center_ = fontStack_.back().center;
+      paddingTopEm_ = fontStack_.back().paddingTop;
+      paddingLeftEm_ = fontStack_.back().paddingLeft;
+      textIndentEm_ = fontStack_.back().textIndent;
       fontStack_.pop_back();
     }
     if (t.kind == XmlToken::Close) depth_--;
@@ -748,8 +801,9 @@ class BodyConverter {
 
   // 要素に当てはまり、`field`(serif/vertical)を指定している規則のうち、詳しさ(クラスの
   // 数、次にタグの有無)が最も高いもの、同じなら後に書かれたもの。無ければnullopt(親のまま)。
-  std::optional<bool> ruleFor(const std::string &tag, const std::string &classAttr,
-                              std::optional<bool> CssFontRule::*field) const {
+  template <typename T>
+  std::optional<T> ruleFor(const std::string &tag, const std::string &classAttr,
+                           std::optional<T> CssFontRule::*field) const {
     std::vector<std::string> classes;
     std::string cur;
     for (char c : classAttr + " ") {
@@ -760,7 +814,7 @@ class BodyConverter {
         cur += c;
       }
     }
-    std::optional<bool> best;
+    std::optional<T> best;
     int bestScore = -1;
     for (const auto &rule : fontRules_) {
       if (!(rule.*field)) continue;
@@ -839,6 +893,10 @@ class BodyConverter {
         lineKind_ = currentKind();
         lineAlignEnd_ = alignEnd_;
         lineCenter_ = center_;
+        startLineIndent();
+      } else if (pendingRestIndent_ && (static_cast<unsigned char>(c) & 0xC0) != 0x80) {
+        line_ += "<indent" + std::to_string(lineIndentRest_ * 2) + ">";  // 2字目以降(折り返した行)
+        pendingRestIndent_ = false;
       }
       line_ += c;
       lineVisible_ = true;
@@ -847,7 +905,32 @@ class BodyConverter {
     }
   }
 
+  // 2026-09-30追加、直接のユーザー依頼("同ファイル(src/K3t.epub)のSection021.xhtmlには
+  // indentタグがあるので実装して"――<div class="indent_1em">、CSSは縦書きが"padding-top:1em;
+  // text-indent:-1em"、横書きが"padding-left:1em; text-indent:-1em"のぶら下げ): 行の最初の字の
+  // 所で、行頭側の余白(縦書きはpadding-top、横書きはpadding-left)とtext-indentから字下げを
+  // 決め、EpubLayoutHints::indentに記録する。横書きの画面の行は<indentN>(半角N個、1em=2)で
+  // 字下げし(PipeBufferが折り返した行にも引き継ぐ)、最初の行と続く行で違えば2字目の前で
+  // 切り替える。縦書きはApplication::rebuildEpubVertical()がこの空白を取り除いて列の頭を空ける。
+  void startLineIndent() {
+    lineIndentRest_ = 0;
+    pendingRestIndent_ = false;
+    bool vertical = vertical_.value_or(bookVertical_);
+    double padding = vertical ? paddingTopEm_ : paddingLeftEm_;
+    int first = std::max(0, static_cast<int>(std::lround(padding + textIndentEm_)));
+    int rest = std::max(0, static_cast<int>(std::lround(padding)));
+    if (first == 0 && rest == 0) return;
+    indentLines_[currentLineNumber()] = {first, rest};
+    if (first > 0) line_ += "<indent" + std::to_string(first * 2) + ">";
+    lineIndentRest_ = rest;
+    pendingRestIndent_ = rest != first;
+    indentOpen_ = true;
+  }
+
   void closeStylesAtLineEnd() {
+    if (indentOpen_) line_ += "</indent>";
+    indentOpen_ = false;
+    pendingRestIndent_ = false;
     if (italic_) line_ += "</i>";
     if (bold_) line_ += "</b>";
     if (underline_) line_ += "</u>";
@@ -938,6 +1021,9 @@ class BodyConverter {
     bool horizontalOutside;
     bool alignEnd;
     bool center;
+    double paddingTop;
+    double paddingLeft;
+    double textIndent;
   };
   std::vector<Frame> fontStack_;  // 開いている要素ごとの、その外側の状態
   bool serif_ = true;
@@ -952,6 +1038,13 @@ class BodyConverter {
   std::vector<int> centerLines_;
   // ルビの親字の中(<rb>を出してから、<rt>か</ruby>で閉じるまで)。
   bool rubyBase_ = false;
+  // 字下げ(CssFontRule::paddingTop等、em): 開いている要素のpaddingの和と、継承したtext-indent。
+  double paddingTopEm_ = 0, paddingLeftEm_ = 0, textIndentEm_ = 0;
+  bool bookVertical_ = false;       // 本全体が縦書き(epubIsRightToLeft())
+  int lineIndentRest_ = 0;          // 今の行の2字目以降の字下げ(em)
+  bool pendingRestIndent_ = false;  // 最初の字の後に<indent>(2字目以降の字下げ)を出す
+  bool indentOpen_ = false;         // 行末で</indent>を出す
+  std::map<int, std::pair<int, int>> indentLines_;  // 行→(最初の字下げ, 続く字下げ)(em)
   std::map<int, LineKind> lineKinds_;
   bool inStyle_ = false;
   std::string path_;
@@ -1077,6 +1170,7 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
   if (!out.empty()) out += "\n";
 
   BodyConverter converter(out, readMember);
+  converter.setBookVertical(epubIsRightToLeft(readMember));
   for (const auto &idref : spine) {
     auto it = manifest.find(idref);
     if (it == manifest.end()) continue;
@@ -1132,6 +1226,8 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
       if (line - leading >= 1) layoutHints->alignEnd.push_back(line - leading);
     for (int line : converter.centerLines())
       if (line - leading >= 1) layoutHints->center.push_back(line - leading);
+    for (const auto &[line, indent] : converter.indentLines())
+      if (line - leading >= 1) layoutHints->indent[line - leading] = indent;
   }
   if (links) {
     links->clear();

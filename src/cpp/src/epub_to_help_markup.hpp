@@ -48,6 +48,10 @@ struct EpubLayoutHints {
   // 2026-09-30追加、直接のユーザー依頼("奥付ページのセンタリング"): text-alignがcenterの
   // 行(元の行番号)。横書きの画面で行の中央に置く(FileMode::readAndWrap())。
   std::vector<int> center;
+  // 2026-09-30追加(直接のユーザー依頼、src/K3t.epubの<div class="indent_1em">): 字下げのある行
+  // (元の行番号)→(最初の行の字下げ, 折り返した行の字下げ)、em(全角の字数)。CSSの行頭側の
+  // padding(縦書きはpadding-top、横書きはpadding-left)とtext-indentから。
+  std::map<int, std::pair<int, int>> indent;
 };
 
 std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember,

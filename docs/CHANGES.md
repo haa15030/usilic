@@ -27693,3 +27693,20 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      当てはめないよう読み飛ばしていたので、奥付の横書きの指定が読まれていなかった。
    - **修正**: 先頭がhtml/bodyだけの子孫・子のセレクタ("html body"、"html > body p"等)は、どの
      要素もその中にあるので、先頭のhtml/bodyを除いた最後の部分として読む。
+539. **2026-09-30: EPUBの字下げ(CSSのpadding-top/padding-left・text-indent)**
+   - **経緯**: 直接のユーザー依頼("同ファイル(src/K3t.epub)のSection021.xhtmlにはindentタグがある
+     ので実装して")。`<div class="indent_1em">`の①〜④の箇条書きで、CSSは縦書きが
+     "padding-top:1em; text-indent:-1em"、横書きが"padding-left:1em; text-indent:-1em"(ぶら下げ)。
+   - **実装**: parseCssFontRules()がpadding-top/padding-left/text-indentのemの値(と0)を読む
+     (parseEmLength()、他の単位は読まない)。変換は、開いている要素の行頭側のpaddingの和(縦書き
+     ならpadding-top、横書きならpadding-left、向きは要素のwriting-mode、無ければ本全体)と継承した
+     text-indentから、行の最初の字の所で「最初の行の字下げ・続く行の字下げ」(em)を決め
+     (startLineIndent())、EpubLayoutHints::indentに記録する。
+     - 横書き: <indentN>(半角N個、1em=2)で字下げし、最初の行と続く行で違えば2字目の前で
+       <indentN>を切り替える(PipeBufferのcurrentIndent_は折り返した行に効く)。
+     - 縦書き: rebuildEpubVertical()が画面の行の頭の空白を取り除き、layoutEpubVerticalColumns()が
+       列の頭を空ける(EpubVerticalSourceLine::indentFirst/indentRest)。
+   - **影響**: 目次の項目(Kbt.epub・K3t.epubのp.start_5em*、padding-top:5em)も縦書きで5字下がる
+     (本の指定どおり)。縦書きのpadding-left/right(列の間)・margin等は読まない。
+   - **確認**: K3t.epubをスクラッチの変換で、①〜④が"①<indent2>..."(最初の行0、続く行1em)に
+     なることを確認。

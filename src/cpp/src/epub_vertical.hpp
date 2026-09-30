@@ -34,6 +34,9 @@ struct EpubVerticalSourceLine {
   std::vector<AttributeRun> attributes;
   int rawLineNumber = 0;
   bool alignEnd = false;  // 1列に収まれば列の下端に寄せる(EpubLayoutHints::alignEnd、著者名等)
+  // 字下げ(2026-09-30、EpubLayoutHints::indent): 最初の列と、続く列の頭の空きのマスの数。
+  int indentFirst = 0;
+  int indentRest = 0;
 };
 
 struct EpubVerticalCell {
