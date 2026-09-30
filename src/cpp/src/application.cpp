@@ -3908,11 +3908,36 @@ void Application::moveDisplayCursorToShellHistoryLine() {
 }
 
 ContentView &Application::activeView() {
-  // -gの縦書き用の描き方(小書きの仮名・半角の位置、「ー」の縦線、「：」の回転)を、
-  // 今見せている画面が縦書きの間だけ有効にする(GraphicalDisplay::setVerticalTextHint())
+  syncEpubHorizontalPresentation();
+  return viewForMode(currentMode_);
+}
+
+// -gの縦書き用の描き方(小書きの仮名・半角の位置、「ー」の縦線、「：」の回転)を、今見せている
+// 画面が縦書きの間だけ有効にする(GraphicalDisplay::setVerticalTextHint())。縦書きの本の横書きの
+// 範囲(奥付等)では、fileView_に範囲の外の行を描かせない(ContentView::setShownIndexRange())。
+// 2026-09-30、直接のユーザー報告("1画面に満たない奥付もなかなかのカオス"=ht): 以前は
+// activeView()の中でだけ切り替えていたので、スクロールで奥付へ入って(activeView()を通らずに)
+// fileView_を描き直すと縦書きの描き方のまま(区切り線が縦棒、数字が縦中横)で、1画面に満たない
+// 奥付は画面を送れる上限で引き戻されて前の章の本文が上に見えていた。範囲に出入りする所
+// (enterEpubHorizontal()等)からも呼ぶ。
+void Application::syncEpubHorizontalPresentation() {
   display_.setVerticalTextHint((currentMode_ == ApplicationMode::File && epubVerticalActive()) ||
                                (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive()));
-  return viewForMode(currentMode_);
+  if (!epubHorizontalSection_ || !epubBookVertical()) {
+    fileView_.setShownIndexRange(std::nullopt);
+    return;
+  }
+  const auto &lines = fileView_.lines();
+  int from = static_cast<int>(lines.size()), until = static_cast<int>(lines.size());
+  for (int i = 0; i < static_cast<int>(lines.size()); i++) {
+    int raw = lines[i].rawLineNumber.value_or(0);
+    if (from == static_cast<int>(lines.size()) && raw >= epubHorizontalSection_->first) from = i;
+    if (raw > epubHorizontalSection_->second) {
+      until = i;
+      break;
+    }
+  }
+  fileView_.setShownIndexRange(std::make_pair(from, until));
 }
 
 // activeView()から括り出した(2026-08-18)ので、currentMode_「以外」の
@@ -6688,6 +6713,7 @@ bool Application::openEpub(const std::string &path) {
   // (epubIsRightToLeft()、OPFのpage-progression-direction="rtl")。
   bool vertical = epubIsRightToLeft(fileMode_.epubMemberReader(path));
   epubHorizontalSection_.reset();
+  syncEpubHorizontalPresentation();
   bool firstTime = !history_.positionFor(PositionCategory::File, path);
   if (!fileMode_.loadFile(path, [this]() { return keyInterruptRequested(); })) return false;
   fileMode_.annotations().clear();
@@ -6801,6 +6827,7 @@ std::optional<std::pair<int, int>> Application::epubHorizontalRangeAt(int rawLin
 // 描き直しは呼び出し元(activeView()はもうfileView_)。
 void Application::enterEpubHorizontal(const std::pair<int, int> &range, int rawLine) {
   epubHorizontalSection_ = range;
+  syncEpubHorizontalPresentation();
   rawLine = std::clamp(rawLine, range.first, range.second);
   const auto &lines = fileView_.lines();
   for (std::size_t i = 0; i < lines.size(); i++) {
@@ -6849,6 +6876,7 @@ bool Application::leaveEpubHorizontalIfOutside() {
   if (!epubHorizontalSection_) return false;
   if (currentMode_ != ApplicationMode::File || !epubBookVertical()) {
     epubHorizontalSection_.reset();
+    syncEpubHorizontalPresentation();
     if (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive()) {
       refreshEpubTocVertical();
       activeView().redraw();
@@ -6866,6 +6894,7 @@ bool Application::leaveEpubHorizontalIfOutside() {
   if (!before && !after) return false;
   if (before) raw = epubHorizontalSection_->first - 1;
   epubHorizontalSection_.reset();
+  syncEpubHorizontalPresentation();
   rebuildEpubVertical(raw);  // リサイズで組み直しが要る場合もあるので、組み直してから置く
   if (before && !epubHorizontalSection_) {
     int col = 0;
@@ -7055,6 +7084,7 @@ void Application::showEpubVerticalRaw(int rawLine) {
     return;
   }
   epubHorizontalSection_.reset();
+  syncEpubHorizontalPresentation();
   int first = 0;
   for (std::size_t c = 0; c < epubVerticalCols_.size(); c++)
     if (epubVerticalCols_[c].rawLineNumber >= rawLine) {

@@ -27710,3 +27710,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (本の指定どおり)。縦書きのpadding-left/right(列の間)・margin等は読まない。
    - **確認**: K3t.epubをスクラッチの変換で、①〜④が"①<indent2>..."(最初の行0、続く行1em)に
      なることを確認。
+540. **2026-09-30: 1画面に満たない奥付のカオス、class="invisible"(display:none)**
+   - **経緯**: 直接のユーザー報告("1画面に満たない奥付もなかなかのカオス。class=\"invisible\"も
+     実装よろしく"=ht、K3t.epub)。奥付の上に前の章の本文が横書きで出て、区切り線が縦棒、
+     「20」「06」が縦中横のように描かれていた。
+   - **原因**: (1)-gの縦書き用の描き方(setVerticalTextHint())はactiveView()の中でだけ切り替えて
+     いたので、スクロールで奥付へ入って(activeView()を通らずに)fileView_を描き直すと縦書きの
+     描き方のままだった。(2)ContentViewは最後の行が画面の下端に来る所(maxTop)より先へ画面を
+     送れないので、1画面に満たない奥付の頭を画面の頭に置いても引き戻され、前の章の行が見えた。
+   - **修正**: Application::syncEpubHorizontalPresentation()(新設)が描き方の切り替えと、横書きの
+     範囲の行の添字の範囲をfileView_に渡すこと(ContentView::setShownIndexRange()、新設)をまとめて
+     行い、activeView()と範囲に出入りする所から呼ぶ。範囲の外の行は空白で描き(ドラッグ・慣性の
+     renderScrolled()の行も)、画面を送れる上限(maxTopIndex()、新設)を範囲の頭まで広げる。
+   - **invisible**: parseCssFontRules()がdisplayを読み(noneならCssFontRule::hidden)、その要素の
+     中身は出さない(K3t.epubのh2.invisible「奥付」)。章の一覧のこの章の名前は、目次(nav)が指す
+     次の行(「過去の末端　３」)になる。

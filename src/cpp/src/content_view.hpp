@@ -732,6 +732,15 @@ class ContentView {
   // Application::captureEpubVerticalEdges()が、画面の外の列を裏に描くのに使う。
   // 戻り値は1行でも描いたか。
   bool renderContentRows();
+  // 2026-09-30追加、直接のユーザー報告("1画面に満たない奥付もなかなかのカオス"=ht): 行の添字の
+  // 範囲[first, second)の外の行は空白として描き、範囲の頭を画面の頭に置けるよう、画面を送れる
+  // 上限(maxTop)を範囲の頭まで広げる。EPUBの縦書きの本の横書きの範囲(奥付等、
+  // Application::syncEpubHorizontalPresentation())だけが使う。
+  void setShownIndexRange(std::optional<std::pair<int, int>> range) { shownIndexRange_ = range; }
+  int maxTopIndex() const;
+  bool isIndexShown(int index) const {
+    return !shownIndexRange_ || (index >= shownIndexRange_->first && index < shownIndexRange_->second);
+  }
 
   // このビューが現在、そのモードライン行に表示している、整形済み
   // の「current/total NN%」テキスト(renderModeLine()参照)――
@@ -1441,6 +1450,7 @@ class ContentView {
   int lastModeLineTrailingEndColumn_ = -1;
   std::function<bool(int)> markedPredicate_;
   bool cursorRowAlsoHighlighted_ = true;
+  std::optional<std::pair<int, int>> shownIndexRange_;  // setShownIndexRange()参照
   bool markedRowUsesUnderline_ = false;
 
   int row0_ = 0, height_ = 0;

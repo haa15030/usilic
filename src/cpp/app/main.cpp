@@ -3374,6 +3374,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       int fillBegin = std::clamp(view.topIndex() - 1, 0, totalLines);
       int fillEnd = std::clamp(view.topIndex() + gui.rows() + 1, fillBegin, totalLines);
       for (int i = fillBegin; i < fillEnd; i++) {
+        if (!view.isIndexShown(i)) continue;  // ContentView::setShownIndexRange()参照(空白のまま)
         const auto &line = view.lines()[i];
         std::vector<fm::Display::AttributeRun> attrs = line.attributes;
         if (auto highlight = view.scrollHighlightForLine(i)) attrs.push_back(*highlight);

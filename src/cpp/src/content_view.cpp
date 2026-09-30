@@ -530,8 +530,7 @@ int ContentView::topIndex() const { return topIndex_; }
 int ContentView::height() const { return height_; }
 
 void ContentView::setTopIndex(int index) {
-  int maxTop = std::max(0, static_cast<int>(lines_.size()) - std::max(height_, 0));
-  topIndex_ = std::clamp(index, 0, maxTop);
+  topIndex_ = std::clamp(index, 0, std::max(0, maxTopIndex()));
 }
 
 void ContentView::centerOnCursor() { setTopIndex(cursorIndex_ - height_ / 2); }
@@ -571,7 +570,7 @@ bool ContentView::stepTopIndex(int direction) {
 // "空行を表示したのち一行分戻って正規画面になる")。
 bool ContentView::canStepTopIndex(int direction) const {
   if (height_ <= 0 || lines_.empty()) return false;
-  int maxTop = std::max(0, static_cast<int>(lines_.size()) - height_);
+  int maxTop = maxTopIndex();
   if (direction > 0) return topIndex_ < maxTop;
   if (direction < 0) return topIndex_ > 0;
   return true;
@@ -761,7 +760,7 @@ void ContentView::scrollLineDown() {
     display_.putChar(7);
     return;
   }
-  int maxTop = std::max(0, static_cast<int>(lines_.size()) - height_);
+  int maxTop = maxTopIndex();
   if (topIndex_ >= maxTop) {
     display_.putChar(7);
     return;
@@ -823,7 +822,7 @@ void ContentView::pageUp() {
 
 void ContentView::pageDown() {
   if (height_ <= 0 || lines_.empty()) return;
-  int maxTop = std::max(0, static_cast<int>(lines_.size()) - height_);
+  int maxTop = maxTopIndex();
   topIndex_ = std::min(maxTop, topIndex_ + height_);
   cursorIndex_ = std::min(static_cast<int>(lines_.size()) - 1, cursorIndex_ + height_);
   redraw();
@@ -2461,6 +2460,12 @@ void ContentView::renderSplitModeLine(const ModeLineFields &fields, const std::s
   }
 }
 
+int ContentView::maxTopIndex() const {
+  int maxTop = std::max(0, static_cast<int>(lines_.size()) - height_);
+  if (shownIndexRange_) maxTop = std::max(maxTop, std::min(shownIndexRange_->first, static_cast<int>(lines_.size()) - 1));
+  return maxTop;
+}
+
 bool ContentView::renderContentRows() {
   clampViewport();
   int highlighted = hoverIndex_.has_value() ? *hoverIndex_ : cursorIndex_;
@@ -2471,6 +2476,7 @@ bool ContentView::renderContentRows() {
     display_.clearToEndOfLine();
     if (row < rowOffset) continue;  // 内容の上の空白パディング、下端固定の場合のみ
     int idx = topIndex_ + (row - rowOffset);
+    if (shownIndexRange_ && (idx < shownIndexRange_->first || idx >= shownIndexRange_->second)) continue;
     if (idx < static_cast<int>(lines_.size())) {
       // Line::neverHighlighted自身のコメント参照: この行は、
       // カーソル/マーク状態に関わらず、Standout/Underlineを完全に

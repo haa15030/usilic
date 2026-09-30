@@ -359,7 +359,16 @@ struct CssFontRule {
   std::optional<double> paddingTop;
   std::optional<double> paddingLeft;
   std::optional<double> textIndent;
+  // display:none(2026-09-30、直接のユーザー依頼"class=\"invisible\"も実装よろしく"――
+  // h2.invisible { display:none })。trueなら要素の中身を出さない。
+  std::optional<bool> hidden;
 };
+
+std::optional<bool> classifyDisplayNone(const std::string &value) {
+  std::string v = trimAsciiSpace(value);
+  if (v.empty()) return std::nullopt;
+  return v.find("none") != std::string::npos;
+}
 
 // "1em"・"-1em"・"0"の値(emか0だけ、他の単位は読まない)。
 std::optional<double> parseEmLength(const std::string &value) {
@@ -494,7 +503,20 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
     std::optional<double> paddingTop = readLength("padding-top");
     std::optional<double> paddingLeft = readLength("padding-left");
     std::optional<double> textIndent = readLength("text-indent");
-    if (!serif && !vertical && !alignEnd && !center && !paddingTop && !paddingLeft && !textIndent) continue;
+    std::optional<bool> hidden;
+    for (std::size_t fp = 0; (fp = body.find("display", fp)) != std::string::npos;) {
+      std::size_t colon = body.find(':', fp);
+      if (colon == std::string::npos) break;
+      bool nameStart = fp == 0 || !(std::isalnum(static_cast<unsigned char>(body[fp - 1])) || body[fp - 1] == '-');
+      bool nameEnd = trimAsciiSpace(body.substr(fp + 7, colon - fp - 7)).empty();
+      std::size_t end = body.find(';', colon);
+      if (nameStart && nameEnd)
+        if (auto v = classifyDisplayNone(
+                body.substr(colon + 1, end == std::string::npos ? std::string::npos : end - colon - 1)))
+          hidden = v;
+      fp = colon;
+    }
+    if (!serif && !vertical && !alignEnd && !center && !paddingTop && !paddingLeft && !textIndent && !hidden) continue;
     std::string one;
     for (char c : selectors + ",") {
       if (c != ',') {
@@ -527,6 +549,7 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
       rule.paddingTop = paddingTop;
       rule.paddingLeft = paddingLeft;
       rule.textIndent = textIndent;
+      rule.hidden = hidden;
       std::size_t dot = sel.find('.');
       rule.tag = sel.substr(0, dot);
       if (rule.tag == "*") rule.tag.clear();
@@ -579,7 +602,7 @@ class BodyConverter {
           pendingDepth_ = 0;
           break;
         }
-    depth_ = skipDepth_ = preDepth_ = 0;
+    depth_ = skipDepth_ = preDepth_ = hiddenDepth_ = 0;
     listStack_.clear();
     fontRules_.clear();  // 本文のファイルごとに、そのファイルが読み込むCSSだけ
     fontStack_.clear();
@@ -615,7 +638,7 @@ class BodyConverter {
     const std::string &name = t.name;
     if (t.kind == XmlToken::Text) {
       if (inStyle_) return;  // convert()が先に読んでいる
-      if (skipDepth_ == 0) text(t.text);
+      if (skipDepth_ == 0 && hiddenDepth_ == 0) text(t.text);
       return;
     }
     bool open = (t.kind == XmlToken::Open || t.kind == XmlToken::SelfClose);
@@ -631,6 +654,15 @@ class BodyConverter {
     }
     if (skipDepth_ > 0) {
       if (t.kind == XmlToken::Close) depth_--;
+      return;
+    }
+    // display:none(CssFontRule::hidden)の要素の中は出さない(開いた時のdepth_より浅くなるまで)
+    if (hiddenDepth_ > 0) {
+      if (t.kind == XmlToken::Close && --depth_ < hiddenDepth_) hiddenDepth_ = 0;
+      return;
+    }
+    if (open && ruleFor(name, attr(t, "class"), &CssFontRule::hidden).value_or(false)) {
+      if (t.kind == XmlToken::Open) hiddenDepth_ = depth_;
       return;
     }
 
@@ -1044,6 +1076,7 @@ class BodyConverter {
   int lineIndentRest_ = 0;          // 今の行の2字目以降の字下げ(em)
   bool pendingRestIndent_ = false;  // 最初の字の後に<indent>(2字目以降の字下げ)を出す
   bool indentOpen_ = false;         // 行末で</indent>を出す
+  int hiddenDepth_ = 0;             // display:noneの要素を開いた時のdepth_(0なら中ではない)
   std::map<int, std::pair<int, int>> indentLines_;  // 行→(最初の字下げ, 続く字下げ)(em)
   std::map<int, LineKind> lineKinds_;
   bool inStyle_ = false;
