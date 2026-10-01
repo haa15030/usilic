@@ -1,4 +1,5 @@
 #include "epub_to_help_markup.hpp"
+#include "utf8.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -362,7 +363,41 @@ struct CssFontRule {
   // display:none(2026-09-30、直接のユーザー依頼"class=\"invisible\"も実装よろしく"――
   // h2.invisible { display:none })。trueなら要素の中身を出さない。
   std::optional<bool> hidden;
+  // 2026-10-01、直接のユーザー報告("span class=\"bold\"(太字のゴシック化)が太字になっていない"):
+  // font-weightが太字(bold/bolder/600以上)ならtrue。normal等(false)は読むが、今は太字を
+  // 打ち消すのには使わない(見出しの<b>との兼ね合い、BodyConverter::handle()参照)。
+  std::optional<bool> bold;
+  // 2026-10-01、直接のユーザー依頼("span class=\"em_accent\"の実装"): text-emphasis(-style)の
+  // 傍点の字("filled sesame"なら"﹅")。字ごとのルビ(<rb>/<rt>)にして描く(-gだけ)。
+  std::optional<std::string> emphasis;
 };
+
+// font-weightの値が太字か。
+std::optional<bool> classifyFontWeight(const std::string &value) {
+  std::string v = trimAsciiSpace(value);
+  if (v.empty()) return std::nullopt;
+  if (v.find("bold") != std::string::npos) return true;  // bold/bolder
+  if (std::isdigit(static_cast<unsigned char>(v[0]))) return std::atoi(v.c_str()) >= 600;
+  return false;  // normal/lighter
+}
+
+// text-emphasis(-style)の値から傍点の字。"none"は空(傍点を打ち消す)。
+std::optional<std::string> parseTextEmphasis(const std::string &value) {
+  std::string v = trimAsciiSpace(value);
+  if (v.empty()) return std::nullopt;
+  for (char q : {'"', '\''}) {  // 字を直接指定した"x"
+    std::size_t a = v.find(q);
+    std::size_t b = a == std::string::npos ? a : v.find(q, a + 1);
+    if (b != std::string::npos && b > a + 1) return v.substr(a + 1, b - a - 1);
+  }
+  if (v.find("none") != std::string::npos) return std::string();
+  bool open = v.find("open") != std::string::npos;
+  if (v.find("double-circle") != std::string::npos) return std::string(open ? "\xE2\x97\x8E" : "\xE2\x97\x89");  // ◎◉
+  if (v.find("circle") != std::string::npos) return std::string(open ? "\xE2\x97\x8B" : "\xE2\x97\x8F");  // ○●
+  if (v.find("triangle") != std::string::npos) return std::string(open ? "\xE2\x96\xB3" : "\xE2\x96\xB2");  // △▲
+  if (v.find("dot") != std::string::npos) return std::string(open ? "\xE2\x97\xA6" : "\xE2\x80\xA2");  // ◦•
+  return std::string(open ? "\xEF\xB9\x86" : "\xEF\xB9\x85");  // ﹆﹅(sesame、"filled"だけの時も)
+}
 
 std::optional<bool> classifyDisplayNone(const std::string &value) {
   std::string v = trimAsciiSpace(value);
@@ -503,6 +538,20 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
     std::optional<double> paddingTop = readLength("padding-top");
     std::optional<double> paddingLeft = readLength("padding-left");
     std::optional<double> textIndent = readLength("text-indent");
+    std::optional<bool> bold = readProperty("font-weight", classifyFontWeight);
+    // text-emphasis/text-emphasis-style(-webkit-・-epub-付きも)。-colorと-positionは読まない。
+    std::optional<std::string> emphasis;
+    for (std::size_t fp = 0; (fp = body.find("text-emphasis", fp)) != std::string::npos;) {
+      std::size_t colon = body.find(':', fp);
+      if (colon == std::string::npos) break;
+      std::string rest = trimAsciiSpace(body.substr(fp + 13, colon - fp - 13));
+      std::size_t end = body.find(';', colon);
+      if (rest.empty() || rest == "-style")
+        if (auto v = parseTextEmphasis(
+                body.substr(colon + 1, end == std::string::npos ? std::string::npos : end - colon - 1)))
+          emphasis = v;
+      fp = colon;
+    }
     std::optional<bool> hidden;
     for (std::size_t fp = 0; (fp = body.find("display", fp)) != std::string::npos;) {
       std::size_t colon = body.find(':', fp);
@@ -516,7 +565,9 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
           hidden = v;
       fp = colon;
     }
-    if (!serif && !vertical && !alignEnd && !center && !paddingTop && !paddingLeft && !textIndent && !hidden) continue;
+    if (!serif && !vertical && !alignEnd && !center && !paddingTop && !paddingLeft && !textIndent && !hidden && !bold &&
+        !emphasis)
+      continue;
     std::string one;
     for (char c : selectors + ",") {
       if (c != ',') {
@@ -550,6 +601,8 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
       rule.paddingLeft = paddingLeft;
       rule.textIndent = textIndent;
       rule.hidden = hidden;
+      rule.bold = bold;
+      rule.emphasis = emphasis;
       std::size_t dot = sel.find('.');
       rule.tag = sel.substr(0, dot);
       if (rule.tag == "*") rule.tag.clear();
@@ -613,7 +666,8 @@ class BodyConverter {
     alignEnd_ = false;
     center_ = false;
     paddingTopEm_ = paddingLeftEm_ = textIndentEm_ = 0;
-    rubyBase_ = false;
+    rubyBase_ = rubyText_ = false;
+    emphasis_.clear();
     inStyle_ = false;
     std::vector<XmlToken> tokens = tokenizeXml(xhtml);
     // CSS(fontRules_参照)は<head>の中にあり、<html>の開始より後に来るので、先に
@@ -752,11 +806,13 @@ class BodyConverter {
         if (rubyBase_) line_ += "</rb>";
         rubyBase_ = false;
         line_ += "<rt>";
+        rubyText_ = true;
         text("《");
       }
       if (close) {
         text("》");
         line_ += "</rt>";
+        rubyText_ = false;
       }
     } else if (name == "b" || name == "strong") {
       changeStyle(bold_, open ? +1 : -1, "b");
@@ -821,7 +877,7 @@ class BodyConverter {
     // 横書き」(扉の縦書きの箱の見分けに使う)。
     if (t.kind == XmlToken::Open) {
       fontStack_.push_back({serif_, vertical_, horizontalOutside_, alignEnd_, center_, paddingTopEm_, paddingLeftEm_,
-                            textIndentEm_});
+                            textIndentEm_, false, emphasis_});
       std::string classes = attr(t, "class");
       setSerif(ruleFor(name, classes, &CssFontRule::serif).value_or(serif_));
       horizontalOutside_ = horizontalOutside_ || vertical_ == false;
@@ -831,6 +887,13 @@ class BodyConverter {
       paddingTopEm_ += ruleFor(name, classes, &CssFontRule::paddingTop).value_or(0.0);
       paddingLeftEm_ += ruleFor(name, classes, &CssFontRule::paddingLeft).value_or(0.0);
       if (auto indent = ruleFor(name, classes, &CssFontRule::textIndent)) textIndentEm_ = *indent;
+      // 太字は見出しの<b>等と同じカウンタに重ねる(見出しのchangeStyle()はこの前、閉じる時の
+      // changeStyle()はこの後なので、入れ子の数が合う)。
+      if (ruleFor(name, classes, &CssFontRule::bold).value_or(false)) {
+        changeStyle(bold_, +1, "b");
+        fontStack_.back().addedBold = true;
+      }
+      if (auto emphasis = ruleFor(name, classes, &CssFontRule::emphasis)) emphasis_ = *emphasis;
     } else if (t.kind == XmlToken::Close && !fontStack_.empty()) {
       setSerif(fontStack_.back().serif);
       vertical_ = fontStack_.back().vertical;
@@ -840,6 +903,8 @@ class BodyConverter {
       paddingTopEm_ = fontStack_.back().paddingTop;
       paddingLeftEm_ = fontStack_.back().paddingLeft;
       textIndentEm_ = fontStack_.back().textIndent;
+      if (fontStack_.back().addedBold) changeStyle(bold_, -1, "b");
+      emphasis_ = fontStack_.back().emphasis;
       fontStack_.pop_back();
     }
     if (t.kind == XmlToken::Close) depth_--;
@@ -921,6 +986,29 @@ class BodyConverter {
   }
 
   void text(const std::string &s) {
+    // 傍点(emphasis_): 字ごとに、その字を親字・傍点を読みにしたルビにする(-gが字の右/上に
+    // 描く、-cは《》ごと出さない――ContentView::renderLine()・toCells()参照)。ルビの中
+    // (親字・読み)と<pre>の中は今までどおり。
+    if (!emphasis_.empty() && !emphasizing_ && !rubyBase_ && !rubyText_ && preDepth_ == 0) {
+      emphasizing_ = true;
+      for (std::size_t i = 0; i < s.size();) {
+        std::size_t len = std::max(1, Utf8::sequence_length(static_cast<unsigned char>(s[i])));
+        std::string ch = s.substr(i, len);
+        i += len;
+        if (ch.size() == 1 && isXmlSpace(ch[0])) {
+          text(ch);
+          continue;
+        }
+        openStylesAtLineStart();
+        line_ += "<rb>";
+        text(ch);
+        line_ += "</rb><rt>";
+        text("\xE3\x80\x8A" + emphasis_ + "\xE3\x80\x8B");  // 《》
+        line_ += "</rt>";
+      }
+      emphasizing_ = false;
+      return;
+    }
     for (std::size_t i = 0; i < s.size(); i++) {
       char c = s[i];
       if (preDepth_ > 0) {
@@ -1085,6 +1173,8 @@ class BodyConverter {
     double paddingTop;
     double paddingLeft;
     double textIndent;
+    bool addedBold;        // この要素のfont-weightで太字にした(閉じる時に戻す)
+    std::string emphasis;  // 傍点の字(emphasis_)
   };
   std::vector<Frame> fontStack_;  // 開いている要素ごとの、その外側の状態
   bool serif_ = true;
@@ -1099,6 +1189,11 @@ class BodyConverter {
   std::vector<int> centerLines_;
   // ルビの親字の中(<rb>を出してから、<rt>か</ruby>で閉じるまで)。
   bool rubyBase_ = false;
+  bool rubyText_ = false;  // <rt>の中
+  // 傍点(CssFontRule::emphasis)の字。空なら傍点なし。emphasizing_はtext()が字ごとのルビを
+  // 出している最中(読みの字に傍点を付けないため)。
+  std::string emphasis_;
+  bool emphasizing_ = false;
   // 字下げ(CssFontRule::paddingTop等、em): 開いている要素のpaddingの和と、継承したtext-indent。
   double paddingTopEm_ = 0, paddingLeftEm_ = 0, textIndentEm_ = 0;
   bool bookVertical_ = false;       // 本全体が縦書き(epubIsRightToLeft())

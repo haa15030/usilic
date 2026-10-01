@@ -1199,6 +1199,13 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
           continue;
         }
         rubyAt(idx);
+      } else if (!rubyOn && inRun(idx, Display::Attribute::RubyText) && text.compare(idx, 3, "\xE3\x80\x8A") == 0) {
+        // 傍点(isEmphasisMarkReading())の「《﹅》」は端末では書かない
+        std::size_t close = text.find("\xE3\x80\x8B", idx + 3);
+        if (close != std::string::npos && isEmphasisMarkReading(text.substr(idx + 3, close - idx - 3))) {
+          idx = close + 3;
+          continue;
+        }
       }
       // highlightStartColumn自身の遷移地点(DirectoryModeのls一覧/
       // WORK/arc.Nバナー、この関数自身の上のコメント参照)――

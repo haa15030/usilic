@@ -123,6 +123,20 @@ std::vector<Cell> toCells(const EpubVerticalSourceLine &line, bool sideways) {
   // ルビ(2026-09-30、-gのみ、Display::Attribute::RubyBase参照): 読み(《》を除く)の字を
   // 並びから抜き、親字の最初の字に読みと親字の字数を持たせる(-gが列の右の行間に描く)。
   // -cは今までどおり「燈《ひ》」をマスに並べる。
+  // 傍点(isEmphasisMarkReading()、字ごとの「《﹅》」の読み)は、-cでは書かない。
+  if (!sideways) {
+    std::vector<Glyph> kept;
+    for (std::size_t i = 0; i < glyphs.size(); i++) {
+      if (glyphs[i].cp == 0x300A && i + 2 < glyphs.size() && glyphs[i + 2].cp == 0x300B &&
+          hasRun(line.attributes, glyphs[i].byte, Display::Attribute::RubyText) &&
+          isEmphasisMarkReading(glyphs[i + 1].bytes)) {
+        i += 2;
+        continue;
+      }
+      kept.push_back(glyphs[i]);
+    }
+    glyphs = std::move(kept);
+  }
   std::map<std::size_t, std::pair<std::string, int>> rubyOf;  // 抜いた後のglyphsの添字→(読み, 親字の字数)
   if (sideways) {
     std::vector<Glyph> kept;

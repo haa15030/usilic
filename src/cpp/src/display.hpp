@@ -498,4 +498,15 @@ class Display {
 // 定義がpipe_buffer.hppからここへ移った後もそのままコンパイルできる。
 using AttributeRun = Display::AttributeRun;
 
+// 2026-10-01追加、直接のユーザー依頼("span class=\"em_accent\"の実装"): EPUBの傍点は、字ごとに
+// 傍点の字を読みにしたルビ(Display::Attribute::RubyText、epubToHelpMarkup()参照)にしてある。
+// `reading`(《》を除いた読み)がその傍点の字か。ルビを描けない端末(-c)は、この読みを《》ごと
+// 書かない(「そ《﹅》れ《﹅》」にしない)。
+inline bool isEmphasisMarkReading(const std::string &reading) {
+  for (const char *mark : {"\xEF\xB9\x85", "\xEF\xB9\x86", "\xE2\x97\x8E", "\xE2\x97\x89", "\xE2\x97\x8B",
+                           "\xE2\x97\x8F", "\xE2\x96\xB3", "\xE2\x96\xB2", "\xE2\x97\xA6", "\xE2\x80\xA2"})
+    if (reading == mark) return true;
+  return false;
+}
+
 }  // namespace fm

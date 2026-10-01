@@ -27848,3 +27848,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      - 慣性スクロール中(renderScrolled())も、カーソル行のハイライトの無いビュー(FILE等)では
        ブロックカーソルを描き(GraphicalDisplay::setScrolledCursor()、新設、app/main.cppが毎フレーム
        設定)、選んでいるリンクの反転(ContentView::extraStandout())も描く。
+547. **2026-10-01: EPUBの傍点(span class="em_accent")と、span class="bold"の太字**
+   - **経緯**: 直接のユーザー報告("span class=\"em_accent\"の実装と、span class=\"bold\"(太字の
+     ゴシック化)が太字になっていない")。Kbt.epubのCSSはspan.em_accentが
+     "-webkit-text-emphasis-style: filled sesame"(傍点)、span.boldがゴシックのfont-familyと
+     "font-weight:bold"。
+   - **太字**: CSSのfont-weightを読んでいなかった(ゴシックだけ効いていた)。CssFontRule::bold
+     (bold/bolder/600以上)を読み、当てはまる要素の中を<b>にする(見出しの<b>と同じカウンタに
+     重ねる)。normal等で太字を打ち消すのは未対応。目次のa.bold(font-weight:bold)も太字になる。
+   - **傍点**: text-emphasis(-style)(-webkit-・-epub-付きも)をCssFontRule::emphasisに読み
+     (sesame→﹅、dot→•、circle→●、open〜は白抜き、"x"は字そのもの)、当てはまる要素の字ごとに、
+     その字を親字・傍点を読みにしたルビ(<rb>そ</rb><rt>《﹅》</rt>)にする。-gは項目533の
+     ルビの描き方で字の右(縦書き)/上(横書き)に描く。-cはこの読みを《》ごと書かない
+     (isEmphasisMarkReading()、ContentView::renderLine()・epub_vertical.cppのtoCells())。
+     既知の制約: 本文の文字列には「そ《﹅》れ《﹅》」が入るので、傍点の語は検索で見つからない
+     (ルビの語と同じ)。
