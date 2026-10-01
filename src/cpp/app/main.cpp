@@ -1114,7 +1114,11 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
   TerminalCoastResult result;
 
   for (;;) {
-    performScrollStepDelay(fm::scaledForRow(fm::kScrollSpeedLevels[level]));
+    // 2026-10-01、直接のユーザー依頼("-uと-iのパラメータがGUI向きなのか、動きが遅く感じる...
+    // CUIだけ倍率上げてみて"): 1行あたりの遅延を16ドット分ではなく8ドット分にする(-gの約2倍の
+    // 「1秒あたりの行数」)。
+    constexpr int kTerminalDotsPerRow = 8;
+    performScrollStepDelay(fm::scaledForRow(fm::kScrollSpeedLevels[level], kTerminalDotsPerRow));
 
     int before = view.topIndex();
     view.setTopIndex(before + direction);
@@ -1468,8 +1472,11 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     // マウス無反応な環境(本当に非対応な端末)では、単にこの
     // エスケープシーケンスが無視され、以前と同じ「マウスでは何も
     // 起きない」に留まるだけで安全側に倒れる。
-    bool want = (!forceCui || app.currentMode() == fm::ApplicationMode::Copy) &&
-                app.currentMode() != fm::ApplicationMode::Shell;
+    // 2026-10-01訂正、直接のユーザー指摘("マウスの無い端末では、マウスの合図が無視されて何も
+    // 起きないだけ、なら-cも引数無しと同じでいいんじゃない？"): `-c`でもマウスを絞らない
+    // (SHELL以外で常に追跡)。マウスの無い端末では追跡の合図が無視されるだけ。
+    (void)forceCui;
+    bool want = app.currentMode() != fm::ApplicationMode::Shell;
     if (want != mouseTrackingOn) {
       setTerminalMouseTracking(display, want);
       mouseTrackingOn = want;
@@ -4129,15 +4136,10 @@ int main(int argc, char **argv) {
   // during this port's development.
   bool forceCui = false;
   bool forceGui = false;
-  // 2026-10-01追加、直接のユーザー依頼(HELPの「端末でのマウス」の記述どおり、引数無しのCUIでも
-  // マウスを使えるように): `-c`を明示した時だけtrue。2026-09-26に引数無しの既定をCUIにした
-  // (下のforceCui = true)ことで、引数無しの起動もrunTerminalPhase()のマウス追跡の判定上
-  // `-c`と同じ扱いになり、マウスがCOPYの中だけになっていた。マウスを絞るのは明示の`-c`だけ。
-  bool explicitCui = false;
   std::string explicitFontFlag;  // -f <path> -- see its own parsing comment below
   std::vector<char *> positionalArgs;
   for (int i = 1; i < argc; i++) {
-    if (std::strcmp(argv[i], "-c") == 0) forceCui = explicitCui = true;
+    if (std::strcmp(argv[i], "-c") == 0) forceCui = true;
     else if (std::strcmp(argv[i], "-g") == 0) forceGui = true;
     else if (std::strcmp(argv[i], "-h") == 0) {
       // 2026-09-15追加、直接のユーザー依頼("新たな仕様として...
@@ -5107,7 +5109,7 @@ int main(int argc, char **argv) {
       // 戻る先の端末が無いままこのままmain()末尾へ進み終了する。
     } else {
       while (!app.wantsExit()) {
-        if (!runTerminalPhase(app, keyInput, display, explicitCui)) break;
+        if (!runTerminalPhase(app, keyInput, display, forceCui)) break;
         if (app.wantsExit()) break;
         tryEnterGuiPhase(app, display, *terminalDisplay, history);  // ^Og fallback -- unmatched terminal or no display server
       }
