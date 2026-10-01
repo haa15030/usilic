@@ -365,6 +365,23 @@ std::string archiveBadgeFor(const Configuration &configuration, const std::strin
 // ある本物のファイルシステムパスであることが「あり得る」唯一の
 // ring、DIR/MAN/LOCATE/FGREP/EGREP/COMMANDのエントリは決してアーカイブ
 // パスにならない)でない限り空(バッジは一切無し)。
+// 2026-10-01、直接のユーザー依頼(^X^Fの一覧の「パス/」の/について、"旧ではハイライト行(には
+// (unzip)がちゃんとある)の方しか見てないんじゃないかな。そっちで判断すれば？"): ARCで開いた
+// .epubの「パス/」は、一覧と入力欄では/を見せない("(unzip)"の印で分かる)。開く時は、入力欄が
+// ハイライト行のこの文字列のままならハイライト行(「パス/」)で開く(executePromptSubmission())。
+std::string recentFileDisplayText(const std::string &item) {
+  if (item.size() > 1 && item.back() == '/' && isEpubFile(item.substr(0, item.size() - 1)))
+    return item.substr(0, item.size() - 1);
+  return item;
+}
+
+std::vector<std::string> recentFileDisplayTexts(RingCategory category, const std::vector<std::string> &items) {
+  std::vector<std::string> texts;
+  if (category != RingCategory::RecentFile) return texts;
+  for (const auto &item : items) texts.push_back(recentFileDisplayText(item));
+  return texts;
+}
+
 std::vector<std::string> fileHistoryBadges(const Configuration &configuration, RingCategory category,
                                             const std::vector<std::string> &items) {
   std::vector<std::string> badges;
@@ -2658,6 +2675,7 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
   PromptKind kind = promptHistoryContext_->kind;
   const std::string *selected = listBrowserMode_.selectedItem();
   std::string seed = selected ? *selected : promptHistoryContext_->textBeforeRecall;
+  if (selected && promptHistoryContext_->kind == PromptKind::RecentFile) seed = recentFileDisplayText(*selected);
   // 下でpromptHistoryContext_がクリアされ、これがそもそも「候補リスト」
   // であることをやめる「前に」取得する――activatePrompt()自身のコメント
   // 参照(直接のユーザーの訂正: "[bs]→「1/10 TOP」が消滅"、つまり、
@@ -11264,7 +11282,8 @@ bool Application::toggleListBrowserHistory() {
   if (promptHistoryContext_ && promptHistoryContext_->epubOnly)  // ^J^E: EPUBだけ(startEpubList()参照)
     items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item); }),
                 items.end());
-  listBrowserMode_.show(items, fileHistoryBadges(configuration_, listBrowserCategory_, items));
+  listBrowserMode_.show(items, fileHistoryBadges(configuration_, listBrowserCategory_, items),
+                        recentFileDisplayTexts(listBrowserCategory_, items));
   if (listBrowserChronological_ && !items.empty()) {
     // show()自体は既に、cursorIndex_を新たに0へリセットした状態で
     // 一度再描画済みである――下の「末尾へ動かされた」カーソルを
@@ -12775,7 +12794,8 @@ bool Application::feedPromptByteInner(int byte) {
     int idx = listBrowserView_.cursorIndex();
     const std::string *selected = listBrowserMode_.selectedItem();
     drawPromptLabel(promptKind_, count > 0 ? ModeLine::format(idx + 1, count) : "");
-    promptEditor_.setText(selected ? *selected : "");
+    if (selected && promptKind_ == PromptKind::RecentFile) promptEditor_.setText(recentFileDisplayText(*selected));
+    else promptEditor_.setText(selected ? *selected : "");
     return true;
   }
   // 他の認識されない制御バイトは、リテラルに挿入するのではなく、
@@ -12935,6 +12955,11 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
     // リスト経由で到達するだけである。この機能の残りについては
     // startListBrowser()自身のコメント参照。
     case PromptKind::RecentFile:
+      // recentFileDisplayText()参照: 入力欄がハイライト行の(/を見せない)文字列のままなら、
+      // ハイライト行そのもの(「パス/」ならARC)で開く。
+      if (const std::string *selected = listBrowserMode_.selectedItem();
+          selected && *selected != text && recentFileDisplayText(*selected) == text)
+        return openRecentFileEntry(*selected);
       return executePathInput(text);
     case PromptKind::RecentDirectory: {
       // PathInputとは異なり、K-48はopenSelectedListEntry()の「旧」
@@ -13329,7 +13354,8 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   if (promptHistoryContext_ && promptHistoryContext_->epubOnly)  // ^J^E: EPUBだけ(startEpubList()参照)
     items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item); }),
                 items.end());
-  listBrowserMode_.show(items, fileHistoryBadges(configuration_, category, items));
+  listBrowserMode_.show(items, fileHistoryBadges(configuration_, category, items),
+                        recentFileDisplayTexts(category, items));
   currentMode_ = ApplicationMode::ListBrowser;
   if (!items.empty()) {
     if (egrepList) {
@@ -14475,7 +14501,8 @@ void Application::refreshDirectEntryModeLine() {
   std::string positionText = candidateCount > 0 ? ModeLine::format(listBrowserView_.cursorIndex() + 1, candidateCount) : "";
   drawPromptLabel(kind, positionText);
   const std::string *selected = listBrowserMode_.selectedItem();
-  promptEditor_.setText(selected ? *selected : "");
+  if (selected && kind == PromptKind::RecentFile) promptEditor_.setText(recentFileDisplayText(*selected));
+  else promptEditor_.setText(selected ? *selected : "");
   promptEditor_.redraw();
 }
 

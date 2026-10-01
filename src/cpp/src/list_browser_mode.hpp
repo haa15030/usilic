@@ -56,7 +56,11 @@ class ListBrowserMode {
   // インデックスに対して空文字列(または`badges`ベクタ自体がそれより
   // 短い/渡されない)場合は「このインデックスにはバッジ無し」を意味し、
   // 既存の全呼び出し元の挙動を寸分違わず維持する。
-  void show(const std::vector<std::string> &items, const std::vector<std::string> &badges = {});
+  // displayTexts(2026-10-01追加): 空でなければ、項目の文字列の代わりに一覧に出す文字列
+  // (ARCで開いた.epubの「パス/」の/を見せない、Application::recentFileDisplayText()参照)。
+  // items()/selectedItem()は元の文字列のまま。
+  void show(const std::vector<std::string> &items, const std::vector<std::string> &badges = {},
+            const std::vector<std::string> &displayTexts = {});
 
   const std::vector<std::string> &items() const;
   const std::string *selectedItem() const;

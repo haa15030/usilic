@@ -22,13 +22,14 @@ ListBrowserMode::ListBrowserMode(ContentView &view) : view_(view) {
   view_.setMarkedRowUsesUnderline(true);
 }
 
-void ListBrowserMode::show(const std::vector<std::string> &items, const std::vector<std::string> &badges) {
+void ListBrowserMode::show(const std::vector<std::string> &items, const std::vector<std::string> &badges,
+                           const std::vector<std::string> &displayTexts) {
   items_ = items;
   marks_.clear();
   std::vector<ContentView::Line> lines;
   lines.reserve(items_.size());
   for (std::size_t i = 0; i < items_.size(); i++) {
-    std::string text = items_[i];
+    std::string text = i < displayTexts.size() ? displayTexts[i] : items_[i];
     if (i < badges.size() && !badges[i].empty()) text += "  " + badges[i];
     // ellipsisEligible=true(2026-09-11追加、直接のユーザー報告:
     // "^X^F/^X^Dでも^S/^[iをLOCATEと同じように使いたい。Resの3文字が

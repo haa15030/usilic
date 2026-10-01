@@ -27945,3 +27945,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      いた(FILE履歴のopenRecentFileEntry()は「パス/」をARCで開く)。
    - **修正**: executePathInput()でも、FILE側で「パス/」が実在する.epubならopenRecentFileEntry()で
      ARCで開く。
+   - **追加(同日)**: 直接のユーザー依頼("恐らく旧ではハイライト行(には(unzip)がちゃんとある)の方
+     しか見てないんじゃないかな。そっちで判断すれば？")。ARCで開いた.epubの「パス/」は、^X^Fの
+     一覧と入力欄では末尾の/を見せない(recentFileDisplayText()、ListBrowserMode::show()の
+     displayTexts。"(unzip)"の印で分かる)。Enterでは、入力欄がハイライト行のこの文字列のまま
+     ならハイライト行そのもの(「パス/」ならARC)で開く(executePromptSubmission())。編集して
+     別の文字列になっていれば、今までどおり打ったパスとして開く(末尾に/を打てばARC)。
