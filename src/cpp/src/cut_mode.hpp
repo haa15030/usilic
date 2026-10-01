@@ -105,6 +105,9 @@ class CutMode {
 
   const std::string &pattern() const;
   const std::vector<CutSegment> &segments() const;
+  // 2026-10-01追加: 区間の並びが変わる(split()・goBack())たびに増える番号。Applicationが区間ごとの
+  // 中身のカーソル位置(cutSegmentViews_)を、同じ並びの間だけ使うためのもの。
+  int generation() const { return generation_; }
   const CutSegment *selectedSegment() const;
   // 2026-09-30追加(EpubLayoutHints::chapterLabel参照): 区間indexの一覧での名前を置き換える
   // (一覧の行も)。ルビの装飾は落とす。
@@ -168,6 +171,7 @@ class CutMode {
   std::string pattern_;
   std::vector<StyledLine> sourceLines_;
   std::vector<CutSegment> segments_;
+  int generation_ = 0;  // generation()参照
 };
 
 }  // namespace fm

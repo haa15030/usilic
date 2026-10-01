@@ -6766,6 +6766,12 @@ bool Application::openSelectedSegment() {
   for (auto &l : content) lines.push_back({l.text, std::nullopt, std::nullopt, l.attributes});
   cutContentView_.setLines(std::move(lines));
   cutContentView_.setCursorIndex(0);
+  // 前にこの区間を見ていた位置へ戻す(cutSegmentViews_参照)
+  if (cutSegmentViewsGeneration_ == cutMode_.generation())
+    if (auto saved = cutSegmentViews_.find(cutView_.cursorIndex()); saved != cutSegmentViews_.end()) {
+      cutContentView_.setTopIndex(saved->second.second);
+      cutContentView_.setCursorIndex(saved->second.first);
+    }
   cutContentView_.redraw();
   // 2026-08-30、直接のユーザー報告(GUI、"内容一覧でどれかを選ぶと
   // 選んだ時点でのブロックカーソルが画面に残留（^P/^Nで解消）")、
@@ -8622,6 +8628,11 @@ bool Application::returnToGrepResults() {
 }
 
 bool Application::returnFromCutContent() {
+  if (cutSegmentViewsGeneration_ != cutMode_.generation()) {  // cutSegmentViews_参照
+    cutSegmentViews_.clear();
+    cutSegmentViewsGeneration_ = cutMode_.generation();
+  }
+  cutSegmentViews_[cutView_.cursorIndex()] = {cutContentView_.cursorIndex(), cutContentView_.topIndex()};
   currentMode_ = ApplicationMode::Cut;
   cutView_.redraw();
   return true;

@@ -2236,6 +2236,12 @@ class Application {
   // (一覧)。reopenLastCutContent()がその区間を開いてその行へ。
   std::optional<std::pair<int, int>> cutLastContent_;
   void reopenLastCutContent();
+  // 2026-10-01追加、直接のユーザー報告("CUTで`;`のあと`:`で戻ってもカーソル位置が保存されていない"):
+  // 区間の中身から一覧へ戻る時(returnFromCutContent()、;/:もこれを通る)の、区間(一覧の行)ごとの
+  // 中身のカーソル行と画面の一番上の行。openSelectedSegment()が同じ区間を開く時に戻す。同じ区間の
+  // 並び(CutMode::generation())の間だけ使う。
+  std::map<int, std::pair<int, int>> cutSegmentViews_;
+  int cutSegmentViewsGeneration_ = -1;
   // ^X^C等で終える直前に呼ぶ: ファイルCUTの一覧/区間の中身を見ていたら、
   // その位置を保存する(startResumingSession()が同じ画面を作り直す)。
   void saveResumableCutState();

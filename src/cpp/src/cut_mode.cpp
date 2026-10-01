@@ -129,6 +129,7 @@ bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::strin
   pattern_ = pattern;
   sourceLines_ = sourceLines;
   segments_.clear();
+  generation_++;  // generation()参照
 
   int total = static_cast<int>(sourceLines_.size());
   if (matchLines.empty()) {
@@ -237,6 +238,7 @@ bool CutMode::goBack() {
   pattern_ = saved->pattern;
   sourceLines_ = saved->sourceLines;
   segments_ = saved->segments;
+  generation_++;  // generation()参照
 
   std::vector<ContentView::Line> viewLines;
   viewLines.reserve(segments_.size());
