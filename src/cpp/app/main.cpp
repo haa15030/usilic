@@ -935,6 +935,29 @@ void performScrollStepDelay(const fm::ScrollStep &step) {
   }
 }
 
+// 2026-10-02追加: 慣性スクロール中の←→(縦書きでは↓↑)による速度調整。1段ずつ、最低速
+// (段階1)より下げない。
+int adjustCoastLevel(int level, int delta) {
+  return resolveCoastLevel(std::clamp(level + delta, 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1));
+}
+
+// 2026-10-02追加、直接のユーザー依頼("ホイールを本来の機能（画面スクロール）に戻してほしい"):
+// ホイールの刻みを、j/kと同じCommand::ScrollLineDown/Upで`lines`行スクロールする。端ではベルを
+// 鳴らさずに何もしない(ホイールは続けて回されるので)。directionは+1で先へ。
+void scrollByWheel(fm::Application &app, fm::Display &display, int direction, int lines) {
+  fm::ContentView &view = app.activeContentView();
+  for (int i = 0; i < lines; i++) {
+    if (direction < 0) {
+      if (view.topIndex() <= 0) break;
+      app.handleCommand(fm::Command::ScrollLineUp);
+    } else {
+      if (view.topIndex() >= view.maxTopIndex()) app.preloadPagerAhead(view.topIndex() + display.rows() * 2);
+      if (view.topIndex() >= view.maxTopIndex()) break;
+      app.handleCommand(fm::Command::ScrollLineDown);
+    }
+  }
+}
+
 enum class ShiftArrow { None, Up, Down };
 
 // Call immediately after readByte() returned ESC. Recognizes the
@@ -962,6 +985,25 @@ ShiftArrow peekShiftArrow(fm::KeyInput &keyInput) {
   if (final == 'B') return ShiftArrow::Down;
   if (!consumed.empty()) keyInput.playRawMacro(consumed);
   return ShiftArrow::None;
+}
+
+// 2026-10-02追加: readByte()がESCを返した直後に呼ぶ。素の→("\x1b[C"/"\x1bOC")なら+1、
+// ←("\x1b[D"/"\x1bOD")なら-1、それ以外は読んだ分を戻して0(peekShiftArrow()と同じ)。
+int peekLeftRight(fm::KeyInput &keyInput) {
+  std::string consumed;
+  auto next = [&]() -> int {
+    int b = keyInput.readByte();
+    if (b != 0) consumed.push_back(static_cast<char>(b));
+    return b;
+  };
+  int first = next();
+  if (first == '[' || first == 'O') {
+    int final = next();
+    if (final == 'C') return 1;
+    if (final == 'D') return -1;
+  }
+  if (!consumed.empty()) keyInput.playRawMacro(consumed);
+  return 0;
 }
 
 // Call immediately after readByte() returned ESC and peekShiftArrow()
@@ -1093,11 +1135,6 @@ void applyHoverRowAndRedraw(fm::ContentView &view, int mouseRow, bool moveCursor
 // OPPOSITE direction reverses and resets to the base speed) -- that
 // key is handed back to the caller to feed through normally, exactly
 // as if this function had never run.
-// 2026-10-01、直接のユーザー依頼("-uと-iのパラメータがGUI向きなのか、動きが遅く感じる...
-// CUIだけ倍率上げてみて"): 1行あたりの遅延を16ドット分ではなく8ドット分にする(-gの約2倍の
-// 「1秒あたりの行数」)。runCoastLoop()とrunTerminalAutoscroll()で共用。
-constexpr int kTerminalDotsPerRow = 8;
-
 TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm::KeyInput &keyInput,
                                   int initialLevel, int initialDirection) {
   fm::ContentView &view = app.activeContentView();
@@ -1119,6 +1156,10 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
   TerminalCoastResult result;
 
   for (;;) {
+    // 2026-10-01、直接のユーザー依頼("-uと-iのパラメータがGUI向きなのか、動きが遅く感じる...
+    // CUIだけ倍率上げてみて"): 1行あたりの遅延を16ドット分ではなく8ドット分にする(-gの約2倍の
+    // 「1秒あたりの行数」)。
+    constexpr int kTerminalDotsPerRow = 8;
     performScrollStepDelay(fm::scaledForRow(fm::kScrollSpeedLevels[level], kTerminalDotsPerRow));
 
     int before = view.topIndex();
@@ -1189,14 +1230,10 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
       auto mouse = peekMouseSgr(keyInput);
       if (mouse) {
         lastMouseRow = mouse->row;
-        if (mouse->wheel != 0) {  // ホイールはShift+↑/↓と同じ(上の分岐参照)
-          if (mouse->wheel == direction) {
-            level = resolveCoastLevel(std::min(level + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1));
-          } else {
-            direction = mouse->wheel;
-            level = resolveCoastLevel(1);
-          }
-          continue;
+        if (mouse->wheel != 0) {  // ホイール: 慣性を止めて画面スクロール(scrollByWheel()参照)
+          clearHoverAndRedraw(view);
+          scrollByWheel(app, display, mouse->wheel, 1);
+          return result;
         }
         if (mouse->pressed && !mouse->motionOnly && mouse->button == 2) {  // 右クリック: 慣性を止めて^G
           clearHoverAndRedraw(view);
@@ -1214,6 +1251,11 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
           }
         }
         applyHoverRowAndRedraw(view, lastMouseRow);
+        continue;
+      }
+      // 2026-10-02追加、直接のユーザー依頼: ←→で速度調整(adjustCoastLevel()参照)。
+      if (int delta = peekLeftRight(keyInput)) {
+        level = adjustCoastLevel(level, delta);
         continue;
       }
       // Neither a Shift-arrow nor a mouse report -- some other ESC
@@ -1388,71 +1430,31 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
   }
 }
 
-// 2026-10-02追加、直接のユーザー依頼(中ボタン=ホイールボタンを「押しながら前/後」でスクロール、
-// Windowsのオートスクロール風): 中ボタンを押した行を基準に、ポインタが基準より下なら先へ、上なら
-// 前へ、基準からの行数が多いほど速く(1行離れるごとにfm::kScrollSpeedLevelsを1段、基準の行では
-// 止まる)。押したまま動かして離すとそこで終わり、動かさずに離すとそのまま続き(もう一度どれかの
-// ボタンを押すか、何かキーを押すと終わり。そのクリック自体は何もしない)。
-TerminalCoastResult runTerminalAutoscroll(fm::Application &app, fm::Display &display, fm::KeyInput &keyInput,
+// 2026-10-02追加、直接のユーザー依頼("慣性スクロールはホイール押下のマウス移動で開始だが速度は
+// 最低速に限定"): 中ボタンを押したあと、ポインタが別の行へ動いたら、その向きへ最低速で
+// runCoastLoop()を始める(左ドラッグと同じく、下へ動かせば前へ)。動かずに離したら何もしない。
+TerminalCoastResult runTerminalMiddleDrag(fm::Application &app, fm::Display &display, fm::KeyInput &keyInput,
                                           int anchorRow) {
-  fm::ContentView &view = app.activeContentView();
-  int currentRow = anchorRow;
-  bool held = true;    // 中ボタンを押したまま
-  bool moved = false;  // 押したまま基準の行から動かした
   TerminalCoastResult result;
   for (;;) {
-    int offset = currentRow - anchorRow;
-    int level = std::min(std::abs(offset), static_cast<int>(fm::kScrollSpeedLevels.size()) - 1);
-    if (level > 0) {
-      performScrollStepDelay(fm::scaledForRow(fm::kScrollSpeedLevels[resolveCoastLevel(level)], kTerminalDotsPerRow));
-      int direction = offset > 0 ? 1 : -1;
-      int before = view.topIndex();
-      view.setTopIndex(before + direction);
-      if (view.topIndex() == before) {  // runCoastLoop()と同じ遅延先読み
-        app.preloadPagerAhead(before + display.rows() * 2);
-        app.suppressPagerRepoll(view.topIndex());
-        view.setTopIndex(before + direction);
-      }
-      if (view.topIndex() != before) {  // 端では止まったまま(逆へ動かせばまた動く)
-        app.suppressPagerRepoll(view.topIndex());
-        view.setCursorIndex(view.topIndex());  // runCoastLoop()のclampViewport()の注記参照
-        view.redraw();
-      }
-    }
-
-    struct pollfd fd{STDIN_FILENO, POLLIN, 0};
-    if (poll(&fd, 1, level > 0 ? 0 : 50) <= 0 || !(fd.revents & POLLIN)) continue;
     int byte = keyInput.readByte();
-    if (!byte) continue;
+    if (!byte) continue;  // VTIMEのポーリング(runTerminalMouseDrag()と同じ)
     if (byte != 0x1b) {
-      view.redraw();
       result.hadLeftoverByte = true;
       result.leftoverByte = byte;
       return result;
     }
     auto mouse = peekMouseSgr(keyInput);
-    if (!mouse) {  // マウス以外のESCシーケンス(矢印キー等): ESCを戻して終わる
-      view.redraw();
+    if (!mouse) {
       keyInput.playRawMacro("\x1b");
       return result;
     }
     if (mouse->wheel != 0) continue;
     if (mouse->motionOnly) {
-      currentRow = mouse->row;
-      if (held && currentRow != anchorRow) moved = true;
-      continue;
+      if (mouse->row == anchorRow) continue;
+      return runCoastLoop(app, display, keyInput, resolveCoastLevel(1), mouse->row > anchorRow ? -1 : 1);
     }
-    if (mouse->pressed) {  // 続いている間のクリック: 止めるだけ
-      view.redraw();
-      return result;
-    }
-    if (held && mouse->button == 1) {  // 中ボタンを離した
-      held = false;
-      if (moved) {
-        view.redraw();
-        return result;
-      }
-    }
+    return result;  // 離した(または別のボタン)
   }
 }
 
@@ -1680,18 +1682,18 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       if (mouse) {
         consecutiveEscapes = 0;
         if (mouse->wheel != 0) {
-          // ホイール(fm::MouseSgrEvent::wheel参照): -gのホイールと同じく、1刻みで慣性スクロールを
-          // 始める(Shift+↑/↓と同じ。続けて同じ向きなら速く、逆なら向きを変える、runCoastLoop())。
-          TerminalCoastResult coast = runCoastLoop(app, display, keyInput, resolveCoastLevel(1), mouse->wheel);
-          if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
+          // ホイール(fm::MouseSgrEvent::wheel参照): 2026-10-02、直接のユーザー依頼("ホイールを本来の
+          // 機能（画面スクロール）に戻してほしい")により、慣性スクロールではなく1刻み1行の画面
+          // スクロール(scrollByWheel())。
+          scrollByWheel(app, display, mouse->wheel, 1);
         } else if (mouse->pressed && !mouse->motionOnly && mouse->button == 2) {
           // 2026-10-01追加、直接のユーザー依頼("マウスの右クリックに^Gを割り当てて"): -gの右クリック
           // (runGuiPhase()のclick->rightButton、2026-09-07)と同じく、本物のキーボードの^Gと同じ経路へ。
           app.feedCanonicalByte(0x07);
         } else if (mouse->pressed && !mouse->motionOnly && mouse->button == 1 &&
                    app.currentMode() != fm::ApplicationMode::Copy) {
-          // 中ボタン: オートスクロール(runTerminalAutoscroll()参照)
-          TerminalCoastResult coast = runTerminalAutoscroll(app, display, keyInput, mouse->row);
+          // 中ボタン: 動かした向きへ最低速の慣性スクロール(runTerminalMiddleDrag()参照)
+          TerminalCoastResult coast = runTerminalMiddleDrag(app, display, keyInput, mouse->row);
           if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
         } else if (mouse->pressed && !mouse->motionOnly && mouse->button == 0) {
           // Left-button down: the mouse-driven equivalent of
@@ -2128,7 +2130,6 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   int pixelOffset = 0;      // sub-row offset; -cellHeight < pixelOffset < cellHeight
   int coastLevel = 0;       // 0 == not coasting; otherwise an index into fm::kScrollSpeedLevels
   int coastDirection = 0;   // +1 or -1 while coastLevel > 0, matching renderScrolled()'s pixelOffsetY sign
-  bool autoscrollActive = false;  // 中ボタンのオートスクロールがcoastLevelを動かしている
   // 2026-09-07追加、直接のユーザー報告("バーが最下点に達した瞬間...
   // 「00023/00025 END」が一瞬出てしまう...ちらつきが復活"、さらに
   // ContentView::scrollModeLineSegments()自身の"bottomVisible>=total
@@ -2472,12 +2473,6 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
 
     while (auto key = gui.consumeKeyEvent()) {
       anyEventThisFrame = true;
-      if (gui.autoscrollOffsetPixels()) {  // 中ボタンのオートスクロール中のキー: 止めて、キーはそのまま処理
-        gui.cancelAutoscroll();
-        autoscrollActive = false;
-        coastLevel = 0;
-        pixelOffset = 0;
-      }
       // w/s: the keyboard-driven equivalent of a mouse-drag release
       // (see fm::kScrollSpeedLevels' own comment) -- pressing the
       // SAME direction again while already coasting accelerates (one
@@ -2557,6 +2552,23 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       }
       bool upKey = key->special == fm::Display::Key::Up;
       bool downKey = key->special == fm::Display::Key::Down;
+      // 2026-10-02追加、直接のユーザー依頼("慣性スクロール中は←→（縦書きでは↑↓。いずれも普段は
+      // 使わない）でも速度調整可能"): →で1段速く、←で1段遅く(最低速より下げない)。縦書きの左右の
+      // 慣性(epubCoastLevel)では↓/↑。
+      if (app.currentMode() != fm::ApplicationMode::Shell && !app.awaitingSequenceOrPromptByte()) {
+        bool leftKey = key->special == fm::Display::Key::Left;
+        bool rightKey = key->special == fm::Display::Key::Right;
+        if (epubCoastLevel > 0 && (upKey || downKey)) {
+          epubCoastLevel = adjustCoastLevel(epubCoastLevel, downKey ? 1 : -1);
+          consecutiveEscapes = 0;
+          continue;
+        }
+        if (coastLevel > 0 && (leftKey || rightKey)) {
+          coastLevel = adjustCoastLevel(coastLevel, rightKey ? 1 : -1);
+          consecutiveEscapes = 0;
+          continue;
+        }
+      }
       bool arrowSpeedControl = (upKey || downKey) && coastLevel > 0;
       if (arrowSpeedControl && app.currentMode() != fm::ApplicationMode::Shell &&
           !app.awaitingSequenceOrPromptByte()) {
@@ -2641,91 +2653,55 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     while (auto wheel = gui.consumeWheelEvent()) {
       anyEventThisFrame = true;
       if (app.currentMode() == fm::ApplicationMode::Shell || app.awaitingSequenceOrPromptByte()) continue;
-      // 2026-09-28追加: EPUBの縦書き(Application::scrollEpubVertical())は、ホイール/
-      // トラックパッドを1列単位の横スクロールにする(慣性スクロールは使わない)。
-      // 縦のホイールは下で先へ(下の縦スクロールと同じ向き)。横(トラックパッド)は
-      // 当初「右へで戻る」にしたが、実機で逆とのユーザー報告("トラップパッドは
+      // 2026-10-02、直接のユーザー依頼("GUIともどもホイールを本来の機能（画面スクロール）に戻して
+      // ほしい"): 2026-08-05からホイールは慣性スクロールの開始/速度調整だったが、普段の画面
+      // スクロールの操作で慣性が始まって混乱するため、1刻みごとに画面をスクロールするだけに戻す
+      // (慣性中なら止める)。慣性の開始は中ボタンのドラッグ(consumeMiddleDragStart())、速度は
+      // 左ドラッグを離す速さか←→。
+      // EPUBの縦書き(Application::scrollEpubVertical())は1列(章の一覧は1章)ずつの横スクロール。
+      // 縦のホイールは下で先へ。横(トラックパッド)は実機で逆とのユーザー報告("トラップパッドは
       // 方向が逆")により、deltaXが正で先へ。
       if (app.epubVerticalScrollActive()) {
         int delta = wheel->deltaY != 0 ? (wheel->deltaY > 0 ? -1 : 1) : (wheel->deltaX > 0 ? 1 : -1);
-        if (!app.epubVerticalDragActive()) {  // 縦書きの章の一覧: 従来どおり1章ずつ
-          app.scrollEpubVertical(delta);
-          continue;
-        }
-        // 2026-09-29、直接のユーザー依頼("ホイールでスクロール開始と速度調整を実装よろしく"):
-        // 縦書きの本文では、下の上下のホイールと同じ規則で左右の慣性(epubCoastLevel)を
-        // 動かす――止まっていれば段階1でその向きに流し始め、同じ向きならもう1段速く、
-        // 逆向きなら1段遅く、0になったら止めて近い列にそろえる。
-        if (epubCoastLevel == 0) {
-          epubCoastDirection = delta;
-          epubCoastLevel = resolveCoastLevel(1);
-        } else if (delta == epubCoastDirection) {
-          epubCoastLevel =
-              resolveCoastLevel(std::min(epubCoastLevel + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1));
-        } else if (epubCoastLevel - 1 <= 0) {
-          int pitch = std::max(1, gui.cellWidthPixels() * fm::epubVerticalColumnPitch());
-          if (epubDragOffset >= pitch / 2) app.scrollEpubVertical(1);
-          else if (epubDragOffset <= -pitch / 2) app.scrollEpubVertical(-1);
+        if (epubCoastLevel > 0) {
           epubCoastLevel = 0;
           epubCoastDirection = 0;
           epubDragOffset = 0;
           gui.setContentOffsetX(0, 0);
-          gui.flush();
-        } else {
-          epubCoastLevel = resolveCoastLevel(epubCoastLevel - 1);
         }
+        app.scrollEpubVertical(delta);
+        gui.flush();
         continue;
       }
       if (wheel->deltaY == 0) continue;  // 横だけのイベント(WheelEvent::deltaX参照)
       dragging = false;
       gui.setHandCursor(false);
       gui.setPointingCursor(false);
-      // Negated relative to a "naive" reading of deltaY (positive ==
-      // 'w'/reveal-earlier) -- confirmed backwards via real hardware
-      // testing (2026-08-06 user report, macOS's own default "natural
-      // scrolling" -- content follows the physical gesture direction,
-      // the opposite sense from the old pre-natural-scrolling wheel
-      // convention). GraphicalDisplay::consumeWheelEvent() already
-      // normalizes SDL_MOUSEWHEEL_FLIPPED away to a FIXED physical-
-      // direction sign (see its own comment) -- this negation is a
-      // SEPARATE, deliberate choice about which physical direction
-      // means which app-semantic direction, picked to match natural
-      // scrolling since that's this project's real test machine's own
-      // default and the only case actually verified on real hardware.
-      // Not re-derived from SDL's own docs a second time here on
-      // purpose, after getting the direction wrong once already by
-      // reasoning it out instead of testing it.
-      int wheelDirection = wheel->deltaY > 0 ? -1 : 1;
-      if (coastLevel == 0) {
-        // 2026-09-03 fix, a direct user report: the drag-start hoverIndex_
-        // clear (scrollbar ButtonDown / content-drag Motion, see their own
-        // identical comments) never applied here, since wheel-driven
-        // scrolling never goes through either of those sites -- it just
-        // sets coastLevel/coastDirection directly. Only clearing when a
-        // coast is actually starting fresh from rest (not on every tick)
-        // mirrors the drag case: once cleared, ContentView::redraw()'s own
-        // hoverIndex_-else-cursorIndex_ priority keeps falling back to
-        // cursorIndex_ (kept continuously correct by stepTopIndex()) for
-        // the rest of this coast, exactly like a real drag/flick already
-        // does -- see ContentView::scrollHighlightForLine()'s own comment.
-        // (app.activeContentView(), not `view` -- that local isn't
-        // declared until later in this same loop iteration, see its own
-        // declaration site.)
-        app.activeContentView().setHoverIndex(std::nullopt);
-        coastDirection = wheelDirection;
-        coastLevel = resolveCoastLevel(1);
-      } else if (wheelDirection == coastDirection) {
-        coastLevel = resolveCoastLevel(std::min(coastLevel + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1));
-      } else {
-        int decayedLevel = coastLevel - 1;
-        if (decayedLevel <= 0) {
-          coastLevel = 0;
-          coastDirection = 0;
-          pixelOffset = 0;
-        } else {
-          coastLevel = resolveCoastLevel(decayedLevel);
-        }
+      coastLevel = 0;
+      coastDirection = 0;
+      pixelOffset = 0;
+      // 符号: 2026-08-06の実機確認(macOSのナチュラルスクロール)で、deltaYが正なら前へ。
+      scrollByWheel(app, gui, wheel->deltaY > 0 ? -1 : 1, std::abs(wheel->deltaY));
+    }
+
+    // 2026-10-02追加、直接のユーザー依頼("慣性スクロールはホイール押下のマウス移動で開始だが
+    // 速度は最低速に限定"): 中ボタンを押して動かした向きへ、最低速の慣性スクロールを始める
+    // (左ドラッグと同じく、下へ動かせば前へ。縦書きの本文では右へ動かせば先へ)。
+    while (auto middle = gui.consumeMiddleDragStart()) {
+      anyEventThisFrame = true;
+      if (app.currentMode() == fm::ApplicationMode::Shell || app.currentMode() == fm::ApplicationMode::Copy ||
+          app.awaitingSequenceOrPromptByte() || dragging)
+        continue;
+      if (app.epubVerticalScrollActive()) {
+        if (!app.epubVerticalDragActive() || middle->deltaX == 0) continue;
+        epubCoastDirection = middle->deltaX > 0 ? 1 : -1;
+        epubCoastLevel = resolveCoastLevel(1);
+        continue;
       }
+      if (middle->deltaY == 0) continue;
+      app.activeContentView().setHoverIndex(std::nullopt);  // ホイールで始めていた時と同じ(2026-09-03)
+      coastDirection = middle->deltaY > 0 ? 1 : -1;  // coastDirection自身のコメント参照: +1で前へ
+      coastLevel = resolveCoastLevel(1);
     }
 
     fm::ContentView &view = app.activeContentView();
@@ -3087,32 +3063,6 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           break;
         }
       }
-    }
-
-    // 2026-10-02追加、中ボタンのオートスクロール(GraphicalDisplay::autoscrollOffsetPixels()参照、
-    // CUIのrunTerminalAutoscroll()と同じ操作): 押した位置からポインタまでの距離1行ごとに
-    // fm::kScrollSpeedLevelsを1段ずつ速く、下なら先へ。動きそのものは下の慣性スクロールに任せる。
-    if (auto offset = gui.autoscrollOffsetPixels()) {
-      if (app.currentMode() == fm::ApplicationMode::Shell || app.currentMode() == fm::ApplicationMode::Copy ||
-          app.awaitingSequenceOrPromptByte() || app.epubVerticalScrollActive()) {
-        gui.cancelAutoscroll();
-      } else {
-        autoscrollActive = true;
-        int level = std::min(std::abs(*offset) / std::max(cellHeight, 1),
-                             static_cast<int>(fm::kScrollSpeedLevels.size()) - 1);
-        if (level > 0) {
-          coastLevel = resolveCoastLevel(level);
-          coastDirection = *offset > 0 ? -1 : 1;  // coastDirection自身のコメント参照: -1で先へ
-        } else {
-          coastLevel = 0;
-          pixelOffset = 0;
-        }
-      }
-    }
-    if (autoscrollActive && !gui.autoscrollOffsetPixels()) {
-      autoscrollActive = false;
-      coastLevel = 0;
-      pixelOffset = 0;
     }
 
     if (coastLevel > 0 && !dragging) {
