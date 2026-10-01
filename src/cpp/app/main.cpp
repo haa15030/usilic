@@ -1197,6 +1197,11 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
           }
           continue;
         }
+        if (mouse->pressed && !mouse->motionOnly && mouse->button == 2) {  // 右クリック: 慣性を止めて^G
+          clearHoverAndRedraw(view);
+          app.feedCanonicalByte(0x07);
+          return result;
+        }
         if (mouse->pressed && !mouse->motionOnly) {
           int lineIndex = view.lineIndexAtRow(mouse->row);
           if (lineIndex >= 0) {
@@ -1610,6 +1615,10 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
           // 始める(Shift+↑/↓と同じ。続けて同じ向きなら速く、逆なら向きを変える、runCoastLoop())。
           TerminalCoastResult coast = runCoastLoop(app, display, keyInput, resolveCoastLevel(1), mouse->wheel);
           if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
+        } else if (mouse->pressed && !mouse->motionOnly && mouse->button == 2) {
+          // 2026-10-01追加、直接のユーザー依頼("マウスの右クリックに^Gを割り当てて"): -gの右クリック
+          // (runGuiPhase()のclick->rightButton、2026-09-07)と同じく、本物のキーボードの^Gと同じ経路へ。
+          app.feedCanonicalByte(0x07);
         } else if (mouse->pressed && !mouse->motionOnly && mouse->button == 0) {
           // Left-button down: the mouse-driven equivalent of
           // Shift+Up/Down -- see runTerminalMouseDrag()'s own comment
