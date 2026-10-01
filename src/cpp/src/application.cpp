@@ -11666,11 +11666,11 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // C-x SPCだけで新規に開始できるため。
   if (copyLeaderJPending_) {  // copyLeaderJPending_の宣言コメント参照
     copyLeaderJPending_ = false;
-    if (!special && byte == kControlC) {
-      returnFromCopy();
-      handleCommand(Command::GoToFileSelector);
-    }
-    return true;
+    if (!special && byte == kControlG) return true;  // ^J^Gは取り消し(COPYのまま)
+    // ^Jの続きは、COPYを抜けてから通常の^Jとして処理する(^J^O e等の3打目以降も通常どおり)
+    returnFromCopy();
+    dispatchByte(kLeaderJ, std::nullopt);
+    return dispatchByte(byte, special);
   }
   if (!special && byte == kLeaderJ) {
     copyLeaderJPending_ = true;

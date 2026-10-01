@@ -2999,6 +2999,8 @@ class Application {
   // 2026-10-01追加、直接のユーザー報告("^J^Cでカレントディレクトリへ移動のつもりの^O^C(COPY)では
   // ^J^Cと打っても移動しない。^J^Cは全権モードなので対応よろしく"): COPYの中の^Jリーダー。
   // ^J^CでCOPYを抜けて(ls)のカレントディレクトリへ(Command::GoToFileSelector)。
+  // 同日拡張、直接のユーザー依頼("^Jが入口・移動だとすれば全ての^J"): ^Jの2打目でCOPYを抜け、
+  // ^Jとその2打目を通常どおりdispatchByte()へ渡す(^J^GだけはCOPYのまま取り消し)。
   bool copyLeaderJPending_ = false;
   // feedCopyByte()自身のコメント参照(2026-09-08追加、直接のユーザー
   // 要望"未サポートでもある^[N（Nは行番号）で当該行へジャンプする
