@@ -2531,6 +2531,7 @@ class Application {
   std::pair<int, int> epubVerticalShownRange(int first) const;
   // 縦書きの列の端(deltaの向き)の先(前)に横書きの範囲があればそこへ入る(描き直す)。
   bool enterEpubHorizontalAtEdge(int delta);
+  bool enterEpubHorizontalAtBookEnd();  // ^[<で本の末尾の横書きの範囲(奥付等)の最下行へ
   bool leaveEpubHorizontalIfOutside();  // 縦書きへ戻ったらtrue
 
  public:

@@ -4128,6 +4128,22 @@ bool Application::handleCommandImpl(Command command) {
     activeView().syncVisibleCursor();
     return true;
   }
+  // 2026-10-01(enterEpubHorizontalAtBookEnd()参照): 縦書きの本の横書きの範囲(奥付等)でも、
+  // ^[</^[>は縦書きと同じ向き――^[<は本の末尾(奥付の最下行)、^[>は本の冒頭(縦書きの最初)。
+  if (currentMode_ == ApplicationMode::File && epubBookVertical() && epubHorizontalSection_) {
+    if (command == Command::GoToTop) {
+      if (enterEpubHorizontalAtBookEnd()) return true;
+    } else if (command == Command::GoToBottom) {
+      epubJumpRaw_ = fileRawLineAtCursor();  // ^X^Xでここへ戻れるよう
+      epubVerticalMark_.reset();
+      epubHorizontalSection_.reset();
+      syncEpubHorizontalPresentation();
+      setEpubVerticalView(0, 0);
+      activeView().redraw();
+      activeView().syncVisibleCursor();
+      return true;
+    }
+  }
   if (currentMode_ == ApplicationMode::File && epubVerticalActive())  // 縦書き(handleEpubVerticalCommand()参照)
     if (auto handled = handleEpubVerticalCommand(command)) return *handled;
   if (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive())  // 縦書きの章の一覧
@@ -7434,6 +7450,34 @@ std::pair<int, int> Application::epubVerticalStep(int cursor, bool forward) cons
   return {jumped ? (t / perScreen) * perScreen : -1, t};
 }
 
+// 縦書きの本の末尾に横書きの範囲(奥付等)があれば、その最下行(画面の一番下)へ入る(^[<)。
+// 縦書きの列の最後の本文の行より後ろの範囲だけ。
+bool Application::enterEpubHorizontalAtBookEnd() {
+  const auto &ranges = fileMode_.epubLayoutHints().horizontal;
+  if (ranges.empty()) return false;
+  int lastRaw = 0;
+  for (const auto &col : epubVerticalCols_)
+    if (!col.padding && !col.cells.empty()) lastRaw = std::max(lastRaw, col.rawLineNumber);
+  const auto &range = ranges.back();
+  if (range.first <= lastRaw) return false;
+  enterEpubHorizontal(range, range.first);
+  const auto &lines = fileView_.lines();
+  int last = -1, startIndex = -1;
+  for (int i = 0; i < static_cast<int>(lines.size()); i++) {
+    int raw = lines[i].rawLineNumber.value_or(0);
+    if (raw < range.first || raw > range.second) continue;
+    if (startIndex < 0) startIndex = i;
+    last = i;
+  }
+  if (last >= 0) {
+    fileView_.setCursorIndex(last);
+    fileView_.setTopIndex(std::max(startIndex, last - std::max(1, fileView_.height()) + 1));
+  }
+  activeView().redraw();
+  activeView().syncVisibleCursor();
+  return true;
+}
+
 bool Application::enterEpubHorizontalAtEdge(int delta) {
   // 2026-09-29(同じ報告"慣性スクロールは奥付の前の章で止まる"): 縦書きの列の端で、その先に
   // 横書きの範囲(奥付等)があればそこへ入る(k/jのmaybeEnterEpubHorizontal()と同じ)。
@@ -7573,6 +7617,9 @@ std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
       break;
     case Command::GoToTop:
       epubVerticalMark_ = cursor;
+      // 2026-10-01、直接のユーザー報告("^[<で奥付の最下行にならない(横書きでは^[<は冒頭だが流れで
+      // いくと末尾が自然)"): 本文の最後の列の先に横書きの範囲(奥付等)があれば、その最下行へ。
+      if (enterEpubHorizontalAtBookEnd()) return true;
       setEpubVerticalView(static_cast<int>(epubVerticalCols_.size()), static_cast<int>(epubVerticalCols_.size()));
       break;
     case Command::ExchangeJumpMark: {

@@ -379,12 +379,11 @@ struct CssFontRule {
 };
 
 // 2026-10-01、直接のユーザー依頼("<h2 class...、p class=\"title\"...は本文よりも大きめ、
-// <p class=\"author\"...は小さめにして"): 本のCSSの指定(Kbt.epubのp.authorは100%)に関わらず、
-// 見出しと題名は大きい字、著者名は小さい字にする(読む側の好み、BodyConverter::convert()が
-// 本のCSSの後に足す)。
-const char *const kReaderOverrideCss =
-    "h1, h2, h3, .title { font-size: large; }\n"
-    ".author { font-size: small; }\n";
+// <p class=\"author\"...は小さめにして"): 本のCSSの指定に関わらず、見出しと題名は大きい字に
+// する(読む側の好み、BodyConverter::convert()が本のCSSの後に足す)。
+// 同日訂正、直接のユーザー依頼("現物を見てみるとauthorのサイズは本文と同じ方がいいかなと"):
+// 著者名(.author)を小さい字にするのはやめた(Kbt.epubのp.authorは100%で本文と同じ)。
+const char *const kReaderOverrideCss = "h1, h2, h3, .title { font-size: large; }\n";
 
 // font-sizeの値を3段階に。%・em・remは115%以上なら大きい字、90%以下なら小さい字、pxは
 // 16pxを100%とする。キーワードはsmall以下・smallerが小さい字、large以上・largerが大きい字。
@@ -1402,8 +1401,12 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
   title = collapseSpace(title);
   creator = collapseSpace(creator);
   // 本のタイトルは明朝体(2026-09-29、直接のユーザー指定)。下線はリンク専用(BodyConverterの"a"参照)
-  if (!title.empty()) out += "<serif><b>" + title + "</b></serif>\n";
+  // 2026-10-01、直接のユーザー依頼("本の冒頭タイトルページも他の表紙と同じで"): 扉の書名
+  // (p.title、kReaderOverrideCss)と同じく大きい字にし、縦書きの本では扉と同じく1ページの中央に
+  // 置く(下のlayoutHints->centered)。
+  if (!title.empty()) out += "<serif><big><b>" + title + "</b></big></serif>\n";
   if (!creator.empty()) out += creator + "\n";
+  int headerLines = static_cast<int>(std::count(out.begin(), out.end(), '\n'));
   if (!out.empty()) out += "\n";
 
   BodyConverter converter(out, readMember);
@@ -1459,6 +1462,10 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
       run->second = std::max(run->second, total);
     }
     flush();
+    // 本の冒頭の書名・著者名(上のheaderLines)は、縦書きの本では扉(縦書きの箱)と同じ扱い。
+    // 先頭の改行は無いので(leadingは0)、1行目から。
+    if (headerLines > 0 && leading == 0 && epubIsRightToLeft(readMember))
+      layoutHints->centered.insert(layoutHints->centered.begin(), {1, headerLines});
     for (int line : converter.alignEndLines())
       if (line - leading >= 1) layoutHints->alignEnd.push_back(line - leading);
     for (int line : converter.centerLines())

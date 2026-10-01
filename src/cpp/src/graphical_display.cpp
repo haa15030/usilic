@@ -341,9 +341,9 @@ void syncHighDpiRenderScale(SDL_Window *window, SDL_Renderer *renderer) {
 // boxH)の中央を中心に拡大縮小する。マス目(行・列の間隔)は変えない。大きい字は少しはみ出す。
 constexpr double kLargeGlyphScale = 1.25;
 constexpr double kSmallGlyphScale = 0.8;
-SDL_Rect scaleGlyphRect(SDL_Rect r, int size, int boxX, int boxY, int boxW, int boxH) {
+SDL_Rect scaleGlyphRect(SDL_Rect r, int size, int boxX, int boxY, int boxW, int boxH, double factor = 0) {
   if (size == 0) return r;
-  double k = size > 0 ? kLargeGlyphScale : kSmallGlyphScale;
+  double k = factor > 0 ? factor : size > 0 ? kLargeGlyphScale : kSmallGlyphScale;
   double cx = boxX + boxW / 2.0, cy = boxY + boxH / 2.0;
   SDL_Rect out;
   out.x = static_cast<int>(cx + (r.x - cx) * k);
@@ -351,6 +351,37 @@ SDL_Rect scaleGlyphRect(SDL_Rect r, int size, int boxX, int boxY, int boxW, int 
   out.w = static_cast<int>(r.w * k);
   out.h = static_cast<int>(r.h * k);
   return out;
+}
+
+// 2026-10-01訂正、直接のユーザー報告("大きめ文字が詰まるのはやはりマズいのでマス目から外れて
+// みて"): 大きい字の並び(kinds[i] == 2)は、字の間隔ごとkLargeGlyphScale倍に広げ、前後の空いた
+// マス(kinds[i] == 0)へはみ出して描く。行(縦書きは列)の中の位置は、並びの後ろの空きへ伸ばす
+// (前後の空きがほぼ同じ――中央寄せ――なら両側へ)。空きが足りなければ、収まるだけの倍率に
+// 下げる。kindsは行(列)の桁(縦書きは行)ごとの種類で、0は空き、1は他の字、2は大きい字。
+// 戻り値は、index番目の桁の字の新しい頭の位置(桁)と倍率。
+struct LargeGlyphPlacement {
+  double start;
+  double pitch;
+};
+LargeGlyphPlacement placeLargeGlyph(const std::vector<int> &kinds, int index) {
+  int n = static_cast<int>(kinds.size());
+  int s = index, e = index;
+  while (s > 0 && kinds[s - 1] == 2) s--;
+  while (e < n && kinds[e] == 2) e++;
+  int before = 0, after = 0;
+  for (int i = s - 1; i >= 0 && kinds[i] == 0; i--) before++;
+  for (int i = e; i < n && kinds[i] == 0; i++) after++;
+  int length = std::max(1, e - s);
+  double extra = length * (kLargeGlyphScale - 1.0);
+  double pitch = kLargeGlyphScale, shift = 0;
+  if (before + after >= extra) {
+    if (before > 0 && std::abs(before - after) <= 2) shift = std::min<double>(before, extra / 2);
+    if (after < extra - shift) shift = extra - after;
+  } else {
+    pitch = static_cast<double>(length + before + after) / length;
+    shift = before;
+  }
+  return {s - shift + (index - s) * pitch, pitch};
 }
 
 SDL_Rect fitGlyphRect(int boxX, int boxY, int maxW, int maxH, int surfaceW, int surfaceH,
@@ -840,6 +871,32 @@ struct GraphicalDisplay::Impl {
   std::map<GlyphCacheKey, CachedGlyph> glyphCache;
 
   Cell &cellAt(int row, int col) { return grid[row * columns + col]; }
+  const Cell &cellAt(int row, int col) const { return grid[row * columns + col]; }
+  // placeLargeGlyph()の、画面の(row, col)の大きい字の置き方。横書きは行の桁、縦書きは列(colと
+  // その右隣の桁)の行に沿って見る。
+  LargeGlyphPlacement largeGlyphPlacementAt(int row, int col) const {
+    const Impl &d = *this;
+    auto blankGlyph = [](const Cell &c) { return !c.continuation && !c.standout && (c.glyph.empty() || c.glyph == " "); };
+    std::vector<int> kinds;
+    if (d.verticalText) {
+      for (int r = 0; r < d.rows; r++) {
+        const Cell &c = d.cellAt(r, col);
+        bool blank = blankGlyph(c) && (col + 1 >= d.columns || blankGlyph(d.cellAt(r, col + 1)) ||
+                                       d.cellAt(r, col + 1).continuation);
+        kinds.push_back(blank ? 0 : c.size > 0 ? 2 : 1);
+      }
+      return placeLargeGlyph(kinds, row);
+    }
+    for (int c = 0; c < d.columns; c++) {
+      const Cell &cell = d.cellAt(row, c);
+      if (cell.continuation && !kinds.empty()) {
+        kinds.push_back(kinds.back());
+        continue;
+      }
+      kinds.push_back(blankGlyph(cell) ? 0 : cell.size > 0 ? 2 : 1);
+    }
+    return placeLargeGlyph(kinds, col);
+  }
 };
 
 namespace {
@@ -1576,7 +1633,17 @@ void GraphicalDisplay::renderCell(int row, int col) {
     // 自身のコメント参照。
     int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
     SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h, cell.italic || cell.bold);
-    dst = scaleGlyphRect(dst, cell.size, box.x, box.y, maxW, impl_->cellHeight);
+    if (cell.size > 0) {
+      // 大きい字はマス目から外す(placeLargeGlyph())
+      LargeGlyphPlacement place = impl_->largeGlyphPlacementAt(row, col);
+      dst = scaleGlyphRect(dst, cell.size, box.x, box.y, maxW, impl_->cellHeight, place.pitch);
+      if (impl_->verticalText)
+        dst.y += static_cast<int>((place.start - row + (place.pitch - 1) / 2) * impl_->cellHeight);
+      else
+        dst.x += static_cast<int>((place.start - col + (place.pitch - 1) * (isWide ? 2 : 1) / 2.0) * impl_->cellWidth);
+    } else {
+      dst = scaleGlyphRect(dst, cell.size, box.x, box.y, maxW, impl_->cellHeight);
+    }
     if (impl_->verticalText) {
       // Display::setVerticalTextHint()参照。
       auto blankAt = [&](int c) {
@@ -2143,9 +2210,14 @@ void GraphicalDisplay::renderRuby(int row, int col) {
   const Cell &cell = impl_->cellAt(row, col);
   if (cell.ruby.empty() || cell.rubySpan <= 0) return;
   SDL_Color fg = cell.fgColor != Display::kDefaultColor ? ansiColorToSdl(cell.fgColor) : impl_->fg;
-  drawRubyText(Impl::kMarginX + col * impl_->cellWidth + impl_->offsetXForRow(row),
-               Impl::kMarginY + row * impl_->cellHeight, cell.ruby, cell.rubySpan, cell.rubyVertical,
-               Color{fg.r, fg.g, fg.b}, cell.serif);
+  int x = Impl::kMarginX + col * impl_->cellWidth + impl_->offsetXForRow(row);
+  int y = Impl::kMarginY + row * impl_->cellHeight;
+  if (cell.size > 0) {  // 大きい字の親字はマス目から外れている(placeLargeGlyph())ので、読みも合わせる
+    LargeGlyphPlacement place = impl_->largeGlyphPlacementAt(row, col);
+    if (cell.rubyVertical) y += static_cast<int>((place.start - row) * impl_->cellHeight);
+    else x += static_cast<int>((place.start - col) * impl_->cellWidth);
+  }
+  drawRubyText(x, y, cell.ruby, cell.rubySpan, cell.rubyVertical, Color{fg.r, fg.g, fg.b}, cell.serif);
 }
 
 // renderRuby()と、スクロール中のrenderTextRun()の共通部分。(x, y)は親字の最初の字のマスの左上。
@@ -3243,6 +3315,32 @@ void GraphicalDisplay::setPointingCursor(bool active) {
 void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, int startCol,
                                       const std::vector<Display::AttributeRun> &attributes) {
   SDL_Color sdlFg{fg.r, fg.g, fg.b, 255};
+  // 大きい字(Display::Attribute::Large)の置き方のための、桁ごとの種類(placeLargeGlyph())。
+  // 下の描くループと同じ進み方で桁を数える。
+  std::vector<int> kinds(std::max(0, impl_->columns), 0);
+  bool anyLarge = false;
+  for (const auto &run : attributes) anyLarge = anyLarge || run.attribute == Display::Attribute::Large;
+  if (anyLarge) {
+    auto inRun = [&](std::size_t at, Display::Attribute attribute) {
+      for (const auto &run : attributes)
+        if (run.attribute == attribute && static_cast<int>(at) >= run.start && static_cast<int>(at) < run.end)
+          return true;
+      return false;
+    };
+    int cx = startCol;
+    for (std::size_t p = 0; p < line.size() && cx < impl_->columns;) {
+      int l = Utf8::sequence_length(static_cast<unsigned char>(line[p]));
+      if (p + l > line.size()) l = 1;
+      int nw = Utf8::display_width(reinterpret_cast<const unsigned char *>(line.data() + p), l);
+      if ((nw == 0 && l > 1) || inRun(p, Display::Attribute::RubyText)) {
+        p += l;
+        continue;
+      }
+      int kind = line[p] == ' ' ? 0 : inRun(p, Display::Attribute::Large) ? 2 : 1;
+      for (int k = 0; k < std::max(1, nw) && cx < impl_->columns; k++) kinds[cx++] = kind;
+      p += l;
+    }
+  }
   int x = startCol;
   std::size_t pos = 0;
   while (pos < line.size() && x < impl_->columns) {
@@ -3426,8 +3524,15 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
         // (renderScrolled()→ここ)は斜体のみのまま取り残されていた。
         SDL_Rect dst = fitGlyphRect(Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y,
                                      width * impl_->cellWidth, impl_->cellHeight, w, h, wantItalic || wantBold);
-        dst = scaleGlyphRect(dst, wantSize, Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y,
-                             width * impl_->cellWidth, impl_->cellHeight);
+        if (wantSize > 0 && x >= 0 && x < static_cast<int>(kinds.size())) {
+          LargeGlyphPlacement place = placeLargeGlyph(kinds, x);
+          dst = scaleGlyphRect(dst, wantSize, Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y,
+                               width * impl_->cellWidth, impl_->cellHeight, place.pitch);
+          dst.x += static_cast<int>((place.start - x + (place.pitch - 1) * width / 2.0) * impl_->cellWidth);
+        } else {
+          dst = scaleGlyphRect(dst, wantSize, Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y,
+                               width * impl_->cellWidth, impl_->cellHeight);
+        }
         SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
       }
     }
