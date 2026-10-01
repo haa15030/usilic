@@ -935,10 +935,21 @@ void performScrollStepDelay(const fm::ScrollStep &step) {
   }
 }
 
-// 2026-10-02追加: 慣性スクロール中の←→(縦書きでは↓↑)による速度調整。1段ずつ、最低速
-// (段階1)より下げない。
-int adjustCoastLevel(int level, int delta) {
-  return resolveCoastLevel(std::clamp(level + delta, 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1));
+// 2026-10-02追加、直接のユーザー依頼("←→で開始でいい。いずれのキーも速度減少時、最低速を超えたら
+// 逆向き最低速、以後は加速"): 慣性スクロールを始める/速さを変えるキー(←→、縦書きでは↓↑)の1回分。
+// 止まっていれば`pressed`の向きに最低速で始め、同じ向きなら1段速く、逆向きなら1段遅く、最低速から
+// さらに逆を押すと逆向きの最低速(以後同じキーで加速)。
+void stepCoastByKey(int &level, int &direction, int pressed) {
+  if (level == 0) {
+    level = resolveCoastLevel(1);
+    direction = pressed;
+  } else if (pressed == direction) {
+    level = resolveCoastLevel(std::min(level + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1));
+  } else if (level > 1) {
+    level = resolveCoastLevel(level - 1);
+  } else {
+    direction = pressed;
+  }
 }
 
 // 2026-10-02追加、直接のユーザー依頼("ホイールを本来の機能（画面スクロール）に戻してほしい"):
@@ -958,37 +969,8 @@ void scrollByWheel(fm::Application &app, fm::Display &display, int direction, in
   }
 }
 
-enum class ShiftArrow { None, Up, Down };
-
-// Call immediately after readByte() returned ESC. Recognizes the
-// xterm CSI-with-modifier form of Shift+Up/Down ("\x1b[1;2A" /
-// "\x1b[1;2B") -- Up/Down's own *unmodified* sequences are shorter and
-// diverge from this one already at the 3rd byte ('1' here vs. a final
-// letter there), so a mismatch here can only mean "not a Shift-arrow,"
-// never "this was actually a plain arrow key that got misread."
-ShiftArrow peekShiftArrow(fm::KeyInput &keyInput) {
-  std::string consumed;
-  auto next = [&]() -> int {
-    int b = keyInput.readByte();
-    if (b != 0) consumed.push_back(static_cast<char>(b));
-    return b;
-  };
-  static const char kExpected[] = "[1;2";
-  for (const char *p = kExpected; *p; p++) {
-    if (next() != static_cast<unsigned char>(*p)) {
-      if (!consumed.empty()) keyInput.playRawMacro(consumed);
-      return ShiftArrow::None;
-    }
-  }
-  int final = next();
-  if (final == 'A') return ShiftArrow::Up;
-  if (final == 'B') return ShiftArrow::Down;
-  if (!consumed.empty()) keyInput.playRawMacro(consumed);
-  return ShiftArrow::None;
-}
-
 // 2026-10-02追加: readByte()がESCを返した直後に呼ぶ。素の→("\x1b[C"/"\x1bOC")なら+1、
-// ←("\x1b[D"/"\x1bOD")なら-1、それ以外は読んだ分を戻して0(peekShiftArrow()と同じ)。
+// ←("\x1b[D"/"\x1bOD")なら-1、それ以外は読んだ分を戻して0(peekMouseSgr()と同じ)。
 int peekLeftRight(fm::KeyInput &keyInput) {
   std::string consumed;
   auto next = [&]() -> int {
@@ -1006,13 +988,11 @@ int peekLeftRight(fm::KeyInput &keyInput) {
   return 0;
 }
 
-// Call immediately after readByte() returned ESC and peekShiftArrow()
-// already returned None. Recognizes an SGR extended mouse report
+// Call immediately after readByte() returned ESC. Recognizes an SGR extended mouse report
 // ("\x1b[<Cb;Cx;Cy(M|m)", only sent while runTerminalCoast() has
 // enabled mouse tracking -- see setTerminalMouseTracking()) and hands
 // the decoded parameter string to fm::parseMouseSgr(). A malformed or
-// non-mouse sequence is queued back exactly like peekShiftArrow()
-// above.
+// non-mouse sequence is queued back (playRawMacro()).
 std::optional<fm::MouseSgrEvent> peekMouseSgr(fm::KeyInput &keyInput) {
   std::string consumed;
   auto next = [&]() -> int {
@@ -1117,8 +1097,9 @@ void applyHoverRowAndRedraw(fm::ContentView &view, int mouseRow, bool moveCursor
 // is already looking at, no separate window, colors/font always
 // exactly right because it never stopped being the real terminal.
 //
-// Shared by both real-terminal triggers: Shift+Up/Shift+Down (see
-// peekShiftArrow(), which calls this at level 1) and a mouse-drag
+// Shared by both real-terminal triggers: Left/Right (2026-10-02,
+// replacing Shift+Up/Down -- see runTerminalPhase()'s peekLeftRight()
+// call, which calls this at level 1) and a mouse-drag
 // release (see runTerminalMouseDrag(), which calls this at whatever
 // level the release speed worked out to). Reuses the SAME
 // fm::kScrollSpeedLevels timing table runGuiPhase() does, scaled up
@@ -1131,8 +1112,8 @@ void applyHoverRowAndRedraw(fm::ContentView &view, int mouseRow, bool moveCursor
 // comment) -- this function only ever reads/writes hover state, never
 // toggles tracking itself. Stops on: a list boundary; a click (which
 // also opens whatever row is under the pointer); or any key other
-// than Shift+Up/Down (repeating the SAME direction accelerates; the
-// OPPOSITE direction reverses and resets to the base speed) -- that
+// than Left/Right (see stepCoastByKey() for how those change speed
+// and direction) -- that
 // key is handed back to the caller to feed through normally, exactly
 // as if this function had never run.
 TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm::KeyInput &keyInput,
@@ -1216,17 +1197,6 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
     if (!byte) continue;  // spurious wakeup/timeout artifact
 
     if (byte == 0x1b) {
-      ShiftArrow arrow = peekShiftArrow(keyInput);
-      if (arrow != ShiftArrow::None) {
-        int pressedDirection = (arrow == ShiftArrow::Up) ? -1 : 1;
-        if (pressedDirection == direction) {
-          level = resolveCoastLevel(std::min(level + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1));
-        } else {
-          direction = pressedDirection;
-          level = resolveCoastLevel(1);
-        }
-        continue;
-      }
       auto mouse = peekMouseSgr(keyInput);
       if (mouse) {
         lastMouseRow = mouse->row;
@@ -1253,9 +1223,9 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
         applyHoverRowAndRedraw(view, lastMouseRow);
         continue;
       }
-      // 2026-10-02追加、直接のユーザー依頼: ←→で速度調整(adjustCoastLevel()参照)。
+      // 2026-10-02追加、直接のユーザー依頼: ←→で速度/向きを変える(stepCoastByKey()参照)。
       if (int delta = peekLeftRight(keyInput)) {
-        level = adjustCoastLevel(level, delta);
+        stepCoastByKey(level, direction, delta);
         continue;
       }
       // Neither a Shift-arrow nor a mouse report -- some other ESC
@@ -1287,8 +1257,8 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
 // fm::kScrollSpeedLevels level via fm::levelForReleaseDistance()
 // (passing cellHeightPixels=1, since a "pixel" there is already a row
 // here), then hands off into runCoastLoop() to keep going at that
-// speed -- exactly the mouse-drag equivalent of what Shift+Up/Down
-// does via peekShiftArrow(). A release with no meaningful motion (a
+// speed -- exactly the mouse-drag equivalent of what Left/Right
+// does via peekLeftRight(). A release with no meaningful motion (a
 // plain click) isn't a drag at all: it's handled exactly like GUI
 // mode's click-an-already-selected-row-opens-it, via
 // Application::handleMouseClick().
@@ -1427,34 +1397,6 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
     }
     int direction = releaseDistance > 0 ? -1 : 1;  // same natural-scrolling sign as the live-drag step above
     return runCoastLoop(app, display, keyInput, level, direction);
-  }
-}
-
-// 2026-10-02追加、直接のユーザー依頼("慣性スクロールはホイール押下のマウス移動で開始だが速度は
-// 最低速に限定"): 中ボタンを押したあと、ポインタが別の行へ動いたら、その向きへ最低速で
-// runCoastLoop()を始める(左ドラッグと同じく、下へ動かせば前へ)。動かずに離したら何もしない。
-TerminalCoastResult runTerminalMiddleDrag(fm::Application &app, fm::Display &display, fm::KeyInput &keyInput,
-                                          int anchorRow) {
-  TerminalCoastResult result;
-  for (;;) {
-    int byte = keyInput.readByte();
-    if (!byte) continue;  // VTIMEのポーリング(runTerminalMouseDrag()と同じ)
-    if (byte != 0x1b) {
-      result.hadLeftoverByte = true;
-      result.leftoverByte = byte;
-      return result;
-    }
-    auto mouse = peekMouseSgr(keyInput);
-    if (!mouse) {
-      keyInput.playRawMacro("\x1b");
-      return result;
-    }
-    if (mouse->wheel != 0) continue;
-    if (mouse->motionOnly) {
-      if (mouse->row == anchorRow) continue;
-      return runCoastLoop(app, display, keyInput, resolveCoastLevel(1), mouse->row > anchorRow ? -1 : 1);
-    }
-    return result;  // 離した(または別のボタン)
   }
 }
 
@@ -1659,25 +1601,23 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       continue;
     }
     if (byte == 0x1b) {
-      // Shift+Up/Down (see peekShiftArrow()'s own comment): the
-      // keyboard-driven real-terminal drag-scroll trigger. Checked
-      // first because its sequence is longer than Up/Down's own
-      // unmodified ones, which readEscapeSequence() reads a fixed,
-      // shorter length for -- a mismatch here safely requeues
-      // whatever was read (via playRawMacro()) rather than losing
-      // bytes.
-      ShiftArrow arrow = peekShiftArrow(keyInput);
-      if (arrow != ShiftArrow::None) {
-        consecutiveEscapes = 0;
-        TerminalCoastResult coast =
-            runCoastLoop(app, display, keyInput, resolveCoastLevel(1), arrow == ShiftArrow::Up ? -1 : 1);
-        if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
-        continue;
+      // 2026-10-02、直接のユーザー依頼("←→で開始でいい"、"-cでは←→が↑↓に割り当てられているので
+      // 速度調整にもスクロール開始にも使えない"): 一覧系のモードでは←→を^P/^Nとしてではなく、
+      // 慣性スクロールの開始(→で先へ、最低速、runCoastLoop())に使う。以前のShift+↑/↓は廃止
+      // (Terminal.appでは手動のキー割り当てが要るため)。
+      if (app.currentMode() != fm::ApplicationMode::Shell && app.currentMode() != fm::ApplicationMode::Copy &&
+          !app.awaitingSequenceOrPromptByte()) {
+        if (int delta = peekLeftRight(keyInput)) {
+          consecutiveEscapes = 0;
+          TerminalCoastResult coast = runCoastLoop(app, display, keyInput, resolveCoastLevel(1), delta);
+          if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
+          continue;
+        }
       }
       // A mouse report -- only actually arrives while mouseTrackingOn
       // (Terminal.app doesn't send these otherwise), but safe to
       // attempt unconditionally: peekMouseSgr() requeues via
-      // playRawMacro() on any mismatch, same as peekShiftArrow().
+      // playRawMacro() on any mismatch, same as peekLeftRight().
       auto mouse = peekMouseSgr(keyInput);
       if (mouse) {
         consecutiveEscapes = 0;
@@ -1690,14 +1630,9 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
           // 2026-10-01追加、直接のユーザー依頼("マウスの右クリックに^Gを割り当てて"): -gの右クリック
           // (runGuiPhase()のclick->rightButton、2026-09-07)と同じく、本物のキーボードの^Gと同じ経路へ。
           app.feedCanonicalByte(0x07);
-        } else if (mouse->pressed && !mouse->motionOnly && mouse->button == 1 &&
-                   app.currentMode() != fm::ApplicationMode::Copy) {
-          // 中ボタン: 動かした向きへ最低速の慣性スクロール(runTerminalMiddleDrag()参照)
-          TerminalCoastResult coast = runTerminalMiddleDrag(app, display, keyInput, mouse->row);
-          if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
         } else if (mouse->pressed && !mouse->motionOnly && mouse->button == 0) {
           // Left-button down: the mouse-driven equivalent of
-          // Shift+Up/Down -- see runTerminalMouseDrag()'s own comment
+          // Left/Right -- see runTerminalMouseDrag()'s own comment
           // for why this isn't decided as click-vs-drag until release.
           TerminalCoastResult coast = runTerminalMouseDrag(app, display, keyInput, mouse->row, mouse->column);
           if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
@@ -2528,21 +2463,6 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       gui.setHandCursor(false);  // don't leave a stale hand cursor showing either
       gui.setPointingCursor(false);  // ditto, for a scrollbar-thumb drag this key press interrupted
 
-      // Up/Down double as coast-speed control once a coast is already
-      // running -- 2026-08-07, replacing the original w/s keys
-      // entirely (the user's own follow-up request: w/s removed
-      // outright, partly because plain 's' could race against the
-      // ESC-leader's own "ESC s" == StartShell sequence). Arrows keep
-      // their normal single-line-move role (^P/^N equivalent, via the
-      // key->special branch below) whenever nothing is coasting, but
-      // once coastLevel > 0 they accelerate/reset instead of stopping
-      // the coast and moving one line -- gated "not Shell, not
-      // mid-prompt" so a literal arrow keypress reaching the shell or
-      // a prompt is never hijacked. Direction: Down is +1 (matches
-      // the OLD 'w' -- confirmed backwards on the first real-hardware
-      // try with the naive Up=+1 mapping, so this is intentionally
-      // the opposite of what "Up should obviously mean +1" reasoning
-      // alone would suggest), Up is -1.
       // runProgramInLaunchingTerminal()のクイックルック(2026-09-29)参照: 裏で動いている
       // qlmanageは^[/^G/^Cで閉じる(そのキーはusilicへは渡さない)。
       if (!key->special && (key->byte == 0x1b || key->byte == 0x07 || key->byte == 0x03) &&
@@ -2552,35 +2472,29 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       }
       bool upKey = key->special == fm::Display::Key::Up;
       bool downKey = key->special == fm::Display::Key::Down;
-      // 2026-10-02追加、直接のユーザー依頼("慣性スクロール中は←→（縦書きでは↑↓。いずれも普段は
-      // 使わない）でも速度調整可能"): →で1段速く、←で1段遅く(最低速より下げない)。縦書きの左右の
-      // 慣性(epubCoastLevel)では↓/↑。
-      if (app.currentMode() != fm::ApplicationMode::Shell && !app.awaitingSequenceOrPromptByte()) {
+      // 2026-10-02追加、直接のユーザー依頼("←→で開始でいい。いずれのキーも速度減少時、最低速を
+      // 超えたら逆向き最低速、以後は加速"): ←→で慣性スクロールを始め/速さを変える(stepCoastByKey()、
+      // →で先へ)。縦書きの本文の左右の慣性では↓(先へ)/↑。2026-08-07からの「慣性中の↑↓で加速/
+      // 最低速で逆向き」はこれに置き換えた(以後↑↓は慣性を止めて1行動く、他のキーと同じ)。
+      if (app.currentMode() != fm::ApplicationMode::Shell && app.currentMode() != fm::ApplicationMode::Copy &&
+          !app.awaitingSequenceOrPromptByte()) {
         bool leftKey = key->special == fm::Display::Key::Left;
         bool rightKey = key->special == fm::Display::Key::Right;
-        if (epubCoastLevel > 0 && (upKey || downKey)) {
-          epubCoastLevel = adjustCoastLevel(epubCoastLevel, downKey ? 1 : -1);
+        if (app.epubVerticalDragActive() && (upKey || downKey)) {
+          stepCoastByKey(epubCoastLevel, epubCoastDirection, downKey ? 1 : -1);
           consecutiveEscapes = 0;
           continue;
         }
-        if (coastLevel > 0 && (leftKey || rightKey)) {
-          coastLevel = adjustCoastLevel(coastLevel, rightKey ? 1 : -1);
+        if (!app.epubVerticalScrollActive() && (leftKey || rightKey)) {
+          if (coastLevel == 0) app.activeContentView().setHoverIndex(std::nullopt);  // ホイールで始めていた時と同じ(2026-09-03)
+          stepCoastByKey(coastLevel, coastDirection, rightKey ? -1 : 1);  // coastDirection自身のコメント参照: -1で先へ
           consecutiveEscapes = 0;
           continue;
         }
       }
-      bool arrowSpeedControl = (upKey || downKey) && coastLevel > 0;
-      if (arrowSpeedControl && app.currentMode() != fm::ApplicationMode::Shell &&
-          !app.awaitingSequenceOrPromptByte()) {
+      if (key->special) {
         consecutiveEscapes = 0;
-        int pressedDirection = downKey ? 1 : -1;
-        if (coastLevel > 0 && pressedDirection == coastDirection) {
-          coastLevel = resolveCoastLevel(std::min(coastLevel + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1));
-        } else {
-          coastDirection = pressedDirection;
-          coastLevel = resolveCoastLevel(1);
-        }
-      } else if (key->special) {
+        // Any other real key stops      } else if (key->special) {
         consecutiveEscapes = 0;
         // Any other real key stops an active coast, matching
         // runTerminalCoast()'s own rule -- pixelOffset must be reset
@@ -2656,8 +2570,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // 2026-10-02、直接のユーザー依頼("GUIともどもホイールを本来の機能（画面スクロール）に戻して
       // ほしい"): 2026-08-05からホイールは慣性スクロールの開始/速度調整だったが、普段の画面
       // スクロールの操作で慣性が始まって混乱するため、1刻みごとに画面をスクロールするだけに戻す
-      // (慣性中なら止める)。慣性の開始は中ボタンのドラッグ(consumeMiddleDragStart())、速度は
-      // 左ドラッグを離す速さか←→。
+      // (慣性中なら止める)。慣性の開始/速さは←→(stepCoastByKey())か左ドラッグを離す速さ。
       // EPUBの縦書き(Application::scrollEpubVertical())は1列(章の一覧は1章)ずつの横スクロール。
       // 縦のホイールは下で先へ。横(トラックパッド)は実機で逆とのユーザー報告("トラップパッドは
       // 方向が逆")により、deltaXが正で先へ。
@@ -2680,28 +2593,9 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       coastLevel = 0;
       coastDirection = 0;
       pixelOffset = 0;
-      // 符号: 2026-08-06の実機確認(macOSのナチュラルスクロール)で、deltaYが正なら前へ。
-      scrollByWheel(app, gui, wheel->deltaY > 0 ? -1 : 1, std::abs(wheel->deltaY));
-    }
-
-    // 2026-10-02追加、直接のユーザー依頼("慣性スクロールはホイール押下のマウス移動で開始だが
-    // 速度は最低速に限定"): 中ボタンを押して動かした向きへ、最低速の慣性スクロールを始める
-    // (左ドラッグと同じく、下へ動かせば前へ。縦書きの本文では右へ動かせば先へ)。
-    while (auto middle = gui.consumeMiddleDragStart()) {
-      anyEventThisFrame = true;
-      if (app.currentMode() == fm::ApplicationMode::Shell || app.currentMode() == fm::ApplicationMode::Copy ||
-          app.awaitingSequenceOrPromptByte() || dragging)
-        continue;
-      if (app.epubVerticalScrollActive()) {
-        if (!app.epubVerticalDragActive() || middle->deltaX == 0) continue;
-        epubCoastDirection = middle->deltaX > 0 ? 1 : -1;
-        epubCoastLevel = resolveCoastLevel(1);
-        continue;
-      }
-      if (middle->deltaY == 0) continue;
-      app.activeContentView().setHoverIndex(std::nullopt);  // ホイールで始めていた時と同じ(2026-09-03)
-      coastDirection = middle->deltaY > 0 ? 1 : -1;  // coastDirection自身のコメント参照: +1で前へ
-      coastLevel = resolveCoastLevel(1);
+      // 符号: 実機確認(2026-10-02、直接のユーザー報告"-gでのホイールの回転がスクロール方向と逆")で、
+      // deltaYが正なら先へ。
+      scrollByWheel(app, gui, wheel->deltaY > 0 ? 1 : -1, std::abs(wheel->deltaY));
     }
 
     fm::ContentView &view = app.activeContentView();

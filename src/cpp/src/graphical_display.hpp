@@ -425,15 +425,6 @@ class GraphicalDisplay : public Display {
   };
   std::optional<WheelEvent> consumeWheelEvent();
 
-  // 2026-10-02追加、直接のユーザー依頼("慣性スクロールはホイール押下のマウス移動で開始"): 中ボタン
-  // (ホイールボタン)を押したまま、押した位置から1マス以上動いた時に1回だけ積まれる、その時点の
-  // 押した位置からのずれ(ピクセル、右/下が正)。慣性の開始はapp/main.cpp側。
-  struct MiddleDragStart {
-    int deltaX = 0;
-    int deltaY = 0;
-  };
-  std::optional<MiddleDragStart> consumeMiddleDragStart();
-
   // 右端に予約されたスクロールバー帯の「内側で」始まった左ボタンの
   // 押下/ドラッグ/解放(drawScrollbar()自身のコメント参照)――つまみ
   // をドラッグすることが内容の選択や内容のドラッグスクロールも

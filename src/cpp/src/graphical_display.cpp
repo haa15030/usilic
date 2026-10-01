@@ -785,11 +785,6 @@ struct GraphicalDisplay::Impl {
   // 無関係に「押した時のファイル」が開いてしまう。これが実用上どう
   // 感じられるかを含めて、まずは実機で試してもらうための実装。
   std::optional<MouseClick> pendingLeftClick;
-  // consumeMiddleDragStart()自身の宣言コメント参照。中ボタンを押している間の押した位置と、
-  // その押下で既に積んだかどうか。
-  std::optional<std::pair<int, int>> middleAnchor;
-  bool middleFired = false;
-  std::deque<MiddleDragStart> middleQueue;
   std::deque<KeyEvent> keyQueue;
   // consumeDroppedFiles()自身の宣言コメント参照。
   std::vector<std::string> pendingDrop;       // 受け渡しの途中
@@ -2507,12 +2502,6 @@ bool GraphicalDisplay::pumpEvents() {
             std::fclose(f);
           }
         }
-        if (event.button.button == SDL_BUTTON_MIDDLE) {
-          impl_->middleAnchor = std::make_pair(event.button.x, event.button.y);
-          impl_->middleFired = false;
-          SDL_CaptureMouse(SDL_TRUE);
-          break;
-        }
         if (event.button.button != SDL_BUTTON_LEFT && event.button.button != SDL_BUTTON_RIGHT) break;
         // スクロールバーの帯の中で始まる左クリックの押下は、つまみの
         // ドラッグのジェスチャであり、コンテンツのクリック/ドラッグ
@@ -2560,11 +2549,6 @@ bool GraphicalDisplay::pumpEvents() {
             std::fclose(f);
           }
         }
-        if (event.button.button == SDL_BUTTON_MIDDLE && impl_->middleAnchor) {
-          impl_->middleAnchor.reset();
-          SDL_CaptureMouse(SDL_FALSE);
-          break;
-        }
         if (event.button.button == SDL_BUTTON_LEFT) {
           SDL_CaptureMouse(SDL_FALSE);
           if (impl_->scrollbarDragActive) {
@@ -2598,14 +2582,7 @@ bool GraphicalDisplay::pumpEvents() {
             std::fclose(f);
           }
         }
-        if (impl_->middleAnchor) {  // 中ボタンを押している間はホバー/ドラッグにしない
-          int dx = event.motion.x - impl_->middleAnchor->first;
-          int dy = event.motion.y - impl_->middleAnchor->second;
-          if (!impl_->middleFired && (std::abs(dx) >= impl_->cellWidth || std::abs(dy) >= impl_->cellHeight)) {
-            impl_->middleFired = true;
-            impl_->middleQueue.push_back(MiddleDragStart{dx, dy});
-          }
-        } else if (impl_->scrollbarDragActive) {
+        if (impl_->scrollbarDragActive) {
           impl_->scrollbarQueue.push_back(ScrollbarEvent{ScrollbarEventType::Motion, event.motion.y});
         } else if (event.motion.state & SDL_BUTTON_LMASK) {
           // row/column(2026-09-07追加、DragEvent自身の宣言コメント
@@ -2838,13 +2815,6 @@ std::optional<GraphicalDisplay::WheelEvent> GraphicalDisplay::consumeWheelEvent(
   if (impl_->wheelQueue.empty()) return std::nullopt;
   WheelEvent event = impl_->wheelQueue.front();
   impl_->wheelQueue.pop_front();
-  return event;
-}
-
-std::optional<GraphicalDisplay::MiddleDragStart> GraphicalDisplay::consumeMiddleDragStart() {
-  if (impl_->middleQueue.empty()) return std::nullopt;
-  MiddleDragStart event = impl_->middleQueue.front();
-  impl_->middleQueue.pop_front();
   return event;
 }
 
