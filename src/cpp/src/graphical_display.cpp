@@ -785,6 +785,11 @@ struct GraphicalDisplay::Impl {
   // 無関係に「押した時のファイル」が開いてしまう。これが実用上どう
   // 感じられるかを含めて、まずは実機で試してもらうための実装。
   std::optional<MouseClick> pendingLeftClick;
+  // autoscrollOffsetPixels()自身の宣言コメント参照。
+  std::optional<int> autoscrollAnchorY;
+  int autoscrollCurrentY = 0;
+  bool autoscrollHeld = false;
+  bool autoscrollMoved = false;
   std::deque<KeyEvent> keyQueue;
   // consumeDroppedFiles()自身の宣言コメント参照。
   std::vector<std::string> pendingDrop;       // 受け渡しの途中
@@ -2502,6 +2507,18 @@ bool GraphicalDisplay::pumpEvents() {
             std::fclose(f);
           }
         }
+        if (impl_->autoscrollAnchorY) {  // オートスクロール中の押下: 止めるだけ
+          cancelAutoscroll();
+          break;
+        }
+        if (event.button.button == SDL_BUTTON_MIDDLE) {
+          impl_->autoscrollAnchorY = event.button.y;
+          impl_->autoscrollCurrentY = event.button.y;
+          impl_->autoscrollHeld = true;
+          impl_->autoscrollMoved = false;
+          SDL_CaptureMouse(SDL_TRUE);
+          break;
+        }
         if (event.button.button != SDL_BUTTON_LEFT && event.button.button != SDL_BUTTON_RIGHT) break;
         // スクロールバーの帯の中で始まる左クリックの押下は、つまみの
         // ドラッグのジェスチャであり、コンテンツのクリック/ドラッグ
@@ -2549,6 +2566,12 @@ bool GraphicalDisplay::pumpEvents() {
             std::fclose(f);
           }
         }
+        if (event.button.button == SDL_BUTTON_MIDDLE && impl_->autoscrollAnchorY && impl_->autoscrollHeld) {
+          impl_->autoscrollHeld = false;
+          SDL_CaptureMouse(SDL_FALSE);
+          if (impl_->autoscrollMoved) cancelAutoscroll();
+          break;
+        }
         if (event.button.button == SDL_BUTTON_LEFT) {
           SDL_CaptureMouse(SDL_FALSE);
           if (impl_->scrollbarDragActive) {
@@ -2582,7 +2605,11 @@ bool GraphicalDisplay::pumpEvents() {
             std::fclose(f);
           }
         }
-        if (impl_->scrollbarDragActive) {
+        if (impl_->autoscrollAnchorY) {  // オートスクロール中はホバー/ドラッグにしない
+          impl_->autoscrollCurrentY = event.motion.y;
+          if (impl_->autoscrollHeld && std::abs(event.motion.y - *impl_->autoscrollAnchorY) >= impl_->cellHeight)
+            impl_->autoscrollMoved = true;
+        } else if (impl_->scrollbarDragActive) {
           impl_->scrollbarQueue.push_back(ScrollbarEvent{ScrollbarEventType::Motion, event.motion.y});
         } else if (event.motion.state & SDL_BUTTON_LMASK) {
           // row/column(2026-09-07追加、DragEvent自身の宣言コメント
@@ -2816,6 +2843,18 @@ std::optional<GraphicalDisplay::WheelEvent> GraphicalDisplay::consumeWheelEvent(
   WheelEvent event = impl_->wheelQueue.front();
   impl_->wheelQueue.pop_front();
   return event;
+}
+
+std::optional<int> GraphicalDisplay::autoscrollOffsetPixels() const {
+  if (!impl_->autoscrollAnchorY) return std::nullopt;
+  return impl_->autoscrollCurrentY - *impl_->autoscrollAnchorY;
+}
+
+void GraphicalDisplay::cancelAutoscroll() {
+  if (impl_->autoscrollHeld) SDL_CaptureMouse(SDL_FALSE);
+  impl_->autoscrollAnchorY.reset();
+  impl_->autoscrollHeld = false;
+  impl_->autoscrollMoved = false;
 }
 
 std::optional<GraphicalDisplay::ScrollbarEvent> GraphicalDisplay::consumeScrollbarEvent() {

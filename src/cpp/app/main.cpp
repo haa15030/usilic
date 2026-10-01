@@ -1093,6 +1093,11 @@ void applyHoverRowAndRedraw(fm::ContentView &view, int mouseRow, bool moveCursor
 // OPPOSITE direction reverses and resets to the base speed) -- that
 // key is handed back to the caller to feed through normally, exactly
 // as if this function had never run.
+// 2026-10-01、直接のユーザー依頼("-uと-iのパラメータがGUI向きなのか、動きが遅く感じる...
+// CUIだけ倍率上げてみて"): 1行あたりの遅延を16ドット分ではなく8ドット分にする(-gの約2倍の
+// 「1秒あたりの行数」)。runCoastLoop()とrunTerminalAutoscroll()で共用。
+constexpr int kTerminalDotsPerRow = 8;
+
 TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm::KeyInput &keyInput,
                                   int initialLevel, int initialDirection) {
   fm::ContentView &view = app.activeContentView();
@@ -1114,10 +1119,6 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
   TerminalCoastResult result;
 
   for (;;) {
-    // 2026-10-01、直接のユーザー依頼("-uと-iのパラメータがGUI向きなのか、動きが遅く感じる...
-    // CUIだけ倍率上げてみて"): 1行あたりの遅延を16ドット分ではなく8ドット分にする(-gの約2倍の
-    // 「1秒あたりの行数」)。
-    constexpr int kTerminalDotsPerRow = 8;
     performScrollStepDelay(fm::scaledForRow(fm::kScrollSpeedLevels[level], kTerminalDotsPerRow));
 
     int before = view.topIndex();
@@ -1387,6 +1388,74 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
   }
 }
 
+// 2026-10-02追加、直接のユーザー依頼(中ボタン=ホイールボタンを「押しながら前/後」でスクロール、
+// Windowsのオートスクロール風): 中ボタンを押した行を基準に、ポインタが基準より下なら先へ、上なら
+// 前へ、基準からの行数が多いほど速く(1行離れるごとにfm::kScrollSpeedLevelsを1段、基準の行では
+// 止まる)。押したまま動かして離すとそこで終わり、動かさずに離すとそのまま続き(もう一度どれかの
+// ボタンを押すか、何かキーを押すと終わり。そのクリック自体は何もしない)。
+TerminalCoastResult runTerminalAutoscroll(fm::Application &app, fm::Display &display, fm::KeyInput &keyInput,
+                                          int anchorRow) {
+  fm::ContentView &view = app.activeContentView();
+  int currentRow = anchorRow;
+  bool held = true;    // 中ボタンを押したまま
+  bool moved = false;  // 押したまま基準の行から動かした
+  TerminalCoastResult result;
+  for (;;) {
+    int offset = currentRow - anchorRow;
+    int level = std::min(std::abs(offset), static_cast<int>(fm::kScrollSpeedLevels.size()) - 1);
+    if (level > 0) {
+      performScrollStepDelay(fm::scaledForRow(fm::kScrollSpeedLevels[resolveCoastLevel(level)], kTerminalDotsPerRow));
+      int direction = offset > 0 ? 1 : -1;
+      int before = view.topIndex();
+      view.setTopIndex(before + direction);
+      if (view.topIndex() == before) {  // runCoastLoop()と同じ遅延先読み
+        app.preloadPagerAhead(before + display.rows() * 2);
+        app.suppressPagerRepoll(view.topIndex());
+        view.setTopIndex(before + direction);
+      }
+      if (view.topIndex() != before) {  // 端では止まったまま(逆へ動かせばまた動く)
+        app.suppressPagerRepoll(view.topIndex());
+        view.setCursorIndex(view.topIndex());  // runCoastLoop()のclampViewport()の注記参照
+        view.redraw();
+      }
+    }
+
+    struct pollfd fd{STDIN_FILENO, POLLIN, 0};
+    if (poll(&fd, 1, level > 0 ? 0 : 50) <= 0 || !(fd.revents & POLLIN)) continue;
+    int byte = keyInput.readByte();
+    if (!byte) continue;
+    if (byte != 0x1b) {
+      view.redraw();
+      result.hadLeftoverByte = true;
+      result.leftoverByte = byte;
+      return result;
+    }
+    auto mouse = peekMouseSgr(keyInput);
+    if (!mouse) {  // マウス以外のESCシーケンス(矢印キー等): ESCを戻して終わる
+      view.redraw();
+      keyInput.playRawMacro("\x1b");
+      return result;
+    }
+    if (mouse->wheel != 0) continue;
+    if (mouse->motionOnly) {
+      currentRow = mouse->row;
+      if (held && currentRow != anchorRow) moved = true;
+      continue;
+    }
+    if (mouse->pressed) {  // 続いている間のクリック: 止めるだけ
+      view.redraw();
+      return result;
+    }
+    if (held && mouse->button == 1) {  // 中ボタンを離した
+      held = false;
+      if (moved) {
+        view.redraw();
+        return result;
+      }
+    }
+  }
+}
+
 // Runs until wantsExit() or a GUI-mode toggle is requested. Returns
 // true if it should be followed by a GUI phase (false means the whole
 // program is exiting).
@@ -1619,6 +1688,11 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
           // 2026-10-01追加、直接のユーザー依頼("マウスの右クリックに^Gを割り当てて"): -gの右クリック
           // (runGuiPhase()のclick->rightButton、2026-09-07)と同じく、本物のキーボードの^Gと同じ経路へ。
           app.feedCanonicalByte(0x07);
+        } else if (mouse->pressed && !mouse->motionOnly && mouse->button == 1 &&
+                   app.currentMode() != fm::ApplicationMode::Copy) {
+          // 中ボタン: オートスクロール(runTerminalAutoscroll()参照)
+          TerminalCoastResult coast = runTerminalAutoscroll(app, display, keyInput, mouse->row);
+          if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
         } else if (mouse->pressed && !mouse->motionOnly && mouse->button == 0) {
           // Left-button down: the mouse-driven equivalent of
           // Shift+Up/Down -- see runTerminalMouseDrag()'s own comment
@@ -2054,6 +2128,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   int pixelOffset = 0;      // sub-row offset; -cellHeight < pixelOffset < cellHeight
   int coastLevel = 0;       // 0 == not coasting; otherwise an index into fm::kScrollSpeedLevels
   int coastDirection = 0;   // +1 or -1 while coastLevel > 0, matching renderScrolled()'s pixelOffsetY sign
+  bool autoscrollActive = false;  // 中ボタンのオートスクロールがcoastLevelを動かしている
   // 2026-09-07追加、直接のユーザー報告("バーが最下点に達した瞬間...
   // 「00023/00025 END」が一瞬出てしまう...ちらつきが復活"、さらに
   // ContentView::scrollModeLineSegments()自身の"bottomVisible>=total
@@ -2397,6 +2472,12 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
 
     while (auto key = gui.consumeKeyEvent()) {
       anyEventThisFrame = true;
+      if (gui.autoscrollOffsetPixels()) {  // 中ボタンのオートスクロール中のキー: 止めて、キーはそのまま処理
+        gui.cancelAutoscroll();
+        autoscrollActive = false;
+        coastLevel = 0;
+        pixelOffset = 0;
+      }
       // w/s: the keyboard-driven equivalent of a mouse-drag release
       // (see fm::kScrollSpeedLevels' own comment) -- pressing the
       // SAME direction again while already coasting accelerates (one
@@ -3006,6 +3087,32 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           break;
         }
       }
+    }
+
+    // 2026-10-02追加、中ボタンのオートスクロール(GraphicalDisplay::autoscrollOffsetPixels()参照、
+    // CUIのrunTerminalAutoscroll()と同じ操作): 押した位置からポインタまでの距離1行ごとに
+    // fm::kScrollSpeedLevelsを1段ずつ速く、下なら先へ。動きそのものは下の慣性スクロールに任せる。
+    if (auto offset = gui.autoscrollOffsetPixels()) {
+      if (app.currentMode() == fm::ApplicationMode::Shell || app.currentMode() == fm::ApplicationMode::Copy ||
+          app.awaitingSequenceOrPromptByte() || app.epubVerticalScrollActive()) {
+        gui.cancelAutoscroll();
+      } else {
+        autoscrollActive = true;
+        int level = std::min(std::abs(*offset) / std::max(cellHeight, 1),
+                             static_cast<int>(fm::kScrollSpeedLevels.size()) - 1);
+        if (level > 0) {
+          coastLevel = resolveCoastLevel(level);
+          coastDirection = *offset > 0 ? -1 : 1;  // coastDirection自身のコメント参照: -1で先へ
+        } else {
+          coastLevel = 0;
+          pixelOffset = 0;
+        }
+      }
+    }
+    if (autoscrollActive && !gui.autoscrollOffsetPixels()) {
+      autoscrollActive = false;
+      coastLevel = 0;
+      pixelOffset = 0;
     }
 
     if (coastLevel > 0 && !dragging) {

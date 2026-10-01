@@ -425,6 +425,15 @@ class GraphicalDisplay : public Display {
   };
   std::optional<WheelEvent> consumeWheelEvent();
 
+  // 2026-10-02追加、直接のユーザー依頼(中ボタン=ホイールボタンを「押しながら前/後」でスクロール、
+  // Windowsのオートスクロール風、app/main.cppのrunTerminalAutoscroll()のCUI版と同じ操作):
+  // オートスクロール中なら、中ボタンを押した位置から今のポインタまでの縦のピクセル数(下が正)、
+  // そうでなければnullopt。押したまま動かして離すと終わり、動かさずに離すと続き、続いている間の
+  // どのボタンの押下も(クリックとしては扱わずに)終わらせる。キーで終わらせるのは呼び出し側
+  // (cancelAutoscroll())。
+  std::optional<int> autoscrollOffsetPixels() const;
+  void cancelAutoscroll();
+
   // 右端に予約されたスクロールバー帯の「内側で」始まった左ボタンの
   // 押下/ドラッグ/解放(drawScrollbar()自身のコメント参照)――つまみ
   // をドラッグすることが内容の選択や内容のドラッグスクロールも
