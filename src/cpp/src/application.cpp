@@ -10868,9 +10868,46 @@ bool Application::startArchivePagerLoadAsync(const std::string &path, const std:
 // loadContentAsPipe()+setSearchOrigin()+setPagerListingDirectory())を
 // 代わりに行う――ArchiveModeへは一切入らない(対話的な選択不可の
 // プレーンなtvfページャー表示のまま)。
+// 2026-10-01、直接のユーザー依頼("^Oeまたは^O^Mで選んだ時のsort順を逆にして"): ^O^Mで見る
+// .epubの`unzip -l`の一覧(ArchiveMode::finishLoadFromOutput()の名前順と同じく)は、前後の
+// "----"の罫線の間のファイルの行を名前(4つ目の欄から後)の順に並べる。
+std::string sortZipListingByName(const std::string &listing) {
+  std::vector<std::string> lines;
+  for (std::size_t pos = 0; pos < listing.size();) {
+    std::size_t nl = listing.find('\n', pos);
+    lines.push_back(listing.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos));
+    pos = nl == std::string::npos ? listing.size() : nl + 1;
+  }
+  auto isRule = [](const std::string &line) { return line.find("---------") != std::string::npos; };
+  auto nameOf = [](const std::string &line) {
+    std::size_t p = 0;
+    for (int field = 0; field < 3; field++) {
+      p = line.find_first_not_of(' ', p);
+      if (p == std::string::npos) return std::string();
+      p = line.find(' ', p);
+      if (p == std::string::npos) return std::string();
+    }
+    p = line.find_first_not_of(' ', p);
+    return p == std::string::npos ? std::string() : line.substr(p);
+  };
+  auto first = std::find_if(lines.begin(), lines.end(), isRule);
+  if (first == lines.end()) return listing;
+  auto second = std::find_if(first + 1, lines.end(), isRule);
+  if (second == lines.end()) return listing;
+  std::stable_sort(first + 1, second,
+                   [&](const std::string &a, const std::string &b) { return nameOf(a) < nameOf(b); });
+  std::string out;
+  for (std::size_t i = 0; i < lines.size(); i++) {
+    out += lines[i];
+    if (i + 1 < lines.size() || (!listing.empty() && listing.back() == '\n')) out += '\n';
+  }
+  return out;
+}
+
 void Application::finishArchiveLoadAsync() {
   if (archiveLoadForPager_) {
     archiveLoadForPager_ = false;
+    if (isEpubFile(archiveLoadPendingPath_)) archiveLoadPendingOutput_ = sortZipListingByName(archiveLoadPendingOutput_);
     if (fileMode_.loadContentAsPipe(archiveLoadPendingOutput_)) {
       fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, archiveLoadPendingPath_,
                                                     archiveLoadPendingBadge_);

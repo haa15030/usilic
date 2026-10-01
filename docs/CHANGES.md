@@ -27928,3 +27928,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      FILE履歴・^J^J・再起動での再開(openRecentFileEntry())と^Cf(executeCut())は、覚えていれば
      その区間を開いてその行へ(reopenLastCutContent()、^Gで一覧)。一度も中身を見ていなければ
      一覧で、最初はカーソルが最上行。
+552. **2026-10-01: ^Oe/^O^Mで開いた.epubの一覧を名前順に**
+   - **経緯**: 直接のユーザー依頼("^Oeまたは^O^Mで選んだ時のsort順を逆にして")。Kbt.epubのzipは
+     OEBPS/Text/がSection024→000の逆順に入っており、ARC(^Oe)の一覧も^O^Mの`unzip -l`の一覧も
+     zipに入っている順のままだった。
+   - **ARC(^Oe)**: .epubは一覧を名前順に並べる(ArchiveMode::finishLoadFromOutput())。中身の位置
+     (ZipReader::locateContent())は`unzip -p`の生のバイト列と同じ元の順で辿る必要があるので、
+     元の順をArchiveEntry::listingIndexに残し、位置を求める時だけ元の順に並べ直す。
+   - **^O^M**: .epubの`unzip -l`の一覧は、前後の罫線の間のファイルの行を名前順に並べてから見せる
+     (sortZipListingByName()、finishArchiveLoadAsync())。

@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "child_process.hpp"
+#include "file_mode.hpp"  // isEpubFile()
 
 namespace fm {
 
@@ -252,6 +253,13 @@ bool ArchiveMode::finishLoadFromOutput(const std::string &path, const std::strin
   // executePathInput()等)。中身が本当に空のアーカイブも普通のファイルとして
   // 開くことになるが、その場合はCODEの判定で種類が表示される。
   if (entries.empty()) return false;
+  // 2026-10-01、直接のユーザー依頼("^Oeまたは^O^Mで選んだ時のsort順を逆にして"): .epubの
+  // zipは中身が逆順(OEBPS/Text/がSection024→000)に入っていることがあるので、名前順に並べる。
+  // 中身の位置(locateContent())は元の順で辿るので、元の順をlistingIndexに残す。
+  for (std::size_t i = 0; i < entries.size(); i++) entries[i].listingIndex = static_cast<int>(i);
+  if (isEpubFile(path))
+    std::stable_sort(entries.begin(), entries.end(),
+                     [](const ArchiveEntry &a, const ArchiveEntry &b) { return a.name < b.name; });
 
   currentArchive_ = path;
   archiveKind_ = kind;
@@ -374,7 +382,21 @@ std::optional<std::vector<unsigned char>> ArchiveMode::extractSelected() {
       return std::nullopt;
   }
 
-  reader->locateContent(data.data(), data.size(), entries_);
+  // 一覧を並べ替えていても(finishLoadFromOutput()、listingIndex)、生のバイト列は元の順なので、
+  // 元の順に並べ直したもので位置を求めてから戻す。
+  {
+    std::vector<ArchiveEntry> ordered = entries_;
+    std::stable_sort(ordered.begin(), ordered.end(),
+                     [](const ArchiveEntry &a, const ArchiveEntry &b) { return a.listingIndex < b.listingIndex; });
+    reader->locateContent(data.data(), data.size(), ordered);
+    for (const auto &located : ordered)
+      for (auto &entry : entries_)
+        if (entry.listingIndex == located.listingIndex) {
+          entry.contentOffset = located.contentOffset;
+          entry.contentTruncated = located.contentTruncated;
+          break;
+        }
+  }
 
   const ArchiveEntry &entry = entries_[idx];
   if (entry.contentOffset < 0) return std::nullopt;

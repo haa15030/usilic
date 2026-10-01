@@ -24,6 +24,10 @@ struct ArchiveEntry {
   // 込み)場合にtrue――alloc_tar()/alloc_lha()/alloc_unzip()の
   // `split = -2`という番兵からの移植。
   bool contentTruncated = false;
+  // 一覧のコマンドが出した順(0から)。ArchiveMode::finishLoadFromOutput()が並べ替えた
+  // (.epubを名前順に、2026-10-01)後も、locateContent()は生のバイト列と同じこの順で
+  // 辿る必要がある(ArchiveMode::selectedContent()参照)。
+  int listingIndex = -1;
 };
 
 // あるアーカイブフォーマットのテキスト一覧をエントリ群へパースし、
