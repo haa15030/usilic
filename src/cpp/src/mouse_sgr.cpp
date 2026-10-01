@@ -18,6 +18,10 @@ std::optional<MouseSgrEvent> parseMouseSgr(const std::string &raw) {
   event.column = cx - 1;
   event.row = cy - 1;
   event.button = cb & 0x3;
+  if (cb & 0x40) {  // ホイール(MouseSgrEvent::wheel参照)。66/67(横)は向きを持たせない
+    event.button = -1;
+    if ((cb & 0x2) == 0) event.wheel = (cb & 0x1) ? 1 : -1;
+  }
   event.motionOnly = (cb & 0x20) != 0;
   event.pressed = (terminator == 'M');
   return event;

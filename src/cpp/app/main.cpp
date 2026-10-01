@@ -1188,6 +1188,15 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
       auto mouse = peekMouseSgr(keyInput);
       if (mouse) {
         lastMouseRow = mouse->row;
+        if (mouse->wheel != 0) {  // ホイールはShift+↑/↓と同じ(上の分岐参照)
+          if (mouse->wheel == direction) {
+            level = resolveCoastLevel(std::min(level + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1));
+          } else {
+            direction = mouse->wheel;
+            level = resolveCoastLevel(1);
+          }
+          continue;
+        }
         if (mouse->pressed && !mouse->motionOnly) {
           int lineIndex = view.lineIndexAtRow(mouse->row);
           if (lineIndex >= 0) {
@@ -1265,6 +1274,7 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
         keyInput.playRawMacro("\x1b");
         return TerminalCoastResult{};
       }
+      if (mouse->wheel != 0 || mouse->button < 0) continue;  // ドラッグ中のホイールは無視
       if (mouse->motionOnly) {
         app.copyMouseDrag(mouse->row, mouse->column);
         continue;
@@ -1307,6 +1317,7 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
       return TerminalCoastResult{};
     }
 
+    if (mouse->wheel != 0 || mouse->button < 0) continue;  // ドラッグ中のホイールは無視
     if (mouse->motionOnly) {
       int rowDelta = mouse->row - lastRow;
       lastRow = mouse->row;
@@ -1594,7 +1605,12 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       auto mouse = peekMouseSgr(keyInput);
       if (mouse) {
         consecutiveEscapes = 0;
-        if (mouse->pressed && !mouse->motionOnly && mouse->button == 0) {
+        if (mouse->wheel != 0) {
+          // ホイール(fm::MouseSgrEvent::wheel参照): -gのホイールと同じく、1刻みで慣性スクロールを
+          // 始める(Shift+↑/↓と同じ。続けて同じ向きなら速く、逆なら向きを変える、runCoastLoop())。
+          TerminalCoastResult coast = runCoastLoop(app, display, keyInput, resolveCoastLevel(1), mouse->wheel);
+          if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
+        } else if (mouse->pressed && !mouse->motionOnly && mouse->button == 0) {
           // Left-button down: the mouse-driven equivalent of
           // Shift+Up/Down -- see runTerminalMouseDrag()'s own comment
           // for why this isn't decided as click-vs-drag until release.
