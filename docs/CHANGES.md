@@ -27937,3 +27937,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      元の順をArchiveEntry::listingIndexに残し、位置を求める時だけ元の順に並べ直す。
    - **^O^M**: .epubの`unzip -l`の一覧は、前後の罫線の間のファイルの行を名前順に並べてから見せる
      (sortZipListingByName()、finishArchiveLoadAsync())。
+553. **2026-10-01: ^X^Fの一覧から(unzip)の.epubを選ぶとEPUBで開いていた件**
+   - **経緯**: 直接のユーザー報告("^X^F一覧中、^Oeで開いた.epubには(unzip)が付いているのに
+     (epub)時と同じ表示になる")。
+   - **原因**: ^X^Fの一覧で選んだ項目は入力欄の文字列としてexecutePathInput()へ渡り、ARCで開いた
+     .epubの履歴の形「パス/」(項目513)をパスとして解決するので末尾の/が落ち、openEpub()で開いて
+     いた(FILE履歴のopenRecentFileEntry()は「パス/」をARCで開く)。
+   - **修正**: executePathInput()でも、FILE側で「パス/」が実在する.epubならopenRecentFileEntry()で
+     ARCで開く。

@@ -15859,6 +15859,15 @@ bool Application::executePathInput(const std::string &path) {
   // ため、下のRecentFile専用のopenRecentFileEntry()分岐を経由し
   // ない)ので、ここでも同じ合成形の検出をしておく必要がある。
   if (parseCutFileHistoryEntry(path)) return openRecentFileEntry(path);
+  // 2026-10-01、直接のユーザー報告("^X^F一覧中、^Oeで開いた.epubには(unzip)が付いているのに
+  // (epub)時と同じ表示になる"): ARCで開いた.epubの履歴の形「パス/」(openEpubAsArchive())は、
+  // パスとして解決すると末尾の/が落ちてEPUBモードで開いていた。FILE履歴と同じくARCで開く。
+  if (!pathInputIsDirectory_ && path.size() > 1 && path.back() == '/' &&
+      isEpubFile(path.substr(0, path.size() - 1))) {
+    std::error_code ec;
+    if (std::filesystem::is_regular_file(path.substr(0, path.size() - 1), ec) && !ec)
+      return openRecentFileEntry(path);
+  }
   // directoryMode_自身のcurrentDirectory()(最後に「閲覧された」
   // ディレクトリ、そこから開かれたFile/Man等の画面を見ている間も
   // そのまま留まる――なぜこれがプロセス自身のcwdではあり得ないのか
