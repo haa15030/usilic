@@ -1187,7 +1187,12 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
     // cursor lands once coasting stops is a reasonable resting
     // position, the same way pageDown() leaves it wherever the page
     // landed.
-    view.setCursorIndex(view.topIndex());
+    // 2026-10-02修正、直接のユーザー報告("-cの慣性スクロールでは下向きのスクロールでハイライト行が
+    // 最上行にある（上へのスクロールなら正解）"): -gのContentView::stepTopIndex()と同じく、先へ
+    // 進む時は画面の最下行に。
+    view.setCursorIndex(direction > 0 ? std::min(view.topIndex() + view.height() - 1,
+                                                 static_cast<int>(view.lines().size()) - 1)
+                                      : view.topIndex());
     applyHoverRowAndRedraw(view, lastMouseRow);
 
     struct pollfd fd{STDIN_FILENO, POLLIN, 0};
@@ -1358,7 +1363,10 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
           app.suppressPagerRepoll(view.topIndex());
           view.setTopIndex(beforeDrag - rowDelta);  // natural scrolling: dragging down reveals earlier content
         }
-        view.setCursorIndex(view.topIndex());           // see runCoastLoop()'s clampViewport() note
+        // see runCoastLoop()'s clampViewport() note。先へ進む(上へドラッグ)時は最下行(同じく2026-10-02)。
+        view.setCursorIndex(rowDelta < 0 ? std::min(view.topIndex() + view.height() - 1,
+                                                    static_cast<int>(view.lines().size()) - 1)
+                                         : view.topIndex());
         auto now = std::chrono::steady_clock::now();
         recentMotion.push_back({now, rowDelta});
         while (!recentMotion.empty() && recentMotion.front().first < now - kReleaseWindow) recentMotion.pop_front();

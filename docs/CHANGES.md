@@ -28080,3 +28080,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      同じ)。②Application::directEntryListActive()/hoverDirectEntryList()を新設し、CUI・-gとも
      ホバーで項目を選び直してrefreshDirectEntryModeLine()でモードラインを描き直す。クリックは
      1回目で選択、2回目でEnterと同じ経路で開く。
+565. **2026-10-02: -cの下向きの慣性スクロールでハイライト行が最上行にある件、ハイライト範囲外のクリック**
+   - **経緯**: 直接のユーザー報告+依頼("-cの慣性スクロールでは下向きのスクロールでハイライト行が
+     最上行にある（上へのスクロールなら正解）"、"-c/-g　ハイライト行はマウスに追随するのにハイライト
+     範囲にマウスカーソルが無いと無反応。ハイライト行がある場面では範囲外であってもその場クリックで
+     選択可で")。
+   - **修正**: runCoastLoop()/runTerminalMouseDrag()は常にcursorIndexをtopIndexへ置いていたので、
+     先へ進む時は-gのContentView::stepTopIndex()と同じく画面の最下行へ。handleMouseClickImpl()の
+     一覧(直接入力の一覧・Directory・DU・UNDERLINE・ARC・LOCATE・バナー・CUT)の列の判定
+     (isColumnWithinRowText()/isColumnWithinLineScope())を外し、押した行を選ぶ/開く。EPUBの
+     リンク/画像の行と、慣性を止めるクリック(stopOnly)は従来どおり。ユニットテストは未実行
+     (列の判定を前提にしたテストがあれば要更新)。

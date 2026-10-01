@@ -16346,11 +16346,17 @@ bool Application::hoverDirectEntryList(int row) {
 }
 
 bool Application::handleMouseClickImpl(int row, int column) {
+  // 2026-10-02変更、直接のユーザー依頼("ハイライト行はマウスに追随するのにハイライト範囲にマウス
+  // カーソルが無いと無反応。ハイライト行がある場面では範囲外であってもその場クリックで選択可で"):
+  // 以下の一覧のクリックは、列(isColumnWithinRowText()/isColumnWithinLineScope())を問わず、
+  // 押した行を選ぶ/開く。ホバーが既に列を問わずその行をハイライトしているのに合わせる。EPUBの
+  // リンク/画像の行だけは従来どおり字の上で。慣性スクロールを止めるクリック(app/main.cppの
+  // stopOnly)は従来どおり範囲外なら止めるだけ。
   // 2026-10-02追加(directEntryListActive()自身の宣言コメント参照): 直接入力の一覧は
   // Directory等と同じ「1回目で選択、2回目で開く」。開くのはEnterと同じ経路。
   if (directEntryListActive()) {
     int idx = listBrowserView_.lineIndexAtRow(row);
-    if (idx < 0 || !listBrowserView_.isColumnWithinRowText(idx, column)) return false;
+    if (idx < 0) return false;
     if (idx == listBrowserView_.cursorIndex()) return feedCanonicalByte(0x0d);
     return hoverDirectEntryList(row);
   }
@@ -16369,7 +16375,6 @@ bool Application::handleMouseClickImpl(int row, int column) {
     // ドラッグの開始点として自由に使えるようになったため、この前提
     // 自体が不要になった――isColumnWithinRowText()(上限のみ、左
     // マージンの除外なし)へ緩めた。
-    if (!directoryView_.isColumnWithinRowText(idx, column)) return false;
     if (idx == directoryView_.cursorIndex()) return openSelectedEntry();
     directoryView_.setCursorIndex(idx);
     directoryView_.redraw();
@@ -16390,7 +16395,6 @@ bool Application::handleMouseClickImpl(int row, int column) {
     // コメント参照)。
     int idx = duView_.lineIndexAtRow(row);
     if (idx < 0) return false;
-    if (!duView_.isColumnWithinRowText(idx, column)) return false;
     if (idx == duView_.cursorIndex()) return openSelectedDuEntry();
     duView_.setCursorIndex(idx);
     duView_.redraw();
@@ -16401,7 +16405,6 @@ bool Application::handleMouseClickImpl(int row, int column) {
   if (currentMode_ == ApplicationMode::Underline) {
     int idx = underlineView_.lineIndexAtRow(row);
     if (idx < 0) return false;
-    if (!underlineView_.isColumnWithinRowText(idx, column)) return false;
     if (idx == underlineView_.cursorIndex()) return openSelectedUnderlineEntry();
     underlineView_.setCursorIndex(idx);
     underlineView_.redraw();
@@ -16416,7 +16419,6 @@ bool Application::handleMouseClickImpl(int row, int column) {
     // 理由と同じく不要になった。
     int idx = archiveView_.lineIndexAtRow(row);
     if (idx < 0) return false;
-    if (!archiveView_.isColumnWithinRowText(idx, column)) return false;
     if (idx == archiveView_.cursorIndex()) return openSelectedArchiveEntry();
     archiveView_.setCursorIndex(idx);
     archiveView_.redraw();
@@ -16432,7 +16434,6 @@ bool Application::handleMouseClickImpl(int row, int column) {
     // 形式の`ls -l`の行の中のファイル名の部分文字列だけではなく、
     // パス全体が「エントリ」であることに合わせて、レンダリングされた
     // 行全体がクリック可能である。
-    if (!locateView_.isColumnWithinLineScope(idx, column)) return false;
     if (idx == locateView_.cursorIndex()) return openSelectedLocateResult();
     locateView_.setCursorIndex(idx);
     locateView_.redraw();
@@ -16459,7 +16460,6 @@ bool Application::handleMouseClickImpl(int row, int column) {
     int idx = fileView_.lineIndexAtRow(row);
     if (idx < 0) return false;
     if (fileView_.lines()[idx].neverHighlighted) return false;
-    if (!fileView_.isColumnWithinRowText(idx, column)) return false;
     if (idx == fileView_.cursorIndex()) return openSelectedBannerEntry();
     fileView_.setCursorIndex(idx);
     fileView_.redraw();
@@ -16489,7 +16489,6 @@ bool Application::handleMouseClickImpl(int row, int column) {
   if (currentMode_ == ApplicationMode::Cut) {
     int idx = cutView_.lineIndexAtRow(row);
     if (idx < 0) return false;
-    if (!cutView_.isColumnWithinRowText(idx, column)) return false;
     if (idx == cutView_.cursorIndex()) return openSelectedSegment();
     cutView_.setCursorIndex(idx);
     cutView_.redraw();
