@@ -11664,6 +11664,18 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // か否かに関わらず常に「矩形マーク発動の2バイトの先頭」として先読み
   // する――emacsのrectangle-mark-modeは、マークが未設定の状態からも
   // C-x SPCだけで新規に開始できるため。
+  if (copyLeaderJPending_) {  // copyLeaderJPending_の宣言コメント参照
+    copyLeaderJPending_ = false;
+    if (!special && byte == kControlC) {
+      returnFromCopy();
+      handleCommand(Command::GoToFileSelector);
+    }
+    return true;
+  }
+  if (!special && byte == kLeaderJ) {
+    copyLeaderJPending_ = true;
+    return true;
+  }
   if (!special && byte == 0x18) {
     copyLeaderXPending_ = true;
     return true;

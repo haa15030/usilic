@@ -2996,6 +2996,10 @@ class Application {
   // 理由の1バイト先読み――^Xに続く2バイト目(SPC)が来るまで、
   // 矩形マークの発動を確定できない。
   bool copyLeaderXPending_ = false;
+  // 2026-10-01追加、直接のユーザー報告("^J^Cでカレントディレクトリへ移動のつもりの^O^C(COPY)では
+  // ^J^Cと打っても移動しない。^J^Cは全権モードなので対応よろしく"): COPYの中の^Jリーダー。
+  // ^J^CでCOPYを抜けて(ls)のカレントディレクトリへ(Command::GoToFileSelector)。
+  bool copyLeaderJPending_ = false;
   // feedCopyByte()自身のコメント参照(2026-09-08追加、直接のユーザー
   // 要望"未サポートでもある^[N（Nは行番号）で当該行へジャンプする
   // 機能をサポートして欲しい。emacsではalt＋ggNなのでそちらも
