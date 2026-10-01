@@ -4129,10 +4129,15 @@ int main(int argc, char **argv) {
   // during this port's development.
   bool forceCui = false;
   bool forceGui = false;
+  // 2026-10-01追加、直接のユーザー依頼(HELPの「端末でのマウス」の記述どおり、引数無しのCUIでも
+  // マウスを使えるように): `-c`を明示した時だけtrue。2026-09-26に引数無しの既定をCUIにした
+  // (下のforceCui = true)ことで、引数無しの起動もrunTerminalPhase()のマウス追跡の判定上
+  // `-c`と同じ扱いになり、マウスがCOPYの中だけになっていた。マウスを絞るのは明示の`-c`だけ。
+  bool explicitCui = false;
   std::string explicitFontFlag;  // -f <path> -- see its own parsing comment below
   std::vector<char *> positionalArgs;
   for (int i = 1; i < argc; i++) {
-    if (std::strcmp(argv[i], "-c") == 0) forceCui = true;
+    if (std::strcmp(argv[i], "-c") == 0) forceCui = explicitCui = true;
     else if (std::strcmp(argv[i], "-g") == 0) forceGui = true;
     else if (std::strcmp(argv[i], "-h") == 0) {
       // 2026-09-15追加、直接のユーザー依頼("新たな仕様として...
@@ -5102,7 +5107,7 @@ int main(int argc, char **argv) {
       // 戻る先の端末が無いままこのままmain()末尾へ進み終了する。
     } else {
       while (!app.wantsExit()) {
-        if (!runTerminalPhase(app, keyInput, display, forceCui)) break;
+        if (!runTerminalPhase(app, keyInput, display, explicitCui)) break;
         if (app.wantsExit()) break;
         tryEnterGuiPhase(app, display, *terminalDisplay, history);  // ^Og fallback -- unmatched terminal or no display server
       }
