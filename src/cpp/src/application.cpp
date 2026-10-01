@@ -6213,20 +6213,16 @@ bool Application::openRecentFileEntry(const std::string &path) {
     // "^<"が無い"): loadFile()がパス単体を積んで合成エントリより新しくして
     // しまうので、executeCut()のファイルの分岐と同じく、その後で積み直す。
     history_.pushRecent(RingCategory::RecentFile, path);
-    auto saved = history_.positionFor(PositionCategory::Screen, path);
     restoreCutFilePosition(path);
     currentMode_ = ApplicationMode::Cut;
     // 2026-09-29追加、直接のユーザー依頼("^J^Jでも区間まで開くようにして"):
     // 区間の中身を見たまま離れていた(saveCutPositionIfLeft()/終了時の
     // saveResumableCutState()が行+1を入れた)なら、その区間を開いてその行へ。
-    // ^G^Gで閉じていれば(returnFromCut()が-1を入れる)一覧のまま。
-    if (saved && saved->lineNumber > 0 && openSelectedSegment()) {
-      int last = static_cast<int>(cutContentView_.lines().size()) - 1;
-      cutContentView_.setCursorIndex(std::max(0, std::min(saved->lineNumber - 1, last)));
-      cutContentView_.centerOnCursor();
-      cutContentView_.redraw();
-      cutContentView_.syncVisibleCursor();
-    }
+    // 2026-10-01、直接のユーザー依頼("CUTモードの動作をEPUBに合わせてほしい。一覧ではなく
+    // 以前見ていたページへ戻る。最初はリストの最上行をクリックした状態"): ^G^Gで一覧から
+    // 離れていても、最後に見ていた区間を開く(cutLastContent_)。一度も中身を見ていなければ
+    // 一覧(最初はカーソルが最上行)。
+    reopenLastCutContent();
     return true;
   }
   if (path.size() > 1 && path.back() == '/' && isEpubFile(path.substr(0, path.size() - 1)))
@@ -8601,6 +8597,8 @@ bool Application::returnToGrepResults() {
 }
 
 bool Application::returnFromCutContent() {
+  if (cutOrigin_ == CutOrigin::File && !cutPositionKey_.empty())  // cutLastContent_参照
+    cutLastContent_ = std::make_pair(cutView_.cursorIndex(), cutContentView_.cursorIndex());
   currentMode_ = ApplicationMode::Cut;
   cutView_.redraw();
   return true;
@@ -8680,6 +8678,11 @@ void Application::saveCutFilePosition(int contentCursor) {
   pos.row = cutView_.cursorIndex();
   pos.totalRows = static_cast<int>(cutMode_.segments().size());
   pos.lineNumber = contentCursor >= 0 ? contentCursor + 1 : -1;
+  // 一覧のまま離れても、最後に見ていた区間とその行を残す(cutLastContent_参照)
+  if (contentCursor < 0 && cutLastContent_) {
+    pos.row = cutLastContent_->first;
+    pos.lineNumber = cutLastContent_->second + 1;
+  }
   history_.setPosition(PositionCategory::Screen, cutPositionKey_, pos);
 }
 
@@ -8711,8 +8714,10 @@ void Application::saveResumableCutState() {
 
 void Application::restoreCutFilePosition(const std::string &key) {
   cutPositionKey_ = key;
+  cutLastContent_.reset();
   auto pos = history_.positionFor(PositionCategory::Screen, key);
   if (!pos) return;
+  if (pos->lineNumber > 0) cutLastContent_ = std::make_pair(pos->row, pos->lineNumber - 1);
   int last = static_cast<int>(cutMode_.segments().size()) - 1;
   cutView_.setCursorIndex(std::max(0, std::min(pos->row, last)));
   cutView_.centerOnCursor();  // ^Lと同じく画面中央へ(2026-09-29、直接のユーザー依頼)
@@ -14561,7 +14566,10 @@ bool Application::executeCut(const std::string &pattern) {
   cutFileSourcePath_.clear();  // 下のどちらの分岐が実行されるか、その結果に関わらず正確に一度消費される
   // saveCutFilePosition()自身のキー: ネストした再分割以外は新しい一覧
   // なので、下のファイルの分岐が設定し直すまで空にする。
-  if (currentMode_ != ApplicationMode::CutContent && currentMode_ != ApplicationMode::Cut) cutPositionKey_.clear();
+  if (currentMode_ != ApplicationMode::CutContent && currentMode_ != ApplicationMode::Cut) {
+    cutPositionKey_.clear();
+    cutLastContent_.reset();
+  }
 
   if (currentMode_ == ApplicationMode::CutContent || currentMode_ == ApplicationMode::Cut) {
     // ネストした再分割――cutOrigin_には手を付けない、クラスコメント
@@ -14704,7 +14712,25 @@ bool Application::executeCut(const std::string &pattern) {
   // タイプされた検索が、古いtrueを引き継ぐことはない。
   cutReturnsToCandidateList_ = pendingSearchFromDirectEntryList_;
   pendingSearchFromDirectEntryList_ = false;
+  // ^Cf(ファイルを選んでCUT)でも、前に同じファイル・パターンで見ていた区間を開く
+  // (openRecentFileEntry()の同日のコメント参照)。
+  if (!fileSourcePath.empty() && cutOrigin_ == CutOrigin::File) reopenLastCutContent();
   return true;
+}
+
+void Application::reopenLastCutContent() {
+  if (!cutLastContent_ || cutOrigin_ != CutOrigin::File || currentMode_ != ApplicationMode::Cut) return;
+  auto [row, line] = *cutLastContent_;
+  int lastSegment = static_cast<int>(cutMode_.segments().size()) - 1;
+  if (lastSegment < 0) return;
+  cutView_.setCursorIndex(std::clamp(row, 0, lastSegment));
+  cutView_.centerOnCursor();
+  if (!openSelectedSegment()) return;
+  int last = static_cast<int>(cutContentView_.lines().size()) - 1;
+  cutContentView_.setCursorIndex(std::max(0, std::min(line, last)));
+  cutContentView_.centerOnCursor();
+  cutContentView_.redraw();
+  cutContentView_.syncVisibleCursor();
 }
 
 bool Application::executeMan(const std::string &name) {
