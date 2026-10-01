@@ -1464,8 +1464,12 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
     flush();
     // 本の冒頭の書名・著者名(上のheaderLines)は、縦書きの本では扉(縦書きの箱)と同じ扱い。
     // 先頭の改行は無いので(leadingは0)、1行目から。
-    if (headerLines > 0 && leading == 0 && epubIsRightToLeft(readMember))
+    // 2026-10-01、直接のユーザー報告("本のタイトルページだけ著者名が上"): 扉の著者名(p.author)は
+    // text-align: right(縦書きでは列の下端寄せ)なので、冒頭の著者名の行も下端に寄せる。
+    if (headerLines > 0 && leading == 0 && epubIsRightToLeft(readMember)) {
       layoutHints->centered.insert(layoutHints->centered.begin(), {1, headerLines});
+      if (!creator.empty()) layoutHints->alignEnd.push_back(headerLines);
+    }
     for (int line : converter.alignEndLines())
       if (line - leading >= 1) layoutHints->alignEnd.push_back(line - leading);
     for (int line : converter.centerLines())
