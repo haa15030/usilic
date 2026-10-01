@@ -6220,6 +6220,7 @@ bool Application::openRecentFileEntry(const std::string &path) {
     // 残したFileのままになり得た――^GがCUTしたファイル自身のFILE画面へ
     // 着地していた。cutFileReturnModeFor()で常に明示的に揃える。
     cutReturnMode_ = cutFileReturnModeFor(currentMode_);
+    fileMode_.skipNextRecentPush();  // 合成エントリだけを積む(FileMode::skipNextRecentPush()参照)
     if (!fileMode_.loadFile(filePath)) return false;
     std::vector<StyledLine> sourceLines;
     sourceLines.reserve(fileView_.lines().size());
@@ -14669,6 +14670,7 @@ bool Application::executeCut(const std::string &pattern) {
     // (^Cb扱い)。離れるFILE自身の位置もここで保存する。
     if (currentMode_ == ApplicationMode::File) fileMode_.saveCursorPosition();
     cutReturnMode_ = cutFileReturnModeFor(currentMode_);
+    fileMode_.skipNextRecentPush();  // 合成エントリだけを積む(FileMode::skipNextRecentPush()参照)
     if (!fileMode_.loadFile(fileSourcePath)) {
       activeView().redraw();
       return false;

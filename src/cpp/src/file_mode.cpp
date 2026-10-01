@@ -702,6 +702,13 @@ std::vector<ContentView::Line> FileMode::readAndWrapChunked(const std::string &p
 }
 
 bool FileMode::loadFile(const std::string &path, const std::function<bool()> &shouldAbort) {
+  // skipNextRecentPush()は、この1回の読み込みの間だけ効かせる(途中で失敗しても次へ持ち越さない)
+  skipRecentPushNow_ = skipNextRecentPush_;
+  skipNextRecentPush_ = false;
+  struct ClearSkip {
+    bool &flag;
+    ~ClearSkip() { flag = false; }
+  } clearSkip{skipRecentPushNow_};
   noWrapMode_ = false;
   rawControlCodesMode_ = false;
   // 2026-09-25追加、直接のユーザー依頼(usilicrcのBUFFER、"バッファへ読み込む
@@ -841,7 +848,7 @@ bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()>
   // K-46(^X^F、「FILE: Select file name」)自身のデータソース――
   // K-48自身のRecentDirectoryの対応物に対するDirectoryMode::
   // enterDirectory()の同一のpushRecent()呼び出し参照。
-  history_.pushRecent(RingCategory::RecentFile, currentFile_);
+  if (!skipRecentPushNow_) history_.pushRecent(RingCategory::RecentFile, currentFile_);
   if (auto pos = history_.positionFor(PositionCategory::File, currentFile_)) {
     int idx = pos->row;
     int last = static_cast<int>(view_.lines().size()) - 1;

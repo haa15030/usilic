@@ -220,6 +220,11 @@ class FileMode {
   // saveCurrentCursorPosition()パターン、そちらではopenSelected()/
   // goBack()から呼ばれる、と同じ)。
   void saveCursorPosition();
+  // 2026-10-01追加、直接のユーザー報告("^Cf^I^Mで file をカットする場合、FILE履歴には file "^I"が
+  // 入るだけのはずなのに file が必ず入る...file "^I"とfileが延々FILE履歴リストに積み上がる"):
+  // 次の1回のloadFile()では、FILE履歴(RingCategory::RecentFile)にパスを積まない。ファイルCUT
+  // (^Cf・「パス "パターン"」の開き直し)は、読み込んだ後に合成エントリだけを積む。
+  void skipNextRecentPush() { skipNextRecentPush_ = true; }
 
   // 端末サイズ変更のために、現在のファイルを再度読み、newWidthで
   // 再度折り返す。alloc.cのalloc_winch()からの移植――ただし逐語的な
@@ -603,6 +608,8 @@ class FileMode {
   mutable std::map<int, int> epubLinks_;
   mutable EpubLayoutHints epubLayoutHints_;  // epubLinks_と同じく変換のたびに作り直す
   std::string currentFile_;
+  bool skipNextRecentPush_ = false;  // skipNextRecentPush()参照
+  bool skipRecentPushNow_ = false;   // 今のloadFile()の間だけのskipNextRecentPush_
   AnnotationStack<FileAnnotationKind> annotations_;
   // pagerMode_(2026-08-25): loadStream()が設定し、loadFile()が
   // クリアする――ページャ起動されたファイルのモードラインが、
