@@ -6236,10 +6236,10 @@ bool Application::openRecentFileEntry(const std::string &path) {
     // 2026-09-29追加、直接のユーザー依頼("^J^Jでも区間まで開くようにして"):
     // 区間の中身を見たまま離れていた(saveCutPositionIfLeft()/終了時の
     // saveResumableCutState()が行+1を入れた)なら、その区間を開いてその行へ。
-    // 2026-10-01、直接のユーザー依頼("CUTモードの動作をEPUBに合わせてほしい。一覧ではなく
-    // 以前見ていたページへ戻る。最初はリストの最上行をクリックした状態"): ^G^Gで一覧から
-    // 離れていても、最後に見ていた区間を開く(cutLastContent_)。一度も中身を見ていなければ
-    // 一覧(最初はカーソルが最上行)。
+    // 2026-10-01訂正、直接のユーザー依頼("^Cf後の^J^Jでは以前の閲覧がCUT一覧だったら一覧へ、
+    // 一覧から^Mで選択後だったら選択後へ戻り、最初は一律選択後へ"): 離れた時に一覧なら一覧、
+    // 区間の中身ならその区間のその行へ、位置の記録が無い最初は最上行の区間の中身へ
+    // (cutLastContent_、restoreCutFilePosition())。
     reopenLastCutContent();
     return true;
   }
@@ -8615,8 +8615,6 @@ bool Application::returnToGrepResults() {
 }
 
 bool Application::returnFromCutContent() {
-  if (cutOrigin_ == CutOrigin::File && !cutPositionKey_.empty())  // cutLastContent_参照
-    cutLastContent_ = std::make_pair(cutView_.cursorIndex(), cutContentView_.cursorIndex());
   currentMode_ = ApplicationMode::Cut;
   cutView_.redraw();
   return true;
@@ -8696,11 +8694,6 @@ void Application::saveCutFilePosition(int contentCursor) {
   pos.row = cutView_.cursorIndex();
   pos.totalRows = static_cast<int>(cutMode_.segments().size());
   pos.lineNumber = contentCursor >= 0 ? contentCursor + 1 : -1;
-  // 一覧のまま離れても、最後に見ていた区間とその行を残す(cutLastContent_参照)
-  if (contentCursor < 0 && cutLastContent_) {
-    pos.row = cutLastContent_->first;
-    pos.lineNumber = cutLastContent_->second + 1;
-  }
   history_.setPosition(PositionCategory::Screen, cutPositionKey_, pos);
 }
 
@@ -8734,7 +8727,11 @@ void Application::restoreCutFilePosition(const std::string &key) {
   cutPositionKey_ = key;
   cutLastContent_.reset();
   auto pos = history_.positionFor(PositionCategory::Screen, key);
-  if (!pos) return;
+  // 初めて(位置の記録が無い)は、一覧の最上行を選んだ後(区間の中身)から(cutLastContent_参照)
+  if (!pos) {
+    cutLastContent_ = std::make_pair(0, 0);
+    return;
+  }
   if (pos->lineNumber > 0) cutLastContent_ = std::make_pair(pos->row, pos->lineNumber - 1);
   int last = static_cast<int>(cutMode_.segments().size()) - 1;
   cutView_.setCursorIndex(std::max(0, std::min(pos->row, last)));

@@ -2230,11 +2230,10 @@ class Application {
   // +1して入れる(0/-1は「中身は開いていない」)――次回起動の再開で使う。
   void saveCutFilePosition(int contentCursor = -1);
   void restoreCutFilePosition(const std::string &key);
-  // 2026-10-01追加、直接のユーザー依頼("CUTモードの動作をEPUBに合わせてほしい。一覧ではなく
-  // 以前見ていたページへ戻る"): ファイルCUTで最後に見ていた区間(一覧の行)と、その中身の
-  // カーソル行。区間の中身から一覧へ戻った時(returnFromCutContent())に覚え、一覧のまま離れても
-  // saveCutFilePosition()が保存する。restoreCutFilePosition()が保存から読み直し、
-  // reopenLastCutContent()がその区間を開いてその行へ。
+  // 2026-10-01追加(同日訂正): ファイルCUTを開き直した時に開く区間(一覧の行)と、その中身の
+  // カーソル行。restoreCutFilePosition()が保存から決める――区間の中身を見たまま離れていれば
+  // その区間とその行、位置の記録が無い最初は最上行の区間(0, 0)、一覧のまま離れていれば無し
+  // (一覧)。reopenLastCutContent()がその区間を開いてその行へ。
   std::optional<std::pair<int, int>> cutLastContent_;
   void reopenLastCutContent();
   // ^X^C等で終える直前に呼ぶ: ファイルCUTの一覧/区間の中身を見ていたら、
