@@ -16330,7 +16330,30 @@ bool Application::handleMouseClick(int row, int column) {
   return result;
 }
 
+bool Application::directEntryListActive() const {
+  return currentMode_ == ApplicationMode::ListBrowser && promptKind_ == PromptKind::None &&
+         (promptHistoryContext_.has_value() || tabCompletionContext_.has_value());
+}
+
+bool Application::hoverDirectEntryList(int row) {
+  if (!directEntryListActive()) return false;
+  int idx = listBrowserView_.lineIndexAtRow(row);
+  if (idx < 0 || idx == listBrowserView_.cursorIndex()) return false;
+  listBrowserView_.setCursorIndex(idx);
+  listBrowserView_.redraw();
+  refreshDirectEntryModeLine();
+  return true;
+}
+
 bool Application::handleMouseClickImpl(int row, int column) {
+  // 2026-10-02追加(directEntryListActive()自身の宣言コメント参照): 直接入力の一覧は
+  // Directory等と同じ「1回目で選択、2回目で開く」。開くのはEnterと同じ経路。
+  if (directEntryListActive()) {
+    int idx = listBrowserView_.lineIndexAtRow(row);
+    if (idx < 0 || !listBrowserView_.isColumnWithinRowText(idx, column)) return false;
+    if (idx == listBrowserView_.cursorIndex()) return feedCanonicalByte(0x0d);
+    return hoverDirectEntryList(row);
+  }
   if (currentMode_ == ApplicationMode::Directory) {
     int idx = directoryView_.lineIndexAtRow(row);
     if (idx < 0) return false;

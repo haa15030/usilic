@@ -28068,3 +28068,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (runTerminalPhase()のpeekLeftRight())。-gの縦書きの本文では↓(先へ)/↑。Shift+↑/↓
      (peekShiftArrow())と、-gの慣性中の↑/↓による加速は廃止(↑↓は他のキーと同じく慣性を止めて
      1行動く)。-gのホイールは向きを反転(deltaYが正で先へ)。
+564. **2026-10-02: -cで慣性スクロールが左クリックで止まらない件、^X^F等の一覧でホバー/クリックが効かない件**
+   - **経緯**: 直接のユーザー報告("-cでは慣性スクロールがマウスの左クリックで停止しない"、"-gの^X^F
+     でスクロール停止時ハイライト行がマウスの動きに追随しないため、左クリックではファイルを選べない")。
+   - **原因**: ①runCoastLoop()は、行の無い所(lineIndexAtRow()が-1)の左クリックを素通りさせて慣性を
+     続けていた(実機で実際にどこを押したかは未確認、コードから推定)。②^X^F等の直接入力の一覧
+     (ListBrowserのpromptHistoryContext_/tabCompletionContext_閲覧中)は、モードラインの上書きを
+     避けるためredrawSensitivePromptOrRecallActive()でホバーから外してあり(2026-08-20)、
+     handleMouseClick()にもその一覧の分岐が無かった。
+   - **修正**: ①どこを押しても止め、ハイライト範囲の中なら従来どおりその行を開く(-gのstopOnlyと
+     同じ)。②Application::directEntryListActive()/hoverDirectEntryList()を新設し、CUI・-gとも
+     ホバーで項目を選び直してrefreshDirectEntryModeLine()でモードラインを描き直す。クリックは
+     1回目で選択、2回目でEnterと同じ経路で開く。

@@ -1211,14 +1211,17 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
           return result;
         }
         if (mouse->pressed && !mouse->motionOnly) {
+          // 2026-10-02修正、直接のユーザー報告("-cでは慣性スクロールがマウスの左クリックで停止
+          // しない"): 以前は行の無い所(lineIndexAtRow()が-1)のクリックを素通りさせ、慣性が続いて
+          // いた。どこを押しても止め、行のハイライト範囲の中なら従来どおりその行を開く(-gの
+          // runGuiPhase()のstopOnly、2026-09-25と同じ)。
           int lineIndex = view.lineIndexAtRow(mouse->row);
-          if (lineIndex >= 0) {
-            view.setCursorIndex(lineIndex);  // handleMouseClick() opens an already-selected row
-            int row = mouse->row, col = mouse->column;
-            clearHoverAndRedraw(view);
-            app.handleMouseClick(row, col);
-            return result;
-          }
+          int row = mouse->row, col = mouse->column;
+          bool open = lineIndex >= 0 && view.isColumnWithinLineScope(lineIndex, col);
+          if (open) view.setCursorIndex(lineIndex);  // handleMouseClick() opens an already-selected row
+          clearHoverAndRedraw(view);
+          if (open) app.handleMouseClick(row, col);
+          return result;
         }
         applyHoverRowAndRedraw(view, lastMouseRow);
         continue;
@@ -1636,6 +1639,8 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
           // for why this isn't decided as click-vs-drag until release.
           TerminalCoastResult coast = runTerminalMouseDrag(app, display, keyInput, mouse->row, mouse->column);
           if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
+        } else if (mouse->motionOnly && app.directEntryListActive()) {
+          app.hoverDirectEntryList(mouse->row);  // Application::directEntryListActive()参照
         } else if (mouse->motionOnly && !app.redrawSensitivePromptOrRecallActive()) {
           // Plain hover (no button held), outside any active drag or
           // coast: just keep the highlight live, matching how a
@@ -2331,7 +2336,15 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // ContentView::redraw() (called via applyHoverRowAndRedraw())
     // unconditionally redraws its own mode-line row, the exact row
     // Application's prompt label/input field also live on.
-    if (!dragging && coastLevel == 0 && app.currentMode() != fm::ApplicationMode::Shell &&
+    if (!dragging && coastLevel == 0 && app.directEntryListActive()) {
+      // 2026-10-02追加(Application::directEntryListActive()参照): ^X^F等の直接入力の一覧の
+      // ホバーは、下の通常のホバー(ContentView::redraw()でモードラインを上書きする)ではなく
+      // hoverDirectEntryList()で。
+      while (auto hover = gui.consumeHoverEvent()) {
+        anyEventThisFrame = true;
+        app.hoverDirectEntryList(hover->row);
+      }
+    } else if (!dragging && coastLevel == 0 && app.currentMode() != fm::ApplicationMode::Shell &&
         !app.redrawSensitivePromptOrRecallActive() && !app.awaitingLocateUpdateDb() && !app.awaitingDu() && !app.awaitingArchiveLoad()) {
       // !app.awaitingLocateUpdateDb() (2026-08-15 fix): see the render-
       // mode branch's own identical addition below -- a mouse wiggle

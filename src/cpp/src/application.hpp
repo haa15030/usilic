@@ -1843,6 +1843,14 @@ class Application {
   // Directoryモードの外側、またはクリックがどの本物の行の外側にも
   // 着地した場合はfalse。
   bool handleMouseClick(int row, int column);
+  // 2026-10-02追加、直接のユーザー報告("-gの^X^Fでスクロール停止時ハイライト行がマウスの動きに
+  // 追随しないため、左クリックではファイルを選べない"): 直接入力の一覧(^X^F/^X^D等の履歴の
+  // 呼び出し、^Iの補完一覧の閲覧中)か。この一覧はredrawSensitivePromptOrRecallActive()のため
+  // 通常のホバー(ContentView::redraw())から外してあるので、ホバーはhoverDirectEntryList()で、
+  // モードラインをrefreshDirectEntryModeLine()で描き直す形にする。
+  bool directEntryListActive() const;
+  // その一覧で、表示行`row`の項目を選ぶ。選び直した時true。
+  bool hoverDirectEntryList(int row);
 
   // 端末のリサイズが検出された(本物の実行ループの合図、
   // KeyInput::consumeResizeSignal()がDisplay自身の幾何形状を既に
