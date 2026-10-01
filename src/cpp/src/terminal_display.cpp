@@ -257,6 +257,10 @@ void TerminalDisplay::setAttribute(Attribute attr) {
     case Attribute::ItalicOff: italicOn_ = false; break;
     case Attribute::Serif:
     case Attribute::SerifOff:
+    case Attribute::Large:
+    case Attribute::LargeOff:
+    case Attribute::Small:
+    case Attribute::SmallOff:
     case Attribute::RubyBase:
     case Attribute::RubyText: break;  // 端末ではフォントを選べない(Display::Attribute::Serif参照)
     case Attribute::Standout: standoutOn_ = true; break;
@@ -329,6 +333,10 @@ std::string TerminalDisplay::attributeEscape(Attribute attr) const {
       return caps_.italicOff;
     case Attribute::Serif:
     case Attribute::SerifOff:
+    case Attribute::Large:
+    case Attribute::LargeOff:
+    case Attribute::Small:
+    case Attribute::SmallOff:
     case Attribute::RubyBase:
     case Attribute::RubyText:
       return "";

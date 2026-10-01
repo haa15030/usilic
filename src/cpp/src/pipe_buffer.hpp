@@ -179,6 +179,9 @@ class PipeBuffer {
   // 2026-09-30追加: <rb>(\x06)/<rt>(\x10)、Display::Attribute::RubyBase/RubyText参照。
   int currentRubyBase_ = 0;
   int currentRubyText_ = 0;
+  // 2026-10-01追加: <big>(\x11)/<small>(\x12)、Display::Attribute::Large/Small参照。
+  int currentLarge_ = 0;
+  int currentSmall_ = 0;
 
   // escapeLengthAt()自身のコメント参照。SGRで指定された現在の状態――
   // 本物の端末と同じく、改行や折り返しをまたいで次のSGRまで持続する。

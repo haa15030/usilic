@@ -80,7 +80,8 @@ bool isNoEnd(char32_t cp) {
 std::optional<Display::Attribute> attributeAt(const std::vector<AttributeRun> &runs, int byte) {
   for (const auto &run : runs)
     if (byte >= run.start && byte < run.end && run.attribute != Display::Attribute::Serif &&
-        run.attribute != Display::Attribute::RubyBase && run.attribute != Display::Attribute::RubyText)
+        run.attribute != Display::Attribute::RubyBase && run.attribute != Display::Attribute::RubyText &&
+        run.attribute != Display::Attribute::Large && run.attribute != Display::Attribute::Small)
       return run.attribute;
   return std::nullopt;
 }
@@ -199,6 +200,9 @@ std::vector<Cell> toCells(const EpubVerticalSourceLine &line, bool sideways) {
     }
     previousUnderline = underline;
     cell.serif = serifAt(line.attributes, g.byte);
+    cell.size = hasRun(line.attributes, g.byte, Display::Attribute::Large)   ? 1
+                : hasRun(line.attributes, g.byte, Display::Attribute::Small) ? -1
+                                                                             : 0;
     if (auto ruby = rubyOf.find(i); ruby != rubyOf.end()) {
       cell.ruby = ruby->second.first;
       cell.rubySpan = ruby->second.second;
@@ -301,6 +305,7 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
     std::vector<std::string> screen(std::max(0, columns), " ");
     std::vector<std::optional<Display::Attribute>> attrs(std::max(0, columns));
     std::vector<bool> serifs(std::max(0, columns), false);
+    std::vector<int> sizes(std::max(0, columns), 0);
     std::vector<std::pair<std::string, int>> rubies(std::max(0, columns));  // 桁ごとのルビ(読み, 親字の行数)
     for (int k = 0; k < perScreen; k++) {
       long c = static_cast<long>(first) + k;
@@ -334,6 +339,8 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
       serifs[x] = cell.serif;
       if (!cell.ruby.empty()) rubies[x] = {cell.ruby, std::min(cell.rubySpan, std::max(1, rows) - r)};
       if (x + 1 < columns) serifs[x + 1] = cell.serif;
+      sizes[x] = cell.size;
+      if (x + 1 < columns) sizes[x + 1] = cell.size;
     }
     ContentView::Line line;
     for (int x = 0; x < columns; x++) {
@@ -349,21 +356,26 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
           line.attributes.push_back({start, end, *attrs[x]});
       }
     }
-    // 明朝体(EpubVerticalCell::serif)は他の装飾と別のランにする(重ねて持てるように)
-    for (int x = 0, pos = 0; x < columns; pos += static_cast<int>(screen[x].size()), x++) {
-      int end = pos + static_cast<int>(screen[x].size());
-      if (!serifs[x] || end <= pos) continue;
-      bool extend = false;
-      for (auto it = line.attributes.rbegin(); it != line.attributes.rend(); ++it)
-        if (it->attribute == Display::Attribute::Serif) {
-          if (it->end == pos) {
-            it->end = end;
-            extend = true;
+    // 明朝体(EpubVerticalCell::serif)と字の大きさ(size)は他の装飾と別のランにする(重ねて持てるように)
+    auto addSeparateRuns = [&](Display::Attribute attribute, auto on) {
+      for (int x = 0, pos = 0; x < columns; pos += static_cast<int>(screen[x].size()), x++) {
+        int end = pos + static_cast<int>(screen[x].size());
+        if (!on(x) || end <= pos) continue;
+        bool extend = false;
+        for (auto it = line.attributes.rbegin(); it != line.attributes.rend(); ++it)
+          if (it->attribute == attribute) {
+            if (it->end == pos) {
+              it->end = end;
+              extend = true;
+            }
+            break;
           }
-          break;
-        }
-      if (!extend) line.attributes.push_back({pos, end, Display::Attribute::Serif});
-    }
+        if (!extend) line.attributes.push_back({pos, end, attribute});
+      }
+    };
+    addSeparateRuns(Display::Attribute::Serif, [&](int x) { return static_cast<bool>(serifs[x]); });
+    addSeparateRuns(Display::Attribute::Large, [&](int x) { return sizes[x] > 0; });
+    addSeparateRuns(Display::Attribute::Small, [&](int x) { return sizes[x] < 0; });
     while (!line.text.empty() && line.text.back() == ' ') line.text.pop_back();
     for (auto &run : line.attributes) run.end = std::min<int>(run.end, static_cast<int>(line.text.size()));
     line.attributes.erase(std::remove_if(line.attributes.begin(), line.attributes.end(),

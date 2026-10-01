@@ -463,7 +463,8 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
         }
       }
       unsigned char value = static_cast<unsigned char>(convertedLine[pos + 1]);
-      if ((mc == '\x02' || mc == '\x03' || mc == '\x04' || mc == '\x05' || mc == '\x06' || mc == '\x10') &&
+      if ((mc == '\x02' || mc == '\x03' || mc == '\x04' || mc == '\x05' || mc == '\x06' || mc == '\x10' ||
+           mc == '\x11' || mc == '\x12') &&
           value >= '0' && value <= '9') {
         // ゼロ幅マーカー、位置だけ進める(状態の更新は本物の消費パス側の責務)。
       } else {
@@ -515,6 +516,8 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       else if (mc == '\x05') currentSerif_ = std::max(0, currentSerif_ + delta);
       else if (mc == '\x06') currentRubyBase_ = std::max(0, currentRubyBase_ + delta);
       else if (mc == '\x10') currentRubyText_ = std::max(0, currentRubyText_ + delta);
+      else if (mc == '\x11') currentLarge_ = std::max(0, currentLarge_ + delta);
+      else if (mc == '\x12') currentSmall_ = std::max(0, currentSmall_ + delta);
       else break;
       pos += 2;
     }
@@ -566,6 +569,8 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     if (currentSerif_) push(Display::Attribute::Serif);
     if (currentRubyBase_) push(Display::Attribute::RubyBase);
     if (currentRubyText_) push(Display::Attribute::RubyText);
+    if (currentLarge_) push(Display::Attribute::Large);
+    if (currentSmall_) push(Display::Attribute::Small);
     if (sgrReverse_) push(Display::Attribute::Standout);
     if (sgrFg_ != Display::kDefaultColor || sgrBg_ != Display::kDefaultColor) {
       wrapAttrs_.push_back({start, start + bytes, Display::Attribute::Color, sgrFg_, sgrBg_});
@@ -630,6 +635,15 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       unsigned char digit = static_cast<unsigned char>(convertedLine[i + 1]);
       if (digit == '0' || digit == '1') {
         int &counter = (c == '\x06') ? currentRubyBase_ : currentRubyText_;
+        counter = std::max(0, counter + (digit == '1' ? 1 : -1));
+        i += 2;
+        continue;
+      }
+    }
+    if ((c == '\x11' || c == '\x12') && i + 1 < n) {  // <big>/<small>(currentLarge_参照)
+      unsigned char digit = static_cast<unsigned char>(convertedLine[i + 1]);
+      if (digit == '0' || digit == '1') {
+        int &counter = (c == '\x11') ? currentLarge_ : currentSmall_;
         counter = std::max(0, counter + (digit == '1' ? 1 : -1));
         i += 2;
         continue;

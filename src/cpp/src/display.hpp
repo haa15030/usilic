@@ -58,6 +58,14 @@ class Display {
     // EPUBの変換(epubToHelpMarkup())がCSSのfont-familyから<serif>を付ける。
     Serif,
     SerifOff,
+    // 2026-10-01追加、直接のユーザー依頼("フォントサイズの設定を実装よろしく"、EPUBのCSSの
+    // font-size): 大きい字(Large、115%以上)と小さい字(Small、90%以下)。GraphicalDisplay(-g)
+    // だけがマス目はそのままで字を拡大縮小して描き、端末(-c)は何もしない。EPUBの変換
+    // (epubToHelpMarkup())が<big>/<small>を付ける。
+    Large,
+    LargeOff,
+    Small,
+    SmallOff,
     // 2026-09-30追加、直接のユーザー依頼("-gでのルビを実装してみて"): ルビの親字(RubyBase)と
     // 読み(RubyText、「《ひ》」の《》を含む)。行の装飾のラン(AttributeRun)にだけ現れ、
     // setAttribute()には渡さない。ContentView::renderLine()が、drawsRuby()の表示では読みを

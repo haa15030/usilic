@@ -874,6 +874,9 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
   };
   bool serifOn = false;  // Display::Attribute::Serif参照
   auto setSerif = [&](bool on) { setAttr(serifOn, on, Display::Attribute::Serif, Display::Attribute::SerifOff); };
+  bool largeOn = false, smallOn = false;  // Display::Attribute::Large/Small参照
+  auto setLarge = [&](bool on) { setAttr(largeOn, on, Display::Attribute::Large, Display::Attribute::LargeOff); };
+  auto setSmall = [&](bool on) { setAttr(smallOn, on, Display::Attribute::Small, Display::Attribute::SmallOff); };
   // Display::Attribute::Highlight自身の宣言コメント参照(2026-09-10
   // 追加、直接のユーザー依頼: "マッチ文字列をboldの代わりにハイ
   // ライトでやってみて")――setBold()/setItalic()と全く同じ形…
@@ -1230,11 +1233,14 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
       // しては位置がずれてしまう`col`とは異なる)。
       if (!renderedAttributes->empty()) {
         bool wantBold = false, wantUnderline = false, wantStandout = false, wantItalic = false,
-             wantHighlight = false, wantHighlightCurrent = false, wantSerif = false;
+             wantHighlight = false, wantHighlightCurrent = false, wantSerif = false, wantLarge = false,
+             wantSmall = false;
         int wantFg = Display::kDefaultColor, wantBg = Display::kDefaultColor;
         for (const AttributeRun &run : *renderedAttributes) {
           if (static_cast<int>(idx) < run.start || static_cast<int>(idx) >= run.end) continue;
           if (run.attribute == Display::Attribute::Serif) wantSerif = true;
+          else if (run.attribute == Display::Attribute::Large) wantLarge = true;
+          else if (run.attribute == Display::Attribute::Small) wantSmall = true;
           else if (run.attribute == Display::Attribute::Bold) wantBold = true;
           else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;
           else if (run.attribute == Display::Attribute::Standout) wantStandout = true;
@@ -1251,6 +1257,8 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
         setUnderline(wantUnderline);
         setItalic(wantItalic);
         setSerif(wantSerif);
+        setLarge(wantLarge);
+        setSmall(wantSmall);
         setHighlightState(wantHighlightCurrent  ? HighlightState::Current
                            : wantHighlight       ? HighlightState::Regular
                                                   : HighlightState::Off);
@@ -1341,6 +1349,8 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
     setUnderline(false);
     setItalic(false);
     setSerif(false);
+    setLarge(false);
+    setSmall(false);
     setHighlightState(HighlightState::Off);
     setColor(Display::kDefaultColor, Display::kDefaultColor);
   }

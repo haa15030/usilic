@@ -31,6 +31,7 @@ struct Cell {
   bool standout = false;
   bool italic = false;  // 2026-09-04追加、直接のユーザー依頼("<i>プログラム名</i>")
   bool serif = false;   // 明朝体で描く(Display::Attribute::Serif参照)
+  int size = 0;          // 字の大きさ: 1なら大きい字、-1なら小さい字(Display::Attribute::Large参照)
   // 2026-09-10追加、直接のユーザー依頼("マッチ文字列をboldの代わりに
   // ハイライトでやってみて。色は変えられない？薄めの色とか。"):
   // GREPマッチ表示専用の色付き前景(他の属性と同じく独立、standout等
@@ -335,6 +336,23 @@ void syncHighDpiRenderScale(SDL_Window *window, SDL_Renderer *renderer) {
 // 理屈(几帳面な等幅グリッドの中で太字だけがわずかに隣のセルへ食み
 // 出るのは、本物の端末エミュレータの太字フォントでも普通に起こる
 // 見た目)で、太字セルについても幅方向のはみ出しを許容する。
+// 2026-10-01追加、直接のユーザー依頼("フォントサイズの設定を実装よろしく"、EPUBのCSSの
+// font-size、マスの中で拡大縮小): fitGlyphRect()で決めた字の矩形を、マス(boxX, boxY, boxW,
+// boxH)の中央を中心に拡大縮小する。マス目(行・列の間隔)は変えない。大きい字は少しはみ出す。
+constexpr double kLargeGlyphScale = 1.25;
+constexpr double kSmallGlyphScale = 0.8;
+SDL_Rect scaleGlyphRect(SDL_Rect r, int size, int boxX, int boxY, int boxW, int boxH) {
+  if (size == 0) return r;
+  double k = size > 0 ? kLargeGlyphScale : kSmallGlyphScale;
+  double cx = boxX + boxW / 2.0, cy = boxY + boxH / 2.0;
+  SDL_Rect out;
+  out.x = static_cast<int>(cx + (r.x - cx) * k);
+  out.y = static_cast<int>(cy + (r.y - cy) * k);
+  out.w = static_cast<int>(r.w * k);
+  out.h = static_cast<int>(r.h * k);
+  return out;
+}
+
 SDL_Rect fitGlyphRect(int boxX, int boxY, int maxW, int maxH, int surfaceW, int surfaceH,
                        bool allowWidthOverflow = false) {
   float scale = allowWidthOverflow
@@ -661,6 +679,7 @@ struct GraphicalDisplay::Impl {
   int savedRow = 0, savedCol = 0;
   bool standoutActive = false, boldActive = false, underlineActive = false, italicActive = false,
        highlightActive = false, highlightCurrentActive = false, serifActive = false;
+  bool largeActive = false, smallActive = false;  // Display::Attribute::Large/Small参照
   // 明朝体(Display::Attribute::Serif参照)。最初に明朝の字を描く時にloadSerifFont()で
   // 読み込む(見つからなければserifFontMissingを立て、以後はふだんのフォントで描く)。
   TTF_Font *serifFont = nullptr;
@@ -677,7 +696,7 @@ struct GraphicalDisplay::Impl {
   std::vector<Cell> edgeSavedGrid;
   bool edgeCapturing = false;
   int edgeSavedRow = 0, edgeSavedCol = 0;
-  bool edgeSavedFlags[7] = {};
+  bool edgeSavedFlags[9] = {};
   int edgeSavedFg = 0, edgeSavedBg = 0;
   int fgColorActive = Display::kDefaultColor, bgColorActive = Display::kDefaultColor;  // setColor()
 
@@ -1264,6 +1283,7 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
   cell.standout = impl_->standoutActive;
   cell.italic = impl_->italicActive;
   cell.serif = impl_->serifActive;
+  cell.size = impl_->largeActive ? 1 : impl_->smallActive ? -1 : 0;
   cell.highlight = impl_->highlightActive;
   cell.highlightCurrent = impl_->highlightCurrentActive;
   cell.fgColor = impl_->fgColorActive;
@@ -1283,6 +1303,7 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
     shadow.standout = cell.standout;
     shadow.italic = cell.italic;
     shadow.serif = cell.serif;
+    shadow.size = cell.size;
     shadow.highlight = cell.highlight;
     shadow.highlightCurrent = cell.highlightCurrent;
     shadow.fgColor = cell.fgColor;
@@ -1555,6 +1576,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
     // 自身のコメント参照。
     int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
     SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h, cell.italic || cell.bold);
+    dst = scaleGlyphRect(dst, cell.size, box.x, box.y, maxW, impl_->cellHeight);
     if (impl_->verticalText) {
       // Display::setVerticalTextHint()参照。
       auto blankAt = [&](int c) {
@@ -1695,6 +1717,7 @@ void GraphicalDisplay::renderCursor() {
   if (texture) {
     int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
     SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h, cell.italic || cell.bold);
+    dst = scaleGlyphRect(dst, cell.size, box.x, box.y, maxW, impl_->cellHeight);
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
   }
 }
@@ -1905,6 +1928,18 @@ void GraphicalDisplay::setAttribute(Attribute attr) {
       break;
     case Attribute::SerifOff:
       impl_->serifActive = false;
+      break;
+    case Attribute::Large:
+      impl_->largeActive = true;
+      break;
+    case Attribute::LargeOff:
+      impl_->largeActive = false;
+      break;
+    case Attribute::Small:
+      impl_->smallActive = true;
+      break;
+    case Attribute::SmallOff:
+      impl_->smallActive = false;
       break;
     case Attribute::RubyBase:
     case Attribute::RubyText:
@@ -2169,9 +2204,9 @@ void GraphicalDisplay::beginContentEdgeCapture() {
   d.grid.assign(d.edgeSavedGrid.size(), Cell{});
   d.edgeSavedRow = d.cursorRow;
   d.edgeSavedCol = d.cursorCol;
-  bool *flags[7] = {&d.standoutActive, &d.boldActive,      &d.underlineActive,        &d.italicActive,
-                    &d.highlightActive, &d.highlightCurrentActive, &d.serifActive};
-  for (int i = 0; i < 7; i++) {
+  bool *flags[9] = {&d.standoutActive,  &d.boldActive,  &d.underlineActive, &d.italicActive, &d.highlightActive,
+                    &d.highlightCurrentActive, &d.serifActive, &d.largeActive, &d.smallActive};
+  for (int i = 0; i < 9; i++) {
     d.edgeSavedFlags[i] = *flags[i];
     *flags[i] = false;
   }
@@ -2188,9 +2223,9 @@ void GraphicalDisplay::endContentEdgeCapture(int side) {
   d.grid = std::move(d.edgeSavedGrid);
   d.cursorRow = d.edgeSavedRow;
   d.cursorCol = d.edgeSavedCol;
-  bool *flags[7] = {&d.standoutActive, &d.boldActive,      &d.underlineActive,        &d.italicActive,
-                    &d.highlightActive, &d.highlightCurrentActive, &d.serifActive};
-  for (int i = 0; i < 7; i++) *flags[i] = d.edgeSavedFlags[i];
+  bool *flags[9] = {&d.standoutActive,  &d.boldActive,  &d.underlineActive, &d.italicActive, &d.highlightActive,
+                    &d.highlightCurrentActive, &d.serifActive, &d.largeActive, &d.smallActive};
+  for (int i = 0; i < 9; i++) *flags[i] = d.edgeSavedFlags[i];
   d.fgColorActive = d.edgeSavedFg;
   d.bgColorActive = d.edgeSavedBg;
 }
@@ -3273,10 +3308,13 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
     // オフセット==画面上の列である)。
     bool wantBold = false, wantUnderline = false, wantStandout = false, wantItalic = false,
          wantHighlight = false, wantHighlightCurrent = false, wantSerif = false;
+    int wantSize = 0;  // Display::Attribute::Large/Small参照
     int wantFg = Display::kDefaultColor, wantBg = Display::kDefaultColor;
     for (const auto &run : attributes) {
       if (static_cast<int>(pos) < run.start || static_cast<int>(pos) >= run.end) continue;
       if (run.attribute == Display::Attribute::Serif) wantSerif = true;
+      else if (run.attribute == Display::Attribute::Large) wantSize = 1;
+      else if (run.attribute == Display::Attribute::Small) wantSize = -1;
       else if (run.attribute == Display::Attribute::Bold) wantBold = true;
       else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;
       else if (run.attribute == Display::Attribute::Standout) wantStandout = true;
@@ -3388,6 +3426,8 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
         // (renderScrolled()→ここ)は斜体のみのまま取り残されていた。
         SDL_Rect dst = fitGlyphRect(Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y,
                                      width * impl_->cellWidth, impl_->cellHeight, w, h, wantItalic || wantBold);
+        dst = scaleGlyphRect(dst, wantSize, Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y,
+                             width * impl_->cellWidth, impl_->cellHeight);
         SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
       }
     }

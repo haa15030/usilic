@@ -370,7 +370,35 @@ struct CssFontRule {
   // 2026-10-01、直接のユーザー依頼("span class=\"em_accent\"の実装"): text-emphasis(-style)の
   // 傍点の字("filled sesame"なら"﹅")。字ごとのルビ(<rb>/<rt>)にして描く(-gだけ)。
   std::optional<std::string> emphasis;
+  // 2026-10-01、直接のユーザー依頼("フォントサイズの設定を実装よろしく"): font-sizeを3段階に
+  // 丸めたもの(1: 大きい字、-1: 小さい字、0: ふつう)。-gだけがマスの中で字を拡大縮小して
+  // 描く(Display::Attribute::Large/Small、<big>/<small>)。
+  std::optional<int> fontSize;
 };
+
+// font-sizeの値を3段階に。%・em・remは115%以上なら大きい字、90%以下なら小さい字、pxは
+// 16pxを100%とする。キーワードはsmall以下・smallerが小さい字、large以上・largerが大きい字。
+std::optional<int> classifyFontSize(const std::string &value) {
+  std::string v = trimAsciiSpace(value);
+  for (auto &c : v) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  if (v.empty()) return std::nullopt;
+  if (v == "medium" || v == "inherit" || v == "initial") return 0;
+  if (v.find("small") != std::string::npos) return -1;  // xx-small/x-small/small/smaller
+  if (v.find("large") != std::string::npos) return 1;   // large/x-large/xx-large/larger
+  char *end = nullptr;
+  double d = std::strtod(v.c_str(), &end);
+  if (!end || end == v.c_str()) return std::nullopt;
+  std::string unit = trimAsciiSpace(end);
+  double percent;
+  if (unit == "%") percent = d;
+  else if (unit == "em" || unit == "rem") percent = d * 100;
+  else if (unit == "px") percent = d / 16 * 100;
+  else if (unit == "pt") percent = d / 12 * 100;
+  else return std::nullopt;
+  if (percent >= 115) return 1;
+  if (percent <= 90) return -1;
+  return 0;
+}
 
 // font-weightの値が太字か。
 std::optional<bool> classifyFontWeight(const std::string &value) {
@@ -539,6 +567,18 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
     std::optional<double> paddingLeft = readLength("padding-left");
     std::optional<double> textIndent = readLength("text-indent");
     std::optional<bool> bold = readProperty("font-weight", classifyFontWeight);
+    std::optional<int> fontSize;
+    for (std::size_t fp = 0; (fp = body.find("font-size", fp)) != std::string::npos;) {
+      std::size_t colon = body.find(':', fp);
+      if (colon == std::string::npos) break;
+      bool nameEnd = trimAsciiSpace(body.substr(fp + 9, colon - fp - 9)).empty();  // font-size-adjust等は読まない
+      std::size_t end = body.find(';', colon);
+      if (nameEnd)
+        if (auto v = classifyFontSize(
+                body.substr(colon + 1, end == std::string::npos ? std::string::npos : end - colon - 1)))
+          fontSize = v;
+      fp = colon;
+    }
     // text-emphasis/text-emphasis-style(-webkit-・-epub-付きも)。-colorと-positionは読まない。
     std::optional<std::string> emphasis;
     for (std::size_t fp = 0; (fp = body.find("text-emphasis", fp)) != std::string::npos;) {
@@ -566,7 +606,7 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
       fp = colon;
     }
     if (!serif && !vertical && !alignEnd && !center && !paddingTop && !paddingLeft && !textIndent && !hidden && !bold &&
-        !emphasis)
+        !emphasis && !fontSize)
       continue;
     std::string one;
     for (char c : selectors + ",") {
@@ -603,6 +643,7 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
       rule.hidden = hidden;
       rule.bold = bold;
       rule.emphasis = emphasis;
+      rule.fontSize = fontSize;
       std::size_t dot = sel.find('.');
       rule.tag = sel.substr(0, dot);
       if (rule.tag == "*") rule.tag.clear();
@@ -668,6 +709,7 @@ class BodyConverter {
     paddingTopEm_ = paddingLeftEm_ = textIndentEm_ = 0;
     rubyBase_ = rubyText_ = false;
     emphasis_.clear();
+    fontSize_ = 0;
     inStyle_ = false;
     std::vector<XmlToken> tokens = tokenizeXml(xhtml);
     // CSS(fontRules_参照)は<head>の中にあり、<html>の開始より後に来るので、先に
@@ -877,7 +919,7 @@ class BodyConverter {
     // 横書き」(扉の縦書きの箱の見分けに使う)。
     if (t.kind == XmlToken::Open) {
       fontStack_.push_back({serif_, vertical_, horizontalOutside_, alignEnd_, center_, paddingTopEm_, paddingLeftEm_,
-                            textIndentEm_, false, emphasis_});
+                            textIndentEm_, false, emphasis_, fontSize_});
       std::string classes = attr(t, "class");
       setSerif(ruleFor(name, classes, &CssFontRule::serif).value_or(serif_));
       horizontalOutside_ = horizontalOutside_ || vertical_ == false;
@@ -894,6 +936,7 @@ class BodyConverter {
         fontStack_.back().addedBold = true;
       }
       if (auto emphasis = ruleFor(name, classes, &CssFontRule::emphasis)) emphasis_ = *emphasis;
+      if (auto size = ruleFor(name, classes, &CssFontRule::fontSize)) setFontSize(*size);
     } else if (t.kind == XmlToken::Close && !fontStack_.empty()) {
       setSerif(fontStack_.back().serif);
       vertical_ = fontStack_.back().vertical;
@@ -905,6 +948,7 @@ class BodyConverter {
       textIndentEm_ = fontStack_.back().textIndent;
       if (fontStack_.back().addedBold) changeStyle(bold_, -1, "b");
       emphasis_ = fontStack_.back().emphasis;
+      setFontSize(fontStack_.back().fontSize);
       fontStack_.pop_back();
     }
     if (t.kind == XmlToken::Close) depth_--;
@@ -960,6 +1004,14 @@ class BodyConverter {
     return LineKind::Normal;
   }
 
+  // setSerif()の字の大きさ版(<big>/<small>)。
+  void setFontSize(int size) {
+    if (size == fontSize_) return;
+    if (!line_.empty() && fontSize_ != 0) line_ += fontSize_ > 0 ? "</big>" : "</small>";
+    fontSize_ = size;
+    if (!line_.empty() && size != 0) line_ += size > 0 ? "<big>" : "<small>";
+  }
+
   // changeStyle()の明朝体版(カウンタではなくオン/オフ)。
   void setSerif(bool serif) {
     if (serif == serif_) return;
@@ -980,6 +1032,7 @@ class BodyConverter {
   void openStylesAtLineStart() {
     if (!line_.empty()) return;
     if (serif_) line_ += "<serif>";
+    if (fontSize_ != 0) line_ += fontSize_ > 0 ? "<big>" : "<small>";
     if (underline_) line_ += "<u>";
     if (bold_) line_ += "<b>";
     if (italic_) line_ += "<i>";
@@ -1079,6 +1132,7 @@ class BodyConverter {
     if (italic_) line_ += "</i>";
     if (bold_) line_ += "</b>";
     if (underline_) line_ += "</u>";
+    if (fontSize_ != 0) line_ += fontSize_ > 0 ? "</big>" : "</small>";
     if (serif_) line_ += "</serif>";
   }
 
@@ -1175,6 +1229,7 @@ class BodyConverter {
     double textIndent;
     bool addedBold;        // この要素のfont-weightで太字にした(閉じる時に戻す)
     std::string emphasis;  // 傍点の字(emphasis_)
+    int fontSize;          // 字の大きさ(fontSize_)
   };
   std::vector<Frame> fontStack_;  // 開いている要素ごとの、その外側の状態
   bool serif_ = true;
@@ -1194,6 +1249,7 @@ class BodyConverter {
   // 出している最中(読みの字に傍点を付けないため)。
   std::string emphasis_;
   bool emphasizing_ = false;
+  int fontSize_ = 0;  // 字の大きさ(CssFontRule::fontSize)
   // 字下げ(CssFontRule::paddingTop等、em): 開いている要素のpaddingの和と、継承したtext-indent。
   double paddingTopEm_ = 0, paddingLeftEm_ = 0, textIndentEm_ = 0;
   bool bookVertical_ = false;       // 本全体が縦書き(epubIsRightToLeft())

@@ -27878,3 +27878,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (Display::setOutputEnabled()、本体はopenEpubQuietly())、開き終えてから一度だけ描く。
      再起動時の再開(startResumingSession())は、画面を消して最下行に"Reading Kbt.epub..."を出し、
      (ls)に入るところから止める((ls)も横書きの途中の画面も出ない)。
+549. **2026-10-01: EPUBのCSSのfont-size(-gはマスの中で拡大縮小)**
+   - **経緯**: 直接のユーザー依頼("フォントサイズの設定を実装よろしく")。確認の結果、EPUBのCSSの
+     font-sizeで、-gの描き方は「マス目はそのままで字を拡大縮小」(ユーザーが選択)。Kbt.epubでは
+     p.title(縦160%・横140%)、p.small(font-size: small、奥付)、p.author(100%)。
+   - **変換**: font-sizeを3段階に丸めてCssFontRule::fontSizeに読む(%・em・remは115%以上で大きい
+     字、90%以下で小さい字、pxは16px、ptは12ptを100%、small/smaller等とlarge/larger等の
+     キーワード)。要素ごとに継承し、<big>/<small>を付ける(<serif>と同じ形、行をまたぐと行末で
+     閉じて行頭で開き直す)。入れ子の%の掛け合わせはしない。
+   - **表示**: <big>(\x11)/<small>(\x12)をPipeBufferがDisplay::Attribute::Large/Smallのランに
+     し、ContentView・縦書きのマス(EpubVerticalCell::size)を経てGraphicalDisplayへ。-gは
+     fitGlyphRect()で決めた字の矩形をマスの中央を中心に、大きい字は1.25倍(少しはみ出す)、
+     小さい字は0.8倍にして描く(scaleGlyphRect()、静止時・スクロール中・カーソル)。-cは何もしない。
+     ルビの読みの大きさは変えない。
