@@ -1945,12 +1945,34 @@ bool Application::startResumingSession(const std::string &lastOpenName, const st
   if (!lastOpenName.empty() && std::filesystem::is_regular_file(lastOpenName, ec) && !ec) {
     std::string parent = std::filesystem::path(lastOpenName).parent_path().string();
     if (parent.empty()) parent = fallbackDirectory;
-    if (directoryMode_.enterDirectory(parent, consultHistory)) {
-      // .epubはEPUBモードで(ARCHIVEの別名で.zip扱いなので、loadArchive()より先に)
-      if (isEpubFile(lastOpenName) && !configuration_.isExec(lastOpenName)) {
+    // .epubはEPUBモードで(ARCHIVEの別名で.zip扱いなので、loadArchive()より先に)。
+    // 2026-10-01(openEpub()の同日のコメント参照): (ls)や横書きの途中の画面を見せないよう、
+    // 画面を消して最下行に"Reading Kat.epub..."を出し、開き終えるまで出力を止める。
+    if (isEpubFile(lastOpenName) && !configuration_.isExec(lastOpenName)) {
+      bool wasEnabled = display_.outputEnabled();
+      if (wasEnabled) {
+        display_.clearScreen();
+        display_.moveCursor(std::max(0, display_.rows() - 1), 0);
+        display_.write("Reading " + std::filesystem::path(lastOpenName).filename().string() + "...");
+        display_.flush();
+      }
+      display_.setOutputEnabled(false);
+      bool entered = directoryMode_.enterDirectory(parent, consultHistory);
+      if (entered) {
+        currentMode_ = ApplicationMode::Directory;
         if (!openEpub(lastOpenName)) currentMode_ = ApplicationMode::Directory;
+      }
+      display_.setOutputEnabled(wasEnabled);
+      if (entered) {
+        if (wasEnabled) {
+          activeView().redraw();
+          activeView().syncVisibleCursor();
+          display_.flush();
+        }
         return true;
       }
+    }
+    if (directoryMode_.enterDirectory(parent, consultHistory)) {
       // loadArchive()を先に試す(loadFile()より先): アーカイブファイル
       // 自身もstd::filesystem::is_regular_file()には該当するので、
       // openSelectedEntry()自身の判定順序(アーカイブ判定が通常
@@ -6814,7 +6836,29 @@ bool Application::openEpubImageIn(const std::string &text) {
 //   - 本文ではリンク(下線)で[Enter]→リンク先、^X^Xで戻る(followEpubLink())。
 // 入口は(ls)の[Enter]、FILE履歴、^Xf、^Je/^J^E。EXEC節で.epubに外部
 // プログラムを割り当てていればそちらが優先(openExternallyIfApplicable())。
+// 2026-10-01、直接のユーザー依頼("epub画面が出る前に(ls)が出たり-gでは一旦横書き画面が出て
+// から縦書きに切り替わったりするので...最終画面になるまでは...「Reading...」でよろしく"):
+// 読み込みの間は画面への出力を止め(Display::setOutputEnabled())、止める前にモードラインへ
+// "Reading..."(DUの"Disk usage..."と同じ形)を出す。開き終えてから一度だけ描く。既に止めて
+// あれば(再開時のstartResumingSession()が"Reading Kat.epub..."を出している)そのまま。
 bool Application::openEpub(const std::string &path) {
+  bool wasEnabled = display_.outputEnabled();
+  if (wasEnabled) {
+    drawPromptLabel(PromptKind::EpubLoad, /*positionText=*/"", "Reading...");
+    display_.flush();
+  }
+  display_.setOutputEnabled(false);
+  bool opened = openEpubQuietly(path);
+  display_.setOutputEnabled(wasEnabled);
+  if (wasEnabled) {
+    activeView().redraw();
+    if (opened) activeView().syncVisibleCursor();
+    display_.flush();
+  }
+  return opened;
+}
+
+bool Application::openEpubQuietly(const std::string &path) {
   // 2026-09-29、直接のユーザー依頼("キー操作での縦横切り替えは廃止。著者は、いずれかを
   // cssファイルに設定してあるはずなのでそれで判断する"): 縦書きかどうかは本が決める
   // (epubIsRightToLeft()、OPFのpage-progression-direction="rtl")。
@@ -8606,6 +8650,14 @@ void Application::saveCutPositionIfLeft(const CutLeaveSnapshot &before) {
 }
 
 void Application::saveResumableCutState() {
+  // 2026-10-01、直接のユーザー報告("引数無しの-c/-g起動では、それぞれでも同じ章で立ち上がらない
+  // ので閲覧位置を保存していない模様"): FILEの位置は^G等で離れる時にしか保存しておらず、見たまま
+  // 終えると前に離れた時の位置で開き直していた。終了の直前にも保存する(縦書きなら列から本文の
+  // 行へ合わせてから、returnToEpubToc()と同じ)。
+  if (currentMode_ == ApplicationMode::File) {
+    if (epubVerticalActive()) syncEpubVerticalToFile();
+    fileMode_.saveCursorPosition();
+  }
   if (currentMode_ == ApplicationMode::CutContent) saveCutFilePosition(cutContentView_.cursorIndex());
   else if (currentMode_ == ApplicationMode::Cut) saveCutFilePosition();
 }
@@ -12845,6 +12897,7 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
     case PromptKind::None:
     case PromptKind::Du:  // promptKind_には決して代入されない、drawPromptLabel()専用のラベルマーカー――application.hpp自身の宣言コメント参照
     case PromptKind::ArchiveLoad:  // 同上――PromptKind::ArchiveLoad自身の宣言コメント参照
+    case PromptKind::EpubLoad:     // 同上(openEpub()の"Reading...")
     case PromptKind::TabCompletionList:  // 同上――PromptKind::TabCompletionList自身の宣言コメント参照
       return false;
   }
@@ -13534,6 +13587,8 @@ std::string Application::promptLabelText(PromptKind kind) const {
       return "DU";
     case PromptKind::ArchiveLoad:
       return "ARC";
+    case PromptKind::EpubLoad:
+      return "EPUB";
     case PromptKind::TabCompletionList:
       return "LIST";
     case PromptKind::ShellCommand:

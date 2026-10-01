@@ -27863,3 +27863,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (isEmphasisMarkReading()、ContentView::renderLine()・epub_vertical.cppのtoCells())。
      既知の制約: 本文の文字列には「そ《﹅》れ《﹅》」が入るので、傍点の語は検索で見つからない
      (ルビの語と同じ)。
+548. **2026-10-01: 見たまま終えたEPUB(FILE)の位置を再起動で、読み込み中は「Reading...」**
+   - **経緯**: 直接のユーザー報告("引数無しの-c/-g起動では、それぞれでも同じ章で立ち上がらない
+     ので閲覧位置を保存していない模様"、"epub画面が出る前に(ls)が出たり-gでは一旦横書き画面が
+     出てから縦書きに切り替わったりするので一旦画面クリア後、最終画面になるまでは最下行に
+     「Reading Kat.epub...」、(ls)上ならモードラインの「Disk usage ...」等の位置に「Reading...」
+     でよろしく")。
+   - **位置**: FILEの位置(FileMode::saveCursorPosition())は^G等で離れる時にしか保存して
+     おらず、見たまま終えると前に離れた時の位置で開いていた。終了の直前
+     (saveResumableCutState()、executeExit()/requestImmediateExit())にも保存する。縦書きは
+     列から本文の行へ合わせてから(syncEpubVerticalToFile())。EPUBに限らずFILE全般。
+   - **Reading...**: openEpub()は、モードラインに"Reading..."(PromptKind::EpubLoad、名前欄は
+     "EPUB"、DUの"Disk usage..."と同じ形)を出してから画面への出力を止め
+     (Display::setOutputEnabled()、本体はopenEpubQuietly())、開き終えてから一度だけ描く。
+     再起動時の再開(startResumingSession())は、画面を消して最下行に"Reading Kbt.epub..."を出し、
+     (ls)に入るところから止める((ls)も横書きの途中の画面も出ない)。

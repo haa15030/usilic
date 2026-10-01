@@ -2483,7 +2483,8 @@ class Application {
   bool openEpubSegmentImage(const CutSegment &segment);  // 自身のコメント(application.cpp)参照
   bool openEpubLineImage(const ContentView &view);       // 同上
   bool openEpubImageIn(const std::string &text);          // 同上
-  bool openEpub(const std::string &path);  // EPUBモード、自身のコメント(application.cpp)参照
+  bool openEpub(const std::string &path);
+  bool openEpubQuietly(const std::string &path);  // openEpub()の本体(画面への出力を止めた中で)  // EPUBモード、自身のコメント(application.cpp)参照
   // 縦書き(rebuildEpubVertical()自身のコメント参照)
   bool epubVerticalActive() const;
   // 2026-09-29追加、直接のユーザー依頼(EPUBの段階3、"扉...や奥付(横書き)等、章毎の
@@ -3428,6 +3429,9 @@ class Application {
     // Du同様、promptKind_へは一切代入されないdrawPromptLabel()専用の
     // 静的メッセージ("Loading archive...")のためだけに存在する。
     ArchiveLoad,
+    // 2026-10-01追加、openEpub()自身のコメント参照。ArchiveLoadと同じく、drawPromptLabel()専用の
+    // 静的メッセージ("Reading...")のためだけに存在する。
+    EpubLoad,
     // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装、実機報告
     // (スクリーンショット=gv、legacyの参照画面: "プロンプトエリアは
     // 編集可能な非ハイライト表示が正解")を受けての追加。Du/ArchiveLoad
