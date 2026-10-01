@@ -6289,6 +6289,12 @@ bool Application::goToRecentFile() {
   }
   else if (currentMode_ == ApplicationMode::File)
     current = fileMode_.currentFile();
+  // 2026-10-01、直接のユーザー報告("\"：\"でCUTの前のファイルは平文ファイルなのに^J^Jでそこへ戻らない"):
+  // ファイルCUTの一覧・区間の中身では、今見ているのは「パス "パターン"」(cutPositionKey_)。以前は
+  // currentが空のままで、いちばん最近のその合成エントリ自身を開き直していた。
+  else if ((currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
+           cutOrigin_ == CutOrigin::File && !cutPositionKey_.empty())
+    current = cutPositionKey_;
   // 現在と同じものだけでなく、「失敗した」エントリも越えてたどり続け
   // る(goToRecentDirectory()自身の同一の2026-08-27の修正参照)。
   for (auto it = recent.rbegin(); it != recent.rend(); ++it) {
