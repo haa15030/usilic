@@ -27891,3 +27891,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      fitGlyphRect()で決めた字の矩形をマスの中央を中心に、大きい字は1.25倍(少しはみ出す)、
      小さい字は0.8倍にして描く(scaleGlyphRect()、静止時・スクロール中・カーソル)。-cは何もしない。
      ルビの読みの大きさは変えない。
+   - **追加(同日)**: 直接のユーザー依頼("<h2 class...、p class=\"title\"...は本文よりも大きめ、
+     <p class=\"author\"...は小さめにして")。本のCSS(Kbt.epubのp.authorは100%、h2.chapterは
+     font-size無し)に関わらず、h1〜h3と.titleは大きい字、.authorは小さい字にする。読む側の
+     上書きの規則(kReaderOverrideCss)を本のCSSの後に足し、CssFontRule::readerOverrideの
+     規則は詳しさに関わらず本の規則に勝つ(ruleFor())。

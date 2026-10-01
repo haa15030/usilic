@@ -374,7 +374,17 @@ struct CssFontRule {
   // 丸めたもの(1: 大きい字、-1: 小さい字、0: ふつう)。-gだけがマスの中で字を拡大縮小して
   // 描く(Display::Attribute::Large/Small、<big>/<small>)。
   std::optional<int> fontSize;
+  // 本のCSSより優先する規則(kReaderOverrideCss)。詳しさに関わらず、本の規則に勝つ。
+  bool readerOverride = false;
 };
+
+// 2026-10-01、直接のユーザー依頼("<h2 class...、p class=\"title\"...は本文よりも大きめ、
+// <p class=\"author\"...は小さめにして"): 本のCSSの指定(Kbt.epubのp.authorは100%)に関わらず、
+// 見出しと題名は大きい字、著者名は小さい字にする(読む側の好み、BodyConverter::convert()が
+// 本のCSSの後に足す)。
+const char *const kReaderOverrideCss =
+    "h1, h2, h3, .title { font-size: large; }\n"
+    ".author { font-size: small; }\n";
 
 // font-sizeの値を3段階に。%・em・remは115%以上なら大きい字、90%以下なら小さい字、pxは
 // 16pxを100%とする。キーワードはsmall以下・smallerが小さい字、large以上・largerが大きい字。
@@ -724,6 +734,10 @@ class BodyConverter {
       if (inStyle && t.kind == XmlToken::Text)
         for (auto &rule : parseCssFontRules(t.text)) fontRules_.push_back(std::move(rule));
     }
+    for (auto rule : readerOverrideRules()) {
+      rule.readerOverride = true;
+      fontRules_.push_back(std::move(rule));
+    }
     for (const auto &t : tokens) handle(t);
     endLine(false);
     flushDeferredLabel();
@@ -954,6 +968,11 @@ class BodyConverter {
     if (t.kind == XmlToken::Close) depth_--;
   }
 
+  static const std::vector<CssFontRule> &readerOverrideRules() {
+    static const std::vector<CssFontRule> rules = parseCssFontRules(kReaderOverrideCss);
+    return rules;
+  }
+
   void loadStylesheet(const std::string &href) {
     if (href.empty()) return;
     std::string path = resolveHref(directoryOf(path_), href);
@@ -989,7 +1008,8 @@ class BodyConverter {
       for (const auto &c : rule.classes)
         if (std::find(classes.begin(), classes.end(), c) == classes.end()) all = false;
       if (!all) continue;
-      int score = static_cast<int>(rule.classes.size()) * 10 + (rule.tag.empty() ? 0 : 1);
+      int score = static_cast<int>(rule.classes.size()) * 10 + (rule.tag.empty() ? 0 : 1) +
+                  (rule.readerOverride ? 1000 : 0);
       if (score >= bestScore) {
         bestScore = score;
         best = rule.*field;
