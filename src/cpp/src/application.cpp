@@ -16305,6 +16305,13 @@ std::vector<int> keyBytesFromHelpLabel(std::string label) {
 // (最初の「：」より前の本文)は除く。^Mでその行のキーを実行し(executeSelectedKeyLine())、hで平文の
 // HELPのその行へ(jumpFromKeyToHelp())。^Gは開く前の画面へ。
 bool Application::startKey() {
+  // 2026-10-02追加、直接のユーザー依頼("KEYでKEY選んだ時は「あなたはもうそこにいる」みたいのにして"):
+  // KEYの一覧で^K/^J^Kの行を^Mした時は、開き直さずにKEYのまま知らせる。
+  if (executingKeyLine_) {
+    currentMode_ = ApplicationMode::Cut;
+    showTransientNotice(activeView(), "Already in KEY");
+    return true;
+  }
   if (helpText_.empty()) return false;
   std::vector<StyledLine> lines = wrapHelpText(display_.columns());
   bool fromCut = currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent;
@@ -16326,7 +16333,9 @@ bool Application::executeSelectedKeyLine() {
   currentMode_ = cutReturnMode_;
   activeView().redraw();
   bool result = false;
+  executingKeyLine_ = true;
   for (int b : bytes) result = feedByte(b, std::nullopt);  // 利用者のキーとして(KEY節の置き換えを通す)
+  executingKeyLine_ = false;
   return result;
 }
 

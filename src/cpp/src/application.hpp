@@ -3357,6 +3357,7 @@ private:
   // ^X^S(saveMacroToUsilicrc()参照): 直前に^Xeでマクロを実行した(^X^S以外のキーで下ろす)、
   // 実行キーの1文字を待っている、保存するK番号の並び。
   bool macroJustPlayed_ = false;
+  bool executingKeyLine_ = false;  // executeSelectedKeyLine()がキーを流している間(startKey()参照)
   bool macroKeyPending_ = false;
   std::string pendingMacroItems_;
   bool finishMacroKey(int byte, std::optional<KeyInput::SpecialKey> special);
