@@ -28091,3 +28091,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (isColumnWithinRowText()/isColumnWithinLineScope())を外し、押した行を選ぶ/開く。EPUBの
      リンク/画像の行と、慣性を止めるクリック(stopOnly)は従来どおり。ユニットテストは未実行
      (列の判定を前提にしたテストがあれば要更新)。
+566. **2026-10-02: -gで慣性スクロールをクリックで止めた後、マウスを動かさずにクリックしたらハイライト行を開く**
+   - **経緯**: 直接のユーザー依頼(=hw、"-g→^X^Fで下向きスクロール中、左クリックで停止。マウス
+     カーソル位置は`basic_hi.css`行にある。マウスを動かしていないのでハイライト行も変わってない。
+     このままで左クリックした場合でも`Kbt.epub "^I"`を開いてほしい（現状は`basic_hi.css`位置に
+     ハイライト行が移るだけ）")。
+   - **修正**: runGuiPhase()にclickTargetsCursorを新設。慣性を止めるだけのクリック(stopOnly)の後、
+     ホバー(マウスの移動)・ドラッグ・キー・ホイールのどれかが来るまで、次の左クリックをハイライト行
+     (cursorIndex_)へのクリックとして扱う(clickInterruptedCoastの!stopOnlyと同じ差し替え、
+     handleMouseClick()のidx==cursorIndex()で開く)。

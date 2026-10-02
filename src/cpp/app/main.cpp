@@ -2075,6 +2075,12 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   // 行を、生のマウス位置ではなくその時点のcursorIndex_(スクロール
   // 中ずっと見えていたハイライト行)へ差し替えるために使う。
   bool clickInterruptedCoast = false;
+  // 2026-10-02追加、直接のユーザー依頼(=hw、"-g→^X^Fで下向きスクロール中、左クリックで停止...
+  // マウスを動かしていないのでハイライト行も変わってない。このままで左クリックした場合でも
+  // [ハイライト行]を開いてほしい"): 慣性を止めるだけのクリック(stopOnly)の後、マウスを動かす
+  // (ホバー)かキー/ホイールを使うまでは、次の左クリックをポインタの行ではなくハイライト行
+  // (cursorIndex_)へのクリックとして扱う(clickInterruptedCoastの!stopOnlyと同じ差し替え)。
+  bool clickTargetsCursor = false;
   int pixelOffset = 0;      // sub-row offset; -cellHeight < pixelOffset < cellHeight
   int coastLevel = 0;       // 0 == not coasting; otherwise an index into fm::kScrollSpeedLevels
   int coastDirection = 0;   // +1 or -1 while coastLevel > 0, matching renderScrolled()'s pixelOffsetY sign
@@ -2298,7 +2304,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           int rawIdx = v.lineIndexAtRow(click->row);
           stopOnly = rawIdx < 0 || !v.isColumnWithinLineScope(rawIdx, click->column);
         }
-        if (clickInterruptedCoast && !stopOnly) {
+        if ((clickInterruptedCoast && !stopOnly) || (!clickInterruptedCoast && clickTargetsCursor)) {
           int cursorRow = app.activeContentView().cursorDisplayRow();
           if (cursorRow >= 0) {
             row = cursorRow;
@@ -2311,6 +2317,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           }
         }
         if (!stopOnly) app.handleMouseClick(row, column);
+        clickTargetsCursor = stopOnly;
       } else if (click->rightButton && !dragging) {
         // 2026-09-07追加、直接のユーザー要望("右クリックに`^G`の機能を
         // 持たせて欲しい"): app.feedByte()経由で本物のキーボード^G
@@ -2350,6 +2357,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // hoverDirectEntryList()で。
       while (auto hover = gui.consumeHoverEvent()) {
         anyEventThisFrame = true;
+        clickTargetsCursor = false;
         app.hoverDirectEntryList(hover->row);
       }
     } else if (!dragging && coastLevel == 0 && app.currentMode() != fm::ApplicationMode::Shell &&
@@ -2377,6 +2385,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // the same reasoning keyboard ^N/^P already gets via
         // handleCommand(). Harmless outside Directory mode.
         app.directoryMode().clearEditError();
+        clickTargetsCursor = false;
         applyHoverRowAndRedraw(app.activeContentView(), hover->row, /*moveCursor=*/true);
         // 2026-09-02、直接のユーザー報告(=fg/=fh、慣性スクロールが
         // 止まった直後、ドラッグ無しでマウスを動かすだけでハイライト
@@ -2429,6 +2438,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
 
     while (auto key = gui.consumeKeyEvent()) {
       anyEventThisFrame = true;
+      clickTargetsCursor = false;
       // w/s: the keyboard-driven equivalent of a mouse-drag release
       // (see fm::kScrollSpeedLevels' own comment) -- pressing the
       // SAME direction again while already coasting accelerates (one
@@ -2587,6 +2597,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // shouldn't hijack scrolling there).
     while (auto wheel = gui.consumeWheelEvent()) {
       anyEventThisFrame = true;
+      clickTargetsCursor = false;
       if (app.currentMode() == fm::ApplicationMode::Shell || app.awaitingSequenceOrPromptByte()) continue;
       // 2026-10-02、直接のユーザー依頼("GUIともどもホイールを本来の機能（画面スクロール）に戻して
       // ほしい"): 2026-08-05からホイールは慣性スクロールの開始/速度調整だったが、普段の画面
@@ -2863,6 +2874,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           break;
         }
         case fm::GraphicalDisplay::DragEventType::Motion: {
+          clickTargetsCursor = false;  // 本物のドラッグ(clickTargetsCursor自身のコメント参照)
           if ((buttonHeldPendingDrag || epubDragging) && !dragging && app.epubVerticalDragActive()) {
             // epubDragging自身のコメント参照。右へのドラッグで先へ(本文が右へ動き、左から
             // 次の列が出てくる)。本の端で動けなければずらさない。
