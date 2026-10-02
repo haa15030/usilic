@@ -707,24 +707,43 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
           auto trimmed = trimCommentAndLeadingWs(lines[i]);
           i++;
           if (!trimmed) continue;
-          auto tokens = tokenize(*trimmed);
-          if (tokens.size() < 3 || tokens[0].size() < 3 || tokens[0].compare(0, 2, "M-") != 0 ||
-              tokens[0].find_first_not_of("0123456789", 2) != std::string::npos)
-            continue;  // "--"(^X^Sが次に書き込む位置の印)やK番号の無い行
+          // 「M-n キー 要素...」。要素はK-nか"文字列"(空白を含んでよい。"自体は書けない)。
+          const std::string &line = *trimmed;
+          std::size_t p = 0;
+          auto word = [&]() {
+            while (p < line.size() && (line[p] == ' ' || line[p] == '\t')) p++;
+            std::size_t start = p;
+            if (p < line.size() && line[p] == '"') {
+              std::size_t close = line.find('"', p + 1);
+              p = (close == std::string::npos) ? line.size() : close + 1;
+            } else {
+              while (p < line.size() && line[p] != ' ' && line[p] != '\t') p++;
+            }
+            return line.substr(start, p - start);
+          };
+          std::string head = word(), key = word();
+          if (head.size() < 3 || head.compare(0, 2, "M-") != 0 ||
+              head.find_first_not_of("0123456789", 2) != std::string::npos || key.empty())
+            continue;  // "--"(^X^Sが次に書き込む位置の印)等
           MacroEntry entry;
-          entry.number = std::atoi(tokens[0].c_str() + 2);
-          entry.keySpec = tokens[1];
+          entry.number = std::atoi(head.c_str() + 2);
+          entry.keySpec = key;
           bool ok = true;
-          for (std::size_t t = 2; t < tokens.size(); t++) {
-            if (tokens[t].size() < 3 || tokens[t].compare(0, 2, "K-") != 0 ||
-                tokens[t].find_first_not_of("0123456789", 2) != std::string::npos) {
-              errors_.push_back("MACRO: " + tokens[0] + ": not a K-number: " + tokens[t]);
+          for (std::string item = word(); !item.empty(); item = word()) {
+            KeyBindings::MacroItem macroItem;
+            if (item.front() == '"') {
+              macroItem.literal = item.substr(1, item.size() >= 2 && item.back() == '"' ? item.size() - 2 : item.size() - 1);
+            } else if (item.size() >= 3 && item.compare(0, 2, "K-") == 0 &&
+                       item.find_first_not_of("0123456789", 2) == std::string::npos) {
+              macroItem.keyNumber = std::atoi(item.c_str() + 2);
+            } else {
+              errors_.push_back("MACRO: " + head + ": not a K-number or a \"string\": " + item);
               ok = false;
               break;
             }
-            entry.keyNumbers.push_back(std::atoi(tokens[t].c_str() + 2));
+            entry.items.push_back(macroItem);
           }
-          if (ok) macros_.push_back(entry);
+          if (ok && !entry.items.empty()) macros_.push_back(entry);
         }
         break;
       }
@@ -735,7 +754,9 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
   }
   // KEY節(2026-09-25実装): 組み込みの表と突き合わせて置き換え表を組み、
   // 不正な指定はこのusilicrcのエラーとして積む(keyBindings()参照)。
-  keyBindings_.configure(keyPrefixSpecs_, keyEntrySpecs_, &errors_);
+  std::vector<KeyBindings::Macro> macros;
+  for (const auto &m : macros_) macros.push_back({m.number, m.keySpec, m.items});
+  keyBindings_.configure(keyPrefixSpecs_, keyEntrySpecs_, &errors_, macros);
   return true;
 }
 

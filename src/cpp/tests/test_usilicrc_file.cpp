@@ -81,3 +81,16 @@ TEST_CASE("usilicrc::replaceSection: several value lines collapse into the new o
         "\n"
         "KEY\n");
 }
+
+TEST_CASE("usilicrc::replaceMacroMarker / nextMacroNumber: ^X^S writes at the -- marker") {
+  std::string text =
+      "MACRO\n"
+      "\tM-1\t;\tK-1 K-2 K-14\n"
+      "\t--\n";
+  CHECK(fm::usilicrc::nextMacroNumber(text) == 2);
+  CHECK(fm::usilicrc::replaceMacroMarker(text, {"\tM-2\tx\tK-3", "\t--"}) ==
+        "MACRO\n"
+        "\tM-1\t;\tK-1 K-2 K-14\n"
+        "\tM-2\tx\tK-3\n"
+        "\t--\n");
+}

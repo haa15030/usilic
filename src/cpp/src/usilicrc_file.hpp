@@ -32,6 +32,17 @@ bool setSection(const std::string &home, const std::string &section, const std::
 std::string replaceSection(const std::string &text, const std::string &section, const std::vector<std::string> &values,
                            const std::string &templateText);
 
+// MACRO(2026-10-02、^X^S): MACRO節の「--」の行(^X^Sが次に書き込む位置の印)を`replacement`の行で
+// 置き換える(印が無ければ節の末尾へ足す。節も無ければKEYの後ろ=末尾へ足す)。テキスト版と、
+// 利用者のusilicrcへ書くファイル版。
+std::string replaceMacroMarker(const std::string &text, const std::vector<std::string> &replacement);
+bool setMacroMarker(const std::string &home, const std::vector<std::string> &replacement);
+// MACRO節で使われている最大のM番号+1(無ければ1)。
+int nextMacroNumber(const std::string &text);
+// 節の見出しの行番号(1始まり)。無ければnullopt。
+std::optional<int> sectionLineNumber(const std::string &text, const std::string &section);
+std::string readText(const std::string &path);
+
 }  // namespace usilicrc
 
 }  // namespace fm

@@ -343,7 +343,7 @@ class Configuration {
   struct MacroEntry {
     int number = 0;
     std::string keySpec;
-    std::vector<int> keyNumbers;
+    std::vector<KeyBindings::MacroItem> items;  // K番号か"文字列"
   };
   const std::vector<MacroEntry> &macros() const { return macros_; }
   // COLUMNディレクティブ(2026-09-12追加、直接のユーザー依頼):

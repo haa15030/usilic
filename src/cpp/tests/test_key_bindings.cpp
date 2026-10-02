@@ -88,10 +88,10 @@ TEST_CASE("KeyBindings: a changed K-n works with its new keys, and its old keys 
 }
 
 TEST_CASE("KeyBindings: old keys given to another function do that function instead (swap)") {
-  // ^J^C(K-16)と^J^K(K-17)を入れ替える。
-  KeyBindings b = configured("\tK-16\tF-1 C-k\n\tK-17\tF-1 C-c\n");
-  CHECK(run(b, {kJ, 0x0b}) == std::vector<int>{kJ, kCtrlC});
-  CHECK(run(b, {kJ, kCtrlC}) == std::vector<int>{kJ, 0x0b});
+  // ^J^C(K-16)と^J^B(K-17、2026-10-02に^J^Kから)を入れ替える。
+  KeyBindings b = configured("\tK-16\tF-1 C-b\n\tK-17\tF-1 C-c\n");
+  CHECK(run(b, {kJ, 0x02}) == std::vector<int>{kJ, kCtrlC});
+  CHECK(run(b, {kJ, kCtrlC}) == std::vector<int>{kJ, 0x02});
 }
 
 TEST_CASE("KeyBindings: empty keys unassign a function") {
@@ -101,13 +101,14 @@ TEST_CASE("KeyBindings: empty keys unassign a function") {
 
 TEST_CASE("KeyBindings: changing a prefix (F-n) moves every function under it; a clash is a usilicrc error") {
   std::vector<std::string> errors;
-  KeyBindings b = configured("\tF-1\tC-t\n", &errors);  // ^Jを^Tへ
-  CHECK(run(b, {kT, kCtrlC}) == std::vector<int>{kJ, kCtrlC});
-  CHECK(run(b, {kT, 'd'}) == std::vector<int>{kJ, 'd'});
+  KeyBindings b = configured("\tF-1\tC-k\n", &errors);  // ^Jを^Kへ
+  CHECK(run(b, {0x0b, kCtrlC}) == std::vector<int>{kJ, kCtrlC});
+  CHECK(run(b, {0x0b, 'd'}) == std::vector<int>{kJ, 'd'});
   CHECK(run(b, {kJ, kCtrlC}).empty());
-  // K-90(^T、TUTORIAL)は新しい接頭キー^Tそのものと衝突するのでエラーになり、割り当て無し。
+  // K-105(^K、KEY、2026-10-02)は新しい接頭キー^Kそのものと衝突するのでエラーになり、割り当て無し
+  // (2026-10-02までは^Tだったが、^T(TUTORIAL)は廃止)。
   bool reported = false;
-  for (const auto &e : errors) reported = reported || e.find("K-90") != std::string::npos;
+  for (const auto &e : errors) reported = reported || e.find("K-105") != std::string::npos;
   CHECK(reported);
 }
 
@@ -145,7 +146,8 @@ TEST_CASE("src/usilicrc and src/usilicrc.en: read without errors, their KEY sect
     Configuration config;
     REQUIRE(config.loadRcText(text, true));
     CHECK(config.errors().empty());
-    CHECK(config.keyBindings().isIdentity());
+    // 2026-10-02: MACRO節(M-1〜)があるので置き換え表自体は空ではない。KEY節が既定と同じことは下で確かめる。
+    CHECK(config.macros().size() == 10);
     CHECK(config.keyEntrySpecs().size() == KeyBindings::defaultEntries().size());
     for (const auto &entry : KeyBindings::defaultEntries()) {
       CAPTURE(entry.number);
@@ -160,7 +162,7 @@ TEST_CASE("src/usilicrc and src/usilicrc.en: read without errors, their KEY sect
 // 順序(番号の並び)は意味を持たない。
 TEST_CASE("KeyBindings: the order of K-n lines in usilicrc does not matter") {
   CHECK(configured("\tK-3\tC-n\n\tK-1\tC-g\n\tK-2\tC-p\n").isIdentity());
-  KeyBindings b = configured("\tK-17\tF-1 C-c\n\tK-16\tF-1 C-k\n");  // 入れ替えを逆順の行で書く
-  CHECK(run(b, {kJ, 0x0b}) == std::vector<int>{kJ, kCtrlC});
-  CHECK(run(b, {kJ, kCtrlC}) == std::vector<int>{kJ, 0x0b});
+  KeyBindings b = configured("\tK-17\tF-1 C-c\n\tK-16\tF-1 C-b\n");  // 入れ替えを逆順の行で書く
+  CHECK(run(b, {kJ, 0x02}) == std::vector<int>{kJ, kCtrlC});
+  CHECK(run(b, {kJ, kCtrlC}) == std::vector<int>{kJ, 0x02});
 }

@@ -1,4 +1,5 @@
 #include "application.hpp"
+#include "usilicrc_file.hpp"
 
 #include "epub_vertical.hpp"
 
@@ -529,7 +530,6 @@ std::string buildCutFileHistoryEntry(const std::string &path, const std::string 
 // しない(本文が全角スペースで始まることは無い)ため、後続の階層
 // 表現無しでも見出し行すべてに過不足無く一致する――BREの範囲内で
 // 完結する分、ERE前提の旧パターンより移植性も高い。
-std::string tutorialCutPattern() { return "^\xE3\x80\x80[0-9]"; }
 
 
 Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
@@ -546,8 +546,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       logFilePath_(tempRootDirectory_ + "/shell"),
       usilicrcPath_(homeDirectory + "/.usilic/usilicrc"),
       historyFilePath_(homeDirectory + "/.usilic/history"),
-      tutorialPath_(homeDirectory + "/.local/lib/usilic/TUTORIAL"),
-      tutorialBasePath_(homeDirectory + "/.local/lib/usilic/TUTORIAL"),
+      helpPath_(homeDirectory + "/.local/lib/usilic/HELP"),
+      helpBasePath_(helpPath_),
       encoding_(encoding),
       configuration_(configuration),
       history_(history),
@@ -1099,8 +1099,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // Directory起点の選択(導出された名前ではなく、リテラルな"CUT"
     // ――名付けるべき単一のファイルが存在しない)を反映している。
     std::string name;
-    if (cutOrigin_ == CutOrigin::Help) {
-      name = "HELP";
+    if (cutOrigin_ == CutOrigin::Help || cutOrigin_ == CutOrigin::Key) {
+      name = cutOrigin_ == CutOrigin::Key ? "KEY" : "HELP";
     } else if (cutOrigin_ == CutOrigin::Directory) {
       name = "CUT";
       // 2026-09-15追加、直接のユーザー方針("CUT、F/EGREPは[MAN、
@@ -1148,7 +1148,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       fields.trailing3 = name;
       return fields;
     }
-    if (cutOrigin_ == CutOrigin::Help) {
+    if (cutOrigin_ == CutOrigin::Help || cutOrigin_ == CutOrigin::Key) {
       return {name, trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", label};
     }
     // 2026-09-27変更、直接のユーザー依頼("選択後の戻り値が、一覧で選んだ行の
@@ -1189,6 +1189,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 2026-09-15修正のコメント参照): 「所在地の宣言はモード名で
     // なされる」という同じ慣習に揃えている。
     std::string name = (cutOrigin_ == CutOrigin::Help)     ? "HELP"
+                        : (cutOrigin_ == CutOrigin::Key)    ? "KEY"
                         : (cutOrigin_ == CutOrigin::Log)    ? "LOG"
                         : (cutOrigin_ == CutOrigin::Man)    ? "MAN"
                         : (cutOrigin_ == CutOrigin::Locate) ? "LOCATE"
@@ -1227,7 +1228,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // バイト数」という慣習)がまさにそれを与え、ユーザー自身の参照
     // 値(413、TOC一覧自身のサイズであり、HELP.jpのはるかに大きい
     // 合計ではない)に一致する。
-    if (cutOrigin_ == CutOrigin::Help && !cutMode_.parentPattern()) {
+    if ((cutOrigin_ == CutOrigin::Help || cutOrigin_ == CutOrigin::Key) && !cutMode_.parentPattern()) {
       return {name, std::to_string(contentByteCount(cutView_)), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
               directoryMode_.currentDirectory()};
     }
@@ -2242,10 +2243,8 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
     // (^G/^P/^N/^Mを直接送り込み、決してこのswitchを一切通らない)
     // が既に正しいまま手を付けられずにいることも保つ、最小限の修正
     // である。
-    case ';':
-      return Command::JumpPrevious;
-    case ':':
-      return Command::JumpNext;
+    // 2026-10-02: ';'/':'(JumpPrevious/JumpNext)はusilicrcのMACROへ移した(.steering/20261002-help-key-
+    // usilicrc-reorg/)。コマンド自体は残す。
     // 2026-09-19変更、直接のユーザー依頼("現状の^SでFGREP、^[iで
     // インクリメンタルサーチを廃止して、^Sでリテラルなインクリメンタル
     // サーチに一本化してほしい"): プレーンな^S(K-31)は、Enterで確定
@@ -2270,18 +2269,21 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
     case 0x80:  // ^Space(M_mark)――KeyInputはリテラルなNUL/Ctrl-Spaceを0x80として報告する、そのクラスコメント参照
     case '.':   // 2026-08-23: 同じプレーンなトグル、移動は無い――ToggleMark自身のコメント参照
       return Command::ToggleMark;
-    case ']':  // 現在のエントリをマークし、その後下へ移動――Command::MarkAndAdvance自身のコメント参照
-      return Command::MarkAndAdvance;
-    case '[':  // 現在のエントリをマークし、その後上へ移動
-      return Command::MarkAndRetreat;
+    // '['/']'(MarkAndRetreat/MarkAndAdvance)も2026-10-02にusilicrcのMACROへ移した。
     case 0x12:  // ^R(M_hist)――ToggleHistoryView自身のコメント参照
       return Command::ToggleHistoryView;
     case 0x0c:  // ^L(M_clear)
       return Command::Redraw;
     case 0x09:  // ^I(M_usilic、K-0、"USILIC"/今は"INFO")――2026-08-27に^Tから割り当て直した、kKeyTable自身のコメント参照
       return Command::ShowUsilicBanner;
-    case 0x14:  // ^T――Command::StartTutorial自身のコメント参照(TUTORIAL専用の直接キー)
-      return Command::StartTutorial;
+    // 2026-10-02(Command::StartKey自身のコメント参照): ^KでKEY、^]は^J^Cと同じ(カレントディレクトリへ)。
+    // ^T(TUTORIAL)は廃止。
+    case 0x0b:
+      return Command::StartKey;
+    case 0x1d:
+      return Command::GoToFileSelector;
+    case 'h':
+      return Command::KeyJumpToHelp;
     case 0x1a:  // ^Z(M_susp)――Command::Suspend自身のコメント参照
       return Command::Suspend;
     case 'q':  // M_quit――usilicrcはこれをページャの文脈に限定している;handleCommand()自身のゲート参照
@@ -2976,8 +2978,14 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     leaderJPending_ = false;
     if (special) return false;
     switch (byte) {
-      case 0x0b:  // ^J ^K : 親ディレクトリへ移動(旧^O^K、K-19。2026-09-25のキー再編、^J ^C自身のコメント参照)
+      // 2026-10-02変更、直接のユーザー依頼("^J^K（親ディレクトリ移動）では「K」に由来が無いので^J^B
+      // （親→カレントが今だとすると親はひとつ前）に変更"): 親ディレクトリは^J^Bへ、^J^KはKEY。
+      case 0x02:  // ^J ^B : 親ディレクトリへ移動
         return handleCommand(Command::GoToParentDirectory);
+      case 0x0b:  // ^J ^K : KEY(SHELL・プロンプトからも)
+        return handleCommand(Command::StartKey);
+      case 's':  // ^J s : SHELLを再起動(2026-10-02、^Osから)
+        return handleCommand(Command::RestartShell);
       case kLeaderJ:  // ^J ^J : 最も最近のRecentFileエントリへ移動――Command::GoToRecentFile自身のコメント参照
         return handleCommand(Command::GoToRecentFile);
       case kControlS:  // ^J ^S : EGREP
@@ -2990,8 +2998,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // ディレクトリ)を引き継ぐ。
       case kControlC:  // ^J ^C : カレントディレクトリ(ファイルセレクタ)へ移動(旧^J^K、K-18)
         return handleCommand(Command::GoToFileSelector);
-      case 'a':  // ^J a : TUTORIAL/TUTORIAL.en切替(Command::ToggleTutorialLanguage自身のコメント参照)
-        return handleCommand(Command::ToggleTutorialLanguage);
+      case 'a':  // ^J a : HELP/HELP.en切替(Command::ToggleHelpLanguage自身のコメント参照)
+        return handleCommand(Command::ToggleHelpLanguage);
       // K-43/K-44、K-41/K-42(CLAUDE.mdの経緯の項目289の追跡): LOCATE/
       // DUとは異なり、この2つのペアについてのusilicrc自身の表現は本当
       // に「Input」/「Select」である――EGREPの^J^Sと同じ形――なので、
@@ -3103,6 +3111,10 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 同じく、開く対象の名前(SHELL)の頭文字に揃える。
       case 's':  // ^J ^O s : SHELLのログ(旧^J^Ol、旧々^X^Kl)
         return handleCommand(Command::ShowShellLog);
+      case 'u':  // ^J ^O u : ~/.usilic/usilicrc(2026-10-02、Command::OpenUserUsilicrc参照)
+        return handleCommand(Command::OpenUserUsilicrc);
+      case 'h':  // ^J ^O h : 平文のHELP(2026-10-02、Command::OpenPlainHelp参照)
+        return handleCommand(Command::OpenPlainHelp);
       case 'd':  // ^J ^O d : ~/.usilic/data/(K-96、2026-09-27)
         return handleCommand(Command::OpenDataDirectory);
       case 'w':  // ^J ^O w : WORK(K-97、2026-09-27)
@@ -3155,6 +3167,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StopMacroRecord);
       case 'e':  // ^X e : 記録済みマクロを実行
         return handleCommand(Command::PlayMacro);
+      case kControlS:  // ^X ^S : 記録したマクロをusilicrcのMACROへ保存(2026-10-02、saveMacroToUsilicrc()参照)
+        return handleCommand(Command::SaveMacro);
       default:
         return false;  // このスライスでは認識されない^Xシーケンス
     }
@@ -3230,8 +3244,6 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
                  // それは^J aへ先に移した(kKeyTable自身の"^Ja"コメント
                  // 参照)。
         return handleCommand(Command::StartArchiveExtract);
-      case 's':  // ^O s : SHELLを再起動(旧^X s、K-60)
-        return handleCommand(Command::RestartShell);
       // 2026-09-08追加、直接のユーザー依頼によるキー再編: SHELLモード
       // 内では素の^H/^L/^Iが行編集機構(バックスペース/未ハンドルで
       // 化ける/Tab補完)に奪われ、それぞれKEY/再描画/INFOへ到達
@@ -3401,6 +3413,9 @@ bool Application::feedUntranslatedByte(int byte, std::optional<KeyInput::Special
 }
 
 bool Application::feedByteImpl(int byte, std::optional<KeyInput::SpecialKey> special) {
+  if (macroKeyPending_) return finishMacroKey(byte, special);  // ^X^Sの実行キー(saveMacroToUsilicrc()参照)
+  // ^X^Sの「^Xeの直後」: ^Xとその次の^Sの間は下ろさない。
+  if (!leaderXPending_ && !(byte == kLeaderX && !special)) macroJustPlayed_ = false;
   bool wasLeaderXPending = leaderXPending_;
   bool wasRecording = recordingMacro_;
 
@@ -3432,12 +3447,16 @@ bool Application::startMacroRecording() {
   recordingMacro_ = true;
   recordedMacro_.clear();
   pendingLeaderXByte_.reset();
+  ContentView::modeNameOverride() = "MACRO";  // ContentView::modeNameOverride()参照
+  activeView().redraw();
   return true;
 }
 
 bool Application::stopMacroRecording() {
   if (!recordingMacro_) return false;
   recordingMacro_ = false;
+  ContentView::modeNameOverride().clear();
+  activeView().redraw();
   return true;
 }
 
@@ -3447,6 +3466,7 @@ bool Application::stopMacroRecording() {
 bool Application::playRecordedMacro() {
   if (recordedMacro_.empty()) return false;
   for (const auto &step : recordedMacro_) dispatchByte(step.byte, step.special);
+  macroJustPlayed_ = true;  // saveMacroToUsilicrc()参照(実行した後で立てる――実行中のキーで下ろされないよう)
   return true;
 }
 
@@ -4469,6 +4489,11 @@ bool Application::handleCommandImpl(Command command) {
         // 結果リストへ戻る。
         if (fileReturnMode_ == ApplicationMode::Du) return returnToDuResults();
         if (fileReturnMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Epub) return returnToEpubToc();
+        if (fileReturnMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Key) {  // KEYのhから(openPlainHelp())
+          currentMode_ = ApplicationMode::Cut;
+          activeView().redraw();
+          return true;
+        }
         // FILE一覧(^X^F)から開いたファイル: 元のディレクトリへ戻した上で一覧を再表示する。
         // 注釈のゲート(Grepと同じ理屈): 別のファイルを開くと注釈が消え、この分岐は働かない。
         if (fileReturnsToFileList_ && !fileMode_.annotations().empty()) {
@@ -4668,9 +4693,29 @@ bool Application::handleCommandImpl(Command command) {
       return startCutPrompt(GrepSyntax::Regex);  // 2026-09-27、BREからERE(grep -E)へ。下の同日のコメント参照
     case Command::StartCutFile:
       return startCutFilePrompt(GrepSyntax::Regex);
-    case Command::ToggleTutorialLanguage:
-      tutorialPath_ = (tutorialPath_ == tutorialBasePath_) ? tutorialBasePath_ + ".en" : tutorialBasePath_;
+    case Command::ToggleHelpLanguage: {
+      // HELP.enが無ければ切り替えない(読めないファイルへ切り替わって^Hが効かなくなるのを避ける)。
+      std::string previous = helpPath_;
+      helpPath_ = (helpPath_ == helpBasePath_) ? helpBasePath_ + ".en" : helpBasePath_;
+      if (!reloadHelpText()) {
+        helpPath_ = previous;
+        return false;
+      }
       return true;
+    }
+    case Command::StartKey:
+      return startKey();
+    case Command::KeyJumpToHelp:
+      return jumpFromKeyToHelp();
+    case Command::OpenPlainHelp:
+      return openPlainHelp();
+    case Command::OpenUserUsilicrc: {
+      std::string home = std::filesystem::path(usilicrcPath_).parent_path().parent_path().string();
+      usilicrc::ensureUser(home);
+      return executePathInput(usilicrc::userPath(home));
+    }
+    case Command::SaveMacro:
+      return saveMacroToUsilicrc();
     case Command::StartMan:
       return startManPrompt();
     case Command::StartManList:
@@ -4767,8 +4812,6 @@ bool Application::handleCommandImpl(Command command) {
       return executeStartLog();
     case Command::ShowUsilicBanner:
       return executeShowUsilicBanner();
-    case Command::StartTutorial:
-      return openTutorial();
     // 2026-08-17修正(=cn): K-46(^X^F、「Select file name」)――なぜ
     // これがもうそれを直接呼ばないのかについてはstartListBrowser()
     // 自身のコメント参照。startRegexPromptList()は、その名前にも
@@ -6774,6 +6817,7 @@ bool Application::returnFromUnderline() {
 }
 
 bool Application::openSelectedSegment() {
+  if (cutOrigin_ == CutOrigin::Key) return executeSelectedKeyLine();  // KEYの^M(startKey()参照)
   const CutSegment *segment = cutMode_.selectedSegment();
   if (!segment) return false;
   if (cutOrigin_ == CutOrigin::Epub) return openEpubSegmentImage(*segment) || openEpubTocEntry(*segment);
@@ -10149,7 +10193,7 @@ bool Application::executeShowUsilicBanner() {
   openable.push_back(true);   // 「ERROR」――下でtouchされる、それ自身のコメント参照
   openable.push_back(true);   // 「SHELL」――下でtouchされる、それ自身のコメント参照
   // 2026-09-14追加、直接のユーザー依頼("usilic内での発動は^Tで行う"):
-  // 「TUTORIAL」――tutorialPath_自身のコメント参照(インストール先
+  // 「TUTORIAL」――helpPath_自身のコメント参照(インストール先
   // $PREFIX/lib/usilic/TUTORIAL、~/.usilic/ではない)。Startup file/
   // ERROR/SHELLとは異なり実体はTUTORIAL自身が固定で持つ(このセッション
   // 中に何かが起きて初めて存在する類のファイルではない)ので、touch()は
@@ -10181,7 +10225,7 @@ bool Application::executeShowUsilicBanner() {
   banner << field("Startup file") << startupFilePath() << "\n";
   banner << field("ERROR") << errorLogPath_ << "\n";
   banner << field("SHELL") << logFilePath_ << "\n";
-  banner << field("TUTORIAL") << tutorialPath_ << "\n";
+  banner << field("HELP") << helpPath_ << "\n";
   banner << field("WORK");
   for (std::size_t i = 0; i < allocatedWorkFiles_.size(); i++) {
     if (i) banner << continuationIndent;
@@ -10347,9 +10391,7 @@ bool Application::executeShowUsilicBanner() {
 // させたいという要望。openSelectedBannerEntry()自身の「TUTORIAL」行
 // 分岐と全く同じCUT-by-file再生ロジックをここへ括り出し、両方の入口
 // (^I画面での選択、^T直接)から共有する。
-bool Application::openTutorial() {
-  return openRecentFileEntry(buildCutFileHistoryEntry(tutorialPath_, tutorialCutPattern(), GrepSyntax::Basic));
-}
+
 
 bool Application::openSelectedBannerEntry() {
   if (fileMode_.currentFile() != bannerFilePath()) return false;
@@ -10401,7 +10443,7 @@ bool Application::openSelectedBannerEntry() {
   // なloadFile())とは異なり、CUT-by-fileそのものを再生する必要がある
   // ――openTutorial()自身のコメント参照(2026-09-20、^T単独キーとの
   // 共有のため括り出した)。
-  if (endsWith(tutorialPath_)) return openTutorial();
+  if (endsWith(helpPath_)) return reloadHelpText() && startHelp();
   for (const std::string &fixedPath : {startupFilePath(), errorLogPath_, logFilePath_}) {
     if (!endsWith(fixedPath)) continue;
     // 2026-08-27修正、実際の報告("^T→「/tmp/.usilic.NNNNN/shell」
@@ -13063,6 +13105,7 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
     case PromptKind::Du:  // promptKind_には決して代入されない、drawPromptLabel()専用のラベルマーカー――application.hpp自身の宣言コメント参照
     case PromptKind::ArchiveLoad:  // 同上――PromptKind::ArchiveLoad自身の宣言コメント参照
     case PromptKind::EpubLoad:     // 同上(openEpub()の"Reading...")
+    case PromptKind::MacroKey:     // 同上(^X^Sの"Key:")
     case PromptKind::TabCompletionList:  // 同上――PromptKind::TabCompletionList自身の宣言コメント参照
       return false;
   }
@@ -13755,6 +13798,8 @@ std::string Application::promptLabelText(PromptKind kind) const {
       return "ARC";
     case PromptKind::EpubLoad:
       return "EPUB";
+    case PromptKind::MacroKey:
+      return "MACRO";
     case PromptKind::TabCompletionList:
       return "LIST";
     case PromptKind::ShellCommand:
@@ -16178,6 +16223,222 @@ std::vector<StyledLine> Application::wrapHelpText(int width) const {
 // ――KEYのloadKeyText()のような「引数を取らない専用ローダー」とは
 // 異なり、こちらは元々main.cpp自身のUSILICHELP環境変数の経路とも
 // 共有されていた汎用の注入口)。
+bool Application::reloadHelpText() {
+  // helpPath_自身の宣言コメント参照: ~/.local/lib/usilic/に無ければ/usr/local/lib/usilic/の同名のもの。
+  std::ifstream in(helpPath_, std::ios::binary);
+  if (!in) in.open("/usr/local/lib/usilic/" + std::filesystem::path(helpPath_).filename().string(), std::ios::binary);
+  if (!in) return false;
+  std::ostringstream buffer;
+  buffer << in.rdbuf();
+  if (buffer.str().empty()) return false;
+  helpText_ = buffer.str();
+  return true;
+}
+
+namespace {
+// KEYの行の頭のキー表記(「^J^C」「^[w」「.」「^@/^␣」等、「：」より前)を、それを押した時のバイト列へ。
+// 「^x」は制御文字(^[はESC、^@と^␣はCtrl-Space=0x80、KeyInput参照)、「␣」は空白。「a/b」(両側が
+// 空でない)は前の方。解釈できなければ空。
+std::vector<int> keyBytesFromHelpLabel(std::string label) {
+  std::size_t colon = label.find("\xEF\xBC\x9A");  // 「：」
+  if (colon != std::string::npos) label.erase(colon);
+  std::size_t first = label.find_first_not_of(" \t");
+  if (first == std::string::npos) return {};
+  label = label.substr(first);
+  while (!label.empty() && (label.back() == ' ' || label.back() == '\t')) label.pop_back();
+  std::size_t slash = label.find('/');
+  if (slash != std::string::npos && slash > 0 && slash + 1 < label.size()) label.erase(slash);
+  const std::string space = "\xE2\x90\xA3";  // 「␣」
+  std::vector<int> bytes;
+  std::size_t i = 0;
+  while (i < label.size()) {
+    if (label[i] == '^' && i + 1 < label.size()) {
+      if (label.compare(i + 1, space.size(), space) == 0) {
+        bytes.push_back(0x80);
+        i += 1 + space.size();
+        continue;
+      }
+      char c = label[i + 1];
+      if (c == '@') bytes.push_back(0x80);
+      else if (c == '?') bytes.push_back(0x7f);
+      else if (c >= '@' && c <= '_') bytes.push_back(c - '@');
+      else if (c >= 'a' && c <= 'z') bytes.push_back(c - 'a' + 1);
+      else return {};
+      i += 2;
+      continue;
+    }
+    if (label.compare(i, space.size(), space) == 0) {
+      bytes.push_back(' ');
+      i += space.size();
+      continue;
+    }
+    if (static_cast<unsigned char>(label[i]) >= 0x80) return {};  // その他の全角の字はキーではない
+    bytes.push_back(static_cast<unsigned char>(label[i]));
+    i++;
+  }
+  return bytes;
+}
+}  // namespace
+
+// 2026-10-02追加、直接のユーザー依頼(KEYモードの復活、.steering/20261002-help-key-usilicrc-reorg/):
+// HELP(helpText_)を「：」(全角コロン)でCUTした一覧。HELPを変えれば都度反映される。冒頭の「--」
+// (最初の「：」より前の本文)は除く。^Mでその行のキーを実行し(executeSelectedKeyLine())、hで平文の
+// HELPのその行へ(jumpFromKeyToHelp())。^Gは開く前の画面へ。
+bool Application::startKey() {
+  if (helpText_.empty()) return false;
+  std::vector<StyledLine> lines = wrapHelpText(display_.columns());
+  bool fromCut = currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent;
+  if (!fromCut) cutReturnMode_ = currentMode_;
+  cutOrigin_ = CutOrigin::Key;
+  cutSyntax_ = GrepSyntax::Fixed;
+  if (!cutMode_.split(lines, "\xEF\xBC\x9A", GrepSyntax::Fixed)) return false;
+  cutMode_.dropLeadingFiller();
+  currentMode_ = ApplicationMode::Cut;
+  activeView().redraw();
+  return true;
+}
+
+bool Application::executeSelectedKeyLine() {
+  const CutSegment *segment = cutMode_.selectedSegment();
+  if (!segment) return false;
+  std::vector<int> bytes = keyBytesFromHelpLabel(segment->label);
+  if (bytes.empty()) return false;
+  currentMode_ = cutReturnMode_;
+  activeView().redraw();
+  bool result = false;
+  for (int b : bytes) result = feedByte(b, std::nullopt);  // 利用者のキーとして(KEY節の置き換えを通す)
+  return result;
+}
+
+bool Application::jumpFromKeyToHelp() {
+  if (currentMode_ != ApplicationMode::Cut || cutOrigin_ != CutOrigin::Key) return false;
+  const CutSegment *segment = cutMode_.selectedSegment();
+  if (!segment) return false;
+  std::vector<StyledLine> content = cutMode_.segmentContent(*segment);
+  if (content.empty()) return false;
+  return openPlainHelp(content.front().rawLineNumber);
+}
+
+// 平文のHELP(helpPath_のファイルをそのまま、^J^Oh)。rawLineがあればその行へ。KEYから来たなら^GでKEYへ戻る。
+bool Application::openPlainHelp(std::optional<int> rawLine) {
+  bool fromKey = currentMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Key;
+  std::string path = helpPath_;
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(path, ec))  // reloadHelpText()と同じく/usr/local/lib/usilic/の同名のもの
+    path = "/usr/local/lib/usilic/" + std::filesystem::path(helpPath_).filename().string();
+  if (!fileMode_.loadFile(path)) return false;
+  currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = fromKey ? ApplicationMode::Cut : ApplicationMode::Directory;
+  if (rawLine) {
+    const auto &lines = fileView_.lines();
+    for (std::size_t i = 0; i < lines.size(); i++)
+      if (lines[i].rawLineNumber && *lines[i].rawLineNumber >= *rawLine) {
+        fileView_.setCursorIndex(static_cast<int>(i));
+        fileView_.centerOnCursor();
+        break;
+      }
+  }
+  activeView().redraw();
+  return true;
+}
+
+// 2026-10-02追加、直接のユーザー依頼("^X^S：キーシーケンスをusilicrcのMACROの「--」へ保存したのち
+// usilicrcのMACRO設定一覧を表示したうえで実行キー（一文字のみ）入力を促すプロンプトで入力待ち、キーが
+// 入力されたら「M-?? key K-? ...」で設定したのち次の行へ「--」を挿入。^X^Sが^Xeの直後でなければ設定
+// 一覧を表示するだけ"): 記録したキー(KEY節の置き換えの後の既定のキー)を、K番号の既定のキー列へ最長
+// 一致で戻し(KeyBindings::defaultSequences())、K番号にならない字は"文字列"にまとめる(矢印等の特殊
+// キーは書けないので除く)。保存したマクロが効くのは次の起動から(usilicrcは起動時に読む)。
+bool Application::saveMacroToUsilicrc() {
+  bool justPlayed = macroJustPlayed_;
+  macroJustPlayed_ = false;
+  std::string home = std::filesystem::path(usilicrcPath_).parent_path().parent_path().string();
+  if (!usilicrc::ensureUser(home)) return false;
+  std::string userPath = usilicrc::userPath(home);
+  if (justPlayed && !recordedMacro_.empty()) {
+    auto sequences = KeyBindings::defaultSequences();
+    std::string items, literal;
+    auto flushLiteral = [&]() {
+      if (literal.empty()) return;
+      items += (items.empty() ? "" : " ") + std::string("\"") + literal + "\"";
+      literal.clear();
+    };
+    std::size_t i = 0;
+    while (i < recordedMacro_.size()) {
+      if (recordedMacro_[i].special) {
+        i++;
+        continue;
+      }
+      int bestNumber = 0;
+      std::size_t bestLength = 0;
+      for (const auto &[number, seq] : sequences) {
+        if (seq.size() <= bestLength || i + seq.size() > recordedMacro_.size()) continue;
+        bool match = true;
+        for (std::size_t k = 0; k < seq.size() && match; k++)
+          match = !recordedMacro_[i + k].special && recordedMacro_[i + k].byte == seq[k];
+        if (match) {
+          bestNumber = number;
+          bestLength = seq.size();
+        }
+      }
+      if (bestNumber > 0) {
+        flushLiteral();
+        items += (items.empty() ? "" : " ") + std::string("K-") + std::to_string(bestNumber);
+        i += bestLength;
+        continue;
+      }
+      int b = recordedMacro_[i].byte;
+      if (b >= 0x20 && b != '"' && b != '#' && b != 0x7f) literal.push_back(static_cast<char>(b));
+      i++;
+    }
+    flushLiteral();
+    if (items.empty()) return false;
+    pendingMacroItems_ = items;
+    usilicrc::setMacroMarker(home, {"\t--\t" + items});
+  }
+  // 設定一覧(usilicrcのMACROの節)を表示する。
+  if (!executePathInput(userPath)) return false;
+  if (auto line = usilicrc::sectionLineNumber(usilicrc::readText(userPath), "MACRO")) {
+    const auto &lines = fileView_.lines();
+    for (std::size_t k = 0; k < lines.size(); k++)
+      if (lines[k].rawLineNumber && *lines[k].rawLineNumber >= *line) {
+        fileView_.setCursorIndex(static_cast<int>(k));
+        fileView_.setTopIndex(static_cast<int>(k));
+        break;
+      }
+    activeView().redraw();
+  }
+  if (!pendingMacroItems_.empty()) {
+    macroKeyPending_ = true;
+    drawPromptLabel(PromptKind::MacroKey, /*positionText=*/"", "Key:");
+    display_.flush();
+  }
+  return true;
+}
+
+// saveMacroToUsilicrc()の続き: 実行キー(1文字、印字できる字)を受け、「--」の行を「M-n キー K-...」に
+// して次の行へ「--」を足す。それ以外のキー(^G等)なら取りやめる(「--」の行には並びが残る)。
+bool Application::finishMacroKey(int byte, std::optional<KeyInput::SpecialKey> special) {
+  macroKeyPending_ = false;
+  std::string items;
+  items.swap(pendingMacroItems_);
+  std::string home = std::filesystem::path(usilicrcPath_).parent_path().parent_path().string();
+  std::string userPath = usilicrc::userPath(home);
+  if (special || byte <= 0x20 || byte >= 0x7f || byte == '#') {
+    activeView().redraw();
+    return false;
+  }
+  int number = usilicrc::nextMacroNumber(usilicrc::readText(userPath));
+  std::string key(1, static_cast<char>(byte));
+  usilicrc::setMacroMarker(home, {"\tM-" + std::to_string(number) + "\t" + key + "\t" + items, "\t--"});
+  int cursor = fileView_.cursorIndex(), top = fileView_.topIndex();
+  if (fileMode_.loadFile(userPath)) {
+    fileView_.setCursorIndex(cursor);
+    fileView_.setTopIndex(top);
+  }
+  activeView().redraw();
+  return true;
+}
+
 bool Application::loadHelpText(const std::string &text) {
   helpText_ = text;
   return !helpText_.empty();
@@ -16287,7 +16548,7 @@ void Application::handleResize() {
   if ((currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
       !cutMode_.canGoBack()) {
     std::vector<StyledLine> freshSource;
-    if (cutOrigin_ == CutOrigin::Help) {
+    if (cutOrigin_ == CutOrigin::Help || cutOrigin_ == CutOrigin::Key) {
       freshSource = wrapHelpText(display_.columns());
     } else if (cutOrigin_ == CutOrigin::Directory) {
       // 2026-08-11: ディレクトリ一覧の行は、File/Manのテキストがそう
@@ -16307,6 +16568,7 @@ void Application::handleResize() {
     int savedIndex = cutView_.cursorIndex();
     bool wasContent = (currentMode_ == ApplicationMode::CutContent);
     if (cutMode_.split(freshSource, cutMode_.pattern(), cutSyntax_)) {
+      if (cutOrigin_ == CutOrigin::Key) cutMode_.dropLeadingFiller();
       int last = static_cast<int>(cutMode_.segments().size()) - 1;
       if (savedIndex < 0) savedIndex = 0;
       if (savedIndex > last) savedIndex = (last < 0) ? 0 : last;

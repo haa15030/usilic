@@ -246,8 +246,8 @@ TEST_CASE("resolveCommand: ';' is JumpPrevious (Back+MoveUp+Enter), ':' is JumpN
   // sourced VERBATIM from usilicrc's own macro definitions) say ';'
   // (M-0) = ^G ^P Enter = "Back, cursor up" and ':' (M-1) = ^G ^N
   // Enter = "Back, cursor down", which is what this asserts.
-  CHECK(Application::resolveCommand(';', std::nullopt) == Command::JumpPrevious);
-  CHECK(Application::resolveCommand(':', std::nullopt) == Command::JumpNext);
+  CHECK(Application::resolveCommand(';', std::nullopt) == Command::None);  // 2026-10-02からusilicrcのMACRO
+  CHECK(Application::resolveCommand(':', std::nullopt) == Command::None);
 }
 
 TEST_CASE("resolveCommand: an unmapped byte resolves to None") {
@@ -6996,47 +6996,35 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): highlightStartColumn lands at
   for (std::size_t i : {1, 2, 3, 4}) CHECK_FALSE(lines[i].neverHighlighted);  // Startup file / ERROR / SHELL / TUTORIAL
 }
 
-// 2026-09-14追加、直接のユーザー依頼("README改めTUTORIALとして...
-// usilic内での発動は^Tで行う"): ^T(INFO banner)の「TUTORIAL」行を
-// 選んでEnterすると、プレーンなファイル閲覧ではなく、
-// tutorialPath_自身に対するCUT-by-fileが(openRecentFileEntry()の
-// 合成エントリ分岐を経由して)再生される――app/main.cppの真っ新起動
-// 時の事前登録エントリが選ばれた時と全く同じ経路・同じパターン
-// (fm::tutorialCutPattern())。
-TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the TUTORIAL line replays a CUT split over "
-                           "its own heading pattern, the same composite-entry path fresh-boot seeding uses") {
+// 2026-10-02変更(TUTORIALはHELPへ改名、.steering/20261002-help-key-usilicrc-reorg/): INFOの「HELP」行で
+// Enterすると、HELP(~/.local/lib/usilic/HELP)を読み直してタブ(^I)でCUTする(^Hと同じstartHelp())。
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the HELP line splits HELP at its tab-marked chapters") {
   fs::create_directories(root / ".local" / "lib" / "usilic");
-  // U+3000 (full-width space, raw UTF-8) + bold-overstruck digit
-  // ("N\bN") + "." -- the same heading byte sequence src/TUTORIAL
-  // itself actually uses (verified via egrep, docs/HISTORY.md).
   {
-    std::ofstream tutorial(root / ".local" / "lib" / "usilic" / "TUTORIAL");
-    tutorial << "intro\n"
-             << "\xE3\x80\x80" << "1\b1." << "\nfirst section\n"
-             << "\xE3\x80\x80" << "2\b2." << "\nsecond section\n";
+    std::ofstream help(root / ".local" / "lib" / "usilic" / "HELP");
+    help << "intro\n"
+         << "first\t\nfirst section\n"
+         << "second\t\nsecond section\n";
   }
 
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
   const auto &lines = app.activeContentView().lines();
-  int tutorialRow = -1;
-  std::string suffix = (root / ".local" / "lib" / "usilic" / "TUTORIAL").string();
+  int helpRow = -1;
+  std::string suffix = (root / ".local" / "lib" / "usilic" / "HELP").string();
   for (std::size_t i = 0; i < lines.size(); i++) {
     if (lines[i].text.size() >= suffix.size() &&
         lines[i].text.compare(lines[i].text.size() - suffix.size(), suffix.size(), suffix) == 0) {
-      tutorialRow = static_cast<int>(i);
+      helpRow = static_cast<int>(i);
       break;
     }
   }
-  REQUIRE(tutorialRow >= 0);
-  app.activeContentView().setCursorIndex(tutorialRow);
+  REQUIRE(helpRow >= 0);
+  app.activeContentView().setCursorIndex(helpRow);
   REQUIRE(app.handleCommand(Command::Enter));
   CHECK(app.currentMode() == ApplicationMode::Cut);
-  CHECK(app.cutMode().pattern() == fm::tutorialCutPattern());
-  // 3segments: the leading "--" region ("intro", before the first
-  // heading match) plus the two "N\bN." heading segments themselves --
-  // see CutMode::split()'s own comment for why unmatched leading
-  // content gets its own labelless "--" segment.
+  CHECK(app.cutMode().pattern() == "\t");
+  // 冒頭の"--"("intro")と、タブの付いた2つの章。
   REQUIRE(app.cutMode().segments().size() == 3);
   CHECK(app.cutMode().segments()[0].label == "--");
 }
@@ -7693,12 +7681,12 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^O o toggles DirectoryMode::filenameOnlyMo
   CHECK(history.lsMode() == 0);
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^K (formerly ^O ^K) jumps to the parent directory (K-19, M_m)") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^B (formerly ^J ^K, ^O ^K) jumps to the parent directory (K-17, M_m)") {
   REQUIRE(app.start(path() + "subdir/"));
   REQUIRE(app.directoryMode().currentDirectory() == path() + "subdir/");
 
   REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J(2026-09-25のキー再編、旧^O)
-  CHECK(app.feedByte(0x0b, std::nullopt));    // ^K
+  CHECK(app.feedByte(0x02, std::nullopt));    // ^B(2026-10-02、^Kから)
   CHECK(app.directoryMode().currentDirectory() == path());
   CHECK(app.directoryMode().canGoBack());  // ^G returns to subdir/, same as descending into it normally would
 }
@@ -9614,7 +9602,7 @@ TEST_CASE_FIXTURE(Fixture, "^Oc: while the destination prompt is active, marked 
   int markIdx = indexOf(app.directoryMode().selectedEntry()->name);
   REQUIRE(markIdx == idx + 1);
 
-  CHECK(app.feedByte('[', std::nullopt));  // marks markIdx, cursor retreats back onto idx
+  CHECK(app.handleCommand(Command::MarkAndRetreat));  // marks markIdx, cursor retreats back onto idx
   REQUIRE(app.directoryMode().isMarked(markIdx));
   REQUIRE(indexOf(app.directoryMode().selectedEntry()->name) == idx);
 
@@ -9710,7 +9698,7 @@ TEST_CASE_FIXTURE(Fixture, "']': marks the current entry, then moves the cursor 
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
-  CHECK(app.feedByte(']', std::nullopt));
+  CHECK(app.handleCommand(Command::MarkAndAdvance));
   CHECK(app.directoryMode().isMarked(idx));
   CHECK(app.directoryMode().selectedEntry()->name != "cpmv_a.txt");  // cursor advanced
 }
@@ -9722,7 +9710,7 @@ TEST_CASE_FIXTURE(Fixture, "'[': marks the current entry, then moves the cursor 
   REQUIRE(app.handleCommand(Command::MoveDown));  // step onto the NEXT entry, so '[' has somewhere to retreat to
   REQUIRE(indexOf(app.directoryMode().selectedEntry()->name) == idx + 1);
 
-  CHECK(app.feedByte('[', std::nullopt));
+  CHECK(app.handleCommand(Command::MarkAndRetreat));
   CHECK(app.directoryMode().isMarked(idx + 1));      // the entry '[' was pressed on got marked
   CHECK(indexOf(app.directoryMode().selectedEntry()->name) == idx);  // cursor retreated back onto cpmv_a.txt
 }
@@ -9749,7 +9737,7 @@ TEST_CASE_FIXTURE(Fixture, "'[' marking: the row the cursor ends up resting on (
   int markIdx = indexOf(app.directoryMode().selectedEntry()->name);
   REQUIRE(markIdx == idx + 1);
 
-  CHECK(app.feedByte('[', std::nullopt));  // marks markIdx, cursor retreats back onto idx
+  CHECK(app.handleCommand(Command::MarkAndRetreat));  // marks markIdx, cursor retreats back onto idx
   REQUIRE(app.directoryMode().isMarked(markIdx));
   REQUIRE_FALSE(app.directoryMode().isMarked(idx));
   REQUIRE(indexOf(app.directoryMode().selectedEntry()->name) == idx);
@@ -12570,6 +12558,38 @@ std::string testHelpText() {
 }
 }  // namespace
 
+// 2026-10-02追加(KEYモードの復活、Application::startKey()参照)。
+TEST_CASE_FIXTURE(Fixture, "KEY (^K): lists HELP's full-width-colon lines without the leading -- segment") {
+  REQUIRE(app.loadHelpText("intro\n        ^J^C\xEF\xBC\x9A" "current directory\n           .\xEF\xBC\x9A" "mark\n"));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.cutMode().segments().size() == 2);
+  CHECK(app.cutMode().segments()[0].label.find("^J^C") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "KEY (^K): Enter runs the selected line's key in the screen KEY was opened from") {
+  REQUIRE(app.loadHelpText("intro\n         ^Xf\xEF\xBC\x9A" "file name\n"));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+  app.feedByte(0x0d, std::nullopt);  // ^M: ^X f(FILEの入力)を実行
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "^J ^B goes to the parent directory (moved from ^J ^K, which now opens KEY)") {
+  REQUIRE(app.loadHelpText("x\n ^K\xEF\xBC\x9A" "key\n"));
+  REQUIRE(app.start((root / "subdir").string()));
+  app.feedByte(0x0a, std::nullopt);  // ^J
+  REQUIRE(app.feedByte(0x02, std::nullopt));  // ^B
+  CHECK(fs::path(app.directoryMode().currentDirectory()).lexically_normal() ==
+        fs::path(root.string() + "/").lexically_normal());
+  app.feedByte(0x0a, std::nullopt);  // ^J
+  REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+}
+
 TEST_CASE_FIXTURE(Fixture, "HELP: refused if no help text was loaded") {
   REQUIRE(app.start(path()));
   CHECK_FALSE(app.handleCommand(Command::StartHelp));
@@ -13437,14 +13457,16 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a click on DirectoryMode's own ls-
   CHECK(app.directoryMode().selectedEntry()->name == "plain.txt");
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a press past the end of the entry's own text is also a no-op") {
+// 2026-10-02変更(Application::handleMouseClickImpl()の同日のコメント参照): 一覧のクリックは列を問わず
+// 押した行を選ぶ(ホバーが列を問わずハイライトしているのに合わせる)。
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a press past the end of the entry's own text still selects that row") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   REQUIRE(idx >= 0);
   int end = static_cast<int>(app.activeContentView().lines()[idx].text.size());
 
-  CHECK_FALSE(app.handleMouseClick(idx, end));  // exactly at the end -- past the last real character
-  CHECK(app.directoryMode().selectedEntry()->name != "plain.txt");
+  CHECK(app.handleMouseClick(idx, end));  // exactly at the end -- past the last real character
+  CHECK(app.directoryMode().selectedEntry()->name == "plain.txt");
 }
 
 
@@ -13506,9 +13528,9 @@ TEST_CASE_FIXTURE(Fixture, "startPagerFileList: '[' and ']' double as PagerPrevi
   std::string b = (root / "log.txt").string();
   REQUIRE(app.startPagerFileList({a, b}));
 
-  CHECK(app.feedByte(']', std::nullopt));
+  CHECK(app.handleCommand(Command::MarkAndAdvance));
   CHECK(app.fileMode().currentFile() == b);
-  CHECK(app.feedByte('[', std::nullopt));
+  CHECK(app.handleCommand(Command::MarkAndRetreat));
   CHECK(app.fileMode().currentFile() == a);
 }
 
@@ -13725,8 +13747,8 @@ TEST_CASE_FIXTURE(Fixture, "^Ou: a file opened from the UNDER list shows its own
 TEST_CASE_FIXTURE(Fixture, "^Ou: ';'/':' keep their ordinary JumpPrevious/JumpNext resolution -- no "
                            "dedicated Command exists for this feature, unlike the withdrawn first "
                            "implementation") {
-  CHECK(Application::resolveCommand(';', std::nullopt) == Command::JumpPrevious);
-  CHECK(Application::resolveCommand(':', std::nullopt) == Command::JumpNext);
+  CHECK(Application::resolveCommand(';', std::nullopt) == Command::None);  // 2026-10-02からusilicrcのMACRO
+  CHECK(Application::resolveCommand(':', std::nullopt) == Command::None);
 }
 
 // 2026-09-06追記: この2つのテストは元々、"(Exit)"通知が一瞬の
@@ -14005,7 +14027,7 @@ TEST_CASE_FIXTURE(Fixture, "'[' and ']' keep their ordinary Directory-mode marki
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
-  CHECK(app.feedByte(']', std::nullopt));
+  CHECK(app.handleCommand(Command::MarkAndAdvance));
   CHECK(app.directoryMode().isMarked(idx));  // ordinary marking, not pager navigation
 }
 
@@ -15686,7 +15708,7 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: '.' selects results, ^Jp seeds the selected 
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Locate);
 
-  REQUIRE(app.feedByte(']', std::nullopt));  // 1行目を選択して下へ
+  REQUIRE(app.handleCommand(Command::MarkAndAdvance));  // 1行目を選択して下へ
   REQUIRE(app.feedByte('.', std::nullopt));  // 2行目も選択
   CHECK(app.locateMode().marks().count() == 2);
 

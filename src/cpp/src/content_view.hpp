@@ -1143,6 +1143,13 @@ class ContentView {
   // 選択するまで、これが追加される前から変わらない)。
   using ModeLineFieldsProvider = std::function<ModeLineFields(int cursorIndex)>;
   void setModeLineFieldsProvider(ModeLineFieldsProvider provider);
+  // 2026-10-02追加、直接のユーザー依頼("^X(から^X)までの間、モード名をMACROで乗っ取り"): 空でなければ、
+  // 全てのビューのモードラインの名前欄をこれにする(Application::startMacroRecording()が立て、
+  // stopMacroRecording()が下ろす)。プロンプトのラベル(drawPromptLabel())は対象外。
+  static std::string &modeNameOverride();
+ private:
+  ModeLineFields providedModeLineFields() const;
+ public:
 
   // 現在のプロバイダを(このビュー自身のcursorIndex_で)今、一度
   // だけ評価する――このクラスの他の全ての呼び出し元のように将来の

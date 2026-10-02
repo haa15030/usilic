@@ -5,7 +5,7 @@
 # 始めます。それ以外の文字で始まる行はエラーになります。
 #
 # ARCHIVE, FILE, EXEC, EGREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
-# HISTORY, WAIT, LS, SCROLL, CP, MV, RM, KEY
+# LINE, WAIT, CP, MV, RM, SERIF, SANS-SERIF, SPEED, DRAG, FONT, KEY, MACRO
 #
 # 英語のコメント付きの同じ内容のファイルが usilicrc.en です。
 # -------------------------------------------------------------
@@ -83,7 +83,7 @@ EGREP
 # (もう一度 ^R で履歴)。以前の節名 GREP も使えます。
 # (空白を含む文字列は "" で囲みます。)
 #
-# TUTORIAL の EGREP の章の正規表現一覧と同じ順に、TUTORIAL 自身の本文に
+# HELP の EGREP の章の正規表現一覧と同じ順に、HELP 自身の本文に
 # マッチする例を並べています。macOS(BSD grep)と Linux(GNU grep)の両方の
 # grep -E で同じ意味になるように、\d/\D は [0-9]/[^0-9] で書き、grep -E に
 # 無い最短一致(*?/+?)・(?:...)・先読み/後読みの例はありません。
@@ -311,7 +311,7 @@ KEY
 	K-14	C-m         # ^M     開く/表示
 	K-15	F-0 d       # ^Xd    DIR: 入力
 	K-16	F-1 C-c     # ^J^C   カレントディレクトリへ
-	K-17	F-1 C-b     # ^J^K   親ディレクトリへ
+	K-17	F-1 C-b     # ^J^B   親ディレクトリへ
 	K-18	F-1 N       # ^JN    N番目のディレクトリへ
 	K-19	F-0 f       # ^Xf    FILE: 入力
 	K-20	F-0 C-f     # ^X^F   FILE: 一覧
@@ -375,8 +375,7 @@ KEY
 	K-80	F-0 F-0     # ^X^X   大きく移動する前の行と行き来
 	K-81	F-1 C-u     # ^J^U   USILIC: 種類ごとの一覧
 	K-82	F-1 u       # ^Ju    USILIC: 時系列
-	K-83	F-1 a       # ^Ja    TUTORIAL の言語切替
-	K-84	F-2 g       # ^Og    GUI 表示との切替
+	K-83	F-1 a       # ^Ja    HELP の言語切替
 	K-85	F-2 l       # ^Ol    ls のソート順を逆順に
 	K-86	C-l         # ^L     再表示
 	K-87	C-SPC       # ^SPC   選択/非選択
@@ -393,21 +392,22 @@ KEY
 	K-99	F-1 C-e     # ^J^E   EPUB: 一覧
 	K-100	F-2 e       # ^Oe    ARC: .epubの中身
 	K-101	F-4 u	    # ^J^Ou  ~/.usilic/usilicrc 
-	K-102	F-4 h	    # ^J^Oh  ~/.usilic/HELP
+	K-102	F-4 h	    # ^J^Oh  平文のHELP
 	K-103	F-0 C-s	    # ^X^S    usilicrcのMACROに保存
 	K-104	h	    # h	     KEYから平文HELPへ移動
 	K-105	C-k	    # ^K     KEY
-	K-106	F-1 C-k	    # ^J^K   プロンプトからKEY		
+	K-106	F-1 C-k	    # ^J^K   プロンプトからKEY
+	K-107	C-]	    # ^]     カレントディレクトリへ(^J^Cと同じ)
 
 MACRO
-	M-1	;	K-2 K-11 K-22		# ^G^P^M
-	M-2	:	K-2 K-11 K-22		# ^G^N^M
-	M-3	+	K-2 K-2 K-11 K-22 K-22	# ^G^G^P^M^M
-	M-4	*	K-2 K-2 K-10 K-22 K-22	# ^G^G^N^M^M
-	M-5	[	K-22 K-11	  	# .^N
-	M-6	]	K-22 K-10		# .^P
-	M-7	<	K-22 K-2 K-11 K-22	# ^M^G^N^M
-	M-8	>	K-22 K-2 K-10 K-22	# ^M^G^N^M
-	M-9	{	# ^J^Ou^S^MACRO^Me	
-	M-10	}	# ^J^Os^Cb"usilic-1.5b:"^M
+	M-1	;	K-1 K-2 K-14			# ^G^P^M	前の項目を開く
+	M-2	:	K-1 K-3 K-14			# ^G^N^M	次の項目を開く
+	M-3	+	K-1 K-1 K-2 K-14 K-14		# ^G^G^P^M^M
+	M-4	*	K-1 K-1 K-3 K-14 K-14		# ^G^G^N^M^M
+	M-5	[	K-24 K-2			# .^P		選択して上へ
+	M-6	]	K-24 K-3			# .^N		選択して下へ
+	M-7	<	K-14 K-1 K-2 K-14		# ^M^G^P^M
+	M-8	>	K-14 K-1 K-3 K-14		# ^M^G^N^M
+	M-9	{	K-101 K-39 "MACRO" K-14 K-7	# ^J^Ou^S"MACRO"^Me
+	M-10	}	K-53 K-41 "usilic-1.5b:" K-14	# ^J^Os^Cb"usilic-1.5b:"^M
 	--

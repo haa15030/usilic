@@ -192,6 +192,16 @@ void CutMode::setSegmentLabel(std::size_t index, const std::string &label) {
   }
 }
 
+void CutMode::dropLeadingFiller() {
+  if (segments_.empty() || segments_.front().label != "--") return;
+  segments_.erase(segments_.begin());
+  std::vector<ContentView::Line> viewLines;
+  viewLines.reserve(segments_.size());
+  for (const auto &seg : segments_) viewLines.push_back({seg.label, std::nullopt, std::nullopt, seg.labelAttributes});
+  view_.setLines(std::move(viewLines));
+  view_.setCursorIndex(0);
+}
+
 const CutSegment *CutMode::selectedSegment() const {
   int idx = view_.cursorIndex();
   if (idx < 0 || idx >= static_cast<int>(segments_.size())) return nullptr;

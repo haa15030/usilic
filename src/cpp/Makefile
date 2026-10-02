@@ -135,7 +135,9 @@ install: $(BUILD_DIR)/usilic
 	install -d $(LIB_DIR)
 	install -m 644 ../usilicrc $(LIB_DIR)/usilicrc
 	install -m 644 ../usilicrc.en $(LIB_DIR)/usilicrc.en  # 英語コメント版(2026-09-25、設定値はusilicrcと同一)
-	install -m 644 ../TUTORIAL $(LIB_DIR)/TUTORIAL
+	# 2026-10-02: TUTORIALはHELPへ改名し、正本はリポジトリ直下のdoc/HELP(HELP.enがあればそれも)。
+	install -m 644 ../../doc/HELP $(LIB_DIR)/HELP
+	if [ -f ../../doc/HELP.en ]; then install -m 644 ../../doc/HELP.en $(LIB_DIR)/HELP.en; fi
 
 # macOS .app bundle (2026-08-24, docs/CHANGES.md item 421, a direct
 # user request: "アイコンをクリックして起動する形にはできる？"):

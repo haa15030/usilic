@@ -32,8 +32,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {1, "C-g"},        // ^G    前のモードへ戻る
       {2, "C-p"},        // ^P    カーソルを1行上へ
       {3, "C-n"},        // ^N    カーソルを1行下へ
-      {4, ";"},          // ;     前の項目を開く
-      {5, ":"},          // :     次の項目を開く
+      // 4(;)・5(:)・25([)・26(])は2026-10-02にusilicrcのMACROへ移した。84(^Og)・90(^T)は廃止。
       {6, "C-i"},        // ^I    INFO
       {7, "e"},          // e     EDIT
       {8, "F-2 C-i"},    // ^O^I  INFO(SHELL内から)
@@ -45,7 +44,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {14, "C-m"},       // ^M    開く/表示
       {15, "F-0 d"},     // ^Xd   DIR: 入力
       {16, "F-1 C-c"},   // ^J^C  カレントディレクトリへ
-      {17, "F-1 C-k"},   // ^J^K  親ディレクトリへ
+      {17, "F-1 C-b"},   // ^J^B  親ディレクトリへ(2026-10-02、^J^Kから)
       {18, "F-1 N"},     // ^JN   N番目のディレクトリへ
       {19, "F-0 f"},     // ^Xf   FILE: 入力
       {20, "F-0 C-f"},   // ^X^F  FILE: 一覧
@@ -53,8 +52,6 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {22, "ESC C-m"},   // ^[^M  そのまま読む
       {23, "F-1 F-1"},   // ^J^J  以前のfileへ
       {24, "."},         // .     選択/非選択
-      {25, "["},         // [     選択して上へ
-      {26, "]"},         // ]     選択して下へ
       {27, "F-2 y"},     // ^Oy   全選択
       {28, "F-2 n"},     // ^On   全解除
       {29, "F-2 u"},     // ^Ou   選択したfileの一覧(USILIC)
@@ -64,7 +61,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {33, "F-1 p"},     // ^Jp   PROGRAM: 入力
       {34, "F-1 C-p"},   // ^J^P  PROGRAM: 一覧
       {35, "SPC"},       // ␣     ページ送り/クイックルック
-      {36, "F-2 s"},     // ^Os   SHELLを再起動
+      {36, "F-1 s"},     // ^Js   SHELLを再起動(2026-10-02、^Osから)
       {37, "F-2 a"},     // ^Oa   ARC: 展開
       {38, "C-r"},       // ^R    履歴一覧
       {39, "C-s"},       // ^S    逐次検索
@@ -111,14 +108,12 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {80, "F-0 F-0"},   // ^X^X  大きく移動する前の行と行き来
       {81, "F-1 C-u"},   // ^J^U  USILIC: 種類ごとの一覧
       {82, "F-1 u"},     // ^Ju   USILIC: 時系列
-      {83, "F-1 a"},     // ^Ja   TUTORIAL の言語切替
-      {84, "F-2 g"},     // ^Og   GUI 表示との切替
+      {83, "F-1 a"},     // ^Ja   HELP の言語切替
       {85, "F-2 l"},     // ^Ol   ls のソート順を逆順に
       {86, "C-l"},       // ^L    再表示
       {87, "C-SPC"},     // ^SPC  選択/非選択
       {88, "ESC P"},     // ^[P   一時的な選択対象の貼り付け
       {89, "ESC u"},     // ^[u   USILIC: 目次
-      {90, "C-t"},       // ^T    TUTORIAL
       {91, "C-h"},       // ^H    HELP
       {92, "F-1 C-h"},   // ^J^H  HELP
       {93, "F-0 ("},     // ^X(   マクロの記録開始
@@ -129,6 +124,14 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {98, "F-1 e"},     // ^Je   EPUB: 入力
       {99, "F-1 C-e"},   // ^J^E  EPUB: 一覧
       {100, "F-2 e"},    // ^Oe   EPUB: 縦書き/横書き
+      // 2026-10-02追加(.steering/20261002-help-key-usilicrc-reorg/)。
+      {101, "F-4 u"},    // ^J^Ou ~/.usilic/usilicrc
+      {102, "F-4 h"},    // ^J^Oh 平文のHELP
+      {103, "F-0 C-s"},  // ^X^S  usilicrcのMACROに保存
+      {104, "h"},        // h     KEYから平文のHELPへ
+      {105, "C-k"},      // ^K    KEY
+      {106, "F-1 C-k"},  // ^J^K  KEY(SHELL・プロンプトから)
+      {107, "C-]"},      // ^]    カレントディレクトリへ(^J^Cと同じ)
   };
   return entries;
 }
@@ -204,7 +207,8 @@ std::string knName(int n) { return "K-" + std::to_string(n); }
 }  // namespace
 
 void KeyBindings::configure(const std::map<int, std::string> &userPrefixes,
-                            const std::map<int, std::string> &userEntries, std::vector<std::string> *errors) {
+                            const std::map<int, std::string> &userEntries, std::vector<std::string> *errors,
+                            const std::vector<Macro> &macros) {
   rules_.clear();
   auto report = [&](const std::string &message) {
     if (errors) errors->push_back("KEY: " + message);
@@ -302,9 +306,64 @@ void KeyBindings::configure(const std::map<int, std::string> &userPrefixes,
     if (!reused)
       rules_.push_back({r.defaultSeq, std::nullopt, isLeaderByte(r.defaultSeq[0]) && r.defaultSeq.size() >= 2});
   }
+
+  // MACRO(Macro自身のコメント参照)。キーがKEY節のどれかのキーと重なる/頭になっていればエラーで無視。
+  std::vector<Sequence> macroKeys;
+  for (const auto &macro : macros) {
+    std::string name = "MACRO: M-" + std::to_string(macro.number);
+    std::string error;
+    auto from = parseSpec(macro.keySpec, userPrefixSeqs, &error);
+    if (!from) {
+      if (errors) errors->push_back(name + ": " + error);
+      continue;
+    }
+    bool conflict = std::find(from->begin(), from->end(), kDigit) != from->end();
+    for (const auto &r : resolved)
+      if (r.userSeq && (samePattern(*r.userSeq, *from) || patternIsProperPrefix(*r.userSeq, *from) ||
+                        patternIsProperPrefix(*from, *r.userSeq)))
+        conflict = true;
+    for (const auto &other : macroKeys)
+      if (samePattern(other, *from) || patternIsProperPrefix(other, *from) || patternIsProperPrefix(*from, other))
+        conflict = true;
+    if (conflict) {
+      if (errors) errors->push_back(name + ": key conflicts with another key");
+      continue;
+    }
+    Sequence to;
+    bool ok = true;
+    for (const auto &item : macro.items) {
+      if (item.keyNumber <= 0) {
+        for (unsigned char c : item.literal) to.push_back(c);
+        continue;
+      }
+      int number = item.keyNumber;
+      auto it = std::find_if(resolved.begin(), resolved.end(), [&](const Resolved &r) { return r.number == number; });
+      if (it == resolved.end() || std::find(it->defaultSeq.begin(), it->defaultSeq.end(), kDigit) != it->defaultSeq.end()) {
+        if (errors) errors->push_back(name + ": unknown or unusable " + knName(number));
+        ok = false;
+        break;
+      }
+      to.insert(to.end(), it->defaultSeq.begin(), it->defaultSeq.end());
+    }
+    if (!ok || to.empty()) continue;
+    macroKeys.push_back(*from);
+    rules_.push_back({*from, to, leaderEligible(*from, *from)});
+  }
 }
 
 bool KeyBindings::isIdentity() const { return rules_.empty(); }
+
+std::vector<std::pair<int, KeyBindings::Sequence>> KeyBindings::defaultSequences() {
+  std::vector<Sequence> prefixes(kPrefixCount);
+  std::string error;
+  for (int n = 0; n < kPrefixCount; n++) prefixes[n] = *parseSpec(defaultPrefixSpecs()[n], prefixes, &error);
+  std::vector<std::pair<int, Sequence>> out;
+  for (const auto &entry : defaultEntries()) {
+    auto seq = parseSpec(entry.spec, prefixes, &error);
+    if (seq && std::find(seq->begin(), seq->end(), kDigit) == seq->end()) out.push_back({entry.number, *seq});
+  }
+  return out;
+}
 
 bool KeyBindings::matches(const Sequence &pattern, const std::vector<int> &input) {
   if (pattern.size() != input.size()) return false;

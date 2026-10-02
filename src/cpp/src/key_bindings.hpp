@@ -45,8 +45,24 @@ class KeyBindings {
   // usilicrcの指定(未指定の番号は既定のまま)から置き換え表を組む。
   // userPrefixes: F番号→キー表記、userEntries: K番号→キー表記(空=割り当て無し)。
   // 問題があればerrorsへ追記し、その指定は既定のままにする。
+  // macros(2026-10-02、usilicrcのMACRO節): キー表記→K番号の並び。そのキーで、各K番号の既定の
+  // キー列を順に続けて本体へ渡す(K番号はKEY節の置き換えの前の既定のキーで渡すので、KEY節で
+  // キーを変えてもマクロの中身は変わらない)。
+  // 要素はK番号(keyNumber>0)か、そのまま渡す文字列(literal、"..."で書いたもの)のどちらか。
+  struct MacroItem {
+    int keyNumber = 0;
+    std::string literal;
+  };
+  struct Macro {
+    int number;
+    std::string keySpec;
+    std::vector<MacroItem> items;
+  };
+  // K番号の既定のキー列(マクロの記録をK番号へ戻す^X^S用、Application::saveMacroToUsilicrc())。
+  // 数字(N)を含むものは除く。
+  static std::vector<std::pair<int, Sequence>> defaultSequences();
   void configure(const std::map<int, std::string> &userPrefixes, const std::map<int, std::string> &userEntries,
-                 std::vector<std::string> *errors);
+                 std::vector<std::string> *errors, const std::vector<Macro> &macros = {});
 
   // 置き換え/無効化が1つも無い(=既定のまま)ならtrue。
   bool isIdentity() const;

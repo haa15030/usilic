@@ -1459,7 +1459,7 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments(bool t
     return segments;
   }
   ModeLineFields fields = withTruncatedTrailing3(
-      withTruncatedFields(modeLineFieldsProvider_(cursorIndex_), positionText), positionText);
+      withTruncatedFields(providedModeLineFields(), positionText), positionText);
   int cols = display_.columns();
 
   // 2026-08-30、直接のユーザー報告(GUI、実際のマウスドラッグ中は
@@ -1612,6 +1612,18 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments(bool t
     }
   }
   return segments;
+}
+
+std::string &ContentView::modeNameOverride() {
+  static std::string name;
+  return name;
+}
+
+// modeLineFieldsProvider_の結果に、modeNameOverride()(^X(〜^X)の"MACRO")を当てたもの。
+ContentView::ModeLineFields ContentView::providedModeLineFields() const {
+  ModeLineFields fields = modeLineFieldsProvider_(cursorIndex_);
+  if (!modeNameOverride().empty()) fields.name = modeNameOverride();
+  return fields;
 }
 
 void ContentView::setModeLineFieldsProvider(ModeLineFieldsProvider provider) {
@@ -1940,7 +1952,7 @@ ContentView::FieldFit ContentView::fitModeLineFields(const ModeLineFields &field
 std::string ContentView::composeModeLineRow(const std::string &positionText) const {
   if (!modeLineFieldsProvider_) return positionText;
   ModeLineFields fields = withTruncatedTrailing3(
-      withTruncatedFields(modeLineFieldsProvider_(cursorIndex_), positionText), positionText);
+      withTruncatedFields(providedModeLineFields(), positionText), positionText);
   FieldFit fit = fitModeLineFields(fields, positionText);
 
   std::string row = positionText;

@@ -6,7 +6,7 @@
 # other line is an error.
 #
 # ARCHIVE, FILE, EXEC, EGREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
-# HISTORY, WAIT, LS, SCROLL, CP, MV, RM, KEY
+# LINE, WAIT, CP, MV, RM, SERIF, SANS-SERIF, SPEED, DRAG, FONT, KEY, MACRO
 #
 # usilicrc is the same file with Japanese comments.
 # -------------------------------------------------------------
@@ -85,8 +85,8 @@ EGREP
 # CUT (regular expression); ^R again shows the history.  The old section
 # name GREP is also accepted.  (Enclose a string containing a space in "".)
 #
-# TUTORIAL's EGREP chapter examples, in the same order as its regular-
-# expression list -- each one matches some text in TUTORIAL itself.
+# HELP's EGREP chapter examples, in the same order as its regular-
+# expression list -- each one matches some text in HELP itself.
 # Written for `grep -E' on both macOS (BSD grep) and Linux (GNU grep):
 # \d/\D are spelled [0-9]/[^0-9], and grep -E has no non-greedy *?/+?,
 # (?:...) or look-around, so those have no example.
@@ -140,7 +140,8 @@ EDITOR
 #
 # The editor launched by EDIT.
 
-	vi
+	pico
+#	vi
 #	jed
 
 BUFFER
@@ -151,7 +152,7 @@ BUFFER
 # like ^O^M, reading only what is shown.  Lists (ls, DU, LOCATE, archive
 # contents), files extracted from an archive, MAN and ^[^M (read as is)
 # stop reading at this size.  Either way "Not enough buffer" is shown
-# (any key clears it).
+# (any key clears it).  Try a value with usilic -b; usilic -B writes it here.
 
 	64
 
@@ -178,7 +179,7 @@ SHELL
 	bash
 #	tcsh
 
-HISTORY
+LINE
 # Format: `line'
 #
 # The maximum number of lines kept per history kind (FILE, DIR, MAN,
@@ -186,33 +187,18 @@ HISTORY
 # removed (USILIC keeps three times as many).  0 means unlimited (the
 # default).  History never gets large enough to matter for memory, but
 # ~/.usilic/history is rewritten whole each time an entry is added, so set
-# a limit if saving starts to feel slow.
+# a limit if saving starts to feel slow.  Try a value with usilic -l;
+# usilic -L writes it here.
 
 	0
 
 WAIT
 # Format: `wait'
 #
-# Macros are executed at intervals of `wait' (in units of 10 msec).
+# Macros are executed at intervals of `wait' (in units of 10 msec).  Try a
+# value with usilic -w; usilic -W writes it here.
 
 	1
-
-LS
-# Format: `flag'
-#
-# The initial ls display format (switched by ^Oo afterwards).  When set,
-# only file names are shown.
-
-	0
-
-SCROLL
-# Format: `flag'
-#
-# The initial scroll mode (at startup only; ^Oh switches the mode-line on
-# and off).  When set, the window scrolls within the range above the
-# bottom line.
-
-	0
 
 CP
 # Format: `cp' (option)
@@ -259,6 +245,36 @@ SANS-SERIF
 
 #	/System/Library/Fonts/ヒラギノ角ゴシック W4.ttc
 
+SPEED
+# Format: `usec1' `usec2' ...  (levels 1-10)
+#
+# The speed of each inertial-scroll level: the time waited for each line
+# (each dot with -g) moved, in usec, from level 1 (slowest) up.  Levels not
+# given keep their built-in values.  Try values with usilic -s; usilic -S
+# writes them here.
+
+	90000 20000 10000 5000 3000 2000 1000 500 200 100
+
+DRAG
+# Format: `dot1' `dot2' ...  (levels 1-10)
+#
+# When a screen drag is released, the amount of motion (dots) just before
+# that decides the inertial-scroll level: at least `dot1' for level 1,
+# `dot2' for level 2, and so on.  Try values with usilic -d; usilic -D
+# writes them here.
+
+	1 2 4 8 16 30 40 50 60 70
+
+FONT
+# Format: `font file'
+#
+# The basic (half-width) monospace font of the -g window.  Full-width
+# characters use the SANS-SERIF font and mincho (serif) uses SERIF.  Without
+# this setting, built-in candidates are used.  Try one with usilic -f;
+# usilic -F writes it here.
+
+#	/Library/Fonts/MS-Gothic.ttf
+
 KEY
 # Key assignments.
 #
@@ -296,8 +312,6 @@ KEY
 	K-1	C-g         # ^G     Return to previous mode
 	K-2	C-p         # ^P     Move cursor one line up
 	K-3	C-n         # ^N     Move cursor one line down
-	K-4	;           # ;      Open previous entry
-	K-5	:           # :      Open next entry
 	K-6	C-i         # ^I     INFO
 	K-7	e           # e      EDIT
 	K-8	F-2 C-i     # ^O^I   INFO (from SHELL)
@@ -309,7 +323,7 @@ KEY
 	K-14	C-m         # ^M     Open / show
 	K-15	F-0 d       # ^Xd    DIR: input name
 	K-16	F-1 C-c     # ^J^C   Go to current directory
-	K-17	F-1 C-k     # ^J^K   Go to parent directory
+	K-17	F-1 C-b     # ^J^B   Go to parent directory
 	K-18	F-1 N       # ^JN    Go to N-th directory
 	K-19	F-0 f       # ^Xf    FILE: input name
 	K-20	F-0 C-f     # ^X^F   FILE: select from list
@@ -317,8 +331,6 @@ KEY
 	K-22	ESC C-m     # ^[^M   Read as is
 	K-23	F-1 F-1     # ^J^J   Go to previous file
 	K-24	.           # .      Toggle selection
-	K-25	[           # [      Select and move up
-	K-26	]           # ]      Select and move down
 	K-27	F-2 y       # ^Oy    Select all
 	K-28	F-2 n       # ^On    Clear all
 	K-29	F-2 u       # ^Ou    List of selected files (USILIC)
@@ -328,7 +340,7 @@ KEY
 	K-33	F-1 p       # ^Jp    PROGRAM: input name
 	K-34	F-1 C-p     # ^J^P   PROGRAM: select from list
 	K-35	SPC         # ␣      Page down / Quick Look
-	K-36	F-2 s       # ^Os    Restart SHELL
+	K-36	F-1 s       # ^Js    Restart SHELL
 	K-37	F-2 a       # ^Oa    ARC: extract
 	K-38	C-r         # ^R     History list
 	K-39	C-s         # ^S     Incremental search
@@ -375,14 +387,12 @@ KEY
 	K-80	F-0 F-0     # ^X^X   Swap with line before big move
 	K-81	F-1 C-u     # ^J^U   USILIC: list by kind
 	K-82	F-1 u       # ^Ju    USILIC: chronological
-	K-83	F-1 a       # ^Ja    Switch TUTORIAL language
-	K-84	F-2 g       # ^Og    Switch GUI
+	K-83	F-1 a       # ^Ja    Switch HELP language
 	K-85	F-2 l       # ^Ol    Reverse ls sort order
 	K-86	C-l         # ^L     Redraw
 	K-87	C-SPC       # ^SPC   Toggle selection
 	K-88	ESC P       # ^[P    Paste transient targets
 	K-89	ESC u       # ^[u    USILIC: contents
-	K-90	C-t         # ^T     TUTORIAL
 	K-91	C-h         # ^H     HELP
 	K-92	F-1 C-h     # ^J^H   HELP
 	K-93	F-0 (       # ^X(    Begin macro
@@ -393,3 +403,23 @@ KEY
 	K-98	F-1 e       # ^Je    EPUB: input
 	K-99	F-1 C-e     # ^J^E   EPUB: list
 	K-100	F-2 e       # ^Oe    ARC: contents of .epub
+	K-101	F-4 u       # ^J^Ou  ~/.usilic/usilicrc
+	K-102	F-4 h       # ^J^Oh  Plain HELP
+	K-103	F-0 C-s     # ^X^S   Save the macro to MACRO in usilicrc
+	K-104	h           # h      From KEY to plain HELP
+	K-105	C-k         # ^K     KEY
+	K-106	F-1 C-k     # ^J^K   KEY (from a prompt)
+	K-107	C-]         # ^]     Go to the current directory (same as ^J^C)
+
+MACRO
+	M-1	;	K-1 K-2 K-14			# ^G^P^M	Open previous entry
+	M-2	:	K-1 K-3 K-14			# ^G^N^M	Open next entry
+	M-3	+	K-1 K-1 K-2 K-14 K-14		# ^G^G^P^M^M
+	M-4	*	K-1 K-1 K-3 K-14 K-14		# ^G^G^N^M^M
+	M-5	[	K-24 K-2			# .^P		Select and move up
+	M-6	]	K-24 K-3			# .^N		Select and move down
+	M-7	<	K-14 K-1 K-2 K-14		# ^M^G^P^M
+	M-8	>	K-14 K-1 K-3 K-14		# ^M^G^N^M
+	M-9	{	K-101 K-39 "MACRO" K-14 K-7	# ^J^Ou^S"MACRO"^Me
+	M-10	}	K-53 K-41 "usilic-1.5b:" K-14	# ^J^Os^Cb"usilic-1.5b:"^M
+	--

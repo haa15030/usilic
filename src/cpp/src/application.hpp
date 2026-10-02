@@ -162,11 +162,9 @@ enum class Command {
   //                              自体はキーごと廃止した)
   StartCut,
   StartCutFile,
-  // 2026-09-14追加、直接のユーザー依頼("モード名はTUTORIALだが読み込む
-  // ファイルをTUTORIALとTUTORIAL.enとで切り替えを行う^Jaを復活して
-  // 欲しい"、旧HELPの日英切替^Oa/^Jaの後継、HISTORY.md:13854): ^J a。
-  // tutorialPath_自身のコメント参照。
-  ToggleTutorialLanguage,
+  // ^J a: HELPとHELP.enの切替(helpPath_自身のコメント参照)。2026-09-14にTUTORIAL/TUTORIAL.enの
+  // 切替として復活し、2026-10-02にTUTORIALがHELPへ改名されたのに合わせて改名。
+  ToggleHelpLanguage,
   StartMan,
   StartManList,
   StartProgram,
@@ -315,6 +313,17 @@ enum class Command {
   ToggleHistoryView,
   StartEdit,
   StartHelp,
+  // 2026-10-02追加、直接のユーザー依頼(.steering/20261002-help-key-usilicrc-reorg/):
+  //   StartKey(^K、^J^K): KEYモード。HELPを「：」でCUTした一覧(冒頭の「--」は除く)。startKey()参照。
+  //   KeyJumpToHelp(h、KEYの中だけ): 選んでいる行の、平文のHELPの同じ行へ。
+  //   OpenPlainHelp(^J^Oh): 平文のHELP(helpPath_のファイルをそのまま)。
+  //   OpenUserUsilicrc(^J^Ou): ~/.usilic/usilicrc。
+  //   SaveMacro(^X^S): 記録したキーボードマクロをusilicrcのMACROへ保存。saveMacroToUsilicrc()参照。
+  StartKey,
+  KeyJumpToHelp,
+  OpenPlainHelp,
+  OpenUserUsilicrc,
+  SaveMacro,
   StartMacroRecord,
   StopMacroRecord,
   PlayMacro,
@@ -562,10 +571,8 @@ enum class Command {
   // K-0(^T、M_usilic、「USILIC」): ステータス/バージョン情報画面を表示
   // する。Application::executeShowUsilicBanner()自身のコメント参照。
   ShowUsilicBanner,
-  // ^T――直接のユーザー依頼("INFOは^I、TUTORIALは^T")。openTutorial()
-  // 自身のコメント参照: ^I(INFO banner)の「TUTORIAL」行のEnterと全く
-  // 同じCUT-by-file再生を、専用の直接キーからも起動できるようにする。
-  StartTutorial,
+  // StartTutorial(^T)は2026-10-02に廃止(TUTORIALはHELPへ改名、^Hで開く。
+  // .steering/20261002-help-key-usilicrc-reorg/)。
   // K-27(^Oa)は2026-09-20に廃止された。2026-09-01に一度、直接の
   // ユーザー依頼("^Oaはデフォルト文字コード切り替えではなくてHELP/KEY
   // の日本語<->英語切り替えでいいと思う")によりCycleCharset(Ascii ->
@@ -1369,7 +1376,6 @@ struct AnchorSnapshot {
 // それぞれ独立に組み立てると、片方だけ直して他方を直し忘れる事故が
 // 起きやすい――両者が正典として1箇所(application.cpp)だけで定義した
 // この関数を呼ぶことで、その危険を排除する。
-std::string tutorialCutPattern();
 
 // parseCutFileHistoryEntry()/buildCutFileHistoryEntry()自身の定義側
 // コメント参照(application.cpp): FILE履歴の合成CUTエントリ
@@ -2669,8 +2675,6 @@ class Application {
   // る。FileMode::loadFile()は本物のパスを必要とし、このテキストは
   // ERROR/LOGのような他の自然なディスク上の住処を持たないため。
   bool executeShowUsilicBanner();
-  // openTutorial()自身のコメント参照(^T単独キー、Command::StartTutorial)。
-  bool openTutorial();
   // Command::Suspend(^Z)自身のコメント参照。
   bool handleSuspend();
   // ^Tバナー自身の合成された裏付けファイルは
@@ -2860,6 +2864,15 @@ class Application {
   bool executePathInput(const std::string &path);
   bool executeEdit();
   bool startHelp();
+  bool startKey();  // Command::StartKey参照
+  bool saveMacroToUsilicrc();  // Command::SaveMacro参照
+  bool executeSelectedKeyLine();  // KEYの^M: 選んでいる行のキーを、KEYを開く前の画面で実行する
+  bool jumpFromKeyToHelp();       // Command::KeyJumpToHelp参照
+  bool openPlainHelp(std::optional<int> rawLine = std::nullopt);
+public:
+  // HELP(helpPath_のファイル)を読み直す(起動時・^Ja)。読めなければfalse(helpText_はそのまま)。
+  bool reloadHelpText();
+private:
   std::vector<StyledLine> wrapHelpText(int width) const;
 
   Display &display_;  // handleResize()自身のrows()/columns()の参照――現在他のどのメンバーもこれを必要としない
@@ -2956,7 +2969,10 @@ class Application {
   // 真っ新起動時のFILE履歴事前登録と全く同じパス構築)を指す――
   // ホームディレクトリはこの2つの意味で重なるだけで、本質的には
   // 別の概念である。
-  std::string tutorialPath_;
+  // 2026-10-02変更(.steering/20261002-help-key-usilicrc-reorg/): TUTORIALはHELPへ改名。
+  // `~/.local/lib/usilic/HELP`、無ければ`/usr/local/lib/usilic/HELP`(コンストラクタ参照)。^Hは
+  // これを^I(タブ)でCUTし(startHelp())、^KはKEY(「：」でCUT、startKey())。^JaでHELP.enと切り替える。
+  std::string helpPath_;
   // 2026-09-14追加、直接のユーザー依頼("モード名はTUTORIALだが読み込む
   // ファイルをTUTORIALとTUTORIAL.enとで切り替えを行う^Jaを復活して
   // 欲しい"、旧HELPの日英切替^Oa/^Jaの後継、HISTORY.md:13854): 切替
@@ -2965,7 +2981,7 @@ class Application {
   // 自身をこれと(これ+".en")の間でトグルする――tutorialPath_を直接
   // 書き換えるだけなので、^T画面のTUTORIAL行表示・そこからの再生
   // (openSelectedBannerEntry())は無改造のまま追随する。
-  std::string tutorialBasePath_;
+  std::string helpBasePath_;
   Charset::Encoding encoding_;  // wrapHelpText()自身のPipeBuffer構築――現在他のどのメンバーもこれを必要としない
   const Configuration &configuration_;  // executeProgram()自身のPROGRAM一覧の参照、上のfind_prog()の注記参照
   History &history_;  // sortedUniqueRecentEntries()/startPromptHistoryRecall()自身のrecentEntries()の参照(2026-09-20: startListBrowser()削除に伴い参照元を更新)
@@ -3334,10 +3350,16 @@ class Application {
   // DU等に]関与（検索）できる"): Directory起点(directoryView_.lines()
   // を分割する)と全く同じ発想で、manView_/locateView_/duView_.lines()
   // を分割する――executeCut()自身の新設の分岐参照。
-  enum class CutOrigin { File, Help, Directory, Log, Man, Locate, Du, Epub };  // Epub: openEpub()参照
+  enum class CutOrigin { File, Help, Directory, Log, Man, Locate, Du, Epub, Key };  // Epub: openEpub()参照、Key: startKey()参照
   CutOrigin cutOrigin_ = CutOrigin::File;
 
   bool recordingMacro_ = false;
+  // ^X^S(saveMacroToUsilicrc()参照): 直前に^Xeでマクロを実行した(^X^S以外のキーで下ろす)、
+  // 実行キーの1文字を待っている、保存するK番号の並び。
+  bool macroJustPlayed_ = false;
+  bool macroKeyPending_ = false;
+  std::string pendingMacroItems_;
+  bool finishMacroKey(int byte, std::optional<KeyInput::SpecialKey> special);
   std::vector<RecordedStep> recordedMacro_;
   // leaderXシーケンスの先頭の^Xバイトを、2番目のバイトが解決する
   // まで保持しておくので、StartMacroRecord/StopMacroRecord/
@@ -3452,6 +3474,9 @@ class Application {
     // 2026-10-01追加、openEpub()自身のコメント参照。ArchiveLoadと同じく、drawPromptLabel()専用の
     // 静的メッセージ("Reading...")のためだけに存在する。
     EpubLoad,
+    // 2026-10-02追加(saveMacroToUsilicrc()参照): ^X^Sの「実行キーを1文字」の案内("MACRO Key:")。
+    // drawPromptLabel()専用で、promptKind_へは代入しない(キーはmacroKeyPending_で受ける)。
+    MacroKey,
     // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装、実機報告
     // (スクリーンショット=gv、legacyの参照画面: "プロンプトエリアは
     // 編集可能な非ハイライト表示が正解")を受けての追加。Du/ArchiveLoad

@@ -1,6 +1,8 @@
 #include "usilicrc_file.hpp"
 
+#include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -132,20 +134,77 @@ std::string replaceSection(const std::string &text, const std::string &section, 
   return join(lines);
 }
 
+namespace {
+bool writeAtomically(const std::string &path, const std::string &text) {
+  std::string temp = path + ".tmp";
+  {
+    std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+    if (!out) return false;
+    out << text;
+    if (!out) return false;
+  }
+  return std::rename(temp.c_str(), path.c_str()) == 0;
+}
+}  // namespace
+
+std::string readText(const std::string &path) { return readFile(path); }
+
+std::optional<int> sectionLineNumber(const std::string &text, const std::string &section) {
+  auto header = findHeader(splitKeepingLines(text), section);
+  if (!header) return std::nullopt;
+  return static_cast<int>(*header) + 1;
+}
+
+std::string replaceMacroMarker(const std::string &text, const std::vector<std::string> &replacement) {
+  std::vector<std::string> lines = splitKeepingLines(text);
+  auto header = findHeader(lines, "MACRO");
+  if (!header) {
+    if (!lines.empty() && !lines.back().empty()) lines.push_back("");
+    lines.push_back("MACRO");
+    header = lines.size() - 1;
+  }
+  std::size_t end = sectionEnd(lines, *header);
+  for (std::size_t i = *header + 1; i < end; i++) {
+    std::size_t p = lines[i].find_first_not_of(" \t");
+    if (p != std::string::npos && lines[i].compare(p, 2, "--") == 0) {
+      lines.erase(lines.begin() + static_cast<long>(i));
+      lines.insert(lines.begin() + static_cast<long>(i), replacement.begin(), replacement.end());
+      return join(lines);
+    }
+  }
+  std::size_t last = *header;
+  for (std::size_t i = *header + 1; i < end; i++)
+    if (!lines[i].empty()) last = i;
+  lines.insert(lines.begin() + static_cast<long>(last + 1), replacement.begin(), replacement.end());
+  return join(lines);
+}
+
+bool setMacroMarker(const std::string &home, const std::vector<std::string> &replacement) {
+  if (!ensureUser(home)) return false;
+  std::string user = userPath(home);
+  return writeAtomically(user, replaceMacroMarker(readFile(user), replacement));
+}
+
+int nextMacroNumber(const std::string &text) {
+  std::vector<std::string> lines = splitKeepingLines(text);
+  auto header = findHeader(lines, "MACRO");
+  int next = 1;
+  if (!header) return next;
+  std::size_t end = sectionEnd(lines, *header);
+  for (std::size_t i = *header + 1; i < end; i++) {
+    std::size_t p = lines[i].find_first_not_of(" \t");
+    if (p == std::string::npos || lines[i].compare(p, 2, "M-") != 0) continue;
+    next = std::max(next, std::atoi(lines[i].c_str() + p + 2) + 1);
+  }
+  return next;
+}
+
 bool setSection(const std::string &home, const std::string &section, const std::vector<std::string> &values) {
   if (!ensureUser(home)) return false;
   std::string user = userPath(home);
   std::string templateText;
   if (auto installed = installedPath(home)) templateText = readFile(*installed);
-  std::string updated = replaceSection(readFile(user), section, values, templateText);
-  std::string temp = user + ".tmp";
-  {
-    std::ofstream out(temp, std::ios::binary | std::ios::trunc);
-    if (!out) return false;
-    out << updated;
-    if (!out) return false;
-  }
-  return std::rename(temp.c_str(), user.c_str()) == 0;
+  return writeAtomically(user, replaceSection(readFile(user), section, values, templateText));
 }
 
 }  // namespace usilicrc

@@ -28190,3 +28190,26 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ARCHIVEの拡張子なら(ls)の^O^Mと同じstartArchivePagerLoadAsync()で開く。引数が複数の時は従来
      どおり(n/p等で移った先は生のまま)。.epubで開いた時は'q'では終わらない(ページャーとしての
      FileModeではないため、^X^C等で終わる)。疑似端末でK3t.epub・x.zipを確認。
+576. **2026-10-02: TUTORIAL→HELP、KEYモード(^K/^J^K)の復活、MACRO節、^X^S、^X(〜^X)中のモード名MACRO、キーの付け替え**
+   - **経緯**: 直接のユーザー依頼(HELP/KEY/usilicrc再編、.steering/20261002-help-key-usilicrc-reorg/)。
+   - **HELP**: TUTORIALはHELPへ改名。正本はリポジトリのdoc/HELP(装飾付き、作者だけが編集)、装飾無しの
+     版はsrc/HELP.txt(アシスタントの修正はこちら)。`make install`でdoc/HELP(とHELP.enがあれば)を
+     `$PREFIX/lib/usilic/`へ。^Hは`~/.local/lib/usilic/HELP`(無ければ`/usr/local/lib/usilic/`の同名)
+     をタブ(^I)でCUTする(それまでの^Hは`usilic.man`を読んでいて、無いので何も出なかった)。^Jaは
+     HELP.enとの切替(無ければ切り替えない)。^T(TUTORIAL)・FILE履歴への事前登録は廃止。
+   - **KEY(^K、^J^K)**: HELPを「：」(全角コロン)でCUTした一覧(冒頭の「--」は除く、CutOrigin::Key)。
+     ^Mでその行のキーを、KEYを開く前の画面で実行する(KEY節の置き換えを通す)。hで平文のHELPの
+     その行へ(^GでKEYへ戻る)。^J^Ohは平文のHELP、^J^Ouは`~/.usilic/usilicrc`。
+   - **MACRO節**: 「M-n キー 要素...」(要素はK番号か"文字列")を、KEY節と同じ置き換え表
+     (KeyBindings)の規則として組み込む。`;` `:` `[` `]`は組み込みのキーから外し、MACROへ移した
+     (src/usilicrcのM-1〜M-10、K番号は今の番号で書いた)。
+   - **^X^S**: ^Xeの直後なら、記録したキー列をK番号(既定のキー列への最長一致)と"文字列"に戻して
+     MACROの「--」の行へ書き、MACROの節を表示して実行キー(1文字)を尋ね、「M-n キー ...」にして次の
+     行へ「--」を足す。^Xeの直後でなければ節を表示するだけ。効くのは次の起動から。
+   - **^X(〜^X)**: 記録中はモードラインの名前欄を「MACRO」に(ContentView::modeNameOverride())。
+   - **キー**: 親ディレクトリは^J^K→^J^B、SHELLの再起動は^Os→^Js、^]は^J^Cと同じ、^J^KはKEY。
+     組み込みの既定キー表からK-4/5/25/26/84/90を外し、K-101〜107を足した(K番号の並べ替えは後続)。
+   - src/usilicrc・usilicrc.enを同じ内容に更新し、`~/.usilic/usilicrc`を差し替えた(元のものは
+     `~/.usilic/usilicrc.20261002.bak`)。疑似端末で^H・^K・KEYの^M/h・^GでKEYへ戻ることを確認。
+     テストは関係するもの(キー割り当て・設定・usilicrc・CUT・アプリケーション)を回し、残る12件は
+     10/1の^Cfの仕様変更で古くなったCUTのテスト10件と環境依存のLOCATE・DUの2件(今回とは無関係)。

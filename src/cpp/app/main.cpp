@@ -4764,14 +4764,8 @@ int main(int argc, char **argv) {
       // tutorialPath_の初期値(常にTUTORIAL、日本語版)に合わせ、
       // より目立つ「最新」の位置(pushRecent()は末尾ほど新しい)に
       // TUTORIALが来るよう、TUTORIAL.enを先に積む。
-      if (homeEnv) {
-        std::string tutorialPath = std::string(homeEnv) + "/.local/lib/usilic/TUTORIAL";
-        history.pushRecent(fm::RingCategory::RecentFile, fm::buildCutFileHistoryEntry(
-                                                               tutorialPath + ".en", fm::tutorialCutPattern(),
-                                                               fm::GrepSyntax::Basic));
-        history.pushRecent(fm::RingCategory::RecentFile,
-                            fm::buildCutFileHistoryEntry(tutorialPath, fm::tutorialCutPattern(), fm::GrepSyntax::Basic));
-      }
+      // 2026-10-02: TUTORIALはHELPへ改名し^Hで開くので、FILE履歴への事前登録はやめた
+      // (.steering/20261002-help-key-usilicrc-reorg/)。
     }
   }
 
@@ -4828,12 +4822,15 @@ int main(int argc, char **argv) {
   // そちらを優先する(手元の別ファイルで試したい場合の上書き用)。
   // 読めない場合はHELP(^H/^J^H)が単に利用不可能になるだけ
   // (Command::StartHelpが素直に失敗する)――起動時エラーにはしない。
-  std::string helpPath = std::getenv("USILICHELP") ? std::getenv("USILICHELP")
-                                                    : (homeEnv ? std::string(homeEnv) + "/.local/lib/usilic/usilic.man"
-                                                               : std::string());
-  if (!helpPath.empty()) {
-    std::string text = readFileIfExists(helpPath);
+  //
+  // 2026-10-02変更(.steering/20261002-help-key-usilicrc-reorg/): usilic.manではなく、TUTORIALから改名した
+  // HELP(Application::helpPath_、~/.local/lib/usilic/HELP、無ければ/usr/local/lib/usilic/HELP)を読む。
+  // ^HはこれをタブでCUTし、^Kは「：」でCUTする(KEY)。
+  if (const char *overridePath = std::getenv("USILICHELP")) {
+    std::string text = readFileIfExists(overridePath);
     if (!text.empty()) app.loadHelpText(text);
+  } else {
+    app.reloadHelpText();
   }
 
   // "実はすでにGUI" (docs/ideas/IDEAS.md, see CLAUDE.md's 2026-07-30

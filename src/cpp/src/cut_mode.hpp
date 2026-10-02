@@ -105,6 +105,8 @@ class CutMode {
 
   const std::string &pattern() const;
   const std::vector<CutSegment> &segments() const;
+  // 2026-10-02追加(Application::startKey()): 最初の一致より前の行をまとめた「--」の区間があれば除く。
+  void dropLeadingFiller();
   // 2026-10-01追加: 区間の並びが変わる(split()・goBack())たびに増える番号。Applicationが区間ごとの
   // 中身のカーソル位置(cutSegmentViews_)を、同じ並びの間だけ使うためのもの。
   int generation() const { return generation_; }

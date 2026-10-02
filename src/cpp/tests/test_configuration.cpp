@@ -251,7 +251,18 @@ TEST_CASE("MACRO directive: M-n key K-numbers, skipping the -- marker and empty 
   REQUIRE(config.macros().size() == 1);
   CHECK(config.macros()[0].number == 1);
   CHECK(config.macros()[0].keySpec == ";");
-  CHECK(config.macros()[0].keyNumbers == std::vector<int>{1, 2, 14});
+  REQUIRE(config.macros()[0].items.size() == 3);
+  CHECK(config.macros()[0].items[0].keyNumber == 1);
+  CHECK(config.macros()[0].items[2].keyNumber == 14);
+}
+
+TEST_CASE("MACRO directive: a quoted string item is passed through as-is") {
+  Configuration config;
+  REQUIRE(config.loadRcText("MACRO\n\tM-10\t}\tK-41 \"usilic-1.5b: x\" K-14\n", true));
+  REQUIRE(config.macros().size() == 1);
+  REQUIRE(config.macros()[0].items.size() == 3);
+  CHECK(config.macros()[0].items[1].literal == "usilic-1.5b: x");
+  CHECK(config.errors().empty());
 }
 
 // 2026-09-12追加、直接のユーザー依頼(columnThreshold()自身の
