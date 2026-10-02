@@ -12212,12 +12212,13 @@ TEST_CASE_FIXTURE(Fixture, "history browser: Back returns to Directory mode") {
 
 // 2026-09-08、直接のユーザー依頼("^Je⇒e（←lessと同様）")によるキー
 // 再編でプレフィックス無しの単一文字'e'へ移行。
-TEST_CASE_FIXTURE(Fixture, "feedByte: e starts EDIT (StartEdit)") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ESC e starts EDIT (StartEdit; plain e is a usilicrc MACRO since 2026-10-02)") {
   configuration.loadRcText("EDITOR\n sh -c 'echo \"EDITED:$0\" >> \"$1\"'\n", true);
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
+  app.feedByte(0x1b, std::nullopt);  // ESC
   app.feedByte('e', std::nullopt);   // e
 
   std::ifstream in(root / "plain.txt");

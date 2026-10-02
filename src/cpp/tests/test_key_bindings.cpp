@@ -147,7 +147,7 @@ TEST_CASE("src/usilicrc and src/usilicrc.en: read without errors, their KEY sect
     REQUIRE(config.loadRcText(text, true));
     CHECK(config.errors().empty());
     // 2026-10-02: MACRO節(M-1〜)があるので置き換え表自体は空ではない。KEY節が既定と同じことは下で確かめる。
-    CHECK(config.macros().size() == 10);
+    CHECK(config.macros().size() == 12);
     CHECK(config.keyEntrySpecs().size() == KeyBindings::defaultEntries().size());
     for (const auto &entry : KeyBindings::defaultEntries()) {
       CAPTURE(entry.number);
@@ -169,20 +169,20 @@ TEST_CASE("KeyBindings: the order of K-n lines in usilicrc does not matter") {
 
 // 2026-10-02追加(KeyBindings::rewriteHelpText()参照)。
 TEST_CASE("KeyBindings::rewriteHelpText: changed keys are shown in HELP, keeping the colon column") {
-  // ^Xf(FILE: 入力、K-61)を^Xgへ、^Oy(全選択、K-37)と^On(全解除、K-38)を入れ替え、e(EDIT、K-67)をEへ。
-  KeyBindings b = configured("\tK-61\tF-0 g\n\tK-37\tF-2 n\n\tK-38\tF-2 y\n\tK-67\tE\n");
+  // ^Xf(FILE: 入力、K-61)を^Xgへ、^Oy(全選択、K-37)と^On(全解除、K-38)を入れ替え、.(選択、K-35)を,へ。
+  KeyBindings b = configured("\tK-61\tF-0 g\n\tK-37\tF-2 n\n\tK-38\tF-2 y\n\tK-35\t,\n");
   std::string help =
       "         ^Xf\xEF\xBC\x9A" "ファイル名を入力\n"
       "         ^Oy\xEF\xBC\x9A" "全行選択\n"
       "         ^On\xEF\xBC\x9A" "全行解除\n"
-      "           e\xEF\xBC\x9A" "編集\n"
-      "    ^Xf\"~/x\"^M で開き、e で編集します。\n";
+      "           .\xEF\xBC\x9A" "選択\n"
+      "    ^Xf\"~/x\"^M で開き、. で選択します。\n";
   CHECK(b.rewriteHelpText(help) ==
         "         ^Xg\xEF\xBC\x9A" "ファイル名を入力\n"
         "         ^On\xEF\xBC\x9A" "全行選択\n"
         "         ^Oy\xEF\xBC\x9A" "全行解除\n"
-        "           E\xEF\xBC\x9A" "編集\n"
-        "    ^Xg\"~/x\"^M で開き、e で編集します。\n");  // 本文の1文字のキーはそのまま
+        "           ,\xEF\xBC\x9A" "選択\n"
+        "    ^Xg\"~/x\"^M で開き、. で選択します。\n");  // 本文の1文字のキーはそのまま
 }
 
 TEST_CASE("KeyBindings::rewriteHelpText: a longer key keeps the colon column by eating one leading space") {

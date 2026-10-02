@@ -376,7 +376,7 @@ KEY
 	K-64	F-0 C-d     # ^X^D    DIR: select from list
 	K-65	F-2 C-c     # ^O^C    COPY
 	K-66	F-2 C-y     # ^O^Y    Paste
-	K-67	e           # e       EDIT
+	K-67	ESC e       # ^[e     EDIT (e is a MACRO)
 	K-68	ESC s       # ^[s     Go to SHELL
 	K-69	F-1 s       # ^Js     Restart SHELL
 	K-70	ESC l       # ^[l     SHELL log
@@ -396,7 +396,7 @@ KEY
 	K-84	F-4 u       # ^J^Ou   ~/.usilic/usilicrc
 	K-85	F-4 e       # ^J^Oe   ERROR
 	K-86	F-4 s       # ^J^Os   SHELL log
-	K-87	F-4 h       # ^J^Oh   Plain HELP
+	K-87	F-4 h       # ^J^Oh   Plain HELP (in KEY, at the selected line)
 	K-88	F-4 d       # ^J^Od   ~/.usilic/data/
 	K-89	F-4 w       # ^J^Ow   WORK
 	K-90	C-h         # ^H      HELP
@@ -404,13 +404,12 @@ KEY
 	K-92	F-1 a       # ^Ja     Switch HELP language
 	K-93	C-k         # ^K      KEY
 	K-94	F-1 C-k     # ^J^K    KEY (from a prompt)
-	K-95	h           # h       From KEY to plain HELP
-	K-96	F-0 (       # ^X(     Begin macro
-	K-97	F-0 )       # ^X)     End macro
-	K-98	F-0 e       # ^Xe     Execute macro
-	K-99	F-0 C-s     # ^X^S    Save the macro to MACRO in usilicrc
-	K-100	F-0 C-c     # ^X^C    EXIT
-	K-101	ESC ESC     # ^[^[    EXIT
+	K-95	F-0 (       # ^X(     Begin macro
+	K-96	F-0 )       # ^X)     End macro
+	K-97	F-0 e       # ^Xe     Execute macro
+	K-98	F-0 C-s     # ^X^S    Save the macro to MACRO in usilicrc
+	K-99	F-0 C-c     # ^X^C    EXIT
+	K-100	ESC ESC     # ^[^[    EXIT
 
 MACRO
 	M-1	;	K-20 K-4 K-28			# ^G^P^M	Open previous entry
@@ -421,6 +420,8 @@ MACRO
 	M-6	]	K-35 K-3			# .^N		Select and move down
 	M-7	<	K-28 K-20 K-4 K-28		# ^M^G^P^M
 	M-8	>	K-28 K-20 K-3 K-28		# ^M^G^N^M
-	M-9	{	K-84 K-51 "MACRO" K-28 K-67	# ^J^Ou^S"MACRO"^Me
+	M-9	{	K-84 K-51 "MACRO" K-28 K-67	# ^J^Ou^S"MACRO"^M^[e
 	M-10	}	K-86 K-53 "usilic-1.5b:" K-28	# ^J^Os^Cb"usilic-1.5b:"^M
+	M-11	e	K-67				# ^[e		EDIT
+	M-12	h	K-87				# ^J^Oh		From KEY to plain HELP at that line (plain HELP outside KEY)
 	--

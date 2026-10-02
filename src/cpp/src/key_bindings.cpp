@@ -97,7 +97,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {64, "F-0 C-d"},   // ^X^D  DIR: 一覧
       {65, "F-2 C-c"},   // ^O^C  COPY
       {66, "F-2 C-y"},   // ^O^Y  ペースト
-      {67, "e"},         // e     EDIT
+      {67, "ESC e"},     // ^[e    EDIT(2026-10-02、eから。eはusilicrcのMACRO)
       {68, "ESC s"},     // ^[s   SHELLへ
       {69, "F-1 s"},     // ^Js   SHELLを再起動(2026-10-02、^Osから)
       {70, "ESC l"},     // ^[l   SHELLのログ
@@ -125,13 +125,12 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {92, "F-1 a"},     // ^Ja   HELP の言語切替
       {93, "C-k"},       // ^K    KEY
       {94, "F-1 C-k"},   // ^J^K  KEY(SHELL・プロンプトから)
-      {95, "h"},         // h     KEYから平文のHELPへ
-      {96, "F-0 ("},     // ^X(   マクロの記録開始
-      {97, "F-0 )"},     // ^X)   マクロの記録終了
-      {98, "F-0 e"},     // ^Xe   マクロの実行
-      {99, "F-0 C-s"},   // ^X^S  usilicrcのMACROに保存
-      {100, "F-0 C-c"},  // ^X^C  EXIT
-      {101, "ESC ESC"},  // ^[^[  EXIT
+      {95, "F-0 ("},     // ^X(   マクロの記録開始
+      {96, "F-0 )"},     // ^X)   マクロの記録終了
+      {97, "F-0 e"},     // ^Xe   マクロの実行
+      {98, "F-0 C-s"},   // ^X^S  usilicrcのMACROに保存
+      {99, "F-0 C-c"},   // ^X^C  EXIT
+      {100, "ESC ESC"},  // ^[^[  EXIT
   };
   return entries;
 }

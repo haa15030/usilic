@@ -363,7 +363,7 @@ KEY
 	K-64	F-0 C-d     # ^X^D    DIR: 一覧
 	K-65	F-2 C-c     # ^O^C    COPY
 	K-66	F-2 C-y     # ^O^Y    ペースト
-	K-67	e           # e       EDIT
+	K-67	ESC e       # ^[e     EDIT(eはMACRO)
 	K-68	ESC s       # ^[s     SHELLへ
 	K-69	F-1 s       # ^Js     SHELLを再起動
 	K-70	ESC l       # ^[l     SHELLのログ
@@ -383,7 +383,7 @@ KEY
 	K-84	F-4 u       # ^J^Ou   ~/.usilic/usilicrc
 	K-85	F-4 e       # ^J^Oe   ERROR
 	K-86	F-4 s       # ^J^Os   SHELLのログ
-	K-87	F-4 h       # ^J^Oh   平文のHELP
+	K-87	F-4 h       # ^J^Oh   平文のHELP(KEYでは選んでいる行へ)
 	K-88	F-4 d       # ^J^Od   ~/.usilic/data/
 	K-89	F-4 w       # ^J^Ow   WORK
 	K-90	C-h         # ^H      HELP
@@ -391,13 +391,12 @@ KEY
 	K-92	F-1 a       # ^Ja     HELP の言語切替
 	K-93	C-k         # ^K      KEY
 	K-94	F-1 C-k     # ^J^K    プロンプトからKEY
-	K-95	h           # h       KEYから平文HELPへ移動
-	K-96	F-0 (       # ^X(     マクロの記録開始
-	K-97	F-0 )       # ^X)     マクロの記録終了
-	K-98	F-0 e       # ^Xe     マクロの実行
-	K-99	F-0 C-s     # ^X^S    usilicrcのMACROに保存
-	K-100	F-0 C-c     # ^X^C    EXIT
-	K-101	ESC ESC     # ^[^[    EXIT
+	K-95	F-0 (       # ^X(     マクロの記録開始
+	K-96	F-0 )       # ^X)     マクロの記録終了
+	K-97	F-0 e       # ^Xe     マクロの実行
+	K-98	F-0 C-s     # ^X^S    usilicrcのMACROに保存
+	K-99	F-0 C-c     # ^X^C    EXIT
+	K-100	ESC ESC     # ^[^[    EXIT
 
 MACRO
 	M-1	;	K-20 K-4 K-28			# ^G^P^M	前の項目を開く
@@ -408,6 +407,8 @@ MACRO
 	M-6	]	K-35 K-3			# .^N		選択して下へ
 	M-7	<	K-28 K-20 K-4 K-28		# ^M^G^P^M
 	M-8	>	K-28 K-20 K-3 K-28		# ^M^G^N^M
-	M-9	{	K-84 K-51 "MACRO" K-28 K-67	# ^J^Ou^S"MACRO"^Me
+	M-9	{	K-84 K-51 "MACRO" K-28 K-67	# ^J^Ou^S"MACRO"^M^[e
 	M-10	}	K-86 K-53 "usilic-1.5b:" K-28	# ^J^Os^Cb"usilic-1.5b:"^M
+	M-11	e	K-67				# ^[e		EDIT
+	M-12	h	K-87				# ^J^Oh		KEYから平文のHELPの当該位置へ(KEYの外では平文のHELP)
 	--

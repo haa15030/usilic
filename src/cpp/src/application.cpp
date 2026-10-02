@@ -2260,12 +2260,8 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
     // なった――^H単体と^J^Hはどちらも同じ新HELPへ到達する。
     case 0x08:  // ^H
       return Command::StartHelp;
-    // 2026-09-08、直接のユーザー依頼によるキー再編("^Je⇒e（←less
-    // 同様）")で^Jeから移行: 他のプレフィックス無しのページャー単一
-    // 文字コマンド(b/j/k/q等、このswitch自身の他のcase参照)と同じ
-    // 扱いになった。
-    case 'e':
-      return Command::StartEdit;
+    // 'e'(EDIT)は2026-10-02に^[eへ移し、'e'はusilicrcのMACRO(e→^[e)にした(直接のユーザー依頼"e/hを
+    // それぞれ^[e/^J^OhとしたうえでMACROに設定してはどうかな。1文字だし設定例として使える")。
     case 0x80:  // ^Space(M_mark)――KeyInputはリテラルなNUL/Ctrl-Spaceを0x80として報告する、そのクラスコメント参照
     case '.':   // 2026-08-23: 同じプレーンなトグル、移動は無い――ToggleMark自身のコメント参照
       return Command::ToggleMark;
@@ -2282,8 +2278,6 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::StartKey;
     case 0x1d:
       return Command::GoToFileSelector;
-    case 'h':
-      return Command::KeyJumpToHelp;
     case 0x1a:  // ^Z(M_susp)――Command::Suspend自身のコメント参照
       return Command::Suspend;
     case 'q':  // M_quit――usilicrcはこれをページャの文脈に限定している;handleCommand()自身のゲート参照
@@ -2979,6 +2973,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // ケース参照)へ移り、2つのキーを保つ理由が無くなったため削除した
       // ――以後^[iはこのswitchのdefaultへ落ちる未認識シーケンスである
       // (Command::StartIncrementalGrep自身の宣言コメント参照)。
+      case 'e':  // ESC e : EDIT(2026-10-02、'e'から。'e'はusilicrcのMACROでこれになる)
+        return handleCommand(Command::StartEdit);
       // 2026-10-02追加、直接のユーザー提案("COPYにしか割り振られていないキーが押されたとき...
       // モードラインの定位置にCOPYモードの時だけ、みたいなメッセージを出す"): ^[w・^[p(COPYの
       // 範囲のコピー/PROGRAMへ)はCOPYの外では何もしないので、そう知らせる(どれかのキーで消える)。
@@ -4734,6 +4730,9 @@ bool Application::handleCommandImpl(Command command) {
     case Command::KeyJumpToHelp:
       return jumpFromKeyToHelp();
     case Command::OpenPlainHelp:
+      // KEYの中では、選んでいる行の、平文のHELPの同じ行へ(2026-10-02、それまでのh(K-95)を統合。
+      // 'h'はusilicrcのMACRO(h→^J^Oh)になった)。
+      if (currentMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Key) return jumpFromKeyToHelp();
       return openPlainHelp();
     case Command::OpenUserUsilicrc: {
       std::string home = std::filesystem::path(usilicrcPath_).parent_path().parent_path().string();
