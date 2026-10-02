@@ -9108,6 +9108,8 @@ bool Application::returnFromShell() {
 // 依頼(2026-08-02)がこれを確認した――全体のやり取りについては
 // resetSessionState()自身のコメント参照。
 void Application::handleShellChildExited() {
+  saveShellLog();  // 2026-10-03(saveShellLog()参照)
+  shellLogBlock_.clear();
   shell_.terminate();
   shellStarted_ = false;
   if (currentMode_ == ApplicationMode::Shell) returnFromShell();
@@ -9457,6 +9459,8 @@ bool Application::ensureShellActive() {
 // shellStarted_/currentMode_/shellReturnMode_を直接管理する。
 bool Application::shellRestart() {
   if (refuseIfShellBusy()) return false;
+  saveShellLog();  // 2026-10-03(saveShellLog()参照)
+  shellLogBlock_.clear();
   shell_.terminate();
   shellStarted_ = false;
   // ensureShellActive()自身の同一の2026-09-15のコメント参照――
@@ -10039,10 +10043,39 @@ bool Application::executeOpenWorkList() {
 // みのために開けなかった場合はfalse。
 bool Application::refreshShellLogFile() {
   if (!shellStarted_) return false;
-  std::ofstream out(logFilePath_, std::ios::trunc);
-  if (!out) return false;
-  for (const auto &line : shell_.scrollback().lines()) out << line.text << "\n";
-  return static_cast<bool>(out);
+  saveShellLog();
+  std::error_code ec;
+  return std::filesystem::exists(logFilePath_, ec);
+}
+
+// 2026-10-03、直接のユーザー依頼("shellはhistory同様延々記録していってほしい"): 以前は書くたびに
+// 今のSHELLの内容だけで上書きしていたので、前のセッション(SHELLの再起動、usilicの再起動)の分が
+// 消えていた。今は、このセッションが前回書いた分(shellLogBlock_)をファイル中から探して最新の内容に
+// 置き換え、無ければ末尾へ足す。別のusilicが同時に書いていても、互いの分は消さない。上限は設けない。
+// SHELLを終える・再起動する時、usilicを終える時にも書く。
+void Application::saveShellLog() {
+  if (!shellStarted_) return;
+  std::string block;
+  for (const auto &line : shell_.scrollback().lines()) block += line.text + "\n";
+  std::string text;
+  {
+    std::ifstream in(logFilePath_, std::ios::binary);
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    text = buffer.str();
+  }
+  std::size_t pos = shellLogBlock_.empty() ? std::string::npos : text.rfind(shellLogBlock_);
+  if (pos != std::string::npos) text.replace(pos, shellLogBlock_.size(), block);
+  else text += block;
+  std::string tmpPath = logFilePath_ + ".tmp." + std::to_string(::getpid());
+  {
+    std::ofstream out(tmpPath, std::ios::binary | std::ios::trunc);
+    out << text;
+    if (!out) return;
+  }
+  std::error_code ec;
+  std::filesystem::rename(tmpPath, logFilePath_, ec);
+  if (!ec) shellLogBlock_ = block;
 }
 
 bool Application::executeShowShellLog() {

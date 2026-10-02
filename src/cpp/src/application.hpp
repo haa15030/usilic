@@ -2656,6 +2656,14 @@ class Application {
   // executeShowShellLog()/executeStartLog()で共有される――自身の
   // 定義コメント(application.cpp)参照。
   bool refreshShellLogFile();
+ public:
+  // 今のSHELLの内容をlogFilePath_(~/.usilic/shell)へ、前のセッションの分を残したまま書く
+  // (2026-10-03、定義のコメント参照)。終了時にmain()からも呼ぶ。
+  void saveShellLog();
+
+ private:
+  // saveShellLog()が最後に書いた、このSHELLセッションの分。次はファイル中のこれを置き換える。
+  std::string shellLogBlock_;
   // ESC l("LOG"): 自身の定義コメント(application.cpp)参照。
   bool executeStartLog();
   // K-0(^T): 短いステータス/バージョン情報画面を構築する――

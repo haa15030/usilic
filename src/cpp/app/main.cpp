@@ -5264,6 +5264,7 @@ int main(int argc, char **argv) {
   // just "load skipped, save unconditional"): saving would otherwise
   // silently overwrite the real no-argument session's own saved state
   // with this unrelated run's in-memory rings.
+  app.saveShellLog();  // 2026-10-03、SHELLのログを~/.usilic/shellへ(Application::saveShellLog()参照)
   if (consultHistoryOnStart) {
     // 2026-08-30、直接のユーザー報告("通常ファイルで終えたなら次回
     // 起動時も同ファイルから"、"utf8.tarの画面（アーカイブ構成ファイル

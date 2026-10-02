@@ -28310,3 +28310,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: K-83の既定を"F-2 C-i"から"F-1 C-i"へ。dispatchLeaderByte()の^O ^Iを消して^J ^Iへ移した。
      src/usilicrc・usilicrc.en・doc/HELP・src/TUTORIAL_draft.txtの表記を合わせ、`~/.usilic/usilicrc`の
      K-83も差し替えた。
+589. **2026-10-03: SHELLのログ(~/.usilic/shell)を、historyと同じくセッションをまたいで延々記録する**
+   - **経緯**: 直接のユーザー依頼("shellはhistory同様延々記録していってほしい")。以前はrefreshShellLogFile()
+     (^J^Os・^[lの時だけ)が今のSHELLの内容だけで上書きしていたので、SHELLやusilicを再起動すると前の
+     分が消えていた。
+   - **実装**: Application::saveShellLog()を新設。このセッションが前回書いた分(shellLogBlock_)をファイル中
+     から探して最新の内容に置き換え、無ければ末尾へ足す(一時ファイル→rename)。別のusilicが同時に書いて
+     いても互いの分は消さない。上限は設けない。^J^Os・^[lに加え、SHELLの終了・再起動(^Js)の前と
+     usilicの終了時(引数付きの起動でも)にも書く。
