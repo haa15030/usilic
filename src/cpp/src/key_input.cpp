@@ -1,5 +1,6 @@
 #include "key_input.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <csignal>
@@ -232,7 +233,12 @@ void KeyInput::setPidReporter(std::function<void(int)> reporter) {
 }
 
 void KeyInput::playRawMacro(const std::string &bytes) {
-  macroQueue_ = bytes;
+  // 2026-10-02修正、直接のユーザー報告("Kbt.epubで→を数回押すとEXITになる。escが拾われているかも"):
+  // 以前はキューを丸ごと置き換えていた。app/main.cppの覗き見(peekMouseSgr()/peekArrow())は、
+  // 読んだ分(例えば→の"[C")を戻した後、呼び出し側がさらに先頭のESCを戻す――置き換えだとESCだけが
+  // 残って"[C"が消え、ESCが単独でApplicationへ届き、次のESCとでESC ESC(K-65、EXIT)になっていた。
+  // まだ読まれていない分の前に足す。
+  macroQueue_ = bytes + macroQueue_.substr(std::min(macroPos_, macroQueue_.size()));
   macroPos_ = 0;
 }
 
