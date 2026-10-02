@@ -75,12 +75,12 @@ TEST_CASE("KeyBindings: no KEY section (or the defaults) is the identity -- ever
   REQUIRE(config.loadRcText("LS\n\t0\n", true));
   CHECK(config.keyBindings().isIdentity());
   CHECK(run(config.keyBindings(), {kJ, kCtrlC, 'j'}) == std::vector<int>{kJ, kCtrlC, 'j'});
-  CHECK(configured("\tK-16\tF-1 C-c\n\tF-1\tC-j\n").isIdentity());
+  CHECK(configured("\tK-24\tF-1 C-c\n\tF-1\tC-j\n").isIdentity());
 }
 
 TEST_CASE("KeyBindings: a changed K-n works with its new keys, and its old keys stop working") {
   std::vector<std::string> errors;
-  KeyBindings b = configured("\tK-16\tF-1 z\n", &errors);  // ^J^C(カレントディレクトリ) -> ^Jz
+  KeyBindings b = configured("\tK-24\tF-1 z\n", &errors);  // ^J^C(カレントディレクトリ) -> ^Jz
   CHECK(errors.empty());
   CHECK(run(b, {kJ, 'z'}) == std::vector<int>{kJ, kCtrlC});
   CHECK(run(b, {kJ, kCtrlC}).empty());                       // 元のキーは捨てられる
@@ -89,13 +89,13 @@ TEST_CASE("KeyBindings: a changed K-n works with its new keys, and its old keys 
 
 TEST_CASE("KeyBindings: old keys given to another function do that function instead (swap)") {
   // ^J^C(K-16)と^J^B(K-17、2026-10-02に^J^Kから)を入れ替える。
-  KeyBindings b = configured("\tK-16\tF-1 C-b\n\tK-17\tF-1 C-c\n");
+  KeyBindings b = configured("\tK-24\tF-1 C-b\n\tK-26\tF-1 C-c\n");
   CHECK(run(b, {kJ, 0x02}) == std::vector<int>{kJ, kCtrlC});
   CHECK(run(b, {kJ, kCtrlC}) == std::vector<int>{kJ, 0x02});
 }
 
 TEST_CASE("KeyBindings: empty keys unassign a function") {
-  KeyBindings b = configured("\tK-68\t\n");  // ^X^W(バッファ保存)を割り当て無しに
+  KeyBindings b = configured("\tK-81\t\n");  // ^X^W(バッファ保存)を割り当て無しに
   CHECK(run(b, {kX, 0x17}).empty());
 }
 
@@ -105,35 +105,35 @@ TEST_CASE("KeyBindings: changing a prefix (F-n) moves every function under it; a
   CHECK(run(b, {0x0b, kCtrlC}) == std::vector<int>{kJ, kCtrlC});
   CHECK(run(b, {0x0b, 'd'}) == std::vector<int>{kJ, 'd'});
   CHECK(run(b, {kJ, kCtrlC}).empty());
-  // K-105(^K、KEY、2026-10-02)は新しい接頭キー^Kそのものと衝突するのでエラーになり、割り当て無し
+  // K-93(^K、KEY、2026-10-02)は新しい接頭キー^Kそのものと衝突するのでエラーになり、割り当て無し
   // (2026-10-02までは^Tだったが、^T(TUTORIAL)は廃止)。
   bool reported = false;
-  for (const auto &e : errors) reported = reported || e.find("K-105") != std::string::npos;
+  for (const auto &e : errors) reported = reported || e.find("K-93") != std::string::npos;
   CHECK(reported);
 }
 
 TEST_CASE("KeyBindings: N (digit family) maps the typed digit through") {
-  KeyBindings b = configured("\tK-18\tF-0 N\n");  // ^JN -> ^XN
+  KeyBindings b = configured("\tK-27\tF-0 N\n");  // ^JN -> ^XN
   CHECK(run(b, {kX, '3'}) == std::vector<int>{kJ, '3'});
   CHECK(run(b, {kJ, '3'}).empty());
 }
 
 TEST_CASE("KeyBindings: one-character keys are only replaced where the app treats keys as commands") {
-  KeyBindings b = configured("\tK-70\tJ\n");  // j(1行下へ) -> J
+  KeyBindings b = configured("\tK-1\tJ\n");  // j(1行下へ) -> J
   CHECK(run(b, {'J'}) == std::vector<int>{'j'});
   CHECK(run(b, {'j'}).empty());
   // プロンプト入力中など(LeaderOnly)では、どちらも文字として入力される。
   CHECK(run(b, {'J'}, Context::LeaderOnly) == std::vector<int>{'J'});
   CHECK(run(b, {'j'}, Context::LeaderOnly) == std::vector<int>{'j'});
   // 接頭キーで始まるキーは、プロンプト入力中でも置き換わる。
-  KeyBindings c = configured("\tK-16\tF-1 z\n");
+  KeyBindings c = configured("\tK-24\tF-1 z\n");
   CHECK(run(c, {kJ, 'z'}, Context::LeaderOnly) == std::vector<int>{kJ, kCtrlC});
   CHECK(run(c, {kJ, 'z'}, Context::None) == std::vector<int>{kJ, 'z'});
 }
 
 TEST_CASE("KeyBindings: unknown numbers and unwritable keys are usilicrc errors") {
   std::vector<std::string> errors;
-  configured("\tK-999\tx\n\tK-16\tC-1\n\tF-7\tC-t\n", &errors);
+  configured("\tK-999\tx\n\tK-24\tC-1\n\tF-7\tC-t\n", &errors);
   CHECK(errors.size() == 3);
 }
 
@@ -161,8 +161,8 @@ TEST_CASE("src/usilicrc and src/usilicrc.en: read without errors, their KEY sect
 // 2026-09-26追加、直接のユーザー依頼: K番号は機能の固定IDで、usilicrc上の行の
 // 順序(番号の並び)は意味を持たない。
 TEST_CASE("KeyBindings: the order of K-n lines in usilicrc does not matter") {
-  CHECK(configured("\tK-3\tC-n\n\tK-1\tC-g\n\tK-2\tC-p\n").isIdentity());
-  KeyBindings b = configured("\tK-17\tF-1 C-c\n\tK-16\tF-1 C-b\n");  // 入れ替えを逆順の行で書く
+  CHECK(configured("\tK-3\tC-n\n\tK-20\tC-g\n\tK-4\tC-p\n").isIdentity());
+  KeyBindings b = configured("\tK-26\tF-1 C-c\n\tK-24\tF-1 C-b\n");  // 入れ替えを逆順の行で書く
   CHECK(run(b, {kJ, 0x02}) == std::vector<int>{kJ, kCtrlC});
   CHECK(run(b, {kJ, kCtrlC}) == std::vector<int>{kJ, 0x02});
 }

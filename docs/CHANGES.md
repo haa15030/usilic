@@ -28213,3 +28213,19 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      `~/.usilic/usilicrc.20261002.bak`)。疑似端末で^H・^K・KEYの^M/h・^GでKEYへ戻ることを確認。
      テストは関係するもの(キー割り当て・設定・usilicrc・CUT・アプリケーション)を回し、残る12件は
      10/1の^Cfの仕様変更で古くなったCUTのテスト10件と環境依存のLOCATE・DUの2件(今回とは無関係)。
+577. **2026-10-02: K番号をHELPの記載順に振り直し、HELP.txtのキーを確定済みのものに統一、ページャーのキー一覧**
+   - **経緯**: 直接のユーザー依頼("今までの経緯で決めてきたキーアサインに統一してほしい"、"ページャー用の
+     キーアサインにもHELPでは触れてない。それ用のKEYも必要かなと。それらはHELP.txtのファイルマネージャの
+     章の前に入れたのち、usilicrcへも反映して")。HELP.txtとusilicrcを突き合わせると、FILE(^Jf/^J^F)・
+     DIR(^Jd/^J^D、DUと重複)・全選択(^Jy/^Jn)・SHELLの再起動(^Xs)・マクロの保存(^Xs)・SHELLからの
+     INFO(^J^I)・[/]の向きがHELP側で古く、HELPに載っていないキーも多かった。
+   - **HELP.txt**(追跡対象外、HELPへの反映はユーザー): 確定済みのキー(コードと src/usilicrc)へ直し、
+     ページャーの節(ファイルマネージャーの前)に主なキーの一覧(j k ^N ^P ␣ ^V ^F b ^B ^[v ^[< ^[> ^[N
+     ^X^X n p x f q ^G ^L ^Z ^Oh)を足した。^]、(ls)の表示(^Oo ^Ol ^O^L)、^[P、^Je ^J^E、^[l、SHELLの
+     ^O/ ^O^F ^O^B ^O^L、^X^W、^J^H、KEYのh、MACROの^X^S(新しい説明)も載せた。
+   - **K番号**: 組み込みの表(KeyBindings::defaultEntries())・src/usilicrc・usilicrc.enのKEY節・MACROの
+     K番号を、HELP.txtの「：」の行の順(SHELLの「コマンド行」の行編集キーを除く)に K-1〜K-101 で振り
+     直した(旧番号との対応は.steering/20261002-help-key-usilicrc-reorg/参照)。KEY節の説明も「HELPの記載
+     順」に改めた。`~/.usilic/usilicrc`も差し替えた。
+   - キー割り当て・設定のテストは番号を合わせて通過。疑似端末で、新しいusilicrcのまま^H・^K、MACROの
+     `:`(次のファイル)・`;`(前のファイル)が動くことを確認。

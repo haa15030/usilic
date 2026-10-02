@@ -281,9 +281,10 @@ KEY
 # Format: F-n  keys    (defines prefix key F-0 .. F-4)
 #         K-n  keys    (the keys of function K-n)
 #
-# Each K-n number is a fixed ID of its function: neither the order of the
-# lines nor that of the numbers means anything, so the lines may be
-# rearranged freely (a new function gets the next number at the end).
+# Each K-n number is the ID of its function, numbered in the order HELP
+# describes them (the KEY list shows them in that order too).  Neither the
+# order of the lines nor that of the numbers means anything, so the lines
+# may be rearranged freely.
 # Changing the keys of a function makes it work only with the new keys;
 # the old keys stop working (they can be given to another function).
 # Leaving the keys empty unassigns the function.  A number whose line is
@@ -309,117 +310,117 @@ KEY
 	F-3	C-c         # ^C
 	F-4	C-j C-o     # ^J^O
 
-	K-1	C-g         # ^G     Return to previous mode
-	K-2	C-p         # ^P     Move cursor one line up
-	K-3	C-n         # ^N     Move cursor one line down
-	K-6	C-i         # ^I     INFO
-	K-7	e           # e      EDIT
-	K-8	F-2 C-i     # ^O^I   INFO (from SHELL)
-	K-9	p           # p      Previous file (pager)
-	K-10	n           # n      Next file (pager)
-	K-11	x           # x      First file (pager)
-	K-12	f           # f      Last file (pager)
-	K-13	q           # q      Quit (pager)
-	K-14	C-m         # ^M     Open / show
-	K-15	F-0 d       # ^Xd    DIR: input name
-	K-16	F-1 C-c     # ^J^C   Go to current directory
-	K-17	F-1 C-b     # ^J^B   Go to parent directory
-	K-18	F-1 N       # ^JN    Go to N-th directory
-	K-19	F-0 f       # ^Xf    FILE: input name
-	K-20	F-0 C-f     # ^X^F   FILE: select from list
-	K-21	F-2 C-m     # ^O^M   Read per line
-	K-22	ESC C-m     # ^[^M   Read as is
-	K-23	F-1 F-1     # ^J^J   Go to previous file
-	K-24	.           # .      Toggle selection
-	K-27	F-2 y       # ^Oy    Select all
-	K-28	F-2 n       # ^On    Clear all
-	K-29	F-2 u       # ^Ou    List of selected files (USILIC)
-	K-30	F-2 c       # ^Oc    CP
-	K-31	F-2 m       # ^Om    MV
-	K-32	F-2 r       # ^Or    RM
-	K-33	F-1 p       # ^Jp    PROGRAM: input name
-	K-34	F-1 C-p     # ^J^P   PROGRAM: select from list
-	K-35	SPC         # ␣      Page down / Quick Look
-	K-36	F-1 s       # ^Js    Restart SHELL
-	K-37	F-2 a       # ^Oa    ARC: extract
-	K-38	C-r         # ^R     History list
-	K-39	C-s         # ^S     Incremental search
-	K-40	F-1 C-s     # ^J^S   EGREP
-	K-41	F-3 b       # ^Cb    CUT: buffer
-	K-42	F-3 f       # ^Cf    CUT: file
-	K-43	F-1 d       # ^Jd    DU: run du
-	K-44	F-1 C-d     # ^J^D   DU: back to result
-	K-45	F-1 l       # ^Jl    LOCATE: build database
-	K-46	F-1 C-l     # ^J^L   LOCATE
-	K-47	F-1 m       # ^Jm    MAN: input page
-	K-48	F-1 C-m     # ^J^M   MAN: select from list
-	K-49	F-0 C-d     # ^X^D   DIR: select from list
-	K-50	F-2 C-c     # ^O^C   COPY
-	K-51	F-2 C-y     # ^O^Y   Paste
-	K-52	F-4 e       # ^J^Oe  ERROR
-	K-53	F-4 s       # ^J^Os  SHELL log
-	K-54	ESC l       # ^[l    SHELL log
-	K-55	ESC s       # ^[s    Go to SHELL
-	K-56	F-1 .       # ^J.    SHELL: cd to current directory
-	K-57	F-1 ,       # ^J,    SHELL: ls -l
-	K-58	F-1 w       # ^Jw    SHELL: insert access name
-	K-59	F-1 C-w     # ^J^W   SHELL: insert buffer content
-	K-60	F-2 /       # ^O/    Search (from SHELL)
-	K-61	F-2 C-f     # ^O^F   Page down (from SHELL)
-	K-62	F-2 C-b     # ^O^B   Page up (from SHELL)
-	K-63	F-2 C-l     # ^O^L   Redraw (from SHELL) / cycle ls sort key
-	K-64	F-0 C-c     # ^X^C   EXIT
-	K-65	ESC ESC     # ^[^[   EXIT
-	K-66	F-2 o       # ^Oo    Switch ls format
-	K-67	F-2 h       # ^Oh    Show/hide mode-line
-	K-68	F-0 C-w     # ^X^W   Save buffer to work file
-	K-69	C-z         # ^Z     Suspend
-	K-70	j           # j      Scroll one line down
-	K-71	k           # k      Scroll one line up
-	K-72	C-f         # ^F     Page down
-	K-73	C-v         # ^V     Page down
-	K-74	b           # b      Page up
-	K-75	C-b         # ^B     Page up
-	K-76	ESC v       # ^[v    Page up
-	K-77	ESC <       # ^[<    Go to top
-	K-78	ESC >       # ^[>    Go to bottom
-	K-79	ESC N       # ^[N    Go to N-th line
-	K-80	F-0 F-0     # ^X^X   Swap with line before big move
-	K-81	F-1 C-u     # ^J^U   USILIC: list by kind
-	K-82	F-1 u       # ^Ju    USILIC: chronological
-	K-83	F-1 a       # ^Ja    Switch HELP language
-	K-85	F-2 l       # ^Ol    Reverse ls sort order
-	K-86	C-l         # ^L     Redraw
-	K-87	C-SPC       # ^SPC   Toggle selection
-	K-88	ESC P       # ^[P    Paste transient targets
-	K-89	ESC u       # ^[u    USILIC: contents
-	K-91	C-h         # ^H     HELP
-	K-92	F-1 C-h     # ^J^H   HELP
-	K-93	F-0 (       # ^X(    Begin macro
-	K-94	F-0 )       # ^X)    End macro
-	K-95	F-0 e       # ^Xe    Execute macro
-	K-96	F-4 d       # ^J^Od  ~/.usilic/data/
-	K-97	F-4 w       # ^J^Ow  WORK
-	K-98	F-1 e       # ^Je    EPUB: input
-	K-99	F-1 C-e     # ^J^E   EPUB: list
-	K-100	F-2 e       # ^Oe    ARC: contents of .epub
-	K-101	F-4 u       # ^J^Ou  ~/.usilic/usilicrc
-	K-102	F-4 h       # ^J^Oh  Plain HELP
-	K-103	F-0 C-s     # ^X^S   Save the macro to MACRO in usilicrc
-	K-104	h           # h      From KEY to plain HELP
-	K-105	C-k         # ^K     KEY
-	K-106	F-1 C-k     # ^J^K   KEY (from a prompt)
-	K-107	C-]         # ^]     Go to the current directory (same as ^J^C)
+	K-1	j           # j       Scroll one line down
+	K-2	k           # k       Scroll one line up
+	K-3	C-n         # ^N      Move cursor one line down
+	K-4	C-p         # ^P      Move cursor one line up
+	K-5	SPC         # ␣       Page down / Quick Look
+	K-6	C-v         # ^V      Page down
+	K-7	C-f         # ^F      Page down
+	K-8	b           # b       Page up
+	K-9	C-b         # ^B      Page up
+	K-10	ESC v       # ^[v     Page up
+	K-11	ESC <       # ^[<     Go to top
+	K-12	ESC >       # ^[>     Go to bottom
+	K-13	ESC N       # ^[N     Go to N-th line
+	K-14	F-0 F-0     # ^X^X    Swap with line before big move
+	K-15	n           # n       Next file (pager)
+	K-16	p           # p       Previous file (pager)
+	K-17	x           # x       First file (pager)
+	K-18	f           # f       Last file (pager)
+	K-19	q           # q       Quit (pager)
+	K-20	C-g         # ^G      Return to previous mode
+	K-21	C-l         # ^L      Redraw
+	K-22	C-z         # ^Z      Suspend
+	K-23	F-2 h       # ^Oh     Show/hide mode-line
+	K-24	F-1 C-c     # ^J^C    Go to current directory
+	K-25	C-]         # ^]      Go to the current directory (same as ^J^C)
+	K-26	F-1 C-b     # ^J^B    Go to parent directory
+	K-27	F-1 N       # ^JN     Go to N-th directory
+	K-28	C-m         # ^M      Open / show
+	K-29	F-2 C-m     # ^O^M    Read per line
+	K-30	ESC C-m     # ^[^M    Read as is
+	K-31	F-1 F-1     # ^J^J    Go to previous file
+	K-32	F-2 o       # ^Oo     Switch ls format
+	K-33	F-2 l       # ^Ol     Reverse ls sort order
+	K-34	F-2 C-l     # ^O^L    Redraw (from SHELL) / cycle ls sort key
+	K-35	.           # .       Toggle selection
+	K-36	C-SPC       # ^SPC    Toggle selection
+	K-37	F-2 y       # ^Oy     Select all
+	K-38	F-2 n       # ^On     Clear all
+	K-39	ESC P       # ^[P     Paste transient targets
+	K-40	F-2 c       # ^Oc     CP
+	K-41	F-2 m       # ^Om     MV
+	K-42	F-2 r       # ^Or     RM
+	K-43	F-1 p       # ^Jp     PROGRAM: input name
+	K-44	F-1 C-p     # ^J^P    PROGRAM: select from list
+	K-45	F-2 u       # ^Ou     List of selected files (USILIC)
+	K-46	F-2 a       # ^Oa     ARC: extract
+	K-47	F-1 e       # ^Je     EPUB: input
+	K-48	F-1 C-e     # ^J^E    EPUB: list
+	K-49	F-2 e       # ^Oe     ARC: contents of .epub
+	K-50	C-r         # ^R      History list
+	K-51	C-s         # ^S      Incremental search
+	K-52	F-1 C-s     # ^J^S    EGREP
+	K-53	F-3 b       # ^Cb     CUT: buffer
+	K-54	F-3 f       # ^Cf     CUT: file
+	K-55	F-1 d       # ^Jd     DU: run du
+	K-56	F-1 C-d     # ^J^D    DU: back to result
+	K-57	F-1 l       # ^Jl     LOCATE: build database
+	K-58	F-1 C-l     # ^J^L    LOCATE
+	K-59	F-1 m       # ^Jm     MAN: input page
+	K-60	F-1 C-m     # ^J^M    MAN: select from list
+	K-61	F-0 f       # ^Xf     FILE: input name
+	K-62	F-0 C-f     # ^X^F    FILE: select from list
+	K-63	F-0 d       # ^Xd     DIR: input name
+	K-64	F-0 C-d     # ^X^D    DIR: select from list
+	K-65	F-2 C-c     # ^O^C    COPY
+	K-66	F-2 C-y     # ^O^Y    Paste
+	K-67	e           # e       EDIT
+	K-68	ESC s       # ^[s     Go to SHELL
+	K-69	F-1 s       # ^Js     Restart SHELL
+	K-70	ESC l       # ^[l     SHELL log
+	K-71	F-1 .       # ^J.     SHELL: cd to current directory
+	K-72	F-1 ,       # ^J,     SHELL: ls -l
+	K-73	F-1 w       # ^Jw     SHELL: insert access name
+	K-74	F-1 C-w     # ^J^W    SHELL: insert buffer content
+	K-75	F-2 /       # ^O/     Search (from SHELL)
+	K-76	F-2 C-f     # ^O^F    Page down (from SHELL)
+	K-77	F-2 C-b     # ^O^B    Page up (from SHELL)
+	K-78	ESC u       # ^[u     USILIC: contents
+	K-79	F-1 C-u     # ^J^U    USILIC: list by kind
+	K-80	F-1 u       # ^Ju     USILIC: chronological
+	K-81	F-0 C-w     # ^X^W    Save buffer to work file
+	K-82	C-i         # ^I      INFO
+	K-83	F-2 C-i     # ^O^I    INFO (from SHELL)
+	K-84	F-4 u       # ^J^Ou   ~/.usilic/usilicrc
+	K-85	F-4 e       # ^J^Oe   ERROR
+	K-86	F-4 s       # ^J^Os   SHELL log
+	K-87	F-4 h       # ^J^Oh   Plain HELP
+	K-88	F-4 d       # ^J^Od   ~/.usilic/data/
+	K-89	F-4 w       # ^J^Ow   WORK
+	K-90	C-h         # ^H      HELP
+	K-91	F-1 C-h     # ^J^H    HELP
+	K-92	F-1 a       # ^Ja     Switch HELP language
+	K-93	C-k         # ^K      KEY
+	K-94	F-1 C-k     # ^J^K    KEY (from a prompt)
+	K-95	h           # h       From KEY to plain HELP
+	K-96	F-0 (       # ^X(     Begin macro
+	K-97	F-0 )       # ^X)     End macro
+	K-98	F-0 e       # ^Xe     Execute macro
+	K-99	F-0 C-s     # ^X^S    Save the macro to MACRO in usilicrc
+	K-100	F-0 C-c     # ^X^C    EXIT
+	K-101	ESC ESC     # ^[^[    EXIT
 
 MACRO
-	M-1	;	K-1 K-2 K-14			# ^G^P^M	Open previous entry
-	M-2	:	K-1 K-3 K-14			# ^G^N^M	Open next entry
-	M-3	+	K-1 K-1 K-2 K-14 K-14		# ^G^G^P^M^M
-	M-4	*	K-1 K-1 K-3 K-14 K-14		# ^G^G^N^M^M
-	M-5	[	K-24 K-2			# .^P		Select and move up
-	M-6	]	K-24 K-3			# .^N		Select and move down
-	M-7	<	K-14 K-1 K-2 K-14		# ^M^G^P^M
-	M-8	>	K-14 K-1 K-3 K-14		# ^M^G^N^M
-	M-9	{	K-101 K-39 "MACRO" K-14 K-7	# ^J^Ou^S"MACRO"^Me
-	M-10	}	K-53 K-41 "usilic-1.5b:" K-14	# ^J^Os^Cb"usilic-1.5b:"^M
+	M-1	;	K-20 K-4 K-28			# ^G^P^M	Open previous entry
+	M-2	:	K-20 K-3 K-28			# ^G^N^M	Open next entry
+	M-3	+	K-20 K-20 K-4 K-28 K-28		# ^G^G^P^M^M
+	M-4	*	K-20 K-20 K-3 K-28 K-28		# ^G^G^N^M^M
+	M-5	[	K-35 K-4			# .^P		Select and move up
+	M-6	]	K-35 K-3			# .^N		Select and move down
+	M-7	<	K-28 K-20 K-4 K-28		# ^M^G^P^M
+	M-8	>	K-28 K-20 K-3 K-28		# ^M^G^N^M
+	M-9	{	K-84 K-51 "MACRO" K-28 K-67	# ^J^Ou^S"MACRO"^Me
+	M-10	}	K-86 K-53 "usilic-1.5b:" K-28	# ^J^Os^Cb"usilic-1.5b:"^M
 	--
