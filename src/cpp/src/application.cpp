@@ -3957,6 +3957,19 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     shell_.commandLine().undo();
     return true;
   }
+  // 2026-10-03追加、直接のユーザー依頼("SHELLプロンプトの^Wは、CP/MV等と同じくひとつ前のディレクトリを
+  // 挿入してほしい"): feedPromptByteInner()のCP/MV/ARCの^Wと同じ「最後から2番目」のディレクトリ。
+  // ただしコマンド行の途中で使うので、行を置き換えずにカーソル位置へ挿入する。
+  if (byte == kControlW) {
+    const auto &recentDirs = history_.recentEntries(RingCategory::RecentDirectory);
+    if (recentDirs.size() < 2) {
+      display_.putChar(7);
+      return true;
+    }
+    shell_.commandLine().insertString(recentDirs[recentDirs.size() - 2]);
+    shell_.commandLine().redraw();
+    return true;
+  }
   if (byte == kControlC) {
     shell_.sendControlByte(static_cast<unsigned char>(byte));
     return true;
