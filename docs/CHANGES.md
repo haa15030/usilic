@@ -28251,3 +28251,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      KEYを開く前の画面へ戻ってから^Kを押したことになり、KEYを開き直していた。
    - **実装**: executeSelectedKeyLine()がキーを流している間(executingKeyLine_)にstartKey()が呼ばれたら、
      開き直さずにKEYの一覧へ戻して"Already in KEY"を一時メッセージで出す。疑似端末で確認。
+581. **2026-10-02: HELPの中で^H/^J^Hを押したら「Already in HELP」と知らせる**
+   - **経緯**: 直接のユーザー依頼("HELPでの^Hも同じようにして"、項目580のKEYと同じ)。以前はHELPの目次・
+     本文の上にHELPをもう一段重ねて開いていた(cutMode_.pushSplit())。
+   - **実装**: startHelp()で、HELP(CutOrigin::Help)の目次・本文にいる時は開き直さずに"Already in HELP"を
+     一時メッセージで出す。HELP関係のテスト通過。

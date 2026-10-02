@@ -16483,6 +16483,13 @@ bool Application::loadHelpText(const std::string &text) {
 // (GrepSyntax::Fixed)へ切り替えた――kHelpPattern自身の定義コメント
 // 参照。
 bool Application::startHelp() {
+  // 2026-10-02追加、直接のユーザー依頼("HELPでの^Hも同じようにして"、startKey()の"Already in KEY"と同じ):
+  // HELP(目次・本文)の中の^H/^J^Hは、開き直さずにそう知らせる。
+  if ((currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
+      cutOrigin_ == CutOrigin::Help) {
+    showTransientNotice(activeView(), "Already in HELP");
+    return true;
+  }
   if (helpText_.empty()) return false;
   std::vector<StyledLine> helpLines = wrapHelpText(display_.columns());
 
