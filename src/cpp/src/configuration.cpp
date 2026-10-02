@@ -762,6 +762,15 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
 
 const std::vector<std::string> &Configuration::errors() const { return errors_; }
 
+void Configuration::reloadKeysAndMacros(const std::string &rcText) {
+  Configuration fresh;
+  fresh.loadRcText(rcText, /*fileManagerMode=*/true);
+  keyPrefixSpecs_ = fresh.keyPrefixSpecs_;
+  keyEntrySpecs_ = fresh.keyEntrySpecs_;
+  macros_ = fresh.macros_;
+  keyBindings_ = fresh.keyBindings_;
+}
+
 std::optional<ProgramCommand> Configuration::programForSuffix(const std::string &filename,
                                                                 ArchiveKind *archiveKindOut) const {
   const SuffixEntry *best = nullptr;

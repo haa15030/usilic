@@ -532,7 +532,7 @@ std::string buildCutFileHistoryEntry(const std::string &path, const std::string 
 // 完結する分、ERE前提の旧パターンより移植性も高い。
 
 
-Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
+Application::Application(Display &display, KeyInput &keyInput, History &history, Configuration &configuration,
                           Charset::Encoding encoding, int width, ShellOptions shellOptions,
                           std::string homeDirectory, std::string tempRootDirectory, std::string workRootDirectory,
                           std::string bootOptions)
@@ -16265,6 +16265,9 @@ bool Application::executeEdit() {
     }
   }
   if (changed && currentMode_ == ApplicationMode::File) fileMode_.loadFile(path);
+  // 2026-10-03追加(reloadUsilicrcKeys()参照): usilicrc自身を直したらKEY・MACROをその場で効かせる。
+  std::error_code ec;
+  if (changed && std::filesystem::equivalent(path, usilicrcPath_, ec)) reloadUsilicrcKeys();
   activeView().redraw();
   // 2026-09-20追加、直接のユーザー報告("-cではviから復帰後のブロック
   // カーソルが無い"): redraw()自体は(意図的に)決してsyncVisibleCursor()
@@ -16559,6 +16562,7 @@ bool Application::finishMacroKey(int byte, std::optional<KeyInput::SpecialKey> s
   int number = usilicrc::nextMacroNumber(usilicrc::readText(userPath));
   std::string key(1, static_cast<char>(byte));
   usilicrc::setMacroMarker(home, {"\tM-" + std::to_string(number) + "\t" + key + "\t" + items, "\t--"});
+  reloadUsilicrcKeys();  // 保存したキーをすぐ使えるように(2026-10-03)
   int cursor = fileView_.cursorIndex(), top = fileView_.topIndex();
   if (fileMode_.loadFile(userPath)) {
     fileView_.setCursorIndex(cursor);
@@ -16566,6 +16570,14 @@ bool Application::finishMacroKey(int byte, std::optional<KeyInput::SpecialKey> s
   }
   activeView().redraw();
   return true;
+}
+
+void Application::reloadUsilicrcKeys() {
+  std::string text = usilicrc::readText(usilicrcPath_);
+  if (text.empty()) return;
+  configuration_.reloadKeysAndMacros(text);
+  keyBindingPending_ = {};
+  reloadHelpText();
 }
 
 bool Application::loadHelpText(const std::string &text) {

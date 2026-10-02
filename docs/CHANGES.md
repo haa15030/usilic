@@ -28318,3 +28318,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      から探して最新の内容に置き換え、無ければ末尾へ足す(一時ファイル→rename)。別のusilicが同時に書いて
      いても互いの分は消さない。上限は設けない。^J^Os・^[lに加え、SHELLの終了・再起動(^Js)の前と
      usilicの終了時(引数付きの起動でも)にも書く。
+590. **2026-10-03: usilicrcのMACRO・KEYを、^X^Sで保存した時とEDITでusilicrcを直した時にその場で効かせる**
+   - **経緯**: 直接のユーザー質問("マクロ設定のその場反映はできない？")。usilicrcは起動時に一度読むだけ
+     だったので、^X^Sで保存したマクロも、usilicrcを直したキーも、usilicを再起動するまで効かなかった。
+   - **実装**: Configuration::reloadKeysAndMacros()(usilicrcを読み直し、KEY・MACROの節だけを置き換える。
+     他の節は起動時のまま)と、それを呼ぶApplication::reloadUsilicrcKeys()(HELPのキー表記も読み直す)を
+     新設。finishMacroKey()(^X^Sの実行キーを決めた後)と、executeEdit()で~/.usilic/usilicrc自身を
+     編集して変更があった時に呼ぶ。そのためApplicationが持つConfigurationの参照をconstでなくした。

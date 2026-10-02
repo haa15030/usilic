@@ -1428,7 +1428,7 @@ class Application {
   // bootOptions(2026-08-18の追加): ^T自身の新しい「Boot options」
   // フィールド、そのまま。デフォルトは""(素の引数無し起動自身の
   // 空の表示に一致する、executeShowUsilicBanner()のコメント参照)。
-  Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
+  Application(Display &display, KeyInput &keyInput, History &history, Configuration &configuration,
               Charset::Encoding encoding, int width, ShellOptions shellOptions = ShellOptions{},
               std::string homeDirectory = "", std::string tempRootDirectory = "", std::string workRootDirectory = "",
               std::string bootOptions = "");
@@ -2874,6 +2874,9 @@ class Application {
   bool startHelp();
   bool startKey();  // Command::StartKey参照
   bool saveMacroToUsilicrc();  // Command::SaveMacro参照
+  // ~/.usilic/usilicrcのKEY・MACROを読み直してその場で効かせる(^X^Sの保存後、EDITでusilicrcを
+  // 直した後)。HELPのキー表記も読み直す。
+  void reloadUsilicrcKeys();
   bool executeSelectedKeyLine();  // KEYの^M: 選んでいる行のキーを、KEYを開く前の画面で実行する
   bool jumpFromKeyToHelp();       // Command::KeyJumpToHelp参照
   bool openPlainHelp(std::optional<int> rawLine = std::nullopt);
@@ -2991,7 +2994,7 @@ private:
   // (openSelectedBannerEntry())は無改造のまま追随する。
   std::string helpBasePath_;
   Charset::Encoding encoding_;  // wrapHelpText()自身のPipeBuffer構築――現在他のどのメンバーもこれを必要としない
-  const Configuration &configuration_;  // executeProgram()自身のPROGRAM一覧の参照、上のfind_prog()の注記参照
+  Configuration &configuration_;  // (KEY・MACROはreloadUsilicrcKeys()で読み直す) executeProgram()自身のPROGRAM一覧の参照、上のfind_prog()の注記参照
   History &history_;  // sortedUniqueRecentEntries()/startPromptHistoryRecall()自身のrecentEntries()の参照(2026-09-20: startListBrowser()削除に伴い参照元を更新)
   ModeStack modeStack_;
   ModeStack cutModeStack_;
