@@ -2502,7 +2502,17 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     if (*special == KeyInput::SpecialKey::Left) return handleCommand(Command::MoveDown);
     if (*special == KeyInput::SpecialKey::Right) return handleCommand(Command::MoveUp);
   }
-  return handleCommand(resolveCommand(byte, special));
+  // 2026-10-02追加、直接のユーザー依頼(COPY専用のキーの"COPY mode only"と同じく、SHELLの行編集の
+  // キーも): SHELL・プロンプトの文字入力でだけ使うキー(^W ^U ^Y ^D ^E ^A ^Q、HELPの[SHELL]の
+  // 「コマンド行」)は、ここ(一覧・閲覧の画面)では何もしないので、そう知らせる。^H/^K/^I/^L/^B/^F/^C
+  // は、ここでは別の機能に割り当てられているので対象外。
+  Command command = resolveCommand(byte, special);
+  if (!special && command == Command::None &&
+      (byte == 0x17 || byte == 0x15 || byte == 0x19 || byte == 0x04 || byte == 0x05 || byte == 0x01 || byte == 0x11)) {
+    showTransientNotice(activeView(), "SHELL/prompt only");
+    return false;
+  }
+  return handleCommand(command);
 }
 
 // なぜこれが存在するのかについてはdispatchByte()自身のコメント参照。
