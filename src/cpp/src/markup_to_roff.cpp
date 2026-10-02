@@ -1,6 +1,11 @@
 #include "markup_to_roff.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
+#include <cstring>
+
+#include "utf8.hpp"
 
 namespace fm {
 
@@ -131,6 +136,48 @@ std::string convertMarkupToLegacyHelpText(const std::string &markup) {
 // (さもないと著者の本文がroffの制御行/エスケープと誤認される)、
 // (2)改行・空行の扱い(2026-09-25以降は元の1行=出力の1行の.brと、
 // 空行の.sp――関数本体冒頭の同日のコメント参照)。
+// 2026-10-02追加、直接のユーザー報告("usilic -nで出来たHELP.1を開くとインデントが利いていない行が
+// ある"): 行長を78桁に決め打ちしていたため、それより長い行(HELP.txtは80桁で折り返してある、全角は
+// 2桁)をgroffが折り返し、折り返した続きの行が字下げ無しで出ていた。タグを除いた元の行の表示幅
+// (<indentN>の字下げ込み)の最大に合わせ、元の1行が折り返されないようにする(78桁未満なら78桁)。
+static int markupLineLengthForRoff(const std::string &markup) {
+  int longest = 78, width = 0, indent = 0;
+  std::size_t i = 0;
+  while (i < markup.size()) {
+    if (markup[i] == '\n') {
+      longest = std::max(longest, indent + width);
+      width = 0;
+      i++;
+      continue;
+    }
+    bool tag = false;
+    for (const char *t : {"<b>", "</b>", "<u>", "</u>", "<i>", "</i>", "</indent>"}) {
+      std::size_t n = std::strlen(t);
+      if (markup.compare(i, n, t) == 0) {
+        if (t[1] == '/' && t[2] == 'i' && t[3] == 'n') indent = 0;
+        i += n;
+        tag = true;
+        break;
+      }
+    }
+    if (tag) continue;
+    if (markup.compare(i, 7, "<indent") == 0) {
+      std::size_t j = i + 7;
+      while (j < markup.size() && j < i + 9 && std::isdigit(static_cast<unsigned char>(markup[j]))) j++;
+      if (j > i + 7 && j < markup.size() && markup[j] == '>') {
+        indent = std::atoi(markup.substr(i + 7, j - i - 7).c_str());
+        i = j + 1;
+        continue;
+      }
+    }
+    int len = Utf8::sequence_length(static_cast<unsigned char>(markup[i]));
+    if (i + len > markup.size()) len = 1;
+    width += Utf8::display_width(reinterpret_cast<const unsigned char *>(markup.data() + i), len);
+    i += len;
+  }
+  return std::max(longest, indent + width);
+}
+
 std::string convertMarkupToMsRoffSource(const std::string &markup) {
   std::string out;
   out.reserve(markup.size() * 2);
@@ -155,8 +202,10 @@ std::string convertMarkupToMsRoffSource(const std::string &markup) {
   // 行長78桁(man既定と同じ)、両端揃え・ハイフネーション無し、上記の
   // ASCII記号はASCIIのまま、元の1行=出力の1行(行末ごとに.br)、空行は
   // .PPではなく素の.sp。
+  int lineLength = markupLineLengthForRoff(markup);
   out += ".\\\" usilic -n: -m(usilic自身の表示)と同じ見た目にするための前置き\n"
-         ".nr PO 0\n.po 0\n.nr HM 0\n.nr FM 0\n.nr PL 100000v\n.pl 100000v\n.ds CH\n.nr LL 78n\n.ll 78n\n.nh\n.ad l\n"
+         ".nr PO 0\n.po 0\n.nr HM 0\n.nr FM 0\n.nr PL 100000v\n.pl 100000v\n.ds CH\n"
+         ".nr LL " + std::to_string(lineLength) + "n\n.ll " + std::to_string(lineLength) + "n\n.nh\n.ad l\n"
          ".char - \\[u002D]\n.char ' \\[u0027]\n.char ^ \\[u005E]\n.char ~ \\[u007E]\n.char ` \\[u0060]\n"
          // 日本語の文字の間でも改行できるようにする(-mは任意の位置で
          // 折り返す)。groff 1.24のja.tmacの定義をそのまま取り込み、
