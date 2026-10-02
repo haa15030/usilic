@@ -2065,6 +2065,27 @@ bool Application::startPagerFileList(const std::vector<std::string> &paths) {
   // 起動は遅延ロードする――FileMode::loadStream()自身のコメント参照
   // ――なのでこれは、loadFile()がそうするようにファイル全体を積極的
   // に読むのではなく、loadStream()に既に開かれたfdを渡す。
+  // 2026-10-02追加、直接のユーザー依頼("ページャー起動時、引数ファイルが.epubかまたは拡張子がARCHIVEに
+  // 登録されている場合、前者はまんまEPUBで起動、後者は(ls)での^O^M一覧風で表示"): 引数が1つで、
+  // それが.epub(EXECに割り当てが無いもの)ならopenEpub()、ARCHIVEの拡張子なら(ls)の^O^Mと同じ
+  // startArchivePagerLoadAsync()で開く。
+  if (paths.size() == 1) {
+    const std::string &path = paths.front();
+    if (isEpubFile(path) && !configuration_.isExec(path)) {
+      pagerFileList_.clear();
+      pagerFileIndex_ = 0;
+      return openEpub(path);
+    }
+    ArchiveKind kind = ArchiveKind::None;
+    if (configuration_.programForSuffix(path, &kind) && kind != ArchiveKind::None) {
+      pagerFileList_.clear();
+      pagerFileIndex_ = 0;
+      std::string directory = std::filesystem::path(path).parent_path().string() + "/";
+      drawPromptLabel(PromptKind::ArchiveLoad, /*positionText=*/"", "Loading archive...");
+      display_.flush();
+      return startArchivePagerLoadAsync(path, directory);
+    }
+  }
   int fd = ::open(paths.front().c_str(), O_RDONLY);
   if (fd < 0) return false;
   currentMode_ = ApplicationMode::File;

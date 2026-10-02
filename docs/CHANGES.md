@@ -28183,3 +28183,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **EDITOR**: 節が無い時の既定をpicoに(それまでは空でコマンド無し)。src/usilicrcもpicoに。
    - 空のHOMEで`-W 3 -S 1000 2000 -L 500`を試し、既定のusilicrcのコピーと書き込みを確認。関連
      テスト(設定・エディタ・usilicrcの書き換え・^O)通過。
+575. **2026-10-02: ページャー起動の引数が.epub・ARCHIVEの拡張子なら、EPUB・(ls)の^O^M一覧風で開く**
+   - **経緯**: 直接のユーザー依頼("ページャー起動時、引数ファイルが.epubかまたは拡張子がARCHIVEに登録
+     されている場合、前者はまんまEPUBで起動、後者は(ls)での^O^M一覧風で表示")。
+   - **実装**: startPagerFileList()で、引数が1つの時、.epub(EXECに割り当てが無いもの)ならopenEpub()、
+     ARCHIVEの拡張子なら(ls)の^O^Mと同じstartArchivePagerLoadAsync()で開く。引数が複数の時は従来
+     どおり(n/p等で移った先は生のまま)。.epubで開いた時は'q'では終わらない(ページャーとしての
+     FileModeではないため、^X^C等で終わる)。疑似端末でK3t.epub・x.zipを確認。
