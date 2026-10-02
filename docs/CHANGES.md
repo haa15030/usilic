@@ -28263,3 +28263,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: executeSelectedKeyLine()で、COPY専用のキー(^[w・^[p・^X␣、開く前がCOPYでなければ)と
      SHELL・プロンプト専用のキー(^W ^U ^Y ^D ^E ^A ^Q、開く前がSHELLでなければ)は、戻らずにKEYの画面の
      まま"COPY mode only"/"SHELL/prompt only"を出す。疑似端末で^Uの行を確認。
+583. **2026-10-02: KEYのカーソル位置を保存、hで飛んだ先の行を右端まで反転(任意のキーで消える)**
+   - **経緯**: 直接のユーザー報告("KEYではカーソル位置が保存されない"、"hを押してHELPへ移動したあとの対象
+     位置がわかりにくい。一行に渡るハイライトでよろしく（任意のキーで消える）")。あわせて"(ls)→KEY→^Jy
+     （全行選択）を選んでも選択されてない"は、インストールされたHELP(doc/HELP)がまだ古い^Jyのため
+     (HELP.txtは^Oyに直してある、HELPへの反映待ち)。
+   - **実装**: KEYを離れる時(^M・h・^G)の行をkeyCursorIndex_に覚え、startKey()で戻す。openPlainHelp()は
+     飛んだ先の行をカーソル行の反転表示にし、ContentView::setHighlightToRowEnd()で文字の後ろも画面の
+     右端まで反転する。次のキーでclearTransientNotice()が消す。疑似端末で確認。

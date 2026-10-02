@@ -509,6 +509,9 @@ class ContentView {
   // ハイライトが全く無い)。FileModeは自身のContentViewでこれを
   // 無効にする。DirectoryModeはデフォルトのままにする。
   void setCursorHighlightEnabled(bool enabled);
+  // 2026-10-02追加(Application::openPlainHelp()、KEYのhで飛んだ先の行): 反転表示の行を画面の右端まで
+  // 反転する(文字の部分だけでなく「一行に渡る」ハイライト)。
+  void setHighlightToRowEnd(bool enabled);
   bool cursorHighlightEnabled() const;
 
   // contentCursorColumn_自身のコメント参照(CopyModeの位置的な
@@ -1430,6 +1433,7 @@ class ContentView {
   int topIndex_ = 0;
   std::optional<int> hoverIndex_;
   bool cursorHighlightEnabled_ = true;
+  bool highlightToRowEnd_ = false;  // setHighlightToRowEnd()参照
   bool bottomAnchored_ = false;
   bool contentMayGrow_ = false;  // setContentMayGrow()自身の宣言コメント参照
   Line emptyPlaceholderLine_ = Line{"--", std::nullopt, std::nullopt, {}};

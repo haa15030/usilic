@@ -580,6 +580,7 @@ void ContentView::setHoverIndex(std::optional<int> index) { hoverIndex_ = index;
 std::optional<int> ContentView::hoverIndex() const { return hoverIndex_; }
 
 void ContentView::setCursorHighlightEnabled(bool enabled) { cursorHighlightEnabled_ = enabled; }
+void ContentView::setHighlightToRowEnd(bool enabled) { highlightToRowEnd_ = enabled; }
 bool ContentView::cursorHighlightEnabled() const { return cursorHighlightEnabled_; }
 
 void ContentView::setContentCursorColumn(int column) {
@@ -1343,6 +1344,14 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
         col += width;
         idx += static_cast<std::size_t>(len);
       }
+    }
+    // highlightToRowEnd_(setHighlightToRowEnd()参照): 反転表示の行を、文字の後ろも画面の右端まで反転する。
+    if (marked && highlightToRowEnd_) {
+      setBold(false);
+      setUnderline(false);
+      setItalic(false);
+      setStandout(true);
+      for (; col < maxCol; col++) display_.putChar(' ');
     }
     setStandout(false);
     setBold(false);

@@ -4157,6 +4157,12 @@ void Application::showTransientNotice(ContentView &view, const std::string &text
 }
 
 void Application::clearTransientNotice() {
+  if (helpJumpHighlight_) {  // hで飛んだ先の行のハイライト(helpJumpHighlight_参照)
+    helpJumpHighlight_ = false;
+    fileView_.setCursorHighlightEnabled(false);
+    fileView_.setHighlightToRowEnd(false);
+    if (currentMode_ == ApplicationMode::File) fileView_.redraw();
+  }
   if (sortLabelNoticeShown_) {  // ^O^Lのソートキーのラベル(CycleLsSortKey参照)
     sortLabelNoticeShown_ = false;
     directoryMode_.setSortLabelShown(false);
@@ -8738,6 +8744,7 @@ bool Application::returnFromCutContent() {
 // returnFromGrep()が防がなければならなかったような古い注釈の危険は
 // 無い。
 bool Application::returnFromCut() {
+  saveKeyCursor();
   saveCutFilePosition();
   if (cutOrigin_ == CutOrigin::Epub) {
     fileMode_.annotations().clear();  // openEpub()の"EPUB"注釈
@@ -16320,12 +16327,24 @@ bool Application::startKey() {
   cutSyntax_ = GrepSyntax::Fixed;
   if (!cutMode_.split(lines, "\xEF\xBC\x9A", GrepSyntax::Fixed)) return false;
   cutMode_.dropLeadingFiller();
+  int last = static_cast<int>(cutMode_.segments().size()) - 1;
+  if (keyCursorIndex_ > 0 && keyCursorIndex_ <= last) {  // 前回KEYを離れた行(keyCursorIndex_参照)
+    cutView_.setCursorIndex(keyCursorIndex_);
+    cutView_.centerOnCursor();
+  }
   currentMode_ = ApplicationMode::Cut;
   activeView().redraw();
   return true;
 }
 
+void Application::saveKeyCursor() {
+  if ((currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
+      cutOrigin_ == CutOrigin::Key)
+    keyCursorIndex_ = cutView_.cursorIndex();
+}
+
 bool Application::executeSelectedKeyLine() {
+  saveKeyCursor();
   const CutSegment *segment = cutMode_.selectedSegment();
   if (!segment) return false;
   std::vector<int> bytes = keyBytesFromHelpLabel(segment->label);
@@ -16356,6 +16375,7 @@ bool Application::executeSelectedKeyLine() {
 
 bool Application::jumpFromKeyToHelp() {
   if (currentMode_ != ApplicationMode::Cut || cutOrigin_ != CutOrigin::Key) return false;
+  saveKeyCursor();
   const CutSegment *segment = cutMode_.selectedSegment();
   if (!segment) return false;
   std::vector<StyledLine> content = cutMode_.segmentContent(*segment);
@@ -16379,6 +16399,9 @@ bool Application::openPlainHelp(std::optional<int> rawLine) {
       if (lines[i].rawLineNumber && *lines[i].rawLineNumber >= *rawLine) {
         fileView_.setCursorIndex(static_cast<int>(i));
         fileView_.centerOnCursor();
+        fileView_.setCursorHighlightEnabled(true);  // 飛んだ先の行(helpJumpHighlight_参照)
+        fileView_.setHighlightToRowEnd(true);
+        helpJumpHighlight_ = true;
         break;
       }
   }
