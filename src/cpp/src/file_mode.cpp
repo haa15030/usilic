@@ -524,24 +524,46 @@ std::string FileMode::loadAndTransformContent(const std::string &path) const {
     if (auto markup = epubToHelpMarkup(epubMemberReader(path), &epubLinks_, &epubLayoutHints_))
       return expandHelpMarkup(*markup);
   }
-  std::ifstream in(path, std::ios::binary);
-  if (!in) return {};
-  // 2026-09-27修正、直接のユーザー報告("CODE: なんかバイナリ判定に時間が
-  // かかるんだが、最後まで読んでるの？"): 以前はファイル全体をメモリへ
-  // 読んでからバイナリ判定していた(判定自体は先頭64KBしか見ないのに、
-  // 大きなバイナリほど読み込みだけで待たされていた)。先に先頭64KBだけ
-  // 読んで判定し、バイナリなら残りは読まない。
-  std::string content(0x10000, '\0');
-  in.read(content.data(), static_cast<std::streamsize>(content.size()));
-  content.resize(static_cast<std::size_t>(in.gcount()));
-  if (!rawControlCodesMode_)
-    if (auto typeText = binaryTypeText(path, content)) return *typeText;
-  if (in) {
-    std::ostringstream buffer;
-    buffer << in.rdbuf();
-    content += buffer.str();
+  // 2026-10-02追加、直接のユーザー報告(doc/tcb.1.gzを^Mするとバイナリ判定、"gzip -dcは何処へ？"):
+  // usilicrcのFILE節(拡張子ごとの表示用フィルタ、.gz→gzip -dc等)は読み込むだけで、表示に一度も
+  // 使っていなかった。最も長く一致した拡張子がFILE節のもの(ARCHIVE・EXECではない)なら、その
+  // コマンドにファイルを渡した出力を内容にし、以降の整形(roffならgroff等)はそのまま通す。
+  // コマンドが失敗したら、従来どおりファイルそのものを読む。
+  std::string content;
+  bool filtered = false;
+  if (!rawControlCodesMode_) {
+    ArchiveKind kind = ArchiveKind::None;
+    auto filter = configuration_.programForSuffix(path, &kind);
+    if (filter && kind == ArchiveKind::None && !filter->argv.empty() && !configuration_.isExec(path)) {
+      std::vector<std::string> argv = filter->argv;
+      argv.push_back(path);
+      ChildProcess::Result result = ChildProcess::run(argv, ChildProcessOptions{});
+      if (result.ok) {
+        content = result.output;
+        filtered = true;
+      }
+    }
   }
-  if (in.bad()) return {};
+  if (!filtered) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return {};
+    // 2026-09-27修正、直接のユーザー報告("CODE: なんかバイナリ判定に時間が
+    // かかるんだが、最後まで読んでるの？"): 以前はファイル全体をメモリへ
+    // 読んでからバイナリ判定していた(判定自体は先頭64KBしか見ないのに、
+    // 大きなバイナリほど読み込みだけで待たされていた)。先に先頭64KBだけ
+    // 読んで判定し、バイナリなら残りは読まない。
+    content.assign(0x10000, '\0');
+    in.read(content.data(), static_cast<std::streamsize>(content.size()));
+    content.resize(static_cast<std::size_t>(in.gcount()));
+    if (!rawControlCodesMode_)
+      if (auto typeText = binaryTypeText(path, content)) return *typeText;
+    if (in) {
+      std::ostringstream buffer;
+      buffer << in.rdbuf();
+      content += buffer.str();
+    }
+    if (in.bad()) return {};
+  }
   if (rawControlCodesMode_) return content;
   // isHelpMarkupPagerFile()自身のコメント参照(HELP.txt/QUICK.txtの
   // <indentN>/<i>/<b>/<u>markupを、リテラルなタグのままではなく
