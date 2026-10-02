@@ -1045,6 +1045,12 @@ struct TerminalCoastResult {
   int leftoverByte = 0;
 };
 
+// 2026-10-02追加、直接のユーザー依頼(=hw、-gのrunGuiPhase()のclickTargetsCursorと同じ): 慣性を
+// 止めるだけのクリックの後、マウスを動かす・キー・ホイールのどれかが来るまでは、次の左クリックを
+// ポインタの行ではなくハイライト行(cursorIndex_)へのクリックとして扱う。runCoastLoop()が立て、
+// runTerminalPhase()が下ろし、runTerminalMouseDrag()のクリックが使う。
+bool gTerminalClickTargetsCursor = false;
+
 void clearHoverAndRedraw(fm::ContentView &view) {
   view.setHoverIndex(std::nullopt);
   view.redraw();
@@ -1121,27 +1127,89 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
   fm::ContentView &view = app.activeContentView();
   int level = initialLevel;
   int direction = initialDirection;
-  // The most recently reported mouse row (display-row space, i.e.
-  // moveCursor()'s coordinate space), or -1 before any mouse event has
-  // arrived. Deliberately a ROW, not a resolved line index: content
-  // keeps moving underneath a stationary mouse while coasting, so
-  // which LINE is under this row has to be recomputed against the
-  // current topIndex_ every step (see applyHoverRowAndRedraw()) -- a
-  // fixed line index would instead have the highlight visibly drift
-  // away from the actual pointer position as the list scrolled past
-  // it (found via a real PTY run: a hover event correctly highlighted
-  // row 9, but by the time of the next screen capture -- several
-  // scroll steps later, mouse untouched -- the highlight had already
-  // scrolled off to a different row entirely).
-  int lastMouseRow = -1;
   TerminalCoastResult result;
+  gTerminalClickTargetsCursor = false;
+  // 2026-10-02変更、直接のユーザー報告("-cの慣性スクロールでは...ハイライト行が最上行にある"の
+  // 修正後も"ハイライト表示もスクロール方向の先端行にならない"): 以前は慣性中もマウスの行を
+  // ホバーでハイライトしていた(ホバーはcursorIndex_より優先)ため、実機ではポインタの行が
+  // ハイライトされ、先端行のcursorIndex_が見えなかった。-gと同じく、慣性中はホバーしない。
+  view.setHoverIndex(std::nullopt);
 
   for (;;) {
     // 2026-10-01、直接のユーザー依頼("-uと-iのパラメータがGUI向きなのか、動きが遅く感じる...
     // CUIだけ倍率上げてみて"): 1行あたりの遅延を16ドット分ではなく8ドット分にする(-gの約2倍の
     // 「1秒あたりの行数」)。
     constexpr int kTerminalDotsPerRow = 8;
-    performScrollStepDelay(fm::scaledForRow(fm::kScrollSpeedLevels[level], kTerminalDotsPerRow));
+    fm::ScrollStep step = fm::scaledForRow(fm::kScrollSpeedLevels[level], kTerminalDotsPerRow);
+    // 2026-10-02変更、直接のユーザー報告("-cではそもそも左クリックでスクロールが止まらない"、疑似
+    // 端末では止まるのに実機では止まらない): 以前は1行進むごとに入力を1件しか読まず、待ちは
+    // usleep()だった。実機のTerminal.appはマウスを動かすたびに移動の報告(?1003)を送るので、最低速
+    // (1行約0.7秒)では報告が溜まる一方になり、クリックがその後ろで待たされていた。待ちの間ずっと
+    // poll()し、届いた入力はその場で全部処理する。
+    auto deadline = std::chrono::steady_clock::now();
+    if (step.busyLoop) performScrollStepDelay(step);
+    else deadline += std::chrono::microseconds(step.microseconds);
+    for (;;) {
+      auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+      int timeoutMs = remaining.count() > 0 ? static_cast<int>(remaining.count()) : 0;
+      struct pollfd fd{STDIN_FILENO, POLLIN, 0};
+      if (poll(&fd, 1, timeoutMs) <= 0 || !(fd.revents & POLLIN)) {
+        if (std::chrono::steady_clock::now() >= deadline) break;
+        continue;
+      }
+      int byte = keyInput.readByte();
+      if (!byte) continue;  // spurious wakeup/timeout artifact
+      if (byte != 0x1b) {
+        clearHoverAndRedraw(view);
+        result.hadLeftoverByte = true;
+        result.leftoverByte = byte;
+        return result;
+      }
+      auto mouse = peekMouseSgr(keyInput);
+      if (mouse) {
+        if (mouse->wheel != 0) {  // ホイール: 慣性を止めて画面スクロール(scrollByWheel()参照)
+          clearHoverAndRedraw(view);
+          scrollByWheel(app, display, mouse->wheel, 1);
+          return result;
+        }
+        if (mouse->pressed && !mouse->motionOnly && mouse->button == 2) {  // 右クリック: 慣性を止めて^G
+          clearHoverAndRedraw(view);
+          app.feedCanonicalByte(0x07);
+          return result;
+        }
+        if (mouse->pressed && !mouse->motionOnly) {
+          // 左クリック: どこを押しても止める。-gのrunGuiPhase()のstopOnly(2026-09-25)・
+          // clickInterruptedCoastと同じく、押した行のハイライト範囲の中なら、慣性中ずっと
+          // 見えていたハイライト行(cursorIndex_)を開き、範囲外なら止めるだけ(その後、マウスを
+          // 動かさずにクリックすればハイライト行を開く、gTerminalClickTargetsCursor参照)。
+          int lineIndex = view.lineIndexAtRow(mouse->row);
+          bool open = lineIndex >= 0 && view.isColumnWithinLineScope(lineIndex, mouse->column);
+          clearHoverAndRedraw(view);
+          if (open) {
+            int cursorRow = view.cursorDisplayRow();
+            if (cursorRow >= 0) app.handleMouseClick(cursorRow, 0);
+          } else {
+            gTerminalClickTargetsCursor = true;
+          }
+          return result;
+        }
+        continue;  // 移動・離す: 何もしない(慣性中はホバーしない)
+      }
+      // 2026-10-02追加、直接のユーザー依頼: ←→で速度/向きを変える(stepCoastByKey()参照)。
+      if (int delta = peekLeftRight(keyInput)) {
+        stepCoastByKey(level, direction, delta);
+        continue;
+      }
+      // Neither a Left/Right nor a mouse report -- some other ESC
+      // sequence (an ordinary arrow key, ^[s, etc). Nothing beyond the
+      // ESC byte itself has been consumed (both peeks above queue
+      // their own bytes back on mismatch), so requeue ESC too and let
+      // the normal terminal loop re-read and handle it exactly as it
+      // always does.
+      clearHoverAndRedraw(view);
+      keyInput.playRawMacro("\x1b");
+      return result;
+    }
 
     int before = view.topIndex();
     view.setTopIndex(before + direction);
@@ -1193,64 +1261,7 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
     view.setCursorIndex(direction > 0 ? std::min(view.topIndex() + view.height() - 1,
                                                  static_cast<int>(view.lines().size()) - 1)
                                       : view.topIndex());
-    applyHoverRowAndRedraw(view, lastMouseRow);
-
-    struct pollfd fd{STDIN_FILENO, POLLIN, 0};
-    if (poll(&fd, 1, 0) <= 0 || !(fd.revents & POLLIN)) continue;  // nothing pending -- keep coasting
-
-    int byte = keyInput.readByte();
-    if (!byte) continue;  // spurious wakeup/timeout artifact
-
-    if (byte == 0x1b) {
-      auto mouse = peekMouseSgr(keyInput);
-      if (mouse) {
-        lastMouseRow = mouse->row;
-        if (mouse->wheel != 0) {  // ホイール: 慣性を止めて画面スクロール(scrollByWheel()参照)
-          clearHoverAndRedraw(view);
-          scrollByWheel(app, display, mouse->wheel, 1);
-          return result;
-        }
-        if (mouse->pressed && !mouse->motionOnly && mouse->button == 2) {  // 右クリック: 慣性を止めて^G
-          clearHoverAndRedraw(view);
-          app.feedCanonicalByte(0x07);
-          return result;
-        }
-        if (mouse->pressed && !mouse->motionOnly) {
-          // 2026-10-02修正、直接のユーザー報告("-cでは慣性スクロールがマウスの左クリックで停止
-          // しない"): 以前は行の無い所(lineIndexAtRow()が-1)のクリックを素通りさせ、慣性が続いて
-          // いた。どこを押しても止め、行のハイライト範囲の中なら従来どおりその行を開く(-gの
-          // runGuiPhase()のstopOnly、2026-09-25と同じ)。
-          int lineIndex = view.lineIndexAtRow(mouse->row);
-          int row = mouse->row, col = mouse->column;
-          bool open = lineIndex >= 0 && view.isColumnWithinLineScope(lineIndex, col);
-          if (open) view.setCursorIndex(lineIndex);  // handleMouseClick() opens an already-selected row
-          clearHoverAndRedraw(view);
-          if (open) app.handleMouseClick(row, col);
-          return result;
-        }
-        applyHoverRowAndRedraw(view, lastMouseRow);
-        continue;
-      }
-      // 2026-10-02追加、直接のユーザー依頼: ←→で速度/向きを変える(stepCoastByKey()参照)。
-      if (int delta = peekLeftRight(keyInput)) {
-        stepCoastByKey(level, direction, delta);
-        continue;
-      }
-      // Neither a Shift-arrow nor a mouse report -- some other ESC
-      // sequence (an ordinary arrow key, ^[s, etc). Nothing beyond the
-      // ESC byte itself has been consumed (both peeks above queue
-      // their own bytes back on mismatch), so requeue ESC too and let
-      // the normal terminal loop re-read and handle it exactly as it
-      // always does.
-      clearHoverAndRedraw(view);
-      keyInput.playRawMacro("\x1b");
-      return result;
-    }
-
-    clearHoverAndRedraw(view);
-    result.hadLeftoverByte = true;
-    result.leftoverByte = byte;
-    return result;
+    view.redraw();
   }
 }
 
@@ -1314,9 +1325,11 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
   fm::ContentView &view = app.activeContentView();
   int lastRow = startRow;
   bool moved = false;
+  bool targetsCursor = gTerminalClickTargetsCursor;  // それ自身のコメント参照
+  gTerminalClickTargetsCursor = false;
   std::deque<std::pair<std::chrono::steady_clock::time_point, int>> recentMotion;
   constexpr auto kReleaseWindow = std::chrono::milliseconds(150);
-  applyHoverRowAndRedraw(view, startRow);
+  if (!targetsCursor) applyHoverRowAndRedraw(view, startRow);
 
   for (;;) {
     int byte = keyInput.readByte();
@@ -1394,7 +1407,9 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
       // already works (see Application::handleMouseClick()'s own
       // comment for the full user report this addresses).
       clearHoverAndRedraw(view);
-      app.handleMouseClick(mouse->row, mouse->column);
+      int cursorRow = targetsCursor ? view.cursorDisplayRow() : -1;
+      if (cursorRow >= 0) app.handleMouseClick(cursorRow, 0);
+      else app.handleMouseClick(mouse->row, mouse->column);
       return TerminalCoastResult{};
     }
     auto cutoff = std::chrono::steady_clock::now() - kReleaseWindow;
@@ -1611,6 +1626,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       if (keyInput.consumeResizeSignal()) app.handleResize();
       continue;
     }
+    if (byte != 0x1b) gTerminalClickTargetsCursor = false;  // キー(それ自身のコメント参照)
     if (byte == 0x1b) {
       // 2026-10-02、直接のユーザー依頼("←→で開始でいい"、"-cでは←→が↑↓に割り当てられているので
       // 速度調整にもスクロール開始にも使えない"): 一覧系のモードでは←→を^P/^Nとしてではなく、
@@ -1630,6 +1646,8 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       // attempt unconditionally: peekMouseSgr() requeues via
       // playRawMacro() on any mismatch, same as peekLeftRight().
       auto mouse = peekMouseSgr(keyInput);
+      // 左ボタンの押下/離す以外(移動・ホイール・他のボタン・キー)はgTerminalClickTargetsCursorを下ろす。
+      if (!mouse || mouse->wheel != 0 || mouse->motionOnly || mouse->button != 0) gTerminalClickTargetsCursor = false;
       if (mouse) {
         consecutiveEscapes = 0;
         if (mouse->wheel != 0) {
