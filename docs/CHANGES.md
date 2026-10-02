@@ -28325,3 +28325,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      他の節は起動時のまま)と、それを呼ぶApplication::reloadUsilicrcKeys()(HELPのキー表記も読み直す)を
      新設。finishMacroKey()(^X^Sの実行キーを決めた後)と、executeEdit()で~/.usilic/usilicrc自身を
      編集して変更があった時に呼ぶ。そのためApplicationが持つConfigurationの参照をconstでなくした。
+591. **2026-10-03: HISTORY.mdの自動記録(Stopフック)を、作業ディレクトリに関係なく動くようにする**
+   - **経緯**: 2026-10-03のセッションで、docs/HISTORY.mdへの自動追記が一度も動いていなかった(ユーザーの
+     依頼で手動実行して補った)。`.claude/settings.json`のフックが`python3 .claude/hooks/history_sync.py`
+     という相対パスだったため、アシスタントがsrc/cpp等へcdしたまま応答を終えるとスクリプトが見つからず、
+     ログにも残らずに失敗していた。
+   - **変更**: `python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/history_sync.py"`へ。src/cppから起動して
+     スクリプトが実行されることを確認。
