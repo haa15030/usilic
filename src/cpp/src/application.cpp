@@ -16330,6 +16330,21 @@ bool Application::executeSelectedKeyLine() {
   if (!segment) return false;
   std::vector<int> bytes = keyBytesFromHelpLabel(segment->label);
   if (bytes.empty()) return false;
+  // 2026-10-02追加、直接のユーザー依頼("KEYを抜けるのはマズい。KEY画面は微動だにせずメッセージだけが
+  // モードラインに出る、でいい"): KEYを開く前の画面では使えないキー(COPY専用、SHELL・プロンプト専用、
+  // 項目578/579)は、その画面へ戻らずにKEYのままメッセージだけを出す。
+  bool copyOnly = (bytes == std::vector<int>{0x1b, 'w'} || bytes == std::vector<int>{0x1b, 'p'} ||
+                   bytes == std::vector<int>{kLeaderX, ' '});
+  bool shellOnly = bytes.size() == 1 && (bytes[0] == 0x17 || bytes[0] == 0x15 || bytes[0] == 0x19 ||
+                                         bytes[0] == 0x04 || bytes[0] == 0x05 || bytes[0] == 0x01 || bytes[0] == 0x11);
+  if (copyOnly && cutReturnMode_ != ApplicationMode::Copy) {
+    showTransientNotice(activeView(), "COPY mode only");
+    return false;
+  }
+  if (shellOnly && cutReturnMode_ != ApplicationMode::Shell) {
+    showTransientNotice(activeView(), "SHELL/prompt only");
+    return false;
+  }
   currentMode_ = cutReturnMode_;
   activeView().redraw();
   bool result = false;

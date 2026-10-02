@@ -28256,3 +28256,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      本文の上にHELPをもう一段重ねて開いていた(cutMode_.pushSplit())。
    - **実装**: startHelp()で、HELP(CutOrigin::Help)の目次・本文にいる時は開き直さずに"Already in HELP"を
      一時メッセージで出す。HELP関係のテスト通過。
+582. **2026-10-02: KEYの一覧で、開く前の画面では使えないキーを選んだらKEYのままメッセージだけを出す**
+   - **経緯**: 直接のユーザー報告("SHELL/prompt onlyは出た。ただしKEYを抜けるのはマズい。KEY画面は微動だに
+     せずメッセージだけがモードラインに出る、でいい")。項目578/579のメッセージは、KEYを開く前の画面へ
+     戻ってから出ていた。
+   - **実装**: executeSelectedKeyLine()で、COPY専用のキー(^[w・^[p・^X␣、開く前がCOPYでなければ)と
+     SHELL・プロンプト専用のキー(^W ^U ^Y ^D ^E ^A ^Q、開く前がSHELLでなければ)は、戻らずにKEYの画面の
+     まま"COPY mode only"/"SHELL/prompt only"を出す。疑似端末で^Uの行を確認。
