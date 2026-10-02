@@ -166,3 +166,26 @@ TEST_CASE("KeyBindings: the order of K-n lines in usilicrc does not matter") {
   CHECK(run(b, {kJ, 0x02}) == std::vector<int>{kJ, kCtrlC});
   CHECK(run(b, {kJ, kCtrlC}) == std::vector<int>{kJ, 0x02});
 }
+
+// 2026-10-02追加(KeyBindings::rewriteHelpText()参照)。
+TEST_CASE("KeyBindings::rewriteHelpText: changed keys are shown in HELP, keeping the colon column") {
+  // ^Xf(FILE: 入力、K-61)を^Xgへ、^Oy(全選択、K-37)と^On(全解除、K-38)を入れ替え、e(EDIT、K-67)をEへ。
+  KeyBindings b = configured("\tK-61\tF-0 g\n\tK-37\tF-2 n\n\tK-38\tF-2 y\n\tK-67\tE\n");
+  std::string help =
+      "         ^Xf\xEF\xBC\x9A" "ファイル名を入力\n"
+      "         ^Oy\xEF\xBC\x9A" "全行選択\n"
+      "         ^On\xEF\xBC\x9A" "全行解除\n"
+      "           e\xEF\xBC\x9A" "編集\n"
+      "    ^Xf\"~/x\"^M で開き、e で編集します。\n";
+  CHECK(b.rewriteHelpText(help) ==
+        "         ^Xg\xEF\xBC\x9A" "ファイル名を入力\n"
+        "         ^On\xEF\xBC\x9A" "全行選択\n"
+        "         ^Oy\xEF\xBC\x9A" "全行解除\n"
+        "           E\xEF\xBC\x9A" "編集\n"
+        "    ^Xg\"~/x\"^M で開き、e で編集します。\n");  // 本文の1文字のキーはそのまま
+}
+
+TEST_CASE("KeyBindings::rewriteHelpText: a longer key keeps the colon column by eating one leading space") {
+  KeyBindings b = configured("\tK-61\tESC C-f\n");  // ^Xf -> ^[^F(1桁長い)
+  CHECK(b.rewriteHelpText("         ^Xf\xEF\xBC\x9A" "x\n") == "        ^[^F\xEF\xBC\x9A" "x\n");
+}

@@ -67,6 +67,15 @@ class KeyBindings {
   // 置き換え/無効化が1つも無い(=既定のまま)ならtrue。
   bool isIdentity() const;
 
+  // 2026-10-02追加、直接のユーザー依頼("usilicrcのKEY設定を変更した場合、それをHELPへも反映できないか"):
+  // HELPは既定のキーで書かれているので、表示する前に、KEY節で変えたキーの表記を利用者のキーの表記へ
+  // 置き換える(ファイルは書き換えない)。「^」で始まる表記(^X^F、^[w等)は本文中も、1文字のキー(e、h等)
+  // は「キー：説明」の行のキー欄だけ。一度の走査で最も長く一致する表記を置き換えるので、キーの
+  // 入れ替えでも二重に置き換わらない。「キー：」の行は「：」の桁がそろうよう前の空白を詰める/足す。
+  std::string rewriteHelpText(const std::string &text) const;
+  // キー列の表記(^X、^[、^␣、␣、N等。HELPの書き方)。
+  static std::string label(const Sequence &seq);
+
   // 入力1バイトを照合する。context: 照合を始めてよい範囲(Application::
   // keyBindingContext()参照)。戻り値は本体へ渡すバイト列(空なら、まだ
   // 溜めている途中か、無効化されたキーとして捨てた)。
@@ -87,6 +96,8 @@ class KeyBindings {
     bool leaderEligible;        // プロンプト/SHELL等(LeaderOnly)でも対象か
   };
   std::vector<Rule> rules_;
+  // configure()が組んだ、KEY節で変えたキー(既定のキー列→利用者のキー列)。rewriteHelpText()用。
+  std::vector<std::pair<Sequence, Sequence>> changed_;
 
   static bool matches(const Sequence &pattern, const std::vector<int> &input);
   static bool isPrefixOf(const std::vector<int> &input, const Sequence &pattern);

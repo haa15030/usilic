@@ -206,6 +206,125 @@ std::string fnName(int n) { return "F-" + std::to_string(n); }
 std::string knName(int n) { return "K-" + std::to_string(n); }
 }  // namespace
 
+std::string KeyBindings::label(const Sequence &seq) {
+  std::string out;
+  for (int b : seq) {
+    if (b == kDigit) out += "N";
+    else if (b == 0x80 || b == 0) out += "^\xE2\x90\xA3";  // ^␣(Ctrl-Space)
+    else if (b == ' ') out += "\xE2\x90\xA3";              // ␣
+    else if (b == 0x1b) out += "^[";
+    else if (b < 0x20) out += std::string("^") + static_cast<char>(b + '@');
+    else if (b == 0x7f) out += "^?";
+    else out += static_cast<char>(b);
+  }
+  return out;
+}
+
+namespace {
+// 表示幅(全角は2、U+FEFF等の幅0の印は0)。「キー：」の行の桁合わせ用。
+int helpDisplayWidth(const std::string &s) {
+  int width = 0;
+  for (std::size_t i = 0; i < s.size();) {
+    unsigned char c = static_cast<unsigned char>(s[i]);
+    int len = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+    if (len == 3 && i + 2 < s.size()) {
+      unsigned cp = ((c & 0x0F) << 12) | ((static_cast<unsigned char>(s[i + 1]) & 0x3F) << 6) |
+                    (static_cast<unsigned char>(s[i + 2]) & 0x3F);
+      if (cp == 0xFEFF || cp == 0x2060) width += 0;
+      else if (cp == 0x2423) width += 1;  // ␣
+      else width += 2;
+    } else {
+      width += len == 1 ? 1 : 2;
+    }
+    i += len;
+  }
+  return width;
+}
+}  // namespace
+
+std::string KeyBindings::rewriteHelpText(const std::string &text) const {
+  if (changed_.empty()) return text;
+  std::vector<std::pair<std::string, std::string>> caretLabels, keyColumnLabels;
+  for (const auto &[from, to] : changed_) {
+    std::string a = label(from), b = label(to);
+    keyColumnLabels.push_back({a, b});
+    if (a.size() >= 2 && a[0] == '^') caretLabels.push_back({a, b});
+  }
+  // 本文: 「^」で始まる表記を、一度の走査で最も長く一致するものから置き換える。
+  auto rewriteCarets = [&](const std::string &s) {
+    std::string out;
+    for (std::size_t i = 0; i < s.size();) {
+      const std::pair<std::string, std::string> *best = nullptr;
+      if (s[i] == '^')
+        for (const auto &kv : caretLabels)
+          if (s.compare(i, kv.first.size(), kv.first) == 0 && (!best || kv.first.size() > best->first.size()))
+            best = &kv;
+      // 一致の後ろがさらに表記の続き(^x)なら、もっと長いキーの一部なので置き換えない。
+      if (best) {
+        std::size_t end = i + best->first.size();
+        bool longer = end + 1 < s.size() && s[end] == '^' && s[end + 1] != ' ';
+        if (!longer || best->first.find('N') != std::string::npos) {
+          out += best->second;
+          i = end;
+          continue;
+        }
+      }
+      out += s[i++];
+    }
+    return out;
+  };
+  static const std::string kColon = "\xEF\xBC\x9A";  // 「：」
+  std::string out;
+  std::size_t start = 0;
+  while (start < text.size()) {
+    std::size_t nl = text.find('\n', start);
+    std::string line = text.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
+    // 「キー：説明」の行: 行頭の空白(U+FEFFの印を含む)、キー欄、「：」。
+    std::size_t keyStart = 0;
+    while (keyStart < line.size()) {
+      if (line[keyStart] == ' ') keyStart++;
+      else if (line.compare(keyStart, 3, "\xEF\xBB\xBF") == 0) keyStart += 3;
+      else break;
+    }
+    std::size_t colon = line.find(kColon, keyStart);
+    std::string key = colon == std::string::npos ? std::string() : line.substr(keyStart, colon - keyStart);
+    if (!key.empty() && key.find(' ') == std::string::npos) {
+      std::string replaced = key;
+      for (const auto &kv : keyColumnLabels)
+        if (kv.first == key) replaced = kv.second;
+      if (replaced == key) replaced = rewriteCarets(key);
+      std::string lead = line.substr(0, keyStart);
+      if (replaced != key) {
+        // 「：」の桁を保つ: 表記の幅の差だけ、前の空白を詰める/足し、空白で足りなければ字下げの印
+        // (U+FEFF、個数-1が字下げの幅、PipeBuffer参照)を減らす(1つは残す)。
+        int diff = helpDisplayWidth(replaced) - helpDisplayWidth(key);
+        int spaces = 0, marks = 0;
+        for (std::size_t k = 0; k < lead.size();) {
+          if (lead[k] == ' ') spaces++, k++;
+          else marks++, k += 3;
+        }
+        if (diff < 0) spaces -= diff;
+        else {
+          int fromSpaces = std::min(spaces, diff);
+          spaces -= fromSpaces;
+          marks = std::max(marks > 0 ? 1 : 0, marks - (diff - fromSpaces));
+        }
+        lead.clear();
+        for (int k = 0; k < marks; k++) lead += "\xEF\xBB\xBF";
+        lead += std::string(static_cast<std::size_t>(spaces), ' ');
+      }
+      line = lead + replaced + rewriteCarets(line.substr(colon));
+    } else {
+      line = rewriteCarets(line);
+    }
+    out += line;
+    if (nl == std::string::npos) break;
+    out += '\n';
+    start = nl + 1;
+  }
+  return out;
+}
+
 void KeyBindings::configure(const std::map<int, std::string> &userPrefixes,
                             const std::map<int, std::string> &userEntries, std::vector<std::string> *errors,
                             const std::vector<Macro> &macros) {
@@ -287,6 +406,10 @@ void KeyBindings::configure(const std::map<int, std::string> &userPrefixes,
       }
     }
   }
+
+  changed_.clear();
+  for (const auto &r : resolved)
+    if (r.userSeq && *r.userSeq != r.defaultSeq) changed_.push_back({r.defaultSeq, *r.userSeq});
 
   // 接頭キー(F-n)の先頭のバイト――プロンプト/SHELL等でも照合してよい列の判定用。
   std::vector<int> leaderFirstBytes = {kEsc};

@@ -16258,7 +16258,8 @@ bool Application::reloadHelpText() {
   std::ostringstream buffer;
   buffer << in.rdbuf();
   if (buffer.str().empty()) return false;
-  helpText_ = buffer.str();
+  // usilicrcのKEY節で変えたキーを、HELPの表記にも反映する(KeyBindings::rewriteHelpText()参照)。
+  helpText_ = configuration_.keyBindings().rewriteHelpText(buffer.str());
   return true;
 }
 
@@ -16390,6 +16391,20 @@ bool Application::openPlainHelp(std::optional<int> rawLine) {
   std::error_code ec;
   if (!std::filesystem::is_regular_file(path, ec))  // reloadHelpText()と同じく/usr/local/lib/usilic/の同名のもの
     path = "/usr/local/lib/usilic/" + std::filesystem::path(helpPath_).filename().string();
+  // KEY節でキーを変えていれば、キーの表記を置き換えたもの(KeyBindings::rewriteHelpText())を作業用の
+  // 一時ディレクトリに書いて、それを開く。
+  if (!configuration_.keyBindings().isIdentity()) {
+    std::ifstream in(path, std::ios::binary);
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    std::string rewritten = configuration_.keyBindings().rewriteHelpText(buffer.str());
+    if (rewritten != buffer.str()) {
+      std::string temp = tempRootDirectory_ + "/" + std::filesystem::path(path).filename().string();
+      std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+      out << rewritten;
+      if (out) path = temp;
+    }
+  }
   if (!fileMode_.loadFile(path)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = fromKey ? ApplicationMode::Cut : ApplicationMode::Directory;
@@ -16507,7 +16522,7 @@ bool Application::finishMacroKey(int byte, std::optional<KeyInput::SpecialKey> s
 }
 
 bool Application::loadHelpText(const std::string &text) {
-  helpText_ = text;
+  helpText_ = configuration_.keyBindings().rewriteHelpText(text);  // reloadHelpText()と同じ
   return !helpText_.empty();
 }
 
