@@ -956,6 +956,11 @@ void stepCoastByKey(int &level, int &direction, int pressed) {
 // ホイールの刻みを、j/kと同じCommand::ScrollLineDown/Upで`lines`行スクロールする。端ではベルを
 // 鳴らさずに何もしない(ホイールは続けて回されるので)。directionは+1で先へ。
 void scrollByWheel(fm::Application &app, fm::Display &display, int direction, int lines) {
+  if (app.epubVerticalScrollActive()) {  // 縦書きのEPUB: 1列(章の一覧は1章)ずつ(-gのホイールと同じ)
+    for (int i = 0; i < lines; i++)
+      if (!app.scrollEpubVertical(direction)) break;
+    return;
+  }
   fm::ContentView &view = app.activeContentView();
   for (int i = 0; i < lines; i++) {
     if (direction < 0) {
@@ -969,9 +974,10 @@ void scrollByWheel(fm::Application &app, fm::Display &display, int direction, in
   }
 }
 
-// 2026-10-02追加: readByte()がESCを返した直後に呼ぶ。素の→("\x1b[C"/"\x1bOC")なら+1、
-// ←("\x1b[D"/"\x1bOD")なら-1、それ以外は読んだ分を戻して0(peekMouseSgr()と同じ)。
-int peekLeftRight(fm::KeyInput &keyInput) {
+// 2026-10-02追加: readByte()がESCを返した直後に呼ぶ。素の矢印("\x1b[A"〜"\x1b[D"、"\x1bOA"〜
+// "\x1bOD")なら最後の字('A'=↑、'B'=↓、'C'=→、'D'=←)を返す。それ以外、または`accept`に無い
+// 矢印なら読んだ分を戻して0(peekMouseSgr()と同じ)。
+int peekArrow(fm::KeyInput &keyInput, const char *accept) {
   std::string consumed;
   auto next = [&]() -> int {
     int b = keyInput.readByte();
@@ -981,8 +987,7 @@ int peekLeftRight(fm::KeyInput &keyInput) {
   int first = next();
   if (first == '[' || first == 'O') {
     int final = next();
-    if (final == 'C') return 1;
-    if (final == 'D') return -1;
+    if (final != 0 && std::strchr(accept, final)) return final;
   }
   if (!consumed.empty()) keyInput.playRawMacro(consumed);
   return 0;
@@ -1104,7 +1109,7 @@ void applyHoverRowAndRedraw(fm::ContentView &view, int mouseRow, bool moveCursor
 // exactly right because it never stopped being the real terminal.
 //
 // Shared by both real-terminal triggers: Left/Right (2026-10-02,
-// replacing Shift+Up/Down -- see runTerminalPhase()'s peekLeftRight()
+// replacing Shift+Up/Down -- see runTerminalPhase()'s peekArrow()
 // call, which calls this at level 1) and a mouse-drag
 // release (see runTerminalMouseDrag(), which calls this at whatever
 // level the release speed worked out to). Reuses the SAME
@@ -1124,7 +1129,12 @@ void applyHoverRowAndRedraw(fm::ContentView &view, int mouseRow, bool moveCursor
 // as if this function had never run.
 TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm::KeyInput &keyInput,
                                   int initialLevel, int initialDirection) {
-  fm::ContentView &view = app.activeContentView();
+  // 2026-10-02追加、直接のユーザー報告("-cの縦書きEPUBでは↑↓で横スクロールが始まらず、←→で行移動
+  // しない。-gは問題無し"): 縦書きのEPUBの本文では、-gの左右の慣性(runGuiPhase()のepubCoastLevel)
+  // と同じく1列ずつ(Application::scrollEpubVertical()、+1で先へ)送り、速さは↓↑で変える。-gと
+  // 同じく、横書きの範囲(奥付等)へ入ったら同じ段階の上下の慣性として続ける。
+  bool columns = app.epubVerticalDragActive();
+  fm::ContentView *viewPtr = &app.activeContentView();
   int level = initialLevel;
   int direction = initialDirection;
   TerminalCoastResult result;
@@ -1133,9 +1143,10 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
   // 修正後も"ハイライト表示もスクロール方向の先端行にならない"): 以前は慣性中もマウスの行を
   // ホバーでハイライトしていた(ホバーはcursorIndex_より優先)ため、実機ではポインタの行が
   // ハイライトされ、先端行のcursorIndex_が見えなかった。-gと同じく、慣性中はホバーしない。
-  view.setHoverIndex(std::nullopt);
+  viewPtr->setHoverIndex(std::nullopt);
 
   for (;;) {
+    fm::ContentView &view = *viewPtr;
     // 2026-10-01、直接のユーザー依頼("-uと-iのパラメータがGUI向きなのか、動きが遅く感じる...
     // CUIだけ倍率上げてみて"): 1行あたりの遅延を16ドット分ではなく8ドット分にする(-gの約2倍の
     // 「1秒あたりの行数」)。
@@ -1177,6 +1188,10 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
           app.feedCanonicalByte(0x07);
           return result;
         }
+        if (mouse->pressed && !mouse->motionOnly && columns) {  // 縦書き: 止めるだけ
+          view.redraw();
+          return result;
+        }
         if (mouse->pressed && !mouse->motionOnly) {
           // 左クリック: どこを押しても止める。-gのrunGuiPhase()のstopOnly(2026-09-25)・
           // clickInterruptedCoastと同じく、押した行のハイライト範囲の中なら、慣性中ずっと
@@ -1195,9 +1210,9 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
         }
         continue;  // 移動・離す: 何もしない(慣性中はホバーしない)
       }
-      // 2026-10-02追加、直接のユーザー依頼: ←→で速度/向きを変える(stepCoastByKey()参照)。
-      if (int delta = peekLeftRight(keyInput)) {
-        stepCoastByKey(level, direction, delta);
+      // 2026-10-02追加、直接のユーザー依頼: ←→(縦書きでは↓↑)で速度/向きを変える(stepCoastByKey()参照)。
+      if (int arrow = peekArrow(keyInput, columns ? "AB" : "CD")) {
+        stepCoastByKey(level, direction, arrow == 'B' || arrow == 'C' ? 1 : -1);
         continue;
       }
       // Neither a Left/Right nor a mouse report -- some other ESC
@@ -1211,6 +1226,14 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
       return result;
     }
 
+    if (columns) {
+      if (!app.scrollEpubVertical(direction)) return result;  // 本の端
+      if (!app.epubVerticalDragActive()) {  // 横書きの範囲へ入った: 上下の慣性として続ける
+        columns = false;
+        viewPtr = &app.activeContentView();
+      }
+      continue;
+    }
     int before = view.topIndex();
     view.setTopIndex(before + direction);
     if (view.topIndex() == before) {
@@ -1277,7 +1300,7 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
 // (passing cellHeightPixels=1, since a "pixel" there is already a row
 // here), then hands off into runCoastLoop() to keep going at that
 // speed -- exactly the mouse-drag equivalent of what Left/Right
-// does via peekLeftRight(). A release with no meaningful motion (a
+// does via peekArrow(). A release with no meaningful motion (a
 // plain click) isn't a drag at all: it's handled exactly like GUI
 // mode's click-an-already-selected-row-opens-it, via
 // Application::handleMouseClick().
@@ -1634,8 +1657,12 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       // (Terminal.appでは手動のキー割り当てが要るため)。
       if (app.currentMode() != fm::ApplicationMode::Shell && app.currentMode() != fm::ApplicationMode::Copy &&
           !app.awaitingSequenceOrPromptByte()) {
-        if (int delta = peekLeftRight(keyInput)) {
+        // 縦書きのEPUBの本文では↓↑(↓で先へ)、章の一覧では矢印は横取りしない(-gと同じ、
+        // runCoastLoop()参照)。
+        const char *trigger = app.epubVerticalDragActive() ? "AB" : app.epubVerticalScrollActive() ? "" : "CD";
+        if (int arrow = *trigger ? peekArrow(keyInput, trigger) : 0) {
           consecutiveEscapes = 0;
+          int delta = arrow == 'B' || arrow == 'C' ? 1 : -1;
           TerminalCoastResult coast = runCoastLoop(app, display, keyInput, resolveCoastLevel(1), delta);
           if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
           continue;
@@ -1644,7 +1671,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       // A mouse report -- only actually arrives while mouseTrackingOn
       // (Terminal.app doesn't send these otherwise), but safe to
       // attempt unconditionally: peekMouseSgr() requeues via
-      // playRawMacro() on any mismatch, same as peekLeftRight().
+      // playRawMacro() on any mismatch, same as peekArrow().
       auto mouse = peekMouseSgr(keyInput);
       // 左ボタンの押下/離す以外(移動・ホイール・他のボタン・キー)はgTerminalClickTargetsCursorを下ろす。
       if (!mouse || mouse->wheel != 0 || mouse->motionOnly || mouse->button != 0) gTerminalClickTargetsCursor = false;

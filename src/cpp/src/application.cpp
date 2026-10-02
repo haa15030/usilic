@@ -6204,6 +6204,10 @@ bool Application::openRecentFileEntry(const std::string &path) {
   // スラッシュ)から復元する。
   if (auto composite = parseCutFileHistoryEntry(path)) {
     const auto &[filePath, pattern, syntax] = *composite;
+    // 2026-10-02追加(executeCut()の同日のコメント参照): 以前に積まれた「.epub "^I"」は、横書きの
+    // CUTではなく本として開く(縦書きの本は縦書き、openEpub())。
+    if (isEpubFile(filePath) && pattern == kHelpPattern && !configuration_.isExec(filePath))
+      return openEpub(filePath);
     // 2026-09-14追加、直接のユーザー依頼("usilic内での発動は^Tで
     // 行う"、^T画面からTUTORIALを選ぶ経路の追加で発覚): startCutFilePrompt()
     // 自身の同一のcutReturnMode_の代入(そちら自身のコメント参照)と
@@ -14717,7 +14721,12 @@ bool Application::executeCut(const std::string &pattern) {
     // 参照、この形をFILE履歴から選び直すとCUT自体を再実行する。
     if (ok) {
       std::string entry = buildCutFileHistoryEntry(fileSourcePath, pattern, cutSyntax_);
-      history_.pushRecent(RingCategory::RecentFile, entry);
+      // 2026-10-02、直接のユーザー依頼("今後は"^I"付きの.epubは履歴に残らない、でいい。EPUBはあくまで
+      // CSSに従うモードとしたいので横書き可能にはしない方針"): .epubを章の印(kHelpPattern、
+      // epub_to_help_markup.cppが見出し・目次の行に付けるタブ)でCUTしたものは、openEpub()の章の
+      // 一覧の横書き版でしかないので、FILE履歴へ積まない(選び直すと横書きの本になってしまう)。
+      if (!(isEpubFile(fileSourcePath) && pattern == kHelpPattern))
+        history_.pushRecent(RingCategory::RecentFile, entry);
       restoreCutFilePosition(entry);
     }
   } else if (cutOrigin_ == CutOrigin::File && !fileMode_.currentFile().empty()) {
