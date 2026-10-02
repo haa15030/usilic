@@ -4299,7 +4299,18 @@ int main(int argc, char **argv) {
       // 取り消してしまって申し訳ない"というユーザー自身の言葉通り)
       // ――使い方の表示は「素の引数無し起動の既定の挙動」ではなく、
       // この明示的な-hフラグ専用にした。
-      std::cout << "usilic [<file] [file] [directory]\n";
+      // 2026-10-03、直接のユーザー報告("-hの表示が旧来のまま"): 2026-10-02に-s/-d等へ改名・新設した
+      // オプションも並べる。裏オプションの-m/-nは載せない。
+      std::cout << "usage: usilic [options] [<file] [file] [directory]\n"
+                   "  -c            CUI (terminal) mode\n"
+                   "  -g            GUI (window) mode\n"
+                   "  -s usec ...   scroll SPEED per level (1-10)\n"
+                   "  -d dot ...    flick DRAG thresholds per level (1-10)\n"
+                   "  -f file       FONT file for -g\n"
+                   "  -w wait       macro WAIT (x 10 msec)\n"
+                   "  -b MB         BUFFER size (1-100)\n"
+                   "  -l lines      history LINE count\n"
+                   "  -S -D -F -W -B -L   same as lowercase, and also write it to ~/.usilic/usilicrc\n";
       return 0;
     } else if (std::strlen(argv[i]) == 2 && std::strchr("sSdD", argv[i][1]) && argv[i][0] == '-') {
       // 2026-10-02、直接のユーザー依頼(.steering/20261002-help-key-usilicrc-reorg/): 旧-u/-iを
