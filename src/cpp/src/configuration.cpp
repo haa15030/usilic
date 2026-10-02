@@ -43,7 +43,8 @@ const std::vector<std::string> &directiveKeywords() {
   // が、str.cとの照合を容易にするために保持されている)。
   static const std::vector<std::string> kKeywords = {
       "ARCHIVE", "FILE", "EXEC",   "EDITOR", "SHELL", "GREP", "PROGRAM", "BUFFER", "CODE",
-      "HISTORY", "WAIT", "SCROLL", "LS",     "KEY",   "CP",   "MV",      "RM",
+      // "LINE"は2026-10-02にHISTORYから改名(.steering/20261002-help-key-usilicrc-reorg/)。
+      "LINE",    "WAIT", "SCROLL", "LS",     "KEY",   "CP",   "MV",      "RM",
       // 2026-09-12追加、直接のユーザー依頼(columnThreshold()自身の
       // コメント参照): このC++移植自身の新設ディレクティブなので
       // legacy str.cのusilicrc[]には対応物が無い――既存の並びの
@@ -51,6 +52,8 @@ const std::vector<std::string> &directiveKeywords() {
       "COLUMN",
       // 2026-09-29追加(serifFontCandidates()自身のコメント参照)。
       "SERIF", "SANS-SERIF",
+      // 2026-10-02追加(Configuration::speedValues()/macros()参照)。
+      "SPEED", "DRAG", "FONT", "MACRO",
   };
   return kKeywords;
 }
@@ -600,7 +603,7 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         }
         break;
       }
-      case 9: {  // HISTORY
+      case 9: {  // LINE(旧HISTORY)
         if (auto v = nextDigitToken(lines, i)) historyRetentionCount_ = std::atoi(v->c_str());
         break;
       }
@@ -608,12 +611,9 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         if (auto v = nextDigitToken(lines, i)) waitIntervalMicros_ = std::atoi(v->c_str()) * 10000;
         break;
       }
-      case 11: {  // SCROLL
-        if (auto v = nextDigitToken(lines, i)) smoothScrollEnabled_ = std::atoi(v->c_str()) != 0;
-        break;
-      }
-      case 12: {  // LS
-        if (auto v = nextDigitToken(lines, i)) lsMode_ = std::atoi(v->c_str());
+      case 11:    // SCROLL
+      case 12: {  // LS(どちらも2026-10-02に廃止、Configuration::overrideWait()の宣言のコメント参照)
+        while (i < lines.size() && isContinuationLine(lines[i])) i++;
         break;
       }
       case 13: {
@@ -675,6 +675,56 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
           std::string path = *data;
           while (!path.empty() && (path.back() == ' ' || path.back() == '\t')) path.pop_back();
           if (!path.empty()) candidates.push_back(path);  // フォントファイルの絶対パス
+        }
+        break;
+      }
+      case 20:    // SPEED
+      case 21: {  // DRAG(speedValues()自身のコメント参照)
+        auto &values = (index == 20) ? speedValues_ : dragValues_;
+        values.clear();
+        while (auto data = nextDataLine(lines, i))
+          for (const auto &token : tokenize(*data)) {
+            if (token.empty() || token.find_first_not_of("0123456789") != std::string::npos) {
+              errors_.push_back(std::string(index == 20 ? "SPEED" : "DRAG") + ": not a number: " + token);
+              continue;
+            }
+            values.push_back(std::atol(token.c_str()));
+          }
+        break;
+      }
+      case 22: {  // FONT
+        while (auto data = nextDataLine(lines, i)) {
+          std::string path = *data;
+          while (!path.empty() && (path.back() == ' ' || path.back() == '\t')) path.pop_back();
+          if (!path.empty()) fontPath_ = path;
+        }
+        break;
+      }
+      case 23: {  // MACRO(macros()自身のコメント参照)
+        macros_.clear();
+        while (i < lines.size()) {
+          if (std::find(keywords.begin(), keywords.end(), firstToken(lines[i])) != keywords.end()) break;
+          auto trimmed = trimCommentAndLeadingWs(lines[i]);
+          i++;
+          if (!trimmed) continue;
+          auto tokens = tokenize(*trimmed);
+          if (tokens.size() < 3 || tokens[0].size() < 3 || tokens[0].compare(0, 2, "M-") != 0 ||
+              tokens[0].find_first_not_of("0123456789", 2) != std::string::npos)
+            continue;  // "--"(^X^Sが次に書き込む位置の印)やK番号の無い行
+          MacroEntry entry;
+          entry.number = std::atoi(tokens[0].c_str() + 2);
+          entry.keySpec = tokens[1];
+          bool ok = true;
+          for (std::size_t t = 2; t < tokens.size(); t++) {
+            if (tokens[t].size() < 3 || tokens[t].compare(0, 2, "K-") != 0 ||
+                tokens[t].find_first_not_of("0123456789", 2) != std::string::npos) {
+              errors_.push_back("MACRO: " + tokens[0] + ": not a K-number: " + tokens[t]);
+              ok = false;
+              break;
+            }
+            entry.keyNumbers.push_back(std::atoi(tokens[t].c_str() + 2));
+          }
+          if (ok) macros_.push_back(entry);
         }
         break;
       }
@@ -780,8 +830,21 @@ const KeyBindings &Configuration::keyBindings() const { return keyBindings_; }
 int Configuration::bufferSizeLimitBytes() const { return bufferSizeLimitBytes_; }
 int Configuration::historyRetentionCount() const { return historyRetentionCount_; }
 int Configuration::waitIntervalMicros() const { return waitIntervalMicros_; }
-bool Configuration::smoothScrollEnabled() const { return smoothScrollEnabled_; }
-int Configuration::lsMode() const { return lsMode_; }
+bool Configuration::overrideWait(int tenMillis) {
+  if (tenMillis < 0) return false;
+  waitIntervalMicros_ = tenMillis * 10000;
+  return true;
+}
+bool Configuration::overrideBuffer(int megabytes) {
+  if (megabytes < 1 || megabytes > 100) return false;  // BUFFER節と同じ範囲
+  bufferSizeLimitBytes_ = megabytes * 1024 * 1024;
+  return true;
+}
+bool Configuration::overrideLine(int lines) {
+  if (lines < 0) return false;
+  historyRetentionCount_ = lines;
+  return true;
+}
 int Configuration::columnThreshold() const { return columnThreshold_; }
 
 void Configuration::setEnvironmentCharset(std::optional<std::string> envCharsetValue) {

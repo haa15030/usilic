@@ -83,10 +83,10 @@ TEST_CASE_FIXTURE(Fixture, "edit: a nonexistent file fails cleanly") {
   CHECK_FALSE(mode.edit("/tmp/editmode_does_not_exist_xyz.txt", 1));
 }
 
-TEST_CASE_FIXTURE(Fixture, "edit: no EDITOR configured behaves as a no-op (reports unchanged)") {
-  // With no EDITOR directive loaded, Configuration::editorArgv()
-  // still returns a non-empty argv (just "+1"/path with no real
-  // program prepended), so this isn't caught by an empty-argv check --
+TEST_CASE_FIXTURE(Fixture, "edit: an EDITOR that cannot be launched behaves as a no-op (reports unchanged)") {
+  // 2026-10-02変更: EDITOR節が無い時の既定がpicoになった(Configuration::editorProgram_)ので、
+  // 「起動できないエディタ」は存在しないコマンドを設定して確かめる(本物のpicoを起動しないため)。
+  REQUIRE(configuration.loadRcText("EDITOR\n no-such-editor-usilic-test\n", true));
   // execvp() fails inside the child (silently, matching
   // ChildProcess::runInteractive()'s own contract of not
   // distinguishing "exec failed" from "ran and exited"), and since

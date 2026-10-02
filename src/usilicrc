@@ -72,6 +72,7 @@ EXEC
 
 #	.mp4	open
 #	.mp4	open	-a	IINA
+	.xcf	open 	-a	GIMP
 	.info	info	-f
 	.info.gz info	-f
 
@@ -123,7 +124,6 @@ PROGRAM
 	vi
 	less
 	man
-	lynx
 	info
 	top
 	lv
@@ -136,7 +136,8 @@ EDITOR
 #
 # EDIT で起動するエディター。
 
-	vi
+	pico
+#	vi
 #	jed
 
 BUFFER
@@ -147,7 +148,7 @@ BUFFER
 # 読み込む方法で開きます。一覧(ls、DU、LOCATE、アーカイブの内容)や
 # アーカイブから取り出した file、MAN、^[^M(そのまま読む)は、ここまでで
 # 読み込みを止めます。どちらの場合も「Not enough buffer」を表示します
-# (どれかのキーで消えます)。
+# (どれかのキーで消えます)。usilic -b で試し、usilic -B でここへ書き込めます。
 
 	64
 
@@ -173,39 +174,25 @@ SHELL
 	bash
 #	tcsh
 
-HISTORY
+LINE
 # 書式: 行数
 #
 # 履歴(FILE、DIR、MAN、LOCATE、FGREP、EGREP、SHELL のコマンド)を種類ごとに
 # 残す最大の行数。これを超えると古い行から消えます(USILIC はその 3 倍)。
 # 0 は無制限です(既定)。履歴はメモリの面では何年分でも問題にならない
 # 規模ですが、~/.usilic/history は項目が増えるたびに全体を書き直すので、
-# 保存が重く感じるようになったら上限を付けてください。
+# 保存が重く感じるようになったら上限を付けてください。usilic -l で試し、
+# usilic -L でここへ書き込めます。
 
 	0
 
 WAIT
 # 書式: wait
 #
-# マクロを wait(単位は 10 msec)の間隔で実行します。
+# マクロを wait(単位は 10 msec)の間隔で実行します。usilic -w で試し、
+# usilic -W でここへ書き込めます。
 
 	1
-
-LS
-# 書式: フラグ
-#
-# ls 表示の形式(起動後は ^Oo で切替)の初期値。セットするとファイル名のみを
-# 表示します。
-
-	0
-
-SCROLL
-# 書式: フラグ
-#
-# スクロールモードの初期値(起動時のみ。^Oh は mode-line の表示/非表示の
-# 切替です)。セットすると最下行より上の範囲でスクロールします。
-
-	0
 
 CP
 # 書式: cp  (option)
@@ -250,6 +237,33 @@ SANS-SERIF
 
 #	/System/Library/Fonts/ヒラギノ角ゴシック W4.ttc
 
+SPEED
+# 書式: usec1  usec2 ...  (段1〜10)
+#
+# 慣性スクロールの段ごとの速さ。1 行(-g では 1 ドット)進むごとに待つ時間を
+# 段 1(最も遅い)から順に、単位 usec で書きます。足りない段は組み込みの値の
+# ままです。usilic -s で試し、usilic -S でここへ書き込めます。
+
+	90000 20000 10000 5000 3000 2000 1000 500 200 100
+
+DRAG
+# 書式: dot1  dot2 ...  (段1〜10)
+#
+# 画面をドラッグして離した時に、その直前の動きの量(ドット)がいくつ以上なら
+# 段 1、段 2 ...の慣性スクロールになるか。usilic -d で試し、usilic -D でここへ
+# 書き込めます。
+
+	1 2 4 8 16 30 40 50 60 70
+
+FONT
+# 書式: フォントファイル
+#
+# -g の画面の基本の(半角の)等幅フォント。全角の字は SANS-SERIF、明朝体は
+# SERIF のフォントで描きます。無ければ組み込みの候補を使います。usilic -f で
+# 試し、usilic -F でここへ書き込めます。
+
+#	/Library/Fonts/MS-Gothic.ttf
+
 KEY
 # キーの割り当て。
 #
@@ -286,8 +300,6 @@ KEY
 	K-1	C-g         # ^G     前のモードへ戻る
 	K-2	C-p         # ^P     カーソルを1行上へ
 	K-3	C-n         # ^N     カーソルを1行下へ
-	K-4	;           # ;      前の項目を開く
-	K-5	:           # :      次の項目を開く
 	K-6	C-i         # ^I     INFO
 	K-7	e           # e      EDIT
 	K-8	F-2 C-i     # ^O^I   INFO(SHELL内から)
@@ -299,7 +311,7 @@ KEY
 	K-14	C-m         # ^M     開く/表示
 	K-15	F-0 d       # ^Xd    DIR: 入力
 	K-16	F-1 C-c     # ^J^C   カレントディレクトリへ
-	K-17	F-1 C-k     # ^J^K   親ディレクトリへ
+	K-17	F-1 C-b     # ^J^K   親ディレクトリへ
 	K-18	F-1 N       # ^JN    N番目のディレクトリへ
 	K-19	F-0 f       # ^Xf    FILE: 入力
 	K-20	F-0 C-f     # ^X^F   FILE: 一覧
@@ -307,8 +319,6 @@ KEY
 	K-22	ESC C-m     # ^[^M   そのまま読む
 	K-23	F-1 F-1     # ^J^J   以前のfileへ
 	K-24	.           # .      選択/非選択
-	K-25	[           # [      選択して上へ
-	K-26	]           # ]      選択して下へ
 	K-27	F-2 y       # ^Oy    全選択
 	K-28	F-2 n       # ^On    全解除
 	K-29	F-2 u       # ^Ou    選択したfileの一覧(USILIC)
@@ -318,7 +328,7 @@ KEY
 	K-33	F-1 p       # ^Jp    PROGRAM: 入力
 	K-34	F-1 C-p     # ^J^P   PROGRAM: 一覧
 	K-35	SPC         # ␣      ページ送り/クイックルック
-	K-36	F-2 s       # ^Os    SHELLを再起動
+	K-36	F-1 s       # ^Js    SHELLを再起動
 	K-37	F-2 a       # ^Oa    ARC: 展開
 	K-38	C-r         # ^R     履歴一覧
 	K-39	C-s         # ^S     逐次検索
@@ -372,9 +382,8 @@ KEY
 	K-87	C-SPC       # ^SPC   選択/非選択
 	K-88	ESC P       # ^[P    一時的な選択対象の貼り付け
 	K-89	ESC u       # ^[u    USILIC: 目次
-	K-90	C-t         # ^T     TUTORIAL
 	K-91	C-h         # ^H     HELP
-	K-92	F-1 C-h     # ^J^H   HELP
+	K-92	F-1 C-h     # ^J^H   プロンプトからHELP
 	K-93	F-0 (       # ^X(    マクロの記録開始
 	K-94	F-0 )       # ^X)    マクロの記録終了
 	K-95	F-0 e       # ^Xe    マクロの実行
@@ -383,3 +392,22 @@ KEY
 	K-98	F-1 e       # ^Je    EPUB: 入力
 	K-99	F-1 C-e     # ^J^E   EPUB: 一覧
 	K-100	F-2 e       # ^Oe    ARC: .epubの中身
+	K-101	F-4 u	    # ^J^Ou  ~/.usilic/usilicrc 
+	K-102	F-4 h	    # ^J^Oh  ~/.usilic/HELP
+	K-103	F-0 C-s	    # ^X^S    usilicrcのMACROに保存
+	K-104	h	    # h	     KEYから平文HELPへ移動
+	K-105	C-k	    # ^K     KEY
+	K-106	F-1 C-k	    # ^J^K   プロンプトからKEY		
+
+MACRO
+	M-1	;	K-2 K-11 K-22		# ^G^P^M
+	M-2	:	K-2 K-11 K-22		# ^G^N^M
+	M-3	+	K-2 K-2 K-11 K-22 K-22	# ^G^G^P^M^M
+	M-4	*	K-2 K-2 K-10 K-22 K-22	# ^G^G^N^M^M
+	M-5	[	K-22 K-11	  	# .^N
+	M-6	]	K-22 K-10		# .^P
+	M-7	<	K-22 K-2 K-11 K-22	# ^M^G^N^M
+	M-8	>	K-22 K-2 K-10 K-22	# ^M^G^N^M
+	M-9	{	# ^J^Ou^S^MACRO^Me	
+	M-10	}	# ^J^Os^Cb"usilic-1.5b:"^M
+	--

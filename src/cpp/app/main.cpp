@@ -167,6 +167,7 @@
 #include "mac_font_resolver.hpp"
 #include "markup_to_roff.hpp"
 #include "mouse_sgr.hpp"
+#include "usilicrc_file.hpp"
 #include "terminal_display.hpp"
 
 namespace {
@@ -1577,7 +1578,6 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       app.requestImmediateExit();
       return leavePhase(true);
     }
-    if (app.consumeGuiModeToggleRequest()) return leavePhase(true);
     // See Application::awaitingLocateUpdateDb()'s own comment: this
     // loop's own poll() below already ticks every ~100ms regardless of
     // input, so a detached `updatedb` launched by ^Jl is noticed and
@@ -2618,7 +2618,6 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         pixelOffset = 0;  // see the key->special branch's comment above
         app.feedByte(key->byte, std::nullopt);
       }
-      if (app.consumeGuiModeToggleRequest()) return;
     }
 
     // Mouse wheel: a per-tick alternative to the coast-speed keys just
@@ -4033,14 +4032,14 @@ bool tryHandoffToParentShell(int argc, char **argv) {
   for (int i = 1; i < argc; i++) {
     std::string arg = argv[i];
     if (arg == "-c" || arg == "-g") continue;
-    if (arg == "-u" || arg == "-i") {
+    if (arg == "-s" || arg == "-S" || arg == "-d" || arg == "-D") {  // RcOption参照
       while (i + 1 < argc && *argv[i + 1] &&
              std::all_of(argv[i + 1], argv[i + 1] + std::strlen(argv[i + 1]),
                          [](unsigned char c) { return std::isdigit(c); }))
         i++;
       continue;
     }
-    if (arg == "-f") {  // フォントのパスは開くファイルではない
+    if (arg.size() == 2 && arg[0] == '-' && std::strchr("fFwWbBlL", arg[1])) {  // 値は開くファイルではない
       if (i + 1 < argc) i++;
       continue;
     }
@@ -4183,6 +4182,88 @@ bool tryHandoffToParentShell(int argc, char **argv) {
 
 }  // namespace
 
+// 2026-10-02新設、直接のユーザー依頼(.steering/20261002-help-key-usilicrc-reorg/): usilicrcの設定を
+// 起動時に上書きするオプション1つ分。小文字(-s/-d/-f/-w/-b/-l)はこの起動だけ、大文字
+// (-S/-D/-F/-W/-B/-L)は同じ効果に加えて~/.usilic/usilicrcの該当する節へ書き込み、以後はオプション
+// 無しでもusilicrcから読まれる(applyRcOptions()参照)。
+struct RcOption {
+  char letter;
+  std::vector<std::string> values;
+};
+
+// usilicrcを読んだ後で、rcOptionsを書いた順に当てる。優先順位は「オプション > usilicrc > 組み込み」。
+// 書き込みに失敗したら標準エラーへ出すだけで起動は続ける。
+void applyRcOptions(fm::Configuration &configuration, const std::vector<RcOption> &rcOptions, const std::string &home,
+                    std::string *fontPath) {
+  if (!configuration.speedValues().empty()) fm::applyScrollSpeedOverride(configuration.speedValues());
+  if (!configuration.dragValues().empty()) fm::applyReleaseDistanceOverride(configuration.dragValues());
+  *fontPath = configuration.fontPath();
+  auto numbers = [](const std::vector<std::string> &values) {
+    std::vector<long> out;
+    for (const auto &v : values) out.push_back(std::atol(v.c_str()));
+    return out;
+  };
+  for (const auto &option : rcOptions) {
+    char lower = static_cast<char>(std::tolower(option.letter));
+    bool save = option.letter != lower;
+    std::string section;
+    std::vector<std::string> saved;
+    int value = option.values.empty() ? 0 : std::atoi(option.values.front().c_str());
+    switch (lower) {
+      case 's': {
+        int tunable = static_cast<int>(fm::kScrollSpeedLevels.size()) - 1;
+        if (static_cast<int>(option.values.size()) > tunable)
+          std::cerr << "usilic: -" << option.letter << " only tunes " << tunable << " levels; the extra "
+                    << (option.values.size() - tunable) << " trailing value(s) will be ignored.\n";
+        fm::applyScrollSpeedOverride(numbers(option.values));
+        section = "SPEED";
+        // 書く値は、足りない段を今の値で埋めた全段(どの段が何μsかを一目で分かるように)。
+        std::string line;
+        for (int level = 1; level <= tunable; level++)
+          line += (level > 1 ? " " : "") + std::to_string(fm::kScrollSpeedLevels[level].microseconds);
+        saved.push_back(line);
+        break;
+      }
+      case 'd': {
+        fm::applyReleaseDistanceOverride(numbers(option.values));
+        section = "DRAG";
+        std::string line;
+        for (long v : fm::currentReleaseDistances()) line += (line.empty() ? "" : " ") + std::to_string(v);
+        saved.push_back(line);
+        break;
+      }
+      case 'f':
+        *fontPath = option.values.front();
+        section = "FONT";
+        saved.push_back(*fontPath);
+        break;
+      case 'w':
+        configuration.overrideWait(value);
+        section = "WAIT";
+        saved.push_back(option.values.front());
+        break;
+      case 'b':
+        if (!configuration.overrideBuffer(value)) {
+          std::cerr << "usilic: -" << option.letter << ": value out of range (1-100): " << value << "\n";
+          continue;
+        }
+        section = "BUFFER";
+        saved.push_back(option.values.front());
+        break;
+      case 'l':
+        configuration.overrideLine(value);
+        section = "LINE";
+        saved.push_back(option.values.front());
+        break;
+      default:
+        continue;
+    }
+    if (save && !fm::usilicrc::setSection(home, section, saved))
+      std::cerr << "usilic: -" << option.letter << ": cannot write " << section << " to "
+                << fm::usilicrc::userPath(home) << "\n";
+  }
+}
+
 int main(int argc, char **argv) {
   checkInvalidTerminalMarker();
   if (tryHandoffToParentShell(argc, argv)) return 0;
@@ -4200,7 +4281,7 @@ int main(int argc, char **argv) {
   // during this port's development.
   bool forceCui = false;
   bool forceGui = false;
-  std::string explicitFontFlag;  // -f <path> -- see its own parsing comment below
+  std::vector<RcOption> rcOptions;  // -s/-S、-d/-D、-f/-F、-w/-W、-b/-B、-l/-L(RcOption参照)
   std::vector<char *> positionalArgs;
   for (int i = 1; i < argc; i++) {
     if (std::strcmp(argv[i], "-c") == 0) forceCui = true;
@@ -4220,80 +4301,34 @@ int main(int argc, char **argv) {
       // この明示的な-hフラグ専用にした。
       std::cout << "usilic [<file] [file] [directory]\n";
       return 0;
-    } else if (std::strcmp(argv[i], "-u") == 0) {
-      // User-tunable drag-scroll "inertia" speed, in usleep()
-      // microseconds -- see fm::applyScrollSpeedOverride()'s own
-      // comment for exactly which levels this reaches: levels
-      // 1..N (N = however many values are given here, capped at
-      // fm::kScrollSpeedLevels.size()-1 -- 10 levels total, since
-      // index 0 is the inert "not coasting" placeholder), assigned in
-      // order starting at the slowest, EACH forced to usleep-driven
-      // timing even if it defaulted to an uncalibrated busy-loop
-      // (levels 5+) -- e.g. "-u 90000 70000 50000 30000 10000" (5
-      // values) makes level 5 precisely-timed too, not just 1..4; all
-      // 10 levels can be given precisely-timed values right up to the
-      // fastest. Consumes every following plain-digit argument,
-      // stopping at the next flag or the end of argv -- "-u 90000"
-      // overrides only the slowest level.
-      std::vector<long> scrollValues;
+    } else if (std::strlen(argv[i]) == 2 && std::strchr("sSdD", argv[i][1]) && argv[i][0] == '-') {
+      // 2026-10-02、直接のユーザー依頼(.steering/20261002-help-key-usilicrc-reorg/): 旧-u/-iを
+      // usilicrcのSPEED/DRAGに合わせて-s/-dへ改名。大文字は同じ効果に加えてusilicrcへ書き込む
+      // (rcOptions参照)。値は1つ以上の整数。
+      char letter = argv[i][1];
+      RcOption option{letter, {}};
       while (i + 1 < argc && *argv[i + 1] && std::all_of(argv[i + 1], argv[i + 1] + std::strlen(argv[i + 1]),
-                                                          [](unsigned char c) { return std::isdigit(c); })) {
-        scrollValues.push_back(std::atol(argv[++i]));
-      }
-      if (scrollValues.empty()) {
-        std::cerr << "usilic: -u requires one or more microsecond values (e.g. -u 90000 55000 30000 15000).\n";
+                                                          [](unsigned char c) { return std::isdigit(c); }))
+        option.values.push_back(argv[++i]);
+      if (option.values.empty()) {
+        std::cerr << "usilic: -" << letter << " requires one or more "
+                  << (std::tolower(letter) == 's' ? "microsecond values (e.g. -s 90000 20000 10000)"
+                                                   : "pixel-distance values (e.g. -d 1 2 4 8 16)")
+                  << ".\n";
         return 1;
       }
-      int tunableLevels = static_cast<int>(fm::kScrollSpeedLevels.size()) - 1;
-      if (static_cast<int>(scrollValues.size()) > tunableLevels) {
-        std::cerr << "usilic: -u only tunes " << tunableLevels << " levels; the extra "
-                   << (scrollValues.size() - tunableLevels) << " trailing value(s) will be ignored.\n";
-      }
-      fm::applyScrollSpeedOverride(scrollValues);
-    } else if (std::strcmp(argv[i], "-i") == 0) {
-      // User-tunable drag-release "inertia" DISTANCE thresholds, in
-      // pixels -- the counterpart to "-u" (SPEED) above, added
-      // 2026-08-21 after a direct user clarification that "-u" alone
-      // doesn't cover what felt off: "-uオプションはマウスホイールの
-      // 回転角度とスクロール速度との関係。それは解決済みだが、今イチ
-      // なのはマウスドラッグを解除したときのカーソル移動幅とスクロール
-      // 速度との関係" -- see fm::applyReleaseDistanceOverride()'s own
-      // comment for exactly how these values replace
-      // levelForReleaseDistance()'s own built-in doubling/divisor/bias
-      // formula. `thresholds[k-1]` is the minimum release-drag pixel
-      // distance needed to reach level k -- e.g. "-i 20 40 80 160 320
-      // 480 640 800 960 1120" (10 values) means a release under 20px
-      // doesn't coast at all, 20-39px lands on level 1, ..., 1120px+
-      // reaches the fastest level. Same "consume every following
-      // plain-digit argument" parsing as "-u" above.
-      std::vector<long> distanceValues;
-      while (i + 1 < argc && *argv[i + 1] && std::all_of(argv[i + 1], argv[i + 1] + std::strlen(argv[i + 1]),
-                                                          [](unsigned char c) { return std::isdigit(c); })) {
-        distanceValues.push_back(std::atol(argv[++i]));
-      }
-      if (distanceValues.empty()) {
-        std::cerr << "usilic: -i requires one or more pixel-distance values (e.g. -i 20 40 80 160 320).\n";
+      rcOptions.push_back(option);
+    } else if (std::strlen(argv[i]) == 2 && std::strchr("fFwWbBlL", argv[i][1]) && argv[i][0] == '-') {
+      // -f/-F(FONT、フォントファイル)、-w/-W(WAIT、10ms単位)、-b/-B(BUFFER、MB)、-l/-L(LINE、行数)。
+      char letter = argv[i][1];
+      bool numeric = std::tolower(letter) != 'f';
+      if (i + 1 >= argc || (numeric && (!*argv[i + 1] || !std::all_of(argv[i + 1], argv[i + 1] + std::strlen(argv[i + 1]),
+                                                                        [](unsigned char c) { return std::isdigit(c); })))) {
+        std::cerr << "usilic: -" << letter << " requires "
+                  << (numeric ? "a number" : "a font file path (e.g. -f /Library/Fonts/MS-Gothic.ttf)") << ".\n";
         return 1;
       }
-      int tunableLevels = static_cast<int>(fm::kScrollSpeedLevels.size()) - 1;
-      if (static_cast<int>(distanceValues.size()) > tunableLevels) {
-        std::cerr << "usilic: -i only tunes " << tunableLevels << " levels; the extra "
-                   << (distanceValues.size() - tunableLevels) << " trailing value(s) will be ignored.\n";
-      }
-      fm::applyReleaseDistanceOverride(distanceValues);
-    } else if (std::strcmp(argv[i], "-f") == 0) {
-      // 2026-08-30、直接のユーザー依頼: "-g"のGUIウィンドウで使う
-      // フォントファイルへの明示パス。既存の隠しUSILICFONT環境変数
-      // (resolveGuiFontPath()参照)と同じ効果だが、こちらは
-      // History::GuiPreferences.fontPathとしてセッションをまたいで
-      // 記憶される(下のconsultHistoryOnStart由来のhistory書き出し
-      // 参照)ため、Finderからのダブルクリック起動(引数も環境変数も
-      // 渡せない、"白アイコンusilic"起動)でも一度設定すれば効き続ける。
-      if (i + 1 >= argc) {
-        std::cerr << "usilic: -f requires a font file path (e.g. -f /Library/Fonts/MS-Gothic.ttf).\n";
-        return 1;
-      }
-      explicitFontFlag = argv[++i];
+      rcOptions.push_back(RcOption{letter, {argv[++i]}});
     } else if (std::strcmp(argv[i], "-m") == 0) {
       // 2026-09-20追加、直接のユーザー依頼("usilicに裏オプションを
       // 作ってほしい。具体的には、`usilic -m src/QUICK.txt` >
@@ -4656,10 +4691,14 @@ int main(int argc, char **argv) {
   // hand-created ~/.usilic/usilicrc silently ran on built-in defaults
   // only, never actually reading the usilicrc `make install` just
   // copied into place.
+  // 2026-10-02追加(fm::usilicrc::ensureUser()参照): ~/.usilic/usilicrcが無ければ既定のものをコピーする。
+  if (homeEnv) fm::usilicrc::ensureUser(homeEnv);
   std::string rcText = readFileIfExists(usilicDir + "usilicrc");
   if (rcText.empty() && homeEnv) rcText = readFileIfExists(std::string(homeEnv) + "/.local/lib/usilic/usilicrc");
   if (rcText.empty()) rcText = readFileIfExists("/usr/local/lib/usilic/usilicrc");
   if (!rcText.empty()) configuration.loadRcText(rcText, /*fileManagerMode=*/true);
+  std::string rcFontPath;  // FONT、-f/-F(applyRcOptions()参照)
+  applyRcOptions(configuration, rcOptions, homeEnv ? std::string(homeEnv) : std::string(), &rcFontPath);
   // usilicrcのSERIF/SANS-SERIF(2026-09-29、GraphicalDisplay::setFontFamilyCandidates()参照)。
   fm::GraphicalDisplay::setFontFamilyCandidates(configuration.serifFontCandidates(),
                                                 configuration.sansSerifFontCandidates());
@@ -4742,9 +4781,12 @@ int main(int argc, char **argv) {
   // 呼び出し側、savedGui.fontPath参照)にすぐ反映され、(2) 末尾の
   // consultHistoryOnStart由来のhistory書き出しにも自然に乗る(引数
   // 無し起動の場合のみ、次回のダブルクリック起動でも効き続ける)。
-  if (!explicitFontFlag.empty()) {
+  //
+  // 2026-10-02変更(applyRcOptions()参照): フォントはusilicrcのFONT(と-f/-F)で決め、historyに保存
+  // された値は使わない――毎回の起動でここで上書きする(FONTが無ければ空=組み込みの候補)。
+  {
     fm::History::GuiPreferences prefs = history.guiPreferences();
-    prefs.fontPath = explicitFontFlag;
+    prefs.fontPath = rcFontPath;
     history.setGuiPreferences(prefs);
   }
 
@@ -4970,10 +5012,11 @@ int main(int argc, char **argv) {
   // fresh install (no history file yet) correctly falls back to
   // usilicrc's own SCROLL/LS defaults instead of silently always
   // starting both off regardless of what the user configured.
+  // 2026-10-02: usilicrcのSCROLL・LSは廃止(Configuration::overrideWait()の宣言のコメント参照)。
+  // historyに保存が無い(新規)なら、どちらもオフ。
   bool hasSavedHistory = !historyText.empty();
-  display.setSmoothScrollEnabled(hasSavedHistory ? history.smoothScrollEnabled()
-                                                  : configuration.smoothScrollEnabled());
-  app.directoryMode().setFilenameOnlyMode(hasSavedHistory ? history.lsMode() != 0 : configuration.lsMode() != 0);
+  display.setSmoothScrollEnabled(history.smoothScrollEnabled());
+  app.directoryMode().setFilenameOnlyMode(history.lsMode() != 0);
   // 2026-09-12追加、項目⑫: History::modeLineVisible_にはusilicrc側の
   // 対応するディレクティブが無い(ユーザー依頼はHistoryでの永続化のみ)
   // ため、未保存の新規インストールは単純に「表示」を既定値とする

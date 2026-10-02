@@ -209,11 +209,13 @@ TEST_CASE("CODE directive: only byte values under 32 are accepted, clamped to 2 
   CHECK(allowed.find(static_cast<char>(99)) == std::string::npos);
 }
 
-TEST_CASE("BUFFER/HISTORY/WAIT/SCROLL/LS/COLUMN: single-integer directives") {
+// 2026-10-02変更: HISTORYはLINEへ改名、SCROLL・LSは廃止(古いusilicrcにあっても読み飛ばし、エラーに
+// しない)。SPEED/DRAG/FONTを新設。
+TEST_CASE("BUFFER/LINE/WAIT/COLUMN: single-integer directives; SCROLL/LS are skipped") {
   Configuration config;
   REQUIRE(config.loadRcText(
       "BUFFER\n 5\n"
-      "HISTORY\n 300\n"
+      "LINE\n 300\n"
       "WAIT\n 7\n"
       "SCROLL\n 1\n"
       "LS\n 2\n"
@@ -222,9 +224,34 @@ TEST_CASE("BUFFER/HISTORY/WAIT/SCROLL/LS/COLUMN: single-integer directives") {
   CHECK(config.bufferSizeLimitBytes() == 5 * 1024 * 1024);
   CHECK(config.historyRetentionCount() == 300);
   CHECK(config.waitIntervalMicros() == 70000);
-  CHECK(config.smoothScrollEnabled() == true);
-  CHECK(config.lsMode() == 2);
   CHECK(config.columnThreshold() == 12);
+  CHECK(config.errors().empty());
+}
+
+TEST_CASE("SPEED/DRAG/FONT directives") {
+  Configuration config;
+  REQUIRE(config.loadRcText(
+      "SPEED\n\t90000 20000 10000\n"
+      "DRAG\n\t1 2 4\n"
+      "FONT\n#\t/a.ttf\n\t/b.ttf\n",
+      true));
+  CHECK(config.speedValues() == std::vector<long>{90000, 20000, 10000});
+  CHECK(config.dragValues() == std::vector<long>{1, 2, 4});
+  CHECK(config.fontPath() == "/b.ttf");
+}
+
+TEST_CASE("MACRO directive: M-n key K-numbers, skipping the -- marker and empty entries") {
+  Configuration config;
+  REQUIRE(config.loadRcText(
+      "MACRO\n"
+      "\tM-1\t;\tK-1 K-2 K-14\t# ^G^P^M\n"
+      "\tM-9\t{\t# not yet\n"
+      "\t--\n",
+      true));
+  REQUIRE(config.macros().size() == 1);
+  CHECK(config.macros()[0].number == 1);
+  CHECK(config.macros()[0].keySpec == ";");
+  CHECK(config.macros()[0].keyNumbers == std::vector<int>{1, 2, 14});
 }
 
 // 2026-09-12追加、直接のユーザー依頼(columnThreshold()自身の

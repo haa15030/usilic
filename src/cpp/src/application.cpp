@@ -3143,8 +3143,6 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     leaderOPending_ = false;
     if (special) return false;
     switch (byte) {
-      case 'g':  // ^O g : GUIモードをトグル(このポート自身の追加であり、usilicrcのK-?のキー割り当てではない)
-        return handleCommand(Command::ToggleGuiMode);
       case 'h':  // ^O h : モードライン表示/非表示を切り替え(K-25、
                  // 2026-09-12にToggleScrollModeから付け替え。
                  // Command::ToggleModeLineVisibility自身のコメント参照)
@@ -4864,9 +4862,6 @@ bool Application::handleCommandImpl(Command command) {
       return stopMacroRecording();
     case Command::PlayMacro:
       return playRecordedMacro();
-    case Command::ToggleGuiMode:
-      guiModeToggleRequested_ = true;
-      return true;
     case Command::Redraw:
       activeView().setHoverIndex(std::nullopt);  // Move*/Page*系のcase自身のコメント参照
       // 2026-09-08追加、直接のユーザー要望("^Lで消去"、DirectoryMode::
@@ -16319,11 +16314,7 @@ void Application::requestImmediateExit() {
   wantsExit_ = true;
 }
 
-bool Application::consumeGuiModeToggleRequest() {
-  bool requested = guiModeToggleRequested_;
-  guiModeToggleRequested_ = false;
-  return requested;
-}
+
 
 // IDEAS.md自身のGUIモードのクリックの説明(legacyではない)から移植
 // ――クリックで選択/再度クリックで開くという慣習についてはクラス

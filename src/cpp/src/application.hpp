@@ -318,7 +318,8 @@ enum class Command {
   StartMacroRecord,
   StopMacroRecord,
   PlayMacro,
-  ToggleGuiMode,
+  // ToggleGuiMode(^Og)は2026-10-02に廃止(「実はすでにGUI」方針の打ち切り、-gが正式オプションに。
+  // .steering/20261002-help-key-usilicrc-reorg/)。
   // K-3(^L、M_clear): アクティブなビューの完全な再描画を強制する。
   Redraw,
   // ^Z(M_susp)――legacy自身のkey.c(M_susp、`f_M != M_shell`の場合の
@@ -1828,13 +1829,6 @@ class Application {
   // 依頼されたもので、他所でのその置き換えではない(端末フェーズの
   // ^X^C+yフローは変更されていない)。
   void requestImmediateExit();
-
-  // 前回の呼び出し以降に^Ogが押されていればtrue(フラグを消費する。
-  // KeyInput::consumeResizeSignal()と同じ形)――GUIモードを切り替え
-  // るべきという実行ループへの合図。「切り替え」が実際に何をする
-  // かについてApplicationが何も知らない理由についてはクラス
-  // コメント自身のGUIモード節参照。
-  bool consumeGuiModeToggleRequest();
 
   // 「表示」行/列でのマウスクリック(この座標空間と現在の
   // Directoryモード限定のスコープについてはクラスコメント自身の
@@ -3398,7 +3392,6 @@ class Application {
   bool leaderCPending_ = false;  // ^Cを見た(2026-09-25、^Cb/^Cf。dispatchByte()自身のコメント参照)
   bool leaderOPending_ = false;  // ^Oを見た、2バイトのコマンドを完成させるバイトを待っている(2026-09-08のキー再編で^Xの大半の役割を引き継いだ)
   bool wantsExit_ = false;
-  bool guiModeToggleRequested_ = false;
   // 2026-09-25追加、次のキーで消える一時メッセージ(showTransientNotice()
   // 参照)を今表示しているビュー。nullptrなら表示していない。
   ContentView *transientNoticeView_ = nullptr;

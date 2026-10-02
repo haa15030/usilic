@@ -322,10 +322,30 @@ class Configuration {
     bufferLimitHit_ = false;
     return hit;
   }
-  int historyRetentionCount() const;               // HISTORY
+  int historyRetentionCount() const;               // LINE(2026-10-02にHISTORYから改名)
   int waitIntervalMicros() const;                  // WAIT
-  bool smoothScrollEnabled() const;                // SCROLL
-  int lsMode() const;                              // LS
+  // 2026-10-02、直接のユーザー依頼(.steering/20261002-help-key-usilicrc-reorg/): SCROLL・LSの節は
+  // 廃止(^Oh・^Ooの状態はhistoryに保存してある)。古いusilicrcにあっても読み飛ばす。
+  //
+  // オプション-w/-b/-l(と書き込み版の-W/-B/-L)による上書き。値の意味は各節と同じ(WAITは10ms単位、
+  // BUFFERはMB、LINEは行数)。範囲外ならfalse(上書きしない)。
+  bool overrideWait(int tenMillis);
+  bool overrideBuffer(int megabytes);
+  bool overrideLine(int lines);
+  // SPEED/DRAG/FONT(2026-10-02新設、旧オプション-u/-i/-f): 慣性スクロールの段ごとの遅延(μs、
+  // fm::applyScrollSpeedOverride()へ)、段が上がるドラッグ距離(fm::applyReleaseDistanceOverride()へ)、
+  // -gの画面の基本の等幅フォントのファイル。空なら組み込みの既定のまま。
+  const std::vector<long> &speedValues() const { return speedValues_; }
+  const std::vector<long> &dragValues() const { return dragValues_; }
+  const std::string &fontPath() const { return fontPath_; }
+  // MACRO(2026-10-02新設): 「M-n キー K-a K-b ...」の行。キーはKEY節と同じ表記、K番号の並びは
+  // それぞれの既定のキー列を続けて本体へ渡す(KeyBindings::configure()参照)。K番号の無い行は無視。
+  struct MacroEntry {
+    int number = 0;
+    std::string keySpec;
+    std::vector<int> keyNumbers;
+  };
+  const std::vector<MacroEntry> &macros() const { return macros_; }
   // COLUMNディレクティブ(2026-09-12追加、直接のユーザー依頼):
   // DirectoryMode自身の同名の使用箇所コメント参照――現在の端末幅から
   // `ls -alF`の固定幅メタ情報(パーミッション・リンク数・所有者・
@@ -360,7 +380,7 @@ class Configuration {
   std::vector<SuffixEntry> suffixEntries_;
   std::vector<SuffixEntry> builtinArchiveEntries_;  // ARCHIVE[]の既定値、別名検索のため別に保持
 
-  std::vector<std::string> editorProgram_;
+  std::vector<std::string> editorProgram_ = {"pico"};  // EDITOR(2026-10-02、既定をpicoに。それまでは空)
   std::vector<std::string> shellProgram_;
 
   std::map<ConfiguredRole, ProgramCommand> roleCommands_;
@@ -382,8 +402,10 @@ class Configuration {
   int columnThreshold_ = 8;  // columnThreshold()自身のコメント参照
   std::vector<std::string> serifFontCandidates_;      // SERIF
   std::vector<std::string> sansSerifFontCandidates_;  // SANS-SERIF
-  bool smoothScrollEnabled_ = false;
-  int lsMode_ = 0;
+  std::vector<long> speedValues_;  // SPEED
+  std::vector<long> dragValues_;   // DRAG
+  std::string fontPath_;           // FONT
+  std::vector<MacroEntry> macros_;  // MACRO
 
   std::optional<std::string> envCharsetValue_;
 

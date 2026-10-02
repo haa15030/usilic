@@ -118,6 +118,9 @@ int levelForReleaseDistance(int pixels, int cellHeightPixels);
 // 各閾値が厳密に増加している必要があるが、それは「-u」に妥当な値を
 // 選ぶのと同様、呼び出し側自身の責任である)。
 void applyReleaseDistanceOverride(const std::vector<long> &thresholds);
+// 2026-10-02追加(usilicrcのDRAG、-Dでの書き込み用): 今の閾値(applyReleaseDistanceOverride()で
+// 入れたもの、既定はユーザーが実機で調整した値)。
+const std::vector<long> &currentReleaseDistances();
 
 // 1「ピクセル」あたりのScrollStep(kScrollSpeedLevels参照、
 // GraphicalDisplayのドット単位のrenderScrolled()向けに調整済み)を、

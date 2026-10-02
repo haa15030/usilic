@@ -28164,3 +28164,22 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (ARCHIVE・EXECではない)なら、そのコマンドにファイルを渡した出力を内容にする。以降の整形
      (roffならgroff等)はそのまま通す。コマンドが失敗したらファイルそのものを読む。疑似端末で
      tcb.1.gzが解凍・groffで整形されて表示されることを確認。
+574. **2026-10-02: usilicrcのSPEED/DRAG/FONT新設とオプション-s/-S・-d/-D・-f/-F・-w/-W・-b/-B・-l/-L、HISTORY→LINE、LS・SCROLL廃止、^Og廃止、既定のエディタをpicoに**
+   - **経緯**: 直接のユーザー依頼(HELP/KEY/usilicrc再編、.steering/20261002-help-key-usilicrc-reorg/)。
+     「実はすでにGUI」方針(HISTORY.md:4264)は2026-10-02をもって打ち切り、-gは正式オプション。
+   - **usilicrc**: `~/.usilic/usilicrc`が無ければ既定のusilicrc(`~/.local/lib/usilic/`、無ければ
+     `/usr/local/lib/usilic/`)をコピーしてから読む(fm::usilicrc::ensureUser())。SPEED(慣性スクロールの
+     段ごとの遅延μs、旧-u)・DRAG(段が上がるドラッグ距離、旧-i)・FONT(-gの基本の等幅フォント)・
+     MACRO(読み込みのみ、本体への反映は後続)の節を新設し、src/usilicrcではKEYの手前に置いた。
+     HISTORYはLINEへ改名、LS・SCROLLは廃止(^Oo・^Ohの状態はhistoryに保存済み、古いusilicrcに
+     あっても読み飛ばす)。
+   - **オプション**: 小文字はこの起動だけ、大文字は同じ効果に加えて`~/.usilic/usilicrc`の該当する節へ
+     書き込む(fm::usilicrc::setSection()、コメントを残して値の行だけ置き換え、節が無ければ既定の
+     usilicrcから雛形ごとKEYの手前へ足す)。-Sは足りない段を今の値で埋めた10段を書く。優先順位は
+     「オプション > usilicrc > 組み込み」。-fはhistoryへ保存しなくなった(フォントはFONTと-f/-Fで決める)。
+     usilicのSHELLの中から親へ引数を渡す処理も新しい名前に合わせた。
+   - **^Og**: Command::ToggleGuiModeと要求フラグを削除。引数無しの起動は従来どおり-c(端末が無い
+     .appの起動だけGUI)。
+   - **EDITOR**: 節が無い時の既定をpicoに(それまでは空でコマンド無し)。src/usilicrcもpicoに。
+   - 空のHOMEで`-W 3 -S 1000 2000 -L 500`を試し、既定のusilicrcのコピーと書き込みを確認。関連
+     テスト(設定・エディタ・usilicrcの書き換え・^O)通過。

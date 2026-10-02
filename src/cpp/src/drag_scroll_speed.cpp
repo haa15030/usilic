@@ -99,6 +99,8 @@ std::vector<long> gReleaseDistanceOverride = {1, 2, 4, 8, 16, 30, 40, 50, 60, 70
 
 void applyReleaseDistanceOverride(const std::vector<long> &thresholds) { gReleaseDistanceOverride = thresholds; }
 
+const std::vector<long> &currentReleaseDistances() { return gReleaseDistanceOverride; }
+
 int levelForReleaseDistance(int pixels, int cellHeightPixels) {
   int magnitude = std::abs(pixels);
   int maxLevel = static_cast<int>(kScrollSpeedLevels.size()) - 1;
