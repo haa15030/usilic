@@ -8360,7 +8360,9 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleLsMode): refused outside Directo
   CHECK_FALSE(app.handleCommand(Command::ToggleLsMode));
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: 'q' exits immediately outside Directory mode, without the y/n confirmation") {
+// 2026-10-02変更(Command::QuitPagerの同日のコメント参照): 'q'で終わるのはページャーとして起動した
+// ファイルだけ。(ls)から開いたファイルでは何もしない。
+TEST_CASE_FIXTURE(Fixture, "feedByte: 'q' does not exit a file opened from Directory (not a pager launch)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   REQUIRE(idx >= 0);
@@ -8368,8 +8370,8 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: 'q' exits immediately outside Directory mo
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
-  CHECK(app.feedByte('q', std::nullopt));
-  CHECK(app.wantsExit());
+  CHECK_FALSE(app.feedByte('q', std::nullopt));
+  CHECK_FALSE(app.wantsExit());
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f prompts, and a typed FILE path switches to File mode") {

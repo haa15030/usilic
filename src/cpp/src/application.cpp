@@ -4933,6 +4933,10 @@ bool Application::handleCommandImpl(Command command) {
       // (pager)");Directoryモードにはそれ自身の確認済みの終了経路
       // (StartExit、^X^C)があり、素の'q'にそれを迂回されたくない。
       if (currentMode_ == ApplicationMode::Directory) return false;
+      // 2026-10-02追加、直接のユーザー報告("ページャー起動じゃないのに通常ファイル閲覧時`q`で終わる"):
+      // 以前は(ls)以外ならどの画面でも終わっていた。ページャーとして起動したファイル
+      // (FileMode::isPagerMode()、引数のファイル・標準入力)を見ている時だけにする。
+      if (currentMode_ != ApplicationMode::File || !fileMode_.isPagerMode()) return false;
       // 2026-08-25(上のCommand::Back自身のFileモードの分岐と同じ
       // ユーザーの追跡報告): SHELLの引き渡しで起動されたページャは、
       // 'q'でプロセス全体を殺しては「ならない」――それはユーザー自身
