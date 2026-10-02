@@ -3068,6 +3068,10 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::ShellInsertName);
       case 0x17:  // ^J ^W : SHELL、バッファのコンテンツを挿入
         return handleCommand(Command::ShellInsertBufferContent);
+      // 2026-10-03、直接のユーザー提案("SHELLからのINFO実行は^O^Iではなくて^J^Iの方がいいのでは？"):
+      // ^O^Iから移した。
+      case 0x09:  // ^J ^I : INFO(SHELL内から)
+        return handleCommand(Command::ShowUsilicBanner);
       // FILE(^Jf/^J^F)は2026-09-08に一度ここへ移行したが、2026-09-09、
       // 直接のユーザー判断により^Xf/^X^Fへ差し戻された――
       // leaderXPending_自身のswitch参照(理由: emacsの`^Xf`
@@ -3292,8 +3296,6 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       case 0x0c:  // ^O ^L : 再描画(SHELL内から)/ソートキー巡回(Directory)
         if (currentMode_ == ApplicationMode::Shell) return handleCommand(Command::Redraw);
         return handleCommand(Command::CycleLsSortKey);
-      case 0x09:  // ^O ^I : INFO(SHELL内から)
-        return handleCommand(Command::ShowUsilicBanner);
       case '/':  // ^O / : 検索(SHELL内から、2026-09-19以後はインクリメンタル)
         return handleCommand(Command::StartIncrementalGrep);
       // 2026-09-08、当初はMeta(ESC)機構経由の"@F"/"@B"(将来のAlt表記

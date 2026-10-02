@@ -113,7 +113,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {80, "F-1 u"},     // ^Ju   USILIC: 時系列
       {81, "F-0 C-w"},   // ^X^W  バッファを作業fileへ保存
       {82, "C-i"},       // ^I    INFO
-      {83, "F-2 C-i"},   // ^O^I  INFO(SHELL内から)
+      {83, "F-1 C-i"},   // ^J^I  INFO(SHELL内から、2026-10-03、^O^Iから)
       {84, "F-4 u"},     // ^J^Ou ~/.usilic/usilicrc
       {85, "F-4 e"},     // ^J^Oe ERROR
       {86, "F-4 s"},     // ^J^Os SHELLのログ(2026-09-27、^J^Olから)

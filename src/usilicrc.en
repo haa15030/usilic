@@ -392,7 +392,7 @@ KEY
 	K-80	F-1 u       # ^Ju     USILIC: chronological
 	K-81	F-0 C-w     # ^X^W    Save buffer to work file
 	K-82	C-i         # ^I      INFO
-	K-83	F-2 C-i     # ^O^I    INFO (from SHELL)
+	K-83	F-1 C-i     # ^J^I    INFO (from SHELL)
 	K-84	F-4 u       # ^J^Ou   ~/.usilic/usilicrc
 	K-85	F-4 e       # ^J^Oe   ERROR
 	K-86	F-4 s       # ^J^Os   SHELL log

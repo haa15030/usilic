@@ -379,7 +379,7 @@ KEY
 	K-80	F-1 u       # ^Ju     USILIC: 時系列
 	K-81	F-0 C-w     # ^X^W    バッファを作業fileへ保存
 	K-82	C-i         # ^I      INFO
-	K-83	F-2 C-i     # ^O^I    INFO(SHELL内から)
+	K-83	F-1 C-i     # ^J^I    INFO(SHELL内から)
 	K-84	F-4 u       # ^J^Ou   ~/.usilic/usilicrc
 	K-85	F-4 e       # ^J^Oe   ERROR
 	K-86	F-4 s       # ^J^Os   SHELLのログ

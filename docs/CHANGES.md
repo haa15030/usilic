@@ -28305,3 +28305,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: feedShellByte()で^Wを受け、CP/MV/ARCの宛先プロンプトの^Wと同じくDIR履歴の最後から
      2番目を使う。ただしコマンド行の途中で使うので、行を置き換えずにカーソル位置へ挿入する
      (LineEditor::insertString()を新設、undoは1回分)。履歴が足りなければベル。
+588. **2026-10-03: SHELLからのINFOを^O^Iから^J^Iへ**
+   - **経緯**: 直接のユーザー提案("SHELLからのINFO実行は^O^Iではなくて^J^Iの方がいいのでは？")。
+   - **変更**: K-83の既定を"F-2 C-i"から"F-1 C-i"へ。dispatchLeaderByte()の^O ^Iを消して^J ^Iへ移した。
+     src/usilicrc・usilicrc.en・doc/HELP・src/TUTORIAL_draft.txtの表記を合わせ、`~/.usilic/usilicrc`の
+     K-83も差し替えた。
