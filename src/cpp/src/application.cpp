@@ -2969,6 +2969,13 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // ケース参照)へ移り、2つのキーを保つ理由が無くなったため削除した
       // ――以後^[iはこのswitchのdefaultへ落ちる未認識シーケンスである
       // (Command::StartIncrementalGrep自身の宣言コメント参照)。
+      // 2026-10-02追加、直接のユーザー提案("COPYにしか割り振られていないキーが押されたとき...
+      // モードラインの定位置にCOPYモードの時だけ、みたいなメッセージを出す"): ^[w・^[p(COPYの
+      // 範囲のコピー/PROGRAMへ)はCOPYの外では何もしないので、そう知らせる(どれかのキーで消える)。
+      case 'w':
+      case 'p':
+        showTransientNotice(activeView(), "COPY mode only");
+        return false;
       default:
         return false;  // このスライスでは認識されないESCシーケンス
     }
@@ -3169,6 +3176,9 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::PlayMacro);
       case kControlS:  // ^X ^S : 記録したマクロをusilicrcのMACROへ保存(2026-10-02、saveMacroToUsilicrc()参照)
         return handleCommand(Command::SaveMacro);
+      case ' ':  // ^X ␣ : COPYの矩形範囲指定(COPYの外では何もしない、上の^[w/^[pと同じ)
+        showTransientNotice(activeView(), "COPY mode only");
+        return false;
       default:
         return false;  // このスライスでは認識されない^Xシーケンス
     }
