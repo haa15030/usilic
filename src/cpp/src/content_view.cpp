@@ -2122,7 +2122,9 @@ void ContentView::renderModeLine() {
     return;
   }
 
-  ModeLineFields rawFields = modeLineFieldsProvider_(cursorIndex_);
+  // 2026-10-03修正、直接のユーザー報告("MACRO定義中にモード名がMACROにならない"): ここだけ
+  // providedModeLineFields()を通さずに読んでいたので、^X(〜^X)の"MACRO"が当たらなかった。
+  ModeLineFields rawFields = providedModeLineFields();
   // ModeLineFields::splitLayoutWhenCrowded/renderSplitModeLine()自身
   // のコメント参照。withTruncatedFields()の出力ではなく「生の」
   // (切り詰められていない)フィールドに対してチェックされる――実際
