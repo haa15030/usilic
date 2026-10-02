@@ -15493,9 +15493,29 @@ void Application::pollPendingCpMvRmShellRun() {
   // 一覧から発動した場合(2026-09-27): CP/MVが成功して宛先へ入れたら(ls)の
   // 宛先へ(従来と同じ)。それ以外(RM、失敗)は発動元の一覧へ戻り、選択を
   // 解く。LOCATEは消えた/動いたファイルが一覧に残らないよう検索し直す。
-  if (run.origin != ApplicationMode::Directory) {
-    if (ok && !run.destination.empty() && directoryMode_.descendTo(run.destination)) {
+  // 2026-10-03修正、直接のユーザー報告("(ls)のHELP.man上で.^Oc~/.local/lib/usilic/HELP^Mのあと
+  // Destinationである~/.local/lib/usilic/へ切り替わらない"): 宛先がディレクトリでなく、ファイル名まで
+  // 付けたもの(別名でのコピー・上書き)だと、descendTo()が失敗して元のディレクトリへ戻っていた。その
+  // 場合は宛先の親ディレクトリへ入り、宛先のファイル名を一時マークする。親が元のディレクトリと同じ
+  // (同じ場所での別名コピー・MVでの改名)なら、^Gの戻り先を積まずに読み直すだけにする。
+  auto landAtDestination = [&]() -> bool {
+    if (!ok || run.destination.empty()) return false;
+    if (directoryMode_.descendTo(run.destination)) {
       directoryMode_.setTransientMarkedNames(run.targetBasenames);
+      return true;
+    }
+    std::filesystem::path dest(run.destination);
+    std::string name = dest.filename().string();
+    std::string parent = dest.parent_path().string();
+    std::error_code ec;
+    if (name.empty() || parent.empty() || !std::filesystem::is_directory(parent, ec)) return false;
+    bool sameDirectory = std::filesystem::equivalent(parent, directoryMode_.currentDirectory(), ec);
+    if (!(sameDirectory ? directoryMode_.enterDirectory(parent) : directoryMode_.descendTo(parent))) return false;
+    directoryMode_.setTransientMarkedNames({name});
+    return true;
+  };
+  if (run.origin != ApplicationMode::Directory) {
+    if (landAtDestination()) {
       if (run.origin == ApplicationMode::ListBrowser) promptHistoryContext_ = std::nullopt;
       directoryView_.redraw();
       return;
@@ -15509,17 +15529,10 @@ void Application::pollPendingCpMvRmShellRun() {
     activeView().redraw();
     return;
   }
-  if (!ok || run.destination.empty() || !directoryMode_.descendTo(run.destination)) {
-    directoryMode_.enterDirectory(run.sourceDirectory);
-  } else {
-    // 2026-09-08追加、DirectoryMode::setTransientMarkedNames()自身の
-    // コメント参照――descendTo()が成功した(宛先が本物の、閲覧可能な
-    // ディレクトリへ解決した)場合に限り、コピー/移動した対象を一時
-    // マークする。descendTo()自身がenterDirectory()を呼ぶので、その
-    // 内部でtransientMarkedNames_は既にクリアされている――この直後に
-    // 設定するので問題ない。
-    directoryMode_.setTransientMarkedNames(run.targetBasenames);
-  }
+  // 2026-09-08追加、DirectoryMode::setTransientMarkedNames()自身のコメント参照――宛先へ入れた場合に
+  // 限り、コピー/移動した対象を一時マークする(landAtDestination()の中、descendTo()自身が
+  // enterDirectory()でtransientMarkedNames_をクリアした直後に設定する)。
+  if (!landAtDestination()) directoryMode_.enterDirectory(run.sourceDirectory);
   directoryView_.redraw();
 }
 
