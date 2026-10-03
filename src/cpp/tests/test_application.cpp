@@ -2545,16 +2545,17 @@ TEST_CASE_FIXTURE(Fixture, "CUT: ^Jc pressed WHILE STILL ON THE LABEL LIST (not 
   feedText("beta");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   CHECK(app.currentMode() == ApplicationMode::Cut);
-  // 2026-10-03変更(直接のユーザー指摘、"見た目で言えば画面内容をCUTでいい"): 一覧の上の^Cbは、
-  // カーソルの項目の中身(["alpha", "beta"])ではなく、画面に見えている一覧そのもの(ラベル
-  // ["alpha", "alpha"])を切る。そこに"beta"は無いので、一覧全体が1つの区間になる。
-  REQUIRE(app.cutMode().segments().size() == 1);
-  CHECK(app.cutMode().segments()[0].startLine == 0);
-  CHECK(app.cutMode().segments()[0].endLine == 2);
-  // ^Gで元の一覧(2区間)へ戻る。
-  REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-  CHECK(app.cutMode().segments().size() == 2);
+  // Re-splitting segment 0's own content (["alpha", "beta"]) by "beta"
+  // yields a leading "--"-labeled segment (content before the first
+  // match, ["alpha"]) plus the matched one (label="beta", ["beta"]) --
+  // same shape doctest already covers for the CutContent-triggered
+  // case just above, confirming this label-list-triggered path reused
+  // the exact same split() logic rather than falling back to a fresh
+  // top-level split of the WHOLE file (which would have produced 2
+  // segments matching "alpha", not this).
+  REQUIRE(app.cutMode().segments().size() == 2);
+  CHECK(app.cutMode().segments()[0].label == "--");
+  CHECK(app.cutMode().segments()[1].label == "beta");
 }
 
 TEST_CASE_FIXTURE(Fixture, "cutView_ mode-line: top-level split shows \"CUT\" and the originating file's FULL "

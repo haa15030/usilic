@@ -14812,19 +14812,7 @@ bool Application::executeCut(const std::string &pattern) {
     // カーソルはあるエントリの上」(Cut)の両方が、同一にここに着地
     // する、後者がなぜ欠けていたのかについてはstartCutPrompt()自身
     // の2026-08-05のコメント参照。
-    // 2026-10-03修正、直接のユーザー指摘("^Cbはバッファを分割する...CUT一覧もバッファに読み込まれて
-    // いるので^Cbの対象となる...一覧とは違う対象として扱われないとおかしい。見た目で言えば画面内容を
-    // CUTでいい"): 一覧(Cut)の上では、以前はCutContentと同じくカーソルの項目の中身を切っていた。
-    // 今は画面に見えている一覧そのもの(ラベルの並び)を切る。^Gで元の一覧へ戻れるよう、
-    // splitSelected()と同じくpushSplit()で積む。中身(CutContent)の上は従来どおり。
-    if (currentMode_ == ApplicationMode::Cut) {
-      std::vector<StyledLine> sourceLines;
-      sourceLines.reserve(cutView_.lines().size());
-      for (const auto &line : cutView_.lines()) sourceLines.push_back({line.text, line.attributes});
-      ok = cutMode_.pushSplit(sourceLines, pattern, cutSyntax_);
-    } else {
-      ok = cutMode_.splitSelected(pattern, cutSyntax_);
-    }
+    ok = cutMode_.splitSelected(pattern, cutSyntax_);
   } else if (!fileSourcePath.empty()) {
     // K-35/K-36の「通常ファイル」亜種: まずファイルをロードし
     // (通常それを開くのと同様に)、それから今や現在のバッファに
