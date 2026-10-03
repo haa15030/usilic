@@ -241,6 +241,9 @@ class ContentView {
   void setViewport(int row0, int height);
 
   void setLines(std::vector<Line> lines);
+  // 2026-10-03追加(Display::ContentImage参照、EPUBの縦書きの画像ページ): この画面の本文に描く画像の
+  // 置き場所。renderContentRows()が毎回Displayへ渡す(画像の無い画面は空なので、前の画面の画像が残らない)。
+  void setContentImages(std::vector<Display::ContentImage> images) { images_ = std::move(images); }
   const std::vector<Line> &lines() const;
 
   // 現在読み込まれている全ての行の合計バイトサイズ、バッファ
@@ -1428,6 +1431,7 @@ class ContentView {
   Display &display_;
 
   std::vector<Line> lines_;
+  std::vector<Display::ContentImage> images_;  // setContentImages()参照
   int cursorIndex_ = 0;
   std::optional<int> jumpMark_;  // markJumpOrigin()参照
   int topIndex_ = 0;

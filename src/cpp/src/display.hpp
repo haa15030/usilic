@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -397,6 +399,24 @@ class Display {
   // 端末は横に少しずらせないので何もしない。
   virtual void beginContentEdgeCapture() {}
   virtual void endContentEdgeCapture(int side) { (void)side; }
+
+  // 2026-10-03追加、直接のユーザー依頼(EPUBの縦書きの画像ページ、.steering/20261003-epub-image-page/):
+  // 本文の中に描く画像の置き場所。画像は矩形(row, col, rows, colsのマス、colは負や画面の外でも
+  // よい)に、縦横比を保って収めて中央に描く。keyはsetImageProvider()の関数へ渡す名前。
+  struct ContentImage {
+    std::string key;
+    int row = 0;
+    int col = 0;
+    int rows = 0;
+    int cols = 0;
+  };
+  // 今描いている画面(ContentView::renderContentRows()が毎回渡す、画像が無ければ空)の画像。
+  // 裏の画面を描いている間(beginContentEdgeCapture()〜end)はその裏の画面の画像。-gだけが描き、
+  // 端末は何もしない。
+  virtual void setContentImages(const std::vector<ContentImage> &images) { (void)images; }
+  // keyから画像のファイルのバイト列(JPEG/PNG等)を返す関数。取れなければnullopt。
+  using ImageProvider = std::function<std::optional<std::string>(const std::string &key)>;
+  virtual void setImageProvider(ImageProvider provider) { (void)provider; }
 
   // モードライン行の1要素――ハイライトされた(反転表示/「standout」)
   // フィールド(ファイル名、位置インジケータ、末尾のパス)か、2つの

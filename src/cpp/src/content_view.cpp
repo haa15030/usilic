@@ -470,7 +470,7 @@ void ContentView::syncVisibleCursor() {
   }
   if (!cursorHighlightEnabled_) {
     int row = cursorDisplayRow();
-    if (row >= 0) {
+    if (row >= 0 && contentCursorColumn_ >= 0) {  // 負: カーソルを出さない(EPUBの画像ページ、2026-10-03)
       display_.setVisibleCursor(row, contentCursorColumn_);
       return;
     }
@@ -2507,6 +2507,7 @@ int ContentView::maxTopIndex() const {
 }
 
 bool ContentView::renderContentRows() {
+  display_.setContentImages(images_);  // setContentImages()参照
   clampViewport();
   int highlighted = hoverIndex_.has_value() ? *hoverIndex_ : cursorIndex_;
   int rowOffset = bottomAnchorRowOffset();

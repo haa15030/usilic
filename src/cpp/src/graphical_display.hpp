@@ -7,6 +7,8 @@
 
 #include "display.hpp"
 
+struct SDL_Texture;  // contentImageTexture()(SDLのヘッダはgraphical_display.cppだけで読む)
+
 namespace fm {
 
 // SDL2/SDL2_ttf駆動のDisplay: TerminalDisplayが本物の端末へ書く
@@ -227,6 +229,10 @@ class GraphicalDisplay : public Display {
   void renderRuby(int row, int col);
   void drawRubyText(int x, int y, const std::string &ruby, int span, bool vertical, Color fg, bool serif);
   void endContentEdgeCapture(int side) override;
+  void setContentImages(const std::vector<ContentImage> &images) override;  // Display::setContentImages()参照
+  void setImageProvider(ImageProvider provider) override;
+  void renderContentImages(const std::vector<ContentImage> &images);
+  SDL_Texture *contentImageTexture(const std::string &key, int *width, int *height);
 
   bool modeLineVisible() const override;
   void setModeLineVisible(bool visible) override;

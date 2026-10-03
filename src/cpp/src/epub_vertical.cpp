@@ -252,6 +252,13 @@ std::vector<EpubVerticalColumn> layoutEpubVerticalColumns(const std::vector<Epub
   int height = std::max(1, rows);
   std::vector<EpubVerticalColumn> cols;
   for (const auto &line : lines) {
+    if (!line.images.empty()) {  // 画像だけの行: 画像ごとに印の列(EpubVerticalSourceLine::images参照)
+      for (const auto &image : line.images) {
+        cols.push_back({{}, line.rawLineNumber});
+        cols.back().image = image;
+      }
+      continue;
+    }
     std::vector<Cell> cells = toCells(line, sideways);
     if (cells.empty()) {
       cols.push_back({{}, line.rawLineNumber});

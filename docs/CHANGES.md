@@ -28460,3 +28460,30 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      読み直してから、記録直後なら「--」へ書き、マクロの一覧を出す。Command::ReloadUsilicrcは廃止。
      src/usilicrc・usilicrc.en・`~/.usilic/usilicrc`のK-98を合わせた。疑似端末で^X^Sが何もしないこと、
      ^X(jj^X)^Xe^Xsで一覧の「--」(_ jj)の行が出ることを確認。HELPの^X^S・^Xsの記述はユーザー側の反映待ち。
+607. **2026-10-03: -gの縦書きのEPUBで、画像を本文の帯の中の画像ページ(画面1枚分)として表示する**
+   - **経緯**: 直接のユーザー依頼("EPUBだが.jpgだの.pngだのをusilicの画面内に表示するのは大変？"、"←で画像の
+     ページに来たら表示して再度←で消える、とはできない？"、"画像ページのドット単位スクロールは？"→"その方針で
+     進めて")。以前は`[image: ファイル名]`の字が出るだけで、見るには^MでQuickLookを開いていた。作業計画は
+     `.steering/20261003-epub-image-page/`。
+   - **実装**:
+     - stb_image v2.30(パブリックドメイン/MIT)を`src/cpp/src/third_party/stb_image.h`に同梱し、
+       `stb_image_impl.cpp`で展開(JPEG/PNG/GIF/BMP)。外部の依存は増えない。
+     - `Display::ContentImage`(画像を収めるマスの矩形)、`setContentImages()`/`setImageProvider()`を追加
+       (端末は何もしない、DelegatingDisplayは転送)。ContentViewが`setContentImages()`で持ち、
+       `renderContentRows()`の度にDisplayへ渡す(画像の無い画面は空)。
+     - GraphicalDisplayは、keyの画像をプロバイダから取ってstb_imageで復号しテクスチャにキャッシュ(失敗も
+       覚える)、`flush()`のマスの後に、縦横比を保って矩形の中央に描く。左右のずれ(offsetXForRow())と
+       裏の画面(renderContentEdge())もマスと同じ。本文の右端(スクロールバーの帯の手前)と本文の行でクリップ。
+     - 組版: `EpubVerticalSourceLine::images`のある行(画像だけの行)は画像ごとに印の列
+       (`EpubVerticalColumn::image`)を出す。`rebuildEpubVertical()`は-gの時に`[image: …]`だけの論理行を
+       見つけ、印の列をページの区切りにそろえた画像の列perScreen本(imageSlice)にする(章の区切りは記録
+       しない――記録すると隠されて滑り込まない)。`epubVerticalImagesFor()`が窓に見える画像ページの矩形を
+       作り、本文と裏の画面(captureEpubVerticalEdges())に渡す。
+     - 列カーソルの←/→(MoveDown/MoveUp)は画像ページを1回で出入りする(`epubVerticalStep()`の
+       wholeImagePages)。ドラッグ・慣性・j/kは1列ずつのままなので、画像は1ドットずつ滑り込む。画像の
+       列ではブロックカーソルを出さない(`setContentCursorColumn(-1)`、ContentViewは負なら隠す)。
+       ^Mは従来どおりQuickLook。-cは従来どおり字の`[image: …]`。
+   - **検証**: 組版のテスト1件追加、EPUB関係のテストは以前からの失敗4件(epubToHelpMarkup)以外通過。
+     -cでKat.epubの`[image: …]`が字で出ることを疑似端末で確認。-gの表示は実機での確認待ち。
+   - **未対応**: 扉(EpubLayoutHints::centered)の範囲の途中にある画像は画像ページにならない(扉の1ページの
+     列として空の列になる)。横書きの本文の画像はスコープ外。

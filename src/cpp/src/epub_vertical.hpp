@@ -37,6 +37,10 @@ struct EpubVerticalSourceLine {
   // 字下げ(2026-09-30、EpubLayoutHints::indent): 最初の列と、続く列の頭の空きのマスの数。
   int indentFirst = 0;
   int indentRest = 0;
+  // 画像だけの行(2026-10-03、-gの画像ページ、.steering/20261003-epub-image-page/): その画像の名前
+  // (`[image: 名前]`の名前、並びの順)。空でなければ字として組まず、画像ごとに印の列を1本出す
+  // (EpubVerticalColumn::image)。Application::rebuildEpubVertical()が画像ページに広げる。
+  std::vector<std::string> images;
 };
 
 struct EpubVerticalCell {
@@ -60,6 +64,10 @@ struct EpubVerticalColumn {
   // 等に足した空の列(padding)と、扉の1ページ分の列(titlePage、その空の列も含む)。
   bool padding = false;
   bool titlePage = false;
+  // 画像の列(2026-10-03、EpubVerticalSourceLine::images参照): 画像の名前(空なら字の列)と、画像
+  // ページ(画面1枚分の列)の右から何本目か。字のマス(cells)は空。
+  std::string image;
+  int imageSlice = 0;
 };
 
 // 1列の高さ`rows`で、論理行を列の並びへ組む。

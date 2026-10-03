@@ -1,5 +1,7 @@
 #include "delegating_display.hpp"
 
+#include <utility>
+
 namespace fm {
 
 DelegatingDisplay::DelegatingDisplay(Display &backend) : backend_(&backend) {}
@@ -56,6 +58,8 @@ void DelegatingDisplay::setPendingRuby(const std::string &reading, int span, boo
   backend_->setPendingRuby(reading, span, vertical);
 }
 void DelegatingDisplay::endContentEdgeCapture(int side) { backend_->endContentEdgeCapture(side); }
+void DelegatingDisplay::setContentImages(const std::vector<ContentImage> &images) { backend_->setContentImages(images); }
+void DelegatingDisplay::setImageProvider(ImageProvider provider) { backend_->setImageProvider(std::move(provider)); }
 
 void DelegatingDisplay::renderScrolled(const std::vector<ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                                         const std::vector<ModeLineSegment> &modeLineSegments) {

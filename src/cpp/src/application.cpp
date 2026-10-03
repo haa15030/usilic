@@ -7362,6 +7362,44 @@ void Application::rebuildEpubVertical(int rawLine) {
       logical.back().attributes.push_back(run);
     }
   }
+  // 2026-10-03追加、直接のユーザー依頼(EPUBの画像を画面内に、"←で画像のページに来たら表示して
+  // 再度←で消える"、"画像ページのドット単位スクロール"、.steering/20261003-epub-image-page/):
+  // -gでは、`[image: 名前]`だけの論理行を画像ページにする(EpubVerticalSourceLine::images、下の
+  // 帯への挿入、epubVerticalImagesFor())。-cは今までどおり字の`[image: …]`。
+  if (display_.isGraphical()) {
+    const std::string marker = "[image: ";
+    for (auto &line : logical) {
+      std::vector<std::string> names;
+      std::size_t p = 0;
+      const std::string &text = line.text;
+      bool ok = true;
+      while (true) {
+        p = text.find_first_not_of(' ', p);
+        if (p == std::string::npos) break;
+        std::size_t close = text.compare(p, marker.size(), marker) == 0 ? text.find(']', p) : std::string::npos;
+        if (close == std::string::npos) {
+          ok = false;
+          break;
+        }
+        names.push_back(text.substr(p + marker.size(), close - p - marker.size()));
+        p = close + 1;
+      }
+      if (ok && !names.empty()) line.images = std::move(names);
+    }
+    std::string book = fileMode_.currentFile();
+    if (book != epubImageProviderBook_) {
+      epubImageProviderBook_ = book;
+      // keyは「本のパス\n画像の名前」(epubVerticalImagesFor()参照)。描く時に初めてzipから読む。
+      display_.setImageProvider([this](const std::string &key) -> std::optional<std::string> {
+        std::size_t nl = key.find('\n');
+        if (nl == std::string::npos) return std::nullopt;
+        EpubMemberReader reader = fileMode_.epubMemberReader(key.substr(0, nl));
+        auto member = findEpubImageMember(reader, key.substr(nl + 1));
+        if (!member) return std::nullopt;
+        return reader(*member);
+      });
+    }
+  }
   std::vector<EpubVerticalColumn> laid = layoutEpubVerticalColumns(logical, epubVerticalRows(), display_.isGraphical());
   // 2026-09-29、直接のユーザー依頼("Kindle、iBook、Kinoppy風の章管理...章の開始は必ず画面
   // 右端から始まるだけ"): 章の頭の列が画面1枚分(perScreen列)の区切りに来るよう、その前に
@@ -7385,6 +7423,23 @@ void Application::rebuildEpubVertical(int rawLine) {
   };
   for (std::size_t c = 0; c < laid.size();) {
     int raw = laid[c].rawLineNumber;
+    // 画像の印の列(上の-gの画像ページ参照): ページの区切りまで空の列を足し、画像の列を画面1枚分
+    // (perScreen本、imageSliceは右から0..)入れる。区切り(epubVerticalBoundaries_)は記録しない
+    // ――記録すると画像ページが別の章として隠され(setEpubVerticalView()の見せる範囲)、左右の
+    // スクロールで本文から滑り込まなくなる。後ろはperScreen本ちょうどなので区切りにそろっている。
+    if (!laid[c].image.empty()) {
+      while (epubVerticalCols_.size() % perScreen != 0) {
+        epubVerticalCols_.push_back({{}, raw});
+        epubVerticalCols_.back().padding = true;
+      }
+      for (int k = 0; k < perScreen; k++) {
+        epubVerticalCols_.push_back({{}, raw});
+        epubVerticalCols_.back().image = laid[c].image;
+        epubVerticalCols_.back().imageSlice = k;
+      }
+      c++;
+      continue;
+    }
     bool lineStart = c == 0 || laid[c - 1].rawLineNumber != raw;
     auto range = std::find_if(centered.begin(), centered.end(),
                               [raw](const auto &r) { return raw >= r.first && raw <= r.second; });
@@ -7493,6 +7548,7 @@ void Application::setEpubVerticalView(int first, int cursor, std::optional<int> 
   // したら？"): 画面には右端の列の章(区切りepubVerticalBoundaries_の間)だけを描き、前後の章の
   // 列は空にする。章の間の空の列は飛ばす(stepEpubVerticalFirst()参照)。
   auto [shownFrom, shownUntil] = epubVerticalShownRange(epubVerticalFirst_);
+  epubVerticalView_.setContentImages(epubVerticalImagesFor(epubVerticalFirst_, shownFrom, shownUntil));  // 画像ページ
   epubVerticalView_.setLines(renderEpubVerticalWindow(epubVerticalCols_, epubVerticalFirst_, epubVerticalRows(),
                                                       display_.columns(), !display_.isGraphical(),
                                                       actionable ? epubVerticalCursor_ : -1, shownFrom, shownUntil,
@@ -7501,8 +7557,10 @@ void Application::setEpubVerticalView(int first, int cursor, std::optional<int> 
                            shownFrom, shownUntil, highlightLink);
   epubVerticalView_.setCursorIndex(0);
   epubVerticalView_.setTopIndex(0);
+  // 画像ページの列ではブロックカーソルを画像に重ねない(rebuildEpubVertical()の画像ページ参照)。
+  bool onImage = total > 0 && !epubVerticalCols_[epubVerticalCursor_].image.empty();
   epubVerticalView_.setContentCursorColumn(
-      std::max(0, epubVerticalScreenColumn(epubVerticalCursor_ - epubVerticalFirst_, display_.columns())));
+      onImage ? -1 : std::max(0, epubVerticalScreenColumn(epubVerticalCursor_ - epubVerticalFirst_, display_.columns())));
   char position[64];
   std::snprintf(position, sizeof(position), "%05d/%05d %3d%%", epubVerticalCursor_ + 1, std::max(total, 1),
                 total > 0 ? static_cast<int>(100L * (epubVerticalCursor_ + 1) / total) : 100);
@@ -7517,7 +7575,9 @@ void Application::captureEpubVerticalEdges(ContentView &view, const std::vector<
                                            int highlight, int shownFrom, int shownUntil, int highlightLink) {
   if (!display_.isGraphical()) return;
   std::vector<ContentView::Line> window = view.lines();
+  bool images = &view == &epubVerticalView_;  // 画像ページ(epubVerticalImagesFor())は本文だけ
   for (int side : {1, -1}) {
+    if (images) view.setContentImages(epubVerticalImagesFor(first + side * kEpubVerticalEdgeColumns, shownFrom, shownUntil));
     view.setLines(renderEpubVerticalWindow(cols, first + side * kEpubVerticalEdgeColumns, epubVerticalRows(),
                                            display_.columns(), false, highlight, shownFrom, shownUntil,
                                            highlightLink));
@@ -7528,8 +7588,32 @@ void Application::captureEpubVerticalEdges(ContentView &view, const std::vector<
     display_.endContentEdgeCapture(side);
   }
   view.setLines(std::move(window));
+  if (images) view.setContentImages(epubVerticalImagesFor(first, shownFrom, shownUntil));
   view.setCursorIndex(0);
   view.setTopIndex(0);
+}
+
+// 右端の列firstの窓[first, first+perScreen)に見える画像の列(見せる範囲[shownFrom, shownUntil)の中だけ)
+// から、画像ページごとに置き場所を1つ作る(rebuildEpubVertical()の画像ページ参照)。右からk番目の列は
+// 桁[columns-pitch*(k+1), columns-pitch*k)(右端は行間)なので、右端の列がk0の画像ページ(perScreen本)は
+// 桁columns-pitch*(k0+perScreen)から幅pitch*perScreen。画面の外にはみ出してもよい(描く側でクリップ)。
+std::vector<Display::ContentImage> Application::epubVerticalImagesFor(int first, int shownFrom, int shownUntil) const {
+  std::vector<Display::ContentImage> out;
+  if (!display_.isGraphical()) return out;
+  int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+  int pitch = epubVerticalColumnPitch();
+  int total = static_cast<int>(epubVerticalCols_.size());
+  std::set<int> pages;
+  for (int c = std::max({first, shownFrom, 0}); c < std::min({first + perScreen, shownUntil, total}); c++) {
+    const EpubVerticalColumn &column = epubVerticalCols_[c];
+    if (column.image.empty()) continue;
+    int pageStart = c - column.imageSlice;
+    if (!pages.insert(pageStart).second) continue;
+    int k0 = pageStart - first;
+    out.push_back({fileMode_.currentFile() + "\n" + column.image, 0, display_.columns() - pitch * (k0 + perScreen),
+                   epubVerticalRows(), pitch * perScreen});
+  }
+  return out;
 }
 
 // 右端の列firstの章の列の範囲[from, until)(setEpubVerticalView()参照)。
@@ -7567,7 +7651,10 @@ void Application::syncEpubVerticalToFile() {
 // ページ(titlePage)は1列の送り/戻りでページごと越える(2026-09-29、直接のユーザー依頼
 // "扉ページは画像ページ同様、一行送りがページ送りとなる")。空の列や扉を越えた時は、
 // 着いた列のページ(perScreen列ごとの区切り)の頭を右端にする。
-std::pair<int, int> Application::epubVerticalStep(int cursor, bool forward) const {
+// wholeImagePages(2026-10-03、列カーソルの←/→、rebuildEpubVertical()の画像ページ参照): 画像ページは
+// 1回で入り(ページの頭を右端に、カーソルは右端の画像の列)、もう1回で次/前の列へ抜ける。左右の
+// ドラッグ・慣性・j/k(stepEpubVerticalFirst())は従来どおり1列ずつ(ドット単位で滑り込ませるため)。
+std::pair<int, int> Application::epubVerticalStep(int cursor, bool forward, bool wholeImagePages) const {
   int n = static_cast<int>(epubVerticalCols_.size());
   int perScreen = epubVerticalColumnsPerScreen(display_.columns());
   if (n == 0) return {-1, cursor};
@@ -7575,7 +7662,11 @@ std::pair<int, int> Application::epubVerticalStep(int cursor, bool forward) cons
   int dir = forward ? 1 : -1;
   int t = cursor + dir;
   bool jumped = false;
-  if (epubVerticalCols_[cursor].titlePage) {
+  if (wholeImagePages && !epubVerticalCols_[cursor].image.empty()) {
+    int pageStart = cursor - epubVerticalCols_[cursor].imageSlice;
+    t = forward ? pageStart + perScreen : pageStart - 1;
+    jumped = true;
+  } else if (epubVerticalCols_[cursor].titlePage) {
     while (t >= 0 && t < n && epubVerticalCols_[t].titlePage) t += dir;
     jumped = true;
   }
@@ -7584,6 +7675,10 @@ std::pair<int, int> Application::epubVerticalStep(int cursor, bool forward) cons
     jumped = true;
   }
   if (t < 0 || t >= n) return {-1, cursor};  // 本の端(横書きの範囲へはmaybeEnterEpubHorizontal())
+  if (wholeImagePages && !epubVerticalCols_[t].image.empty()) {
+    int pageStart = t - epubVerticalCols_[t].imageSlice;
+    return {pageStart, pageStart};
+  }
   if (epubVerticalCols_[t].titlePage) {
     int pageStart = t;
     while (pageStart > 0 && epubVerticalCols_[pageStart - 1].titlePage) pageStart--;
@@ -7726,14 +7821,14 @@ std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
   switch (command) {
     case Command::MoveDown: {  // 列カーソルを1列先(左)へ(setEpubVerticalView()、epubVerticalStep()参照)
       if (selectAdjacentEpubVerticalLink(+1)) return true;
-      auto [nextFirst, next] = epubVerticalStep(cursor, true);
+      auto [nextFirst, next] = epubVerticalStep(cursor, true, /*wholeImagePages=*/true);
       setEpubVerticalView(nextFirst < 0 ? first : nextFirst, next);
       if (crossing(true)) return true;
       break;
     }
     case Command::MoveUp: {  // 1列戻る(右へ)
       if (selectAdjacentEpubVerticalLink(-1)) return true;
-      auto [nextFirst, next] = epubVerticalStep(cursor, false);
+      auto [nextFirst, next] = epubVerticalStep(cursor, false, /*wholeImagePages=*/true);
       setEpubVerticalView(nextFirst < 0 ? first : nextFirst, next);
       if (crossing(false)) return true;
       break;

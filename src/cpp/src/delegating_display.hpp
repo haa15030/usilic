@@ -96,6 +96,8 @@ class DelegatingDisplay : public Display {
   bool drawsRuby() const override;
   void setPendingRuby(const std::string &reading, int span, bool vertical) override;
   void endContentEdgeCapture(int side) override;
+  void setContentImages(const std::vector<ContentImage> &images) override;
+  void setImageProvider(ImageProvider provider) override;
 
   void renderScrolled(const std::vector<ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                        const std::vector<ModeLineSegment> &modeLineSegments) override;

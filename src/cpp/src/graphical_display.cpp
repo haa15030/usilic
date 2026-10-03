@@ -18,6 +18,14 @@
 #include "scrollbar_idle_image.hpp"
 #include "mac_cursor.hpp"
 #include "utf8.hpp"
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Weverything"
+#endif
+#include "third_party/stb_image.h"  // 実装はstb_image_impl.cpp
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 #include "content_view.hpp"  // middleEllipsisTruncateByWidth() -- renderScrolled()自身のコメント参照
 
 namespace fm {
@@ -730,6 +738,22 @@ struct GraphicalDisplay::Impl {
   bool edgeSavedFlags[9] = {};
   int edgeSavedFg = 0, edgeSavedBg = 0;
   int fgColorActive = Display::kDefaultColor, bgColorActive = Display::kDefaultColor;  // setColor()
+  // 本文の画像(Display::setContentImages()参照、2026-10-03)。imagesが今の画面、edgeImagesが裏の
+  // 画面(edgeGridと同じ添字)、edgePendingImagesは裏の画面を描いている間に渡されたもの。
+  std::vector<Display::ContentImage> images, edgeImages[2], edgePendingImages;
+  Display::ImageProvider imageProvider;
+  // keyごとの復号済みのテクスチャ(failed: 取れない・復号できない、二度と試さない)。
+  struct ImageTexture {
+    SDL_Texture *texture = nullptr;
+    int width = 0, height = 0;
+    bool failed = false;
+  };
+  std::map<std::string, ImageTexture> imageCache;
+  void clearImageCache() {
+    for (auto &[key, image] : imageCache)
+      if (image.texture) SDL_DestroyTexture(image.texture);
+    imageCache.clear();
+  }
 
   // renderCursor()が実際に描く「論理的な」カーソル位置――上の
   // cursorRow/cursorCol(純粋に「次のバイトがどこに書かれるか」で
@@ -1219,6 +1243,7 @@ GraphicalDisplay::~GraphicalDisplay() {
   if (impl_->handCursor) SDL_FreeCursor(impl_->handCursor);
   if (impl_->pointingCursor) SDL_FreeCursor(impl_->pointingCursor);
   clearGlyphCache(*impl_);  // impl_->rendererがまだ有効なうちに実行する必要がある――それ自身のコメント参照
+  impl_->clearImageCache();  // 同じく(本文の画像のテクスチャ)
   if (impl_->renderer) SDL_DestroyRenderer(impl_->renderer);
   if (impl_->window) SDL_DestroyWindow(impl_->window);
   if (impl_->serifFont) TTF_CloseFont(impl_->serifFont);
@@ -1825,6 +1850,7 @@ void GraphicalDisplay::flush() {
     for (int col = 0; col < impl_->columns; col++) renderCellBackground(row, col);
   for (int row = 0; row < impl_->rows; row++)
     for (int col = 0; col < impl_->columns; col++) renderCell(row, col);
+  renderContentImages(impl_->images);
   for (int row = 0; row < impl_->rows; row++)
     for (int col = 0; col < impl_->columns; col++) renderRuby(row, col);
   renderContentEdge();
@@ -2291,6 +2317,8 @@ void GraphicalDisplay::endContentEdgeCapture(int side) {
   Impl &d = *impl_;
   if (!d.edgeCapturing) return;
   d.edgeCapturing = false;
+  d.edgeImages[side > 0 ? 0 : 1] = std::move(d.edgePendingImages);
+  d.edgePendingImages.clear();
   d.edgeGrid[side > 0 ? 0 : 1] = std::move(d.grid);
   d.grid = std::move(d.edgeSavedGrid);
   d.cursorRow = d.edgeSavedRow;
@@ -2330,11 +2358,83 @@ void GraphicalDisplay::renderContentEdge() {
       for (int col = lo; col < hi; col++) renderCellBackground(row, col);
     for (int row = 0; row < rows; row++)
       for (int col = lo; col < hi; col++) renderCell(row, col);
+    renderContentImages(d.edgeImages[side]);  // 裏の画面の画像も同じずれで(setContentImages()参照)
     for (int row = 0; row < rows; row++)
       for (int col = lo; col < hi; col++) renderRuby(row, col);
     d.contentOffsetX = savedOffset;
     std::swap(d.grid, d.edgeGrid[side]);
   }
+}
+
+// 本文の画像(Display::setContentImages()参照、2026-10-03、EPUBの縦書きの画像ページ)。裏の画面を
+// 描いている間はその裏の画面のものとして覚える(endContentEdgeCapture()がedgeImagesへ移す)。
+void GraphicalDisplay::setContentImages(const std::vector<ContentImage> &images) {
+  if (impl_->edgeCapturing) impl_->edgePendingImages = images;
+  else impl_->images = images;
+}
+
+void GraphicalDisplay::setImageProvider(ImageProvider provider) {
+  impl_->imageProvider = std::move(provider);
+  impl_->clearImageCache();  // 前の本の画像を持ち続けない
+}
+
+// keyの画像のテクスチャ(初めてならプロバイダからバイト列を取ってstb_imageで復号する)。
+// 取れない・復号できない画像はnullptr(失敗を覚えて、毎フレーム試し直さない)。
+SDL_Texture *GraphicalDisplay::contentImageTexture(const std::string &key, int *width, int *height) {
+  Impl &d = *impl_;
+  auto it = d.imageCache.find(key);
+  if (it == d.imageCache.end()) {
+    Impl::ImageTexture image;
+    image.failed = true;
+    std::optional<std::string> bytes = d.imageProvider ? d.imageProvider(key) : std::nullopt;
+    int w = 0, h = 0, channels = 0;
+    unsigned char *pixels =
+        bytes && !bytes->empty()
+            ? stbi_load_from_memory(reinterpret_cast<const unsigned char *>(bytes->data()),
+                                    static_cast<int>(bytes->size()), &w, &h, &channels, 4)
+            : nullptr;
+    if (pixels) {
+      SDL_Texture *texture = SDL_CreateTexture(d.renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, w, h);
+      if (texture) {
+        SDL_UpdateTexture(texture, nullptr, pixels, w * 4);
+        SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
+        SDL_SetTextureScaleMode(texture, SDL_ScaleModeLinear);  // 縮小をなめらかに
+        image = {texture, w, h, false};
+      }
+      stbi_image_free(pixels);
+    }
+    it = d.imageCache.emplace(key, image).first;
+  }
+  if (it->second.failed) return nullptr;
+  *width = it->second.width;
+  *height = it->second.height;
+  return it->second.texture;
+}
+
+// 画像をそれぞれの矩形(マス)に、縦横比を保って収めて中央に描く。縦書きの間だけ。左右の
+// ずれ(offsetXForRow())はマスと同じ。本文の右端(スクロールバーの帯の手前)と矩形の下端
+// (本文の行、モードラインは含めない)でクリップする。
+void GraphicalDisplay::renderContentImages(const std::vector<ContentImage> &images) {
+  Impl &d = *impl_;
+  if (!d.outputEnabled || !d.verticalText || images.empty()) return;
+  SDL_Rect previousClip;
+  SDL_RenderGetClipRect(d.renderer, &previousClip);
+  bool hadClip = SDL_RenderIsClipEnabled(d.renderer);
+  for (const auto &image : images) {
+    int w = 0, h = 0;
+    SDL_Texture *texture = contentImageTexture(image.key, &w, &h);
+    if (!texture || w <= 0 || h <= 0 || image.rows <= 0 || image.cols <= 0) continue;
+    int boxX = Impl::kMarginX + image.col * d.cellWidth + d.offsetXForRow(image.row);
+    int boxY = Impl::kMarginY + image.row * d.cellHeight;
+    int boxW = image.cols * d.cellWidth, boxH = image.rows * d.cellHeight;
+    double scale = std::min(static_cast<double>(boxW) / w, static_cast<double>(boxH) / h);
+    int dw = std::max(1, static_cast<int>(w * scale)), dh = std::max(1, static_cast<int>(h * scale));
+    SDL_Rect dst{boxX + (boxW - dw) / 2, boxY + (boxH - dh) / 2, dw, dh};
+    SDL_Rect clip{0, boxY, Impl::kMarginX + d.columns * d.cellWidth, boxH};
+    SDL_RenderSetClipRect(d.renderer, &clip);
+    SDL_RenderCopy(d.renderer, texture, nullptr, &dst);
+  }
+  SDL_RenderSetClipRect(d.renderer, hadClip ? &previousClip : nullptr);
 }
 
 bool GraphicalDisplay::modeLineVisible() const { return impl_->modeLineVisible; }

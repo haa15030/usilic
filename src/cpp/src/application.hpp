@@ -2520,7 +2520,7 @@ class Application {
   bool maybeEnterEpubHorizontal(int fromRaw, bool forward);
   // 縦書きの1列の送り/戻り(rebuildEpubVertical()の空の列・扉のページ参照)。返り値は
   // {右端の列(-1なら今のまま), 列カーソル}。
-  std::pair<int, int> epubVerticalStep(int cursor, bool forward) const;
+  std::pair<int, int> epubVerticalStep(int cursor, bool forward, bool wholeImagePages = false) const;
   // 列cが空の列/扉のページなら、その後の(forward)/前の本文の列、または扉の書名の列へ
   // 寄せ、右端を画面の区切りに揃える(ページ送り・飛び先用)。
   void snapEpubVerticalToPage(bool forward);
@@ -2551,6 +2551,9 @@ class Application {
   std::vector<ContentView *> grepModeLineViews(ApplicationMode mode);
   bool redrawEpubVerticalForGrep(ContentView &target);
   std::pair<int, int> epubVerticalShownRange(int first) const;
+  // 縦書きの窓(右端の列first)に見える画像ページの置き場所(2026-10-03、rebuildEpubVertical()参照)。
+  std::vector<Display::ContentImage> epubVerticalImagesFor(int first, int shownFrom, int shownUntil) const;
+  std::string epubImageProviderBook_;  // display_.setImageProvider()を渡した本(rebuildEpubVertical()参照)
   // 縦書きの列の端(deltaの向き)の先(前)に横書きの範囲があればそこへ入る(描き直す)。
   bool enterEpubHorizontalAtEdge(int delta);
   bool enterEpubHorizontalAtBookEnd();  // ^[<で本の末尾の横書きの範囲(奥付等)の最下行へ

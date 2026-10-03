@@ -72,3 +72,20 @@ TEST_CASE("layoutEpubVerticalColumns: 2 alnum tate-chu-yoko, 3+ half-width packe
   CHECK(fm::layoutEpubVerticalColumns({{"abcde", {}, 1}}, 9)[0].cells.size() == 5);  // -cは1字1マス
   CHECK(window({{"→←", {}, 1}}, 2, 3, 0) == std::vector<std::string>{"↓", "↑"});
 }
+
+// 2026-10-03追加(-gの画像ページ、.steering/20261003-epub-image-page/): 画像だけの行は字として組まず、
+// 画像ごとに印の列(字のマスが無く、画像の名前と元の行番号を持つ)を1本ずつ出す。
+TEST_CASE("layoutEpubVerticalColumns: an image-only line becomes one marker column per image") {
+  EpubVerticalSourceLine imageLine{"[image: a.jpg][image: b.png]", {}, 2};
+  imageLine.images = {"a.jpg", "b.png"};
+  std::vector<EpubVerticalSourceLine> lines = {{"あ", {}, 1}, imageLine, {"い", {}, 3}};
+  auto cols = fm::layoutEpubVerticalColumns(lines, 4);
+  REQUIRE(cols.size() == 4);
+  CHECK(cols[0].image.empty());
+  CHECK(cols[1].image == "a.jpg");
+  CHECK(cols[2].image == "b.png");
+  CHECK(cols[1].cells.empty());
+  CHECK(cols[1].rawLineNumber == 2);
+  CHECK(cols[2].rawLineNumber == 2);
+  CHECK(cols[3].image.empty());
+}
