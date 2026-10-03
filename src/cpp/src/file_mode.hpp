@@ -82,7 +82,7 @@ bool isEpubFile(const std::string &path);
 
 // 2026-10-04追加、直接のユーザー依頼("画像ファイルJPEG、PNG、GIF(アニメ無し)、BMPをEPUBモードで表示可能なら
 // (ls)でも表示できてほしい"): 拡張子.jpg/.jpeg/.png/.gif/.bmp(大小無視)。-gではFileMode::readAndWrap()が
-// EPUBの画像と同じ画像の行(ContentView::Line::imageKey、keyは「パス\n」で画像の名前が空)にして画面に収めて
+// EPUBの画像と同じ画像の行(ContentView::Line::imageKey、keyは「パス\n\x01更新時刻:大きさ」)にして画面に収めて
 // 描く(Application::openExternallyIfApplicable()もクイックルックへ渡さない)。
 bool isViewableImageFile(const std::string &path);
 

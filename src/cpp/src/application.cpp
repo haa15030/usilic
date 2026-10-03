@@ -5050,6 +5050,11 @@ bool Application::handleCommandImpl(Command command) {
       return playRecordedMacro();
     case Command::Redraw:
       activeView().setHoverIndex(std::nullopt);  // Move*/Page*系のcase自身のコメント参照
+      // 2026-10-04: 画像ファイル(isViewableImageFile())を見ている時は読み直す(gimp等で書き出し直した
+      // 画像を確かめる、FileMode::readAndWrap()の"\x01更新時刻:大きさ"参照)。
+      if (currentMode_ == ApplicationMode::File && isViewableImageFile(fileMode_.currentFile()) &&
+          !fileView_.lines().empty() && !fileView_.lines().front().imageKey.empty())
+        fileMode_.loadFile(fileMode_.currentFile());
       // 2026-09-08追加、直接のユーザー要望("^Lで消去"、DirectoryMode::
       // setTransientMarkedNames()自身のコメント参照)――CP/MV/ARC完了後
       // の一時マーキングを^Lで消す。CP/MV/RM着手前の複数選択
@@ -7795,7 +7800,7 @@ bool Application::toggleEpubChapterBreaks() {
 std::optional<std::string> Application::epubImageBytes(const std::string &key) const {
   std::size_t nl = key.find('\n');
   if (nl == std::string::npos) return std::nullopt;
-  if (nl + 1 == key.size()) {  // 画像の名前が空: 画像ファイルそのもの(isViewableImageFile()、2026-10-04)
+  if (key.compare(nl + 1, 1, "\x01") == 0) {  // 画像ファイルそのもの(isViewableImageFile()、2026-10-04)
     std::ifstream in(key.substr(0, nl), std::ios::binary);
     if (!in) return std::nullopt;
     std::ostringstream buffer;

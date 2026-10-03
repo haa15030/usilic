@@ -2403,6 +2403,19 @@ SDL_Texture *GraphicalDisplay::contentImageTexture(const std::string &key, int *
       }
       stbi_image_free(pixels);
     }
+    // 画像ファイル(keyが「パス\n\x01更新時刻:大きさ」、FileMode::readAndWrap())は書き換えられると別のkeyに
+    // なるので、同じパスの古いテクスチャを捨てる(2026-10-04)。
+    if (std::size_t mark = key.find("\n\x01"); mark != std::string::npos) {
+      std::string prefix = key.substr(0, mark + 2);
+      for (auto old = d.imageCache.begin(); old != d.imageCache.end();) {
+        if (old->first.compare(0, prefix.size(), prefix) == 0) {
+          if (old->second.texture) SDL_DestroyTexture(old->second.texture);
+          old = d.imageCache.erase(old);
+        } else {
+          ++old;
+        }
+      }
+    }
     it = d.imageCache.emplace(key, image).first;
   }
   if (it->second.failed) return nullptr;

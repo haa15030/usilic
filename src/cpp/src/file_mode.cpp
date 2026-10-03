@@ -612,12 +612,19 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path,
   if (epubImageRows_ && !noWrapMode_ && !rawControlCodesMode_ && isViewableImageFile(path)) {
     epubLinks_.clear();
     epubLayoutHints_ = {};
-    if (int rows = epubImageRows_(path, "", width_); rows > 0) {
+    // 画像の名前の代わりに"\x01更新時刻:大きさ"(2026-10-04、直接のユーザー指摘"gimpで...jpgエクスポートで
+    // 仕上がりを確認するときに困る"): 画像の大きさ・テクスチャはkeyで覚えているので、書き換えられた画像は
+    // 別のkeyにして読み直させる(Application::epubImageBytes()はこの印ならファイルそのものを読む)。
+    std::error_code ec;
+    auto mtime = std::filesystem::last_write_time(path, ec).time_since_epoch().count();
+    auto size = std::filesystem::file_size(path, ec);
+    std::string name = "\x01" + std::to_string(static_cast<long long>(mtime)) + ":" + std::to_string(static_cast<unsigned long long>(ec ? 0 : size));
+    if (int rows = epubImageRows_(path, name, width_); rows > 0) {
       std::vector<ContentView::Line> lines;
       for (int k = 0; k < rows; k++) {
         ContentView::Line image;
         image.rawLineNumber = 1;
-        image.imageKey = path + "\n";
+        image.imageKey = path + "\n" + name;
         image.imageRow = k;
         image.imageRows = rows;
         lines.push_back(std::move(image));
