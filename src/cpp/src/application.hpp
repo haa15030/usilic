@@ -2555,10 +2555,10 @@ class Application {
   std::pair<int, int> epubVerticalShownRange(int first) const;
   // 縦書きの窓(右端の列first)に見える画像ページの置き場所(2026-10-03、rebuildEpubVertical()参照)。
   std::vector<Display::ContentImage> epubVerticalImagesFor(int first, int shownFrom, int shownUntil) const;
-  // 2026-10-03追加、直接のユーザー依頼("連続スクロールと章区切りの２通りを選べる"、キーだけで切り替え、既定は
-  // 章区切り、縦書き・横書きの両方): trueなら章区切り(縦書きは右端、横書きは上端の行の章だけを描き、
+  // 2026-10-03追加、直接のユーザー依頼("連続スクロールと章区切りの２通りを選べる"、キーだけで切り替え、
+  // 縦書き・横書きの両方。既定は同日"既定は連続でよろしく"で連続に): trueなら章区切り(縦書きは右端、横書きは上端の行の章だけを描き、
   // 縦書きは章の頭をページの区切りにそろえる)、falseなら章をまたいでひと続きに流す。
-  bool epubChapterBreaks_ = true;
+  bool epubChapterBreaks_ = false;
   bool toggleEpubChapterBreaks();
   std::vector<int> epubHorizontalChapterStarts() const;
   bool jumpEpubChapter(int delta);
