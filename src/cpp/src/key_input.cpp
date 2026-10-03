@@ -223,6 +223,20 @@ std::optional<KeyInput::SpecialKey> KeyInput::readEscapeSequence() {
     }
     return std::nullopt;
   }
+  // ^[+矢印を素早く押した時(とOptionをMetaにした端末のOption+矢印): "\x1b\x1b[A"等がひと続きに届く。
+  // Shift+矢印と同じものとして返す(2026-10-04、EPUBの章送り、Application::jumpEpubChapterByArrow()参照)。
+  // 以前はESC ESCとして^[^[(EXIT)になっていた。
+  if (matched < 0 && (esc == "\x1b\x1b[" || esc == "\x1b\x1bO")) {
+    int c = readByte();
+    if (c) lastEscapeBytes_.push_back(static_cast<char>(c));
+    switch (c) {
+      case 'A': return SpecialKey::ShiftUp;
+      case 'B': return SpecialKey::ShiftDown;
+      case 'C': return SpecialKey::ShiftRight;
+      case 'D': return SpecialKey::ShiftLeft;
+      default: break;
+    }
+  }
   if (matched < 0) return std::nullopt;
   if (matched >= 4) readByte();  // PageUp/PageDown: 末尾のバイト(例えば'~')を捨てる
   return kSpecialOrder[matched];

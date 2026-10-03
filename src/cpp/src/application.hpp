@@ -2567,6 +2567,7 @@ class Application {
   bool toggleEpubChapterBreaks();
   std::vector<int> epubHorizontalChapterStarts() const;
   bool jumpEpubChapter(int delta);
+  bool jumpEpubChapterByArrow(KeyInput::SpecialKey arrow);
   // 横書きの章の頭の行(ContentView::setChapterStarts()へ渡したもの)を作り直す目安。
   const void *epubChapterStartsLines_ = nullptr;
   std::size_t epubChapterStartsCount_ = 0;

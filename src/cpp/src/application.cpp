@@ -2529,13 +2529,18 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // 本なのでKindle等と同じく←で先へ)。
   // 2026-10-03追加、直接のユーザー依頼("ページ送りすると章の冒頭で止まるとは限らないのがストレスなので、ここは
   // ひとつ章送り機能を新設してほしい。縦書きでは暫定shift+←→、横書きはshift+↑↓"): EPUBの本文の章送り
-  // (jumpEpubChapter())。縦書きは←が先(右から左へ読む)。
-  if (special && currentMode_ == ApplicationMode::File && isEpubFile(fileMode_.currentFile())) {
-    bool vertical = epubVerticalActive();
-    if (*special == (vertical ? KeyInput::SpecialKey::ShiftLeft : KeyInput::SpecialKey::ShiftDown))
-      return jumpEpubChapter(+1);
-    if (*special == (vertical ? KeyInput::SpecialKey::ShiftRight : KeyInput::SpecialKey::ShiftUp))
-      return jumpEpubChapter(-1);
+  // (jumpEpubChapter())。2026-10-04に^[+矢印へ変更(dispatchLeaderByte()のescPending_参照)、Shift+矢印は
+  // 別名として残す。
+  if (special) {
+    std::optional<KeyInput::SpecialKey> arrow;
+    switch (*special) {
+      case KeyInput::SpecialKey::ShiftUp: arrow = KeyInput::SpecialKey::Up; break;
+      case KeyInput::SpecialKey::ShiftDown: arrow = KeyInput::SpecialKey::Down; break;
+      case KeyInput::SpecialKey::ShiftLeft: arrow = KeyInput::SpecialKey::Left; break;
+      case KeyInput::SpecialKey::ShiftRight: arrow = KeyInput::SpecialKey::Right; break;
+      default: break;
+    }
+    if (arrow) return jumpEpubChapterByArrow(*arrow);
   }
   if (special && ((currentMode_ == ApplicationMode::File && (epubVerticalActive() || epubHorizontalSection_)) ||
                   (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive()))) {
@@ -2941,7 +2946,9 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
   }
   if (escPending_) {
     escPending_ = false;
-    if (special) return false;
+    // ^[+矢印: EPUBの章送り(2026-10-04、直接のユーザー依頼"章送りキーだがshift+だと設定が必要なので^[に
+    // 変更して"、jumpEpubChapterByArrow()参照)。
+    if (special) return jumpEpubChapterByArrow(*special);
     // "^[N"/"^[gg"(goto-line)自身の入口――上のgotoLineDigitsPending_/
     // gotoLineGPending_のコメント参照。数字が直接続けば(^[N)そのまま
     // gotoLineDigitsPending_へ、'g'が続けば(^[gg、Emacs自身のM-g g)
@@ -7718,6 +7725,15 @@ std::vector<int> Application::epubHorizontalChapterStarts() const {
     starts.push_back(i);
   }
   return starts;
+}
+
+// ^[+矢印(とShift+矢印)の章送り: EPUBの本文の時だけ。縦書きは←が先(右から左へ読む)/→が前、横書きは↓が先/↑が前。
+bool Application::jumpEpubChapterByArrow(KeyInput::SpecialKey arrow) {
+  if (currentMode_ != ApplicationMode::File || !isEpubFile(fileMode_.currentFile())) return false;
+  bool vertical = epubVerticalActive();
+  if (arrow == (vertical ? KeyInput::SpecialKey::Left : KeyInput::SpecialKey::Down)) return jumpEpubChapter(+1);
+  if (arrow == (vertical ? KeyInput::SpecialKey::Right : KeyInput::SpecialKey::Up)) return jumpEpubChapter(-1);
+  return false;
 }
 
 // 章送り(dispatchByte()のShift+矢印、2026-10-03): delta>0で次の章の頭、<0で今の章の頭(既に頭にいれば前の

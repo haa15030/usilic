@@ -28584,3 +28584,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: Application::noteUserActivity()(clearTransientNotice()、hで飛んだ先のハイライトも含む)を新設し、
      -gのキーのイベントの入口、-cの←→の慣性の開始、マウスのイベント(項目603のclearHelpJumpHighlight()の
      呼び出しを置き換え)で呼ぶ。ビルドのみ確認(実機確認待ち)。
+617. **2026-10-04: EPUBの章送りを^[+矢印に(縦書きは^[←→、横書きは^[↓↑)**
+   - **経緯**: 直接のユーザー依頼("章送りキーだがshift+だと設定が必要なので^[に変更して"、項目614の
+     Shift+矢印はmacOSのTerminal.appでは端末側の設定が要る)。
+   - **実装**: dispatchLeaderByte()のescPending_で、続く矢印をApplication::jumpEpubChapterByArrow()へ渡す
+     (EPUBの本文の時だけ、縦書きは←が先、横書きは↓が先)。^[と矢印を素早く押して`ESC ESC [ A`等が
+     ひと続きに届いた時(とOptionをMetaにした端末のOption+矢印)も、KeyInput::readEscapeSequence()が
+     Shift+矢印と同じものとして読む(以前はESC ESC=^[^[になっていた)。Shift+矢印は別名として残した。
+     -gの←→の慣性の開始は^[の後(awaitingSequenceOrPromptByte())には横取りしない(従来どおり)。
+     ビルドのみ確認(実機確認待ち)。HELPへの記載はユーザー側の反映待ち。
