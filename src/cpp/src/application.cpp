@@ -7642,13 +7642,33 @@ std::vector<Display::ContentImage> Application::epubVerticalImagesFor(int first,
 
 // 右端の列firstの章の列の範囲[from, until)(setEpubVerticalView()参照)。
 std::pair<int, int> Application::epubVerticalShownRange(int first) const {
-  int from = 0, until = static_cast<int>(epubVerticalCols_.size());
-  for (int boundary : epubVerticalBoundaries_) {
-    if (boundary <= first) from = boundary;
-    else {
-      until = boundary;
-      break;
+  int total = static_cast<int>(epubVerticalCols_.size());
+  // 区切りで分けた章[from, until)と、その前後の区切り
+  auto chapterAt = [&](int column) {
+    int from = 0, until = total;
+    for (int boundary : epubVerticalBoundaries_) {
+      if (boundary <= column) from = boundary;
+      else {
+        until = boundary;
+        break;
+      }
     }
+    return std::pair<int, int>{from, until};
+  };
+  auto [from, until] = chapterAt(first);
+  // 2026-10-03追加、直接のユーザー報告("本の冒頭からスクロールを始めるとタイトルページはOKだが画像の
+  // あとには空白ページがあり、それが終わるまでしばらくかかる"): 画像ページだけの章(表紙等、
+  // rebuildEpubVertical()の画像ページ参照)は、左右のスクロールで次の章が右端に来るまで1画面分が
+  // 空のまま流れていた。画像ページだけの章は前後の章と続けて見せる(画像ページは1ページで完結
+  // しているので、章の頭を右端でそろえる意味が無い)。
+  int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+  auto imageOnly = [&](int f, int u) {
+    return u - f == perScreen && f < total && !epubVerticalCols_[f].image.empty();
+  };
+  if (imageOnly(from, until) && until < total) until = chapterAt(until).second;
+  if (from > 0) {
+    auto previous = chapterAt(from - 1);
+    if (imageOnly(previous.first, previous.second)) from = previous.first;
   }
   return {from, until};
 }
