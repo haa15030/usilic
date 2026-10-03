@@ -3184,12 +3184,11 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StopMacroRecord);
       case 'e':  // ^X e : 記録済みマクロを実行
         return handleCommand(Command::PlayMacro);
-      case kControlS:  // ^X ^S : 記録したマクロをusilicrcのMACROへ保存(2026-10-02、saveMacroToUsilicrc()参照)
+      // 2026-10-03変更、直接のユーザー依頼("^X^Sだが^Xsに一本化"、"他が^X+1文字なので^Xsだけでいい"):
+      // 以前の^X^S(マクロの保存・一覧)と^Xs(usilicrcの読み直し)を^Xsにまとめた。読み直してから一覧を
+      // 出す(saveMacroToUsilicrc()参照)。
+      case 's':  // ^X s : usilicrcのKEY・MACROを読み直し、記録したマクロの保存・マクロの一覧
         return handleCommand(Command::SaveMacro);
-      // 2026-10-03追加、直接のユーザー質問("usilicを再起動せずとも^Xsで反映はムズい？"): usilic以外の
-      // エディタ等でusilicrcを直した場合用。^[eで直した時と^X^Sの後は自動で読み直す(reloadUsilicrcKeys())。
-      case 's':  // ^X s : usilicrcのKEY・MACROを読み直す
-        return handleCommand(Command::ReloadUsilicrc);
       case ' ':  // ^X ␣ : COPYの矩形範囲指定(COPYの外では何もしない、上の^[w/^[pと同じ)
         showTransientNotice(activeView(), "COPY mode only");
         return false;
@@ -4767,10 +4766,6 @@ bool Application::handleCommandImpl(Command command) {
     }
     case Command::SaveMacro:
       return saveMacroToUsilicrc();
-    case Command::ReloadUsilicrc:
-      reloadUsilicrcKeys();
-      showTransientNotice(activeView(), "usilicrc reloaded");
-      return true;
     case Command::StartMan:
       return startManPrompt();
     case Command::StartManList:
@@ -16579,6 +16574,9 @@ bool Application::saveMacroToUsilicrc() {
   macroJustPlayed_ = false;
   std::string home = std::filesystem::path(usilicrcPath_).parent_path().parent_path().string();
   if (!usilicrc::ensureUser(home)) return false;
+  // ^Xs(2026-10-03、旧^Xsの読み直しをまとめた): usilic以外のエディタ等でusilicrcを直した場合用に、
+  // まずKEY・MACROを読み直す(^[eで直した時と、下の一覧で書いた時は自動で読み直す)。
+  reloadUsilicrcKeys();
   bool recorded = false;
   if (justPlayed && !recordedMacro_.empty()) {
     std::vector<int> bytes;

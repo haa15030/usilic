@@ -28453,3 +28453,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 605. **2026-10-03: ^Jeのプロンプトのモード名をEPUBに**
    - **経緯**: 直接のユーザー依頼("EPUBでよろしく"、項目604の確認で^Jeのプロンプトが「FILE」と出ていた件)。
    - **実装**: promptLabelText()のPathInputで、epubPathPending_ならEPUB(^J^Eの一覧と同じ)。疑似端末で確認。
+606. **2026-10-03: ^X^S(マクロの保存・一覧)と^Xs(usilicrcの読み直し)を^Xsに一本化**
+   - **経緯**: 直接のユーザー依頼("^X^Sだが^Xsに一本化したら何かマズい？"→"他が^X+1文字なので^Xsだけでいい")。
+   - **変更**: K-98の既定を"F-0 C-s"から"F-0 s"にし、項目598で末尾に足したK-101(^Xs)を消した(末尾なので
+     他のK番号はずれない)。^X sはCommand::SaveMacroに。saveMacroToUsilicrc()は最初にreloadUsilicrcKeys()で
+     読み直してから、記録直後なら「--」へ書き、マクロの一覧を出す。Command::ReloadUsilicrcは廃止。
+     src/usilicrc・usilicrc.en・`~/.usilic/usilicrc`のK-98を合わせた。疑似端末で^X^Sが何もしないこと、
+     ^X(jj^X)^Xe^Xsで一覧の「--」(_ jj)の行が出ることを確認。HELPの^X^S・^Xsの記述はユーザー側の反映待ち。

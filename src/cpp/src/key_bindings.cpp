@@ -128,10 +128,9 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {95, "F-0 ("},     // ^X(   マクロの記録開始
       {96, "F-0 )"},     // ^X)   マクロの記録終了
       {97, "F-0 e"},     // ^Xe   マクロの実行
-      {98, "F-0 C-s"},   // ^X^S  usilicrcのMACROに保存
+      {98, "F-0 s"},     // ^Xs   usilicrcの読み直し・マクロの保存と一覧(2026-10-03、^X^Sと^Xsを一本化)
       {99, "F-0 C-c"},   // ^X^C  EXIT
       {100, "ESC ESC"},  // ^[^[  EXIT
-      {101, "F-0 s"},    // ^Xs   usilicrcのKEY・MACROを読み直す(2026-10-03、既存のK番号をずらさないよう末尾へ)
   };
   return entries;
 }

@@ -318,14 +318,12 @@ enum class Command {
   //   KeyJumpToHelp(h、KEYの中だけ): 選んでいる行の、平文のHELPの同じ行へ。
   //   OpenPlainHelp(^J^Oh): 平文のHELP(helpPath_のファイルをそのまま)。
   //   OpenUserUsilicrc(^J^Ou): ~/.usilic/usilicrc。
-  //   SaveMacro(^X^S): 記録したキーボードマクロをusilicrcのMACROへ保存。saveMacroToUsilicrc()参照。
-  //   ReloadUsilicrc(^Xs): ~/.usilic/usilicrcのKEY・MACROを読み直す。reloadUsilicrcKeys()参照。
+  //   SaveMacro(^Xs、2026-10-03に^X^Sから): usilicrcの読み直し、記録したマクロの保存とマクロの一覧。saveMacroToUsilicrc()参照。
   StartKey,
   KeyJumpToHelp,
   OpenPlainHelp,
   OpenUserUsilicrc,
   SaveMacro,
-  ReloadUsilicrc,
   StartMacroRecord,
   StopMacroRecord,
   PlayMacro,
