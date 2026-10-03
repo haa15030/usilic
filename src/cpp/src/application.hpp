@@ -1845,6 +1845,8 @@ class Application {
   // Directoryモードの外側、またはクリックがどの本物の行の外側にも
   // 着地した場合はfalse。
   bool handleMouseClick(int row, int column);
+  // KEYのhで飛んだ先の行のハイライトを消す(マウスに触れた時、main.cppから。2026-10-03)。
+  void clearHelpJumpHighlight();
   // 2026-10-02追加、直接のユーザー報告("-gの^X^Fでスクロール停止時ハイライト行がマウスの動きに
   // 追随しないため、左クリックではファイルを選べない"): 直接入力の一覧(^X^F/^X^D等の履歴の
   // 呼び出し、^Iの補完一覧の閲覧中)か。この一覧はredrawSensitivePromptOrRecallActive()のため

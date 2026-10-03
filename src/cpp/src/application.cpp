@@ -4171,13 +4171,20 @@ void Application::showTransientNotice(ContentView &view, const std::string &text
   view.redraw();
 }
 
+// hで飛んだ先の行のハイライト(helpJumpHighlight_参照)を消す。キー(clearTransientNotice())に加え、
+// 2026-10-03からはマウスに触れた時(main.cppのマウスのイベント、クリック・移動・ホイール・ドラッグ・
+// スクロールバー)も――直接のユーザー報告("-g画面のKEYでhするとジャンプする先のHELPにハイライト行が
+// 出るのはいいとしてそれがマウスの動きに追随するのはマズい。クリックを含め、マウスに触れたら消える、で")。
+void Application::clearHelpJumpHighlight() {
+  if (!helpJumpHighlight_) return;
+  helpJumpHighlight_ = false;
+  fileView_.setCursorHighlightEnabled(false);
+  fileView_.setHighlightToRowEnd(false);
+  if (currentMode_ == ApplicationMode::File) fileView_.redraw();
+}
+
 void Application::clearTransientNotice() {
-  if (helpJumpHighlight_) {  // hで飛んだ先の行のハイライト(helpJumpHighlight_参照)
-    helpJumpHighlight_ = false;
-    fileView_.setCursorHighlightEnabled(false);
-    fileView_.setHighlightToRowEnd(false);
-    if (currentMode_ == ApplicationMode::File) fileView_.redraw();
-  }
+  clearHelpJumpHighlight();
   if (sortLabelNoticeShown_) {  // ^O^Lのソートキーのラベル(CycleLsSortKey参照)
     sortLabelNoticeShown_ = false;
     directoryMode_.setSortLabelShown(false);
