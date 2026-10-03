@@ -131,6 +131,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {98, "F-0 s"},     // ^Xs   usilicrcの読み直し・マクロの保存と一覧(2026-10-03、^X^Sと^Xsを一本化)
       {99, "F-0 C-c"},   // ^X^C  EXIT
       {100, "ESC ESC"},  // ^[^[  EXIT
+      {101, "F-2 C-e"},  // ^O^E  EPUB: 章区切り/連続スクロール(2026-10-03、既存のK番号をずらさないよう末尾へ)
   };
   return entries;
 }

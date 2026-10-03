@@ -410,6 +410,7 @@ KEY
 	K-98	F-0 s       # ^Xs     Reload usilicrc, save/list macros
 	K-99	F-0 C-c     # ^X^C    EXIT
 	K-100	ESC ESC     # ^[^[    EXIT
+	K-101	F-2 C-e     # ^O^E    EPUB: chapter breaks / continuous scroll
 
 MACRO
 	M-1	;	K-20 K-4 K-28			# ^G^P^M	Open previous entry

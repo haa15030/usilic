@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <functional>
 #include <optional>
 #include <string>
@@ -766,7 +767,15 @@ class ContentView {
   const std::optional<ByteSpan> &extraStandout() const { return extraStandout_; }
   int maxTopIndex() const;
   bool isIndexShown(int index) const {
-    return !shownIndexRange_ || (index >= shownIndexRange_->first && index < shownIndexRange_->second);
+    if (shownIndexRange_ && (index < shownIndexRange_->first || index >= shownIndexRange_->second)) return false;
+    return chapterStarts_.empty() || chapterOf(index) == chapterOf(topIndex_);
+  }
+  // 2026-10-03追加、直接のユーザー依頼(EPUBの「連続スクロール/章区切り」、横書きの章区切り): 章の頭の
+  // 行の添字(昇順)。空でなければ、画面の上端の行の章だけを描く(次の章は頭が上端に来るまで描かない、
+  // 縦書きのApplication::epubVerticalShownRange()と同じ)。Application::syncEpubHorizontalPresentation()が渡す。
+  void setChapterStarts(std::vector<int> starts) { chapterStarts_ = std::move(starts); }
+  int chapterOf(int index) const {
+    return static_cast<int>(std::upper_bound(chapterStarts_.begin(), chapterStarts_.end(), index) - chapterStarts_.begin());
   }
 
   // このビューが現在、そのモードライン行に表示している、整形済み
@@ -1487,6 +1496,7 @@ class ContentView {
   std::function<bool(int)> markedPredicate_;
   bool cursorRowAlsoHighlighted_ = true;
   std::optional<std::pair<int, int>> shownIndexRange_;  // setShownIndexRange()参照
+  std::vector<int> chapterStarts_;  // setChapterStarts()参照
   bool verticalText_ = false;  // setVerticalText()参照
   std::optional<ByteSpan> extraStandout_;  // setExtraStandout()参照
   bool markedRowUsesUnderline_ = false;

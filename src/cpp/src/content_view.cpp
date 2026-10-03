@@ -2503,6 +2503,9 @@ void ContentView::renderSplitModeLine(const ModeLineFields &fields, const std::s
 int ContentView::maxTopIndex() const {
   int maxTop = std::max(0, static_cast<int>(lines_.size()) - height_);
   if (shownIndexRange_) maxTop = std::max(maxTop, std::min(shownIndexRange_->first, static_cast<int>(lines_.size()) - 1));
+  // 章区切り(setChapterStarts())では、最後の章の頭も画面の上端まで送れるように(1画面に満たない最後の章が
+  // 描かれないままにならないよう、縦書きの最後のpadToPage()と同じ考え)。
+  if (!chapterStarts_.empty()) maxTop = std::max(maxTop, std::min(chapterStarts_.back(), static_cast<int>(lines_.size()) - 1));
   return maxTop;
 }
 
@@ -2517,6 +2520,7 @@ bool ContentView::renderContentRows() {
       int idx = topIndex_ + row;
       if (idx < 0 || idx >= static_cast<int>(lines_.size())) break;
       const Line &line = lines_[idx];
+      if (!isIndexShown(idx)) continue;
       if (line.imageKey.empty() || line.imageRows <= 0 || (row > 0 && line.imageRow > 0)) continue;
       images.push_back({line.imageKey, row0_ + rowOffset + row - line.imageRow, 0, line.imageRows, display_.columns()});
     }
@@ -2530,7 +2534,7 @@ bool ContentView::renderContentRows() {
     display_.clearToEndOfLine();
     if (row < rowOffset) continue;  // 内容の上の空白パディング、下端固定の場合のみ
     int idx = topIndex_ + (row - rowOffset);
-    if (shownIndexRange_ && (idx < shownIndexRange_->first || idx >= shownIndexRange_->second)) continue;
+    if (!isIndexShown(idx)) continue;  // setShownIndexRange()・setChapterStarts()参照
     if (idx < static_cast<int>(lines_.size())) {
       // Line::neverHighlighted自身のコメント参照: この行は、
       // カーソル/マーク状態に関わらず、Standout/Underlineを完全に

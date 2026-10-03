@@ -566,6 +566,8 @@ enum class Command {
   // K-100(^Oe): (ls)で選んでいる.epubをARCで開く(2026-09-29、縦書き/横書きの切り替え
   // から変更)。Application::openEpubAsArchive()参照。
   OpenEpubAsArchive,
+  // K-101(^O^E、2026-10-03): EPUBのスクロールの「章区切り/連続」の切り替え。Application::epubChapterBreaks_参照。
+  ToggleEpubChapterBreaks,
   // ESC l("LOG"): Application::executeStartLog()自身のコメント参照。
   StartLog,
   // K-0(^T、M_usilic、「USILIC」): ステータス/バージョン情報画面を表示
@@ -2553,6 +2555,14 @@ class Application {
   std::pair<int, int> epubVerticalShownRange(int first) const;
   // 縦書きの窓(右端の列first)に見える画像ページの置き場所(2026-10-03、rebuildEpubVertical()参照)。
   std::vector<Display::ContentImage> epubVerticalImagesFor(int first, int shownFrom, int shownUntil) const;
+  // 2026-10-03追加、直接のユーザー依頼("連続スクロールと章区切りの２通りを選べる"、キーだけで切り替え、既定は
+  // 章区切り、縦書き・横書きの両方): trueなら章区切り(縦書きは右端、横書きは上端の行の章だけを描き、
+  // 縦書きは章の頭をページの区切りにそろえる)、falseなら章をまたいでひと続きに流す。
+  bool epubChapterBreaks_ = true;
+  bool toggleEpubChapterBreaks();
+  // 横書きの章の頭の行(ContentView::setChapterStarts()へ渡したもの)を作り直す目安。
+  const void *epubChapterStartsLines_ = nullptr;
+  std::size_t epubChapterStartsCount_ = 0;
   std::optional<std::string> epubImageBytes(const std::string &key) const;  // 画像のプロバイダ(コンストラクタ参照)
   std::map<std::string, std::pair<int, int>> epubImageSizes_;  // keyごとの画像の幅・高さ(0,0は読めない)
   // 縦書きの列の端(deltaの向き)の先(前)に横書きの範囲があればそこへ入る(描き直す)。

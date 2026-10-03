@@ -3297,6 +3297,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StartUnderlineView);
       case 'e':  // ^O e : (ls)の.epubをARCで開く(K-100、2026-09-29)
         return handleCommand(Command::OpenEpubAsArchive);
+      case 0x05:  // ^O ^E : EPUBのスクロールの章区切り/連続(K-101、2026-10-03)
+        return handleCommand(Command::ToggleEpubChapterBreaks);
       case 'a':  // ^O a : ARC展開(旧^X a、K-58)――^O aはここへ移る
                  // 前にHELP/KEYの表示言語切り替えが占めていたが、
                  // それは^J aへ先に移した(kKeyTable自身の"^Ja"コメント
@@ -4103,6 +4105,26 @@ void Application::syncEpubHorizontalPresentation() {
     epubHorizontalLink_.reset();
   }
   fileView_.setExtraStandout(standout);
+  // 横書きの章区切り(epubChapterBreaks_、ContentView::setChapterStarts()): 章の頭の行(章の印U+2060のある
+  // 行の最初の画面の行)。行が変わった時(読み込み・リサイズ)だけ作り直す。
+  if (epubChapterBreaks_ && isEpubFile(fileMode_.currentFile())) {
+    const auto &lines = fileView_.lines();
+    if (epubChapterStartsLines_ != lines.data() || epubChapterStartsCount_ != lines.size()) {
+      epubChapterStartsLines_ = lines.data();
+      epubChapterStartsCount_ = lines.size();
+      std::vector<int> starts;
+      for (int i = 0; i < static_cast<int>(lines.size()); i++) {
+        if (lines[i].text.find("\xE2\x81\xA0") == std::string::npos) continue;
+        if (i > 0 && lines[i - 1].rawLineNumber == lines[i].rawLineNumber) continue;
+        if (i > 0) starts.push_back(i);
+      }
+      fileView_.setChapterStarts(std::move(starts));
+    }
+  } else if (epubChapterStartsLines_ || epubChapterStartsCount_) {
+    epubChapterStartsLines_ = nullptr;
+    epubChapterStartsCount_ = 0;
+    fileView_.setChapterStarts({});
+  }
   if (!epubHorizontalSection_ || !epubBookVertical()) {
     fileView_.setShownIndexRange(std::nullopt);
     return;
@@ -4891,6 +4913,8 @@ bool Application::handleCommandImpl(Command command) {
       return startEpubList();
     case Command::OpenEpubAsArchive:
       return openSelectedEpubAsArchive();
+    case Command::ToggleEpubChapterBreaks:
+      return toggleEpubChapterBreaks();
     case Command::ShowShellLog:
       return executeShowShellLog();
     case Command::StartLog:
@@ -7463,6 +7487,12 @@ void Application::rebuildEpubVertical(int rawLine) {
     epubVerticalCols_.resize(pageStart);
   };
   auto padToPage = [&]() {
+    if (!epubChapterBreaks_) {  // 連続スクロール: 区切りだけ記録し、ページにはそろえない(epubChapterBreaks_参照)
+      int at = static_cast<int>(epubVerticalCols_.size());
+      if (at > 0 && (epubVerticalBoundaries_.empty() || epubVerticalBoundaries_.back() != at))
+        epubVerticalBoundaries_.push_back(at);
+      return;
+    }
     dropBlankPartialPage();
     int raw = epubVerticalCols_.empty() ? 0 : epubVerticalCols_.back().rawLineNumber;
     while (epubVerticalCols_.size() % perScreen != 0) {
@@ -7476,7 +7506,7 @@ void Application::rebuildEpubVertical(int rawLine) {
   // 画像ページ(画像の列perScreen本、imageSliceは右から0..)を、ページの区切りにそろえて足す。
   auto pushImagePage = [&](const std::string &image, int raw) {
     dropBlankPartialPage();
-    while (epubVerticalCols_.size() % perScreen != 0) {
+    while (epubChapterBreaks_ && epubVerticalCols_.size() % perScreen != 0) {  // 連続スクロールではそろえない
       epubVerticalCols_.push_back({{}, raw});
       epubVerticalCols_.back().padding = true;
     }
@@ -7672,6 +7702,17 @@ void Application::captureEpubVerticalEdges(ContentView &view, const std::vector<
   view.setTopIndex(0);
 }
 
+// ^O^E(epubChapterBreaks_参照): 章区切り/連続を切り替え、今読んでいる所のまま組み直す。
+bool Application::toggleEpubChapterBreaks() {
+  if (!isEpubFile(fileMode_.currentFile()) || currentMode_ != ApplicationMode::File) return false;
+  epubChapterBreaks_ = !epubChapterBreaks_;
+  if (epubVerticalActive()) rebuildEpubVertical(epubVerticalCurrentRaw());
+  syncEpubHorizontalPresentation();
+  activeView().redraw();
+  showTransientNotice(activeView(), epubChapterBreaks_ ? "Scroll: chapter" : "Scroll: continuous");
+  return true;
+}
+
 // 画像のkey(「本のパス\n画像の名前」)のバイト列をzipから読む(画像のプロバイダ、コンストラクタ参照)。
 std::optional<std::string> Application::epubImageBytes(const std::string &key) const {
   std::size_t nl = key.find('\n');
@@ -7708,6 +7749,7 @@ std::vector<Display::ContentImage> Application::epubVerticalImagesFor(int first,
 // 右端の列firstの章の列の範囲[from, until)(setEpubVerticalView()参照)。
 std::pair<int, int> Application::epubVerticalShownRange(int first) const {
   int total = static_cast<int>(epubVerticalCols_.size());
+  if (!epubChapterBreaks_) return {0, total};  // 連続スクロール(epubChapterBreaks_参照)
   // 区切りで分けた章[from, until)と、その前後の区切り
   auto chapterAt = [&](int column) {
     int from = 0, until = total;
