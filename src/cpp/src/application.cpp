@@ -7416,7 +7416,22 @@ void Application::rebuildEpubVertical(int rawLine) {
   const auto &centered = hints.centered;
   epubVerticalCols_.clear();
   epubVerticalBoundaries_.clear();
+  // 2026-10-03追加、直接のユーザー報告("画像およびタイトルの次に空白ページは入るのでスローなスクロール
+  // では結構な待ちとなる。空白ページは飛ばせない？"): 章の終わりの空行の列が新しいページへ1列だけ
+  // はみ出すと、次の章の頭を区切りにそろえる時にそのページが空の列で埋まり、白紙の1ページになって
+  // いた。区切りにそろえる前に、今のページ(区切りより後)が字も画像も無い列だけなら、それらを取り除く。
+  auto dropBlankPartialPage = [&]() {
+    std::size_t size = epubVerticalCols_.size();
+    std::size_t pageStart = size - size % perScreen;
+    if (pageStart == size) return;
+    for (std::size_t c = pageStart; c < size; c++) {
+      const EpubVerticalColumn &column = epubVerticalCols_[c];
+      if (!column.cells.empty() || !column.image.empty() || column.titlePage) return;
+    }
+    epubVerticalCols_.resize(pageStart);
+  };
   auto padToPage = [&]() {
+    dropBlankPartialPage();
     int raw = epubVerticalCols_.empty() ? 0 : epubVerticalCols_.back().rawLineNumber;
     while (epubVerticalCols_.size() % perScreen != 0) {
       epubVerticalCols_.push_back({{}, raw});
@@ -7436,6 +7451,7 @@ void Application::rebuildEpubVertical(int rawLine) {
       // 章の頭(表紙等、上の訂正参照)なら、章の頭と同じく区切りを記録する(章をまたぐ移動・見せる範囲)。
       bool chapterStart = (c == 0 || laid[c - 1].rawLineNumber != raw) && chapterStarts.count(raw);
       if (chapterStart) padToPage();
+      dropBlankPartialPage();
       while (epubVerticalCols_.size() % perScreen != 0) {
         epubVerticalCols_.push_back({{}, raw});
         epubVerticalCols_.back().padding = true;
