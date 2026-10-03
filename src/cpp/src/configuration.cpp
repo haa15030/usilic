@@ -54,6 +54,8 @@ const std::vector<std::string> &directiveKeywords() {
       "SERIF", "SANS-SERIF",
       // 2026-10-02追加(Configuration::speedValues()/macros()参照)。
       "SPEED", "DRAG", "FONT", "MACRO",
+      // 2026-10-04追加(urlHandlers()参照)。
+      "URL",
   };
   return kKeywords;
 }
@@ -747,6 +749,23 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         }
         break;
       }
+      case 24: {  // URL(urlHandlers()自身のコメント参照)
+        urlHandlers_.clear();
+        while (auto data = nextDataLine(lines, i)) {
+          auto tokens = tokenize(*data);
+          if (tokens.empty()) continue;
+          std::string name = tokens[0];
+          for (char &c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+          static const std::vector<std::string> kNames = {"open", "dump", "term", "copy", "look"};
+          if (std::find(kNames.begin(), kNames.end(), name) == kNames.end()) {
+            errors_.push_back("URL: not Open/Dump/Term/Copy/Look: " + tokens[0]);
+            continue;
+          }
+          name[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(name[0])));
+          urlHandlers_.push_back({name, std::vector<std::string>(tokens.begin() + 1, tokens.end())});
+        }
+        break;
+      }
       default:
         while (i < lines.size() && isContinuationLine(lines[i])) i++;
         break;
@@ -761,6 +780,21 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
 }
 
 const std::vector<std::string> &Configuration::errors() const { return errors_; }
+
+// configuration.hpp自身の宣言コメント参照。
+const std::vector<Configuration::UrlHandler> &Configuration::urlHandlers() const {
+  if (!urlHandlers_.empty()) return urlHandlers_;
+#ifdef __APPLE__
+  static const std::vector<UrlHandler> kDefaults = {
+      {"Open", {"open"}}, {"Dump", {"w3m", "-dump"}}, {"Term", {"w3m"}}, {"Copy", {"pbcopy"}}, {"Look", {}}};
+#else
+  static const std::vector<UrlHandler> kDefaults = {{"Open", {"xdg-open"}},
+                                                    {"Dump", {"w3m", "-dump"}},
+                                                    {"Term", {"w3m"}},
+                                                    {"Copy", {"xclip", "-selection", "clipboard"}}};
+#endif
+  return kDefaults;
+}
 
 void Configuration::reloadKeysAndMacros(const std::string &rcText) {
   Configuration fresh;

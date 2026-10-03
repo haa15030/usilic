@@ -5,7 +5,7 @@
 # 始めます。それ以外の文字で始まる行はエラーになります。
 #
 # ARCHIVE, FILE, EXEC, EGREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
-# LINE, WAIT, CP, MV, RM, SERIF, SANS-SERIF, SPEED, DRAG, FONT, KEY, MACRO
+# LINE, WAIT, CP, MV, RM, SERIF, SANS-SERIF, SPEED, DRAG, FONT, URL, KEY, MACRO
 #
 # 英語のコメント付きの同じ内容のファイルが usilicrc.en です。
 # -------------------------------------------------------------
@@ -264,6 +264,26 @@ FONT
 
 #	/Library/Fonts/MS-Gothic.ttf
 
+URL
+# 書式: 名前  program  (option)
+#
+# EPUB の本文の Web のリンク(http 等)を [Enter]・クリックで踏んだ時の対処。
+# 書いた順に ^Ow で巡回し、名前(4文字)を mode-line に表示します。最初の行が
+# 既定です。名前は次のどれかです。
+#   Open  program に URL を渡して起動(既定のブラウザで開く等)
+#   Dump  program に URL を渡した出力を usilic の画面で読む(^G で本へ戻る)
+#   Term  program に URL を渡して端末で起動(EXEC と同じ、終われば本へ戻る)
+#   Copy  program の標準入力へ URL を渡す(クリップボードへコピー)
+#   Look  クイックルック(macOS だけ、program は不要)
+# この節が無ければ下の内容(Linux は Open が xdg-open、Copy が
+# xclip -selection clipboard、Look は無し)を使います。
+
+#	Open	open
+#	Dump	w3m -dump
+#	Term	w3m
+#	Copy	pbcopy
+#	Look
+
 KEY
 # キーの割り当て。
 #
@@ -398,6 +418,7 @@ KEY
 	K-99	F-0 C-c     # ^X^C    EXIT
 	K-100	ESC ESC     # ^[^[    EXIT
 	K-101	F-2 C-e     # ^O^E    EPUB: 章区切り/連続スクロール
+	K-102	F-2 w       # ^Ow     EPUB: Webのリンクの対処を巡回(URL)
 
 MACRO
 	M-1	;	K-20 K-4 K-28			# ^G^P^M	前の項目を開く

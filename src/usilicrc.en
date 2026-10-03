@@ -6,7 +6,7 @@
 # other line is an error.
 #
 # ARCHIVE, FILE, EXEC, EGREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
-# LINE, WAIT, CP, MV, RM, SERIF, SANS-SERIF, SPEED, DRAG, FONT, KEY, MACRO
+# LINE, WAIT, CP, MV, RM, SERIF, SANS-SERIF, SPEED, DRAG, FONT, URL, KEY, MACRO
 #
 # usilicrc is the same file with Japanese comments.
 # -------------------------------------------------------------
@@ -275,6 +275,27 @@ FONT
 
 #	/Library/Fonts/MS-Gothic.ttf
 
+URL
+# Format: `name  program  (option)'
+#
+# What to do when a web link (http etc.) in an EPUB body is followed with
+# [Enter] or a click.  ^Ow cycles through the lines in the order written and
+# shows the name (4 letters) on the mode-line; the first line is the default.
+# The name is one of:
+#   Open  run program with the URL (open it in the default browser etc.)
+#   Dump  read the output of program with the URL in usilic (^G back to the book)
+#   Term  run program with the URL in the terminal (like EXEC)
+#   Copy  pass the URL to program's standard input (copy to the clipboard)
+#   Look  Quick Look (macOS only, no program needed)
+# Without this section the lines below are used (on Linux Open is xdg-open,
+# Copy is xclip -selection clipboard, and there is no Look).
+
+#	Open	open
+#	Dump	w3m -dump
+#	Term	w3m
+#	Copy	pbcopy
+#	Look
+
 KEY
 # Key assignments.
 #
@@ -411,6 +432,7 @@ KEY
 	K-99	F-0 C-c     # ^X^C    EXIT
 	K-100	ESC ESC     # ^[^[    EXIT
 	K-101	F-2 C-e     # ^O^E    EPUB: chapter breaks / continuous scroll
+	K-102	F-2 w       # ^Ow     EPUB: cycle the web link action (URL)
 
 MACRO
 	M-1	;	K-20 K-4 K-28			# ^G^P^M	Open previous entry

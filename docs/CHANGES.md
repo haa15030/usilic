@@ -28612,3 +28612,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      \x01の印ならファイルそのものを読む)。GraphicalDisplay::contentImageTexture()は同じパスの古い
      テクスチャを捨てる。開き直す(^G→^M)か、画像を見ている時の^L(Command::Redraw)で読み直す。
      ビルドのみ確認(実機確認待ち)。
+620. **2026-10-04: EPUBのWebのリンクの対処をusilicrcのURLで選べる(既定はブラウザ)、^Owで巡回**
+   - **経緯**: 直接のユーザー依頼("usilicrcで選べるようにして、既定はA。^Owでモードを巡回し、^Oo同様切り換えの
+     たびに同じ位置に(できれば)4文字で表示")。以前はクイックルック(.webloc)だけだった。
+   - **実装**:
+     - usilicrcのURL節(Configuration::urlHandlers()、新しいキーワードは末尾に追加): 「名前 program (option)」を
+       書いた順に。名前はOpen(programにURLを渡す、既定のブラウザ)・Dump(出力をusilicの画面で読む)・
+       Term(programMode_で端末で起動)・Copy(標準入力へURL)・Look(従来のクイックルック、macOSだけ)。
+       節が無ければ組み込み(macOS: open / w3m -dump / w3m / pbcopy / Look、Linux: xdg-open / w3m -dump /
+       w3m / xclip -selection clipboard)。src/usilicrc・usilicrc.enには例をコメントで書いた。
+     - ^Ow(Command::CycleUrlHandler、K-102を末尾に追加): 次の対処へ。名前(4文字)を位置の欄に一時表示
+       (showTransientNotice()、^O^Eの"Scroll: ..."と同じ場所、どのキーでも消える)。選んだ対処は起動中だけ
+       覚える。
+     - Dump: 出力を一時ディレクトリの「ホスト名.txt」に書いてFILEで開き(注釈"URL")、^Gで本へ戻る
+       (urlDumpReturnBook_、openEpub()で読んでいた所へ)。失敗・Copyの結果は一時表示。
+   - **検証**: ビルドのみ(実機確認待ち)。HELPへの記載はユーザー側の反映待ち。

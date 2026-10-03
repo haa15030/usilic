@@ -3318,6 +3318,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::OpenEpubAsArchive);
       case 0x05:  // ^O ^E : EPUBのスクロールの章区切り/連続(K-101、2026-10-03)
         return handleCommand(Command::ToggleEpubChapterBreaks);
+      case 'w':  // ^O w : EPUBのWebのリンクの対処を巡回(K-102、2026-10-04)
+        return handleCommand(Command::CycleUrlHandler);
       case 'a':  // ^O a : ARC展開(旧^X a、K-58)――^O aはここへ移る
                  // 前にHELP/KEYの表示言語切り替えが占めていたが、
                  // それは^J aへ先に移した(kKeyTable自身の"^Ja"コメント
@@ -4599,6 +4601,12 @@ bool Application::handleCommandImpl(Command command) {
         // ――今度はLocateモードからの「2回目」の^Gが、
         // returnFromLocate()自身の既存の、手を付けられていないロジック
         // 経由で既に正しくlocateReturnStack_に到達する)。
+        // Webのリンクの出力(openEpubWebLink()のDump)から本へ戻る(2026-10-04)。
+        if (!urlDumpReturnBook_.empty() && fileMode_.currentFile() == urlDumpPath_) {
+          std::string book = urlDumpReturnBook_;
+          urlDumpReturnBook_.clear();
+          return openEpub(book);
+        }
         if (fileReturnMode_ == ApplicationMode::Locate) return returnFromFileToLocate();
         // 2026-09-09追加、openSelectedDuEntry()自身のコメント参照
         // ("DUでどれかを選ぶと戻り値がDUじゃない"): DU結果からファイル
@@ -4928,6 +4936,8 @@ bool Application::handleCommandImpl(Command command) {
       return openSelectedEpubAsArchive();
     case Command::ToggleEpubChapterBreaks:
       return toggleEpubChapterBreaks();
+    case Command::CycleUrlHandler:
+      return cycleUrlHandler();
     case Command::ShowShellLog:
       return executeShowShellLog();
     case Command::StartLog:
@@ -7008,7 +7018,86 @@ bool Application::openEpubLineImage(const ContentView &view) {
 // 環境(Linux)や、EPUBでない・画像が見つからない場合はfalse。
 // 2026-09-30追加、直接のユーザー依頼("webサイトへのリンク...踏んだらクイックルックへ移行して
 // ほしい"): URLをWebの場所のファイル(.webloc)にしてクイックルック(runQuickLook())に渡す。
+// 2026-10-04、直接のユーザー依頼("usilicrcで選べるようにして、既定はA(既定のブラウザ)。^Owでモードを
+// 巡回"): Configuration::urlHandlers()の今の対処(urlHandlerIndex_)で開く。以前のクイックルックはLook。
 bool Application::openEpubWebLink(const std::string &url) {
+  const auto &handlers = configuration_.urlHandlers();
+  if (handlers.empty()) return false;
+  const Configuration::UrlHandler &handler = handlers[urlHandlerIndex_ % handlers.size()];
+  if (handler.name == "Look") return openWebLinkInQuickLook(url);
+  if (handler.argv.empty()) return false;
+  std::vector<std::string> argv = handler.argv;
+  if (handler.name == "Copy") {
+    ChildProcessOptions options;
+    options.input = &url;
+    bool ok = ChildProcess::run(argv, options).ok;
+    showTransientNotice(activeView(), ok ? "Copied: " + url : "Cannot run: " + argv[0]);
+    return ok;
+  }
+  argv.push_back(url);
+  if (handler.name == "Term") {
+    display_.flush();
+    programMode_.run(shellQuoteArgv(argv), shellQuoteArgv(argv));
+    activeView().redraw();
+    return true;
+  }
+  if (handler.name == "Dump") {
+    if (currentMode_ != ApplicationMode::File || !isEpubFile(fileMode_.currentFile())) return false;
+    drawPromptLabel(PromptKind::EpubLoad, /*positionText=*/"", "Reading...");
+    display_.flush();
+    ChildProcess::Result result = ChildProcess::run(argv);
+    if (!result.ok || result.output.empty()) {
+      activeView().redraw();
+      showTransientNotice(activeView(), "Cannot run: " + shellQuoteArgv(argv));
+      return false;
+    }
+    std::string host = url.substr(url.find("://") == std::string::npos ? 0 : url.find("://") + 3);
+    host = host.substr(0, host.find('/'));
+    if (host.empty()) host = "link";
+    std::string dir = allocateArcDirectory();
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    std::string path = dir + "/" + host + ".txt";
+    {
+      std::ofstream out(path, std::ios::binary);
+      if (!out) return false;
+      out << result.output;
+    }
+    std::string book = fileMode_.currentFile();
+    if (epubVerticalActive()) syncEpubVerticalToFile();
+    fileMode_.saveCursorPosition();  // ^Gで戻った時にここから(openEpub())
+    epubVertical_ = false;
+    epubHorizontalSection_.reset();
+    if (!fileMode_.loadFile(path)) {
+      openEpub(book);
+      return false;
+    }
+    syncEpubHorizontalPresentation();
+    fileMode_.annotations().clear();
+    fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, url, "URL");
+    urlDumpPath_ = path;
+    urlDumpReturnBook_ = book;
+    currentMode_ = ApplicationMode::File;
+    fileView_.redraw();
+    return true;
+  }
+  // Open
+  ChildProcess::Result result = ChildProcess::run(argv);
+  if (!result.ok) showTransientNotice(activeView(), "Cannot run: " + argv[0]);
+  return result.ok;
+}
+
+// ^Ow(K-102): 次の対処へ。名前(4文字)を位置の欄に出す(どのキーでも消える、^O^Eと同じ)。
+bool Application::cycleUrlHandler() {
+  const auto &handlers = configuration_.urlHandlers();
+  if (handlers.empty()) return false;
+  urlHandlerIndex_ = (urlHandlerIndex_ + 1) % handlers.size();
+  showTransientNotice(activeView(), handlers[urlHandlerIndex_].name);
+  return true;
+}
+
+// URLをWebの場所のファイル(.webloc)にしてクイックルックで開く(Look)。
+bool Application::openWebLinkInQuickLook(const std::string &url) {
   if (::access("/usr/bin/qlmanage", X_OK) != 0) return false;
   std::string host = url.substr(url.find("://") + 3);
   host = host.substr(0, host.find('/'));

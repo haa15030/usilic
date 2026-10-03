@@ -346,6 +346,20 @@ class Configuration {
     std::vector<KeyBindings::MacroItem> items;  // K番号か"文字列"
   };
   const std::vector<MacroEntry> &macros() const { return macros_; }
+  // URL(2026-10-04新設、直接のユーザー依頼"usilicrcで選べるようにして、既定はA。^Owでモードを巡回"):
+  // EPUBの本文のWebのリンクを踏んだ時の対処、「名前 program (option)」の行を書いた順に。名前は
+  //   Open  programにURLを渡して起動(既定のブラウザ等、macOSはopen、Linuxはxdg-open)
+  //   Dump  programにURLを渡した出力(w3m -dump等)をusilicの画面で読む(^Gで本へ戻る)
+  //   Term  programにURLを渡して端末で起動(EXECと同じ、w3m等)
+  //   Copy  programの標準入力へURLを渡す(pbcopy等、クリップボードへ)
+  //   Look  クイックルック(macOSだけ、programは使わない)
+  // 最初の行が既定、^Ow(K-102)で次の行へ巡回する。節が無い・空なら組み込みの一覧(Open/Dump/Term/Copy、
+  // macOSはLookも)。
+  struct UrlHandler {
+    std::string name;  // "Open"/"Dump"/"Term"/"Copy"/"Look"(モードラインに出す4文字)
+    std::vector<std::string> argv;
+  };
+  const std::vector<UrlHandler> &urlHandlers() const;
   // usilicrcのKEY・MACROの節だけを読み直して置き換える(2026-10-03、直接のユーザー依頼"マクロ設定の
   // その場反映はできない？")。他の節は起動時のまま。
   void reloadKeysAndMacros(const std::string &rcText);
@@ -409,6 +423,7 @@ class Configuration {
   std::vector<long> dragValues_;   // DRAG
   std::string fontPath_;           // FONT
   std::vector<MacroEntry> macros_;  // MACRO
+  std::vector<UrlHandler> urlHandlers_;  // URL
 
   std::optional<std::string> envCharsetValue_;
 

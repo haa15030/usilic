@@ -568,6 +568,8 @@ enum class Command {
   OpenEpubAsArchive,
   // K-101(^O^E、2026-10-03): EPUBのスクロールの「章区切り/連続」の切り替え。Application::epubChapterBreaks_参照。
   ToggleEpubChapterBreaks,
+  // K-102(^Ow、2026-10-04): EPUBのWebのリンクを踏んだ時の対処(Configuration::urlHandlers())を次へ巡回。
+  CycleUrlHandler,
   // ESC l("LOG"): Application::executeStartLog()自身のコメント参照。
   StartLog,
   // K-0(^T、M_usilic、「USILIC」): ステータス/バージョン情報画面を表示
@@ -2568,6 +2570,13 @@ class Application {
   std::vector<int> epubHorizontalChapterStarts() const;
   bool jumpEpubChapter(int delta);
   bool jumpEpubChapterByArrow(KeyInput::SpecialKey arrow);
+  // Webのリンクの対処(Configuration::urlHandlers()の何番目か、^Owで巡回、起動中だけ覚える)。
+  std::size_t urlHandlerIndex_ = 0;
+  bool cycleUrlHandler();
+  bool openWebLinkInQuickLook(const std::string &url);
+  // Dump(openEpubWebLink())で読んでいる出力の一時ファイルと、^Gで戻る本。
+  std::string urlDumpPath_;
+  std::string urlDumpReturnBook_;
   // 横書きの章の頭の行(ContentView::setChapterStarts()へ渡したもの)を作り直す目安。
   const void *epubChapterStartsLines_ = nullptr;
   std::size_t epubChapterStartsCount_ = 0;
