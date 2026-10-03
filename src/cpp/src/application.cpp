@@ -7441,26 +7441,32 @@ void Application::rebuildEpubVertical(int rawLine) {
     if (at > 0 && (epubVerticalBoundaries_.empty() || epubVerticalBoundaries_.back() != at))
       epubVerticalBoundaries_.push_back(at);
   };
+  // 画像ページ(画像の列perScreen本、imageSliceは右から0..)を、ページの区切りにそろえて足す。
+  auto pushImagePage = [&](const std::string &image, int raw) {
+    dropBlankPartialPage();
+    while (epubVerticalCols_.size() % perScreen != 0) {
+      epubVerticalCols_.push_back({{}, raw});
+      epubVerticalCols_.back().padding = true;
+    }
+    for (int k = 0; k < perScreen; k++) {
+      epubVerticalCols_.push_back({{}, raw});
+      epubVerticalCols_.back().image = image;
+      epubVerticalCols_.back().imageSlice = k;
+    }
+  };
   for (std::size_t c = 0; c < laid.size();) {
     int raw = laid[c].rawLineNumber;
     // 画像の印の列(上の-gの画像ページ参照): ページの区切りまで空の列を足し、画像の列を画面1枚分
     // (perScreen本、imageSliceは右から0..)入れる。区切り(epubVerticalBoundaries_)は記録しない
     // ――記録すると画像ページが別の章として隠され(setEpubVerticalView()の見せる範囲)、左右の
     // スクロールで本文から滑り込まなくなる。後ろはperScreen本ちょうどなので区切りにそろっている。
-    if (!laid[c].image.empty()) {
+    bool inTitlePage = std::any_of(centered.begin(), centered.end(),
+                                   [raw](const auto &r) { return raw >= r.first && raw <= r.second; });
+    if (!laid[c].image.empty() && !inTitlePage) {  // 扉の範囲の画像は扉のページの後(下の扉の処理)
       // 章の頭(表紙等、上の訂正参照)なら、章の頭と同じく区切りを記録する(章をまたぐ移動・見せる範囲)。
       bool chapterStart = (c == 0 || laid[c - 1].rawLineNumber != raw) && chapterStarts.count(raw);
       if (chapterStart) padToPage();
-      dropBlankPartialPage();
-      while (epubVerticalCols_.size() % perScreen != 0) {
-        epubVerticalCols_.push_back({{}, raw});
-        epubVerticalCols_.back().padding = true;
-      }
-      for (int k = 0; k < perScreen; k++) {
-        epubVerticalCols_.push_back({{}, raw});
-        epubVerticalCols_.back().image = laid[c].image;
-        epubVerticalCols_.back().imageSlice = k;
-      }
+      pushImagePage(laid[c].image, raw);
       c++;
       continue;
     }
@@ -7476,7 +7482,23 @@ void Application::rebuildEpubVertical(int rawLine) {
     std::size_t end = c;
     while (end < laid.size() && laid[end].rawLineNumber >= range->first && laid[end].rawLineNumber <= range->second)
       end++;
-    int pad = std::max(0, perScreen - static_cast<int>(end - c));
+    // 2026-10-03追加、直接のユーザー依頼(扉の範囲の画像は"扉ページの直後に独立した画像ページとして"): 扉の
+    // 範囲にある画像の印の列は扉のページから外し、扉のページの後に画像ページとして足す(扉の列として残すと、
+    // 画像の列1本を画像ページの右端とみなして画面1枚分の幅に描き、扉の字に重なっていた)。扉が画像だけなら
+    // 扉のページは作らない。
+    std::vector<EpubVerticalColumn> titleImages;
+    std::vector<EpubVerticalColumn> titleColumns;
+    for (std::size_t k = c; k < end; k++) {
+      if (!laid[k].image.empty()) titleImages.push_back(std::move(laid[k]));
+      else titleColumns.push_back(std::move(laid[k]));
+    }
+    c = end;
+    if (titleColumns.empty()) {
+      for (const auto &image : titleImages) pushImagePage(image.image, image.rawLineNumber);
+      padToPage();
+      continue;
+    }
+    int pad = std::max(0, perScreen - static_cast<int>(titleColumns.size()));
     auto pushPadding = [&](int count, int padRaw) {
       for (int k = 0; k < count; k++) {
         epubVerticalCols_.push_back({{}, padRaw});
@@ -7485,12 +7507,13 @@ void Application::rebuildEpubVertical(int rawLine) {
       }
     };
     pushPadding(pad / 2, range->first);
-    for (; c < end; c++) {
-      epubVerticalCols_.push_back(std::move(laid[c]));
+    for (auto &column : titleColumns) {
+      epubVerticalCols_.push_back(std::move(column));
       epubVerticalCols_.back().titlePage = true;
     }
     pushPadding(pad - pad / 2, range->second);
     padToPage();  // 扉のページの後(区切りを記録する)
+    for (const auto &image : titleImages) pushImagePage(image.image, image.rawLineNumber);
   }
   padToPage();  // 最後の章も右端から始められるよう(右端に置ける列の上限は列の数-perScreen)
   epubVerticalMark_.reset();
