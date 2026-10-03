@@ -12814,6 +12814,16 @@ bool Application::feedPromptByteInner(int byte) {
                                        [](const std::string &c) { return !c.empty() && c.back() == '/'; }),
                         candidates.end());
     }
+    // 2026-10-03追加、直接のユーザー依頼(HELPの[EPUB]「^Je のプロンプトでは、カレントディレクトリにある
+    // .epub ファイルのみ受け付けます（^I で補完してみてください）」の反映): ^Jeでは、カレントディレクトリ
+    // の.epubファイルだけを候補にする。
+    if (promptKind_ == PromptKind::PathInput && epubPathPending_) {
+      candidates.erase(std::remove_if(candidates.begin(), candidates.end(),
+                                       [](const std::string &c) {
+                                         return c.find('/') != std::string::npos || !isEpubFile(c);
+                                       }),
+                        candidates.end());
+    }
     if (candidates.empty()) {
       promptTabArmed_ = false;
       return true;
@@ -13130,7 +13140,13 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
       if (epubPathPending_) {  // ^Je(startEpubPrompt()参照)
         epubPathPending_ = false;
         ResolvedPath resolved = pathResolver_.resolve(text, directoryMode_.currentDirectory());
-        if (!resolved.exists || resolved.isDirectory || !isEpubFile(resolved.path)) {
+        // 2026-10-03: カレントディレクトリにある.epubだけを受け付ける(上の^Iの補完の同日のコメント参照)。
+        std::error_code ec;
+        bool inCurrentDirectory =
+            std::filesystem::equivalent(std::filesystem::path(resolved.path).parent_path(),
+                                        directoryMode_.currentDirectory(), ec);
+        if (!resolved.exists || resolved.isDirectory || !isEpubFile(resolved.path) || !inCurrentDirectory) {
+          display_.putChar(7);
           activeView().redraw();
           return false;
         }
