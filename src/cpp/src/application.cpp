@@ -7367,24 +7367,29 @@ void Application::rebuildEpubVertical(int rawLine) {
   // -gでは、`[image: 名前]`だけの論理行を画像ページにする(EpubVerticalSourceLine::images、下の
   // 帯への挿入、epubVerticalImagesFor())。-cは今までどおり字の`[image: …]`。
   if (display_.isGraphical()) {
+    // 2026-10-03訂正、直接のユーザー報告("表紙の画像はどれも出ない"): 空の見出し+画像だけの段落の
+    // 章(表紙等)は、EPUBの変換が「表紙 [image: title2.jpg]」(章の名前+画像、行末に章の印)の1行に
+    // まとめている(epub_to_help_markup.cppのendLine())。章の頭の行(chapterStarts)なら、画像以外の字
+    // (章の名前、章の印U+2060、空白)は無視して画像ページにする(章の名前は章の一覧に残る)。
     const std::string marker = "[image: ";
     for (auto &line : logical) {
       std::vector<std::string> names;
-      std::size_t p = 0;
+      std::string rest;
       const std::string &text = line.text;
-      bool ok = true;
-      while (true) {
-        p = text.find_first_not_of(' ', p);
-        if (p == std::string::npos) break;
-        std::size_t close = text.compare(p, marker.size(), marker) == 0 ? text.find(']', p) : std::string::npos;
+      for (std::size_t p = 0; p < text.size();) {
+        std::size_t open = text.find(marker, p);
+        std::size_t close = open == std::string::npos ? std::string::npos : text.find(']', open);
         if (close == std::string::npos) {
-          ok = false;
+          rest += text.substr(p);
           break;
         }
-        names.push_back(text.substr(p + marker.size(), close - p - marker.size()));
+        rest += text.substr(p, open - p);
+        names.push_back(text.substr(open + marker.size(), close - open - marker.size()));
         p = close + 1;
       }
-      if (ok && !names.empty()) line.images = std::move(names);
+      for (std::size_t m; (m = rest.find("\xE2\x81\xA0")) != std::string::npos;) rest.erase(m, 3);
+      bool onlyImages = rest.find_first_not_of(' ') == std::string::npos;
+      if (!names.empty() && (onlyImages || chapterStarts.count(line.rawLineNumber))) line.images = std::move(names);
     }
     std::string book = fileMode_.currentFile();
     if (book != epubImageProviderBook_) {
@@ -7428,6 +7433,9 @@ void Application::rebuildEpubVertical(int rawLine) {
     // ――記録すると画像ページが別の章として隠され(setEpubVerticalView()の見せる範囲)、左右の
     // スクロールで本文から滑り込まなくなる。後ろはperScreen本ちょうどなので区切りにそろっている。
     if (!laid[c].image.empty()) {
+      // 章の頭(表紙等、上の訂正参照)なら、章の頭と同じく区切りを記録する(章をまたぐ移動・見せる範囲)。
+      bool chapterStart = (c == 0 || laid[c - 1].rawLineNumber != raw) && chapterStarts.count(raw);
+      if (chapterStart) padToPage();
       while (epubVerticalCols_.size() % perScreen != 0) {
         epubVerticalCols_.push_back({{}, raw});
         epubVerticalCols_.back().padding = true;
