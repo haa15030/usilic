@@ -28406,3 +28406,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      やめる。キーの並びの表記⇔K番号の変換はmacroNotation()/macroItemsFromNotation()/
      macroItemsFromBytes()(記録からの変換も共通化)。旧MacroKey/finishMacroKey()は廃止。
      usilicrc_fileにmacroLines()/replaceMacroLine()/setMacroLine()を追加。テスト2件追加、通過。
+600. **2026-10-03: ^X^Sのマクロ一覧の戻り値(^Gの戻り先欄)と、開く経路の整備**
+   - **経緯**: 直接のユーザー依頼("^X^Sはまさに目的の作り。戻り値だけ整備してもらえばいい。ひととおりチェック
+     よろしく")。
+   - **変更**: drawPromptLabel()の戻り先にPromptKind::MacroEdit→macroListReturnMode_を足した(以前は
+     currentMode_=ListBrowserのまま)。^X^F等の一覧から開いた場合は、その一覧(作り直すと消える)ではなく
+     一覧の戻り先へ戻る。別のプロンプトの入力中は開かない(ベル)。MACROの節が無くても「--」の行を1つ出し、
+     新しいマクロを書けるようにした。
+   - **確認**: 疑似端末で、(ls)・FILE・^X^Fの一覧からの^X^S(戻り値欄がそれぞれディレクトリ・ファイルの
+     パス、^Gでそこへ戻る)、^N^Nでプロンプトが入れ替わること、^X(jjj^X)^Xe^X^Sで「--」の行(_ jjj)に
+     カーソルが来て、Z^MでM-13 Z K-1 K-1 K-1が書かれ、すぐZでマクロが動くことを確認。

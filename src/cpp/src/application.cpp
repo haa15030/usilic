@@ -14444,6 +14444,9 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     case PromptKind::ShellCommand:
       destinationMode = ApplicationMode::Shell;
       break;
+    case PromptKind::MacroEdit:  // ^X^Sのマクロ一覧: ^Gで戻る、^X^Sを押した画面(2026-10-03)
+      destinationMode = macroListReturnMode_;
+      break;
     default: break;
   }
   // 2026-08-18: 同日の試みは、ここでRecentFile/RecentDirectoryを完全
@@ -16535,12 +16538,16 @@ bool Application::saveMacroToUsilicrc() {
 // 位置、^X^Sが記録した並びがあればそれ)はキーを「_」で出す。プロンプトは「キー キーの並び」で、
 // カーソルはキーの位置(文字列の先頭)。^Mで書き換え(executeMacroEdit())、^Gでやめる。
 bool Application::startMacroList(bool selectMarker) {
-  std::string text = usilicrc::readText(usilicrcPath_);
-  std::vector<usilicrc::MacroLine> lines = usilicrc::macroLines(text);
-  if (lines.empty()) {
+  // 別のプロンプトの入力中は開かない(そのプロンプトを壊すため)。
+  if (promptKind_ != PromptKind::None && promptKind_ != PromptKind::MacroEdit) {
     display_.putChar(7);
     return false;
   }
+  std::string text = usilicrc::readText(usilicrcPath_);
+  std::vector<usilicrc::MacroLine> lines = usilicrc::macroLines(text);
+  // MACROの節(や「--」の行)が無くても、新しいマクロを書けるよう「--」の行を1つ出す(書く時に
+  // setMacroMarker()が節ごと足す)。
+  if (lines.empty()) lines.push_back(usilicrc::MacroLine{});
   std::vector<std::string> items, displays;
   macroListNumbers_.clear();
   int selected = 0;
@@ -16554,8 +16561,15 @@ bool Application::startMacroList(bool selectMarker) {
     macroListNumbers_.push_back(lines[i].number);
     if (selectMarker && lines[i].number == 0) selected = static_cast<int>(i);
   }
-  if (currentMode_ != ApplicationMode::ListBrowser || promptKind_ != PromptKind::MacroEdit)
+  // 戻り先: ^X^Fの一覧等(ListBrowser)から開いた場合は、一覧を作り直すとその一覧は消えるので、
+  // その一覧の戻り先へ戻る。
+  if (promptKind_ != PromptKind::MacroEdit) {
     macroListReturnMode_ = currentMode_;
+    if (currentMode_ == ApplicationMode::ListBrowser) {
+      macroListReturnMode_ = promptHistoryContext_ ? promptHistoryContext_->returnMode : ApplicationMode::Directory;
+      promptHistoryContext_ = std::nullopt;
+    }
+  }
   currentMode_ = ApplicationMode::ListBrowser;
   listBrowserMode_.show(items, {}, displays);
   listBrowserView_.setCursorIndex(selected);
