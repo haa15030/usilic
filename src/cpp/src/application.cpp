@@ -3186,6 +3186,10 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::PlayMacro);
       case kControlS:  // ^X ^S : 記録したマクロをusilicrcのMACROへ保存(2026-10-02、saveMacroToUsilicrc()参照)
         return handleCommand(Command::SaveMacro);
+      // 2026-10-03追加、直接のユーザー質問("usilicを再起動せずとも^Xsで反映はムズい？"): usilic以外の
+      // エディタ等でusilicrcを直した場合用。^[eで直した時と^X^Sの後は自動で読み直す(reloadUsilicrcKeys())。
+      case 's':  // ^X s : usilicrcのKEY・MACROを読み直す
+        return handleCommand(Command::ReloadUsilicrc);
       case ' ':  // ^X ␣ : COPYの矩形範囲指定(COPYの外では何もしない、上の^[w/^[pと同じ)
         showTransientNotice(activeView(), "COPY mode only");
         return false;
@@ -4756,6 +4760,10 @@ bool Application::handleCommandImpl(Command command) {
     }
     case Command::SaveMacro:
       return saveMacroToUsilicrc();
+    case Command::ReloadUsilicrc:
+      reloadUsilicrcKeys();
+      showTransientNotice(activeView(), "usilicrc reloaded");
+      return true;
     case Command::StartMan:
       return startManPrompt();
     case Command::StartManList:

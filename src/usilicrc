@@ -397,6 +397,7 @@ KEY
 	K-98	F-0 C-s     # ^X^S    usilicrcのMACROに保存
 	K-99	F-0 C-c     # ^X^C    EXIT
 	K-100	ESC ESC     # ^[^[    EXIT
+	K-101	F-0 s       # ^Xs     usilicrcのKEY・MACROを読み直す
 
 MACRO
 	M-1	;	K-20 K-4 K-28			# ^G^P^M	前の項目を開く

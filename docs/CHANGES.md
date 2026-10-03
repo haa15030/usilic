@@ -28383,3 +28383,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      できるため。
    - **変更**: `git revert`でコミットab5adbeのコード(executeCut()のCutの分岐、書き換えたテスト)を元に戻した。
      項目594の記録はそのまま残す。
+598. **2026-10-03: ^Xsで~/.usilic/usilicrcのKEY・MACROを読み直す(K-101)**
+   - **経緯**: 直接のユーザー質問("^[lは}と同じだと気づいた...これをlで登録したらどうなるか確認したい。その場合、
+     usilicを再起動せずとも^Xsで反映はムズい？")。項目590で^[eでusilicrcを直した時と^X^Sの後は自動で読み直す
+     ようにしたが、usilic以外のエディタ等で直した場合は再起動が要った。
+   - **実装**: Command::ReloadUsilicrcと^X sを新設し、reloadUsilicrcKeys()を呼んで"usilicrc reloaded"を一時
+     メッセージで出す。K番号は、利用者のusilicrcのKEY節にある既存の番号をずらさないよう末尾のK-101にし、
+     src/usilicrc・usilicrc.enのKEY節に足した。HELP(HELP.txt→doc/HELP)への記載はユーザー側の反映待ち。

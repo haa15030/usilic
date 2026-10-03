@@ -131,6 +131,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {98, "F-0 C-s"},   // ^X^S  usilicrcのMACROに保存
       {99, "F-0 C-c"},   // ^X^C  EXIT
       {100, "ESC ESC"},  // ^[^[  EXIT
+      {101, "F-0 s"},    // ^Xs   usilicrcのKEY・MACROを読み直す(2026-10-03、既存のK番号をずらさないよう末尾へ)
   };
   return entries;
 }

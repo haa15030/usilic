@@ -410,6 +410,7 @@ KEY
 	K-98	F-0 C-s     # ^X^S    Save the macro to MACRO in usilicrc
 	K-99	F-0 C-c     # ^X^C    EXIT
 	K-100	ESC ESC     # ^[^[    EXIT
+	K-101	F-0 s       # ^Xs     Reload KEY/MACRO in usilicrc
 
 MACRO
 	M-1	;	K-20 K-4 K-28			# ^G^P^M	Open previous entry
