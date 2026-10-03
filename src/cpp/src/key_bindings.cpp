@@ -8,7 +8,8 @@ namespace fm {
 namespace {
 constexpr int kCtrlX = 0x18, kCtrlJ = 0x0a, kCtrlO = 0x0f, kCtrlC = 0x03, kEsc = 0x1b;
 
-bool isLeaderByte(int b) { return b == kCtrlX || b == kCtrlJ || b == kCtrlO || b == kEsc; }
+// ^Cは2026-10-03からプロンプト・SHELLでも接頭キー(Application::feedShellByte()参照)。
+bool isLeaderByte(int b) { return b == kCtrlX || b == kCtrlJ || b == kCtrlO || b == kCtrlC || b == kEsc; }
 }  // namespace
 
 const std::vector<const char *> &KeyBindings::defaultPrefixSpecs() {
@@ -412,8 +413,8 @@ void KeyBindings::configure(const std::map<int, std::string> &userPrefixes,
 
   // 接頭キー(F-n)の先頭のバイト――プロンプト/SHELL等でも照合してよい列の判定用。
   std::vector<int> leaderFirstBytes = {kEsc};
-  for (int n : {0, 1, 2, 4})
-    if (!userPrefixSeqs[n].empty() && userPrefixSeqs[n][0] != kCtrlC) leaderFirstBytes.push_back(userPrefixSeqs[n][0]);
+  for (int n = 0; n < kPrefixCount; n++)
+    if (!userPrefixSeqs[n].empty()) leaderFirstBytes.push_back(userPrefixSeqs[n][0]);
   auto leaderEligible = [&](const Sequence &from, const Sequence &defaultSeq) {
     return from.size() >= 2 && isLeaderByte(defaultSeq[0]) &&
            std::find(leaderFirstBytes.begin(), leaderFirstBytes.end(), from[0]) != leaderFirstBytes.end();
