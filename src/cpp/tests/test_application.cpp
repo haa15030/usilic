@@ -2414,29 +2414,6 @@ TEST_CASE_FIXTURE(Fixture, "FILE history ListBrowser: Enter on a composite \"pat
   REQUIRE(app.cutMode().segments().size() == 3);
 }
 
-// 2026-10-03追加、直接のユーザー報告("^X^Fしてみるとそこでも^Cbは利かない"): ^X^Fの一覧(文字を打つと
-// プロンプトへ移る一覧)でも^Cは接頭キー。^Cbは一覧の画面の内容をCUTし、^Gで一覧へ戻る。
-TEST_CASE_FIXTURE(Fixture, "FILE history ListBrowser: ^C b CUTs the list's own lines, ^G returns to the list") {
-  history.pushRecent(RingCategory::RecentFile, (root / "plain.txt").string());
-  history.pushRecent(RingCategory::RecentFile, (root / "log.txt").string());
-
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartFileHistory));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  CHECK(app.feedByte(0x03, std::nullopt));  // ^C
-  CHECK(app.feedByte('b', std::nullopt));
-  REQUIRE(app.promptActive());
-  feedText("log");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Cut);
-  bool found = false;
-  for (const auto &segment : app.cutMode().segments())
-    if (segment.label.find("log.txt") != std::string::npos) found = true;
-  CHECK(found);
-  REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
-}
-
 TEST_CASE_FIXTURE(Fixture, "FILE history: a plain path that happens to contain no quote is NOT "
                            "misparsed as a composite entry -- an ordinary path opens normally") {
   history.pushRecent(RingCategory::RecentFile, (root / "log.txt").string());

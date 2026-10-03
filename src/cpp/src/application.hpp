@@ -3361,7 +3361,7 @@ private:
   // DU等に]関与（検索）できる"): Directory起点(directoryView_.lines()
   // を分割する)と全く同じ発想で、manView_/locateView_/duView_.lines()
   // を分割する――executeCut()自身の新設の分岐参照。
-  enum class CutOrigin { File, Help, Directory, Log, Man, Locate, Du, Epub, Key, List };  // Epub: openEpub()参照、Key: startKey()参照、List: ^X^F等の一覧(2026-10-03)
+  enum class CutOrigin { File, Help, Directory, Log, Man, Locate, Du, Epub, Key };  // Epub: openEpub()参照、Key: startKey()参照
   CutOrigin cutOrigin_ = CutOrigin::File;
 
   bool recordingMacro_ = false;

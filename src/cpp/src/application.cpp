@@ -1101,7 +1101,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     std::string name;
     if (cutOrigin_ == CutOrigin::Help || cutOrigin_ == CutOrigin::Key) {
       name = cutOrigin_ == CutOrigin::Key ? "KEY" : "HELP";
-    } else if (cutOrigin_ == CutOrigin::Directory || cutOrigin_ == CutOrigin::List) {
+    } else if (cutOrigin_ == CutOrigin::Directory) {
       name = "CUT";
       // 2026-09-15追加、直接のユーザー方針("CUT、F/EGREPは[MAN、
       // LOCATE、DU等に]関与（検索）できる"): Man/Locate/Du起点も
@@ -2437,9 +2437,10 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
 
   // 2026-09-25追加、直接のユーザー依頼によるキー再編("^Cをプレフィックス
   // にするのは？ ^Cb：バッファをCUT、^Cf：ファイルをCUT。CUTのCは^CのC"):
-  // ^C(接頭キー)。2026-10-03からはSHELL(feedShellByte()、割り込みは^C^C)・
-  // プロンプト(feedPromptByteInner())・^X^F等の一覧(feedRegexListByte())でも
-  // 接頭キーとして働く。それぞれの同日のコメント参照。
+  // ^Cは他の接頭キー(^J/^X/^O/ESC)と違い、ここ(通常の画面)だけで接頭
+  // キーとして働く――SHELL画面ではシェルへの割り込みとしてそのまま
+  // 送る必要があり(feedShellByte()は通らない)、プロンプトでは入力の
+  // 中断(feedPromptByteInner())なので、どちらにも足していない。
   if (leaderCPending_) {
     leaderCPending_ = false;
     if (special) return false;
@@ -2682,7 +2683,6 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
   // ^O^M/^[^M(2026-09-27、openListEntrySpecial()参照): リーダーキーの途中の
   // ^Mは「決定」ではなく、そのリーダーの続きとして扱う。
   if (isNav && !special && byte == kCarriageReturn && (escPending_ || leaderOPending_)) isNav = false;
-  if (isNav) leaderCPending_ = false;  // 下の^C接頭キー(2026-10-03)を^G等で取りやめた場合
   if (isNav) return handleCommand(resolveCommand(byte, special));
   // ^SPC(2026-09-27): ^X^F/^X^Dの一覧では'.'/'['/']'は打った文字として
   // パスの編集になるので、選択は^SPCだけで行う(list_marks.hpp参照)。
@@ -2691,22 +2691,6 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
        promptHistoryContext_->kind == PromptKind::RecentDirectory) &&
       !(escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_)) {
     return handleCommand(Command::ToggleMark);
-  }
-  // 2026-10-03追加、直接のユーザー報告("^X^Fしてみるとそこでも^Cbは利かない"): 文字を打つとプロンプトへ
-  // 移るこの一覧でも、^Cを接頭キーにする(以前の^Cはプロンプトへ渡ってベルが鳴るだけだった)。
-  // ^Cbは一覧の画面の内容をCUT(startCutPrompt()参照)、^Cfはファイルを選んでCUT。
-  if (!special && (leaderCPending_ || (byte == kControlC && !escPending_ && !leaderJPending_ && !leaderJOPending_ &&
-                                       !leaderXPending_ && !leaderOPending_ && !gotoLineGPending_ &&
-                                       !gotoLineDigitsPending_))) {
-    if (!leaderCPending_) {
-      leaderCPending_ = true;
-      return true;
-    }
-    leaderCPending_ = false;
-    if (byte == 'b') return handleCommand(Command::StartCut);
-    if (byte == 'f') return handleCommand(Command::StartCutFile);
-    display_.putChar(7);
-    return true;
   }
   if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ ||
       gotoLineGPending_ || gotoLineDigitsPending_ ||
@@ -3569,29 +3553,6 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     shell_.commandLine().toggleQuotedInsert();
     return true;
   }
-  // 2026-10-03追加、直接のユーザー依頼("SHELLを含めたプロンプトで、現状の^Cを空きとした上で改めて
-  // プレフィックスキーとしての^Cを割り当てたら"→"^C^Cで進めて"): SHELLでも^Cは接頭キー。シェルへの
-  // 割り込み(以前の^C単独)は^C^C(emacsのshell-modeのC-c C-cと同じ)。^Cfは他の接頭キーの
-  // シーケンスと同じく、SHELLに入る前の画面へ戻ってから実行する。^Cb(SHELLの画面のCUT)はまだ無い。
-  if (leaderCPending_ && !special) {
-    leaderCPending_ = false;
-    if (byte == kControlC) {
-      shell_.sendControlByte(static_cast<unsigned char>(byte));
-      return true;
-    }
-    if (byte == 'f') {
-      currentMode_ = shellReturnMode_;
-      activeView().redraw();
-      return handleCommand(Command::StartCutFile);
-    }
-    display_.putChar(7);
-    return true;
-  }
-  if (!special && byte == kControlC && !escPending_ && !leaderJPending_ && !leaderJOPending_ && !leaderXPending_ &&
-      !leaderOPending_) {
-    leaderCPending_ = true;
-    return true;
-  }
   // Shellモードの内部からのグローバルなリーダーキーへのアクセス:
   // ^J/^X/^X^K/^O/ESC。実際のユーザー報告(2026-08-02、成熟した
   // legacyビルドと並べて比較)により、そこでは^X^F/^X^C等はSHELLの
@@ -4009,6 +3970,10 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     }
     shell_.commandLine().insertString(recentDirs[recentDirs.size() - 2]);
     shell_.commandLine().redraw();
+    return true;
+  }
+  if (byte == kControlC) {
+    shell_.sendControlByte(static_cast<unsigned char>(byte));
     return true;
   }
   shell_.commandLine().insertByte(static_cast<unsigned char>(byte));
@@ -12183,15 +12148,9 @@ bool Application::startCutPrompt(GrepSyntax syntax) {
   if (currentMode_ != ApplicationMode::File && currentMode_ != ApplicationMode::CutContent &&
       currentMode_ != ApplicationMode::Cut && currentMode_ != ApplicationMode::Directory &&
       currentMode_ != ApplicationMode::Man && currentMode_ != ApplicationMode::Locate &&
-      currentMode_ != ApplicationMode::Du && currentMode_ != ApplicationMode::ListBrowser)
+      currentMode_ != ApplicationMode::Du)
     return false;
   cutSyntax_ = syntax;
-  // 2026-10-03追加、直接のユーザー報告("^X^Fしてみるとそこでも^Cbは利かない"): ^X^F等の一覧(ListBrowser)も
-  // 画面の内容(一覧の行)をCUTできる。^Gでその一覧へ戻る。
-  if (currentMode_ == ApplicationMode::ListBrowser) {
-    cutReturnMode_ = ApplicationMode::ListBrowser;
-    cutOrigin_ = CutOrigin::List;
-  }
   if (currentMode_ == ApplicationMode::File) cutReturnMode_ = ApplicationMode::File;
   // 2026-09-15追加: Man/Locate/Du自身も、Fileと同じ理屈で明示的に
   // cutReturnMode_を発動元へ揃える(デフォルトのDirectoryのままでは、
@@ -12654,18 +12613,6 @@ bool Application::feedPromptByteInner(int byte) {
   }
   if (byte == kControlQ) {
     promptEditor_.toggleQuotedInsert();
-    return true;
-  }
-  // 2026-10-03追加(feedShellByte()の同日のコメント参照): プロンプトでも^Cは接頭キー(以前はベルが鳴る
-  // だけの空きキーだった)。入力欄だけのプロンプトにはまだ^Cの続きの割り当てが無いのでベル。
-  if (leaderCPending_) {
-    leaderCPending_ = false;
-    display_.putChar(7);
-    return true;
-  }
-  if (byte == kControlC && !escPending_ && !leaderJPending_ && !leaderJOPending_ && !leaderXPending_ &&
-      !leaderOPending_) {
-    leaderCPending_ = true;
     return true;
   }
   // リーダーのシーケンス(^J/^X/^O/ESC、2026-08-12修正): 文字列入力の
@@ -14990,13 +14937,6 @@ bool Application::executeCut(const std::string &pattern) {
     sourceLines.reserve(locateView_.lines().size());
     for (const auto &line : locateView_.lines()) sourceLines.push_back({line.text, line.attributes});
     cutOrigin_ = CutOrigin::Locate;
-    ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
-  } else if (currentMode_ == ApplicationMode::ListBrowser) {
-    // startCutPrompt()の2026-10-03のコメント参照。
-    std::vector<StyledLine> sourceLines;
-    sourceLines.reserve(listBrowserView_.lines().size());
-    for (const auto &line : listBrowserView_.lines()) sourceLines.push_back({line.text, line.attributes});
-    cutOrigin_ = CutOrigin::List;
     ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
   } else if (currentMode_ == ApplicationMode::Du) {
     std::vector<StyledLine> sourceLines;
