@@ -2553,7 +2553,8 @@ class Application {
   std::pair<int, int> epubVerticalShownRange(int first) const;
   // 縦書きの窓(右端の列first)に見える画像ページの置き場所(2026-10-03、rebuildEpubVertical()参照)。
   std::vector<Display::ContentImage> epubVerticalImagesFor(int first, int shownFrom, int shownUntil) const;
-  std::string epubImageProviderBook_;  // display_.setImageProvider()を渡した本(rebuildEpubVertical()参照)
+  std::optional<std::string> epubImageBytes(const std::string &key) const;  // 画像のプロバイダ(コンストラクタ参照)
+  std::map<std::string, std::pair<int, int>> epubImageSizes_;  // keyごとの画像の幅・高さ(0,0は読めない)
   // 縦書きの列の端(deltaの向き)の先(前)に横書きの範囲があればそこへ入る(描き直す)。
   bool enterEpubHorizontalAtEdge(int delta);
   bool enterEpubHorizontalAtBookEnd();  // ^[<で本の末尾の横書きの範囲(奥付等)の最下行へ

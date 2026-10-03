@@ -224,6 +224,11 @@ class ContentView {
     // 全呼び出し元(DirectoryMode等、そもそも折り返しの概念が無い)は
     // nullopt(デフォルト)のままにする。
     std::optional<int> rawLineNumber;
+    // 画像の行(2026-10-03、横書きのEPUBの画像、FileMode::readAndWrap()参照): 画像(Display::ContentImage
+    // のkey)をimageRows行の帯に収めて描き、この行はその上からimageRow番目。字は空。
+    std::string imageKey;
+    int imageRow = 0;
+    int imageRows = 0;
   };
 
   explicit ContentView(Display &display);

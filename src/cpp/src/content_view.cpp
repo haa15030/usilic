@@ -2507,8 +2507,21 @@ int ContentView::maxTopIndex() const {
 }
 
 bool ContentView::renderContentRows() {
-  display_.setContentImages(images_);  // setContentImages()参照
   clampViewport();
+  // setContentImages()の画像に、見えている画像の行(Line::imageKey)の帯を足して渡す。帯の上が画面の上に
+  // はみ出していても、帯ごと(負の行から)渡す(描く側が本文の行でクリップする)。
+  {
+    std::vector<Display::ContentImage> images = images_;
+    int rowOffset = bottomAnchorRowOffset();
+    for (int row = 0; row + rowOffset < height_; row++) {
+      int idx = topIndex_ + row;
+      if (idx < 0 || idx >= static_cast<int>(lines_.size())) break;
+      const Line &line = lines_[idx];
+      if (line.imageKey.empty() || line.imageRows <= 0 || (row > 0 && line.imageRow > 0)) continue;
+      images.push_back({line.imageKey, row0_ + rowOffset + row - line.imageRow, 0, line.imageRows, display_.columns()});
+    }
+    display_.setContentImages(images);
+  }
   int highlighted = hoverIndex_.has_value() ? *hoverIndex_ : cursorIndex_;
   int rowOffset = bottomAnchorRowOffset();
   bool renderedAny = false;

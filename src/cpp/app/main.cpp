@@ -3464,7 +3464,8 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         } else if (line.highlightStartColumn.has_value() && static_cast<int>(text.size()) > ellipsisBudget) {
           text = fm::truncateHighlightedSuffix(text, std::max(0, *line.highlightStartColumn), ellipsisBudget);
         }
-        scrolledLines[i] = {std::move(text), std::move(attrs), line.ellipsisEligible};
+        scrolledLines[i] = {std::move(text), std::move(attrs), line.ellipsisEligible, line.imageKey, line.imageRow,
+                            line.imageRows};
       }
       scrolledFilledBegin = fillBegin;
       scrolledFilledEnd = fillEnd;

@@ -2411,12 +2411,14 @@ SDL_Texture *GraphicalDisplay::contentImageTexture(const std::string &key, int *
   return it->second.texture;
 }
 
-// 画像をそれぞれの矩形(マス)に、縦横比を保って収めて中央に描く。縦書きの間だけ。左右の
-// ずれ(offsetXForRow())はマスと同じ。本文の右端(スクロールバーの帯の手前)と矩形の下端
-// (本文の行、モードラインは含めない)でクリップする。
+// 画像をそれぞれの矩形(マス)に、縦横比を保って収めて中央に描く。左右のずれ(offsetXForRow()、
+// 縦書きだけ)はマスと同じ。本文の右端(スクロールバーの帯の手前)と、矩形と本文の行(モードラインは
+// 含めない)の重なりでクリップする。2026-10-03: 横書きの画像の行(ContentView::Line::imageKey)でも描く
+// (以前は縦書きの間だけ)。
 void GraphicalDisplay::renderContentImages(const std::vector<ContentImage> &images) {
   Impl &d = *impl_;
-  if (!d.outputEnabled || !d.verticalText || images.empty()) return;
+  if (!d.outputEnabled || images.empty()) return;
+  int contentRows = d.modeLineVisible ? std::max(d.rows - 1, 0) : std::max(d.rows, 0);
   SDL_Rect previousClip;
   SDL_RenderGetClipRect(d.renderer, &previousClip);
   bool hadClip = SDL_RenderIsClipEnabled(d.renderer);
@@ -2430,7 +2432,10 @@ void GraphicalDisplay::renderContentImages(const std::vector<ContentImage> &imag
     double scale = std::min(static_cast<double>(boxW) / w, static_cast<double>(boxH) / h);
     int dw = std::max(1, static_cast<int>(w * scale)), dh = std::max(1, static_cast<int>(h * scale));
     SDL_Rect dst{boxX + (boxW - dw) / 2, boxY + (boxH - dh) / 2, dw, dh};
-    SDL_Rect clip{0, boxY, Impl::kMarginX + d.columns * d.cellWidth, boxH};
+    int clipTop = std::max(boxY, static_cast<int>(Impl::kMarginY));
+    int clipBottom = std::min(boxY + boxH, Impl::kMarginY + contentRows * d.cellHeight);
+    if (clipBottom <= clipTop) continue;
+    SDL_Rect clip{0, clipTop, Impl::kMarginX + d.columns * d.cellWidth, clipBottom - clipTop};
     SDL_RenderSetClipRect(d.renderer, &clip);
     SDL_RenderCopy(d.renderer, texture, nullptr, &dst);
   }
@@ -4052,12 +4057,22 @@ void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &
   // コメント参照。
   int firstRow = (pixelOffsetY > 0) ? topIndex - 1 : topIndex;
   int rowCount = contentRows + 1;
+  // 画像の行(ScrolledLine::imageKey、2026-10-03): 帯の最初の行(画面の上にはみ出していれば最初に描く行)で、
+  // 帯ごと画像を描く。字は空なので、先に描いても行の描画に消されない(行は背景を塗らない)。
+  std::vector<ContentImage> scrolledImages;
+  std::vector<int> scrolledImageY;
 
   for (int i = 0; i < rowCount; i++) {
     int lineIndex = firstRow + i;
     if (lineIndex < 0 || lineIndex >= static_cast<int>(lines.size())) continue;
     int y = i * impl_->cellHeight + pixelOffsetY - ((pixelOffsetY > 0) ? impl_->cellHeight : 0);
     if (y <= -impl_->cellHeight || y >= contentRows * impl_->cellHeight) continue;  // 完全に画面外(あるいはモードラインの行に入り込む)
+    if (const auto &line = lines[lineIndex]; !line.imageKey.empty() && line.imageRows > 0 &&
+                                             (line.imageRow == 0 || scrolledImages.empty() ||
+                                              scrolledImages.back().key != line.imageKey)) {
+      scrolledImages.push_back({line.imageKey, 0, 0, line.imageRows, impl_->columns});
+      scrolledImageY.push_back(y - line.imageRow * impl_->cellHeight);
+    }
     // 2026-08-30、直接のユーザー報告(GUI、実際のマウスドラッグ中の
     // 表示崩れ、composeDakutenInString()/middleEllipsisTruncateByWidth()
     // 自身のコメント参照): 通常のContentView::renderLine()が既に行って
@@ -4130,6 +4145,16 @@ void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &
     }
   }
 
+  for (std::size_t k = 0; k < scrolledImages.size(); k++) {
+    int w = 0, h = 0;
+    SDL_Texture *texture = contentImageTexture(scrolledImages[k].key, &w, &h);
+    if (!texture || w <= 0 || h <= 0) continue;
+    int boxW = scrolledImages[k].cols * impl_->cellWidth, boxH = scrolledImages[k].rows * impl_->cellHeight;
+    double scale = std::min(static_cast<double>(boxW) / w, static_cast<double>(boxH) / h);
+    int dw = std::max(1, static_cast<int>(w * scale)), dh = std::max(1, static_cast<int>(h * scale));
+    SDL_Rect dst{Impl::kMarginX + (boxW - dw) / 2, Impl::kMarginY + scrolledImageY[k] + (boxH - dh) / 2, dw, dh};
+    SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);  // contentClip(本文の行)の中
+  }
   SDL_RenderSetClipRect(impl_->renderer, nullptr);  // 下のモードライン行(と将来のどんなマージン装飾)もこれには縛られない
 
   // drawScrollbar()自身のコメント参照――effectiveTopは、つまみが

@@ -6,7 +6,10 @@ namespace fm {
 
 DelegatingDisplay::DelegatingDisplay(Display &backend) : backend_(&backend) {}
 
-void DelegatingDisplay::setBackend(Display &backend) { backend_ = &backend; }
+void DelegatingDisplay::setBackend(Display &backend) {
+  backend_ = &backend;
+  if (imageProvider_) backend_->setImageProvider(imageProvider_);  // 新しい裏の画面にも(setImageProvider()参照)
+}
 Display &DelegatingDisplay::backend() const { return *backend_; }
 
 void DelegatingDisplay::write(const std::string &text) { backend_->write(text); }
@@ -59,7 +62,12 @@ void DelegatingDisplay::setPendingRuby(const std::string &reading, int span, boo
 }
 void DelegatingDisplay::endContentEdgeCapture(int side) { backend_->endContentEdgeCapture(side); }
 void DelegatingDisplay::setContentImages(const std::vector<ContentImage> &images) { backend_->setContentImages(images); }
-void DelegatingDisplay::setImageProvider(ImageProvider provider) { backend_->setImageProvider(std::move(provider)); }
+void DelegatingDisplay::setImageProvider(ImageProvider provider) {
+  imageProvider_ = std::move(provider);
+  backend_->setImageProvider(imageProvider_);
+}
+int DelegatingDisplay::cellPixelWidth() const { return backend_->cellPixelWidth(); }
+int DelegatingDisplay::cellPixelHeight() const { return backend_->cellPixelHeight(); }
 
 void DelegatingDisplay::renderScrolled(const std::vector<ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                                         const std::vector<ModeLineSegment> &modeLineSegments) {

@@ -417,6 +417,9 @@ class Display {
   // keyから画像のファイルのバイト列(JPEG/PNG等)を返す関数。取れなければnullopt。
   using ImageProvider = std::function<std::optional<std::string>(const std::string &key)>;
   virtual void setImageProvider(ImageProvider provider) { (void)provider; }
+  // 1マスのピクセルの幅・高さ(-gだけ、端末は0)。横書きの画像の行数を決めるのに使う(2026-10-03)。
+  virtual int cellPixelWidth() const { return 0; }
+  virtual int cellPixelHeight() const { return 0; }
 
   // モードライン行の1要素――ハイライトされた(反転表示/「standout」)
   // フィールド(ファイル名、位置インジケータ、末尾のパス)か、2つの
@@ -487,6 +490,10 @@ class Display {
     // 分だけをプレーンに描き、残りは既存のSDLクリップ矩形にまかせて
     // 静かに切り落とす)と一致させるため。
     bool ellipsisEligible = false;
+    // 画像の行(2026-10-03、ContentView::Line::imageKey参照)。renderScrolled()が帯ごと画像を描く。
+    std::string imageKey;
+    int imageRow = 0;
+    int imageRows = 0;
   };
 
   // -- スムーズな(ドラッグ/慣性)スクロール描画 --

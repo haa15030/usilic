@@ -673,7 +673,89 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path,
       }
     }
   }
+  if (epubImageRows_ && !noWrapMode_ && isEpubFile(path)) lines = expandEpubImageLines(std::move(lines), path, effectiveWidth);
   return lines;
+}
+
+// setEpubImageRows()参照。画像だけの行(`[image: 名前]`の並びと空白だけ)を、画像ごとにepubImageRows_の
+// 行数の画像の行にする。章の名前+画像の行(EPUBの変換が空の見出し+画像だけの段落をまとめたもの、行末に
+// 章の印U+2060)は、`[image: …]`を取り除いた名前の行を残し、その後に画像の行を続ける。本文の途中の画像
+// (他の字と同じ行)と、行数が0の画像(zipに無い等)はそのまま(字の`[image: …]`)。
+std::vector<ContentView::Line> FileMode::expandEpubImageLines(std::vector<ContentView::Line> lines,
+                                                              const std::string &path, int width) const {
+  static const std::string kMarker = "[image: ";
+  static const std::string kChapterMark = "\xE2\x81\xA0";
+  std::vector<ContentView::Line> out;
+  out.reserve(lines.size());
+  for (auto &line : lines) {
+    std::vector<std::pair<std::size_t, std::size_t>> spans;  // `[image: …]`の[開始, 終わり)
+    std::vector<std::string> names;
+    for (std::size_t p = 0;;) {
+      std::size_t open = line.text.find(kMarker, p);
+      std::size_t close = open == std::string::npos ? std::string::npos : line.text.find(']', open);
+      if (close == std::string::npos) break;
+      spans.push_back({open, close + 1});
+      names.push_back(line.text.substr(open + kMarker.size(), close - open - kMarker.size()));
+      p = close + 1;
+    }
+    if (names.empty()) {
+      out.push_back(std::move(line));
+      continue;
+    }
+    std::string rest;
+    std::size_t at = 0;
+    for (const auto &span : spans) {
+      rest += line.text.substr(at, span.first - at);
+      at = span.second;
+    }
+    rest += line.text.substr(at);
+    bool chapterLabel = rest.find(kChapterMark) != std::string::npos;
+    std::string visible = rest;
+    for (std::size_t m; (m = visible.find(kChapterMark)) != std::string::npos;) visible.erase(m, kChapterMark.size());
+    bool onlyImages = visible.find_first_not_of(' ') == std::string::npos;
+    if (!onlyImages && !chapterLabel) {
+      out.push_back(std::move(line));
+      continue;
+    }
+    std::vector<int> rows;
+    bool any = false;
+    for (const auto &name : names) {
+      rows.push_back(std::max(0, epubImageRows_(path, name, width)));
+      any = any || rows.back() > 0;
+    }
+    if (!any) {
+      out.push_back(std::move(line));
+      continue;
+    }
+    if (!onlyImages) {  // 章の名前の行を残す(`[image: …]`を取り除き、属性の位置を詰める)
+      ContentView::Line label = line;
+      label.text = rest;
+      label.attributes.clear();
+      for (auto run : line.attributes) {
+        int removedBeforeStart = 0, removedBeforeEnd = 0;
+        for (const auto &span : spans) {
+          int a = static_cast<int>(span.first), b = static_cast<int>(span.second);
+          removedBeforeStart += std::clamp(run.start - a, 0, b - a);
+          removedBeforeEnd += std::clamp(run.end - a, 0, b - a);
+        }
+        run.start -= removedBeforeStart;
+        run.end -= removedBeforeEnd;
+        if (run.end > run.start) label.attributes.push_back(run);
+      }
+      out.push_back(std::move(label));
+    }
+    for (std::size_t i = 0; i < names.size(); i++) {
+      for (int k = 0; k < rows[i]; k++) {
+        ContentView::Line image;
+        image.rawLineNumber = line.rawLineNumber;
+        image.imageKey = path + "\n" + names[i];
+        image.imageRow = k;
+        image.imageRows = rows[i];
+        out.push_back(std::move(image));
+      }
+    }
+  }
+  return out;
 }
 
 // loadFileRaw()自身の宣言コメント参照。readAndWrap()と違い、ファイル

@@ -538,6 +538,11 @@ class FileMode {
   bool jumpToEpubRawLine(int rawLine);
   // 縦書きの本の中の横書き/扉の行の範囲(rawLineNumber、EpubLayoutHints参照)。
   const EpubLayoutHints &epubLayoutHints() const { return epubLayoutHints_; }
+  // 2026-10-03追加(横書きのEPUBの画像、.steering/20261003-epub-image-page/のフェーズ5): 画像の帯の行数を
+  // 返す関数(本のパス、画像の名前、画面の幅(桁)→行数、0なら置き換えない)。Applicationが-gの時だけ渡す。
+  // あればreadAndWrap()がEPUBの画像だけの行を画像の行(ContentView::Line::imageKey)に置き換える。
+  using EpubImageRows = std::function<int(const std::string &epubPath, const std::string &imageName, int width)>;
+  void setEpubImageRows(EpubImageRows rows) { epubImageRows_ = std::move(rows); }
 
  private:
   // loadFile()/loadFileNoWrap()/loadFileRaw()が共有する本体――呼び出し元が
@@ -607,6 +612,9 @@ class FileMode {
   // rawLineNumber)。loadAndTransformContent()(const)が変換のたびに作り直す。
   mutable std::map<int, int> epubLinks_;
   mutable EpubLayoutHints epubLayoutHints_;  // epubLinks_と同じく変換のたびに作り直す
+  std::vector<ContentView::Line> expandEpubImageLines(std::vector<ContentView::Line> lines, const std::string &path,
+                                                     int width) const;
+  EpubImageRows epubImageRows_;  // setEpubImageRows()参照
   std::string currentFile_;
   bool skipNextRecentPush_ = false;  // skipNextRecentPush()参照
   bool skipRecentPushNow_ = false;   // 今のloadFile()の間だけのskipNextRecentPush_

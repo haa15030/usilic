@@ -98,12 +98,15 @@ class DelegatingDisplay : public Display {
   void endContentEdgeCapture(int side) override;
   void setContentImages(const std::vector<ContentImage> &images) override;
   void setImageProvider(ImageProvider provider) override;
+  int cellPixelWidth() const override;
+  int cellPixelHeight() const override;
 
   void renderScrolled(const std::vector<ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                        const std::vector<ModeLineSegment> &modeLineSegments) override;
 
  private:
   Display *backend_;
+  ImageProvider imageProvider_;  // setImageProvider()(裏の画面を切り替えても渡し直す、setBackend()参照)
 };
 
 }  // namespace fm

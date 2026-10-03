@@ -31,6 +31,14 @@
 #include "mode_line.hpp"
 #include "pipe_buffer.hpp"
 #include "utf8.hpp"
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Weverything"
+#endif
+#include "third_party/stb_image.h"  // stbi_info_from_memory()(画像の縦横、実装はstb_image_impl.cpp)
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 namespace fm {
 
@@ -589,6 +597,33 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       execMode_(keyInput, &history),
       copyMode_(copyView_) {
   layoutViews();
+  // 2026-10-03(EPUBの画像、.steering/20261003-epub-image-page/): 画像のバイト列のプロバイダと、横書きの
+  // 画像の帯の行数(FileMode::setEpubImageRows())。どちらも本の種類によらず1回だけ渡す(-gかどうかは
+  // 呼ばれた時に見る――-gの画面は後から作られ、DelegatingDisplayが渡し直す)。keyは「本のパス\n画像の
+  // 名前」(epubVerticalImagesFor()、FileMode::expandEpubImageLines())。
+  display_.setImageProvider([this](const std::string &key) { return epubImageBytes(key); });
+  fileMode_.setEpubImageRows([this](const std::string &path, const std::string &name, int width) {
+    int cw = display_.cellPixelWidth(), ch = display_.cellPixelHeight();
+    if (cw <= 0 || ch <= 0 || width <= 0) return 0;
+    std::string key = path + "\n" + name;
+    auto it = epubImageSizes_.find(key);
+    if (it == epubImageSizes_.end()) {
+      std::pair<int, int> size{0, 0};
+      if (auto bytes = epubImageBytes(key)) {
+        int w = 0, h = 0, channels = 0;
+        if (stbi_info_from_memory(reinterpret_cast<const unsigned char *>(bytes->data()), static_cast<int>(bytes->size()),
+                                  &w, &h, &channels))
+          size = {w, h};
+      }
+      it = epubImageSizes_.emplace(key, size).first;
+    }
+    auto [w, h] = it->second;
+    if (w <= 0 || h <= 0) return 0;
+    // 画面の幅に合わせて縮める(小さい画像は拡大しない)。高さは本文の行の数まで。
+    double shownHeight = std::min(static_cast<double>(h), static_cast<double>(h) * width * cw / w);
+    int rows = static_cast<int>(std::ceil(shownHeight / ch));
+    return std::clamp(rows, 1, std::max(1, fileView_.height()));
+  });
   // K-65(^I): Shell自身のコマンドラインのための、実際のファイル
   // システムに裏打ちされた補完、Shellが最後に自己申告したディレク
   // トリ(それ自身のプロンプトのパースが既にこれを追跡している――
@@ -6920,6 +6955,9 @@ bool Application::openEpubLineImage(const ContentView &view) {
   const auto &lines = view.lines();
   int idx = view.cursorIndex();
   if (idx < 0 || idx >= static_cast<int>(lines.size())) return false;
+  // 横書きの画像の行(2026-10-03、FileMode::expandEpubImageLines())は字が空なので、keyの画像の名前で
+  if (const std::string &key = lines[idx].imageKey; !key.empty())
+    return openEpubImageIn("[image: " + key.substr(key.find('\n') + 1) + "]");
   return openEpubImageIn(lines[idx].text);
 }
 
@@ -7336,6 +7374,13 @@ void Application::rebuildEpubVertical(int rawLine) {
     // (EpubLayoutHints::indent、横書きの<indentN>が画面の行の頭に空白を入れる)も同じく取り除き、
     // 縦書きでは列の頭を空ける(EpubVerticalSourceLine::indentFirst/indentRest)。
     ContentView::Line line = original;
+    // 横書きの画像の行(2026-10-03、FileMode::expandEpubImageLines())は、帯の最初の行を元の`[image: 名前]`に
+    // 戻し(下の画像ページの判定のため)、残りの行は飛ばす。
+    if (!line.imageKey.empty()) {
+      if (line.imageRow > 0) continue;
+      line.text = "[image: " + line.imageKey.substr(line.imageKey.find('\n') + 1) + "]";
+      line.attributes.clear();
+    }
     if (center.count(raw) || hints.indent.count(raw)) {
       std::size_t pad = line.text.find_first_not_of(' ');
       if (pad == std::string::npos) pad = line.text.size();
@@ -7390,19 +7435,6 @@ void Application::rebuildEpubVertical(int rawLine) {
       for (std::size_t m; (m = rest.find("\xE2\x81\xA0")) != std::string::npos;) rest.erase(m, 3);
       bool onlyImages = rest.find_first_not_of(' ') == std::string::npos;
       if (!names.empty() && (onlyImages || chapterStarts.count(line.rawLineNumber))) line.images = std::move(names);
-    }
-    std::string book = fileMode_.currentFile();
-    if (book != epubImageProviderBook_) {
-      epubImageProviderBook_ = book;
-      // keyは「本のパス\n画像の名前」(epubVerticalImagesFor()参照)。描く時に初めてzipから読む。
-      display_.setImageProvider([this](const std::string &key) -> std::optional<std::string> {
-        std::size_t nl = key.find('\n');
-        if (nl == std::string::npos) return std::nullopt;
-        EpubMemberReader reader = fileMode_.epubMemberReader(key.substr(0, nl));
-        auto member = findEpubImageMember(reader, key.substr(nl + 1));
-        if (!member) return std::nullopt;
-        return reader(*member);
-      });
     }
   }
   std::vector<EpubVerticalColumn> laid = layoutEpubVerticalColumns(logical, epubVerticalRows(), display_.isGraphical());
@@ -7638,6 +7670,16 @@ void Application::captureEpubVerticalEdges(ContentView &view, const std::vector<
   if (images) view.setContentImages(epubVerticalImagesFor(first, shownFrom, shownUntil));
   view.setCursorIndex(0);
   view.setTopIndex(0);
+}
+
+// 画像のkey(「本のパス\n画像の名前」)のバイト列をzipから読む(画像のプロバイダ、コンストラクタ参照)。
+std::optional<std::string> Application::epubImageBytes(const std::string &key) const {
+  std::size_t nl = key.find('\n');
+  if (nl == std::string::npos) return std::nullopt;
+  EpubMemberReader reader = fileMode_.epubMemberReader(key.substr(0, nl));
+  auto member = findEpubImageMember(reader, key.substr(nl + 1));
+  if (!member) return std::nullopt;
+  return reader(*member);
 }
 
 // 右端の列firstの窓[first, first+perScreen)に見える画像の列(見せる範囲[shownFrom, shownUntil)の中だけ)
@@ -8351,6 +8393,9 @@ std::optional<Application::EpubVerticalTarget> Application::epubVerticalColumnTa
     if (target.compare(0, 4, "url:") == 0) return EpubVerticalTarget{std::nullopt, {}, target.substr(4)};
     return std::nullopt;
   }
+  // 縦書きの画像ページの列は、その画像(横書きの画像の行に置き換えた本では、行のkeyの名前)。
+  if (c >= 0 && c < static_cast<long>(epubVerticalCols_.size()) && !epubVerticalCols_[c].image.empty())
+    return EpubVerticalTarget{std::nullopt, "[image: " + epubVerticalCols_[c].image + "]", {}};
   for (const auto &line : fileView_.lines())
     if (line.rawLineNumber == raw && line.text.find("[image: ") != std::string::npos)
       return EpubVerticalTarget{std::nullopt, line.text, {}};

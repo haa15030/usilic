@@ -231,6 +231,8 @@ class GraphicalDisplay : public Display {
   void endContentEdgeCapture(int side) override;
   void setContentImages(const std::vector<ContentImage> &images) override;  // Display::setContentImages()参照
   void setImageProvider(ImageProvider provider) override;
+  int cellPixelWidth() const override { return cellWidthPixels(); }
+  int cellPixelHeight() const override { return cellHeightPixels(); }
   void renderContentImages(const std::vector<ContentImage> &images);
   SDL_Texture *contentImageTexture(const std::string &key, int *width, int *height);
 
