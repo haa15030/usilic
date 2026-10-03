@@ -167,7 +167,7 @@ class Display {
   static constexpr int kDefaultColor = -1;
   static constexpr int kTrueColorFlag = 0x1000000;
 
-  enum class Key { Up, Down, Left, Right, PageUp, PageDown };
+  enum class Key { Up, Down, Left, Right, PageUp, PageDown, ShiftUp, ShiftDown, ShiftLeft, ShiftRight };  // Shift*: 2026-10-03
 
   virtual ~Display() = default;
 

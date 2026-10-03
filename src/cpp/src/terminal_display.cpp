@@ -483,6 +483,7 @@ std::string TerminalDisplay::keySequence(Key key) const {
     case Key::Right: return caps_.keyRight;
     case Key::PageUp: return caps_.keyPageUp;
     case Key::PageDown: return caps_.keyPageDown;
+    default: return "";  // Shift+矢印はKeyInput::readEscapeSequence()が直接読む(2026-10-03)
   }
   return "";
 }

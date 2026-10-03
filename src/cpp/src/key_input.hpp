@@ -44,7 +44,8 @@ namespace fm {
 //     戻して再生される――playRawMacro()参照。
 class KeyInput {
  public:
-  enum class SpecialKey { Up, Down, Right, Left, PageUp, PageDown };
+  // Shift*(2026-10-03、EPUBの章送り): Shift+矢印(端末は"\x1b[1;2A"等、-gはKMOD_SHIFT)。
+  enum class SpecialKey { Up, Down, Right, Left, PageUp, PageDown, ShiftUp, ShiftDown, ShiftRight, ShiftLeft };
 
   explicit KeyInput(Display &display);
   virtual ~KeyInput();

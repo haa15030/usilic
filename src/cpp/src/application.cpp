@@ -2237,6 +2237,8 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
         return Command::PageUp;
       case KeyInput::SpecialKey::PageDown:
         return Command::PageDown;
+      default:  // Shift+矢印(EPUBの章送りだけ、dispatchByte()の同日のコメント参照)
+        return Command::None;
     }
     return Command::None;
   }
@@ -2525,6 +2527,16 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // カーソルは移動するが奥付ページに変わった後はさっきの画面との間で行き来ループ"――横書きの
   // ←は「上へ」なので範囲の前へ出て縦書きへ戻り、次の←でまた入っていた。右から左へ読む
   // 本なのでKindle等と同じく←で先へ)。
+  // 2026-10-03追加、直接のユーザー依頼("ページ送りすると章の冒頭で止まるとは限らないのがストレスなので、ここは
+  // ひとつ章送り機能を新設してほしい。縦書きでは暫定shift+←→、横書きはshift+↑↓"): EPUBの本文の章送り
+  // (jumpEpubChapter())。縦書きは←が先(右から左へ読む)。
+  if (special && currentMode_ == ApplicationMode::File && isEpubFile(fileMode_.currentFile())) {
+    bool vertical = epubVerticalActive();
+    if (*special == (vertical ? KeyInput::SpecialKey::ShiftLeft : KeyInput::SpecialKey::ShiftDown))
+      return jumpEpubChapter(+1);
+    if (*special == (vertical ? KeyInput::SpecialKey::ShiftRight : KeyInput::SpecialKey::ShiftUp))
+      return jumpEpubChapter(-1);
+  }
   if (special && ((currentMode_ == ApplicationMode::File && (epubVerticalActive() || epubHorizontalSection_)) ||
                   (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive()))) {
     // 縦書き(handleEpubVerticalCommand()参照)は右から左へ読むので、←で先へ、→で戻る
@@ -4112,13 +4124,7 @@ void Application::syncEpubHorizontalPresentation() {
     if (epubChapterStartsLines_ != lines.data() || epubChapterStartsCount_ != lines.size()) {
       epubChapterStartsLines_ = lines.data();
       epubChapterStartsCount_ = lines.size();
-      std::vector<int> starts;
-      for (int i = 0; i < static_cast<int>(lines.size()); i++) {
-        if (lines[i].text.find("\xE2\x81\xA0") == std::string::npos) continue;
-        if (i > 0 && lines[i - 1].rawLineNumber == lines[i].rawLineNumber) continue;
-        if (i > 0) starts.push_back(i);
-      }
-      fileView_.setChapterStarts(std::move(starts));
+      fileView_.setChapterStarts(epubHorizontalChapterStarts());
     }
   } else if (epubChapterStartsLines_ || epubChapterStartsCount_) {
     epubChapterStartsLines_ = nullptr;
@@ -7700,6 +7706,62 @@ void Application::captureEpubVerticalEdges(ContentView &view, const std::vector<
   if (images) view.setContentImages(epubVerticalImagesFor(first, shownFrom, shownUntil));
   view.setCursorIndex(0);
   view.setTopIndex(0);
+}
+
+// 横書きの章の頭の行(章の印U+2060のある元の行の、最初の画面の行。先頭の行は除く)。
+std::vector<int> Application::epubHorizontalChapterStarts() const {
+  const auto &lines = fileView_.lines();
+  std::vector<int> starts;
+  for (int i = 1; i < static_cast<int>(lines.size()); i++) {
+    if (lines[i].text.find("\xE2\x81\xA0") == std::string::npos) continue;
+    if (lines[i - 1].rawLineNumber == lines[i].rawLineNumber) continue;
+    starts.push_back(i);
+  }
+  return starts;
+}
+
+// 章送り(dispatchByte()のShift+矢印、2026-10-03): delta>0で次の章の頭、<0で今の章の頭(既に頭にいれば前の
+// 章の頭)へ。縦書きは区切り(epubVerticalBoundaries_、章の頭・扉の後・画像ページだけの章)を右端に置き、
+// 横書きは章の頭の行を画面の上端に置く。行き先が無ければfalse(何もしない)。
+bool Application::jumpEpubChapter(int delta) {
+  auto pick = [delta](const std::vector<int> &starts, int here) -> std::optional<int> {
+    if (delta > 0) {
+      for (int s : starts)
+        if (s > here) return s;
+      return std::nullopt;
+    }
+    int current = 0;
+    for (int s : starts)
+      if (s <= here) current = s;
+    if (current < here) return current;
+    int previous = -1;
+    for (int s : starts)
+      if (s < current) previous = s;
+    if (previous < 0 && current > 0) previous = 0;
+    if (previous < 0) return std::nullopt;
+    return previous;
+  };
+  if (epubVerticalActive()) {
+    int total = static_cast<int>(epubVerticalCols_.size());
+    std::vector<int> starts;
+    for (int b : epubVerticalBoundaries_)
+      if (b < total) starts.push_back(b);
+    auto target = pick(starts, epubVerticalFirst_);
+    if (!target) return false;
+    int cursor = *target;  // 扉のページなら書名の列へ(showEpubVerticalRaw()と同じ)
+    while (cursor + 1 < total && epubVerticalCols_[cursor].titlePage && epubVerticalCols_[cursor].padding) cursor++;
+    setEpubVerticalView(*target, cursor);
+    epubVerticalView_.redraw();
+    epubVerticalView_.syncVisibleCursor();
+    return true;
+  }
+  auto target = pick(epubHorizontalChapterStarts(), fileView_.topIndex());
+  if (!target) return false;
+  fileView_.setCursorIndex(*target);
+  fileView_.setTopIndex(*target);
+  fileView_.redraw();
+  fileView_.syncVisibleCursor();
+  return true;
 }
 
 // ^O^E(epubChapterBreaks_参照): 章区切り/連続を切り替え、今読んでいる所のまま組み直す。

@@ -203,6 +203,26 @@ std::optional<KeyInput::SpecialKey> KeyInput::readEscapeSequence() {
       break;
     }
   }
+  // Shift+矢印(2026-10-03、EPUBの章送り): "\x1b[1;2A"〜"\x1b[1;2D"(xterm/Terminal.app/iTerm2の既定)。
+  if (matched < 0 && esc == "\x1b[1") {
+    std::string rest;
+    for (int i = 0; i < 3; i++) {
+      int c = readByte();
+      if (!c) break;
+      rest.push_back(static_cast<char>(c));
+    }
+    lastEscapeBytes_ += rest;
+    if (rest.size() == 3 && rest[0] == ';' && rest[1] == '2') {
+      switch (rest[2]) {
+        case 'A': return SpecialKey::ShiftUp;
+        case 'B': return SpecialKey::ShiftDown;
+        case 'C': return SpecialKey::ShiftRight;
+        case 'D': return SpecialKey::ShiftLeft;
+        default: break;
+      }
+    }
+    return std::nullopt;
+  }
   if (matched < 0) return std::nullopt;
   if (matched >= 4) readByte();  // PageUp/PageDown: 末尾のバイト(例えば'~')を捨てる
   return kSpecialOrder[matched];

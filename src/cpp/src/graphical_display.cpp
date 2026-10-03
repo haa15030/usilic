@@ -2500,16 +2500,16 @@ void GraphicalDisplay::close() {}  // 代わりにデストラクタで破棄さ
 
 namespace {
 
-std::optional<Display::Key> translateScancode(SDL_Keycode key) {
-  switch (key) {
+std::optional<Display::Key> translateScancode(SDL_Keycode key, bool shift) {
+  switch (key) {  // shift: Shift+矢印(2026-10-03、EPUBの章送り)
     case SDLK_UP:
-      return Display::Key::Up;
+      return shift ? Display::Key::ShiftUp : Display::Key::Up;
     case SDLK_DOWN:
-      return Display::Key::Down;
+      return shift ? Display::Key::ShiftDown : Display::Key::Down;
     case SDLK_LEFT:
-      return Display::Key::Left;
+      return shift ? Display::Key::ShiftLeft : Display::Key::Left;
     case SDLK_RIGHT:
-      return Display::Key::Right;
+      return shift ? Display::Key::ShiftRight : Display::Key::Right;
     case SDLK_PAGEUP:
       return Display::Key::PageUp;
     case SDLK_PAGEDOWN:
@@ -2739,7 +2739,7 @@ bool GraphicalDisplay::pumpEvents() {
           FILE *f = std::fopen(dbg, "a");
           if (f) { std::fprintf(f, "SDL_KEYDOWN sym=%d mod=%d GUI=%d CTRL=%d\n", event.key.keysym.sym, event.key.keysym.mod, (event.key.keysym.mod & KMOD_GUI) != 0, (event.key.keysym.mod & KMOD_CTRL) != 0); std::fclose(f); }
         }
-        if (auto special = translateScancode(event.key.keysym.sym)) {
+        if (auto special = translateScancode(event.key.keysym.sym, (event.key.keysym.mod & KMOD_SHIFT) != 0)) {
           impl_->keyQueue.push_back(KeyEvent{0, special});
           break;
         }

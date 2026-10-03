@@ -901,6 +901,14 @@ std::optional<fm::KeyInput::SpecialKey> translateDisplayKey(fm::Display::Key key
       return fm::KeyInput::SpecialKey::PageUp;
     case fm::Display::Key::PageDown:
       return fm::KeyInput::SpecialKey::PageDown;
+    case fm::Display::Key::ShiftUp:
+      return fm::KeyInput::SpecialKey::ShiftUp;
+    case fm::Display::Key::ShiftDown:
+      return fm::KeyInput::SpecialKey::ShiftDown;
+    case fm::Display::Key::ShiftLeft:
+      return fm::KeyInput::SpecialKey::ShiftLeft;
+    case fm::Display::Key::ShiftRight:
+      return fm::KeyInput::SpecialKey::ShiftRight;
   }
   return std::nullopt;
 }

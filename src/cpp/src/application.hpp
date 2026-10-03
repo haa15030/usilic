@@ -2560,6 +2560,8 @@ class Application {
   // 縦書きは章の頭をページの区切りにそろえる)、falseなら章をまたいでひと続きに流す。
   bool epubChapterBreaks_ = true;
   bool toggleEpubChapterBreaks();
+  std::vector<int> epubHorizontalChapterStarts() const;
+  bool jumpEpubChapter(int delta);
   // 横書きの章の頭の行(ContentView::setChapterStarts()へ渡したもの)を作り直す目安。
   const void *epubChapterStartsLines_ = nullptr;
   std::size_t epubChapterStartsCount_ = 0;
