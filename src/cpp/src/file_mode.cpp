@@ -63,6 +63,13 @@ bool isEpubFile(const std::string &path) {
   return ext == ".epub";
 }
 
+// file_mode.hpp自身の宣言コメント参照。
+bool isViewableImageFile(const std::string &path) {
+  std::string ext = std::filesystem::path(path).extension().string();
+  for (char &c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".bmp";
+}
+
 // old/src/code.cのis_man()から移植: `man[0]`が'.'で、続く1〜2文字が
 // troffマクロ名らしく見え(".\\\""コメント、".B "/".I "、または英字1〜2
 // 文字+空白/改行)、その位置が実際に行頭にある場合に真。legacy自身の
@@ -600,6 +607,24 @@ std::string FileMode::loadAndTransformContent(const std::string &path) const {
 
 std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path,
                                                        const std::function<bool()> &shouldAbort) const {
+  // 画像ファイル(isViewableImageFile()、-gだけ): 画像の行の帯1つ(画像の名前は空、行数は画面の幅と高さに
+  // 収まる分)。行数が0(-c、復号できない等)なら従来どおり(バイナリの種類表示)。
+  if (epubImageRows_ && !noWrapMode_ && !rawControlCodesMode_ && isViewableImageFile(path)) {
+    epubLinks_.clear();
+    epubLayoutHints_ = {};
+    if (int rows = epubImageRows_(path, "", width_); rows > 0) {
+      std::vector<ContentView::Line> lines;
+      for (int k = 0; k < rows; k++) {
+        ContentView::Line image;
+        image.rawLineNumber = 1;
+        image.imageKey = path + "\n";
+        image.imageRow = k;
+        image.imageRows = rows;
+        lines.push_back(std::move(image));
+      }
+      return lines;
+    }
+  }
   std::string content = loadAndTransformContent(path);
 
   // 2026-09-14追加、直接のユーザー依頼("（ls）での^O^M/^[^Mを実装

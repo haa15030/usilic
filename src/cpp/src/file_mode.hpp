@@ -80,6 +80,12 @@ bool isMarkdownFile(const std::string &path);
 // 本文のテキストへ変換し、isBinaryFile()はfalseを返す(クイックルックへ渡さない)。
 bool isEpubFile(const std::string &path);
 
+// 2026-10-04追加、直接のユーザー依頼("画像ファイルJPEG、PNG、GIF(アニメ無し)、BMPをEPUBモードで表示可能なら
+// (ls)でも表示できてほしい"): 拡張子.jpg/.jpeg/.png/.gif/.bmp(大小無視)。-gではFileMode::readAndWrap()が
+// EPUBの画像と同じ画像の行(ContentView::Line::imageKey、keyは「パス\n」で画像の名前が空)にして画面に収めて
+// 描く(Application::openExternallyIfApplicable()もクイックルックへ渡さない)。
+bool isViewableImageFile(const std::string &path);
+
 // 2026-09-20追加、直接のユーザー依頼("usilic -m src/QUICK.txt > .../
 // usilic.man...HELPは同ファイルを「C-j b」でCUTする"): legacy自身の
 // is_man()(old/src/code.cから移植、readAndWrap()自身のコメント参照)

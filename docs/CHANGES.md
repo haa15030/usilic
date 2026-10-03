@@ -28593,3 +28593,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      Shift+矢印と同じものとして読む(以前はESC ESC=^[^[になっていた)。Shift+矢印は別名として残した。
      -gの←→の慣性の開始は^[の後(awaitingSequenceOrPromptByte())には横取りしない(従来どおり)。
      ビルドのみ確認(実機確認待ち)。HELPへの記載はユーザー側の反映待ち。
+618. **2026-10-04: -gで(ls)からJPEG/PNG/GIF/BMPを開くとusilicの画面に画像を表示する**
+   - **経緯**: 直接のユーザー依頼("画像ファイルJPEG、PNG、GIF(アニメ無し)、BMPをEPUBモードで表示可能なら
+     (ls)でも表示できてほしい")。項目612の横書きのEPUBの画像の行(stb_image)をそのまま使う。
+   - **実装**: isViewableImageFile()(拡張子.jpg/.jpeg/.png/.gif/.bmp)。FileMode::readAndWrap()は、-gで画像の
+     行数(setEpubImageRows()の関数、画像の名前を空で呼ぶ)が1以上なら、ファイル全体を画像の行の帯1つにする
+     (keyは「パス\n」、画面の幅に合わせて縮め、高さは本文の行の数まで、小さい画像は拡大しない)。
+     Application::epubImageBytes()は画像の名前が空ならファイルそのものを読む。
+     Application::openExternallyIfApplicable()は-gではこれらをクイックルックへ渡さない(-cは従来どおり
+     クイックルック、Spaceのクイックルックも従来どおり)。GIFは最初のコマだけ。
+     ビルドのみ確認(実機確認待ち)。画像のテクスチャはkeyで覚えているので、同じパスの画像を書き換えても
+     usilicを起動し直すまで古い画像のまま。

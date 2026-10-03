@@ -7795,6 +7795,13 @@ bool Application::toggleEpubChapterBreaks() {
 std::optional<std::string> Application::epubImageBytes(const std::string &key) const {
   std::size_t nl = key.find('\n');
   if (nl == std::string::npos) return std::nullopt;
+  if (nl + 1 == key.size()) {  // 画像の名前が空: 画像ファイルそのもの(isViewableImageFile()、2026-10-04)
+    std::ifstream in(key.substr(0, nl), std::ios::binary);
+    if (!in) return std::nullopt;
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    return buffer.str();
+  }
   EpubMemberReader reader = fileMode_.epubMemberReader(key.substr(0, nl));
   auto member = findEpubImageMember(reader, key.substr(nl + 1));
   if (!member) return std::nullopt;
@@ -10308,6 +10315,8 @@ bool Application::openExternallyIfApplicable(const std::string &path) {
     activeView().redraw();
     return true;
   }
+  // 2026-10-04: -gではJPEG/PNG/GIF/BMPはusilicの画面で表示する(isViewableImageFile()参照)。
+  if (display_.isGraphical() && isViewableImageFile(path)) return false;
   if (::access("/usr/bin/qlmanage", X_OK) != 0 || !fileMode_.isBinaryFile(path)) return false;
   ChildProcess::Result result = ChildProcess::run({"file", "-b", "--mime-type", path});
   std::string mime = result.ok ? result.output.substr(0, result.output.find('\n')) : "";
