@@ -66,8 +66,6 @@ class LineEditor {
   // だった(CLAUDE.mdの作業ログ参照: 各バイトの値自体は正しいのに、
   // 端末が中断されたシーケンスを置換文字として描画してしまう)。
   void insertByte(unsigned char byte);
-  // 文字列をまとめてカーソル位置へ挿入する(SHELLの^W、2026-10-03)。undoは1回分。
-  void insertString(const std::string &bytes) { insertText(bytes); }
   void backspace();
   void deleteForward();
   void moveHome();

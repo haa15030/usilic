@@ -15952,3 +15952,25 @@ TEST_CASE_FIXTURE(Fixture, "^X^S: a key already used by another macro is refused
   buffer << in.rdbuf();
   CHECK(buffer.str().find("\tM-2\tl\tK-70\t\t# ^[l\n\t--\n") != std::string::npos);
 }
+
+// 2026-10-03追加(項目587の取り消し): SHELLの^Wは、^J^W・^Jwが最後にコマンド行へ入れたコマンドを出し直す
+// (legacyのT_w)。まだ無ければ何も入れない。
+TEST_CASE_FIXTURE(Fixture, "SHELL ^W: re-shows the command ^J^W last put on the command line (nothing before that)") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  CHECK(app.feedShellByte(0x17, std::nullopt));  // ^W: まだ何も無い
+  CHECK(app.shell().commandLine().text().empty());
+  REQUIRE(app.feedShellByte(0x07, std::nullopt));  // ^G: (ls)へ
+  REQUIRE(app.feedByte(0x0a, std::nullopt));        // ^J
+  REQUIRE(app.feedByte(0x17, std::nullopt));        // ^W: バッファの内容
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+  std::string inserted = app.shell().commandLine().text();
+  REQUIRE(inserted.rfind("cat ", 0) == 0);
+  CHECK(app.feedShellByte(0x15, std::nullopt));  // ^U
+  CHECK(app.shell().commandLine().text().empty());
+  CHECK(app.feedShellByte(0x17, std::nullopt));  // ^W
+  CHECK(app.shell().commandLine().text() == inserted);
+}

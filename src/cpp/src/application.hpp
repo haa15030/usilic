@@ -3377,6 +3377,8 @@ private:
   int keyCursorIndex_ = 0;
   bool helpJumpHighlight_ = false;
   void saveKeyCursor();  // executeSelectedKeyLine()がキーを流している間(startKey()参照)
+  // ^J^W・^Jwが最後にSHELLのコマンド行へ入れたコマンド(SHELLの^Wで出し直す、2026-10-03)。
+  std::string lastShellInsertCommand_;
   bool isHelpCommandLineKey(int rawLine) const;  // executeSelectedKeyLine()参照
   // ^X^Sのマクロ一覧(2026-10-03、startMacroList()参照)。一覧の行ごとのM番号(0は「--」の行)と、
   // 閉じた時に戻る画面。

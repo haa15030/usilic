@@ -28424,3 +28424,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: executeSelectedKeyLine()で、選んだ行のHELPの行番号が[SHELL]の「コマンド行：」の見出しから次の
      「[」で始まる節の見出しの手前までにあれば(isHelpCommandLineKey())、SHELL以外から開いたKEYではKEYのまま
      "SHELL/prompt only"を出す。疑似端末で^K^V^V→^A→^N→^Mがメッセージになることを確認。
+602. **2026-10-03: 項目587を取り消し、SHELLの^Wは^J^W・^Jwのコマンドの再表示(legacyのT_w)にする**
+   - **経緯**: 直接のユーザー依頼("「^W：^J^W、^Jw のコマンドを再表示」をすっかり忘れてた。申し訳ないが587を
+     取り消して^Wを元に戻して欲しい。最近それらを使ってないので^Wが何も出ず、空きだと勘違いしたのが原因。
+     あれは必要なので")。調べると、C++版にはlegacyのshell.cのT_w(key.cの^W)が移植されておらず、587の前の
+     ^Wは^Wの字そのものを入力していた。
+   - **変更**: `git revert`でコミット233c9bcのコード(ひとつ前のディレクトリの挿入、LineEditor::insertString())
+     を戻したうえで、T_wを移植。shellInsertName()(^Jw、"echo 名前")・shellInsertBufferContent()(^J^W、
+     "cat ファイル名")が入れたコマンドをlastShellInsertCommand_に覚え、SHELLの^Wでコマンド行をそれに
+     置き換える(まだ無ければベル)。テスト1件追加、通過。項目587の記録はそのまま残す。
