@@ -16438,6 +16438,12 @@ bool Application::executeSelectedKeyLine() {
                    bytes == std::vector<int>{kLeaderX, ' '});
   bool shellOnly = bytes.size() == 1 && (bytes[0] == 0x17 || bytes[0] == 0x15 || bytes[0] == 0x19 ||
                                          bytes[0] == 0x04 || bytes[0] == 0x05 || bytes[0] == 0x01 || bytes[0] == 0x11);
+  // 2026-10-03追加、直接のユーザー報告("^K^V^V→^A：表示行頭へ移動がハイライト→^N^M→コマンド行じゃないのに
+  // （ls）へ"): ^B ^F ^H ^K ^I ^L ^Cは一覧・閲覧の画面では別の機能(ページ戻し等)なので上の判定から外して
+  // いたが、HELPの[SHELL]の「コマンド行：」の節の行(^B：左へ１文字移動等)をKEYから^Mすると、説明とは
+  // 違うその別の機能が動いて(ls)へ戻っていた。キーではなくHELPのどの節の行かで判定する。
+  std::vector<StyledLine> content = cutMode_.segmentContent(*segment);
+  if (!content.empty() && isHelpCommandLineKey(content.front().rawLineNumber)) shellOnly = true;
   if (copyOnly && cutReturnMode_ != ApplicationMode::Copy) {
     showTransientNotice(activeView(), "COPY mode only");
     return false;
@@ -16453,6 +16459,36 @@ bool Application::executeSelectedKeyLine() {
   for (int b : bytes) result = feedByte(b, std::nullopt);  // 利用者のキーとして(KEY節の置き換えを通す)
   executingKeyLine_ = false;
   return result;
+}
+
+// HELP(helpText_)の1始まりの行rawLineが、[SHELL]の「コマンド行：」の見出しから次の「[」で始まる節の
+// 見出しの手前までにあるか(SHELL・プロンプトの文字入力でだけ使うキー、executeSelectedKeyLine()参照)。
+bool Application::isHelpCommandLineKey(int rawLine) const {
+  auto plain = [](const std::string &line) {  // 重ね打ち(X^HX)と字下げの印(U+FEFF)を除き、前後の空白も除く
+    std::string out;
+    for (std::size_t i = 0; i < line.size(); i++) {
+      if (i + 1 < line.size() && line[i + 1] == '\b') {
+        i++;
+        continue;
+      }
+      out += line[i];
+    }
+    std::string bom = "\xEF\xBB\xBF";
+    for (std::size_t p; (p = out.find(bom)) != std::string::npos;) out.erase(p, bom.size());
+    std::size_t b = out.find_first_not_of(" \t"), e = out.find_last_not_of(" \t\r");
+    return b == std::string::npos ? std::string() : out.substr(b, e - b + 1);
+  };
+  std::istringstream in(helpText_);
+  std::string line;
+  int number = 0, start = 0;
+  while (std::getline(in, line)) {
+    number++;
+    std::string text = plain(line);
+    if (text == "コマンド行：") start = number;
+    else if (start && !text.empty() && text[0] == '[') return rawLine > start && rawLine < number;
+    if (number > rawLine && !start) return false;
+  }
+  return start && rawLine > start;
 }
 
 bool Application::jumpFromKeyToHelp() {

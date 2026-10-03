@@ -3377,6 +3377,7 @@ private:
   int keyCursorIndex_ = 0;
   bool helpJumpHighlight_ = false;
   void saveKeyCursor();  // executeSelectedKeyLine()がキーを流している間(startKey()参照)
+  bool isHelpCommandLineKey(int rawLine) const;  // executeSelectedKeyLine()参照
   // ^X^Sのマクロ一覧(2026-10-03、startMacroList()参照)。一覧の行ごとのM番号(0は「--」の行)と、
   // 閉じた時に戻る画面。
   std::vector<int> macroListNumbers_;
