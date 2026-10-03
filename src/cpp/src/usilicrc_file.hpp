@@ -39,6 +39,19 @@ std::string replaceMacroMarker(const std::string &text, const std::vector<std::s
 bool setMacroMarker(const std::string &home, const std::vector<std::string> &replacement);
 // MACRO節で使われている最大のM番号+1(無ければ1)。
 int nextMacroNumber(const std::string &text);
+// 2026-10-03追加(^X^Sのマクロ一覧、Application::startMacroList()参照): MACRO節の「M-n キー 要素... # コメント」
+// の行と「--」の行(number=0、keyは空、要素は^X^Sが書いた並び)を順に返す。itemsは要素の並びの文字列
+// (usilicrcの書き方のまま)、commentは「#」より後(前後の空白は除く)。
+struct MacroLine {
+  int number = 0;
+  std::string key;
+  std::string items;
+  std::string comment;
+};
+std::vector<MacroLine> macroLines(const std::string &text);
+// M-`number`の行を`line`で置き換える(テキスト版とファイル版)。無ければ何もしない(ファイル版はfalse)。
+std::string replaceMacroLine(const std::string &text, int number, const std::string &line);
+bool setMacroLine(const std::string &home, int number, const std::string &line);
 // 節の見出しの行番号(1始まり)。無ければnullopt。
 std::optional<int> sectionLineNumber(const std::string &text, const std::string &section);
 std::string readText(const std::string &path);

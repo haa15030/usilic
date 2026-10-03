@@ -28390,3 +28390,19 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: Command::ReloadUsilicrcと^X sを新設し、reloadUsilicrcKeys()を呼んで"usilicrc reloaded"を一時
      メッセージで出す。K番号は、利用者のusilicrcのKEY節にある既存の番号をずらさないよう末尾のK-101にし、
      src/usilicrc・usilicrc.enのKEY節に足した。HELP(HELP.txt→doc/HELP)への記載はユーザー側の反映待ち。
+599. **2026-10-03: ^X^Sはusilicrcを開かず、マクロの一覧(キー キーの並び)を出してプロンプトで編集する**
+   - **経緯**: 直接のユーザー依頼("今の^X^SではMACRO登録後の動作が~/.usilic/usilicrcを開いて編集を促す画面に
+     なる。それは別のマクロに担当させたいので、FILE風の一覧にしてほしい"、"カーソル行の文字列編集が
+     プロンプトでは可能になる。ただし文末にカーソルがあるので今の一文字設定の位置で入力を促す仕様の
+     マクロ一覧を表示してほしい")。AskUserQuestionで、行は「キーと内容だけ」、既存の行も^Mで書き換える、
+     プロンプトは行全体を編集できカーソルはキーの位置、を選択。
+   - **実装**: saveMacroToUsilicrc()は、記録した並びを「--」の行に書いたあと(従来どおり)startMacroList()で
+     一覧を出す。一覧はListBrowserの画面に「キー   キーの並び」(「--」の行のキーは「_」)、プロンプトは
+     PromptKind::MacroEdit("MACRO 位置 Key: キー キーの並び"、カーソルは先頭)。^N/^Pで行を移ると
+     その行が入り、カーソルは先頭へ。^MでexecuteMacroEdit(): 既存の行はusilicrc::setMacroLine()で
+     書き換え(コメントの説明は残す)、「--」の行は新しいM番号で書いて次の「--」を足す。どちらも
+     reloadUsilicrcKeys()でその場で効かせて元の画面へ。キーが空・他のマクロと同じ・並びが読めない時は
+     ベルでプロンプトのまま(理由の表示は、モード行の一時メッセージがプロンプトを隠すので見送り)。^Gで
+     やめる。キーの並びの表記⇔K番号の変換はmacroNotation()/macroItemsFromNotation()/
+     macroItemsFromBytes()(記録からの変換も共通化)。旧MacroKey/finishMacroKey()は廃止。
+     usilicrc_fileにmacroLines()/replaceMacroLine()/setMacroLine()を追加。テスト2件追加、通過。

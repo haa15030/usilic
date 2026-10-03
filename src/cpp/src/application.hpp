@@ -3377,9 +3377,16 @@ private:
   int keyCursorIndex_ = 0;
   bool helpJumpHighlight_ = false;
   void saveKeyCursor();  // executeSelectedKeyLine()がキーを流している間(startKey()参照)
-  bool macroKeyPending_ = false;
-  std::string pendingMacroItems_;
-  bool finishMacroKey(int byte, std::optional<KeyInput::SpecialKey> special);
+  // ^X^Sのマクロ一覧(2026-10-03、startMacroList()参照)。一覧の行ごとのM番号(0は「--」の行)と、
+  // 閉じた時に戻る画面。
+  std::vector<int> macroListNumbers_;
+  ApplicationMode macroListReturnMode_ = ApplicationMode::Directory;
+  bool startMacroList(bool selectMarker);
+  bool closeMacroList();
+  bool executeMacroEdit(const std::string &text);
+  static std::string macroItemsFromBytes(const std::vector<int> &bytes, bool *failed = nullptr);
+  static std::string macroNotation(const std::string &items);
+  static std::optional<std::string> macroItemsFromNotation(const std::string &notation);
   std::vector<RecordedStep> recordedMacro_;
   // leaderXシーケンスの先頭の^Xバイトを、2番目のバイトが解決する
   // まで保持しておくので、StartMacroRecord/StopMacroRecord/
@@ -3494,9 +3501,9 @@ private:
     // 2026-10-01追加、openEpub()自身のコメント参照。ArchiveLoadと同じく、drawPromptLabel()専用の
     // 静的メッセージ("Reading...")のためだけに存在する。
     EpubLoad,
-    // 2026-10-02追加(saveMacroToUsilicrc()参照): ^X^Sの「実行キーを1文字」の案内("MACRO Key:")。
-    // drawPromptLabel()専用で、promptKind_へは代入しない(キーはmacroKeyPending_で受ける)。
-    MacroKey,
+    // 2026-10-02追加、2026-10-03変更(startMacroList()参照): ^X^Sのマクロ一覧のプロンプト("MACRO Key:")。
+    // 「キー キーの並び」を編集し、^Mでusilicrcへ書く。
+    MacroEdit,
     // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装、実機報告
     // (スクリーンショット=gv、legacyの参照画面: "プロンプトエリアは
     // 編集可能な非ハイライト表示が正解")を受けての追加。Du/ArchiveLoad

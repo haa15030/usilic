@@ -15894,3 +15894,61 @@ TEST_CASE_FIXTURE(Fixture, "offerShellCommand(): follow-up re-offers after the o
   }));
   CHECK(app.shell().commandLine().text().empty());
 }
+
+// 2026-10-03追加、直接のユーザー依頼("^X^SではMACRO登録後の動作が~/.usilic/usilicrcを開いて編集を促す
+// 画面になる...FILE風の一覧にしてほしい"): ^X^Sはマクロの一覧(キー キーの並び)を出し、カーソル行を
+// プロンプトで編集して^Mでusilicrcへ書き戻す。
+TEST_CASE_FIXTURE(Fixture, "^X^S: the MACRO list shows \"key notation\" rows; editing a row's key and ^M rewrites "
+                           "that M-line in ~/.usilic/usilicrc") {
+  {
+    std::ofstream(root / ".usilic" / "usilicrc") << "MACRO\n"
+                                                    "\tM-1\t;\tK-20 K-4 K-28\t\t# ^G^P^M\t前の項目を開く\n"
+                                                    "\tM-2\t:\tK-20 K-3 K-28\t\t# ^G^N^M\t次の項目を開く\n"
+                                                    "\t--\n";
+  }
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::SaveMacro));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.promptActive());
+  CHECK(app.promptText() == "; ^G^P^M");
+  CHECK(app.listBrowserMode().items().size() == 3);
+
+  REQUIRE(app.feedByte(0x0e, std::nullopt));  // ^N: M-2の行へ
+  CHECK(app.promptText() == ": ^G^N^M");
+  REQUIRE(app.feedByte(0x04, std::nullopt));  // ^D: 先頭(キー)の":"を消す
+  REQUIRE(app.feedByte('n', std::nullopt));
+  CHECK(app.promptText() == "n ^G^N^M");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+
+  std::ifstream in(root / ".usilic" / "usilicrc");
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  CHECK(buffer.str().find("\tM-2\tn\tK-20 K-3 K-28\t\t# ^G^N^M\t次の項目を開く\n") != std::string::npos);
+  CHECK(buffer.str().find("\tM-1\t;\tK-20 K-4 K-28") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^X^S: a key already used by another macro is refused (stays in the prompt)") {
+  {
+    std::ofstream(root / ".usilic" / "usilicrc") << "MACRO\n"
+                                                    "\tM-1\t;\tK-20 K-4 K-28\t\t# ^G^P^M\n"
+                                                    "\t--\tK-70\n";
+  }
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::SaveMacro));
+  REQUIRE(app.feedByte(0x0e, std::nullopt));  // ^N: 「--」の行
+  CHECK(app.promptText() == " ^[l");
+  REQUIRE(app.feedByte(';', std::nullopt));
+  app.feedByte(0x0d, std::nullopt);
+  CHECK(app.promptActive());  // ;はM-1が使っている
+  REQUIRE(app.feedByte(0x01, std::nullopt));  // ^A
+  REQUIRE(app.feedByte(0x04, std::nullopt));  // ^D
+  REQUIRE(app.feedByte('l', std::nullopt));
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK_FALSE(app.promptActive());
+  std::ifstream in(root / ".usilic" / "usilicrc");
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  CHECK(buffer.str().find("\tM-2\tl\tK-70\t\t# ^[l\n\t--\n") != std::string::npos);
+}

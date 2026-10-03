@@ -199,6 +199,86 @@ int nextMacroNumber(const std::string &text) {
   return next;
 }
 
+namespace {
+// MACRO節の1行を読む。M-nの行か「--」の行でなければnullopt。
+std::optional<MacroLine> parseMacroLine(const std::string &raw) {
+  std::size_t p = raw.find_first_not_of(" \t");
+  if (p == std::string::npos) return std::nullopt;
+  auto word = [&]() {
+    while (p < raw.size() && (raw[p] == ' ' || raw[p] == '\t')) p++;
+    std::size_t start = p;
+    while (p < raw.size() && raw[p] != ' ' && raw[p] != '\t') p++;
+    return raw.substr(start, p - start);
+  };
+  auto trim = [](const std::string &s) {
+    std::size_t b = s.find_first_not_of(" \t"), e = s.find_last_not_of(" \t");
+    return b == std::string::npos ? std::string() : s.substr(b, e - b + 1);
+  };
+  // 要素の並びとコメントを分ける(「"..."」の中の#はコメントの始まりではない)。
+  auto splitRest = [&](MacroLine &line) {
+    std::size_t hash = std::string::npos;
+    bool quoted = false;
+    for (std::size_t i = p; i < raw.size(); i++) {
+      if (raw[i] == '"') quoted = !quoted;
+      else if (raw[i] == '#' && !quoted) {
+        hash = i;
+        break;
+      }
+    }
+    line.items = trim(raw.substr(p, hash == std::string::npos ? std::string::npos : hash - p));
+    if (hash != std::string::npos) line.comment = trim(raw.substr(hash + 1));
+  };
+  MacroLine line;
+  std::string head = word();
+  if (head == "--") {
+    splitRest(line);
+    return line;
+  }
+  if (head.size() < 3 || head.compare(0, 2, "M-") != 0 || head.find_first_not_of("0123456789", 2) != std::string::npos)
+    return std::nullopt;
+  line.number = std::atoi(head.c_str() + 2);
+  line.key = word();
+  if (line.key.empty()) return std::nullopt;
+  splitRest(line);
+  return line;
+}
+}  // namespace
+
+std::vector<MacroLine> macroLines(const std::string &text) {
+  std::vector<MacroLine> out;
+  std::vector<std::string> lines = splitKeepingLines(text);
+  auto header = findHeader(lines, "MACRO");
+  if (!header) return out;
+  std::size_t end = sectionEnd(lines, *header);
+  for (std::size_t i = *header + 1; i < end; i++)
+    if (auto line = parseMacroLine(lines[i])) out.push_back(*line);
+  return out;
+}
+
+std::string replaceMacroLine(const std::string &text, int number, const std::string &line) {
+  std::vector<std::string> lines = splitKeepingLines(text);
+  auto header = findHeader(lines, "MACRO");
+  if (!header) return text;
+  std::size_t end = sectionEnd(lines, *header);
+  for (std::size_t i = *header + 1; i < end; i++) {
+    auto parsed = parseMacroLine(lines[i]);
+    if (parsed && parsed->number == number) {
+      lines[i] = line;
+      return join(lines);
+    }
+  }
+  return text;
+}
+
+bool setMacroLine(const std::string &home, int number, const std::string &line) {
+  if (!ensureUser(home)) return false;
+  std::string user = userPath(home);
+  std::string text = readFile(user);
+  std::string replaced = replaceMacroLine(text, number, line);
+  if (replaced == text) return false;
+  return writeAtomically(user, replaced);
+}
+
 bool setSection(const std::string &home, const std::string &section, const std::vector<std::string> &values) {
   if (!ensureUser(home)) return false;
   std::string user = userPath(home);

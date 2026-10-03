@@ -3435,7 +3435,6 @@ bool Application::feedUntranslatedByte(int byte, std::optional<KeyInput::Special
 }
 
 bool Application::feedByteImpl(int byte, std::optional<KeyInput::SpecialKey> special) {
-  if (macroKeyPending_) return finishMacroKey(byte, special);  // ^X^Sの実行キー(saveMacroToUsilicrc()参照)
   // ^X^Sの「^Xeの直後」: ^Xとその次の^Sの間は下ろさない。
   if (!leaderXPending_ && !(byte == kLeaderX && !special)) macroJustPlayed_ = false;
   bool wasLeaderXPending = leaderXPending_;
@@ -12670,6 +12669,7 @@ bool Application::feedPromptByteInner(int byte) {
     return dispatchLeaderByte(byte, std::nullopt);
   }
   if (byte == kCarriageReturn) return submitPrompt();
+  if (byte == kControlG && promptKind_ == PromptKind::MacroEdit) return closeMacroList();  // startMacroList()参照
   if (byte == kControlG) {
     cancelPrompt();
     return true;
@@ -12971,6 +12971,10 @@ bool Application::feedPromptByteInner(int byte) {
     drawPromptLabel(promptKind_, count > 0 ? ModeLine::format(idx + 1, count) : "");
     if (selected && promptKind_ == PromptKind::RecentFile) promptEditor_.setText(recentFileDisplayText(*selected));
     else promptEditor_.setText(selected ? *selected : "");
+    if (promptKind_ == PromptKind::MacroEdit) {  // マクロ一覧はキーの位置(先頭)から(startMacroList()参照)
+      promptEditor_.moveHome();
+      promptEditor_.redraw();
+    }
     return true;
   }
   // 他の認識されない制御バイトは、リテラルに挿入するのではなく、
@@ -13187,9 +13191,10 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
     case PromptKind::Du:  // promptKind_には決して代入されない、drawPromptLabel()専用のラベルマーカー――application.hpp自身の宣言コメント参照
     case PromptKind::ArchiveLoad:  // 同上――PromptKind::ArchiveLoad自身の宣言コメント参照
     case PromptKind::EpubLoad:     // 同上(openEpub()の"Reading...")
-    case PromptKind::MacroKey:     // 同上(^X^Sの"Key:")
     case PromptKind::TabCompletionList:  // 同上――PromptKind::TabCompletionList自身の宣言コメント参照
       return false;
+    case PromptKind::MacroEdit:  // ^X^Sのマクロ一覧(startMacroList()参照)
+      return executeMacroEdit(text);
   }
   return false;
 }
@@ -13880,7 +13885,7 @@ std::string Application::promptLabelText(PromptKind kind) const {
       return "ARC";
     case PromptKind::EpubLoad:
       return "EPUB";
-    case PromptKind::MacroKey:
+    case PromptKind::MacroEdit:
       return "MACRO";
     case PromptKind::TabCompletionList:
       return "LIST";
@@ -14286,8 +14291,10 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   // は、行自身の反転表示の塗りつぶしを通して打ち抜かれた、通常の
   // (反転表示でない)テキストの「穴」として見える。
   if (kind == PromptKind::CopyDestination || kind == PromptKind::MoveDestination ||
-      kind == PromptKind::RemoveConfirm) {
-    std::string message = kind == PromptKind::RemoveConfirm ? "Delete? (y/n) " : "Destination? ";  // 2026-09-27、RMは"Delete? (y/n) "、CP/MVは"Destination? "(直接のユーザー依頼)
+      kind == PromptKind::RemoveConfirm || kind == PromptKind::MacroEdit) {
+    std::string message = kind == PromptKind::RemoveConfirm ? "Delete? (y/n) "
+                          : kind == PromptKind::MacroEdit   ? "Key: "  // ^X^Sのマクロ一覧(2026-10-03)
+                                                            : "Destination? ";  // 2026-09-27、RMは"Delete? (y/n) "、CP/MVは"Destination? "(直接のユーザー依頼)
     display_.moveCursor(row, labelWidth);
     for (unsigned char c : message) display_.putChar(c);
     labelWidth += static_cast<int>(message.size());
@@ -16506,91 +16513,220 @@ bool Application::saveMacroToUsilicrc() {
   macroJustPlayed_ = false;
   std::string home = std::filesystem::path(usilicrcPath_).parent_path().parent_path().string();
   if (!usilicrc::ensureUser(home)) return false;
-  std::string userPath = usilicrc::userPath(home);
+  bool recorded = false;
   if (justPlayed && !recordedMacro_.empty()) {
-    auto sequences = KeyBindings::defaultSequences();
-    std::string items, literal;
-    auto flushLiteral = [&]() {
-      if (literal.empty()) return;
-      items += (items.empty() ? "" : " ") + std::string("\"") + literal + "\"";
-      literal.clear();
-    };
-    std::size_t i = 0;
-    while (i < recordedMacro_.size()) {
-      if (recordedMacro_[i].special) {
-        i++;
-        continue;
-      }
-      int bestNumber = 0;
-      std::size_t bestLength = 0;
-      for (const auto &[number, seq] : sequences) {
-        if (seq.size() <= bestLength || i + seq.size() > recordedMacro_.size()) continue;
-        bool match = true;
-        for (std::size_t k = 0; k < seq.size() && match; k++)
-          match = !recordedMacro_[i + k].special && recordedMacro_[i + k].byte == seq[k];
-        if (match) {
-          bestNumber = number;
-          bestLength = seq.size();
-        }
-      }
-      if (bestNumber > 0) {
-        flushLiteral();
-        items += (items.empty() ? "" : " ") + std::string("K-") + std::to_string(bestNumber);
-        i += bestLength;
-        continue;
-      }
-      int b = recordedMacro_[i].byte;
-      if (b >= 0x20 && b != '"' && b != '#' && b != 0x7f) literal.push_back(static_cast<char>(b));
-      i++;
-    }
-    flushLiteral();
+    std::vector<int> bytes;
+    for (const auto &step : recordedMacro_)
+      if (!step.special) bytes.push_back(step.byte);
+    std::string items = macroItemsFromBytes(bytes);
     if (items.empty()) return false;
-    pendingMacroItems_ = items;
     usilicrc::setMacroMarker(home, {"\t--\t" + items});
+    recorded = true;
   }
-  // 設定一覧(usilicrcのMACROの節)を表示する。
-  if (!executePathInput(userPath)) return false;
-  if (auto line = usilicrc::sectionLineNumber(usilicrc::readText(userPath), "MACRO")) {
-    const auto &lines = fileView_.lines();
-    for (std::size_t k = 0; k < lines.size(); k++)
-      if (lines[k].rawLineNumber && *lines[k].rawLineNumber >= *line) {
-        fileView_.setCursorIndex(static_cast<int>(k));
-        fileView_.setTopIndex(static_cast<int>(k));
-        break;
-      }
-    activeView().redraw();
+  // 2026-10-03変更、直接のユーザー依頼("^X^SではMACRO登録後の動作が~/.usilic/usilicrcを開いて編集を促す
+  // 画面になる。それは別のマクロに担当させたいので、FILE風の一覧にしてほしい"): 以前はusilicrcをFILEで
+  // 開いてMACROの節へ飛び、"MACRO Key:"で実行キーを1文字待っていた。今はマクロの一覧を出す
+  // (startMacroList()参照)。記録した直後なら「--」の行(今記録した並び)にカーソルを置く。
+  return startMacroList(recorded);
+}
+
+// ^X^Sのマクロ一覧(2026-10-03、saveMacroToUsilicrc()参照)。usilicrcのMACRO節の行を「キー   キーの並び」
+// (^X^Fの一覧のように、カーソル行の文字列をプロンプトで編集できる)で出す。「--」の行(次に書き込む
+// 位置、^X^Sが記録した並びがあればそれ)はキーを「_」で出す。プロンプトは「キー キーの並び」で、
+// カーソルはキーの位置(文字列の先頭)。^Mで書き換え(executeMacroEdit())、^Gでやめる。
+bool Application::startMacroList(bool selectMarker) {
+  std::string text = usilicrc::readText(usilicrcPath_);
+  std::vector<usilicrc::MacroLine> lines = usilicrc::macroLines(text);
+  if (lines.empty()) {
+    display_.putChar(7);
+    return false;
   }
-  if (!pendingMacroItems_.empty()) {
-    macroKeyPending_ = true;
-    drawPromptLabel(PromptKind::MacroKey, /*positionText=*/"", "Key:");
-    display_.flush();
+  std::vector<std::string> items, displays;
+  macroListNumbers_.clear();
+  int selected = 0;
+  for (std::size_t i = 0; i < lines.size(); i++) {
+    std::string notation = macroNotation(lines[i].items);
+    std::string key = lines[i].number ? lines[i].key : std::string();
+    items.push_back(key + " " + notation);
+    std::string shown = key.empty() ? "_" : key;
+    shown.append(shown.size() < 4 ? 4 - shown.size() : 1, ' ');
+    displays.push_back(shown + notation);
+    macroListNumbers_.push_back(lines[i].number);
+    if (selectMarker && lines[i].number == 0) selected = static_cast<int>(i);
   }
+  if (currentMode_ != ApplicationMode::ListBrowser || promptKind_ != PromptKind::MacroEdit)
+    macroListReturnMode_ = currentMode_;
+  currentMode_ = ApplicationMode::ListBrowser;
+  listBrowserMode_.show(items, {}, displays);
+  listBrowserView_.setCursorIndex(selected);
+  listBrowserView_.redraw();
+  activatePrompt(PromptKind::MacroEdit, items[selected], ModeLine::format(selected + 1, static_cast<int>(items.size())),
+                 /*cursorAtStart=*/true);
   return true;
 }
 
-// saveMacroToUsilicrc()の続き: 実行キー(1文字、印字できる字)を受け、「--」の行を「M-n キー K-...」に
-// して次の行へ「--」を足す。それ以外のキー(^G等)なら取りやめる(「--」の行には並びが残る)。
-bool Application::finishMacroKey(int byte, std::optional<KeyInput::SpecialKey> special) {
-  macroKeyPending_ = false;
-  std::string items;
-  items.swap(pendingMacroItems_);
-  std::string home = std::filesystem::path(usilicrcPath_).parent_path().parent_path().string();
-  std::string userPath = usilicrc::userPath(home);
-  if (special || byte <= 0x20 || byte >= 0x7f || byte == '#') {
-    activeView().redraw();
-    return false;
-  }
-  int number = usilicrc::nextMacroNumber(usilicrc::readText(userPath));
-  std::string key(1, static_cast<char>(byte));
-  usilicrc::setMacroMarker(home, {"\tM-" + std::to_string(number) + "\t" + key + "\t" + items, "\t--"});
-  reloadUsilicrcKeys();  // 保存したキーをすぐ使えるように(2026-10-03)
-  int cursor = fileView_.cursorIndex(), top = fileView_.topIndex();
-  if (fileMode_.loadFile(userPath)) {
-    fileView_.setCursorIndex(cursor);
-    fileView_.setTopIndex(top);
-  }
+// マクロ一覧を閉じて、^X^Sを押した画面へ戻る。
+bool Application::closeMacroList() {
+  promptKind_ = PromptKind::None;
+  promptCandidateListActive_ = false;
+  currentMode_ = macroListReturnMode_;
   activeView().redraw();
   return true;
+}
+
+// マクロ一覧のプロンプトの^M。「キー キーの並び」を読んで、カーソル行のマクロ(「--」の行なら新しい
+// M番号)としてusilicrcへ書き、その場で効かせる(reloadUsilicrcKeys())。キーが無い・他のマクロと
+// 同じ・並びが読めない時は、ベルを鳴らしてプロンプトのまま。
+bool Application::executeMacroEdit(const std::string &text) {
+  int idx = listBrowserView_.cursorIndex();
+  int count = static_cast<int>(macroListNumbers_.size());
+  // 理由(message)は今のところ出さない(モード行の一時メッセージはプロンプトと同じ行で、出すとプロンプトが
+  // 隠れるため)。ベルだけ。
+  auto stay = [&](const std::string &message) {
+    (void)message;
+    display_.putChar(7);
+    activatePrompt(PromptKind::MacroEdit, text, ModeLine::format(idx + 1, count));
+    return false;
+  };
+  if (idx < 0 || idx >= count) return closeMacroList();
+  int number = macroListNumbers_[idx];
+  std::size_t space = text.find_first_of(" \t");
+  std::string key = text.substr(0, space);
+  std::string notation = space == std::string::npos ? std::string() : text.substr(space);
+  notation.erase(0, notation.find_first_not_of(" \t"));
+  while (!notation.empty() && (notation.back() == ' ' || notation.back() == '\t')) notation.pop_back();
+  if (key.empty() || key.find_first_of("#\"") != std::string::npos) return stay("Key?");
+  std::string home = std::filesystem::path(usilicrcPath_).parent_path().parent_path().string();
+  std::string rcText = usilicrc::readText(usilicrcPath_);
+  std::vector<usilicrc::MacroLine> lines = usilicrc::macroLines(rcText);
+  std::string description;
+  for (const auto &line : lines) {
+    if (line.number != 0 && line.number != number && line.key == key) return stay("Key in use: M-" + std::to_string(line.number));
+    if (line.number == number && number != 0) {
+      std::size_t sp = line.comment.find_first_of(" \t");  // 「# キーの並び  説明」の説明を残す
+      if (sp != std::string::npos) description = line.comment.substr(line.comment.find_first_not_of(" \t", sp));
+    }
+  }
+  std::optional<std::string> items = macroItemsFromNotation(notation);
+  if (!items || items->empty()) return stay("Invalid keys");
+  int written = number ? number : usilicrc::nextMacroNumber(rcText);
+  std::string line = "\tM-" + std::to_string(written) + "\t" + key + "\t" + *items + "\t\t# " + macroNotation(*items);
+  if (!description.empty()) line += "\t" + description;
+  bool ok = number ? usilicrc::setMacroLine(home, number, line) : usilicrc::setMacroMarker(home, {line, "\t--"});
+  if (!ok) return stay("Cannot write usilicrc");
+  reloadUsilicrcKeys();
+  closeMacroList();
+  showTransientNotice(activeView(), "M-" + std::to_string(written) + " " + key);
+  return true;
+}
+
+// 押したキーの並び(バイト列)を、usilicrcのMACROの要素の並び(「K-n」と「"文字列"」)へ戻す。K番号の
+// 既定のキー列で最も長く一致するものから当て、どれにも当たらない印字できる字は「"..."」にまとめる
+// (それ以外の制御文字は落とす。failedがあれば、落とした時にtrueにする)。
+std::string Application::macroItemsFromBytes(const std::vector<int> &bytes, bool *failed) {
+  auto sequences = KeyBindings::defaultSequences();
+  std::string items, literal;
+  auto add = [&](const std::string &item) { items += (items.empty() ? "" : " ") + item; };
+  auto flushLiteral = [&]() {
+    if (literal.empty()) return;
+    add("\"" + literal + "\"");
+    literal.clear();
+  };
+  std::size_t i = 0;
+  while (i < bytes.size()) {
+    int bestNumber = 0;
+    std::size_t bestLength = 0;
+    for (const auto &[number, seq] : sequences) {
+      if (seq.size() <= bestLength || i + seq.size() > bytes.size()) continue;
+      if (std::equal(seq.begin(), seq.end(), bytes.begin() + static_cast<long>(i))) {
+        bestNumber = number;
+        bestLength = seq.size();
+      }
+    }
+    if (bestNumber > 0) {
+      flushLiteral();
+      add("K-" + std::to_string(bestNumber));
+      i += bestLength;
+      continue;
+    }
+    int b = bytes[i];
+    if (b >= 0x20 && b != '"' && b != '#' && b != 0x7f) literal.push_back(static_cast<char>(b));
+    else if (failed) *failed = true;
+    i++;
+  }
+  flushLiteral();
+  return items;
+}
+
+// usilicrcのMACROの要素の並びを、キーの表記(^G^P^M、"文字列"はそのまま)にする。
+std::string Application::macroNotation(const std::string &items) {
+  std::map<int, KeyBindings::Sequence> sequences;
+  for (const auto &[number, seq] : KeyBindings::defaultSequences()) sequences[number] = seq;
+  std::string out;
+  std::size_t p = 0;
+  while (p < items.size()) {
+    while (p < items.size() && (items[p] == ' ' || items[p] == '\t')) p++;
+    if (p >= items.size()) break;
+    std::size_t start = p;
+    if (items[p] == '"') {
+      std::size_t close = items.find('"', p + 1);
+      p = close == std::string::npos ? items.size() : close + 1;
+      out += items.substr(start, p - start);
+      continue;
+    }
+    while (p < items.size() && items[p] != ' ' && items[p] != '\t') p++;
+    std::string word = items.substr(start, p - start);
+    auto it = word.size() > 2 && word.compare(0, 2, "K-") == 0 ? sequences.find(std::atoi(word.c_str() + 2))
+                                                               : sequences.end();
+    out += it != sequences.end() ? KeyBindings::label(it->second) : word;
+  }
+  return out;
+}
+
+// macroNotation()の逆。^X(制御文字)、^[(ESC)、^?(DEL)、^␣、␣、それ以外の字はそのまま、「"..."」は
+// 文字列として読み、要素の並びにする。読めない(当てはまるK番号の無い制御文字がある)ならnullopt。
+std::optional<std::string> Application::macroItemsFromNotation(const std::string &notation) {
+  static const std::string kSpaceMark = "\xE2\x90\xA3";  // ␣
+  std::string items;
+  std::vector<int> bytes;
+  bool failed = false;
+  auto flush = [&]() {
+    std::string part = macroItemsFromBytes(bytes, &failed);
+    if (!part.empty()) items += (items.empty() ? "" : " ") + part;
+    bytes.clear();
+  };
+  std::size_t p = 0;
+  while (p < notation.size()) {
+    char c = notation[p];
+    if (c == '"') {
+      std::size_t close = notation.find('"', p + 1);
+      if (close == std::string::npos) return std::nullopt;
+      flush();
+      items += (items.empty() ? "" : " ") + notation.substr(p, close + 1 - p);
+      p = close + 1;
+    } else if (c == '^' && p + 1 < notation.size()) {
+      if (notation.compare(p + 1, kSpaceMark.size(), kSpaceMark) == 0) {
+        bytes.push_back(0x80);
+        p += 1 + kSpaceMark.size();
+        continue;
+      }
+      char n = notation[p + 1];
+      if (n == '?') bytes.push_back(0x7f);
+      else if (n >= 'a' && n <= 'z') bytes.push_back(n - 'a' + 1);
+      else if (n >= '@' && n <= '_') bytes.push_back(n - '@');
+      else return std::nullopt;
+      p += 2;
+    } else if (notation.compare(p, kSpaceMark.size(), kSpaceMark) == 0) {
+      bytes.push_back(' ');
+      p += kSpaceMark.size();
+    } else {
+      bytes.push_back(static_cast<unsigned char>(c));
+      p++;
+    }
+  }
+  flush();
+  if (failed) return std::nullopt;
+  return items;
 }
 
 void Application::reloadUsilicrcKeys() {
