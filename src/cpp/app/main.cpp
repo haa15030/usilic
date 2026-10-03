@@ -1670,6 +1670,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
         const char *trigger = app.epubVerticalDragActive() ? "AB" : app.epubVerticalScrollActive() ? "" : "CD";
         if (int arrow = *trigger ? peekArrow(keyInput, trigger) : 0) {
           consecutiveEscapes = 0;
+          app.noteUserActivity();  // 慣性の開始でも一時的な表示を消す(Application::noteUserActivity()参照)
           int delta = arrow == 'B' || arrow == 'C' ? 1 : -1;
           TerminalCoastResult coast = runCoastLoop(app, display, keyInput, resolveCoastLevel(1), delta);
           if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
@@ -1685,7 +1686,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       if (!mouse || mouse->wheel != 0 || mouse->motionOnly || mouse->button != 0) gTerminalClickTargetsCursor = false;
       if (mouse) {
         consecutiveEscapes = 0;
-        app.clearHelpJumpHighlight();  // マウスに触れたら消す(Application::clearHelpJumpHighlight()参照)
+        app.noteUserActivity();  // マウスに触れたら一時的な表示を消す(Application::noteUserActivity()参照)
         if (mouse->wheel != 0) {
           // ホイール(fm::MouseSgrEvent::wheel参照): 2026-10-02、直接のユーザー依頼("ホイールを本来の
           // 機能（画面スクロール）に戻してほしい")により、慣性スクロールではなく1刻み1行の画面
@@ -2293,7 +2294,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
 
     while (auto click = gui.consumeMouseClick()) {
       anyEventThisFrame = true;
-      app.clearHelpJumpHighlight();  // マウスに触れたら消す(Application::clearHelpJumpHighlight()参照)
+      app.noteUserActivity();  // マウスに触れたら一時的な表示を消す(Application::noteUserActivity()参照)
       // 2026-09-15、直接のユーザー確認+依頼を経て現在の形になった
       // (この節自身の過去のコメントは2026-08-05のマージン方式を
       // 説明していたが、その後2回の変更で置き換わったので刷新する):
@@ -2412,7 +2413,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // hoverDirectEntryList()で。
       while (auto hover = gui.consumeHoverEvent()) {
         anyEventThisFrame = true;
-        app.clearHelpJumpHighlight();  // マウスに触れたら消す(Application::clearHelpJumpHighlight()参照)
+        app.noteUserActivity();  // マウスに触れたら一時的な表示を消す(Application::noteUserActivity()参照)
         clickTargetsCursor = false;
         app.hoverDirectEntryList(hover->row);
       }
@@ -2429,7 +2430,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // comment.
       while (auto hover = gui.consumeHoverEvent()) {
         anyEventThisFrame = true;
-        app.clearHelpJumpHighlight();  // マウスに触れたら消す(Application::clearHelpJumpHighlight()参照)
+        app.noteUserActivity();  // マウスに触れたら一時的な表示を消す(Application::noteUserActivity()参照)
         // Real mouse movement clears DirectoryMode's own transient
         // "Invalid mode" error (see DirectoryMode::clearEditError()'s
         // own comment on why THIS call site, alongside Application::
@@ -2494,6 +2495,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     }
 
     while (auto key = gui.consumeKeyEvent()) {
+      app.noteUserActivity();  // ←→の慣性の開始等、feedByte()を通らないキーでも一時的な表示を消す
       anyEventThisFrame = true;
       clickTargetsCursor = false;
       // w/s: the keyboard-driven equivalent of a mouse-drag release
@@ -2653,7 +2655,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // shouldn't hijack scrolling there).
     while (auto wheel = gui.consumeWheelEvent()) {
       anyEventThisFrame = true;
-      app.clearHelpJumpHighlight();  // マウスに触れたら消す(Application::clearHelpJumpHighlight()参照)
+      app.noteUserActivity();  // マウスに触れたら一時的な表示を消す(Application::noteUserActivity()参照)
       clickTargetsCursor = false;
       if (app.currentMode() == fm::ApplicationMode::Shell || app.awaitingSequenceOrPromptByte()) continue;
       // 2026-10-02、直接のユーザー依頼("GUIともどもホイールを本来の機能（画面スクロール）に戻して
@@ -2719,7 +2721,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     };
     while (auto sb = gui.consumeScrollbarEvent()) {
       anyEventThisFrame = true;
-      app.clearHelpJumpHighlight();  // マウスに触れたら消す(Application::clearHelpJumpHighlight()参照)
+      app.noteUserActivity();  // マウスに触れたら一時的な表示を消す(Application::noteUserActivity()参照)
       // 縦書きの本文(Application::epubVerticalScrollbar()参照): 上端が本の最初、下端が本の
       // 最後。draggingは立てない(立てると行単位のrenderScrolled()で描き、縦書きのマスの
       // 描画を通らない)。
@@ -2801,7 +2803,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
 
     while (auto drag = gui.consumeDragEvent()) {
       anyEventThisFrame = true;
-      app.clearHelpJumpHighlight();  // マウスに触れたら消す(Application::clearHelpJumpHighlight()参照)
+      app.noteUserActivity();  // マウスに触れたら一時的な表示を消す(Application::noteUserActivity()参照)
       // 2026-09-07追加、直接のユーザー要望("スクロールに関する画面
       // ドラッグと同じマウス操作に関して、発動し得る機能としては
       // 範囲指定がある。COPYモードの際にそれは可能だろうか？"):

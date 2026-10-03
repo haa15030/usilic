@@ -28576,3 +28576,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      キーボードでは章送り(Shift+矢印)で章の頭へ移れる、という判断)。
    - **変更**: `Application::epubChapterBreaks_`の初期値をfalseに。^O^Eで章区切りに切り替えられるのは従来どおり。
      EPUB関係のテストは以前からの失敗4件(epubToHelpMarkup)以外通過。
+616. **2026-10-03: -gで、feedByte()を通らない操作(←→の慣性の開始・マウス)でも一時的な表示を消す**
+   - **経緯**: 直接のユーザー報告("-gでは^O^Eでスクロールモード切り換え後、←→でスクロールを開始すると「Scroll:
+     continuous(chapter)」が消えない。現状から何かが変わったら消去でよろしく")。一時的な表示
+     (showTransientNotice())はfeedByte()の入口でだけ消していたが、-gの←→はmain.cppが慣性を始めるだけで
+     feedByte()を通らない。
+   - **実装**: Application::noteUserActivity()(clearTransientNotice()、hで飛んだ先のハイライトも含む)を新設し、
+     -gのキーのイベントの入口、-cの←→の慣性の開始、マウスのイベント(項目603のclearHelpJumpHighlight()の
+     呼び出しを置き換え)で呼ぶ。ビルドのみ確認(実機確認待ち)。

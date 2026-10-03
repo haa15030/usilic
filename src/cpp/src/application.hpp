@@ -1847,6 +1847,11 @@ class Application {
   bool handleMouseClick(int row, int column);
   // KEYのhで飛んだ先の行のハイライトを消す(マウスに触れた時、main.cppから。2026-10-03)。
   void clearHelpJumpHighlight();
+  // 2026-10-03追加、直接のユーザー報告("-gでは^O^Eでスクロールモード切り換え後、←→でスクロールを開始すると
+  // 「Scroll: continuous(chapter)」が消えない。現状から何かが変わったら消去で"): feedByte()を通らない
+  // 操作(マウス、←→の慣性の開始等、main.cpp)でも一時的な表示(showTransientNotice()、hで飛んだ先の
+  // ハイライト等)を消す。
+  void noteUserActivity() { clearTransientNotice(); }
   // 2026-10-02追加、直接のユーザー報告("-gの^X^Fでスクロール停止時ハイライト行がマウスの動きに
   // 追随しないため、左クリックではファイルを選べない"): 直接入力の一覧(^X^F/^X^D等の履歴の
   // 呼び出し、^Iの補完一覧の閲覧中)か。この一覧はredrawSensitivePromptOrRecallActive()のため
