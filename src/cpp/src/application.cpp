@@ -13898,6 +13898,7 @@ std::string Application::promptLabelText(PromptKind kind) const {
     case PromptKind::ExitConfirm:
       return "EXIT (y/n)?";
     case PromptKind::PathInput:
+      if (epubPathPending_) return "EPUB";  // ^Je(2026-10-03、直接のユーザー依頼。^J^Eの一覧と同じ)
       return pathInputIsDirectory_ ? "DIR" : "FILE";
     case PromptKind::ArchiveDestination:
       return "ARC";
