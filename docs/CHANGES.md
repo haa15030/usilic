@@ -28650,3 +28650,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: resolveCpMvDestination()が先頭の~(~/…)をHOMEに展開(cpはシェルを通さずに渡すため)。
      pollPendingCpMvRmShellRun()は、失敗した時に終了コードの印の直前の空でない行(cp/mvのエラー)を
      showTransientNotice()で一時表示する。ビルドのみ確認(実機確認待ち)。
+623. **2026-10-04: EPUBのWebのリンクの対処のprogramが無ければ"…: command not found"を一時表示、w3mを導入**
+   - **経緯**: 直接のユーザー報告("Dump、Termとも動作しないのはw3mが存在しないからだが-gでは何が起きたか
+     わからないので上記の位置に「w3m: command net found」を出すかbrew installに追加で")。
+   - **実装**: openEpubWebLink()がprogramをPATHから探し、無ければ一時表示して何もしない。あわせて
+     アシスタント側で`brew install w3m`を実施(/usr/local/bin/w3m)。ビルドのみ確認(実機確認待ち)。

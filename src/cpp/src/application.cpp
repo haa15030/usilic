@@ -7027,6 +7027,20 @@ bool Application::openEpubWebLink(const std::string &url) {
   if (handler.name == "Look") return openWebLinkInQuickLook(url);
   if (handler.argv.empty()) return false;
   std::vector<std::string> argv = handler.argv;
+  // 2026-10-04、直接のユーザー報告("Dump、Termとも動作しないのはw3mが存在しないからだが-gでは何が起きたか
+  // わからない"): programが無ければシェルと同じ"…: command not found"を一時表示する。
+  auto found = [](const std::string &program) {
+    if (program.find('/') != std::string::npos) return ::access(program.c_str(), X_OK) == 0;
+    const char *path = std::getenv("PATH");
+    std::stringstream dirs(path ? path : "/usr/bin:/bin");
+    for (std::string dir; std::getline(dirs, dir, ':');)
+      if (!dir.empty() && ::access((dir + "/" + program).c_str(), X_OK) == 0) return true;
+    return false;
+  };
+  if (!found(argv[0])) {
+    showTransientNotice(activeView(), argv[0] + ": command not found");
+    return false;
+  }
   if (handler.name == "Copy") {
     ChildProcessOptions options;
     options.input = &url;
