@@ -240,6 +240,15 @@ std::string shellQuoteArg(const std::string &arg) {
   return quoted;
 }
 
+// 2026-10-04: シェルが分ける・解釈する文字(ASCIIの空白・記号)を含む時だけクォートする(^Jpの1つだけの
+// ファイル名、startProgramPrompt()参照。読みやすさのため、普通の名前はそのまま)。
+std::string shellQuoteArgIfNeeded(const std::string &arg) {
+  for (unsigned char c : arg)
+    if (c < 0x80 && !std::isalnum(c) && std::string("._+-/,:@%=").find(static_cast<char>(c)) == std::string::npos)
+      return shellQuoteArg(arg);
+  return arg.empty() ? shellQuoteArg(arg) : arg;
+}
+
 std::string shellQuoteArgv(const std::vector<std::string> &argv) {
   std::string line;
   for (const auto &arg : argv) {
@@ -12804,7 +12813,7 @@ bool Application::startProgramPrompt() {
       if (!entry.isDirectory) names.push_back(entry.name);
     if (names.size() == 1) {
       programPromptDirectory_ = directoryMode_.currentDirectory();
-      seed = names.front();
+      seed = shellQuoteArgIfNeeded(names.front());
       cursorAtStart = true;
     } else if (names.size() > 1) {
       programPromptDirectory_ = directoryMode_.currentDirectory();
@@ -12817,7 +12826,7 @@ bool Application::startProgramPrompt() {
     if (!sourceFile.empty()) {
       std::filesystem::path path(sourceFile);
       programPromptDirectory_ = path.parent_path().string();
-      seed = path.filename().string();
+      seed = shellQuoteArgIfNeeded(path.filename().string());
       cursorAtStart = true;
     }
   } else {
@@ -12844,7 +12853,7 @@ bool Application::startProgramPrompt() {
         }
         if (sameDir) {
           programPromptDirectory_ = dir;
-          seed = names.size() == 1 ? names.front() : shellQuoteArgv(names);
+          seed = names.size() == 1 ? shellQuoteArgIfNeeded(names.front()) : shellQuoteArgv(names);
         } else {
           seed = shellQuoteArgv(files);
         }
@@ -15558,9 +15567,20 @@ bool Application::executeProgram(const std::string &command) {
   std::size_t end = command.find_first_of(" \t", start);
   std::string firstWord = command.substr(start, end == std::string::npos ? std::string::npos : end - start);
 
+  // 2026-10-04、直接のユーザー報告("^Jpopen -a /System/Applications/Preview.app Kindle ...で何も起きない"):
+  // PROGRAMに載っていないプログラムは何もせずに捨てていた。HELPのとおりSHELLで実行する(ファイルの
+  // ディレクトリへは、SHELL自身の今のディレクトリを変えないようサブシェルで移る)。
   if (!isRecognizedProgram(firstWord)) {
-    activeView().redraw();
-    return false;
+    if (refuseIfShellBusy() || !ensureShellActive()) {
+      activeView().redraw();
+      return false;
+    }
+    std::string line = programPromptDirectory_.empty() ? command : "(" + cdWrap(programPromptDirectory_, command) + ")";
+    programPromptDirectory_.clear();
+    shell_.commandLine().setText(line);
+    shell_.submitLine();
+    history_.pushRecent(RingCategory::ShellCommand, command);
+    return true;
   }
 
   // 2026-09-17追加、実機報告("D. が直ってない")+提案(runNestedUsilicProgram()

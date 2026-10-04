@@ -28680,3 +28680,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: convertMarkupToMsRoffSource()は、行頭で行の途中のタグ(行頭でなく、行末の</indent>でもない)を
      先読みし、続きの行の字下げを最後のタグの値の.in、1行目を今の字下げの.tiにして、行の途中のタグは
      出さない。小さな例をgroffに通して、1行になり続きの行が説明の位置にそろうことを確認。
+628. **2026-10-04: ^JpでPROGRAMに載っていないプログラムをSHELLで実行する、1つだけのファイル名も必要ならクォート**
+   - **経緯**: 直接のユーザー報告("^Jpopen -a /System/Applications/Preview.app Kindle ...で何も起きない")。
+     executeProgram()はisRecognizedProgram()(usilicrcのPROGRAMの一覧)に無いコマンドを何もせずに捨てていた
+     (HELPの「載っていないプログラムは SHELL で実行されます」と食い違っていた)。
+   - **実装**: 載っていなければensureShellActive()でSHELLへ移り、「(cd 'ファイルのディレクトリ' && コマンド)」
+     (SHELL自身のディレクトリを変えないようサブシェル)を投入し、PROGRAMの履歴にも積む。あわせて^Jpの
+     事前入力の1つだけのファイル名は、空白・記号を含む時だけクォートする(shellQuoteArgIfNeeded())。
+     ビルドのみ確認(実機確認待ち)。
