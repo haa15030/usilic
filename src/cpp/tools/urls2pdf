@@ -1,0 +1,15 @@
+#!/bin/sh
+# urls2pdf URL [-m 正規表現] [-o まとめたPDF] ... -- ページの中のリンク先をまとめてPDFにする(urls2pdf.py参照、
+# 2026-10-04)。url2pdfと同じvenvのPythonで動かす(加えてpypdfが要る: ~/.local/lib/usilic/venv/bin/pip install pypdf)。
+# Chromiumは画面無しで、Playwright(Python)で動かす。Pythonはこのファイルの隣のvenv
+# (make installと同じ場所、~/.local/lib/usilic/venv)を使う。準備:
+#   python3 -m venv ~/.local/lib/usilic/venv
+#   ~/.local/lib/usilic/venv/bin/pip install playwright
+#   ~/.local/lib/usilic/venv/bin/python -m playwright install chromium
+#   (Linuxは加えて: sudo ~/.local/lib/usilic/venv/bin/python -m playwright install-deps と日本語フォント)
+here=$(cd "$(dirname "$0")" && pwd)
+python=python3
+for candidate in "$USILIC_VENV/bin/python" "$here/venv/bin/python" "$HOME/.local/lib/usilic/venv/bin/python"; do
+  if [ -x "$candidate" ]; then python=$candidate; break; fi
+done
+exec "$python" "$here/urls2pdf.py" "$@"

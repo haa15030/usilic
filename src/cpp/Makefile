@@ -141,6 +141,9 @@ install: $(BUILD_DIR)/usilic
 	# 2026-10-04: EPUBのWebのリンクのPdf(usilicrcのURL節)。Playwrightの準備はtools/url2pdf自身のコメント参照。
 	install -m 755 tools/url2pdf $(LIB_DIR)/url2pdf
 	install -m 644 tools/url2pdf.py $(LIB_DIR)/url2pdf.py
+	# 2026-10-04: ページの中のリンク先をまとめてPDFにする(tools/urls2pdf.py参照、加えてpypdfが要る)。
+	install -m 755 tools/urls2pdf $(LIB_DIR)/urls2pdf
+	install -m 644 tools/urls2pdf.py $(LIB_DIR)/urls2pdf.py
 
 # macOS .app bundle (2026-08-24, docs/CHANGES.md item 421, a direct
 # user request: "アイコンをクリックして起動する形にはできる？"):

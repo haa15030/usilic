@@ -4,6 +4,7 @@
 読ませてから、ページ全体の高さを用紙の高さにしてPDFにする(page.pdf()にはfull_pageのような引数は無い)。
 PDFの1ページの大きさには上限(約200インチ)があり、それより長いページは複数のページに分かれる。
 出力は第2引数のディレクトリ(無ければ~/Downloads、それも無ければホーム)の「ページの題名.pdf」。
+urls2pdf.py(ページの中のリンク先をまとめてPDFにする)もopen_page()/save_pdf()を使う。
 """
 
 import asyncio
@@ -29,40 +30,50 @@ def output_path(directory: str, title: str, url: str) -> str:
     return path
 
 
+async def open_page(page, url: str) -> None:
+    """urlを開き、遅れて読み込まれる画像のために最後までスクロールして戻る。"""
+    try:
+        await page.goto(url, wait_until="networkidle", timeout=30000)
+    except Exception:
+        pass  # 読み込みの終わらないページ(広告等)でも、そこまでの内容で作る
+    await page.emulate_media(media="screen")
+    await page.evaluate(
+        """async () => {
+             for (let y = 0; y < document.documentElement.scrollHeight; y += window.innerHeight) {
+               window.scrollTo(0, y);
+               await new Promise(r => setTimeout(r, 100));
+             }
+             window.scrollTo(0, 0);
+           }"""
+    )
+    try:
+        await page.wait_for_load_state("networkidle", timeout=5000)
+    except Exception:
+        pass
+
+
+async def save_pdf(page, directory: str, url: str) -> str:
+    """open_page()で開いたページを、ページ全体の高さの1ページのPDFにしてdirectoryへ保存する。"""
+    height = await page.evaluate(
+        "Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)"
+    )
+    path = output_path(directory, await page.title(), url)
+    await page.pdf(
+        path=path,
+        width=f"{WIDTH}px",
+        height=f"{min(height + 1, MAX_HEIGHT)}px",
+        print_background=True,
+        margin={"top": "0", "bottom": "0", "left": "0", "right": "0"},
+    )
+    return path
+
+
 async def main(url: str, directory: str) -> str:
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page(viewport={"width": WIDTH, "height": 900})
-        try:
-            await page.goto(url, wait_until="networkidle", timeout=30000)
-        except Exception:
-            pass  # 読み込みの終わらないページ(広告等)でも、そこまでの内容で作る
-        await page.emulate_media(media="screen")
-        # 遅れて読み込まれる画像のために最後までスクロールして戻る
-        await page.evaluate(
-            """async () => {
-                 for (let y = 0; y < document.documentElement.scrollHeight; y += window.innerHeight) {
-                   window.scrollTo(0, y);
-                   await new Promise(r => setTimeout(r, 100));
-                 }
-                 window.scrollTo(0, 0);
-               }"""
-        )
-        try:
-            await page.wait_for_load_state("networkidle", timeout=5000)
-        except Exception:
-            pass
-        height = await page.evaluate(
-            "Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)"
-        )
-        path = output_path(directory, await page.title(), url)
-        await page.pdf(
-            path=path,
-            width=f"{WIDTH}px",
-            height=f"{min(height + 1, MAX_HEIGHT)}px",
-            print_background=True,
-            margin={"top": "0", "bottom": "0", "left": "0", "right": "0"},
-        )
+        await open_page(page, url)
+        path = await save_pdf(page, directory, url)
         await browser.close()
         return path
 
