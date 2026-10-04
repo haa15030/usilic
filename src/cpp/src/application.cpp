@@ -15815,6 +15815,10 @@ bool Application::executeLocate(const std::string &query) {
 // 自身のcwdに関わらず、常に同じ曖昧さの無い絶対パスを見る。
 std::string Application::resolveCpMvDestination(const std::string &destination) const {
   if (destination.empty() || destination.front() == '/') return destination;
+  // 2026-10-04、直接のユーザー報告("~/.local/lib/usilicにCPしようとしたら~が$HOMEに展開されない"):
+  // 先頭の~(~/…)はホームに(シェルを通さずにcpへ渡すので、ここで展開する)。
+  if (const char *home = std::getenv("HOME"); home && (destination == "~" || destination.compare(0, 2, "~/") == 0))
+    return std::string(home) + destination.substr(1);
   std::string base = directoryMode_.currentDirectory();
   // 一覧から発動した場合(2026-09-27)の相対の宛先は、先頭の対象の親ディレクトリ基準。
   if (cpMvRmOrigin_ != ApplicationMode::Directory && !cpMvRmListTargets_.empty())
@@ -15949,14 +15953,29 @@ void Application::pollPendingCpMvRmShellRun() {
   // シェルの奇癖は考えられる)場合は、保守的なデフォルトとして失敗
   // として扱う。
   bool ok = false;
+  std::string errorText;  // 失敗した時の最後の出力の行(2026-10-04、下のshowTransientNotice()参照)
   const auto &lines = shell_.scrollback().lines();
   static const std::size_t kMarkerLen = std::char_traits<char>::length(kCpMvRmExitMarker);
   for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
     if (it->text.compare(0, kMarkerLen, kCpMvRmExitMarker) == 0) {
       ok = (it->text.substr(kMarkerLen) == "0");
+      for (auto prev = std::next(it); !ok && prev != lines.rend(); ++prev)
+        if (prev->text.find_first_not_of(' ') != std::string::npos) {
+          errorText = prev->text;
+          break;
+        }
       break;
     }
   }
+  // 2026-10-04、直接のユーザー報告("何が起きたかわからない。LOGには「... is not a directory」とあるので
+  // 「SHELL/prompt only」の位置にそれを表示してほしい"): 失敗したら最後の出力の行を一時表示する。
+  struct ShowError {
+    Application &app;
+    const std::string &text;
+    ~ShowError() {
+      if (!text.empty()) app.showTransientNotice(app.activeView(), text);
+    }
+  } showError{*this, errorText};
   // 成功した時「だけ」、そしてそれが何か実在するものへ解決される
   // 時「だけ」宛先ディレクトリに着地する(そうでなければdescendTo()
   // は安全に失敗時no-opになる――例えば`destination`がディレクトリ

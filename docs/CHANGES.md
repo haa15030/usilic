@@ -28643,3 +28643,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
        一時表示。URL節のprogramの先頭の~/はホームに展開する。
    - **検証**: url2pdfを単体でexample.com・ja.wikipedia.org/wiki/EPUBに対して実行し、1ページ
      (960×5739pt)・字を選べるPDFになることを確認。usilicからの呼び出しはビルドのみ(実機確認待ち)。
+622. **2026-10-04: CP/MVの宛先の~をホームに、失敗したら最後の出力の行を一時表示**
+   - **経緯**: 直接のユーザー報告("~/のHELP.manとHELP.1を~/.local/lib/usilicにCPしようとしたら~が$HOMEに展開
+     されない。次に/Users/haa15030/.local/lib/usilicrcへのCPでは/Users/haa15030/の(ls)のままで何が起きたか
+     わからない。LOGには「... is not a directory」とあるので「SHELL/prompt only」の位置にそれを表示してほしい")。
+   - **実装**: resolveCpMvDestination()が先頭の~(~/…)をHOMEに展開(cpはシェルを通さずに渡すため)。
+     pollPendingCpMvRmShellRun()は、失敗した時に終了コードの印の直前の空でない行(cp/mvのエラー)を
+     showTransientNotice()で一時表示する。ビルドのみ確認(実機確認待ち)。
