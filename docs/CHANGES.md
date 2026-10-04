@@ -28673,3 +28673,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: Application::saveFilePosition()(縦書きならsyncEpubVerticalToFile()してから
      fileMode_.saveCursorPosition())を新設し、application.cppのfileMode_.saveCursorPosition()の12か所を
      置き換えた。ビルドのみ確認(実機確認待ち)。
+627. **2026-10-04: usilic -nで、行の途中の<indentN>(ぶら下げ)をキー・「:」・説明の3行に割らない**
+   - **経緯**: 直接のユーザー報告("HELP.1にインデントの失敗がある")。「<indent8>Open</indent> :
+     <indent15>説明</indent>」のような行(-mでは折り返した続きが説明の位置にそろう)で、行の途中のタグを
+     .in(改行を伴う)として出していた。
+   - **実装**: convertMarkupToMsRoffSource()は、行頭で行の途中のタグ(行頭でなく、行末の</indent>でもない)を
+     先読みし、続きの行の字下げを最後のタグの値の.in、1行目を今の字下げの.tiにして、行の途中のタグは
+     出さない。小さな例をgroffに通して、1行になり続きの行が説明の位置にそろうことを確認。

@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 
 #include "utf8.hpp"
 
@@ -188,6 +189,26 @@ std::string convertMarkupToMsRoffSource(const std::string &markup) {
   const std::string indentOpenPrefix = "<indent";
   const std::string indentClose = "</indent>";
   bool atLineStart = true;
+  int currentIndent = 0;  // 今の.inの値(下の行の途中の<indentN>参照)
+
+  // 2026-10-04、直接のユーザー報告("HELP.1にインデントの失敗がある"): 行の途中の<indentN>・</indent>
+  // (「<indent8>Open</indent> : <indent15>説明</indent>」のようなぶら下げ、-mでは折り返した続きの行が
+  // 説明の位置にそろう)を.inとして出していたので、.inの改行でキー・「:」・説明の3行に割れていた。
+  // 行の途中のタグかどうか(行頭でなく、行末の</indent>でもない)。
+  auto isMidLineTag = [&](std::size_t at, bool lineStarted) -> int {  // 長さ(タグでなければ0)
+    if (!lineStarted) return 0;
+    if (markup.compare(at, indentClose.size(), indentClose) == 0) {
+      std::size_t after = at + indentClose.size();
+      if (after >= markup.size() || markup[after] == '\n') return 0;  // 行末の</indent>は従来どおり
+      return static_cast<int>(indentClose.size());
+    }
+    if (markup.compare(at, indentOpenPrefix.size(), indentOpenPrefix) != 0) return 0;
+    std::size_t end = at + indentOpenPrefix.size();
+    while (end < markup.size() && end < at + indentOpenPrefix.size() + 2 && std::isdigit(static_cast<unsigned char>(markup[end])))
+      end++;
+    if (end == at + indentOpenPrefix.size() || end >= markup.size() || markup[end] != '>') return 0;
+    return static_cast<int>(end + 1 - at);
+  };
 
   // 2026-09-25追加、直接のユーザー要望("-nの見た目が-mと違いすぎる。
   // -mと同じになるならしてほしい"): 以前は-ms既定のfillモード段落
@@ -237,10 +258,15 @@ std::string convertMarkupToMsRoffSource(const std::string &markup) {
       numEnd++;
     bool isIndentOpen = markup.compare(i, indentOpenPrefix.size(), indentOpenPrefix) == 0 && numEnd > numStart &&
                         numEnd < markup.size() && markup[numEnd] == '>';
+    if (int skip = isMidLineTag(i, !atLineStart)) {  // 行の途中のタグ(行頭で.in/.tiに済ませた)
+      i += static_cast<std::size_t>(skip);
+      continue;
+    }
     if (isIndentOpen) {
       int value = std::atoi(markup.substr(numStart, numEnd - numStart).c_str());
       ensureFreshLine();
       out += ".in " + std::to_string(value) + "n\n";  // .inは自身で改行(break)を伴う
+      currentIndent = value;
       i = numEnd + 1;
       if (i < markup.size() && markup[i] == '\n') i++;  // convertMarkupToLegacyHelpText()自身の同じ理由のコメント参照
       atLineStart = true;
@@ -249,6 +275,7 @@ std::string convertMarkupToMsRoffSource(const std::string &markup) {
     if (markup.compare(i, indentClose.size(), indentClose) == 0) {
       ensureFreshLine();
       out += ".in 0\n";  // .inは自身で改行(break)を伴う
+      currentIndent = 0;
       i += indentClose.size();
       // 閉じタグの直後の改行は、閉じタグのあった行自体の行末として
       // 消費する(さもないと下の分岐で余分な空行(.sp)になる)。
@@ -271,6 +298,24 @@ std::string convertMarkupToMsRoffSource(const std::string &markup) {
     }
     // 行頭の"."/"'"はtroffの制御行の先頭と誤認されるため、"\&"
     // (幅ゼロの空文字列)を前置してエスケープする。
+    if (atLineStart) {
+      // 行の途中の<indentN>・</indent>(isMidLineTag())があれば、続きの行の字下げ(.in)を最後のタグの値に、
+      // この行の1行目だけ(.ti)を今の字下げにする。
+      std::optional<int> continuation;
+      for (std::size_t k = i; k < markup.size() && markup[k] != '\n';) {
+        if (int len = isMidLineTag(k, k > i)) {
+          continuation = markup[k + 1] == '/' ? 0 : std::atoi(markup.c_str() + k + indentOpenPrefix.size());
+          k += static_cast<std::size_t>(len);
+        } else {
+          k++;
+        }
+      }
+      if (continuation && *continuation != currentIndent) {
+        ensureFreshLine();
+        out += ".in " + std::to_string(*continuation) + "n\n.ti " + std::to_string(currentIndent) + "n\n";
+        currentIndent = *continuation;
+      }
+    }
     if (atLineStart && (markup[i] == '.' || markup[i] == '\'')) out += "\\&";
     atLineStart = false;
 
