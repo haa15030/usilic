@@ -28655,3 +28655,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      わからないので上記の位置に「w3m: command net found」を出すかbrew installに追加で")。
    - **実装**: openEpubWebLink()がprogramをPATHから探し、無ければ一時表示して何もしない。あわせて
      アシスタント側で`brew install w3m`を実施(/usr/local/bin/w3m)。ビルドのみ確認(実機確認待ち)。
+624. **2026-10-04: ^HでHELPのファイルが書き換えられていれば読み直す**
+   - **経緯**: 直接のユーザー報告("~/.local/lib/usilic/HELPが新しくなったのに^Hでは変更点が更新されない")。
+     HELPは起動時(とusilicrcの読み直し・言語の切り替え)にしか読んでいなかった。
+   - **実装**: reloadHelpText()が読んだファイルと更新時刻を覚え(helpLoadedPath_/helpLoadedTime_)、startHelp()が
+     変わっていれば読み直す(テストが直接渡したHELPは対象外)。ビルドのみ確認(実機確認待ち)。

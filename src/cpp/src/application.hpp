@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <optional>
 #include <set>
 #include <string>
@@ -2916,6 +2917,9 @@ class Application {
 public:
   // HELP(helpPath_のファイル)を読み直す(起動時・^Ja)。読めなければfalse(helpText_はそのまま)。
   bool reloadHelpText();
+  // reloadHelpText()が読んだHELPのファイルとその更新時刻(startHelp()が、書き換えられていれば読み直す)。
+  std::string helpLoadedPath_;
+  std::filesystem::file_time_type helpLoadedTime_{};
 private:
   std::vector<StyledLine> wrapHelpText(int width) const;
 

@@ -16833,12 +16833,19 @@ std::vector<StyledLine> Application::wrapHelpText(int width) const {
 // 共有されていた汎用の注入口)。
 bool Application::reloadHelpText() {
   // helpPath_自身の宣言コメント参照: ~/.local/lib/usilic/に無ければ/usr/local/lib/usilic/の同名のもの。
-  std::ifstream in(helpPath_, std::ios::binary);
-  if (!in) in.open("/usr/local/lib/usilic/" + std::filesystem::path(helpPath_).filename().string(), std::ios::binary);
+  std::string path = helpPath_;
+  std::ifstream in(path, std::ios::binary);
+  if (!in) {
+    path = "/usr/local/lib/usilic/" + std::filesystem::path(helpPath_).filename().string();
+    in.open(path, std::ios::binary);
+  }
   if (!in) return false;
   std::ostringstream buffer;
   buffer << in.rdbuf();
   if (buffer.str().empty()) return false;
+  std::error_code ec;
+  helpLoadedPath_ = path;
+  helpLoadedTime_ = std::filesystem::last_write_time(path, ec);
   // usilicrcのKEY節で変えたキーを、HELPの表記にも反映する(KeyBindings::rewriteHelpText()参照)。
   helpText_ = configuration_.keyBindings().rewriteHelpText(buffer.str());
   return true;
@@ -17311,6 +17318,13 @@ bool Application::startHelp() {
       cutOrigin_ == CutOrigin::Help) {
     showTransientNotice(activeView(), "Already in HELP");
     return true;
+  }
+  // 2026-10-04、直接のユーザー報告("~/.local/lib/usilic/HELPが新しくなったのに^Hでは変更点が更新されない"):
+  // 起動時に読んだHELPのファイルが書き換えられていれば読み直す(make install等)。
+  if (!helpLoadedPath_.empty()) {
+    std::error_code ec;
+    auto time = std::filesystem::last_write_time(helpLoadedPath_, ec);
+    if (ec || time != helpLoadedTime_) reloadHelpText();
   }
   if (helpText_.empty()) return false;
   std::vector<StyledLine> helpLines = wrapHelpText(display_.columns());
