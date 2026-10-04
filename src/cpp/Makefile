@@ -138,6 +138,9 @@ install: $(BUILD_DIR)/usilic
 	# 2026-10-02: TUTORIALはHELPへ改名し、正本はリポジトリ直下のdoc/HELP(HELP.enがあればそれも)。
 	install -m 644 ../../doc/HELP $(LIB_DIR)/HELP
 	if [ -f ../../doc/HELP.en ]; then install -m 644 ../../doc/HELP.en $(LIB_DIR)/HELP.en; fi
+	# 2026-10-04: EPUBのWebのリンクのPdf(usilicrcのURL節)。Playwrightの準備はtools/url2pdf自身のコメント参照。
+	install -m 755 tools/url2pdf $(LIB_DIR)/url2pdf
+	install -m 644 tools/url2pdf.py $(LIB_DIR)/url2pdf.py
 
 # macOS .app bundle (2026-08-24, docs/CHANGES.md item 421, a direct
 # user request: "アイコンをクリックして起動する形にはできる？"):

@@ -756,13 +756,16 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
           if (tokens.empty()) continue;
           std::string name = tokens[0];
           for (char &c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-          static const std::vector<std::string> kNames = {"open", "dump", "term", "copy", "look"};
+          static const std::vector<std::string> kNames = {"open", "pdf", "dump", "term", "copy", "look"};
           if (std::find(kNames.begin(), kNames.end(), name) == kNames.end()) {
-            errors_.push_back("URL: not Open/Dump/Term/Copy/Look: " + tokens[0]);
+            errors_.push_back("URL: not Open/Pdf/Dump/Term/Copy/Look: " + tokens[0]);
             continue;
           }
           name[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(name[0])));
-          urlHandlers_.push_back({name, std::vector<std::string>(tokens.begin() + 1, tokens.end())});
+          std::vector<std::string> argv(tokens.begin() + 1, tokens.end());
+          const char *home = std::getenv("HOME");
+          if (!argv.empty() && argv[0].compare(0, 2, "~/") == 0 && home) argv[0] = home + argv[0].substr(1);
+          urlHandlers_.push_back({name, argv});
         }
         break;
       }
@@ -784,15 +787,22 @@ const std::vector<std::string> &Configuration::errors() const { return errors_; 
 // configuration.hpp自身の宣言コメント参照。
 const std::vector<Configuration::UrlHandler> &Configuration::urlHandlers() const {
   if (!urlHandlers_.empty()) return urlHandlers_;
+  static const std::vector<UrlHandler> kDefaults = [] {
 #ifdef __APPLE__
-  static const std::vector<UrlHandler> kDefaults = {
-      {"Open", {"open"}}, {"Dump", {"w3m", "-dump"}}, {"Term", {"w3m"}}, {"Copy", {"pbcopy"}}, {"Look", {}}};
+    std::vector<UrlHandler> list = {
+        {"Open", {"open"}}, {"Dump", {"w3m", "-dump"}}, {"Term", {"w3m"}}, {"Copy", {"pbcopy"}}, {"Look", {}}};
 #else
-  static const std::vector<UrlHandler> kDefaults = {{"Open", {"xdg-open"}},
-                                                    {"Dump", {"w3m", "-dump"}},
-                                                    {"Term", {"w3m"}},
-                                                    {"Copy", {"xclip", "-selection", "clipboard"}}};
+    std::vector<UrlHandler> list = {{"Open", {"xdg-open"}},
+                                    {"Dump", {"w3m", "-dump"}},
+                                    {"Term", {"w3m"}},
+                                    {"Copy", {"xclip", "-selection", "clipboard"}}};
 #endif
+    // Pdf(2026-10-04): make installが入れるurl2pdfがあればOpenの次に。
+    const char *home = std::getenv("HOME");
+    std::string url2pdf = std::string(home ? home : "") + "/.local/lib/usilic/url2pdf";
+    if (home && ::access(url2pdf.c_str(), X_OK) == 0) list.insert(list.begin() + 1, {"Pdf", {url2pdf}});
+    return list;
+  }();
   return kDefaults;
 }
 

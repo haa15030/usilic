@@ -283,14 +283,19 @@ URL
 # shows the name (4 letters) on the mode-line; the first line is the default.
 # The name is one of:
 #   Open  run program with the URL (open it in the default browser etc.)
+#   Pdf   make the whole page one tall PDF page with program (url2pdf), save
+#         it in ~/Downloads and open it with Quick Look (xdg-open on Linux).
+#         Playwright is needed (see ~/.local/lib/usilic/url2pdf's comment)
 #   Dump  read the output of program with the URL in usilic (^G back to the book)
 #   Term  run program with the URL in the terminal (like EXEC)
 #   Copy  pass the URL to program's standard input (copy to the clipboard)
 #   Look  Quick Look (macOS only, no program needed)
 # Without this section the lines below are used (on Linux Open is xdg-open,
-# Copy is xclip -selection clipboard, and there is no Look).
+# Copy is xclip -selection clipboard, and there is no Look; Pdf only when
+# url2pdf is installed).
 
 #	Open	open
+#	Pdf	~/.local/lib/usilic/url2pdf
 #	Dump	w3m -dump
 #	Term	w3m
 #	Copy	pbcopy

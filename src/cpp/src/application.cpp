@@ -7041,6 +7041,21 @@ bool Application::openEpubWebLink(const std::string &url) {
     activeView().redraw();
     return true;
   }
+  if (handler.name == "Pdf") {
+    drawPromptLabel(PromptKind::EpubLoad, /*positionText=*/"", "Making PDF...");
+    display_.flush();
+    ChildProcess::Result result = ChildProcess::run(argv);
+    std::string pdf = result.output.substr(0, result.output.find('\n'));
+    activeView().redraw();
+    if (!result.ok || pdf.empty() || !std::filesystem::exists(pdf)) {
+      showTransientNotice(activeView(), "Cannot run: " + shellQuoteArgv(argv));
+      return false;
+    }
+    if (::access("/usr/bin/qlmanage", X_OK) == 0) runQuickLook({pdf});
+    else ChildProcess::run({"xdg-open", pdf});
+    showTransientNotice(activeView(), "Saved: " + pdf);
+    return true;
+  }
   if (handler.name == "Dump") {
     if (currentMode_ != ApplicationMode::File || !isEpubFile(fileMode_.currentFile())) return false;
     drawPromptLabel(PromptKind::EpubLoad, /*positionText=*/"", "Reading...");

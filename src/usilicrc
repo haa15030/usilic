@@ -271,14 +271,20 @@ URL
 # 書いた順に ^Ow で巡回し、名前(4文字)を mode-line に表示します。最初の行が
 # 既定です。名前は次のどれかです。
 #   Open  program に URL を渡して起動(既定のブラウザで開く等)
+#   Pdf   program(url2pdf)でページ全体を縦長の 1 ページの PDF にして
+#         ~/Downloads へ保存し、クイックルックで開く(Linux は xdg-open)。
+#         Playwright の準備が要ります(~/.local/lib/usilic/url2pdf の
+#         コメント参照)
 #   Dump  program に URL を渡した出力を usilic の画面で読む(^G で本へ戻る)
 #   Term  program に URL を渡して端末で起動(EXEC と同じ、終われば本へ戻る)
 #   Copy  program の標準入力へ URL を渡す(クリップボードへコピー)
 #   Look  クイックルック(macOS だけ、program は不要)
 # この節が無ければ下の内容(Linux は Open が xdg-open、Copy が
-# xclip -selection clipboard、Look は無し)を使います。
+# xclip -selection clipboard、Look は無し。Pdf は url2pdf がある時だけ)を
+# 使います。
 
 #	Open	open
+#	Pdf	~/.local/lib/usilic/url2pdf
 #	Dump	w3m -dump
 #	Term	w3m
 #	Copy	pbcopy

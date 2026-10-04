@@ -28627,3 +28627,19 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      - Dump: 出力を一時ディレクトリの「ホスト名.txt」に書いてFILEで開き(注釈"URL")、^Gで本へ戻る
        (urlDumpReturnBook_、openEpub()で読んでいた所へ)。失敗・Copyの結果は一時表示。
    - **検証**: ビルドのみ(実機確認待ち)。HELPへの記載はユーザー側の反映待ち。
+621. **2026-10-04: EPUBのWebのリンクのPdf(ページ全体を縦長の1ページのPDFにする、url2pdf)**
+   - **経緯**: 直接のユーザー質問("URLをクリックするとブラウザを呼び出して縦長PDFを作成できる？")→Geminiの回答
+     (src/ToPdf.pdf、Playwright/Puppeteerのpage.pdf(full_page=True))との比較の依頼。page.pdf()にfull_pageの
+     引数は無い(screenshot()の引数)ので、ページの高さを測って用紙の高さにする方法で作った。"それでよろしく"で
+     Playwrightのインストールもアシスタント側で実施(~/.local/lib/usilic/venv、Homebrewのpython3.14は
+     EXTERNALLY-MANAGEDなのでvenv。Chromium(headless shell)は~/Library/Caches/ms-playwright/)。
+   - **実装**:
+     - src/cpp/tools/url2pdf(sh、隣のvenvのpythonを探す)+url2pdf.py: 幅1280pxの画面のレイアウト
+       (emulate_media screen)で開き、最後までスクロールして遅れて読み込まれる画像を読ませ、scrollHeightを
+       用紙の高さにしてPDFにする(余白0、背景あり、上限200インチ)。~/Downloads/「題名.pdf」(同名があれば-2…)に
+       保存し、パスを標準出力へ。make installが$(LIB_DIR)へ入れる。
+     - URL節にPdfを追加(Configuration::urlHandlers()、組み込みでは~/.local/lib/usilic/url2pdfがあればOpenの
+       次)。"Making PDF..."を出して待ち、できたPDFをクイックルック(Linuxはxdg-open)で開き、"Saved: パス"を
+       一時表示。URL節のprogramの先頭の~/はホームに展開する。
+   - **検証**: url2pdfを単体でexample.com・ja.wikipedia.org/wiki/EPUBに対して実行し、1ページ
+     (960×5739pt)・字を選べるPDFになることを確認。usilicからの呼び出しはビルドのみ(実機確認待ち)。
