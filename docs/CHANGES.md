@@ -28666,3 +28666,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      だけを見ていた。
    - **実装**: toggleMark()は一時マークの行なら一時マークを外し、clearMarks()は一時マークも消す。
      ビルドのみ確認(実機確認待ち)。
+626. **2026-10-04: 縦書きの本から^J^J等で離れる時に読んでいる位置を記録する**
+   - **経緯**: 直接のユーザー報告("Kat_2.epubで「あとがき」の産経新聞のURL位置で^J^J^J^Jすると「あとがき」の
+     冒頭に戻る")。縦書きの間、FILEの位置(fileView_のカーソル)は章の一覧との行き来等でしか縦書きの列に
+     合わせていなかったので、^J^Jで離れると章の一覧から入った時の位置(章の頭)が記録されていた。
+   - **実装**: Application::saveFilePosition()(縦書きならsyncEpubVerticalToFile()してから
+     fileMode_.saveCursorPosition())を新設し、application.cppのfileMode_.saveCursorPosition()の12か所を
+     置き換えた。ビルドのみ確認(実機確認待ち)。

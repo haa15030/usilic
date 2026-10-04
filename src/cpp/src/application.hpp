@@ -2612,6 +2612,7 @@ class Application {
   int epubVerticalRows() const;
   int epubVerticalCurrentRaw() const;
   void syncEpubVerticalToFile();
+  void saveFilePosition();  // fileMode_.saveCursorPosition()の前に縦書きの位置を合わせる
   std::optional<bool> handleEpubVerticalCommand(Command command);
   // K-100(^Oe、2026-09-29): .epubをARCで開く。FILE履歴には「パス/」で積み、
   // バッジは"(unzip)"(EPUBモードで開いた「パス」は"(epub)")――履歴の一覧から

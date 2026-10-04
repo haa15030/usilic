@@ -2185,7 +2185,7 @@ bool Application::navigateToPagerFile(int newIndex) {
   // 他の「全ての」Fileモードの退出(goBack()、JumpNext/Previous自身の
   // Backのステップ、等)が行うのと同じ「ファイルを離れる」際の記帳
   // ――FileMode::saveCursorPosition()自身のコメント参照。
-  fileMode_.saveCursorPosition();
+  saveFilePosition();
   int fd = ::open(pagerFileList_[newIndex].c_str(), O_RDONLY);
   if (fd < 0) return false;
   // startPagerFileList()自身の同日の同種の修正のコメント参照――
@@ -6386,7 +6386,7 @@ bool Application::openRecentFileEntry(const std::string &path) {
   // ――どの経路でも「今File/Archiveにいるなら、離れる前に保存する」
   // という条件は同じであるため。
   if (currentMode_ == ApplicationMode::File) {
-    fileMode_.saveCursorPosition();
+    saveFilePosition();
   } else if (currentMode_ == ApplicationMode::Archive || currentMode_ == ApplicationMode::ArchiveContent) {
     archiveMode_.saveCursorPosition();
   } else if (currentMode_ == ApplicationMode::Cut) {
@@ -7094,7 +7094,7 @@ bool Application::openEpubWebLink(const std::string &url) {
     }
     std::string book = fileMode_.currentFile();
     if (epubVerticalActive()) syncEpubVerticalToFile();
-    fileMode_.saveCursorPosition();  // ^Gで戻った時にここから(openEpub())
+    saveFilePosition();  // ^Gで戻った時にここから(openEpub())
     epubVertical_ = false;
     epubHorizontalSection_.reset();
     if (!fileMode_.loadFile(path)) {
@@ -7320,7 +7320,7 @@ bool Application::openEpubTocEntry(const CutSegment &segment) {
 // いる行を含む章にカーソルを置く。
 bool Application::returnToEpubToc() {
   if (epubVerticalActive()) syncEpubVerticalToFile();
-  fileMode_.saveCursorPosition();
+  saveFilePosition();
   int cursor = fileView_.cursorIndex();
   std::vector<StyledLine> sourceLines;
   sourceLines.reserve(fileView_.lines().size());
@@ -7995,6 +7995,14 @@ int Application::epubVerticalCurrentRaw() const {
 
 // 縦書きの列カーソルの列の行へ、横書きのfileView_のカーソルを合わせる
 // (位置の記録・章の一覧・横書きへの切り替えは、fileView_の側で行うため)。
+// 2026-10-04、直接のユーザー報告("Kat_2.epubで「あとがき」の産経新聞のURL位置で^J^J^J^Jすると「あとがき」の
+// 冒頭に戻る"): 縦書きの本では、FILEの位置(fileView_のカーソル)は章の一覧との行き来等でしか縦書きの列に
+// 合わせていなかったので、^J^J等で離れると古い位置(章の頭)が記録されていた。記録する前に合わせる。
+void Application::saveFilePosition() {
+  if (epubVerticalActive()) syncEpubVerticalToFile();
+  fileMode_.saveCursorPosition();
+}
+
 void Application::syncEpubVerticalToFile() {
   int raw = epubVerticalCurrentRaw();
   const auto &lines = fileView_.lines();
@@ -8386,7 +8394,7 @@ bool Application::clickEpubTocVertical(int row, int column) {
 // FILE履歴にはEPUBモードの「パス」と区別するため「パス/」で積む(fileHistoryBadges()が
 // "(unzip)"を付け、openRecentFileEntry()/startResumingSession()がARCで開き直す)。
 bool Application::openEpubAsArchive(const std::string &path) {
-  if (currentMode_ == ApplicationMode::File) fileMode_.saveCursorPosition();
+  if (currentMode_ == ApplicationMode::File) saveFilePosition();
   if (!archiveMode_.loadArchive(path)) return false;
   archiveParentStack_.clear();
   currentMode_ = ApplicationMode::Archive;
@@ -8701,7 +8709,7 @@ std::string Application::listBrowserCategoryLabel() const {
 }
 
 bool Application::returnToDirectory() {
-  fileMode_.saveCursorPosition();
+  saveFilePosition();
   // 2026-08-16修正: これは以前は、directoryMode_自身のcurrentDirectory_
   // が既にファイルの格納先ディレクトリだと信頼して、単にcurrentMode_
   // を切り替えdirectoryView_を「そのまま」再描画していた――通常の
@@ -9311,7 +9319,7 @@ void Application::saveResumableCutState() {
   // 行へ合わせてから、returnToEpubToc()と同じ)。
   if (currentMode_ == ApplicationMode::File) {
     if (epubVerticalActive()) syncEpubVerticalToFile();
-    fileMode_.saveCursorPosition();
+    saveFilePosition();
   }
   if (currentMode_ == ApplicationMode::CutContent) saveCutFilePosition(cutContentView_.cursorIndex());
   else if (currentMode_ == ApplicationMode::Cut) saveCutFilePosition();
@@ -9401,7 +9409,7 @@ bool Application::returnFromLocate() {
 // 宛先のビューを再描画)、ただしdirectoryView_ではなくlocateView_に
 // 着地するだけである。
 bool Application::returnFromFileToLocate() {
-  fileMode_.saveCursorPosition();
+  saveFilePosition();
   currentMode_ = ApplicationMode::Locate;
   display_.hideVisibleCursor();
   locateView_.redraw();
@@ -10703,7 +10711,7 @@ bool Application::executeShowUsilicBanner() {
   // ければならない。
   if (fileReturnMode_ != ApplicationMode::File) {
     if (currentMode_ == ApplicationMode::File && fileMode_.currentFile() != bannerFilePath()) {
-      fileMode_.saveCursorPosition();
+      saveFilePosition();
       infoPreviousFilePath_ = fileMode_.currentFile();
     } else {
       infoPreviousFilePath_.clear();
@@ -11004,7 +11012,7 @@ bool Application::openSelectedBannerEntry() {
     // 既に最初にそれを更新している;この入り口は一度もそうしていな
     // かった。
     if (fixedPath == logFilePath_) refreshShellLogFile();
-    fileMode_.saveCursorPosition();
+    saveFilePosition();
     if (!fileMode_.loadFile(fixedPath)) return false;
     // 2026-08-28追加、直接のユーザー提案("最初にそれら（/tmp/
     // .usilic.NNNNN/shell等）をtouchしておき、実際にアクセスしてアン
@@ -11036,7 +11044,7 @@ bool Application::openSelectedBannerEntry() {
   }
   for (const auto &workPath : allocatedWorkFiles_) {
     if (!endsWith(workPath)) continue;
-    fileMode_.saveCursorPosition();
+    saveFilePosition();
     if (!fileMode_.loadFile(workPath)) return false;
     fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search,
                                                   std::filesystem::path(workPath).filename().string(), "INFO");  // 2026-08-27リネーム
@@ -15327,7 +15335,7 @@ bool Application::executeCut(const std::string &pattern) {
     // 以前はcutReturnMode_に手を付けず、FILEから^Cfした場合や直前の
     // ^Cbの後では、^GがCUTしたファイル自身のFILE画面へ着地していた
     // (^Cb扱い)。離れるFILE自身の位置もここで保存する。
-    if (currentMode_ == ApplicationMode::File) fileMode_.saveCursorPosition();
+    if (currentMode_ == ApplicationMode::File) saveFilePosition();
     cutReturnMode_ = cutFileReturnModeFor(currentMode_);
     fileMode_.skipNextRecentPush();  // 合成エントリだけを積む(FileMode::skipNextRecentPush()参照)
     if (!fileMode_.loadFile(fileSourcePath)) {
