@@ -668,6 +668,14 @@ bool DirectoryMode::isSelfOrParentEntry(int index) const {
 void DirectoryMode::toggleMark(int index) {
   if (index < 0 || index >= static_cast<int>(entries_.size())) return;
   if (isSelfOrParentEntry(index)) return;
+  // 2026-10-04、直接のユーザー報告("CP後のディレクトリではアンダーラインが消えない"): 一時マーク
+  // (setTransientMarkedNames())の行は、その一時マークを外す(以前はmarkedIndices_だけを切り替えていた
+  // ので、一時マークの行は'.'で外せなかった)。
+  if (auto name = transientMarkedNames_.find(stripLsFTypeMarker(entries_[index].name));
+      name != transientMarkedNames_.end() && !markedIndices_.count(index)) {
+    transientMarkedNames_.erase(name);
+    return;
+  }
   auto it = markedIndices_.find(index);
   if (it != markedIndices_.end())
     markedIndices_.erase(it);
@@ -703,7 +711,11 @@ std::size_t DirectoryMode::markedCount() const {
   return count;
 }
 
-void DirectoryMode::clearMarks() { markedIndices_.clear(); }
+// 2026-10-04: 一時マーク(CP/MV/ARCの後)も外す(toggleMark()の同日のコメント参照、^On)。
+void DirectoryMode::clearMarks() {
+  markedIndices_.clear();
+  transientMarkedNames_.clear();
+}
 
 void DirectoryMode::markAll() {
   markedIndices_.clear();

@@ -28660,3 +28660,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      HELPは起動時(とusilicrcの読み直し・言語の切り替え)にしか読んでいなかった。
    - **実装**: reloadHelpText()が読んだファイルと更新時刻を覚え(helpLoadedPath_/helpLoadedTime_)、startHelp()が
      変わっていれば読み直す(テストが直接渡したHELPは対象外)。ビルドのみ確認(実機確認待ち)。
+625. **2026-10-04: CP/MV/ARCの後の一時マークを'.'・^Onでも外せる**
+   - **経緯**: 直接のユーザー報告("CP後のディレクトリではアンダーラインが消えない")。一時マーク
+     (setTransientMarkedNames())は^Lでしか消えず、'.'(toggleMark())と^On(clearMarks())はmarkedIndices_
+     だけを見ていた。
+   - **実装**: toggleMark()は一時マークの行なら一時マークを外し、clearMarks()は一時マークも消す。
+     ビルドのみ確認(実機確認待ち)。
