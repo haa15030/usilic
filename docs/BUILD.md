@@ -112,9 +112,10 @@ Linuxの手順でビルドする。違いは、外で開く・クリップボー
    ```
    sudo apt-get update
    sudo apt-get install -y build-essential libncurses-dev pkg-config \
-       libsdl2-dev libsdl2-ttf-dev git fonts-noto-cjk
+       libsdl2-dev libsdl2-ttf-dev git fonts-noto-cjk unzip
    ```
-   `fonts-noto-cjk`は`-g`の日本語の表示用(無ければ最初の起動時の案内にも出る)。
+   `fonts-noto-cjk`は`-g`の日本語の表示用、`unzip`はEPUBと.zip(ARC)用(WSLのUbuntuには最初は
+   入っていない。どちらも無ければ最初の起動時の案内にも出る)。
 3. **ビルドとインストール**: リポジトリは非公開なので、`gh auth login`(GitHub CLI、
    `sudo apt-get install gh`)かSSHの鍵を用意してから`git clone`し、
    ```
@@ -151,7 +152,7 @@ SDL2が見つからないとMakefileが自動で`NO_GUI=1`になり、`src/graph
 2. **パッケージ**(MSYS2 MSYSの端末で):
    ```
    pacman -Syu                     # 初回は端末を閉じて開き直し、もう一度
-   pacman -S --needed gcc make ncurses-devel pkgconf git
+   pacman -S --needed gcc make ncurses-devel pkgconf git unzip
    ```
 3. **ビルド**:
    ```

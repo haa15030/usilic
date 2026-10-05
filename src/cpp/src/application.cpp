@@ -353,6 +353,16 @@ std::size_t contentByteCount(const ContentView &view) { return view.totalByteCou
 // このリストが黙って隠すことではない。複合拡張子(.tar.gz等)は、
 // このポートの他の場所にあるConfiguration自身の拡張子マッチングと
 // 同じ形で、リテラルな末尾として照合される。
+// programがPATHにあるか(/を含めばそのパス)。2026-10-04のopenEpubWebLink()から括り出した(2026-10-05)。
+bool programOnPath(const std::string &program) {
+  if (program.find('/') != std::string::npos) return ::access(program.c_str(), X_OK) == 0;
+  const char *path = std::getenv("PATH");
+  std::stringstream dirs(path ? path : "/usr/bin:/bin");
+  for (std::string dir; std::getline(dirs, dir, ':');)
+    if (!dir.empty() && ::access((dir + "/" + program).c_str(), X_OK) == 0) return true;
+  return false;
+}
+
 // 動画をusilicの外のアプリで開けるか: macOS(IINA/VLC等)とWSL2・MSYS(Windowsの既定のアプリ)。2026-10-05。
 bool canOpenVideos() {
 #ifdef __APPLE__
@@ -7060,15 +7070,7 @@ bool Application::openEpubWebLink(const std::string &url) {
   std::vector<std::string> argv = handler.argv;
   // 2026-10-04、直接のユーザー報告("Dump、Termとも動作しないのはw3mが存在しないからだが-gでは何が起きたか
   // わからない"): programが無ければシェルと同じ"…: command not found"を一時表示する。
-  auto found = [](const std::string &program) {
-    if (program.find('/') != std::string::npos) return ::access(program.c_str(), X_OK) == 0;
-    const char *path = std::getenv("PATH");
-    std::stringstream dirs(path ? path : "/usr/bin:/bin");
-    for (std::string dir; std::getline(dirs, dir, ':');)
-      if (!dir.empty() && ::access((dir + "/" + program).c_str(), X_OK) == 0) return true;
-    return false;
-  };
-  if (!found(argv[0])) {
+  if (!programOnPath(argv[0])) {
     showTransientNotice(activeView(), argv[0] + ": command not found");
     return false;
   }
@@ -7233,6 +7235,12 @@ bool Application::openEpubImageIn(const std::string &text) {
 // "Reading..."(DUの"Disk usage..."と同じ形)を出す。開き終えてから一度だけ描く。既に止めて
 // あれば(再開時のstartResumingSession()が"Reading Kat.epub..."を出している)そのまま。
 bool Application::openEpub(const std::string &path) {
+  // 2026-10-05、直接のユーザー報告(WSLのUbuntuで.epubを^Mしたらfile(1)の表示だけ): EPUBの中身は
+  // unzipで取り出すので、無ければ"unzip: command not found"と知らせる(最初の起動時の案内にも加えた)。
+  if (!programOnPath("unzip")) {
+    showTransientNotice(activeView(), "unzip: command not found");
+    return false;
+  }
   bool wasEnabled = display_.outputEnabled();
   if (wasEnabled) {
     drawPromptLabel(PromptKind::EpubLoad, /*positionText=*/"", "Reading...");

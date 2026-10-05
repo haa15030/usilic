@@ -2012,10 +2012,10 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
   // MSYS2(2026-10-05、.steering/20261005-windows-gitbash/): MSYS2のmsysのリポジトリにあるものだけ
   // (mg・w3mは無い)。infoはtexinfo、7zはp7zipに入っている。
   const std::vector<std::pair<std::string, std::string>> tools = {
-      {"groff", "groff"}, {"info", "texinfo"}, {"7z", "p7zip"}};
+      {"groff", "groff"}, {"info", "texinfo"}, {"7z", "p7zip"}, {"unzip", "unzip"}};
 #else
   const std::vector<std::pair<std::string, std::string>> tools = {
-      {"groff", "groff"}, {"mg", "mg"}, {"info", "info"}, {"7z", "p7zip-full"}, {"w3m", "w3m"}};
+      {"groff", "groff"}, {"mg", "mg"}, {"info", "info"}, {"7z", "p7zip-full"}, {"w3m", "w3m"}, {"unzip", "unzip"}};
 #endif
   // 見つからないものだけのインストールコマンド(全部あれば空)。
   auto installCommand = [tools]() -> std::string {

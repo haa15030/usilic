@@ -28811,3 +28811,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      入っていて気づかなかった。
    - **実装**: application.cppに`#include <cmath>`。他に<cmath>の関数を使っていて入れていないファイルが無いことを
      確認。あわせてmode_line.cppのGCCの-Wformat-truncationの警告(percentBuf[8])を[16]にして消した。
+644. **2026-10-05: unzipが無いとEPUBがfile(1)の表示になる件、最初の起動時の案内にunzipを加える**
+   - **経緯**: 直接のユーザー報告(WSLのUbuntuでKbt.epubを開いたら"file(1)メッセージだけ。unzipもapt install
+     リストに必要？")。EPUBの中身はunzip(-p)で取り出すが、WSLのUbuntuには最初はunzipが入っていない。
+   - **実装**: openEpub()はunzipがPATHに無ければ"unzip: command not found"を一時表示して開かない
+     (programOnPath()をopenEpubWebLink()から括り出して共有)。offerGroffInstallOnce()のLinux・MSYSの対象に
+     unzipを加えた。docs/BUILD.mdのWSL2・MSYS2のパッケージにもunzip。ビルドのみ確認。
