@@ -262,7 +262,7 @@ std::string shellQuoteArgv(const std::vector<std::string> &argv) {
 // デフォルト、configuration.cpp参照)がDirectoryEntry::nameの末尾に
 // 付与する型マーカー(ディレクトリ'/'、実行可能'*'、シンボリックリンク
 // '@'、ソケット'='、FIFO'|')を剥がす――実在のパスとして使う時
-// (PasteTransientTargets自身のコメント参照、ARC展開前後の差分判定)
+// (ARC展開前後の差分判定等)
 // にだけ必要で、isMarked()自身のentries_[index].nameとの照合には
 // 元の(型マーカー付きの)表記のまま使う。
 std::string stripLsFTypeMarker(const std::string &name) {
@@ -3035,13 +3035,6 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 初めて実際にCommand::StartExitへ結線する。
       case kEscape:
         return handleCommand(Command::StartExit);
-      // ESC P (Shift+P、2026-09-08追加): CP/MV/ARC完了直後の一時
-      // マーキングをプロンプトへ貼り付ける――Command::
-      // PasteTransientTargets自身のコメント参照。既存のCOPYモード
-      // 専用^[p(小文字、copyEscapePending_側の分岐)とは無関係の
-      // 別のキー。
-      case 'P':
-        return handleCommand(Command::PasteTransientTargets);
       // ESC u (2026-09-21、直接のユーザー依頼): USILICのCUT風目次(MAN/DIR/FILE)。
       case 'u':
         return handleCommand(Command::StartUsilicToc);
@@ -4994,30 +4987,6 @@ bool Application::handleCommandImpl(Command command) {
       if (!promptActive()) return false;
       promptEditor_.paste(copyMode_.clipboardText());
       return true;
-    // ^[P(2026-09-08追加、Command::PasteTransientTargets自身の
-    // コメント参照): PasteClipboardと同じpromptActive()ガードだが、
-    // 貼り付ける内容はCopyModeのクリップボードではなく
-    // DirectoryMode::transientMarkedNames()(CP/MV/ARC完了後の一時
-    // マーキング)から都度組み立てる。requirements.md「設計判断A」
-    // 決定通り、フルパス+シェルクォート済みで挿入する(宛先ディレク
-    // トリを離れると相対名は無意味になるため)。
-    case Command::PasteTransientTargets: {
-      if (!promptActive()) return false;
-      std::vector<std::string> names = directoryMode_.transientMarkedNames();
-      if (names.empty()) return false;
-      std::string dir = directoryMode_.currentDirectory();
-      if (!dir.empty() && dir.back() != '/') dir += '/';
-      std::vector<std::string> paths;
-      paths.reserve(names.size());
-      // stripLsFTypeMarker()自身のコメント参照――実在のパスとして
-      // 使うので、`ls -F`の型マーカー('*'/'@'等)を剥がす(ディレクトリ
-      // の'/'は実在のパスの表記としても問題ないが、剥がした上で改めて
-      // 明示的に付け直すよりも、他の型マーカーと同じ扱いに揃える方が
-      // 単純)。
-      for (const auto &name : names) paths.push_back(dir + stripLsFTypeMarker(name));
-      promptEditor_.paste(shellQuoteArgv(paths));
-      return true;
-    }
     case Command::StartExit:
       return startExitPrompt();
     case Command::StartDu:

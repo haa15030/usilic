@@ -374,7 +374,6 @@ KEY
 	K-36	C-SPC       # ^SPC    Toggle selection
 	K-37	F-2 y       # ^Oy     Select all
 	K-38	F-2 n       # ^On     Clear all
-	K-39	ESC P       # ^[P     Paste transient targets
 	K-40	F-2 c       # ^Oc     CP
 	K-41	F-2 m       # ^Om     MV
 	K-42	F-2 r       # ^Or     RM

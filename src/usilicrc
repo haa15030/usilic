@@ -361,7 +361,6 @@ KEY
 	K-36	C-SPC       # ^SPC    選択/非選択
 	K-37	F-2 y       # ^Oy     全選択
 	K-38	F-2 n       # ^On     全解除
-	K-39	ESC P       # ^[P     一時的な選択対象の貼り付け
 	K-40	F-2 c       # ^Oc     CP
 	K-41	F-2 m       # ^Om     MV
 	K-42	F-2 r       # ^Or     RM

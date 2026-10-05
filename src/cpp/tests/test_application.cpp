@@ -10305,65 +10305,6 @@ TEST_CASE_FIXTURE(Fixture, "Command::Redraw (^L) clears the post-transfer Underl
   CHECK(display.underlineAt(otherIdx, otherNameCol));  // still shown Underlined, via markedIndices_ this time
 }
 
-// 2026-09-08 addition: ^[P (Command::PasteTransientTargets) pastes the
-// post-transfer marking's full path(s), shell-quoted, into an active
-// prompt -- requirements.md's "設計判断A" decision (full path over
-// bare name, since a bare name becomes meaningless once you leave the
-// destination directory).
-TEST_CASE_FIXTURE(Fixture, "^[P pastes the post-transfer marking's full path, shell-quoted, into an active "
-                           "prompt") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("cpmv_a.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::ToggleMark));
-
-  REQUIRE(app.handleCommand(Command::StartCopy));
-  feedText((root / "cpmvdest").string());
-  CHECK(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(pumpCpMvRmToCompletion(app));
-
-  // FGREP (not PROGRAM) deliberately: startProgramPrompt() now ALSO
-  // auto-seeds from targetEntries() (2026-09-09, the same "integrate"
-  // change this test's own marking relies on) -- that seeding would
-  // otherwise leave stray text in the prompt this test isn't testing.
-  // startGrepPrompt() has no such seeding (activatePrompt(...,"")).
-  REQUIRE(app.handleCommand(Command::StartFgrep));
-  REQUIRE(app.promptActive());
-
-  REQUIRE(app.feedByte(0x1b, std::nullopt));  // ESC
-  REQUIRE(app.feedByte('P', std::nullopt));
-
-  std::string expectedPath = (root / "cpmvdest" / "cpmv_a.txt").string();
-  CHECK(app.promptText() == "'" + expectedPath + "'");
-}
-
-// 2026-09-08 addition: no active prompt / no post-transfer marking ->
-// no-op, matching Command::PasteClipboard's own established convention
-// for "this key doesn't mean anything in the current context".
-TEST_CASE_FIXTURE(Fixture, "^[P is a no-op without an active prompt, and a no-op when there's no "
-                           "post-transfer marking") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("cpmv_a.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::ToggleMark));
-  REQUIRE(app.handleCommand(Command::StartCopy));
-  feedText((root / "cpmvdest").string());
-  CHECK(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(pumpCpMvRmToCompletion(app));
-
-  // No active prompt yet -- ^[P must do nothing (and not crash).
-  REQUIRE(app.feedByte(0x1b, std::nullopt));
-  CHECK_FALSE(app.feedByte('P', std::nullopt));
-
-  // ^L clears the post-transfer marking -- ^[P inside a NOW-active
-  // prompt must still do nothing, since there's nothing left to paste.
-  REQUIRE(app.handleCommand(Command::Redraw));
-  REQUIRE(app.handleCommand(Command::StartProgram));
-  REQUIRE(app.feedByte(0x1b, std::nullopt));
-  CHECK_FALSE(app.feedByte('P', std::nullopt));
-  CHECK(app.promptText().empty());
-}
-
 TEST_CASE_FIXTURE(Fixture, "RM: confirming with 'y' actually deletes the marked file") {
   REQUIRE(app.start(path()));
   int idx = indexOf("cpmv_b.txt");

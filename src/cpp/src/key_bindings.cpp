@@ -69,7 +69,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {36, "C-SPC"},     // ^SPC  選択/非選択
       {37, "F-2 y"},     // ^Oy   全選択
       {38, "F-2 n"},     // ^On   全解除
-      {39, "ESC P"},     // ^[P   一時的な選択対象の貼り付け
+      // (39: ^[P 一時的な選択対象の貼り付け、2026-10-05廃止。番号は詰めない)
       {40, "F-2 c"},     // ^Oc   CP
       {41, "F-2 m"},     // ^Om   MV
       {42, "F-2 r"},     // ^Or   RM

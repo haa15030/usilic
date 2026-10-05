@@ -648,13 +648,8 @@ enum class Command {
   // 共有されたclipboardText()を挿入する――handleCommand()自身の
   // Pasteケース参照。
   PasteClipboard,
-  // ^[P(新設、2026-09-08、直接のユーザー要望): DirectoryMode::
-  // transientMarkedNames()(CP/MV/ARC完了後の一時マーキング)の内容を、
-  // アクティブなプロンプトへフルパス+シェルクォート済みで挿入する。
-  // PasteClipboardの「アプリ内クリップボード」とは別の、ディレクトリ
-  // の一覧から直接読む経路――既存のCOPYモード専用^[p(小文字、
-  // copyEscapePending_側)とも無関係。
-  PasteTransientTargets
+  // (PasteTransientTargets(^[P): 2026-10-05廃止、直接のユーザー依頼。CP/MV/ARC後の一時的な選択は
+  // 通常の選択と同じく^Jp等の対象になるので要らない)
 };
 
 // 現在どの「*Mode」が画面上にあるか。legacyのnp->M(T_*モード定数)
