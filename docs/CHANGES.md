@@ -28713,3 +28713,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      文字列を表示しない仕様で")。
    - **実装**: listBrowserView_のModeLineFieldsProviderで、listBrowserChronological_の間はtrailingを空にする。
      ビルドのみ確認(実機確認待ち)。
+632. **2026-10-05: ^Ouで一覧の最初の行を開いた画面から始める**
+   - **経緯**: 直接のユーザー依頼("^OuのUSILICでもCUTと同じく一覧の最初の行を^Mした内容を表示で")。
+   - **実装**: startUnderlineFileView()は一覧を出した後、openSelectedUnderlineEntry()で最初の行を開く(^Gで
+     一覧へ、returnToUnderlineResults())。開けなければ一覧のまま。ビルドのみ確認(実機確認待ち)。

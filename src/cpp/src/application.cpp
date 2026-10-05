@@ -6791,6 +6791,7 @@ bool Application::startUnderlineFileView() {
     usilicLevel_ = UsilicLevel::None;
     underlineMode_.show(std::move(paths));
     currentMode_ = ApplicationMode::Underline;
+    openSelectedUnderlineEntry();
     return true;
   }
   underlineReturn_.reset();
@@ -6800,6 +6801,9 @@ bool Application::startUnderlineFileView() {
   usilicLevel_ = UsilicLevel::None;
   underlineMode_.show(std::move(paths));
   currentMode_ = ApplicationMode::Underline;
+  // 2026-10-05、直接のユーザー依頼("^OuのUSILICでもCUTと同じく一覧の最初の行を^Mした内容を表示で"):
+  // 一覧の最初の行をそのまま開く(^Gで一覧へ)。開けなければ一覧のまま。
+  openSelectedUnderlineEntry();
   return true;
 }
 
