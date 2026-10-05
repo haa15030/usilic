@@ -346,6 +346,20 @@ std::size_t contentByteCount(const ContentView &view) { return view.totalByteCou
 // このリストが黙って隠すことではない。複合拡張子(.tar.gz等)は、
 // このポートの他の場所にあるConfiguration自身の拡張子マッチングと
 // 同じ形で、リテラルな末尾として照合される。
+// 動画ファイルか(拡張子、大文字小文字は問わない)。2026-10-05、Application::openVideos()参照。
+bool isVideoFile(const std::string &path) {
+  static const std::vector<std::string> kSuffixes = {".mp4", ".m4v", ".mov",  ".mkv", ".avi", ".wmv",
+                                                     ".flv", ".webm", ".ts",  ".mts", ".m2ts", ".mpg",
+                                                     ".mpeg", ".3gp", ".ogv", ".vob"};
+  std::string lower = path;
+  while (!lower.empty() && lower.back() == '/') lower.pop_back();
+  std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
+  for (const auto &suffix : kSuffixes)
+    if (lower.size() > suffix.size() && lower.compare(lower.size() - suffix.size(), suffix.size(), suffix) == 0)
+      return true;
+  return false;
+}
+
 bool hasArchiveCompatibleSuffix(const std::string &path) {
   static const std::vector<std::string> kSuffixes = {
       ".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".tbz2", ".txz", ".tar",
@@ -5340,6 +5354,19 @@ bool Application::openSelectedEntry() {
   // 統一された拡張子テーブルは、実務上はチェックの順序をほぼ無意味
   // にしている)。完全に引き渡して、PROGRAM/EDITと同じ形で、
   // Directoryモードへ変わらず戻る。
+#ifdef __APPLE__
+  // 2026-10-05: 動画で、.[]で選んだ動画が他にもあれば、まとめてアプリへ渡す(openVideos()参照)。
+  if (isVideoFile(path) && !configuration_.isExec(path)) {
+    std::vector<std::string> videos;
+    std::string dir = directoryMode_.currentDirectory();
+    if (!dir.empty() && dir.back() != '/') dir += '/';
+    for (const auto &target : directoryMode_.targetEntries())
+      if (!target.isDirectory && isVideoFile(stripLsFTypeMarker(target.name)))
+        videos.push_back(dir + stripLsFTypeMarker(target.name));
+    if (std::find(videos.begin(), videos.end(), path) == videos.end()) videos.insert(videos.begin(), path);
+    return openVideos(videos);
+  }
+#endif
   if (openExternallyIfApplicable(path)) return true;  // EXEC/画像のクイックルック(2026-09-27)
   if (isEpubFile(path)) return openEpub(path);  // openEpub()自身のコメント参照
 
@@ -10485,6 +10512,9 @@ bool Application::openExternallyIfApplicable(const std::string &path) {
     activeView().redraw();
     return true;
   }
+#ifdef __APPLE__
+  if (isVideoFile(path)) return openVideos({path});  // 2026-10-05、openVideos()参照
+#endif
   // 2026-10-04: -gではJPEG/PNG/GIF/BMPはusilicの画面で表示する(isViewableImageFile()参照)。
   if (display_.isGraphical() && isViewableImageFile(path)) return false;
   if (::access("/usr/bin/qlmanage", X_OK) != 0 || !fileMode_.isBinaryFile(path)) return false;
@@ -10509,6 +10539,34 @@ bool Application::openExternallyIfApplicable(const std::string &path) {
     if (supported.count(tree.output.substr(open + 1, close - open - 1))) return runQuickLook({path});
   }
   return false;
+}
+
+// 2026-10-05、直接のユーザー依頼("mp4等動画ファイル再生失敗をなんとかしたい。.[]で選択済み動画ファイル群は
+// VLC、IINA画面へのドラッグはできない？"): 動画はクイックルック(qlmanage -p、動画では落ちることが多い、
+// 項目416)に回さず、動画のアプリで開く。IINA、無ければVLC(/Applications・~/Applications)、どちらも
+// 無ければopen(既定のアプリ)。複数のパスは1回のopenでまとめて渡す(アプリのウィンドウへドラッグした
+// のと同じく、続けて再生する一覧になる)。usilicrcのEXECに設定があればそちらが優先。
+bool Application::openVideos(const std::vector<std::string> &paths) {
+  if (paths.empty()) return false;
+  std::string app;
+  std::string home = std::getenv("HOME") ? std::getenv("HOME") : "";
+  for (const char *name : {"IINA", "VLC"}) {
+    for (const std::string &dir : {std::string("/Applications/"), home + "/Applications/"}) {
+      std::error_code ec;
+      if (std::filesystem::exists(dir + name + ".app", ec)) {
+        app = name;
+        break;
+      }
+    }
+    if (!app.empty()) break;
+  }
+  std::string command = app.empty() ? "open " : "open -a " + app + " ";
+  std::string label = command + std::filesystem::path(paths.front()).filename().string();
+  if (paths.size() > 1) label += " ...(" + std::to_string(paths.size()) + ")";
+  display_.flush();
+  programMode_.run(command + shellQuoteArgv(paths), label);
+  activeView().redraw();
+  return true;
 }
 
 // `qlmanage -m plugins`の各行("  <UTI> -> <ジェネレーター> (...)")のUTIの集合。
@@ -15761,6 +15819,11 @@ bool Application::executeQuickLook() {
   } else {
     return false;
   }
+#ifdef __APPLE__
+  // 2026-10-05: 動画だけならクイックルックではなく動画のアプリで(openVideos()参照)。
+  if (std::all_of(paths.begin(), paths.end(), [](const std::string &p) { return isVideoFile(p); }))
+    return openVideos(paths);
+#endif
   return runQuickLook(paths);
 }
 

@@ -2674,6 +2674,7 @@ class Application {
   bool startEpubPrompt();                                 // K-98(^Je)
   bool startEpubList();                                   // K-99(^J^E)
   bool startArchiveList();                                // K-103(^J^A)
+  bool openVideos(const std::vector<std::string> &paths);  // 動画をIINA/VLC等で(2026-10-05)
   bool isArchiveHistoryEntry(const std::string &item) const;  // startArchiveList()参照
   std::string listBrowserCategoryLabel() const;           // startEpubList()参照
   bool epubPathPending_ = false;  // ^Jeのパス入力中(PathInputの投入をopenEpub()へ回す)

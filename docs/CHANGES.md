@@ -28745,3 +28745,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      w3m(項目623)を足した(macOS/Ubuntuとも)。印(~/.usilic/install-offered)は従来のままなので、既に案内
      済みの環境では出ない。doc/HELPの「著者」の手前に「必要なソフトウェア」(外部プログラム・最初の起動時の
      案内・Homebrewが無い場合・XcodeのCommand Line Tools)を加筆。ビルドのみ確認(実機確認待ち)。
+637. **2026-10-05: macOSで動画をクイックルックではなくIINA/VLCで開く、選んだ動画はまとめて渡す**
+   - **経緯**: 直接のユーザー依頼("mp4等動画ファイル再生失敗をなんとかしたい。.[]で選択済み動画ファイル群は
+     VLC、IINA画面へのドラッグはできない？")。EXECに設定の無い.mp4はクイックルック(qlmanage -p)に回って
+     いたが、qlmanageは動画で落ちることが多い(項目416)。
+   - **実装**: isVideoFile()(.mp4 .m4v .mov .mkv .avi .wmv .flv .webm .ts .mts .m2ts .mpg .mpeg .3gp .ogv .vob)と
+     Application::openVideos()(IINA→VLC→既定のアプリの順に"open -a"、複数のパスは1回で渡す)を新設。
+     openExternallyIfApplicable()はEXECの次に動画をopenVideos()へ。(ls)の^Mは、動画で.[]の選択に他の動画も
+     あればまとめて渡す。␣(executeQuickLook())も対象が全部動画ならopenVideos()へ。usilicのウィンドウから
+     他のアプリへファイルをドラッグして出す(ドラッグの送り元になる)のはSDLには無く、Cocoaの
+     NSDraggingSourceを自前で書く必要があるので見送り、まとめて渡すことで代える。HELPに追記。
+     ビルドのみ確認(実機確認待ち)。
