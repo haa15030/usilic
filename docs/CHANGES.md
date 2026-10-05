@@ -28817,3 +28817,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: openEpub()はunzipがPATHに無ければ"unzip: command not found"を一時表示して開かない
      (programOnPath()をopenEpubWebLink()から括り出して共有)。offerGroffInstallOnce()のLinux・MSYSの対象に
      unzipを加えた。docs/BUILD.mdのWSL2・MSYS2のパッケージにもunzip。ビルドのみ確認。
+645. **2026-10-05: MSYS2のg++で"'pid_t' does not name a type"になる件**
+   - **経緯**: 直接のユーザー報告(MSYS2のMSYSの端末で`make usilic`、child_process.hppのpid_t)。
+     child_process.hpp・application.hppがpid_tを使うのに<sys/types.h>を読んでおらず、macOS・Linuxでは
+     他のヘッダ経由で入っていた。
+   - **実装**: 2つのヘッダに`#include <sys/types.h>`。他にpid_t等(ssize_t・mode_t・off_t)を使っていて
+     読んでいないファイルが無いことを確認。Macでビルドのみ確認。

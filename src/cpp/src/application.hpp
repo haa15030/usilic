@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>  // pid_t(MSYS2では他のヘッダ経由で入らない、2026-10-05)
+
 #include <filesystem>
 #include <optional>
 #include <set>
