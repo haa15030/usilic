@@ -28717,3 +28717,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼("^OuのUSILICでもCUTと同じく一覧の最初の行を^Mした内容を表示で")。
    - **実装**: startUnderlineFileView()は一覧を出した後、openSelectedUnderlineEntry()で最初の行を開く(^Gで
      一覧へ、returnToUnderlineResults())。開けなければ一覧のまま。ビルドのみ確認(実機確認待ち)。
+633. **2026-10-05: ^J^Aでアーカイブだけの閲覧履歴の一覧(^J^EのARC版)**
+   - **経緯**: 直接のユーザー依頼("^J^Aでアーカイブファイル一覧(^J^Eみたいなやつ)")。
+   - **実装**: Command::StartArchiveList(K-103、F-1 C-a)、startArchiveList()は^J^Eと同じく
+     startRegexPromptList(RecentFile)を、PromptHistoryContext::archiveOnlyを立てて開く。載せるのは
+     isArchiveHistoryEntry()(usilicrcのARCHIVEで開けるか、^R(ARCの中)と同じ拡張子の一覧にあるもの。
+     .epubは^J^Eがあるので除く)。一覧の名前は"ARC"。usilicrc(.en)・HELPに追記。ビルドのみ確認(実機確認待ち)。

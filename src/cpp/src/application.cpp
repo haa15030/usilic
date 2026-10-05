@@ -3091,6 +3091,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StartEpubPrompt);
       case 0x05:  // ^J ^E : EPUB: 一覧(K-99、2026-09-28)
         return handleCommand(Command::StartEpubList);
+      case 0x01:  // ^J ^A : ARC: アーカイブだけのFILE履歴の一覧(K-103、2026-10-05)
+        return handleCommand(Command::StartArchiveList);
       case 'm':  // ^J m : MAN(K-43、「Input manual page」)
         return handleCommand(Command::StartMan);
       case kCarriageReturn:  // ^J ^M : MAN(K-44、「Select manual page」;ここでの2番目のバイトは^Mであり、素のEnterとは無関係)
@@ -4945,6 +4947,8 @@ bool Application::handleCommandImpl(Command command) {
       return startEpubPrompt();
     case Command::StartEpubList:
       return startEpubList();
+    case Command::StartArchiveList:
+      return startArchiveList();
     case Command::OpenEpubAsArchive:
       return openSelectedEpubAsArchive();
     case Command::ToggleEpubChapterBreaks:
@@ -8719,9 +8723,27 @@ bool Application::startEpubList() {
   return ok;
 }
 
-// ringCategoryLabel(listBrowserCategory_)に、^J^E(EPUBだけのFILE履歴)の"EPUB"を足したもの。
+// K-103(^J^A、2026-10-05、直接のユーザー依頼"^J^Aでアーカイブファイル一覧(^J^Eみたいなやつ)"):
+// FILE履歴のうちアーカイブ(hasArchiveCompatibleSuffix())だけの一覧。選ぶとopenRecentFileEntry()でARCへ。
+// ^J^Aの一覧に載せるか: usilicrcのARCHIVEで開ける(archiveBadgeFor())か、^R(ARCの中)と同じ拡張子の一覧
+// (hasArchiveCompatibleSuffix())にあるもの。.epubは^J^Eの一覧があるので載せない。
+bool Application::isArchiveHistoryEntry(const std::string &item) const {
+  std::string path = (item.size() > 1 && item.back() == '/') ? item.substr(0, item.size() - 1) : item;
+  if (isEpubFile(path)) return false;
+  return hasArchiveCompatibleSuffix(path) || !archiveBadgeFor(configuration_, path).empty();
+}
+
+bool Application::startArchiveList() {
+  archiveListPending_ = true;
+  bool ok = startRegexPromptList(PromptKind::RecentFile);
+  archiveListPending_ = false;
+  return ok;
+}
+
+// ringCategoryLabel(listBrowserCategory_)に、^J^E(EPUBだけのFILE履歴)の"EPUB"、^J^A(アーカイブだけ)の"ARC"を足したもの。
 std::string Application::listBrowserCategoryLabel() const {
   if (promptHistoryContext_ && promptHistoryContext_->epubOnly) return "EPUB";
+  if (promptHistoryContext_ && promptHistoryContext_->archiveOnly) return "ARC";
   return ringCategoryLabel(listBrowserCategory_);
 }
 
@@ -11933,6 +11955,10 @@ bool Application::toggleListBrowserHistory() {
   if (promptHistoryContext_ && promptHistoryContext_->epubOnly)  // ^J^E: EPUBだけ(startEpubList()参照)
     items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item); }),
                 items.end());
+  if (promptHistoryContext_ && promptHistoryContext_->archiveOnly)  // ^J^A: アーカイブだけ(startArchiveList()参照)
+    items.erase(std::remove_if(items.begin(), items.end(),
+                                [this](const std::string &item) { return !isArchiveHistoryEntry(item); }),
+                items.end());
   listBrowserMode_.show(items, fileHistoryBadges(configuration_, listBrowserCategory_, items),
                         recentFileDisplayTexts(listBrowserCategory_, items));
   if (listBrowserChronological_ && !items.empty()) {
@@ -13948,6 +13974,8 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   promptHistoryContext_ = PromptHistoryContext{promptKind_, historyReturnMode, promptEditor_.text(), directEntry};
   promptHistoryContext_->epubOnly = epubListPending_;  // ^J^E(startEpubList()参照)
   epubListPending_ = false;
+  promptHistoryContext_->archiveOnly = archiveListPending_;  // ^J^A(startArchiveList()参照)
+  archiveListPending_ = false;
   promptKind_ = PromptKind::None;
   listBrowserCategory_ = category;
   // 2026-08-12修正: ContentView::setCursorAtModeLineTrailingEnd()
@@ -14039,6 +14067,10 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   }
   if (promptHistoryContext_ && promptHistoryContext_->epubOnly)  // ^J^E: EPUBだけ(startEpubList()参照)
     items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item); }),
+                items.end());
+  if (promptHistoryContext_ && promptHistoryContext_->archiveOnly)  // ^J^A: アーカイブだけ(startArchiveList()参照)
+    items.erase(std::remove_if(items.begin(), items.end(),
+                                [this](const std::string &item) { return !isArchiveHistoryEntry(item); }),
                 items.end());
   listBrowserMode_.show(items, fileHistoryBadges(configuration_, category, items),
                         recentFileDisplayTexts(category, items));

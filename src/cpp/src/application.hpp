@@ -564,6 +564,8 @@ enum class Command {
   // K-98(^Je)/K-99(^J^E、2026-09-28): EPUB: 入力/一覧。Application::openEpub()参照。
   StartEpubPrompt,
   StartEpubList,
+  // K-103(^J^A、2026-10-05): FILE履歴のうちアーカイブだけの一覧。Application::startArchiveList()参照。
+  StartArchiveList,
   // K-100(^Oe): (ls)で選んでいる.epubをARCで開く(2026-09-29、縦書き/横書きの切り替え
   // から変更)。Application::openEpubAsArchive()参照。
   OpenEpubAsArchive,
@@ -2671,9 +2673,12 @@ class Application {
   bool returnToEpubToc();                                 // 同上
   bool startEpubPrompt();                                 // K-98(^Je)
   bool startEpubList();                                   // K-99(^J^E)
+  bool startArchiveList();                                // K-103(^J^A)
+  bool isArchiveHistoryEntry(const std::string &item) const;  // startArchiveList()参照
   std::string listBrowserCategoryLabel() const;           // startEpubList()参照
   bool epubPathPending_ = false;  // ^Jeのパス入力中(PathInputの投入をopenEpub()へ回す)
   bool epubListPending_ = false;  // ^J^E: 次のstartPromptHistoryRecall()をEPUBだけにする
+  bool archiveListPending_ = false;  // ^J^A: 次のstartPromptHistoryRecall()をアーカイブだけにする
   bool executeOpenWorkList();       // K-97
   // K-68(^X^Kl): Shell::scrollback()の「現在の」行をlogFilePath_
   // へ(以前のスナップショットを切り詰めて)書き込み、その後その
@@ -3891,6 +3896,7 @@ private:
     // M_cut2は単に`i = -2`を設定し、上端をデフォルトにする)。
     bool isDirectEntry = false;
     bool epubOnly = false;  // ^J^E(Application::startEpubList())
+    bool archiveOnly = false;  // ^J^A(Application::startArchiveList())
   };
   std::optional<PromptHistoryContext> promptHistoryContext_;
   // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装(design.md参照)。
