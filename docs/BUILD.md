@@ -90,6 +90,41 @@ make usilic
 make test
 ```
 
+## Windows(WSL2)
+
+2026-10-05追加(`.steering/20261005-windows-wsl2/`)。WSL2の中身は普通のUbuntuなので、上の
+Linuxの手順でビルドする。違いは、外で開く・クリップボードがWindows側につながること。
+
+1. **WSL2を入れる**(初回のみ): 管理者のPowerShellで`wsl --install`(既定でUbuntuが入る)→再起動→
+   スタートメニューの「Ubuntu」を開いてユーザー名・パスワードを決める。
+   Windows Terminalから「Ubuntu」のタブで使うのがお勧め。
+2. **パッケージ**(Ubuntuの中で):
+   ```
+   sudo apt-get update
+   sudo apt-get install -y build-essential libncurses-dev pkg-config \
+       libsdl2-dev libsdl2-ttf-dev git fonts-noto-cjk
+   ```
+   `fonts-noto-cjk`は`-g`の日本語の表示用(無ければ最初の起動時の案内にも出る)。
+3. **ビルドとインストール**: リポジトリは非公開なので、`gh auth login`(GitHub CLI、
+   `sudo apt-get install gh`)かSSHの鍵を用意してから`git clone`し、
+   ```
+   cd usilic/src/cpp
+   make usilic
+   make install          # ~/.local/bin/usilic、~/.local/lib/usilic/
+   ```
+   `~/.local/bin`がPATHに無ければ`~/.profile`に`export PATH="$HOME/.local/bin:$PATH"`を足す。
+   リポジトリはWSLの中(`~/`の下)に置く。`/mnt/c/...`(Windows側のドライブ)の下はファイルの
+   読み書きが遅く、パーミッションも正しく扱えない。
+4. **-g(GUI)**: WSLg(Windows 11、またはWindows 10の新しい版のWSL)があれば`usilic -g`で
+   Windowsのデスクトップにウィンドウが出る(X/Waylandの設定は要らない)。
+5. **Windows側とのつながり**(usilicがWSLの中かを実行時に判定する、`src/cpp/src/platform.hpp`):
+   - 動画・url2pdfで作ったPDF・EPUBのWebのリンク(Open)は、`explorer.exe`でWindowsの既定の
+     アプリ(ブラウザ・動画プレーヤー等)で開く。WSLの中のファイルは`wslpath -w`で
+     `\\wsl.localhost\Ubuntu\...`の形にして渡す。
+   - COPY(`^[w`/`^[p`)とEPUBのWebのリンクのCopyは、`clip.exe`でWindowsのクリップボードへ入る
+     (日本語はUTF-16に変換して渡す)。
+   - Windows側のファイルは`/mnt/c/Users/<名前>/...`で見える。
+
 ## Docker(`.devcontainer/`)
 
 このリポジトリの`.devcontainer/Dockerfile`(Ubuntu 26.04ベース)

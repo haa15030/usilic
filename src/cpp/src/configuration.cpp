@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <cstdlib>
 #include "key_bindings.hpp"
+#include "platform.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -796,6 +797,9 @@ const std::vector<Configuration::UrlHandler> &Configuration::urlHandlers() const
                                     {"Dump", {"w3m", "-dump"}},
                                     {"Term", {"w3m"}},
                                     {"Copy", {"xclip", "-selection", "clipboard"}}};
+    // 2026-10-05: WSL2ではWindowsの既定のブラウザ・クリップボードへ(platform.hpp参照。URLは
+    // ASCIIなのでclip.exeへそのまま渡してよい)。
+    if (isWsl()) list = {{"Open", {"explorer.exe"}}, {"Dump", {"w3m", "-dump"}}, {"Term", {"w3m"}}, {"Copy", {"clip.exe"}}};
 #endif
     // Pdf(2026-10-04): make installが入れるurl2pdfがあればOpenの次に。
     const char *home = std::getenv("HOME");

@@ -28778,3 +28778,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      「改行無しでつなぐ」を変更。
    - **実装**: CopyMode::confirmMark()は、範囲のある島が2つ以上あり矩形を含まなければ、断片を" "でつなぐ。
      src/HELP.txtのCOPYの説明も直した。ビルドのみ確認(実機確認待ち)。
+641. **2026-10-05: WindowsのWSL2で、外で開く・クリップボードをWindows側へつなぐ(.steering/20261005-windows-wsl2/)**
+   - **経緯**: 直接のユーザー依頼("WindowsではWSL2とgit bashで稼働させたい")。順番はWSL2を先に、Git Bashは
+     後(MSYS2でビルドしてGit Bashで動かす、ダメならMSYS2の端末)。試せるWindows機はユーザーの手元にある。
+   - **実装**: src/cpp/src/platform.{hpp,cpp}を新設: isWsl()(WSLInterop・/proc/versionの"microsoft"、実行時に
+     判定)、windowsPathFor()(wslpath -w)、openOnWindowsHost()(URLはそのまま、ファイルはWindowsのパスで
+     explorer.exe)、copyToWindowsClipboard()(UTF-16LE(BOM付き、改行はCRLF)にしてclip.exe)。
+     WSLでは、copyTextToSystemClipboard()がclip.exeへ、動画(canOpenVideos()、それまでの#ifdef __APPLE__を
+     実行時の判定に)とurl2pdfのPDFがexplorer.exeへ、URLの対処の既定がOpen=explorer.exe・Copy=clip.exe。
+     最初の起動時の案内(Linux)に、Noto CJKフォントが無ければfonts-noto-cjkを加えた。docs/BUILD.mdに
+     「Windows(WSL2)」の節、src/HELP.txtの「必要なソフトウェア」にWSL2の段落。tests/test_platform.cpp。
+     macOSでビルドのみ確認(Linux/WSL2でのビルド・動作はユーザーのWindows機で確認待ち)。

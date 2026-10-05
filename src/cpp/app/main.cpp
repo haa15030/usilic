@@ -2021,6 +2021,18 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
         found = !findExecutable("7z").empty() || !findExecutable("7zz").empty();
       if (!found) packages += " " + tool.second;
     }
+#ifndef __APPLE__
+    // 2026-10-05(.steering/20261005-windows-wsl2/): -gの日本語に要るNoto CJKフォント(GraphicalDisplayが
+    // 探す場所)がどれも無ければfonts-noto-cjkも。WSL2のUbuntuには最初は入っていない。
+    {
+      std::error_code fontEc;
+      bool haveCjkFont = false;
+      for (const char *font : {"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                               "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"})
+        if (std::filesystem::exists(font, fontEc)) haveCjkFont = true;
+      if (!haveCjkFont) packages += " fonts-noto-cjk";
+    }
+#endif
     if (packages.empty()) return "";
 #ifdef __APPLE__
     std::string brew = findExecutable("brew");

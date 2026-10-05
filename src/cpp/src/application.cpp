@@ -30,6 +30,7 @@
 #include "help_text.hpp"
 #include "mode_line.hpp"
 #include "pipe_buffer.hpp"
+#include "platform.hpp"
 #include "utf8.hpp"
 #if defined(__clang__)
 #pragma clang diagnostic push
@@ -290,6 +291,11 @@ void copyTextToSystemClipboard(const std::string &text) {
 #ifdef __APPLE__
   ChildProcess::run({"pbcopy"}, opts);
 #else
+  // 2026-10-05: WSL2ではWindowsのクリップボードへ(platform.hpp参照)。
+  if (isWsl()) {
+    copyToWindowsClipboard(text);
+    return;
+  }
   ChildProcess::Result result = ChildProcess::run({"xclip", "-selection", "clipboard"}, opts);
   if (!result.ok) ChildProcess::run({"xsel", "--clipboard", "--input"}, opts);
 #endif
@@ -346,6 +352,15 @@ std::size_t contentByteCount(const ContentView &view) { return view.totalByteCou
 // このリストが黙って隠すことではない。複合拡張子(.tar.gz等)は、
 // このポートの他の場所にあるConfiguration自身の拡張子マッチングと
 // 同じ形で、リテラルな末尾として照合される。
+// 動画をusilicの外のアプリで開けるか: macOS(IINA/VLC等)とWSL2(Windowsの既定のアプリ)。2026-10-05。
+bool canOpenVideos() {
+#ifdef __APPLE__
+  return true;
+#else
+  return isWsl();
+#endif
+}
+
 // 動画ファイルか(拡張子、大文字小文字は問わない)。2026-10-05、Application::openVideos()参照。
 bool isVideoFile(const std::string &path) {
   static const std::vector<std::string> kSuffixes = {".mp4", ".m4v", ".mov",  ".mkv", ".avi", ".wmv",
@@ -5323,9 +5338,8 @@ bool Application::openSelectedEntry() {
   // 統一された拡張子テーブルは、実務上はチェックの順序をほぼ無意味
   // にしている)。完全に引き渡して、PROGRAM/EDITと同じ形で、
   // Directoryモードへ変わらず戻る。
-#ifdef __APPLE__
   // 2026-10-05: 動画で、.[]で選んだ動画が他にもあれば、まとめてアプリへ渡す(openVideos()参照)。
-  if (isVideoFile(path) && !configuration_.isExec(path)) {
+  if (canOpenVideos() && isVideoFile(path) && !configuration_.isExec(path)) {
     std::vector<std::string> videos;
     std::string dir = directoryMode_.currentDirectory();
     if (!dir.empty() && dir.back() != '/') dir += '/';
@@ -5335,7 +5349,6 @@ bool Application::openSelectedEntry() {
     if (std::find(videos.begin(), videos.end(), path) == videos.end()) videos.insert(videos.begin(), path);
     return openVideos(videos);
   }
-#endif
   if (openExternallyIfApplicable(path)) return true;  // EXEC/画像のクイックルック(2026-09-27)
   if (isEpubFile(path)) return openEpub(path);  // openEpub()自身のコメント参照
 
@@ -7083,6 +7096,7 @@ bool Application::openEpubWebLink(const std::string &url) {
       return false;
     }
     if (::access("/usr/bin/qlmanage", X_OK) == 0) runQuickLook({pdf});
+    else if (isWsl()) openOnWindowsHost(pdf);  // 2026-10-05、platform.hpp参照
     else ChildProcess::run({"xdg-open", pdf});
     showTransientNotice(activeView(), "Saved: " + pdf);
     return true;
@@ -10481,9 +10495,7 @@ bool Application::openExternallyIfApplicable(const std::string &path) {
     activeView().redraw();
     return true;
   }
-#ifdef __APPLE__
-  if (isVideoFile(path)) return openVideos({path});  // 2026-10-05、openVideos()参照
-#endif
+  if (canOpenVideos() && isVideoFile(path)) return openVideos({path});  // 2026-10-05、openVideos()参照
   // 2026-10-04: -gではJPEG/PNG/GIF/BMPはusilicの画面で表示する(isViewableImageFile()参照)。
   if (display_.isGraphical() && isViewableImageFile(path)) return false;
   if (::access("/usr/bin/qlmanage", X_OK) != 0 || !fileMode_.isBinaryFile(path)) return false;
@@ -10517,6 +10529,13 @@ bool Application::openExternallyIfApplicable(const std::string &path) {
 // のと同じく、続けて再生する一覧になる)。usilicrcのEXECに設定があればそちらが優先。
 bool Application::openVideos(const std::vector<std::string> &paths) {
   if (paths.empty()) return false;
+  // WSL2(2026-10-05): Windowsの既定のアプリで1件ずつ(explorer.exeは一度に1つしか開けない)。
+  if (isWsl()) {
+    bool any = false;
+    for (const auto &path : paths) any = openOnWindowsHost(path) || any;
+    activeView().redraw();
+    return any;
+  }
   std::string app;
   std::string home = std::getenv("HOME") ? std::getenv("HOME") : "";
   for (const char *name : {"IINA", "VLC"}) {
@@ -15788,11 +15807,9 @@ bool Application::executeQuickLook() {
   } else {
     return false;
   }
-#ifdef __APPLE__
   // 2026-10-05: 動画だけならクイックルックではなく動画のアプリで(openVideos()参照)。
-  if (std::all_of(paths.begin(), paths.end(), [](const std::string &p) { return isVideoFile(p); }))
+  if (canOpenVideos() && std::all_of(paths.begin(), paths.end(), [](const std::string &p) { return isVideoFile(p); }))
     return openVideos(paths);
-#endif
   return runQuickLook(paths);
 }
 
