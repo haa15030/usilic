@@ -16343,7 +16343,9 @@ bool Application::pollShellHandoff() {
 // 自体が単に表示されない、独立起動と同じ既定の見た目に留まる)――
 // フェーズ2の他モード監査で改めて扱う。
 bool Application::tryPollProgramHandoff(pid_t pid, ApplicationMode capturedMode) {
-  std::string path = "/tmp/.usilic-shell/s." + std::to_string(::getuid()) + "." + std::to_string(pid);
+  (void)pid;
+  // 2026-10-05: 目印は子のpidではなく自分のpid(runNestedUsilicProgram()がUSILIC_HANDOFFで渡す)。
+  std::string path = "/tmp/.usilic-shell/s." + std::to_string(::getuid()) + "." + std::to_string(::getpid());
   struct stat st;
   if (::stat(path.c_str(), &st) != 0) return false;
 
@@ -16370,19 +16372,25 @@ bool Application::tryPollProgramHandoff(pid_t pid, ApplicationMode capturedMode)
   }
 
   std::ifstream in(path);
-  std::string resolved;
-  std::getline(in, resolved);
+  std::vector<std::string> paths;
+  for (std::string line; std::getline(in, line);)
+    if (!line.empty()) paths.push_back(line);
   in.close();
   ::unlink(path.c_str());
-  if (resolved.empty()) return false;
+  if (paths.empty()) return false;
 
-  if (std::filesystem::is_directory(resolved)) {
+  if (paths.size() == 1 && std::filesystem::is_directory(paths.front())) {
     currentMode_ = ApplicationMode::Directory;
-    return directoryMode_.enterDirectory(resolved, /*consultHistory=*/false);
+    return directoryMode_.enterDirectory(paths.front(), /*consultHistory=*/false);
   }
-  if (!fileMode_.loadFile(resolved)) return false;
-  currentMode_ = ApplicationMode::File;
-  fileReturnMode_ = ApplicationMode::Directory;
+  // 2026-10-05、直接のユーザー報告(^Jp"usilic ファイル..."が"複数指定しても最初のファイルのみで戻り値が
+  // USILICでなくディレクトリ"): HELPの通り、^Ouと同じUSILICの一覧にして最初の行を開く(^Gで一覧へ)。
+  underlineReturn_.reset();
+  underlineOriginDirectory_ = directoryMode_.currentDirectory();
+  usilicLevel_ = UsilicLevel::None;
+  underlineMode_.show(std::move(paths));
+  currentMode_ = ApplicationMode::Underline;
+  openSelectedUnderlineEntry();
   activeView().redraw();
   return true;
 }
@@ -16400,7 +16408,9 @@ bool Application::runNestedUsilicProgram(const std::string &command) {
   // "cd '<dir>' && <command>"全体の先頭にではなく、<command>自体の
   // 先頭に付ける(cdだけに変数代入が掛かってしまわないよう、cdWrap()
   // へ渡す前に付与する)。
-  std::string toRun = cdWrap(programPromptDirectory_, "USILIC=1 " + command);
+  // USILIC_HANDOFF(2026-10-05): 子のusilicが受け渡しの目印にする自分のpid(tryPollProgramHandoff()参照)。
+  std::string toRun =
+      cdWrap(programPromptDirectory_, "USILIC=1 USILIC_HANDOFF=" + std::to_string(::getpid()) + " " + command);
   programPromptDirectory_.clear();  // 結果に関わらず正確に一度消費される、executeProgram()自身の慣習通り
 
   display_.leaveForExternalProgram();

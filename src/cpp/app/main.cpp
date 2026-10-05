@@ -4075,6 +4075,12 @@ bool tryHandoffToParentShell(int argc, char **argv) {
   // getppid()の代わりに使う――付いていなければ(typed直接のケース)
   // 以前通りgetppid()にフォールバックする。
   long rendezvousPid = ::getppid();
+  // 2026-10-05、直接のユーザー報告(MSYS2で^Jp"usilic ファイル..."がページャーになる): ^Jp(PROGRAM)からの
+  // 起動では、親のusilicが自分のpidをUSILIC_HANDOFFで渡す(Application::runNestedUsilicProgram())。
+  // getppid()は`sh -c`がコマンドを別プロセスにするか置き換えるかで親のusilicにもshにもなり、MSYS2では
+  // 親の待つ番号と食い違っていた。
+  if (const char *handoff = std::getenv("USILIC_HANDOFF"); handoff && *handoff) rendezvousPid = std::atol(handoff);
+  ::unsetenv("USILIC_HANDOFF");  // このusilicのSHELL等の子へ引き継がない(そこでの受け渡しの目印を取り違える)
   std::vector<std::string> positional;
   for (int i = 1; i < argc; i++) {
     std::string arg = argv[i];
@@ -4171,9 +4177,14 @@ bool tryHandoffToParentShell(int argc, char **argv) {
     return true;
   }
 
+  // 2026-10-05: 引数は全部、1行に1つずつ渡す(以前は最初の1つだけ)。PROGRAMの側はそれをUSILICの一覧に
+  // する(Application::tryPollProgramHandoff())。SHELLの側は今まで通り最初の行だけを読む。
   std::string resolved;
   if (!positional.empty()) {
-    resolved = std::filesystem::absolute(positional.front()).lexically_normal().string();
+    for (const auto &arg : positional) {
+      if (!resolved.empty()) resolved += "\n";
+      resolved += std::filesystem::absolute(arg).lexically_normal().string();
+    }
   } else {
     std::error_code ec;
     resolved = std::filesystem::current_path(ec).string();

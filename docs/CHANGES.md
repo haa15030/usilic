@@ -28832,3 +28832,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      一時表示するようにした(showHelpNotFound())。main.cppが実行ファイルの場所から<PREFIX>/lib/usilic/を求め
      (Application::setInstallLibDirectory())、HELPとusilicrcを~/.local/lib/usilic/の次にそこからも探す
      (`make install PREFIX=/c/Users/<名前>/.local`としてGit Bashで使う時等)。ビルドのみ確認。
+647. **2026-10-05: ^Jp"usilic ファイル..."がMSYS2でページャーになる件、複数のファイルを渡してもUSILICの一覧にならない件**
+   - **経緯**: 直接のユーザー報告("選択後に`^Jpusilic ^M`→ページャー"(MSYS2)、"wslとmacOSではusilic画面だが、
+     複数指定しても最初のファイルのみで戻り値がUSILICでなくディレクトリ")。
+   - **原因**: ^Jpで起動した子のusilic(tryHandoffToParentShell())は、受け渡しの目印にgetppid()を使い、親
+     (runNestedUsilicProgram()のtryPollProgramHandoff())は子のpid(`sh -c`のpid)を待っていた。`sh -c`が
+     コマンドを別プロセスにすれば一致するが、置き換える(exec)と子のgetppid()は親のusilicになり食い違う。
+     MSYS2ではこれで2秒の待ちが切れ、子が単独のページャーになっていた。また子は最初の引数しか渡しておらず、
+     親はそれを普通のファイルとして開いていた(戻り値がディレクトリ)。
+   - **実装**: 親が自分のpidをUSILIC_HANDOFFで子に渡し、両方ともそれを目印にする(子は読んだら環境から消す)。
+     子は引数を全部、1行に1つずつ渡し、PROGRAMの側はそれをUSILICの一覧にして最初の行を開く(^Ouと同じ、
+     HELPの「"usilic"で始まる場合は…USILICモード」の通り)。ディレクトリ1つなら今まで通りそこの(ls)。
+     SHELLの側の受け渡し(最初の行だけを読む)は変えていない。ビルドのみ確認(実機確認待ち)。
