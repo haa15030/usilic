@@ -28851,3 +28851,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: offerGroffInstallOnce()は印のファイルに案内したパッケージ名を1行ずつ書き、見つからないもののうち
      まだ案内していないものがあれば、それだけを案内する(以前の空の印は「何も案内していない」扱い)。
      main.cppに<set>を明示した。ビルドのみ確認。
+649. **2026-10-05: GitHub ActionsでUbuntu(GCC)とWindows(MSYS2)のビルドを確かめる**
+   - **経緯**: 直接のユーザー依頼(configureについての質問への回答で提案→"作ってみて")。項目643・645のヘッダの
+     読み込み忘れは、macOSのclangでは通りGCC・MSYS2でだけ表に出た。
+   - **実装**: .github/workflows/build.yml。src/cpp/**かこのファイルが変わったpush・PR(と手動)で、Ubuntu 24.04で
+     `make usilic`(-gあり・NO_GUI=1)、Windows(msys2/setup-msys2、MSYS環境)で`make usilic`と`ldd`。ビルドだけ、
+     -O0(MakefileにOPTFLAGSを新設)。macOSは手元でビルドするので入れない(非公開リポジトリでは使用時間が10倍)。
+     同じブランチの古い実行は取り消す。

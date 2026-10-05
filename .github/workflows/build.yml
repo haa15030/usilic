@@ -1,0 +1,66 @@
+# C++版usilicを、macOS以外の環境でもビルドできるか確かめる(2026-10-05追加)。
+#
+# 経緯: macOSのclangでは他のヘッダ経由で入っていたため気づかなかったヘッダの読み込み忘れ
+# (<cmath>のstd::ceil、<sys/types.h>のpid_t)が、WSL(GCC)・MSYS2でのビルドで初めて
+# コンパイルエラーになった(docs/CHANGES.md項目643・645)。pushのたびにLinux(GCC)と
+# Windows(MSYS2)でビルドして、手元のMacでは見えないエラーをその場で見つける。
+#
+# - ビルドだけ(テストは走らせない)。最適化を切って(-O0)時間を縮める。
+# - macOSは手元で毎回ビルドしているので入れない(非公開リポジトリではmacOSの仮想マシンは
+#   使用時間が10倍に数えられる。Windowsは2倍)。
+# - C++のソースかMakefileか、このファイルが変わったpushだけ走らせる。
+# - 同じブランチに続けてpushしたら、古い方の実行は取り消す。
+name: build
+
+on:
+  push:
+    paths:
+      - 'src/cpp/**'
+      - '.github/workflows/build.yml'
+  pull_request:
+    paths:
+      - 'src/cpp/**'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:  # GitHubの画面(Actions)から手で走らせる
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Ubuntu (GCC)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: src/cpp
+    steps:
+      - uses: actions/checkout@v4
+      - name: パッケージ
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential libncurses-dev pkg-config libsdl2-dev libsdl2-ttf-dev
+      - name: make usilic(-gあり)
+        run: make usilic OPTFLAGS=-O0
+      - name: make usilic(-g無し、MSYS2と同じスタブ)
+        run: make usilic OPTFLAGS=-O0 NO_GUI=1 BUILD_DIR=build-nogui
+
+  msys2:
+    name: Windows (MSYS2)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+        working-directory: src/cpp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS  # MINGW64等ではなくMSYS(forkや擬似端末のある環境、docs/BUILD.md参照)
+          update: true
+          install: gcc make ncurses-devel pkgconf
+      - name: make usilic(SDL2が無いので自動で-g無し)
+        run: make usilic OPTFLAGS=-O0
+      - name: 足りないDLLの確認用(Git Bashへ持っていく時に見る)
+        run: ldd build/usilic.exe

@@ -20,7 +20,9 @@ SDL_LIBS   := $(shell pkg-config --libs sdl2 SDL2_ttf 2>/dev/null)
 # -O2(2026-09-25追加、直接のユーザー依頼): それまでは最適化無し(-gのみ)で
 # ビルドしており、92MB/100万行のファイルの^Mに約10.6秒かかっていた。-gは
 # デバッガ用にそのまま残す。
-CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -Wno-missing-field-initializers -g $(SDL_CFLAGS)
+# OPTFLAGS(2026-10-05): CI(.github/workflows/build.yml)は-O0でビルド時間を縮める(`make OPTFLAGS=-O0`)。
+OPTFLAGS ?= -O2
+CXXFLAGS ?= -std=c++17 $(OPTFLAGS) -Wall -Wextra -Wno-missing-field-initializers -g $(SDL_CFLAGS)
 # terminal_display.cpp uses ncurses' terminfo API (setupterm/tputs/
 # tgoto), same as the legacy C's config.sh (LIBS= -lncurses).
 # mac_font_resolver.cpp's CoreText/CoreFoundation use is #ifdef
