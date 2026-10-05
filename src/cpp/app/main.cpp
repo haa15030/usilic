@@ -138,6 +138,7 @@
 #include <iostream>
 #include <cmath>
 #include <poll.h>
+#include <set>
 #include <sstream>
 #include <string>
 #include <sys/socket.h>
@@ -1997,9 +1998,17 @@ std::string findExecutable(const std::string &name) { return findExecutableIn(na
 // ~/.usilic/install-offered(以前のgroff-offeredで既にgroffを提示済みの
 // 環境でも、mg/infoの分は1回出す)。
 void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
+  // 2026-10-05、直接のユーザー報告(WSLで"w3mが無い。apt installリストに入ってなかった？"): 印のファイルが
+  // あるだけで二度と案内しなかったので、後から対象に足したもの(w3m・unzip・fonts-noto-cjk)が、既に案内
+  // 済みの環境では一度も案内されなかった。印のファイルには案内したパッケージ名を1行ずつ書き、まだ案内して
+  // いないもので見つからないものがあれば、それだけをもう一度案内する(以前の空の印は「何も案内していない」)。
   std::string marker = usilicDir + "install-offered";
-  std::error_code ec;
-  if (std::filesystem::exists(marker, ec)) return;
+  std::set<std::string> offered;
+  {
+    std::ifstream in(marker);
+    for (std::string line; std::getline(in, line);)
+      if (!line.empty()) offered.insert(line);
+  }
   // {コマンド名, パッケージ名}
 #ifdef __APPLE__
   // 2026-09-27追加、直接のユーザー提案("brew install groff mg texinfo 7zz"):
@@ -2017,14 +2026,14 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
   const std::vector<std::pair<std::string, std::string>> tools = {
       {"groff", "groff"}, {"mg", "mg"}, {"info", "info"}, {"7z", "p7zip-full"}, {"w3m", "w3m"}, {"unzip", "unzip"}};
 #endif
-  // 見つからないものだけのインストールコマンド(全部あれば空)。
-  auto installCommand = [tools]() -> std::string {
-    std::string packages;
+  // 見つからないパッケージ(全部あれば空)。
+  auto missingPackages = [tools]() {
+    std::vector<std::string> missing;
     for (const auto &tool : tools) {
       bool found = !findExecutable(tool.first).empty();
       if (tool.first == "7zz" || tool.first == "7z")
         found = !findExecutable("7z").empty() || !findExecutable("7zz").empty();
-      if (!found) packages += " " + tool.second;
+      if (!found) missing.push_back(tool.second);
     }
 #if !defined(__APPLE__) && !defined(__MSYS__) && !defined(__CYGWIN__)
     // 2026-10-05(.steering/20261005-windows-wsl2/): -gの日本語に要るNoto CJKフォント(GraphicalDisplayが
@@ -2035,9 +2044,21 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
       for (const char *font : {"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
                                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"})
         if (std::filesystem::exists(font, fontEc)) haveCjkFont = true;
-      if (!haveCjkFont) packages += " fonts-noto-cjk";
+      if (!haveCjkFont) missing.push_back("fonts-noto-cjk");
     }
 #endif
+    return missing;
+  };
+  // 今回案内するもの: 見つからないもののうち、まだ案内していないもの。
+  std::set<std::string> toOffer;
+  for (const auto &package : missingPackages())
+    if (!offered.count(package)) toOffer.insert(package);
+  if (toOffer.empty()) return;
+  // toOfferのうち見つからないものだけのインストールコマンド(全部あれば空、followUpでも使う)。
+  auto installCommand = [missingPackages, toOffer]() -> std::string {
+    std::string packages;
+    for (const auto &package : missingPackages())
+      if (toOffer.count(package)) packages += " " + package;
     if (packages.empty()) return "";
 #ifdef __APPLE__
     std::string brew = findExecutable("brew");
@@ -2062,7 +2083,11 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
   };
   std::string command = installCommand();
   if (command.empty()) return;
-  std::ofstream(marker) << "";
+  {
+    std::ofstream out(marker);
+    for (const auto &package : offered) out << package << "\n";
+    for (const auto &package : toOffer) out << package << "\n";
+  }
   // 2026-09-27追加、直接のユーザー提案("brew install groffは2回必要なので、
   // 処理が終わり、プロンプトが戻ったらインストール済みかどうか確認後、
   // 未インストールのアプリのみ再度brew実行"): 実行後にまだ足りないものが
