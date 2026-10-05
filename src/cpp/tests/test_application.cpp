@@ -13551,6 +13551,7 @@ TEST_CASE_FIXTURE(Fixture, "^Ou: with no explicit mark, the cursor's single regu
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
   REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  REQUIRE(app.handleCommand(Command::Back));  // 2026-10-05(項目632): ^Ouは最初の行を開いた画面から、^Gで一覧へ
   CHECK(app.currentMode() == ApplicationMode::Underline);
   REQUIRE(app.underlineMode().entries().size() == 1);
   CHECK(app.underlineMode().entries()[0] == (root / "plain.txt").string());
@@ -13574,6 +13575,7 @@ TEST_CASE_FIXTURE(Fixture, "^Ou: with two regular files marked, both appear in l
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  REQUIRE(app.handleCommand(Command::Back));  // 2026-10-05(項目632): ^Ouは最初の行を開いた画面から、^Gで一覧へ
   CHECK(app.currentMode() == ApplicationMode::Underline);
   REQUIRE(app.underlineMode().entries().size() == 2);
   CHECK(app.underlineMode().entries()[0] == (root / nameA).string());
@@ -13589,6 +13591,7 @@ TEST_CASE_FIXTURE(Fixture, "^Ou: with two regular files marked, both appear in l
   while (indexOf(app.directoryMode().selectedEntry()->name) != dirIdx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
   REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  REQUIRE(app.handleCommand(Command::Back));  // 2026-10-05(項目632): ^Ouは最初の行を開いた画面から、^Gで一覧へ
   REQUIRE(app.underlineMode().entries().size() == 1);
   CHECK(app.underlineMode().entries()[0] == (root / "subdir").string());
 
@@ -13611,6 +13614,7 @@ TEST_CASE_FIXTURE(Fixture, "^J^U: moving to another directory from a listed dire
   while (indexOf(app.directoryMode().selectedEntry()->name) != dirIdx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
   REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  REQUIRE(app.handleCommand(Command::Back));  // 2026-10-05(項目632): ^Ouは最初の行を開いた画面から、^Gで一覧へ
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.directoryMode().primaryAnnotations().topKind() == fm::DirectoryMode::DirAnnotationKind::Usilic);
   REQUIRE(app.handleCommand(Command::GoToParentDirectory));
@@ -13634,6 +13638,7 @@ TEST_CASE_FIXTURE(Fixture, "^Ou: Enter opens the selected entry (fileReturnMode_
   while (indexOf(app.directoryMode().selectedEntry()->name) != idxB) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
   REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  REQUIRE(app.handleCommand(Command::Back));  // 2026-10-05(項目632): ^Ouは最初の行を開いた画面から、^Gで一覧へ
 
   REQUIRE(app.handleCommand(Command::Enter));
   CHECK(app.currentMode() == ApplicationMode::File);
@@ -13666,6 +13671,7 @@ TEST_CASE_FIXTURE(Fixture, "^Ou: JumpNext/JumpPrevious pressed on the UNDER list
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
   REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  REQUIRE(app.handleCommand(Command::Back));  // 2026-10-05(項目632): ^Ouは最初の行を開いた画面から、^Gで一覧へ
   REQUIRE(app.currentMode() == ApplicationMode::Underline);
 
   app.handleCommand(Command::JumpNext);  // Back(-> Directory) + MoveDown + Enter, generic and unmodified
@@ -13679,6 +13685,7 @@ TEST_CASE_FIXTURE(Fixture, "^Ou: a file opened from the UNDER list shows its own
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  REQUIRE(app.handleCommand(Command::Back));  // 2026-10-05(項目632): ^Ouは最初の行を開いた画面から、^Gで一覧へ
   REQUIRE(app.handleCommand(Command::Enter));
 
   std::string modeLine = app.activeContentView().modeLineText();
@@ -15735,6 +15742,7 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: ^Ou views the selected results, ^G returns t
   REQUIRE(app.handleCommand(Command::ToggleMark));  // 2行目だけ選択
 
   REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  REQUIRE(app.handleCommand(Command::Back));  // 2026-10-05(項目632): ^Ouは最初の行を開いた画面から、^Gで一覧へ
   CHECK(app.currentMode() == ApplicationMode::Underline);
   CHECK(app.underlineMode().entries() == std::vector<std::string>{b.string()});
   REQUIRE(app.handleCommand(Command::Back));
