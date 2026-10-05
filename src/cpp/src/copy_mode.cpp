@@ -317,6 +317,22 @@ void CopyMode::confirmMark() {
   // ――進行中のマーク自体は「無ければ何も足さない」だけで、islands_
   // だけは常に確定・消費する。
   if (lines_.empty() || (!markActive_ && islands_.empty())) return;
+  // 2026-10-05、直接のユーザー依頼("COPYの矩形選択ではない離れ小島ハイライト群のコピペでは^Jのコードを
+  // 削除して"): 島が2つ以上あり、どれも矩形でなければ、改行を入れずにつなぐ。
+  // 範囲の無い島(クリックした直後の進行中のマーク等)は数えない。
+  int islandCount = 0;
+  bool anyRectangle = false;
+  auto count = [&](const Island &island) {
+    for (const auto &part : extractIslandParts(island))
+      if (!part.empty()) {
+        islandCount++;
+        if (island.rectangle) anyRectangle = true;
+        return;
+      }
+  };
+  for (const Island &island : islands_) count(island);
+  if (markActive_) count(currentMarkAsIsland());
+  bool joinWithoutNewlines = islandCount >= 2 && !anyRectangle;
   std::vector<std::string> allParts;
   for (const Island &island : islands_) {
     auto parts = extractIslandParts(island);
@@ -337,7 +353,7 @@ void CopyMode::confirmMark() {
     std::string joined;
     for (const auto &part : allParts) {
       if (part.empty()) continue;
-      if (!joined.empty()) joined += "\n";
+      if (!joined.empty() && !joinWithoutNewlines) joined += "\n";
       joined += part;
     }
     clipboardText_ = joined;

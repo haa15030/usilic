@@ -28723,3 +28723,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      startRegexPromptList(RecentFile)を、PromptHistoryContext::archiveOnlyを立てて開く。載せるのは
      isArchiveHistoryEntry()(usilicrcのARCHIVEで開けるか、^R(ARCの中)と同じ拡張子の一覧にあるもの。
      .epubは^J^Eがあるので除く)。一覧の名前は"ARC"。usilicrc(.en)・HELPに追記。ビルドのみ確認(実機確認待ち)。
+634. **2026-10-05: COPYで矩形ではない離れ小島が複数あれば改行を挟まずにつなげてコピーする**
+   - **経緯**: 直接のユーザー依頼("COPYの矩形選択ではない離れ小島ハイライト群のコピペでは^Jのコードを
+     削除して")。
+   - **実装**: CopyMode::confirmMark()は、範囲のある島が2つ以上あり、どれも矩形でなければ、断片を改行無しで
+     つなぐ(複数行の島の中の改行も入れない)。島が1つだけ、または矩形を含む時は従来どおり改行でつなぐ。
+     HELPのCOPYに追記。ビルドのみ確認(実機確認待ち)。
