@@ -28789,3 +28789,19 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      最初の起動時の案内(Linux)に、Noto CJKフォントが無ければfonts-noto-cjkを加えた。docs/BUILD.mdに
      「Windows(WSL2)」の節、src/HELP.txtの「必要なソフトウェア」にWSL2の段落。tests/test_platform.cpp。
      macOSでビルドのみ確認(Linux/WSL2でのビルド・動作はユーザーのWindows機で確認待ち)。
+642. **2026-10-05: WindowsのGit Bash(MSYS2でビルド)で動かす、SDL2の無い環境では-g無しでビルドする(.steering/20261005-windows-gitbash/)**
+   - **経緯**: 直接のユーザー依頼("WindowsではWSL2とgit bashで稼働させたい"、WSL2は実機で確認済み、Git Bashは
+     "(a)MSYS2でビルドしてGit Bashで動かす、ダメなら(b)MSYS2の端末で")。
+   - **実装**: -g無しのビルド: SDL2がpkg-configで見つからない時(または`make NO_GUI=1`)は、graphical_display.cppの
+     代わりにgraphical_display_stub.cpp(create()はnullptr、他は空の定義。tools/gen_graphical_display_stub.pyが
+     graphical_display.cppから82個を自動で作る)をビルドし、-DUSILIC_NO_GUIで-gの時に「not available」を出す。
+     Makefileは`uname -s`がMSYS_*/CYGWIN_*なら-std=gnu++17(Cygwin系のヘッダは厳密なISOだとPOSIXの関数を隠す)、
+     -static-libstdc++ -static-libgcc(Git BashにMSYS2のlibstdc++のDLLが無くても動くように)、ncursesw(pkg-config)。
+     platformにisMsys()(__MSYS__/__CYGWIN__)・hasWindowsHost()(WSLかMSYS)を足し、項目641の呼び出し元を
+     hasWindowsHost()へ。MSYSではパスをcygpath -wで、クリップボードは/dev/clipboardへ、URLのCopyは
+     `sh -c 'cat > /dev/clipboard'`。外で開くのはWSLと同じexplorer.exe(`cmd.exe /c start`はURLの&をcmdが
+     解釈するので避けた)。最初の起動時の案内は、pacmanがあれば(MSYS2の端末)`pacman -S --needed`
+     (groff・texinfo・p7zip)、無ければ(Git Bash)出さない。docs/BUILD.mdに「Windows(Git Bash / MSYS2)」の節、
+     src/HELP.txtの「必要なソフトウェア」に一段落。
+   - **検証**: Macで`make usilic`と`make NO_GUI=1`(SDLをリンクしないことをotool -Lで確認)がリンクまで通る。
+     MSYS2・Git Bashでのビルド・動作はユーザーのWindows機で確認待ち。

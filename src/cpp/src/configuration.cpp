@@ -800,6 +800,10 @@ const std::vector<Configuration::UrlHandler> &Configuration::urlHandlers() const
     // 2026-10-05: WSL2ではWindowsの既定のブラウザ・クリップボードへ(platform.hpp参照。URLは
     // ASCIIなのでclip.exeへそのまま渡してよい)。
     if (isWsl()) list = {{"Open", {"explorer.exe"}}, {"Dump", {"w3m", "-dump"}}, {"Term", {"w3m"}}, {"Copy", {"clip.exe"}}};
+    // MSYS(Git Bash、.steering/20261005-windows-gitbash/): CopyはURLを標準入力で受けて/dev/clipboardへ。
+    if (isMsys())
+      list = {{"Open", {"explorer.exe"}}, {"Dump", {"w3m", "-dump"}}, {"Term", {"w3m"}},
+              {"Copy", {"sh", "-c", "cat > /dev/clipboard"}}};
 #endif
     // Pdf(2026-10-04): make installが入れるurl2pdfがあればOpenの次に。
     const char *home = std::getenv("HOME");

@@ -32,8 +32,18 @@ bool isWsl() {
   return wsl;
 }
 
+bool isMsys() {
+#if defined(__MSYS__) || defined(__CYGWIN__)
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool hasWindowsHost() { return isWsl() || isMsys(); }
+
 std::string windowsPathFor(const std::string &path) {
-  ChildProcess::Result result = ChildProcess::run({"wslpath", "-w", path});
+  ChildProcess::Result result = ChildProcess::run({isMsys() ? "cygpath" : "wslpath", "-w", path});
   if (!result.ok) return "";
   std::string out = result.output;
   while (!out.empty() && (out.back() == '\n' || out.back() == '\r')) out.pop_back();
@@ -88,6 +98,11 @@ std::string utf8ToUtf16LeWithBom(const std::string &utf8) {
 }
 
 bool copyToWindowsClipboard(const std::string &utf8) {
+  if (isMsys()) {
+    std::ofstream out("/dev/clipboard", std::ios::binary);
+    out << utf8;
+    return static_cast<bool>(out);
+  }
   std::string utf16 = utf8ToUtf16LeWithBom(utf8);
   ChildProcess::Options opts;
   opts.input = &utf16;

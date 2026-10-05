@@ -2008,6 +2008,11 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
   // 2026-10-05: w3m(EPUBのWebのリンクのDump/Term、項目623)も。
   const std::vector<std::pair<std::string, std::string>> tools = {
       {"groff", "groff"}, {"mg", "mg"}, {"info", "texinfo"}, {"7zz", "sevenzip"}, {"w3m", "w3m"}};
+#elif defined(__MSYS__) || defined(__CYGWIN__)
+  // MSYS2(2026-10-05、.steering/20261005-windows-gitbash/): MSYS2のmsysのリポジトリにあるものだけ
+  // (mg・w3mは無い)。infoはtexinfo、7zはp7zipに入っている。
+  const std::vector<std::pair<std::string, std::string>> tools = {
+      {"groff", "groff"}, {"info", "texinfo"}, {"7z", "p7zip"}};
 #else
   const std::vector<std::pair<std::string, std::string>> tools = {
       {"groff", "groff"}, {"mg", "mg"}, {"info", "info"}, {"7z", "p7zip-full"}, {"w3m", "w3m"}};
@@ -2021,7 +2026,7 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
         found = !findExecutable("7z").empty() || !findExecutable("7zz").empty();
       if (!found) packages += " " + tool.second;
     }
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__MSYS__) && !defined(__CYGWIN__)
     // 2026-10-05(.steering/20261005-windows-wsl2/): -gの日本語に要るNoto CJKフォント(GraphicalDisplayが
     // 探す場所)がどれも無ければfonts-noto-cjkも。WSL2のUbuntuには最初は入っていない。
     {
@@ -2047,6 +2052,10 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
              packages;
     if (brew == findExecutableOnPathOnly("brew")) return "brew install" + packages;
     return brew + " install" + packages;
+#elif defined(__MSYS__) || defined(__CYGWIN__)
+    // MSYS2の端末ならpacman。Git Bashにはパッケージ管理が無いので案内しない(空を返す)。
+    if (findExecutable("pacman").empty()) return "";
+    return "pacman -S --needed --noconfirm" + packages;
 #else
     return "sudo apt install -y" + packages;  // -y: aptの確認(Y/n)を省く(2026-09-27)
 #endif
@@ -3800,6 +3809,10 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   }
   std::unique_ptr<fm::GraphicalDisplay> gui =
       fontPath.empty() ? nullptr : fm::GraphicalDisplay::create(rows, columns, fontPath, fontPointSize);
+#ifdef USILIC_NO_GUI
+  // 2026-10-05: SDL2の無いビルド(MSYS2等、MakefileのNO_GUI)では-gは使えない。端末のまま動く。
+  if (!gui) std::fprintf(stderr, "usilic: -g is not available in this build (built without SDL2)\n");
+#endif
   if (!gui) return false;  // no usable font, or window/renderer creation failed -- stay in terminal mode
 
   if (appearance && appearance->hasColors) gui->setColors(appearance->foreground, appearance->background);

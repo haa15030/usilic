@@ -291,8 +291,8 @@ void copyTextToSystemClipboard(const std::string &text) {
 #ifdef __APPLE__
   ChildProcess::run({"pbcopy"}, opts);
 #else
-  // 2026-10-05: WSL2ではWindowsのクリップボードへ(platform.hpp参照)。
-  if (isWsl()) {
+  // 2026-10-05: WSL2・MSYS(Git Bash)ではWindowsのクリップボードへ(platform.hpp参照)。
+  if (hasWindowsHost()) {
     copyToWindowsClipboard(text);
     return;
   }
@@ -352,12 +352,12 @@ std::size_t contentByteCount(const ContentView &view) { return view.totalByteCou
 // このリストが黙って隠すことではない。複合拡張子(.tar.gz等)は、
 // このポートの他の場所にあるConfiguration自身の拡張子マッチングと
 // 同じ形で、リテラルな末尾として照合される。
-// 動画をusilicの外のアプリで開けるか: macOS(IINA/VLC等)とWSL2(Windowsの既定のアプリ)。2026-10-05。
+// 動画をusilicの外のアプリで開けるか: macOS(IINA/VLC等)とWSL2・MSYS(Windowsの既定のアプリ)。2026-10-05。
 bool canOpenVideos() {
 #ifdef __APPLE__
   return true;
 #else
-  return isWsl();
+  return hasWindowsHost();
 #endif
 }
 
@@ -7096,7 +7096,7 @@ bool Application::openEpubWebLink(const std::string &url) {
       return false;
     }
     if (::access("/usr/bin/qlmanage", X_OK) == 0) runQuickLook({pdf});
-    else if (isWsl()) openOnWindowsHost(pdf);  // 2026-10-05、platform.hpp参照
+    else if (hasWindowsHost()) openOnWindowsHost(pdf);  // 2026-10-05、platform.hpp参照
     else ChildProcess::run({"xdg-open", pdf});
     showTransientNotice(activeView(), "Saved: " + pdf);
     return true;
@@ -10530,7 +10530,7 @@ bool Application::openExternallyIfApplicable(const std::string &path) {
 bool Application::openVideos(const std::vector<std::string> &paths) {
   if (paths.empty()) return false;
   // WSL2(2026-10-05): Windowsの既定のアプリで1件ずつ(explorer.exeは一度に1つしか開けない)。
-  if (isWsl()) {
+  if (hasWindowsHost()) {
     bool any = false;
     for (const auto &path : paths) any = openOnWindowsHost(path) || any;
     activeView().redraw();

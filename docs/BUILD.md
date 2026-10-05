@@ -125,6 +125,46 @@ Linuxの手順でビルドする。違いは、外で開く・クリップボー
      (日本語はUTF-16に変換して渡す)。
    - Windows側のファイルは`/mnt/c/Users/<名前>/...`で見える。
 
+## Windows(Git Bash / MSYS2)
+
+2026-10-05追加(`.steering/20261005-windows-gitbash/`)。Git Bashの土台はMSYS2(Cygwin系)の実行環境
+なので、MSYS2でビルドしたusilic.exeがGit Bashでも動く見込み。Git for Windowsにはコンパイラが
+無いので、ビルドはMSYS2で行う。**-g(GUI)は使えない**(MSYS2のMSYS環境にSDL2が無いため。
+SDL2が見つからないとMakefileが自動で`NO_GUI=1`になり、`src/graphical_display_stub.cpp`で
+ビルドする)。LOCATEも使えない(locate/updatedbが無い)。
+
+1. **MSYS2を入れる**: https://www.msys2.org/ のインストーラで`C:\msys64`へ。スタートメニューの
+   **「MSYS2 MSYS」**の端末を開く(「MINGW64」「UCRT64」ではない。それらはWindowsネイティブの
+   exeを作る環境で、usilicが使うforkや擬似端末が無い)。
+2. **パッケージ**(MSYS2 MSYSの端末で):
+   ```
+   pacman -Syu                     # 初回は端末を閉じて開き直し、もう一度
+   pacman -S --needed gcc make ncurses-devel pkgconf git
+   ```
+3. **ビルド**:
+   ```
+   git clone ...(WSL2の節と同じく、非公開なので認証を用意する)
+   cd usilic/src/cpp
+   make usilic                     # build/usilic.exe
+   ```
+4. **MSYS2の端末で使う**: `make install`(`~/.local/bin/usilic`、MSYS2のホームは
+   `C:\msys64\home\<名前>`)。`~/.bashrc`に`export PATH="$HOME/.local/bin:$PATH"`。
+5. **Git Bashで使う**: Git Bashのホームは`C:\Users\<名前>`(MSYS2からは`/c/Users/<名前>`)なので、
+   ```
+   make install PREFIX=/c/Users/<名前>/.local
+   ```
+   で入れ、Git Bashの`~/.bashrc`に`export PATH="$HOME/.local/bin:$PATH"`。
+   libstdc++/libgccは静的にリンクしてある。それ以外に足りないDLLがあれば、MSYS2の端末で
+   `ldd build/usilic.exe`を見て、`/usr/bin/msys-*.dll`のうちGit Bashの`/usr/bin`に無いもの
+   (例えば`msys-ncursesw6.dll`)を`/c/Users/<名前>/.local/bin/`へコピーする。
+   `msys-2.0.dll`はGit Bashのものを使う(コピーしない)。版の違いで動かなければ、4.の
+   MSYS2の端末で使う。
+6. **Windows側とのつながり**(`src/cpp/src/platform.hpp`のisMsys()): 動画・url2pdfのPDF・
+   EPUBのWebのリンク(Open)は`explorer.exe`でWindowsの既定のアプリで開き(パスは`cygpath -w`)、
+   COPYとEPUBのリンクのCopyは`/dev/clipboard`でWindowsのクリップボードへ入る。
+7. **最初の起動時の案内**: MSYS2の端末(`pacman`がある)では、groff・texinfo・p7zipのうち
+   無いものを`pacman -S --needed`で入れるコマンドを置く。Git Bashでは案内しない。
+
 ## Docker(`.devcontainer/`)
 
 このリポジトリの`.devcontainer/Dockerfile`(Ubuntu 26.04ベース)

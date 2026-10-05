@@ -86,6 +86,36 @@ SRCS     = $(wildcard $(SRC_DIR)/*.cpp)
 ifeq ($(shell uname), Darwin)
 SRCS := $(filter-out $(SRC_DIR)/mac_cursor_stub.cpp, $(SRCS)) $(SRC_DIR)/mac_cursor.mm
 endif
+# GUI無しのビルド(2026-10-05、.steering/20261005-windows-gitbash/): SDL2がpkg-configで見つからない
+# 時(MSYS2のMSYS環境等)、または`make NO_GUI=1`の時は、graphical_display.cppの代わりに空の定義の
+# graphical_display_stub.cpp(tools/gen_graphical_display_stub.pyが作る)をビルドし、SDLをリンク
+# しない。-gは使えない(main.cppのUSILIC_NO_GUI参照)。
+ifeq ($(strip $(SDL_LIBS)),)
+NO_GUI := 1
+endif
+ifeq ($(NO_GUI),1)
+SRCS := $(filter-out $(SRC_DIR)/graphical_display.cpp, $(SRCS))
+SDL_CFLAGS :=
+SDL_LIBS :=
+CXXFLAGS += -DUSILIC_NO_GUI
+else
+SRCS := $(filter-out $(SRC_DIR)/graphical_display_stub.cpp, $(SRCS))
+endif
+# MSYS2/Cygwin(2026-10-05): Cygwin系のヘッダは厳密なISOの-std=c++17だとPOSIXの関数の一部を
+# 隠すのでgnu++17に。libstdc++/libgccは静的にリンクする(MSYS2でビルドしたexeを、MSYS2の
+# libstdc++のDLLの無いGit Bashでも動かすため)。
+UNAME_S := $(shell uname -s)
+ifneq ($(filter MSYS_% CYGWIN_%,$(UNAME_S)),)
+CXXFLAGS := $(subst -std=c++17,-std=gnu++17,$(CXXFLAGS))
+LDLIBS += -static-libstdc++ -static-libgcc
+# MSYS2のncurses-develはワイド文字版(ncursesw)で、ヘッダは/usr/include/ncursesw/の下。
+NCURSESW_CFLAGS := $(shell pkg-config --cflags ncursesw 2>/dev/null)
+NCURSESW_LIBS   := $(shell pkg-config --libs ncursesw 2>/dev/null)
+ifneq ($(strip $(NCURSESW_LIBS)),)
+CXXFLAGS += $(NCURSESW_CFLAGS)
+LDLIBS := $(subst -lncurses,$(NCURSESW_LIBS),$(LDLIBS))
+endif
+endif
 APP_SRCS = $(wildcard $(APP_DIR)/*.cpp)
 TESTS    = $(wildcard $(TEST_DIR)/*.cpp)
 
