@@ -28707,3 +28707,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: dispatchLeaderByte()の^Oの'l'をCommand::CycleLsSortKeyへ、0x0c(SHELLの外)を
      Command::ToggleLsReverseへ。SHELLの中の^O^L(再描画)はそのまま。kKeyTable・usilicrc(.en)・HELPの
      説明も入れ替え、^O^Lのソートキーのテストを^Olに直した。ビルドのみ確認(実機確認待ち)。
+631. **2026-10-05: HISTORY(^Rの時系列)のモードラインにカーソル行の文字列を出さない**
+   - **経緯**: 直接のユーザー依頼("HISTORYのモードラインにもカーソル行文字列が表示されるため文字編集
+     エリアなのになぜハイライト？　となる(使用中、実際に何度か混乱した)のでモードラインにはカーソル行
+     文字列を表示しない仕様で")。
+   - **実装**: listBrowserView_のModeLineFieldsProviderで、listBrowserChronological_の間はtrailingを空にする。
+     ビルドのみ確認(実機確認待ち)。

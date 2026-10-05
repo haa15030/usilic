@@ -876,6 +876,9 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // name/バッジのフィールドは、埋まったリストと同じくらい、空の
     // リストでも意味がある。
     std::string trailing = inRange ? items[cursorIndex] : "";
+    // 2026-10-05、直接のユーザー依頼("HISTORYのモードラインにもカーソル行文字列が表示されるため文字編集
+    // エリアなのになぜハイライト？となる"): HISTORY(^Rの時系列)ではカーソル行の文字列を出さない。
+    if (listBrowserChronological_) trailing.clear();
     // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装: 他の全ての分岐
     // (promptHistoryContext_ベースのもの)より先にチェックする――
     // ここでチェックしないと、下のフォールバック(ringCategoryLabel
