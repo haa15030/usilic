@@ -35,7 +35,7 @@ jobs:
       run:
         working-directory: src/cpp
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: パッケージ
         run: |
           sudo apt-get update
@@ -54,7 +54,7 @@ jobs:
         shell: msys2 {0}
         working-directory: src/cpp
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MSYS  # MINGW64等ではなくMSYS(forkや擬似端末のある環境、docs/BUILD.md参照)
