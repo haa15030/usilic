@@ -2816,6 +2816,24 @@ bool GraphicalDisplay::pumpEvents() {
         // いるのに合わせている。
         if (event.key.keysym.mod & KMOD_CTRL) {
           SDL_Keycode sym = event.key.keysym.sym;
+          // 2026-10-06追加、直接のユーザー質問("WSLのGUI、文字拡大・縮小キーは？"): Windows/
+          // Linuxでは上のKMOD_GUI(Windowsキー)の組み合わせはOS側が先に取る(Win+'+'は拡大鏡)
+          // ので、Ctrl+'+'/'-'/'0'でも同じ拡大・縮小・元に戻すをする(ブラウザの慣習)。
+          // Ctrl+'-'は2026-09-08に^-のキーとしては撤去済み(下のコメント)で、どれも空いていた。
+          bool shift = (event.key.keysym.mod & KMOD_SHIFT) != 0;
+          if (sym == SDLK_EQUALS || sym == SDLK_PLUS || sym == SDLK_KP_PLUS || sym == SDLK_KP_EQUALS ||
+              sym == SDLK_SEMICOLON || (sym == SDLK_MINUS && shift)) {
+            adjustFontSize(1);
+            break;
+          }
+          if (sym == SDLK_MINUS || sym == SDLK_KP_MINUS) {
+            adjustFontSize(-1);
+            break;
+          }
+          if (sym == SDLK_0 || sym == SDLK_KP_0) {
+            adjustFontSize(0);
+            break;
+          }
           if (sym >= SDLK_a && sym <= SDLK_z) {
             impl_->keyQueue.push_back(KeyEvent{(sym - SDLK_a) + 1, std::nullopt});
           } else if (sym == SDLK_LEFTBRACKET) {

@@ -28858,3 +28858,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      `make usilic`(-gあり・NO_GUI=1)、Windows(msys2/setup-msys2、MSYS環境)で`make usilic`と`ldd`。ビルドだけ、
      -O0(MakefileにOPTFLAGSを新設)。macOSは手元でビルドするので入れない(非公開リポジトリでは使用時間が10倍)。
      同じブランチの古い実行は取り消す。
+
+650. **2026-10-06: -gの文字の大きさをCtrl+"="/"-"/"0"でも変える、慣性スクロール中の^Mは止めるだけ**
+   - **経緯**: 直接のユーザー報告("WSLのGUI、文字拡大・縮小キーは？"、"Enterでも慣性スクロール停止(ハイライト上
+     でも停止だけ)でよろしく")。cmd(KMOD_GUI)の組み合わせはWindows/LinuxではWindowsキーになり、OS側が先に取る
+     (Win+"+"は拡大鏡)。
+   - **実装**: graphical_display.cppのCtrlの分岐の先頭で、cmdと同じキー(JISの"+"・";"を含む)を
+     adjustFontSize()へ。どれも空いていた(Ctrl+"-"は2026-09-08に^-としては撤去済み)。main.cppのrunGuiPhase()の
+     キー処理で、慣性中(coastLevel/epubCoastLevel)の0x0dは止めるだけにしてfeedByte()しない。src/HELP.txtの-gの
+     「表示」「マウス」に追記。

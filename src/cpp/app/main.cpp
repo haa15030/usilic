@@ -2679,6 +2679,20 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         app.feedByte(0x1b, std::nullopt);
       } else if (key->byte == 0x0d && consecutiveEscapes >= 2) {
         app.requestImmediateExit();
+      } else if (key->byte == 0x0d && (coastLevel > 0 || epubCoastLevel > 0)) {
+        // 2026-10-06追加、直接のユーザー依頼("Enterでも慣性スクロール停止(ハイライト上でも
+        // 停止だけ)"): 慣性中のEnterは止めるだけで、ハイライト行は開かない(ハイライト範囲外
+        // の左クリックのstopOnlyと同じ)。
+        consecutiveEscapes = 0;
+        syncCursorBeforeCoastStoppingKey(coastLevel, wasActivelyScrolling);
+        coastLevel = 0;
+        pixelOffset = 0;  // see the key->special branch's comment above
+        if (epubCoastLevel > 0) {
+          epubCoastLevel = 0;
+          epubCoastDirection = 0;
+          epubDragOffset = 0;
+          gui.setContentOffsetX(0, 0);
+        }
       } else {
         consecutiveEscapes = 0;
         syncCursorBeforeCoastStoppingKey(coastLevel, wasActivelyScrolling);
