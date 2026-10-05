@@ -28805,3 +28805,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      src/HELP.txtの「必要なソフトウェア」に一段落。
    - **検証**: Macで`make usilic`と`make NO_GUI=1`(SDLをリンクしないことをotool -Lで確認)がリンクまで通る。
      MSYS2・Git Bashでのビルド・動作はユーザーのWindows機で確認待ち。
+643. **2026-10-05: LinuxのGCCでapplication.cppのstd::ceilがコンパイルエラーになる件(<cmath>の入れ忘れ)**
+   - **経緯**: 直接のユーザー報告(WSLでpull後に`make`したら"'ceil' is not a member of 'std'"、
+     application.cpp:662、項目612で足したstd::ceil)。macOSのclangでは他のヘッダ経由で<cmath>が
+     入っていて気づかなかった。
+   - **実装**: application.cppに`#include <cmath>`。他に<cmath>の関数を使っていて入れていないファイルが無いことを
+     確認。あわせてmode_line.cppのGCCの-Wformat-truncationの警告(percentBuf[8])を[16]にして消した。

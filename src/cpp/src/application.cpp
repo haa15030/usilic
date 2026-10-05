@@ -6,6 +6,7 @@
 #include <poll.h>
 
 #include <algorithm>
+#include <cmath>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>

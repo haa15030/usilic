@@ -17,7 +17,7 @@ std::string ModeLine::format(int currentLine, int totalLines) {
   if (currentLine <= 1) return current + "/" + total + " TOP";
 
   int percent = totalLines > 0 ? (currentLine * 100 / totalLines) : 0;
-  char percentBuf[8];
+  char percentBuf[16];  // intの最大桁+"%"でも切れない(GCCの-Wformat-truncation)
   std::snprintf(percentBuf, sizeof(percentBuf), "%2d%%", percent);
   return current + "/" + total + " " + percentBuf;
 }
@@ -47,7 +47,7 @@ std::string ModeLine::formatFixedWidth(int currentLine, int totalLines) {
   if (currentLine <= 1) return current + "/" + total + " TOP";
 
   int percent = totalLines > 0 ? (currentLine * 100 / totalLines) : 0;
-  char percentBuf[8];
+  char percentBuf[16];  // intの最大桁+"%"でも切れない(GCCの-Wformat-truncation)
   std::snprintf(percentBuf, sizeof(percentBuf), "%2d%%", percent);
   return current + "/" + total + " " + percentBuf;
 }
