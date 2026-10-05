@@ -179,6 +179,11 @@ SDL2が見つからないとMakefileが自動で`NO_GUI=1`になり、`src/graph
    COPYとEPUBのリンクのCopyは`/dev/clipboard`でWindowsのクリップボードへ入る。
 7. **最初の起動時の案内**: MSYS2の端末(`pacman`がある)では、groff・texinfo・p7zipのうち
    無いものを`pacman -S --needed`で入れるコマンドを置く。Git Bashでは案内しない。
+8. **文字の大きさ**: Git BashもMSYS2の端末もmintty。usilic側ではなく端末で変える。
+   その場では`Ctrl`+`+`/`-`(`Ctrl`+ホイール、`Ctrl`+`0`で戻す。閉じると元に戻る)。
+   ずっと変えるには、ウィンドウを右クリック→Options→Text→Fontで選んでSave
+   (`~/.minttyrc`に`FontHeight=14`のように入る)。Git Bash(`C:\Users\<名前>`)と
+   MSYS2(`C:\msys64\home\<名前>`)はホームが別なので、それぞれで設定する。
 
 ## Docker(`.devcontainer/`)
 
