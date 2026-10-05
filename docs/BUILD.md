@@ -8,6 +8,16 @@ macOS/Linuxマシンから実際にビルドできるようになるまでの手
 するため(2026-08-24、Intel Mac実機での`SDL2_ttf`リンクエラー
 [docs/CHANGES.md項目419]の調査を機に整備)。
 
+**ブランチに注意(2026-10-05追記)**: `git clone`で取り出されるのは既定のブランチ`master`
+(2026-08-29の版)で、それ以後の作業は`mpi-gui-fix`ブランチにある(まだ`master`へマージして
+いない)。cloneした後、ビルドの前に必ず
+```
+git checkout mpi-gui-fix
+git pull
+```
+とする(`git branch`で今のブランチを確かめられる)。2026-10-05、WSL2で`master`のままビルドした
+ため古い版(^Hが効かず^TがTUTORIAL)を試していた、という実例があった。
+
 ## 必要なもの(共通)
 
 - C++17対応コンパイラ(`clang++`または`g++`)と`make`
@@ -108,7 +118,9 @@ Linuxの手順でビルドする。違いは、外で開く・クリップボー
 3. **ビルドとインストール**: リポジトリは非公開なので、`gh auth login`(GitHub CLI、
    `sudo apt-get install gh`)かSSHの鍵を用意してから`git clone`し、
    ```
-   cd usilic/src/cpp
+   cd usilic
+   git checkout mpi-gui-fix   # 冒頭の「ブランチに注意」参照
+   cd src/cpp
    make usilic
    make install          # ~/.local/bin/usilic、~/.local/lib/usilic/
    ```
@@ -144,7 +156,9 @@ SDL2が見つからないとMakefileが自動で`NO_GUI=1`になり、`src/graph
 3. **ビルド**:
    ```
    git clone ...(WSL2の節と同じく、非公開なので認証を用意する)
-   cd usilic/src/cpp
+   cd usilic
+   git checkout mpi-gui-fix   # 冒頭の「ブランチに注意」参照
+   cd src/cpp
    make usilic                     # build/usilic.exe
    ```
 4. **MSYS2の端末で使う**: `make install`(`~/.local/bin/usilic`、MSYS2のホームは
