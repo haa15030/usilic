@@ -2005,11 +2005,12 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
   // 2026-09-27追加、直接のユーザー提案("brew install groff mg texinfo 7zz"):
   // 7-Zip(ARCの.7z)も。Homebrewのformula名はsevenzip(コマンド名は7zz、
   // `7zz`というformulaは無い)。fm::sevenZipCommand()が7zの代わりに7zzを使う。
+  // 2026-10-05: w3m(EPUBのWebのリンクのDump/Term、項目623)も。
   const std::vector<std::pair<std::string, std::string>> tools = {
-      {"groff", "groff"}, {"mg", "mg"}, {"info", "texinfo"}, {"7zz", "sevenzip"}};
+      {"groff", "groff"}, {"mg", "mg"}, {"info", "texinfo"}, {"7zz", "sevenzip"}, {"w3m", "w3m"}};
 #else
   const std::vector<std::pair<std::string, std::string>> tools = {
-      {"groff", "groff"}, {"mg", "mg"}, {"info", "info"}, {"7z", "p7zip-full"}};
+      {"groff", "groff"}, {"mg", "mg"}, {"info", "info"}, {"7z", "p7zip-full"}, {"w3m", "w3m"}};
 #endif
   // 見つからないものだけのインストールコマンド(全部あれば空)。
   auto installCommand = [tools]() -> std::string {
@@ -2025,7 +2026,13 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
     std::string brew = findExecutable("brew");
     // brewがPATH上に無い(Finderからの起動でHomebrewの既定の場所だけで
     // 見つかった)場合は、SHELLでもそのまま実行できるようフルパスで書く。
-    if (brew.empty()) return "open https://brew.sh  # Homebrew未インストール: 導入後に brew install" + packages;
+    // 2026-10-05、直接のユーザー依頼("brewが無い場合の案内も入れて欲しい。Xcodeも必要"): brewが
+    // 無ければ、Homebrew公式のインストールコマンド(https://brew.sh、足りなければXcodeのCommand Line
+    // Toolsも入れる)を置く。終わってプロンプトが戻れば、下のfollowUpで今度はbrew installを置く。
+    if (brew.empty())
+      return "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+             "  # Homebrew未インストール(Xcode Command Line Toolsも必要なら入る)。終わると次は brew install" +
+             packages;
     if (brew == findExecutableOnPathOnly("brew")) return "brew install" + packages;
     return brew + " install" + packages;
 #else
@@ -2040,7 +2047,8 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
   // 未インストールのアプリのみ再度brew実行"): 実行後にまだ足りないものが
   // あれば、その分だけのコマンドを再び入力欄に置く(最大2回。実行はやはり
   // ユーザーのreturnで)。
-  app.offerShellCommand(command, installCommand, /*retries=*/2);
+  // brewから入れる場合は、Homebrew自体のインストールの後にbrew installが続くので1回多く。
+  app.offerShellCommand(command, installCommand, /*retries=*/3);
 }
 
 bool stopBackgroundQuickLook();  // 自身のコメント参照

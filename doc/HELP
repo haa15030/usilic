@@ -683,6 +683,11 @@ _u_s_i_l_i_c_(_1_) は今の端末が SSHHEELLLL かどうかを�
 ﻿﻿﻿﻿﻿﻿﻿pipe(8)﻿
 ﻿﻿﻿﻿﻿﻿﻿﻿﻿上記の _s_o_c_k_e_t_(_2_) の使用以外では、 file の内容をバッファへ読み込む際に _f_o_r_k_(_2_) した子プロセスとの間で、pipe(8) によるプロセス間通信を使用しています。﻿
 
+﻿﻿﻿必要なソフトウェア	﻿
+﻿﻿﻿﻿﻿usilic は _g_r_o_f_f_(_1_)（HELP・MMAANN の整形）、_m_g_(_1_)、_i_n_f_o_(_1_)、_7_z_z_(_1_)（AARRCC の .7z）、_w_3_m_(_1_)（EEPPUUBB の Web のリンクの Dump/Term）等の外部プログラムを使います。最初の起動時、これらのうち見つからないものがあれば SSHHEELLLL に切り替わり、プロンプトにインストール用のコマンド（macOS では「brew install ...」、Ubuntu では「sudo apt install -y ...」）を置いて ^M を待ちます（実行するかどうかはお任せします。この案内は一度だけです）。
+macOS で Homebrew（brew）が無い場合は、代わりに Homebrew 自体のインストールコマンド（https://brew.sh にあるもの）を置きます。^M で実行すると、パスワードの入力や確認を求められた後に Homebrew がインストールされ、プロンプトが戻ると続けて「brew install ...」が置かれます。手動で入れる場合は、ターミナルで https://brew.sh のコマンドを実行した後、表示される案内に従って brew に PATH を通して（Apple Silicon では「eval "$(/opt/homebrew/bin/brew shellenv)"」を ~/.zprofile へ）ください。
+Homebrew や usilic 自身のビルド（make）には Xcode の Command Line Tools（コンパイラや git 等）が必要です。Homebrew のインストーラは無ければ自動で入れますが、先に入れておく場合はターミナルで「xcode-select --install」を実行してください（App Store の Xcode 本体は不要です）。Command Line Tools が入っているかは「xcode-select -p」でパスが表示されるかで確かめられます。macOS をアップデートした後に brew や make が「invalid active developer path」等で失敗する場合も、「xcode-select --install」で入れ直してください。﻿
+
 ﻿﻿﻿著者	﻿
 ﻿﻿﻿﻿﻿usilic@X.com﻿
 

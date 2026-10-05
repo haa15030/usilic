@@ -28735,3 +28735,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ^[Pに直し、CP/MV/ARC後の一時的な選択をプロンプトへフルパス(必要ならクォート)で入れる旨と例を加筆。
      COPYの段落にも^[p(クリップボードへコピーしてCOPYを終え、PROGRAMのプロンプトへ入れる)を加筆。あわせて
      項目633で書いた^J^Aの説明の"FILE"の太字を、他と同じ重ね打ち(X^HX)に直した。
+636. **2026-10-05: 最初の起動時のインストールの案内で、brewが無ければHomebrew自体のインストールコマンドを置く、w3mも対象に、HELPに「必要なソフトウェア」**
+   - **経緯**: 直接のユーザー依頼("groffはじめw3m等必要なファイルは最初の起動時brewをSHELLで立ち上げて
+     インストール、はいいんだが、brewが無い場合の案内も入れて欲しい。Xcodeも必要なのでそのあたりを
+     「著者」の手前にでも")。
+   - **実装**: app/main.cppのofferGroffInstallOnce()は、brewが無ければ(従来の"open https://brew.sh"に
+     代えて)Homebrew公式のインストールコマンド(足りなければXcodeのCommand Line Toolsも入る)をSHELLの
+     入力欄に置き、終わってプロンプトが戻ればfollowUpで"brew install ..."を置く(retriesを3に)。対象に
+     w3m(項目623)を足した(macOS/Ubuntuとも)。印(~/.usilic/install-offered)は従来のままなので、既に案内
+     済みの環境では出ない。doc/HELPの「著者」の手前に「必要なソフトウェア」(外部プログラム・最初の起動時の
+     案内・Homebrewが無い場合・XcodeのCommand Line Tools)を加筆。ビルドのみ確認(実機確認待ち)。
