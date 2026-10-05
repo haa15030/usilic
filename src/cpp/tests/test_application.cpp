@@ -15569,11 +15569,11 @@ TEST_CASE_FIXTURE(Fixture, "^M on a file within BUFFER still loads it whole, wit
 }
 
 // DirectoryMode::setSortLabelShown()自身の宣言コメント参照(2026-09-25)。
-TEST_CASE_FIXTURE(Fixture, "^O^L shows the new sort key (Date/Size/Kind/Name) in place of \"(ls)\"; any key clears it") {
+TEST_CASE_FIXTURE(Fixture, "^Ol shows the new sort key (Date/Size/Kind/Name) in place of \"(ls)\"; any key clears it") {
   REQUIRE(app.start(path()));
-  auto pressCtrlOCtrlL = [&] {
+  auto pressCtrlOCtrlL = [&] {  // 2026-10-05、^O^Lから^Olへ
     app.feedByte(0x0f, std::nullopt);  // ^O
-    app.feedByte(0x0c, std::nullopt);  // ^L
+    app.feedByte('l', std::nullopt);   // l
     return app.activeContentView().modeLineText();
   };
   CHECK(pressCtrlOCtrlL().find("Date") != std::string::npos);

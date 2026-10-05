@@ -368,8 +368,8 @@ KEY
 	K-30	ESC C-m     # ^[^M    Read as is
 	K-31	F-1 F-1     # ^J^J    Go to previous file
 	K-32	F-2 o       # ^Oo     Switch ls format
-	K-33	F-2 l       # ^Ol     Reverse ls sort order
-	K-34	F-2 C-l     # ^O^L    Redraw (from SHELL) / cycle ls sort key
+	K-33	F-2 l       # ^Ol     Cycle ls sort key
+	K-34	F-2 C-l     # ^O^L    Redraw (from SHELL) / reverse ls sort order
 	K-35	.           # .       Toggle selection
 	K-36	C-SPC       # ^SPC    Toggle selection
 	K-37	F-2 y       # ^Oy     Select all

@@ -63,8 +63,8 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {30, "ESC C-m"},   // ^[^M  そのまま読む
       {31, "F-1 F-1"},   // ^J^J  以前のfileへ
       {32, "F-2 o"},     // ^Oo   ls の表示形式
-      {33, "F-2 l"},     // ^Ol   ls のソート順を逆順に
-      {34, "F-2 C-l"},   // ^O^L  再表示(SHELL内から)/ls のソートキー巡回
+      {33, "F-2 l"},     // ^Ol   ls のソートキー巡回(2026-10-05、^O^Lと交換)
+      {34, "F-2 C-l"},   // ^O^L  再表示(SHELL内から)/ls のソート順を逆順に
       {35, "."},         // .     選択/非選択
       {36, "C-SPC"},     // ^SPC  選択/非選択
       {37, "F-2 y"},     // ^Oy   全選択

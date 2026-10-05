@@ -3275,8 +3275,9 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 2026-09-12追加、直接のユーザー依頼("`-l`以外も変更できるように
       // したい...`^Ol`が`-r`トグル"): 上の改名で空いた^Olへ新規に
       // 割り当てる(ToggleLsReverse自身の宣言コメント参照)。
-      case 'l':  // ^O l : `ls`のソート順を逆順(-r)にトグル
-        return handleCommand(Command::ToggleLsReverse);
+      // 2026-10-05、直接のユーザー依頼("^Olと^O^Lの機能を逆にして"): ^Olはソートキーの巡回へ。
+      case 'l':  // ^O l : `ls`のソートキー巡回(-t/-S/-k)
+        return handleCommand(Command::CycleLsSortKey);
       // 2026-09-25のキー再編(^J ^C自身のコメント参照): ^O^Kは^J^Kへ、
       // ^Jy/^Jnは^Oy/^Onへ(「^Oは設定・切替・操作」の切り分け)。
       case 'y':  // ^O y : 全マーク(CP、MV、RM、ARC、旧^Jy)
@@ -3363,9 +3364,9 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 参照)へ回す――^O^S(FGREP)がGREPの元の`^S`割り当てを塞いだ際に
       // GREPのハッチだけ`/`へ移したのと同種の、キー空間の奪い合いへの
       // 対処。
-      case 0x0c:  // ^O ^L : 再描画(SHELL内から)/ソートキー巡回(Directory)
+      case 0x0c:  // ^O ^L : 再描画(SHELL内から)/ソート順を逆順(-r)にトグル(Directory、2026-10-05に^Olと交換)
         if (currentMode_ == ApplicationMode::Shell) return handleCommand(Command::Redraw);
-        return handleCommand(Command::CycleLsSortKey);
+        return handleCommand(Command::ToggleLsReverse);
       case '/':  // ^O / : 検索(SHELL内から、2026-09-19以後はインクリメンタル)
         return handleCommand(Command::StartIncrementalGrep);
       // 2026-09-08、当初はMeta(ESC)機構経由の"@F"/"@B"(将来のAlt表記
