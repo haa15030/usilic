@@ -16961,8 +16961,14 @@ bool Application::reloadHelpText() {
   // helpPath_自身の宣言コメント参照: ~/.local/lib/usilic/に無ければ/usr/local/lib/usilic/の同名のもの。
   std::string path = helpPath_;
   std::ifstream in(path, std::ios::binary);
+  std::string name = std::filesystem::path(helpPath_).filename().string();
+  // 2026-10-05: 実行ファイルの場所から見た<PREFIX>/lib/usilic/も(setInstallLibDirectory()参照)。
+  if (!in && !installLibDirectory_.empty()) {
+    path = installLibDirectory_ + name;
+    in.open(path, std::ios::binary);
+  }
   if (!in) {
-    path = "/usr/local/lib/usilic/" + std::filesystem::path(helpPath_).filename().string();
+    path = "/usr/local/lib/usilic/" + name;
     in.open(path, std::ios::binary);
   }
   if (!in) return false;
@@ -17034,7 +17040,7 @@ bool Application::startKey() {
     showTransientNotice(activeView(), "Already in KEY");
     return true;
   }
-  if (helpText_.empty()) return false;
+  if (helpText_.empty()) return showHelpNotFound();
   std::vector<StyledLine> lines = wrapHelpText(display_.columns());
   bool fromCut = currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent;
   if (!fromCut) cutReturnMode_ = currentMode_;
@@ -17437,6 +17443,13 @@ bool Application::loadHelpText(const std::string &text) {
 // 正規表現)/GrepSyntax::Regexから、全角「：」の固定文字列検索
 // (GrepSyntax::Fixed)へ切り替えた――kHelpPattern自身の定義コメント
 // 参照。
+// 2026-10-05、直接のユーザー報告(MSYS2で"^H/^Kが利かない"): HELPのファイルが読めていない時は、何も
+// 起きないのではなく、探した場所を一時表示する(^HはHELPを、^KはそのHELPを「：」で切ったものを使う)。
+bool Application::showHelpNotFound() {
+  showTransientNotice(activeView(), "HELP not found: " + helpPath_ + " (make install)");
+  return true;
+}
+
 bool Application::startHelp() {
   // 2026-10-02追加、直接のユーザー依頼("HELPでの^Hも同じようにして"、startKey()の"Already in KEY"と同じ):
   // HELP(目次・本文)の中の^H/^J^Hは、開き直さずにそう知らせる。
@@ -17452,7 +17465,7 @@ bool Application::startHelp() {
     auto time = std::filesystem::last_write_time(helpLoadedPath_, ec);
     if (ec || time != helpLoadedTime_) reloadHelpText();
   }
-  if (helpText_.empty()) return false;
+  if (helpText_.empty()) return showHelpNotFound();
   std::vector<StyledLine> helpLines = wrapHelpText(display_.columns());
 
   bool preserveExistingCut = (currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent);

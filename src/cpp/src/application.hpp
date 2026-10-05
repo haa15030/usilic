@@ -2671,6 +2671,8 @@ class Application {
   bool startEpubPrompt();                                 // K-98(^Je)
   bool startEpubList();                                   // K-99(^J^E)
   bool startArchiveList();                                // K-103(^J^A)
+  std::string installLibDirectory_;
+  bool showHelpNotFound();  // startHelp()参照
   bool openVideos(const std::vector<std::string> &paths);  // 動画をIINA/VLC等で(2026-10-05)
   bool isArchiveHistoryEntry(const std::string &item) const;  // startArchiveList()参照
   std::string listBrowserCategoryLabel() const;           // startEpubList()参照
@@ -2919,6 +2921,9 @@ class Application {
   bool jumpFromKeyToHelp();       // Command::KeyJumpToHelp参照
   bool openPlainHelp(std::optional<int> rawLine = std::nullopt);
 public:
+  // 実行ファイルの場所から見た<PREFIX>/lib/usilic/(末尾に/、main.cppが設定する)。HELPを~/.local/lib/usilic/・
+  // /usr/local/lib/usilic/に無い時に探す(2026-10-05、MSYS2でPREFIXを変えて入れた時のため)。
+  void setInstallLibDirectory(const std::string &dir) { installLibDirectory_ = dir; }
   // HELP(helpPath_のファイル)を読み直す(起動時・^Ja)。読めなければfalse(helpText_はそのまま)。
   bool reloadHelpText();
   // reloadHelpText()が読んだHELPのファイルとその更新時刻(startHelp()が、書き換えられていれば読み直す)。

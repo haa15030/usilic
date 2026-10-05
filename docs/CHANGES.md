@@ -28823,3 +28823,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      他のヘッダ経由で入っていた。
    - **実装**: 2つのヘッダに`#include <sys/types.h>`。他にpid_t等(ssize_t・mode_t・off_t)を使っていて
      読んでいないファイルが無いことを確認。Macでビルドのみ確認。
+646. **2026-10-05: GUI無しのビルドの-gは端末の画面を作る前に終える、HELPが見つからない時に知らせる、HELP・usilicrcを実行ファイルの場所からも探す**
+   - **経緯**: 直接のユーザー報告(MSYS2で"動いたけど^H/^Kが利かない"、"-g起動してみるとCUI画面上にエラー
+     メッセージが重なっているので起動せずにメッセージだけ表示して終わりでいい")。
+   - **実装**: USILIC_NO_GUIのビルドでは、-gなら"usilic: -g is not available in this build (built without SDL2)."を
+     出して終える(-c/-gの排他の確認の直後、端末の画面を作る前。項目642のrunGuiPhase側のメッセージは削除)。
+     ^H/^Kは、HELPのファイルが読めていなければ何もしなかったのを、"HELP not found: 探した場所 (make install)"と
+     一時表示するようにした(showHelpNotFound())。main.cppが実行ファイルの場所から<PREFIX>/lib/usilic/を求め
+     (Application::setInstallLibDirectory())、HELPとusilicrcを~/.local/lib/usilic/の次にそこからも探す
+     (`make install PREFIX=/c/Users/<名前>/.local`としてGit Bashで使う時等)。ビルドのみ確認。

@@ -3809,10 +3809,6 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   }
   std::unique_ptr<fm::GraphicalDisplay> gui =
       fontPath.empty() ? nullptr : fm::GraphicalDisplay::create(rows, columns, fontPath, fontPointSize);
-#ifdef USILIC_NO_GUI
-  // 2026-10-05: SDL2の無いビルド(MSYS2等、MakefileのNO_GUI)では-gは使えない。端末のまま動く。
-  if (!gui) std::fprintf(stderr, "usilic: -g is not available in this build (built without SDL2)\n");
-#endif
   if (!gui) return false;  // no usable font, or window/renderer creation failed -- stay in terminal mode
 
   if (appearance && appearance->hasColors) gui->setColors(appearance->foreground, appearance->background);
@@ -4481,6 +4477,14 @@ int main(int argc, char **argv) {
     std::cerr << "usilic: -c and -g are mutually exclusive.\n";
     return 1;
   }
+#ifdef USILIC_NO_GUI
+  // 2026-10-05、直接のユーザー依頼(MSYS2で-gを試したら"CUI画面上にエラーメッセージが重なっているので
+  // 起動せずにメッセージだけ表示して終わりでいい"): GUI無しのビルドでは、端末の画面を作る前に終える。
+  if (forceGui) {
+    std::cerr << "usilic: -g is not available in this build (built without SDL2).\n";
+    return 1;
+  }
+#endif
   // Platform-based default when NEITHER "-c" nor "-g" was given
   // explicitly (2026-08-21, a direct user request: "他の隠れオプション
   // としては「-c -g -u -i -h」、デフォルト-gで起動できるのはmacOSの
@@ -4753,10 +4757,17 @@ int main(int argc, char **argv) {
   // hand-created ~/.usilic/usilicrc silently ran on built-in defaults
   // only, never actually reading the usilicrc `make install` just
   // copied into place.
+  // 2026-10-05: 実行ファイルの場所(<PREFIX>/bin/usilic)から見た<PREFIX>/lib/usilic/。MSYS2で
+  // `make install PREFIX=/c/Users/<名前>/.local`としてGit Bashで使う等、HOMEの下の~/.local以外へ
+  // 入れた時にもusilicrc・HELPを見つけるため(Application::setInstallLibDirectory()参照)。
+  std::string installLibDir;
+  if (std::string exe = resolveOwnExecutablePath(); !exe.empty())
+    installLibDir = std::filesystem::path(exe).parent_path().parent_path().string() + "/lib/usilic/";
   // 2026-10-02追加(fm::usilicrc::ensureUser()参照): ~/.usilic/usilicrcが無ければ既定のものをコピーする。
   if (homeEnv) fm::usilicrc::ensureUser(homeEnv);
   std::string rcText = readFileIfExists(usilicDir + "usilicrc");
   if (rcText.empty() && homeEnv) rcText = readFileIfExists(std::string(homeEnv) + "/.local/lib/usilic/usilicrc");
+  if (rcText.empty() && !installLibDir.empty()) rcText = readFileIfExists(installLibDir + "usilicrc");
   if (rcText.empty()) rcText = readFileIfExists("/usr/local/lib/usilic/usilicrc");
   if (!rcText.empty()) configuration.loadRcText(rcText, /*fileManagerMode=*/true);
   std::string rcFontPath;  // FONT、-f/-F(applyRcOptions()参照)
@@ -4888,6 +4899,7 @@ int main(int argc, char **argv) {
   // 2026-10-02変更(.steering/20261002-help-key-usilicrc-reorg/): usilic.manではなく、TUTORIALから改名した
   // HELP(Application::helpPath_、~/.local/lib/usilic/HELP、無ければ/usr/local/lib/usilic/HELP)を読む。
   // ^HはこれをタブでCUTし、^Kは「：」でCUTする(KEY)。
+  app.setInstallLibDirectory(installLibDir);
   if (const char *overridePath = std::getenv("USILICHELP")) {
     std::string text = readFileIfExists(overridePath);
     if (!text.empty()) app.loadHelpText(text);
