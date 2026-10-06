@@ -2136,6 +2136,29 @@ std::vector<fm::FontListEntry> buildFontList(const fm::GraphicalDisplay &gui) {
     return false;
   };
   std::vector<Face> mono = query(":spacing=mono"), japanese = query(":lang=ja"), sans, serif;
+  // 2026-10-06追加、直接のユーザー依頼("wsl版にメイリオが入るようにして"): WSLのfc-listにはWindows側のフォントが
+  // 出ないので、/mnt/c/Windows/Fontsをfc-scanで調べて足す(等幅は%{spacing}が100、または和文の等幅でよくある
+  // 90(dual、MSゴシック等)。日本語は%{lang}にja)。
+  if (std::filesystem::is_directory("/mnt/c/Windows/Fonts")) {
+    fm::ChildProcess::Result scan = fm::ChildProcess::run(
+        {"fc-scan", "-f", "%{index}\t%{file}\t%{family[0]}\t%{style[0]}\t%{spacing}\t|%{lang}|\n", "/mnt/c/Windows/Fonts"});
+    std::set<std::string> seenMono, seenJapanese;
+    for (const auto &face : mono) seenMono.insert(face.path);
+    for (const auto &face : japanese) seenJapanese.insert(face.path);
+    std::istringstream in(scan.output);
+    for (std::string line; std::getline(in, line);) {
+      std::vector<std::string> fields;
+      std::istringstream fieldStream(line);
+      for (std::string field; std::getline(fieldStream, field, '\t');) fields.push_back(field);
+      if (fields.size() < 6 || fields[0] != "0" || fields[2].empty()) continue;
+      Face face{fields[1], fields[2] + (fields[3].empty() ? "" : " " + fields[3])};
+      if ((fields[4] == "100" || fields[4] == "90") && seenMono.insert(face.path).second) mono.push_back(face);
+      if (fields[5].find("|ja|") != std::string::npos && seenJapanese.insert(face.path).second) japanese.push_back(face);
+    }
+    auto byName = [](const Face &a, const Face &b) { return a.name < b.name; };
+    std::sort(mono.begin(), mono.end(), byName);
+    std::sort(japanese.begin(), japanese.end(), byName);
+  }
   if (mono.empty() && japanese.empty()) return {};
   for (const auto &face : japanese) (looksSerif(face.name) ? serif : sans).push_back(face);
   std::vector<fm::FontListEntry> entries;

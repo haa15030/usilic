@@ -29010,3 +29010,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      の場所、実行ファイルから見た<PREFIX>/lib/usilic/、/usr/local/lib/usilic/の順)のHELP.1を`man`へファイルとして渡す。
      英語版のHELP.1は-nが折り返しをmanに任せる(項目666)ので、ls(1)等と同じく画面の幅に追随する。無ければふつうの
      `man usilic`。
+
+668. **2026-10-06: WSLの-gで、和文のゴシック体にWindows側のメイリオを使う、^Ofの一覧にWindowsのフォントを出す**
+   - **経緯**: 直接のユーザー依頼("wsl版にメイリオが入るようにして")。
+   - **実装**: loadCjkFallbackFont()の組み込みの候補の先頭に/mnt/c/Windows/Fonts/meiryo.ttc(macOS・ふつうのLinuxには
+     無いパスなので影響しない、usilicrcのSANS-SERIFが先)。buildFontList()は、/mnt/c/Windows/Fontsがあればfc-scanで
+     調べて足す(WSLのfc-listには出ない。等幅は%{spacing}が100か90(dual、MSゴシック等)、日本語は%{lang}にja、
+     0番目の書体だけ)。docs/BUILD.mdのWSLの節に一言。Macの~/Library/Fontsでfc-scanの絞り込みを確認(WSLの実機は未確認)。

@@ -116,6 +116,8 @@ Linuxの手順でビルドする。違いは、外で開く・クリップボー
    ```
    `fonts-noto-cjk`は`-g`の日本語の表示用、`unzip`はEPUBと.zip(ARC)用(WSLのUbuntuには最初は
    入っていない。どちらも無ければ最初の起動時の案内にも出る)。
+   `-g`の和文のゴシック体は、Windows側のメイリオ(`/mnt/c/Windows/Fonts/meiryo.ttc`)があればそれを
+   使う(無ければNoto Sans CJK)。^Ofのフォント一覧にも`/mnt/c/Windows/Fonts`のフォントが出る。
 3. **ビルドとインストール**: リポジトリは非公開なので、`gh auth login`(GitHub CLI、
    `sudo apt-get install gh`)かSSHの鍵を用意してから`git clone`し、
    ```

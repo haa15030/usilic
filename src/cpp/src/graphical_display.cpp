@@ -518,6 +518,9 @@ TTF_Font *loadSerifFont(int pointSize, std::string *openedPath = nullptr) {
 
 TTF_Font *loadCjkFallbackFont(int pointSize, std::string *openedPath = nullptr) {
   static const char *const candidates[] = {
+      // 2026-10-06追加、直接のユーザー依頼("wsl版にメイリオが入るようにして"): WSLではWindows側のメイリオを
+      // 先に(macOS・ふつうのLinuxには無いパスなので影響しない)。
+      "/mnt/c/Windows/Fonts/meiryo.ttc",
       "/System/Library/Fonts/ヒラギノ角ゴシック W4.ttc",
       "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
       "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc",
