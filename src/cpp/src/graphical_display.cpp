@@ -549,9 +549,11 @@ struct GlyphCacheKey {
   int hinting;
   unsigned char r, g, b;
   bool narrow;  // boostGlyphAlpha()が適用されたかどうか――キャッシュされるピクセルに影響する
+  bool rotated = false;  // 時計回りに90度回した画素(cachedGlyphTexture()のrotate90参照)
   bool operator<(const GlyphCacheKey &other) const {
-    return std::tie(glyph, font, style, hinting, r, g, b, narrow) <
-           std::tie(other.glyph, other.font, other.style, other.hinting, other.r, other.g, other.b, other.narrow);
+    return std::tie(glyph, font, style, hinting, r, g, b, narrow, rotated) <
+           std::tie(other.glyph, other.font, other.style, other.hinting, other.r, other.g, other.b, other.narrow,
+                    other.rotated);
   }
 };
 struct CachedGlyph {
@@ -987,8 +989,8 @@ TTF_Font *serifFontFor(ImplT &impl, unsigned int codepoint) {
 
 template <typename ImplT>
 SDL_Texture *cachedGlyphTexture(ImplT &impl, TTF_Font *font, const std::string &glyph, int style, int hinting,
-                                 SDL_Color color, bool narrow, int &outW, int &outH) {
-  GlyphCacheKey key{glyph, font, style, hinting, color.r, color.g, color.b, narrow};
+                                 SDL_Color color, bool narrow, int &outW, int &outH, bool rotate90 = false) {
+  GlyphCacheKey key{glyph, font, style, hinting, color.r, color.g, color.b, narrow, rotate90};
   auto it = impl.glyphCache.find(key);
   if (it != impl.glyphCache.end()) {
     outW = it->second.w;
@@ -1000,6 +1002,31 @@ SDL_Texture *cachedGlyphTexture(ImplT &impl, TTF_Font *font, const std::string &
   SDL_Surface *surface = TTF_RenderUTF8_Blended(font, glyph.c_str(), color);
   if (!surface) return nullptr;
   if (narrow) boostGlyphAlpha(surface, kNarrowGlyphAlphaGamma);
+  // 2026-10-06追加、直接のユーザー報告(WSL、"「ループ」の「ー」...ひだりに10(5？)度ほど傾いている"):
+  // 縦書きの「ー」等はSDL_RenderCopyEx()で90度回していたが、レンダラーによっては回転がちょうど
+  // 90度にならない(WSLでだけ傾く)と見て、画素そのものを時計回りに90度入れ替えた面を作り、
+  // 回さずに貼る(renderCell()のrotation参照)。
+  if (rotate90) {
+    SDL_Surface *source = SDL_ConvertSurfaceFormat(surface, SDL_PIXELFORMAT_ARGB8888, 0);
+    SDL_FreeSurface(surface);
+    if (!source) return nullptr;
+    SDL_Surface *turned = SDL_CreateRGBSurfaceWithFormat(0, source->h, source->w, 32, SDL_PIXELFORMAT_ARGB8888);
+    if (!turned) {
+      SDL_FreeSurface(source);
+      return nullptr;
+    }
+    SDL_LockSurface(source);
+    SDL_LockSurface(turned);
+    for (int y = 0; y < source->h; y++) {
+      const Uint32 *row = reinterpret_cast<const Uint32 *>(static_cast<const Uint8 *>(source->pixels) + y * source->pitch);
+      for (int x = 0; x < source->w; x++)  // (x, y) → (h-1-y, x)
+        reinterpret_cast<Uint32 *>(static_cast<Uint8 *>(turned->pixels) + x * turned->pitch)[source->h - 1 - y] = row[x];
+    }
+    SDL_UnlockSurface(turned);
+    SDL_UnlockSurface(source);
+    SDL_FreeSurface(source);
+    surface = turned;
+  }
   SDL_Texture *texture = SDL_CreateTextureFromSurface(impl.renderer, surface);
   outW = surface->w;
   outH = surface->h;
@@ -1725,7 +1752,13 @@ void GraphicalDisplay::renderCell(int row, int col) {
       }
       if (kRotated.count(codepoint)) rotation = 90.0;
       if (rotation != 0.0) {
-        SDL_RenderCopyEx(impl_->renderer, texture, nullptr, &dst, rotation, nullptr, SDL_FLIP_NONE);
+        // 画素を回したテクスチャ(cachedGlyphTexture()のrotate90参照)を、dstを中心で90度回した枠へ回さずに貼る。
+        int rw = 0, rh = 0;
+        SDL_Texture *turned =
+            cachedGlyphTexture(*impl_, renderFont, renderGlyph, style, hinting, fg, !isWide, rw, rh, /*rotate90=*/true);
+        if (!turned) return;
+        SDL_Rect rotated{dst.x + (dst.w - dst.h) / 2, dst.y + (dst.h - dst.w) / 2, dst.h, dst.w};
+        SDL_RenderCopy(impl_->renderer, turned, nullptr, &rotated);
         return;
       }
     }
