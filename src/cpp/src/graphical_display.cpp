@@ -488,19 +488,22 @@ std::vector<std::string> &userSansSerifCandidates() {
 
 // `user`(usilicrcの指定)を先に、`builtin`を後に試し、仮名を持つ最初のフォント。
 TTF_Font *openFirstJapaneseFont(const std::vector<std::string> &user, const char *const *builtin, std::size_t count,
-                               int pointSize) {
+                               int pointSize, std::string *openedPath) {
   std::vector<std::string> paths = user;
   for (std::size_t k = 0; k < count; k++) paths.push_back(builtin[k]);
   for (const auto &path : paths) {
     TTF_Font *candidate = TTF_OpenFont(path.c_str(), std::max(pointSize, 1));
     if (!candidate) continue;
-    if (glyphProvidedByFont(candidate, 0x3042)) return candidate;
+    if (glyphProvidedByFont(candidate, 0x3042)) {
+      if (openedPath) *openedPath = path;  // GraphicalDisplay::currentFontPath()参照
+      return candidate;
+    }
     TTF_CloseFont(candidate);
   }
   return nullptr;
 }
 
-TTF_Font *loadSerifFont(int pointSize) {
+TTF_Font *loadSerifFont(int pointSize, std::string *openedPath = nullptr) {
   static const char *const candidates[] = {
       "/System/Library/Fonts/ヒラギノ明朝 ProN.ttc",
       "/System/Library/Fonts/Supplemental/Hiragino Mincho ProN.ttc",
@@ -510,10 +513,10 @@ TTF_Font *loadSerifFont(int pointSize) {
       "/usr/share/fonts/truetype/fonts-japanese-mincho.ttf",
   };
   return openFirstJapaneseFont(userSerifCandidates(), candidates, sizeof(candidates) / sizeof(candidates[0]),
-                               pointSize);
+                               pointSize, openedPath);
 }
 
-TTF_Font *loadCjkFallbackFont(int pointSize) {
+TTF_Font *loadCjkFallbackFont(int pointSize, std::string *openedPath = nullptr) {
   static const char *const candidates[] = {
       "/System/Library/Fonts/ヒラギノ角ゴシック W4.ttc",
       "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
@@ -524,7 +527,7 @@ TTF_Font *loadCjkFallbackFont(int pointSize) {
       "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
   };
   return openFirstJapaneseFont(userSansSerifCandidates(), candidates, sizeof(candidates) / sizeof(candidates[0]),
-                               pointSize);
+                               pointSize, openedPath);
 }
 
 // グリフのテクスチャキャッシュ(2026-08-24、docs/CHANGES.md項目428)
@@ -723,6 +726,8 @@ struct GraphicalDisplay::Impl {
   // 読み込む(見つからなければserifFontMissingを立て、以後はふだんのフォントで描く)。
   TTF_Font *serifFont = nullptr;
   bool serifFontMissing = false;
+  // 今開いているフォントのファイル(GraphicalDisplay::currentFontPath()参照)。
+  std::string fontPath, fallbackFontPath, serifFontPath;
   // setContentOffsetX()参照。
   int contentOffsetX = 0;
   int contentOffsetRows = 0;
@@ -973,7 +978,7 @@ namespace {
 template <typename ImplT>
 TTF_Font *serifFontFor(ImplT &impl, unsigned int codepoint) {
   if (!impl.serifFont && !impl.serifFontMissing) {
-    impl.serifFont = loadSerifFont(impl.currentFontPointSize);
+    impl.serifFont = loadSerifFont(impl.currentFontPointSize, &impl.serifFontPath);
     impl.serifFontMissing = impl.serifFont == nullptr;
   }
   if (!impl.serifFont || !glyphProvidedByFont(impl.serifFont, codepoint)) return nullptr;
@@ -1089,7 +1094,8 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   // を大きくすることは、両方のフォントが常にそれ自身の自然な、
   // 歪んでいない、切り取られていないサイズで描かれることを意味
   // する。
-  TTF_Font *fallbackFont = loadCjkFallbackFont(fontPointSize);
+  std::string fallbackFontPath;
+  TTF_Font *fallbackFont = loadCjkFallbackFont(fontPointSize, &fallbackFontPath);
   if (fallbackFont) {
     int cjkWidth = 0, cjkHeight = 0;
     if (TTF_SizeUTF8(fallbackFont, "\xE5\x9B\xBD" /* "国"、代表的な漢字 */, &cjkWidth, &cjkHeight) == 0) {
@@ -1186,6 +1192,8 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   display->impl_->renderer = renderer;
   display->impl_->font = font;
   display->impl_->fallbackFont = fallbackFont;
+  display->impl_->fontPath = fontPath;
+  display->impl_->fallbackFontPath = fallbackFontPath;
   display->impl_->cellWidth = cellWidth;
   display->impl_->cellHeight = cellHeight;
   display->impl_->scrollbarWidth = cellHeight;  // Impl::scrollbarWidth自身のコメント参照
@@ -2201,6 +2209,89 @@ constexpr GraphicalDisplay::Color kColorPresetBg[] = {
 };
 constexpr int kColorPresetCount = 4;
 }  // namespace
+
+// 2026-10-06追加(^Ofのフォント一覧、.steering/20261006-gui-font-picker/): 開けて、和文の節なら
+// 「あ」があるものだけ差し替える。寸法はcreate()と同じく半角の「M」と和文の「国」から測り直し、
+// ウィンドウの大きさを(adjustFontSize()と同じく行数・桁数はそのままで)合わせる。
+bool GraphicalDisplay::setFont(FontKind kind, const std::string &path) {
+  if (!impl_->window || !impl_->font) return false;
+  TTF_Font *opened = TTF_OpenFont(path.c_str(), std::max(impl_->currentFontPointSize, 1));
+  if (!opened) return false;
+  int w = 0, h = 0;
+  bool usable = kind == FontKind::Base ? TTF_SizeUTF8(opened, "M", &w, &h) == 0 && w > 0 && h > 0
+                                       : glyphProvidedByFont(opened, 0x3042);
+  if (!usable) {
+    TTF_CloseFont(opened);
+    return false;
+  }
+  switch (kind) {
+    case FontKind::Base:
+      TTF_CloseFont(impl_->font);
+      impl_->font = opened;
+      impl_->fontPath = path;
+      break;
+    case FontKind::SansSerif:
+      userSansSerifCandidates() = {path};
+      if (impl_->fallbackFont) TTF_CloseFont(impl_->fallbackFont);
+      impl_->fallbackFont = opened;
+      impl_->fallbackFontPath = path;
+      break;
+    case FontKind::Serif:
+      userSerifCandidates() = {path};
+      if (impl_->serifFont) TTF_CloseFont(impl_->serifFont);
+      impl_->serifFont = opened;
+      impl_->serifFontMissing = false;
+      impl_->serifFontPath = path;
+      break;
+  }
+  auto measure = [&](int &cellWidth, int &cellHeight) {
+    if (TTF_SizeUTF8(impl_->font, "M", &cellWidth, &cellHeight) != 0) return;
+    cellHeight = std::max(cellHeight, TTF_FontHeight(impl_->font));
+    int cjkWidth = 0, cjkHeight = 0;
+    if (impl_->fallbackFont && TTF_SizeUTF8(impl_->fallbackFont, "\xE5\x9B\xBD" /* "国" */, &cjkWidth, &cjkHeight) == 0) {
+      cellWidth = std::max(cellWidth, (cjkWidth + 1) / 2);
+      cellHeight = std::max(cellHeight, cjkHeight);
+    }
+  };
+  // matchWindowSize()が使う起動時の大きさでの寸法も測り直す(Impl::baseFontMetricCellWidth参照)。
+  auto setSizeAll = [&](int points) {
+    TTF_SetFontSize(impl_->font, points);
+    if (impl_->fallbackFont) TTF_SetFontSize(impl_->fallbackFont, points);
+    if (impl_->serifFont) TTF_SetFontSize(impl_->serifFont, points);
+  };
+  bool resized = impl_->baseFontPointSize != impl_->currentFontPointSize;
+  if (resized) setSizeAll(impl_->baseFontPointSize);
+  measure(impl_->baseFontMetricCellWidth, impl_->baseFontMetricCellHeight);
+  if (resized) setSizeAll(impl_->currentFontPointSize);
+  int cellWidth = 0, cellHeight = 0;
+  measure(cellWidth, cellHeight);
+  if (cellWidth > 0 && cellHeight > 0) {
+    impl_->cellWidth = cellWidth;
+    impl_->cellHeight = cellHeight;
+    impl_->scrollbarWidth = cellHeight;  // Impl::scrollbarWidth自身のコメント参照
+  }
+  clearGlyphCache(*impl_);
+  SDL_SetWindowSize(impl_->window, impl_->cellWidth * impl_->columns + Impl::kMarginX * 2 + impl_->scrollbarWidth,
+                    impl_->cellHeight * impl_->rows + Impl::kMarginY * 2);
+  SDL_SetWindowMinimumSize(impl_->window, impl_->cellWidth * 10 + Impl::kMarginX * 2 + impl_->scrollbarWidth,
+                           impl_->cellHeight * 4 + Impl::kMarginY * 2);
+  impl_->needsRedraw = true;
+  return true;
+}
+
+// 明朝体はふだん最初に明朝の字を描く時に読み込む(serifFontFor())ので、まだなら読み込んでから答える。
+std::string GraphicalDisplay::currentFontPath(FontKind kind) const {
+  switch (kind) {
+    case FontKind::Base:
+      return impl_->fontPath;
+    case FontKind::SansSerif:
+      return impl_->fallbackFontPath;
+    case FontKind::Serif:
+      serifFontFor(*impl_, 0x3042);
+      return impl_->serifFontPath;
+  }
+  return {};
+}
 
 void GraphicalDisplay::cycleColorPreset() {
   impl_->colorPresetIndex = (impl_->colorPresetIndex + 1) % kColorPresetCount;

@@ -28867,3 +28867,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      adjustFontSize()へ。どれも空いていた(Ctrl+"-"は2026-09-08に^-としては撤去済み)。main.cppのrunGuiPhase()の
      キー処理で、慣性中(coastLevel/epubCoastLevel)の0x0dは止めるだけにしてfeedByte()しない。src/HELP.txtの-gの
      「表示」「マウス」に追記。
+
+651. **2026-10-06: -gの^Ofでフォント一覧から選ぶ(.steering/20261006-gui-font-picker/)**
+   - **経緯**: 直接のユーザー要望("カレントがアンダーラインのフォント一覧が出てそこから選べれば便利")。
+     確認への回答"1.３つとも。2.英語用なら(a)だが暫定(b)。-Fと同じ。"
+   - **実装**: ^Of(K-104、`F-2 f`)。Applicationは画面の種類を知らないので、^Ofで要求を立て
+     (takeFontListRequest())、main.cppのbuildFontList()がfc-list(FONTは:spacing=mono、SANS-SERIF/SERIFは
+     :lang=ja、名前に明朝/Mincho/Serif等があればSERIF。ファイルの0番目の書体だけ)と
+     GraphicalDisplay::currentFontPath()から一覧を作ってshowFontList()。ListBrowserで出し、今のものは
+     マーク(下線)。Enterで(節, パス)をtakeFontChoice()へ、main.cppのapplyFontChoice()が
+     GraphicalDisplay::setFont()(今の大きさのまま差し替え、寸法を測り直してウィンドウを合わせる)と
+     usilicrc::setSection()。-cでは"-g only"。src/HELP.txtの-gの「表示」とFONTの節に追記。

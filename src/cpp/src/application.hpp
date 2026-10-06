@@ -575,6 +575,8 @@ enum class Command {
   ToggleEpubChapterBreaks,
   // K-102(^Ow、2026-10-04): EPUBのWebのリンクを踏んだ時の対処(Configuration::urlHandlers())を次へ巡回。
   CycleUrlHandler,
+  // K-104(^Of、2026-10-06): -gのフォント一覧(Application::takeFontListRequest()参照)。
+  StartFontList,
   // ESC l("LOG"): Application::executeStartLog()自身のコメント参照。
   StartLog,
   // K-0(^T、M_usilic、「USILIC」): ステータス/バージョン情報画面を表示
@@ -1392,6 +1394,15 @@ std::optional<std::tuple<std::string, std::string, GrepSyntax>> parseCutFileHist
     const std::string &entry);
 std::string buildCutFileHistoryEntry(const std::string &path, const std::string &pattern, GrepSyntax syntax);
 
+// ^Ofのフォント一覧の1行(Application::showFontList()参照)。sectionはusilicrcの節の名前
+// (FONT/SANS-SERIF/SERIF)、currentは今使っているもの(下線で出す)。
+struct FontListEntry {
+  std::string section;
+  std::string path;
+  std::string label;
+  bool current = false;
+};
+
 class Application {
  public:
   // `keyInput`は、実際に本物のttyのraw/cookedモードを制御している
@@ -1839,6 +1850,16 @@ class Application {
   // 依頼されたもので、他所でのその置き換えではない(端末フェーズの
   // ^X^C+yフローは変更されていない)。
   void requestImmediateExit();
+
+  // ^Of(K-104、2026-10-06、.steering/20261006-gui-font-picker/): Applicationは画面の種類を
+  // 知らないので、一覧を作るのも選んだフォントを反映するのもmain.cpp。^Ofで要求を立て、
+  // main.cppがtakeFontListRequest()で受け取り、fc-listと今のフォントからshowFontList()で
+  // 一覧(ListBrowser、今のものに下線)を出す。Enterで選ぶとtakeFontChoice()が(節, パス)を
+  // 一度だけ返す。showNotice()は次のキーで消える一時メッセージ(-gでない時の知らせ等)。
+  bool takeFontListRequest();
+  void showFontList(const std::vector<FontListEntry> &entries);
+  std::optional<std::pair<std::string, std::string>> takeFontChoice();
+  void showNotice(const std::string &text);
 
   // 「表示」行/列でのマウスクリック(この座標空間と現在の
   // Directoryモード限定のスコープについてはクラスコメント自身の
@@ -2678,6 +2699,15 @@ class Application {
   std::string listBrowserCategoryLabel() const;           // startEpubList()参照
   bool epubPathPending_ = false;  // ^Jeのパス入力中(PathInputの投入をopenEpub()へ回す)
   bool epubListPending_ = false;  // ^J^E: 次のstartPromptHistoryRecall()をEPUBだけにする
+  // ^Ofのフォント一覧(takeFontListRequest()参照)。fontListShowing()は、一覧が今のListBrowserの
+  // 中身である間だけ真(別の一覧へ移った後にフラグが残っても、その一覧のEnterを横取りしない)。
+  bool fontListRequested_ = false;
+  bool fontListActive_ = false;
+  std::vector<FontListEntry> fontListEntries_;
+  std::vector<std::string> fontListLabels_;
+  ApplicationMode fontListReturnMode_ = ApplicationMode::Directory;
+  std::optional<std::pair<std::string, std::string>> pendingFontChoice_;
+  bool fontListShowing() const;
   bool archiveListPending_ = false;  // ^J^A: 次のstartPromptHistoryRecall()をアーカイブだけにする
   bool executeOpenWorkList();       // K-97
   // K-68(^X^Kl): Shell::scrollback()の「現在の」行をlogFilePath_

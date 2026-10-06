@@ -44,6 +44,8 @@ void GraphicalDisplay::setSize(int rows, int columns) {}
 void GraphicalDisplay::handleWindowResized(int newPixelWidth, int newPixelHeight) {}
 bool GraphicalDisplay::consumeSizeChanged() { return {}; }
 void GraphicalDisplay::adjustFontSize(int deltaPoints) {}
+bool GraphicalDisplay::setFont(FontKind kind, const std::string &path) { return {}; }
+std::string GraphicalDisplay::currentFontPath(FontKind kind) const { return {}; }
 void GraphicalDisplay::cycleColorPreset() {}
 std::string GraphicalDisplay::keySequence(Key) const { return {}; }
 bool GraphicalDisplay::outputEnabled() const { return {}; }

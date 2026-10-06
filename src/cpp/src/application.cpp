@@ -3368,6 +3368,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::ToggleEpubChapterBreaks);
       case 'w':  // ^O w : EPUBのWebのリンクの対処を巡回(K-102、2026-10-04)
         return handleCommand(Command::CycleUrlHandler);
+      case 'f':  // ^O f : -gのフォント一覧(K-104、2026-10-06)
+        return handleCommand(Command::StartFontList);
       case 'a':  // ^O a : ARC展開(旧^X a、K-58)――^O aはここへ移る
                  // 前にHELP/KEYの表示言語切り替えが占めていたが、
                  // それは^J aへ先に移した(kKeyTable自身の"^Ja"コメント
@@ -4988,6 +4990,9 @@ bool Application::handleCommandImpl(Command command) {
       return toggleEpubChapterBreaks();
     case Command::CycleUrlHandler:
       return cycleUrlHandler();
+    case Command::StartFontList:
+      fontListRequested_ = true;  // takeFontListRequest()参照
+      return true;
     case Command::ShowShellLog:
       return executeShowShellLog();
     case Command::StartLog:
@@ -6296,6 +6301,15 @@ bool Application::openSelectedListEntry() { return openSelectedListEntryImpl(); 
 bool Application::openSelectedListEntryImpl() {
   const std::string *item = listBrowserMode_.selectedItem();
   if (!item) return false;
+  if (fontListShowing()) {  // ^Of(takeFontListRequest()参照)
+    int idx = listBrowserView_.cursorIndex();
+    if (idx >= 0 && idx < static_cast<int>(fontListEntries_.size()))
+      pendingFontChoice_ = std::make_pair(fontListEntries_[idx].section, fontListEntries_[idx].path);
+    fontListActive_ = false;
+    currentMode_ = fontListReturnMode_;
+    activeView().redraw();
+    return true;
+  }
   // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装――他の全ての分岐
   // (promptHistoryContext_等)より先にチェックする、returnFromTab
   // CompletionList()自身のコメント参照。
@@ -7151,6 +7165,48 @@ bool Application::openEpubWebLink(const std::string &url) {
 }
 
 // ^Ow(K-102): 次の対処へ。名前(4文字)を位置の欄に出す(どのキーでも消える、^O^Eと同じ)。
+bool Application::takeFontListRequest() {
+  bool requested = fontListRequested_;
+  fontListRequested_ = false;
+  return requested;
+}
+
+bool Application::fontListShowing() const {
+  return fontListActive_ && currentMode_ == ApplicationMode::ListBrowser && listBrowserMode_.items() == fontListLabels_;
+}
+
+void Application::showFontList(const std::vector<FontListEntry> &entries) {
+  if (entries.empty()) {
+    showNotice("No fonts (fc-list)");
+    return;
+  }
+  if (!fontListShowing()) fontListReturnMode_ = currentMode_;
+  fontListEntries_ = entries;
+  fontListLabels_.clear();
+  for (const auto &entry : entries) fontListLabels_.push_back(entry.label);
+  fontListActive_ = true;
+  listBrowserChronological_ = false;
+  listBrowserView_.setCursorAtModeLineTrailingEnd(false);
+  listBrowserMode_.show(fontListLabels_);
+  currentMode_ = ApplicationMode::ListBrowser;
+  int size = static_cast<int>(entries.size()), first = -1;
+  for (int i = 0; i < size; i++)
+    if (entries[i].current) {
+      listBrowserMode_.marks().toggle(i, size);  // 今のフォントは下線(ListBrowserModeはマークを下線で描く)
+      if (first < 0) first = i;
+    }
+  if (first >= 0) listBrowserView_.setCursorIndex(first);
+  listBrowserView_.redraw();
+}
+
+std::optional<std::pair<std::string, std::string>> Application::takeFontChoice() {
+  auto choice = pendingFontChoice_;
+  pendingFontChoice_ = std::nullopt;
+  return choice;
+}
+
+void Application::showNotice(const std::string &text) { showTransientNotice(activeView(), text); }
+
 bool Application::cycleUrlHandler() {
   const auto &handlers = configuration_.urlHandlers();
   if (handlers.empty()) return false;
@@ -8761,6 +8817,7 @@ bool Application::startArchiveList() {
 
 // ringCategoryLabel(listBrowserCategory_)に、^J^E(EPUBだけのFILE履歴)の"EPUB"、^J^A(アーカイブだけ)の"ARC"を足したもの。
 std::string Application::listBrowserCategoryLabel() const {
+  if (fontListShowing()) return "FONT";
   if (promptHistoryContext_ && promptHistoryContext_->epubOnly) return "EPUB";
   if (promptHistoryContext_ && promptHistoryContext_->archiveOnly) return "ARC";
   return ringCategoryLabel(listBrowserCategory_);
@@ -9649,6 +9706,12 @@ void Application::handleShellChildExited() {
 }
 
 bool Application::returnFromListBrowser() {
+  if (fontListShowing()) {  // ^Of(takeFontListRequest()参照)
+    fontListActive_ = false;
+    currentMode_ = fontListReturnMode_;
+    activeView().redraw();
+    return true;
+  }
   // 2026-09-18追加、openSelectedListEntry()自身の同じ理由のコメント
   // 参照。
   if (tabCompletionContext_) return returnFromTabCompletionList(/*selected=*/false);

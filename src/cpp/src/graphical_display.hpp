@@ -94,6 +94,14 @@ class GraphicalDisplay : public Display {
   // 前に呼ぶ。明朝体(Display::Attribute::Serif)と和文のゴシック体(全角の字を描く
   // フォント)の候補を、組み込みの候補より先に試す。
   static void setFontFamilyCandidates(std::vector<std::string> serif, std::vector<std::string> sansSerif);
+
+  // ^Ofのフォント一覧(2026-10-06、.steering/20261006-gui-font-picker/): usilicrcのFONT(Base)・
+  // SANS-SERIF・SERIFにあたるフォントを、今のポイントサイズのまま差し替える。開けない(和文の節では
+  // 「あ」が無い)ならfalseで、何も変えない。currentFontPath()は今使っているフォントのファイル
+  // (見つからなかった和文の節は空)。
+  enum class FontKind { Base, SansSerif, Serif };
+  bool setFont(FontKind kind, const std::string &path);
+  std::string currentFontPath(FontKind kind) const;
   static std::unique_ptr<GraphicalDisplay> create(int rows, int columns, const std::string &fontPath,
                                                     int fontPointSize = 16);
 

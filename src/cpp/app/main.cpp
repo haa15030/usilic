@@ -1587,6 +1587,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       app.requestImmediateExit();
       return leavePhase(true);
     }
+    if (app.takeFontListRequest()) app.showNotice("Font list: -g only");  // ^Of(buildFontList()参照)
     // See Application::awaitingLocateUpdateDb()'s own comment: this
     // loop's own poll() below already ticks every ~100ms regardless of
     // input, so a detached `updatedb` launched by ^Jl is noticed and
@@ -2099,6 +2100,77 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
 
 bool stopBackgroundQuickLook();  // 自身のコメント参照
 
+// ^Of(K-104、2026-10-06、.steering/20261006-gui-font-picker/、Application::takeFontListRequest()参照)
+// の一覧。fc-listから、FONTは等幅(:spacing=mono)、SANS-SERIF/SERIFは日本語の入ったもの(:lang=ja、
+// 直接のユーザー判断"英語用なら(a)だが暫定(b)")。名前に明朝/Mincho/Serif等を含むものはSERIF、
+// 他はSANS-SERIFへ。usilicrcにはファイルしか書けず、TTF_OpenFont()はファイルの0番目の書体を開くので、
+// 0番目(index 0)だけを載せる。"."で始まる名前はmacOSの内部用。今のフォントが一覧に無ければ先頭に足す。
+std::vector<fm::FontListEntry> buildFontList(const fm::GraphicalDisplay &gui) {
+  struct Face {
+    std::string path, name;
+  };
+  auto query = [](const std::string &pattern) {
+    std::vector<Face> faces;
+    fm::ChildProcess::Result result =
+        fm::ChildProcess::run({"fc-list", "-f", "%{index}\t%{file}\t%{family[0]}\t%{style[0]}\n", pattern});
+    if (!result.ok) return faces;
+    std::istringstream in(result.output);
+    std::set<std::string> seen;
+    for (std::string line; std::getline(in, line);) {
+      std::vector<std::string> fields;
+      std::istringstream fieldStream(line);
+      for (std::string field; std::getline(fieldStream, field, '\t');) fields.push_back(field);
+      if (fields.size() < 3 || fields[0] != "0" || fields[2].empty() || fields[2][0] == '.') continue;
+      if (!seen.insert(fields[1]).second) continue;
+      std::string name = fields[2] + (fields.size() > 3 && !fields[3].empty() ? " " + fields[3] : "");
+      faces.push_back({fields[1], name});
+    }
+    std::sort(faces.begin(), faces.end(), [](const Face &a, const Face &b) { return a.name < b.name; });
+    return faces;
+  };
+  auto looksSerif = [](const std::string &name) {
+    for (const char *word : {"明朝", "Mincho", "MINCHO", "Serif", "SERIF", "Ming", "Song", "教科書", "宋"})
+      if (name.find(word) != std::string::npos) return true;
+    return false;
+  };
+  std::vector<Face> mono = query(":spacing=mono"), japanese = query(":lang=ja"), sans, serif;
+  if (mono.empty() && japanese.empty()) return {};
+  for (const auto &face : japanese) (looksSerif(face.name) ? serif : sans).push_back(face);
+  std::vector<fm::FontListEntry> entries;
+  auto add = [&](const std::string &section, fm::GraphicalDisplay::FontKind kind, const std::vector<Face> &faces) {
+    std::string current = gui.currentFontPath(kind);
+    auto label = [&](const std::string &name, const std::string &path) {
+      std::string head = section;
+      head.resize(std::max<std::size_t>(head.size(), 12), ' ');
+      return head + name + "  (" + std::filesystem::path(path).filename().string() + ")";
+    };
+    bool found = std::any_of(faces.begin(), faces.end(), [&](const Face &face) { return face.path == current; });
+    if (!current.empty() && !found)
+      entries.push_back({section, current, label(std::filesystem::path(current).stem().string(), current), true});
+    for (const auto &face : faces)
+      entries.push_back({section, face.path, label(face.name, face.path), face.path == current});
+  };
+  add("FONT", fm::GraphicalDisplay::FontKind::Base, mono);
+  add("SANS-SERIF", fm::GraphicalDisplay::FontKind::SansSerif, sans);
+  add("SERIF", fm::GraphicalDisplay::FontKind::Serif, serif);
+  return entries;
+}
+
+// ^Ofの一覧で選ばれたフォントを、その場で反映してusilicrcの節へ書く(-Fと同じ、applyRcOptions()参照)。
+void applyFontChoice(fm::Application &app, fm::GraphicalDisplay &gui, const std::string &section,
+                     const std::string &path) {
+  auto kind = section == "FONT"         ? fm::GraphicalDisplay::FontKind::Base
+              : section == "SANS-SERIF" ? fm::GraphicalDisplay::FontKind::SansSerif
+                                        : fm::GraphicalDisplay::FontKind::Serif;
+  if (!gui.setFont(kind, path)) {
+    app.showNotice("Cannot use this font");
+    return;
+  }
+  const char *home = std::getenv("HOME");
+  if (!fm::usilicrc::setSection(home ? home : "", section, {path}))
+    app.showNotice("Cannot write " + section + " to usilicrc");
+}
+
 void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   // 2026-09-25追加、Application::setInterruptPeeker()自身の宣言コメント
   // 参照: ^[^Mの読み込み中にGUIウィンドウ側で押されたキーで中断できる
@@ -2259,6 +2331,8 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       return;
     }
     if (!gui.pumpEvents()) return;  // the window's own close button was clicked
+    if (app.takeFontListRequest()) app.showFontList(buildFontList(gui));  // ^Of(buildFontList()参照)
+    if (auto choice = app.takeFontChoice()) applyFontChoice(app, gui, choice->first, choice->second);
     // See Application::awaitingLocateUpdateDb()'s own comment: this is
     // exactly the call whose ABSENCE (before this fix) let a real ^G
     // click/keypress get queued by SDL but never processed -- a

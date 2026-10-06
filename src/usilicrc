@@ -425,6 +425,7 @@ KEY
 	K-101	F-2 C-e     # ^O^E    EPUB: 章区切り/連続スクロール
 	K-102	F-2 w       # ^Ow     EPUB: Webのリンクの対処を巡回(URL)
 	K-103	F-1 C-a     # ^J^A    ARC: 一覧(アーカイブだけのFILE履歴)
+	K-104	F-2 f       # ^Of     -g: フォント一覧(FONT・SANS-SERIF・SERIF)
 
 MACRO
 	M-1	;	K-20 K-4 K-28			# ^G^P^M	前の項目を開く
