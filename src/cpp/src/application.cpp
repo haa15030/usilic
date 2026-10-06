@@ -7982,6 +7982,15 @@ bool Application::jumpEpubChapter(int delta) {
     for (int b : epubVerticalBoundaries_)
       if (b < total) starts.push_back(b);
     auto target = pick(starts, epubVerticalFirst_);
+    // 2026-10-06、直接のユーザー報告("最後の章から^[←しても奥付へ行かない"): 横書きの範囲(奥付等)は
+    // 縦書きの列に無いので区切りにも無い。次の章の頭より手前(最後の章なら本の末尾まで)に横書きの
+    // 範囲があれば、その頭へ入る(j・スクロールのenterEpubHorizontalAtEdge()と同じ)。
+    if (delta > 0 && epubVerticalFirst_ >= 0 && epubVerticalFirst_ < total) {
+      int edgeRaw = epubVerticalCols_[epubVerticalFirst_].rawLineNumber;
+      int targetRaw = target ? epubVerticalCols_[*target].rawLineNumber : std::numeric_limits<int>::max();
+      for (const auto &range : fileMode_.epubLayoutHints().horizontal)
+        if (range.first > edgeRaw && range.first < targetRaw) return enterEpubHorizontalAtEdge(1);
+    }
     if (!target) return false;
     int cursor = *target;  // 扉のページなら書名の列へ(showEpubVerticalRaw()と同じ)
     while (cursor + 1 < total && epubVerticalCols_[cursor].titlePage && epubVerticalCols_[cursor].padding) cursor++;
