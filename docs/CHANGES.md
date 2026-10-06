@@ -28986,3 +28986,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      76桁)。日付の"-"は\[u002D](前置きの.char -は.THより後で効かず、‐になっていた)。-mandocでは末尾の行を
      manのマクロが最後に出すので、ページ長を縮める.plはan-footerが無い時(-ms)だけ。groff -mandoc・-ms(.THは
      エラーを出して無視)・man(macOSはmandocで、見出しはMANWIDTHいっぱいの80桁、man lsと同じ)で確認。
+
+665. **2026-10-06: MANの"usilic"は、HELPの本文を今の幅で出す(端末の幅を変えると追随)**
+   - **経緯**: 直接のユーザー依頼("^Jmusilic^Mの出力をHELPのようにターミナルの横幅を変えても追随するようにはできない？")。
+   - **実装**: 項目663のManMode::setPageResolver()(HELP.1を`man`へ渡す)をsetPageText()に作り替え、"usilic"は`man`を
+     呼ばずに今のHELP(^Jaの言語、helpText_)の本文をPipeBufferで今の幅に折り返す(HELPの本文は字下げの印U+FEFFを
+     持つので、HELPと同じく字下げをそろえて折り返す)。ManMode::reflow()も同じ道を通るので幅の変更に追随する。
+     HELP.1(-nの時点で78桁に折り返し済み)はusilicの外の`man`用に同梱のまま。-cの80桁・60桁で確認。
