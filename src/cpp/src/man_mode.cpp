@@ -22,20 +22,12 @@ ManMode::ManMode(ContentView &view, History &history, const Configuration &confi
 }
 
 std::optional<std::vector<ContentView::Line>> ManMode::runAndWrap(const std::string &name) const {
-  if (std::optional<std::string> text = pageText_ ? pageText_(name) : std::nullopt) {  // setPageText()参照
-    PipeBuffer pipe(encoding_, width_, 16L * 1024 * 1024);
-    pipe.feed(*text);
-    pipe.flush();
-    std::vector<ContentView::Line> lines;
-    lines.reserve(pipe.lines().size());
-    for (const auto &styled : pipe.lines()) lines.push_back({styled.text, std::nullopt, std::nullopt, styled.attributes});
-    return lines;
-  }
   ProgramCommand command = configuration_.commandFor(ConfiguredRole::Man);
   if (command.argv.empty()) return std::nullopt;
 
   std::vector<std::string> argv = command.argv;
-  argv.push_back(name);
+  std::string resolved = pageResolver_ ? pageResolver_(name) : std::string();  // setPageResolver()参照
+  argv.push_back(resolved.empty() ? name : resolved);
 
   // 2026-09-06追加、直接のユーザー報告("MANも①③(`man ls|usilic -c`/
   // SHELLプロンプトの`man ls^M`)と同じ症状"、実機PTYで実際に検証): この

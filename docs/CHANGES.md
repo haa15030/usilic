@@ -29002,3 +29002,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      末尾の行が78桁に固定されていた)。英語の見本で、man(mandoc)の80・50桁、groff -mandoc -rLLの78・48桁で確認。
      make installはdoc/HELP.1(英語版)だけを入れ、HELP.en.1の行は削除。日本語のdoc/HELP.1(項目663の後に追加)は
      リポジトリから外した(groffが濁点付きの仮名の幅を数え違えるので78桁に決め打ちになり、幅に追随しない)。
+
+667. **2026-10-06: MANの"usilic"は、^Jaの言語に関係なく英語版のHELP.1をmanで出す(項目665を戻す)**
+   - **経緯**: 直接のユーザー訂正("man usilicの仕組みは今のままでいい。を取り消して、~/.local/lib/usilic/HELP.1(英語版の方)を
+     出して欲しい。そうすればHELP(日本語の方)に.THが無いのとusilicだけ日本語という違和感が解消する")。
+   - **実装**: ManMode::setPageText()(HELPの本文を出す)をsetPageResolver()に戻し、"usilic"はHELPと同じ場所(helpBasePath_
+     の場所、実行ファイルから見た<PREFIX>/lib/usilic/、/usr/local/lib/usilic/の順)のHELP.1を`man`へファイルとして渡す。
+     英語版のHELP.1は-nが折り返しをmanに任せる(項目666)ので、ls(1)等と同じく画面の幅に追随する。無ければふつうの
+     `man usilic`。

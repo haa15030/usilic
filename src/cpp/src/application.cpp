@@ -656,15 +656,21 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // 見せる行の範囲(ContentView::setShownIndexRange())が残り、新しいファイルの行が範囲の外として描かれ
   // なかった。どの経路でファイルを読んでも、描く前に消す。
   // 2026-10-06追加、直接のユーザー提案("/usr/share/man/man1とかに登録せずともusilicだけ特別扱いでmanに出る
-  // ってのはどうかな？　^Jmusilic^Mとやると日本語モードではHELP、英語ではHELP_enを表示する。配布時も公的
-  // ディレクトリには入れないがHELP.1はHELPと同梱で配布"): MANの"usilic"は、`man`を呼ばずに今のHELP(^Jaの
-  // 言語、helpText_)の本文を出す。同日の直接のユーザー依頼("^Jmusilic^Mの出力をHELPのようにターミナルの横幅を
-  // 変えても追随するようにはできない？")により、最初の版(HELPと同じ場所のHELP.1を`man`へ渡す)から変えた――
-  // HELP.1は-nの時点の78桁で折り返してあるが、HELPの本文は字下げの印(U+FEFF)を持つので、PipeBufferが今の
-  // 幅で字下げをそろえて折り返す。HELP.1はusilicの外の`man`用に同梱のまま。HELPが無ければふつうの`man usilic`。
-  manMode_.setPageText([this](const std::string &name) -> std::optional<std::string> {
-    if (name != "usilic" || helpText_.empty()) return std::nullopt;
-    return helpText_;
+  // ってのはどうかな？...配布時も公的ディレクトリには入れないがHELP.1はHELPと同梱で配布"): MANの"usilic"は、
+  // HELPと同じ場所のHELP.1を`man`へファイルとして渡す(manは'/'を含む引数をファイルとして整形する)。
+  // 同日の経緯: 一度HELPの本文を出す形にした(幅に追随させるため)が、直接のユーザー訂正("~/.local/lib/usilic/
+  // HELP.1(英語版の方)を出して欲しい。そうすればHELP(日本語の方)に.THが無いのとusilicだけ日本語という
+  // 違和感が解消する")により、英語版のHELP.1(usilic -nが英語の原稿では折り返しをmanに任せるので、ls(1)等と
+  // 同じく幅に追随する)を^Jaの言語に関係なく出す形に戻した。無ければふつうの`man usilic`。
+  manMode_.setPageResolver([this](const std::string &name) -> std::string {
+    if (name != "usilic") return {};
+    std::error_code ec;
+    std::vector<std::string> candidates = {std::filesystem::path(helpBasePath_).parent_path().string() + "/HELP.1"};
+    if (!installLibDirectory_.empty()) candidates.push_back(installLibDirectory_ + "HELP.1");
+    candidates.push_back("/usr/local/lib/usilic/HELP.1");
+    for (const auto &candidate : candidates)
+      if (std::filesystem::is_regular_file(candidate, ec)) return std::filesystem::absolute(candidate, ec).string();
+    return {};
   });
   fileMode_.setBeforeLoad([this]() {
     epubHorizontalSection_.reset();
