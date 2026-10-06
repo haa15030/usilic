@@ -7949,7 +7949,7 @@ std::vector<int> Application::epubHorizontalChapterStarts() const {
 // ^[+矢印(とShift+矢印)の章送り: EPUBの本文の時だけ。縦書きは←が先(右から左へ読む)/→が前、横書きは↓が先/↑が前。
 bool Application::jumpEpubChapterByArrow(KeyInput::SpecialKey arrow) {
   if (currentMode_ != ApplicationMode::File || !isEpubFile(fileMode_.currentFile())) return false;
-  bool vertical = epubVerticalActive();
+  bool vertical = epubBookVertical();  // 縦書きの本の横書きの範囲(奥付等)でも←で先へ(jumpEpubChapter()参照)
   if (arrow == (vertical ? KeyInput::SpecialKey::Left : KeyInput::SpecialKey::Down)) return jumpEpubChapter(+1);
   if (arrow == (vertical ? KeyInput::SpecialKey::Right : KeyInput::SpecialKey::Up)) return jumpEpubChapter(-1);
   return false;
@@ -7976,27 +7976,70 @@ bool Application::jumpEpubChapter(int delta) {
     if (previous < 0) return std::nullopt;
     return previous;
   };
-  if (epubVerticalActive()) {
+  // 縦書きの章の頭(区切り)を右端に置く。扉のページなら書名の列へ(showEpubVerticalRaw()と同じ)。
+  auto showVerticalChapterHead = [this](int head) {
     int total = static_cast<int>(epubVerticalCols_.size());
-    std::vector<int> starts;
-    for (int b : epubVerticalBoundaries_)
-      if (b < total) starts.push_back(b);
-    auto target = pick(starts, epubVerticalFirst_);
-    // 2026-10-06、直接のユーザー報告("最後の章から^[←しても奥付へ行かない"): 横書きの範囲(奥付等)は
-    // 縦書きの列に無いので区切りにも無い。次の章の頭より手前(最後の章なら本の末尾まで)に横書きの
-    // 範囲があれば、その頭へ入る(j・スクロールのenterEpubHorizontalAtEdge()と同じ)。
-    if (delta > 0 && epubVerticalFirst_ >= 0 && epubVerticalFirst_ < total) {
-      int edgeRaw = epubVerticalCols_[epubVerticalFirst_].rawLineNumber;
-      int targetRaw = target ? epubVerticalCols_[*target].rawLineNumber : std::numeric_limits<int>::max();
-      for (const auto &range : fileMode_.epubLayoutHints().horizontal)
-        if (range.first > edgeRaw && range.first < targetRaw) return enterEpubHorizontalAtEdge(1);
-    }
-    if (!target) return false;
-    int cursor = *target;  // 扉のページなら書名の列へ(showEpubVerticalRaw()と同じ)
+    int cursor = head;
     while (cursor + 1 < total && epubVerticalCols_[cursor].titlePage && epubVerticalCols_[cursor].padding) cursor++;
-    setEpubVerticalView(*target, cursor);
+    setEpubVerticalView(head, cursor);
     epubVerticalView_.redraw();
     epubVerticalView_.syncVisibleCursor();
+  };
+  auto verticalStarts = [this]() {
+    std::vector<int> starts;
+    for (int b : epubVerticalBoundaries_)
+      if (b < static_cast<int>(epubVerticalCols_.size())) starts.push_back(b);
+    return starts;
+  };
+  // 2026-10-06、直接のユーザー報告("奥付からも抜けられない"): 縦書きの本の横書きの範囲(奥付等)では、
+  // 前へは範囲の直前の章の頭、先へは範囲の後の縦書きの章の頭(無ければ何もしない)へ、縦書きに戻って入る
+  // (leaveEpubHorizontalIfOutside()と同じ戻り方)。
+  if (currentMode_ == ApplicationMode::File && epubBookVertical() && epubHorizontalSection_) {
+    std::pair<int, int> range = *epubHorizontalSection_;
+    int raw = delta < 0 ? range.first - 1 : -1;
+    if (delta > 0) {
+      for (const auto &column : epubVerticalCols_)
+        if (!column.padding && column.rawLineNumber > range.second) {
+          raw = column.rawLineNumber;
+          break;
+        }
+      if (raw < 0) return false;
+    }
+    epubHorizontalSection_.reset();
+    syncEpubHorizontalPresentation();
+    rebuildEpubVertical(raw);
+    if (epubHorizontalSection_) return true;
+    int col = 0;
+    for (std::size_t c = 0; c < epubVerticalCols_.size(); c++)
+      if (!epubVerticalCols_[c].padding && epubVerticalCols_[c].rawLineNumber <= raw) col = static_cast<int>(c);
+    int head = 0;
+    for (int b : verticalStarts())
+      if (b <= col) head = b;
+    showVerticalChapterHead(head);
+    return true;
+  }
+  if (epubVerticalActive()) {
+    int total = static_cast<int>(epubVerticalCols_.size());
+    // 先へは列カーソルより後の区切り(2026-10-06、直接のユーザー報告"最後の章から^[←しても奥付へ行かない"):
+    // 最後の章は画面1枚に満たないと、画面の右端(epubVerticalFirst_)が章の頭より手前で止まるので、右端で
+    // 比べると毎回同じ最後の章の頭が行き先になっていた。
+    int here = delta > 0 ? std::max(epubVerticalFirst_, epubVerticalCursor_) : epubVerticalFirst_;
+    auto target = pick(verticalStarts(), here);
+    // 横書きの範囲(奥付等)は縦書きの列に無いので区切りにも無い。次の章の頭より手前(最後の章なら本の
+    // 末尾まで)に横書きの範囲があれば、その頭へ入る(j・スクロールのenterEpubHorizontalAtEdge()と同じ)。
+    if (delta > 0 && here >= 0 && here < total) {
+      int hereRaw = epubVerticalCols_[here].rawLineNumber;
+      int targetRaw = target ? epubVerticalCols_[*target].rawLineNumber : std::numeric_limits<int>::max();
+      for (const auto &range : fileMode_.epubLayoutHints().horizontal)
+        if (range.first > hereRaw && range.first < targetRaw) {
+          enterEpubHorizontal(range, range.first);
+          activeView().redraw();
+          activeView().syncVisibleCursor();
+          return true;
+        }
+    }
+    if (!target) return false;
+    showVerticalChapterHead(*target);
     return true;
   }
   auto target = pick(epubHorizontalChapterStarts(), fileView_.topIndex());
