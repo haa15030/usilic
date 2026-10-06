@@ -28,4 +28,12 @@ namespace fm {
 // help_text.cpp。
 std::string expandHelpMarkup(const std::string &text);
 
+// <br />の改行(2026-10-06、直接のユーザー依頼"HELP.txtのソース...句点のたびに改行しておきたい。diffがわかり
+// やすいので。そこで<br />を導入してほしい。usilicで読み込んだときは、それが来るまで改行しない"): 原稿が
+// <br />(<br/>・<br>も)を1つでも含めば、原稿の改行は<br />の所だけを本当の改行にし、他は前の行につなぐ
+// (つなぐ時、前の行の最後と次の行の頭が両方半角なら空白1つ、他はそのまま。次の行の頭の空白は捨てる)。
+// 空行(段落の区切り)と、<indentN>で始まる行・</indent>で終わる行の前後は改行のまま。<br />を含まない原稿
+// (今までの書き方)はそのまま返す。expandHelpMarkup()・-m・-nの変換がそれぞれ最初に通す。
+std::string joinMarkupLinesAtBreaks(const std::string &text);
+
 }  // namespace fm

@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <cstring>
+#include <vector>
 
 namespace fm {
 
@@ -13,7 +15,80 @@ namespace fm {
 // タグの入れ子・重なりは想定しない(このヘルプ本文自身がそもそも
 // 使っていない)ので、開始/終了タグを見つけたらその範囲だけを処理する
 // 単純な逐次スキャンで十分。
-std::string expandHelpMarkup(const std::string &text) {
+std::string joinMarkupLinesAtBreaks(const std::string &source) {
+  static const char *const kBreaks[] = {"<br />", "<br/>", "<br>"};
+  bool any = false;
+  for (const char *tag : kBreaks) any = any || source.find(tag) != std::string::npos;
+  if (!any) return source;
+  // <br />を目印(\x02)+改行に置き換える(直後の空白と改行1つはその改行に含める)。
+  std::string text;
+  text.reserve(source.size());
+  for (std::size_t i = 0; i < source.size();) {
+    std::size_t len = 0;
+    for (const char *tag : kBreaks)
+      if (source.compare(i, std::strlen(tag), tag) == 0) {
+        len = std::strlen(tag);
+        break;
+      }
+    if (!len) {
+      text += source[i++];
+      continue;
+    }
+    i += len;
+    std::size_t j = i;
+    while (j < source.size() && (source[j] == ' ' || source[j] == '\t')) j++;
+    if (j < source.size() && source[j] == '\n') i = j + 1;
+    text += "\x02\n";
+  }
+  std::vector<std::string> lines;
+  std::size_t start = 0;
+  while (start <= text.size()) {
+    std::size_t end = text.find('\n', start);
+    if (end == std::string::npos) {
+      lines.push_back(text.substr(start));
+      break;
+    }
+    lines.push_back(text.substr(start, end - start));
+    start = end + 1;
+  }
+  auto trimmed = [](const std::string &line) {
+    std::size_t b = line.find_first_not_of(" \t");
+    std::size_t e = line.find_last_not_of(" \t");
+    return b == std::string::npos ? std::string() : line.substr(b, e - b + 1);
+  };
+  auto isAsciiText = [](unsigned char c) { return c > 0x20 && c < 0x7F; };
+  std::string out;
+  out.reserve(text.size());
+  bool joining = false;  // 今の行を前の行につないでいる(頭の空白を捨てる)
+  for (std::size_t k = 0; k < lines.size(); k++) {
+    std::string line = lines[k];
+    bool forced = !line.empty() && line.back() == '\x02';
+    if (forced) line.pop_back();
+    if (joining) {
+      std::size_t b = line.find_first_not_of(" \t");
+      line = b == std::string::npos ? std::string() : line.substr(b);
+      if (!out.empty() && !line.empty() && isAsciiText(static_cast<unsigned char>(out.back())) &&
+          isAsciiText(static_cast<unsigned char>(line.front())))
+        out += ' ';
+    }
+    out += line;
+    if (k + 1 == lines.size()) break;
+    std::string here = trimmed(line), next = trimmed(lines[k + 1]);
+    if (!next.empty() && next.back() == '\x02') next.pop_back();
+    bool keepBreak = forced || here.empty() || next.empty() || next.compare(0, 7, "<indent") == 0 ||
+                     (here.size() >= 9 && here.compare(here.size() - 9, 9, "</indent>") == 0);
+    if (keepBreak) {
+      out += '\n';
+      joining = false;
+    } else {
+      joining = true;
+    }
+  }
+  return out;
+}
+
+std::string expandHelpMarkup(const std::string &source) {
+  std::string text = joinMarkupLinesAtBreaks(source);  // <br />(joinMarkupLinesAtBreaks()参照)
   std::string out;
   out.reserve(text.size() * 2);
   std::size_t i = 0;

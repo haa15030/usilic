@@ -29017,3 +29017,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      無いパスなので影響しない、usilicrcのSANS-SERIFが先)。buildFontList()は、/mnt/c/Windows/Fontsがあればfc-scanで
      調べて足す(WSLのfc-listには出ない。等幅は%{spacing}が100か90(dual、MSゴシック等)、日本語は%{lang}にja、
      0番目の書体だけ)。docs/BUILD.mdのWSLの節に一言。Macの~/Library/Fontsでfc-scanの絞り込みを確認(WSLの実機は未確認)。
+
+669. **2026-10-06: HELPの原稿に<br />(原稿の改行は<br />の所だけを本当の改行にする)**
+   - **経緯**: 直接のユーザー依頼("HELP.txtのソースだが...句点のたびに改行しておきたい。diffがわかりやすいので。
+     そこで<br />を導入してほしい。usilicで読み込んだときは、それが来るまで改行しない")。
+   - **実装**: joinMarkupLinesAtBreaks()(help_text.cpp)。原稿が<br />(<br/>・<br>も)を1つでも含めば、原稿の改行は
+     <br />の所だけを改行にし、他は前の行につなぐ(前の行の最後と次の行の頭が両方半角なら空白1つ、他はそのまま。
+     次の行の頭の空白は捨てる)。空行と、<indentN>で始まる行・</indent>で終わる行の前後は改行のまま。<br />を
+     含まない原稿(QUICK.txt・TUTORIAL.txt・今までのHELP.txt)はそのまま。expandHelpMarkup()(usilicでHELP.txt/
+     QUICK.txtを開いた時)・-m(convertMarkupToLegacyHelpText())・-n(convertMarkupToMsRoffSource())がそれぞれ
+     最初に通す。日本語・英語・段落の見本で、-m・-n(groff -mandoc)・-cでの表示を確認。

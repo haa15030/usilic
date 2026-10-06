@@ -7,6 +7,7 @@
 #include <ctime>
 #include <optional>
 
+#include "help_text.hpp"
 #include "utf8.hpp"
 
 namespace fm {
@@ -41,7 +42,8 @@ namespace fm {
 // というのがこの第2のエンコード方式の役割。連続するK個(K>=1)の
 // U+FEFFで字下げ幅(K-1)を表す単項エンコード(K=1が</indent>のリセット
 // に相当)――詳細はreadPortableIndentRun()自身のコメント参照。
-std::string convertMarkupToLegacyHelpText(const std::string &markup) {
+std::string convertMarkupToLegacyHelpText(const std::string &source) {
+  const std::string markup = joinMarkupLinesAtBreaks(source);  // <br />(help_text.hpp参照)
   std::string out;
   out.reserve(markup.size() * 2);
   std::size_t i = 0;
@@ -249,7 +251,8 @@ static std::string wrapRoffTextLines(const std::string &roff, int width) {
   return result;
 }
 
-std::string convertMarkupToMsRoffSource(const std::string &markup) {
+std::string convertMarkupToMsRoffSource(const std::string &source) {
+  const std::string markup = joinMarkupLinesAtBreaks(source);  // <br />(help_text.hpp参照)
   std::string out;
   out.reserve(markup.size() * 2);
   std::size_t i = 0;
