@@ -1221,8 +1221,10 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
         continue;  // 移動・離す: 何もしない(慣性中はホバーしない)
       }
       // 2026-10-02追加、直接のユーザー依頼: ←→(縦書きでは↓↑)で速度/向きを変える(stepCoastByKey()参照)。
-      if (int arrow = peekArrow(keyInput, columns ? "AB" : "CD")) {
-        stepCoastByKey(level, direction, arrow == 'B' || arrow == 'C' ? 1 : -1);
+      // 2026-10-06: 慣性中は進む向きの矢印(一覧の↓↑、縦書きの←→)でも(runGuiPhase()の同じ日の追加参照)。
+      if (int arrow = peekArrow(keyInput, "ABCD")) {
+        bool forward = columns ? (arrow == 'B' || arrow == 'D') : (arrow == 'C' || arrow == 'B');
+        stepCoastByKey(level, direction, forward ? 1 : -1);
         continue;
       }
       // Neither a Left/Right nor a mouse report -- some other ESC
@@ -2698,6 +2700,21 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           !app.awaitingSequenceOrPromptByte()) {
         bool leftKey = key->special == fm::Display::Key::Left;
         bool rightKey = key->special == fm::Display::Key::Right;
+        // 2026-10-06追加、直接のユーザー提案("縦横の方向が変わるとどの矢印がそれなのかわからなくなる。
+        // しかもスクロール中の矢印キーは行移動としての機能が果たせず無意味なキー...スクロールが始まったら
+        // 機能を速度調整に切り換えたらどうかなと。開始に限り上下左右を交換で"): 慣性中は、進む向きの
+        // 矢印(一覧の↓↑、縦書きの本文の←→)でも速さを変える。開始は今まで通り交差する向き(一覧は←→、
+        // 縦書きは↓↑)だけ。
+        if (app.epubVerticalDragActive() && epubCoastLevel > 0 && (leftKey || rightKey)) {
+          stepCoastByKey(epubCoastLevel, epubCoastDirection, leftKey ? 1 : -1);  // ←で先へ(右から左へ読む)
+          consecutiveEscapes = 0;
+          continue;
+        }
+        if (!app.epubVerticalScrollActive() && coastLevel > 0 && (upKey || downKey)) {
+          stepCoastByKey(coastLevel, coastDirection, downKey ? -1 : 1);  // ↓で先へ(-1、coastDirection参照)
+          consecutiveEscapes = 0;
+          continue;
+        }
         if (app.epubVerticalDragActive() && (upKey || downKey)) {
           stepCoastByKey(epubCoastLevel, epubCoastDirection, downKey ? 1 : -1);
           consecutiveEscapes = 0;
