@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <optional>
 
 #include "utf8.hpp"
@@ -294,9 +295,31 @@ std::string convertMarkupToMsRoffSource(const std::string &markup) {
   // .PPではなく素の.sp。
   // groffには折り返させない(wrapRoffTextLines()参照)ので、.llは本文のどの行より長くしておく。
   int lineLength = markupLineLengthForRoff(markup) + 100;
+  // 2026-10-06追加、直接のユーザー依頼(man(-mandoc)で見た時の見出しの「() ()」を、.THで「USILIC(1) ...」に):
+  // 名前はUSILIC、章は1、日付は-nを実行した日、版はusilic 1.5b(モードラインの透かしと同じ決め打ち)、
+  // 手引きの名前は日本語の原稿(仮名・漢字を含む)なら「ユーザーコマンド」、他は「User Commands」。-msで
+  // 組む時は.THが無視されるだけ。.THは前置きより前(manのマクロが.po等を決めた後に前置きで上書きする)。
+  // 見出し・末尾の行はLLレジスタの幅で組まれるので、LLは78桁、本文の.llは折り返させないため長く
+  // (wrapRoffTextLines()参照)。
+  bool japanese = false;
+  for (std::size_t k = 0; k + 2 < markup.size() && !japanese; k++) {
+    unsigned char c = static_cast<unsigned char>(markup[k]);
+    japanese = c == 0xE3 || (c >= 0xE4 && c <= 0xE9);  // U+3000-U+9FFF(仮名・漢字)
+  }
+  // 見出しの手引きの名前「ユーザーコマンド」の「ザ」「ド」を、groffは本文と同じく1桁に数える
+  // (wrapRoffTextLines()参照)ので、見出しの行が2桁長く出る。その分、見出し・末尾の行の幅(LL)を
+  // 縮めて、見出しを78桁に収める(末尾の行は76桁になる)。日付の"-"はハイフンの記号(‐)にならない
+  // よう\[u002D]で(前置きの.char -は.THの後なので効かない)。
+  char date[64] = "";
+  std::time_t now = std::time(nullptr);
+  std::strftime(date, sizeof(date), "%Y\\[u002D]%m\\[u002D]%d", std::localtime(&now));
+  int headerWidth = kRoffWrapWidth - (japanese ? 2 : 0);
+  out += ".nr LL " + std::to_string(headerWidth) + "n\n";
+  out += ".TH USILIC 1 \"" + std::string(date) + "\" \"usilic 1.5b\" \"" +
+         (japanese ? "ユーザーコマンド" : "User Commands") + "\"\n";
   out += ".\\\" usilic -n: -m(usilic自身の表示)と同じ見た目にするための前置き\n"
          ".nr PO 0\n.po 0\n.nr HM 0\n.nr FM 0\n.nr PL 100000v\n.pl 100000v\n.ds CH\n"
-         ".nr LL " + std::to_string(lineLength) + "n\n.ll " + std::to_string(lineLength) + "n\n.nh\n.ad l\n"
+         ".nr LL " + std::to_string(headerWidth) + "n\n.ll " + std::to_string(lineLength) + "n\n.nh\n.ad l\n"
          ".char - \\[u002D]\n.char ' \\[u0027]\n.char ^ \\[u005E]\n.char ~ \\[u007E]\n.char ` \\[u0060]\n"
          // 日本語の文字の間でも改行できるようにする(-mは任意の位置で
          // 折り返す)。groff 1.24のja.tmacの定義をそのまま取り込み、
@@ -422,7 +445,9 @@ std::string convertMarkupToMsRoffSource(const std::string &markup) {
   // 末尾が空行で埋まらないよう、最後にページ長を現在位置まで縮める
   // (man自身の連続表示と同じ定番の手法)。
   ensureFreshLine();
-  out += ".br\n.pl \\n(nlu+1v\n";
+  // 末尾の行(.TH)は見出しと同じ幅で。-mandoc(man)で組む時は、末尾の行をmanのマクロ自身が最後に出すので
+  // ページ長を縮めない(縮めると末尾の行が出ない)。an-footerはgroffのan.tmacのマクロ。
+  out += ".br\n.ll \\n(LLu\n.if !d an-footer .pl \\n(nlu+1v\n";
   return wrapRoffTextLines(out, kRoffWrapWidth);
 }
 

@@ -28976,3 +28976,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      まま)。Applicationは"usilic"を、今のHELP(^Jaの言語、helpPath_)と同じ場所のHELP.1(英語はHELP.en.1、英語の
      HELPがHELP.enなのに合わせた)へ差し替え、`man`へファイルとして渡す(manは'/'を含む引数をファイルとして整形
      する)。無ければふつうの`man usilic`。make installはdoc/HELP.1・doc/HELP.en.1があれば~/.local/lib/usilic/へ。
+
+664. **2026-10-06: usilic -nの出力に.THを入れる(man・-mandocで見出し「USILIC(1) ユーザーコマンド USILIC(1)」と末尾の行)**
+   - **経緯**: 直接のユーザー依頼(MANの"usilic"の見出しの「() ()」について".THを入れるとしたら？"→案に"その案でよろしく")。
+   - **実装**: 名前USILIC、章1、日付は-nを実行した日、版usilic 1.5b、手引きの名前は日本語の原稿(仮名・漢字を
+     含む)なら「ユーザーコマンド」、他は「User Commands」。.THは前置きより前。見出し・末尾の行はLLの幅で組まれる
+     ので、LLは78桁(本文の.llは折り返させないため長いまま、末尾で.ll \n(LLuに戻す)。「ユーザーコマンド」の
+     「ザ」「ド」をgroffが1桁に数えて見出しが2桁長く出るので、日本語ではLLを76桁に(見出しが78桁、末尾の行は
+     76桁)。日付の"-"は\[u002D](前置きの.char -は.THより後で効かず、‐になっていた)。-mandocでは末尾の行を
+     manのマクロが最後に出すので、ページ長を縮める.plはan-footerが無い時(-ms)だけ。groff -mandoc・-ms(.THは
+     エラーを出して無視)・man(macOSはmandocで、見出しはMANWIDTHいっぱいの80桁、man lsと同じ)で確認。
