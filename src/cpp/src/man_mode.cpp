@@ -26,7 +26,8 @@ std::optional<std::vector<ContentView::Line>> ManMode::runAndWrap(const std::str
   if (command.argv.empty()) return std::nullopt;
 
   std::vector<std::string> argv = command.argv;
-  argv.push_back(name);
+  std::string resolved = pageResolver_ ? pageResolver_(name) : std::string();
+  argv.push_back(resolved.empty() ? name : resolved);
 
   // 2026-09-06追加、直接のユーザー報告("MANも①③(`man ls|usilic -c`/
   // SHELLプロンプトの`man ls^M`)と同じ症状"、実機PTYで実際に検証): この

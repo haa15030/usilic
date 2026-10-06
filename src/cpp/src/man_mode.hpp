@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -48,6 +49,9 @@ class ManMode {
   // 同じ形(影響するのは「次の」loadPage()/reflow()であり、既に
   // 表示されている内容ではない)。
   void setEncoding(Charset::Encoding encoding);
+  // `man`へ渡す直前に名前を差し替える関数(2026-10-06、Application::usilicManPageFile()参照)。空を返せば
+  // 名前のまま。モードライン・履歴・位置の記憶は名前のまま(差し替えた先のパスは出さない)。
+  void setPageResolver(std::function<std::string(const std::string &)> resolver) { pageResolver_ = std::move(resolver); }
 
   // `man currentPage()`を再実行し、その出力をnewWidthで再度折り返す。
   // 端末サイズ変更用。共有している設計についてはFileMode::reflow()
@@ -67,6 +71,7 @@ class ManMode {
 
  private:
   std::optional<std::vector<ContentView::Line>> runAndWrap(const std::string &name) const;
+  std::function<std::string(const std::string &)> pageResolver_;  // setPageResolver()参照
 
   ContentView &view_;
   History &history_;

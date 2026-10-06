@@ -655,6 +655,19 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // 表示）"、奥付で): 縦書きの本の横書きの範囲(奥付等)で別のファイルを開くと、範囲(epubHorizontalSection_)と
   // 見せる行の範囲(ContentView::setShownIndexRange())が残り、新しいファイルの行が範囲の外として描かれ
   // なかった。どの経路でファイルを読んでも、描く前に消す。
+  // 2026-10-06追加、直接のユーザー提案("/usr/share/man/man1とかに登録せずともusilicだけ特別扱いでmanに出る
+  // ってのはどうかな？　^Jmusilic^Mとやると日本語モードではHELP、英語ではHELP_enを表示する。配布時も公的
+  // ディレクトリには入れないがHELP.1はHELPと同梱で配布"): MANの"usilic"は、今のHELP(^Jaの言語)と同じ
+  // 場所のHELP.1(英語はHELP.en.1)を`man`へファイルとして渡す(manは'/'を含む引数をファイルとして整形する)。
+  // 無ければふつうの`man usilic`。
+  manMode_.setPageResolver([this](const std::string &name) -> std::string {
+    if (name != "usilic") return {};
+    std::error_code ec;
+    for (const std::string &candidate :
+         {helpPath_ + ".1", "/usr/local/lib/usilic/" + std::filesystem::path(helpPath_).filename().string() + ".1"})
+      if (std::filesystem::is_regular_file(candidate, ec)) return std::filesystem::absolute(candidate, ec).string();
+    return {};
+  });
   fileMode_.setBeforeLoad([this]() {
     epubHorizontalSection_.reset();
     fileView_.setShownIndexRange(std::nullopt);

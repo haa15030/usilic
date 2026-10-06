@@ -28967,3 +28967,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告("変化無し"、iTerm2の80×55で(ls)からEnterで表示)。80桁で折り返すと、ちょうど80桁の
      行が最後の1字だけ次の行の頭に出ていた(手元のPTYでは表示幅79桁で再現)。確認への回答"78桁にする"により、
      kRoffWrapWidthをmanの既定と同じ78桁に。
+
+663. **2026-10-06: MANの"usilic"(^Jmusilic^M)で、HELPと同梱のHELP.1を出す**
+   - **経緯**: 直接のユーザー提案("/usr/share/man/man1とかに登録せずともusilicだけ特別扱いでmanに出るってのはどうかな？
+     ^Jmusilic^Mとやると日本語モードではHELP、英語ではHELP_enを表示する。配布時も公的ディレクトリには入れないが
+     HELP.1はHELPと同梱で配布")。
+   - **実装**: ManMode::setPageResolver()(`man`へ渡す直前に名前を差し替える。モードライン・履歴・位置の記憶は名前の
+     まま)。Applicationは"usilic"を、今のHELP(^Jaの言語、helpPath_)と同じ場所のHELP.1(英語はHELP.en.1、英語の
+     HELPがHELP.enなのに合わせた)へ差し替え、`man`へファイルとして渡す(manは'/'を含む引数をファイルとして整形
+     する)。無ければふつうの`man usilic`。make installはdoc/HELP.1・doc/HELP.en.1があれば~/.local/lib/usilic/へ。
