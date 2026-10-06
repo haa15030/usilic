@@ -313,13 +313,19 @@ std::string convertMarkupToMsRoffSource(const std::string &markup) {
   char date[64] = "";
   std::time_t now = std::time(nullptr);
   std::strftime(date, sizeof(date), "%Y\\[u002D]%m\\[u002D]%d", std::localtime(&now));
+  // 2026-10-06追加、直接のユーザー提案("HELP.enの方は問題無いならHELP.1の同梱は英語版だけにするとか"):
+  // 英語の原稿は、groffが幅を数え違える字(濁点付きの仮名)が無いので、自分で折り返さず(wrapRoffTextLines()
+  // を通さない)、行長もここでは決めない――`man`が渡す画面の幅(MANWIDTH→-rLL)でgroffが折り返し、ls(1)等と
+  // 同じく画面の幅に追随する。日本語の原稿は今まで通り78桁で自分で折り返す。
   int headerWidth = kRoffWrapWidth - (japanese ? 2 : 0);
-  out += ".nr LL " + std::to_string(headerWidth) + "n\n";
+  if (japanese) out += ".nr LL " + std::to_string(headerWidth) + "n\n";
   out += ".TH USILIC 1 \"" + std::string(date) + "\" \"usilic 1.5b\" \"" +
          (japanese ? "ユーザーコマンド" : "User Commands") + "\"\n";
   out += ".\\\" usilic -n: -m(usilic自身の表示)と同じ見た目にするための前置き\n"
          ".nr PO 0\n.po 0\n.nr HM 0\n.nr FM 0\n.nr PL 100000v\n.pl 100000v\n.ds CH\n"
-         ".nr LL " + std::to_string(headerWidth) + "n\n.ll " + std::to_string(lineLength) + "n\n.nh\n.ad l\n"
+         + (japanese ? ".nr LL " + std::to_string(headerWidth) + "n\n.ll " + std::to_string(lineLength) + "n\n"
+                     : std::string()) +
+         ".nh\n.ad l\n"
          ".char - \\[u002D]\n.char ' \\[u0027]\n.char ^ \\[u005E]\n.char ~ \\[u007E]\n.char ` \\[u0060]\n"
          // 日本語の文字の間でも改行できるようにする(-mは任意の位置で
          // 折り返す)。groff 1.24のja.tmacの定義をそのまま取り込み、
@@ -447,8 +453,8 @@ std::string convertMarkupToMsRoffSource(const std::string &markup) {
   ensureFreshLine();
   // 末尾の行(.TH)は見出しと同じ幅で。-mandoc(man)で組む時は、末尾の行をmanのマクロ自身が最後に出すので
   // ページ長を縮めない(縮めると末尾の行が出ない)。an-footerはgroffのan.tmacのマクロ。
-  out += ".br\n.ll \\n(LLu\n.if !d an-footer .pl \\n(nlu+1v\n";
-  return wrapRoffTextLines(out, kRoffWrapWidth);
+  out += std::string(".br\n") + (japanese ? ".ll \\n(LLu\n" : "") + ".if !d an-footer .pl \\n(nlu+1v\n";
+  return japanese ? wrapRoffTextLines(out, kRoffWrapWidth) : out;
 }
 
 }  // namespace fm
