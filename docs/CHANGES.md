@@ -28942,3 +28942,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      HELPの目次・本文(cutOrigin_==Help)では選んでいる章(本文ではカーソルの行)の平文のHELPへ、平文のHELP
      (openPlainHelp()が記録するplainHelpPath_)では今の行を含む章を選んだ目次へ。^Gの戻り先はどちらもHELPへ
      入る前の所。HELPの外では平文のHELP。src/HELP.txt・HELP_en.txt・KEY.txtの^Oh・^J^Ohの記述を直した。
+
+660. **2026-10-06: 縦書きのEPUBの奥付等で別のファイルを開くと、本文が何も描かれない件**
+   - **経緯**: 直接のユーザー報告("~/.usilic/data/HELP.txtを閲覧後、src/Kbt_fixed.epubを開いたところで^J^Jしても
+     何も表示されない（^Bで表示）"、確認への回答で-c・奥付で)。-cでKbt_fixed.epubの奥付(^[<)から^J^Jで再現。
+   - **原因**: 横書きの範囲(epubHorizontalSection_)と、fileView_の見せる行の範囲(ContentView::setShownIndexRange())
+     が、別のファイルを読んだ後も残り、新しいファイルの行がすべて範囲の外として描かれなかった。
+   - **実装**: FileMode::setBeforeLoad()を新設し(loadFileImpl()/loadFileAsPipe()が、開けると分かった後・描く前に
+     呼ぶ)、Applicationが範囲を消す。どの経路(ファイルを読む所は34か所)で読んでも効く。

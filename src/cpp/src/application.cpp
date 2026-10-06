@@ -651,6 +651,14 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // 呼ばれた時に見る――-gの画面は後から作られ、DelegatingDisplayが渡し直す)。keyは「本のパス\n画像の
   // 名前」(epubVerticalImagesFor()、FileMode::expandEpubImageLines())。
   display_.setImageProvider([this](const std::string &key) { return epubImageBytes(key); });
+  // 2026-10-06追加、直接のユーザー報告("src/Kbt_fixed.epubを開いたところで^J^Jしても何も表示されない（^Bで
+  // 表示）"、奥付で): 縦書きの本の横書きの範囲(奥付等)で別のファイルを開くと、範囲(epubHorizontalSection_)と
+  // 見せる行の範囲(ContentView::setShownIndexRange())が残り、新しいファイルの行が範囲の外として描かれ
+  // なかった。どの経路でファイルを読んでも、描く前に消す。
+  fileMode_.setBeforeLoad([this]() {
+    epubHorizontalSection_.reset();
+    fileView_.setShownIndexRange(std::nullopt);
+  });
   fileMode_.setEpubImageRows([this](const std::string &path, const std::string &name, int width) {
     int cw = display_.cellPixelWidth(), ch = display_.cellPixelHeight();
     if (cw <= 0 || ch <= 0 || width <= 0) return 0;

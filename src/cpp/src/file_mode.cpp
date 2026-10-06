@@ -879,6 +879,7 @@ bool FileMode::loadFileRaw(const std::string &path, const std::function<bool()> 
 bool FileMode::loadFileAsPipe(const std::string &path) {
   std::ifstream probe(path, std::ios::binary);
   if (!probe) return false;
+  if (beforeLoad_) beforeLoad_();  // setBeforeLoad()参照
   // 2026-09-25追加(BUFFERを超えるファイルを^Mから^O^Mへ切り替えるようにした
   // のに伴い、直接のユーザー依頼): 以前は常にloadAndTransformContent()で
   // ファイル全体をメモリへ読み、一時ファイルへ書き直してから流していた
@@ -955,6 +956,7 @@ bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()>
   std::ifstream probe(path, std::ios::binary);
   if (!probe) return false;
   probe.close();
+  if (beforeLoad_) beforeLoad_();  // setBeforeLoad()参照
 
   // 「毎回の」読み込みでプレーンなページャーのデフォルトへリセット
   // する(2026-08-18): コンストラクタ自身のsetCursorHighlightEnabled

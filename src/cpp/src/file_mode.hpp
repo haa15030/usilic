@@ -549,6 +549,9 @@ class FileMode {
   // あればreadAndWrap()がEPUBの画像だけの行を画像の行(ContentView::Line::imageKey)に置き換える。
   using EpubImageRows = std::function<int(const std::string &epubPath, const std::string &imageName, int width)>;
   void setEpubImageRows(EpubImageRows rows) { epubImageRows_ = std::move(rows); }
+  // 読み込みを始める前(開けると分かった後、描く前)に呼ぶ関数。Applicationが、前に見ていたファイル
+  // だけに関わる表示の状態(縦書きのEPUBの横書きの範囲で見せる行の範囲等)を消すのに使う(2026-10-06)。
+  void setBeforeLoad(std::function<void()> callback) { beforeLoad_ = std::move(callback); }
 
  private:
   // loadFile()/loadFileNoWrap()/loadFileRaw()が共有する本体――呼び出し元が
@@ -621,6 +624,7 @@ class FileMode {
   std::vector<ContentView::Line> expandEpubImageLines(std::vector<ContentView::Line> lines, const std::string &path,
                                                      int width) const;
   EpubImageRows epubImageRows_;  // setEpubImageRows()参照
+  std::function<void()> beforeLoad_;  // setBeforeLoad()参照
   std::string currentFile_;
   bool skipNextRecentPush_ = false;  // skipNextRecentPush()参照
   bool skipRecentPushNow_ = false;   // 今のloadFile()の間だけのskipNextRecentPush_
