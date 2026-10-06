@@ -141,6 +141,9 @@ std::string convertMarkupToLegacyHelpText(const std::string &markup) {
 // ある"): 行長を78桁に決め打ちしていたため、それより長い行(HELP.txtは80桁で折り返してある、全角は
 // 2桁)をgroffが折り返し、折り返した続きの行が字下げ無しで出ていた。タグを除いた元の行の表示幅
 // (<indentN>の字下げ込み)の最大に合わせ、元の1行が折り返されないようにする(78桁未満なら78桁)。
+// wrapRoffTextLines()で折り返す幅。HELP.txtの折り返しの幅(80桁、markupLineLengthForRoff()のコメント参照)。
+constexpr int kRoffWrapWidth = 80;
+
 static int markupLineLengthForRoff(const std::string &markup) {
   int longest = 78, width = 0, indent = 0;
   std::size_t i = 0;
@@ -177,6 +180,71 @@ static int markupLineLengthForRoff(const std::string &markup) {
     i += len;
   }
   return std::max(longest, indent + width);
+}
+
+// 2026-10-06追加、直接のユーザー報告("「Boot options」で、の続きの「引数」の「引」だけ行頭にあって「数」が
+// 字下げ箇所にある...みたいのがあちこちある"): groffは濁点・半濁点の付いた仮名(「で」等)を、分解した字形
+// (u3066_3099)として1桁の幅に数えるので(-Zで確認: 「あ」は2桁)、そういう字の多い行は.llを超えて
+// 出ていた。それを画面の幅で折り返すと、行末の1字だけが次の行の頭に出る。groffに折り返させず、本当の
+// 表示幅で自分で折り返す: 本文の行(制御行以外)を、.in/.tiの字下げを数えながらwidth桁で切り、続きの
+// 行は.inの字下げから(.brで改行)。続きの行の頭の空白は除く。
+static std::string wrapRoffTextLines(const std::string &roff, int width) {
+  std::string result;
+  int indent = 0;
+  std::optional<int> tempIndent;
+  auto readNumber = [](const std::string &line, std::size_t from) {
+    return std::atoi(line.c_str() + from);
+  };
+  std::size_t pos = 0;
+  while (pos < roff.size()) {
+    std::size_t end = roff.find('\n', pos);
+    if (end == std::string::npos) end = roff.size();
+    std::string line = roff.substr(pos, end - pos);
+    pos = end + 1;
+    if (!line.empty() && line[0] == '.' && line.compare(0, 2, "\\&") != 0) {
+      if (line.compare(0, 4, ".in ") == 0) indent = readNumber(line, 4);
+      if (line.compare(0, 4, ".ti ") == 0) tempIndent = readNumber(line, 4);
+      result += line + "\n";
+      continue;
+    }
+    int column = tempIndent.value_or(indent);
+    tempIndent.reset();
+    std::string chunk;
+    bool chunkHasText = false;
+    for (std::size_t i = 0; i < line.size();) {
+      std::size_t len;
+      int w;
+      if (line[i] == '\\' && i + 1 < line.size()) {
+        char kind = line[i + 1];
+        len = (kind == 'f' && i + 2 < line.size()) ? 3 : 2;  // \fB/\fI/\fP、\&、\e
+        w = kind == 'e' ? 1 : 0;
+      } else {
+        len = static_cast<std::size_t>(Utf8::sequence_length(static_cast<unsigned char>(line[i])));
+        if (len == 0 || i + len > line.size()) len = 1;
+        w = Utf8::display_width(reinterpret_cast<const unsigned char *>(line.data() + i), static_cast<int>(len));
+      }
+      if (w > 0 && chunkHasText && column + w > width) {
+        result += chunk + "\n.br\n";
+        chunk.clear();
+        chunkHasText = false;
+        column = indent;
+      }
+      if (w > 0 && !chunkHasText && line[i] == ' ' && column == indent && !result.empty() &&
+          result.compare(result.size() - 4, 4, ".br\n") == 0 && i > 0) {
+        i += len;  // 折り返した続きの行の頭の空白
+        continue;
+      }
+      std::string piece = line.substr(i, len);
+      if (!chunkHasText && w > 0 && (piece == "." || piece == "'") && chunk.empty()) chunk += "\\&";
+      chunk += piece;
+      if (w > 0) chunkHasText = true;
+      column += w;
+      i += len;
+    }
+    result += chunk + "\n";
+  }
+  if (!roff.empty() && roff.back() != '\n' && !result.empty()) result.pop_back();
+  return result;
 }
 
 std::string convertMarkupToMsRoffSource(const std::string &markup) {
@@ -223,7 +291,8 @@ std::string convertMarkupToMsRoffSource(const std::string &markup) {
   // 行長78桁(man既定と同じ)、両端揃え・ハイフネーション無し、上記の
   // ASCII記号はASCIIのまま、元の1行=出力の1行(行末ごとに.br)、空行は
   // .PPではなく素の.sp。
-  int lineLength = markupLineLengthForRoff(markup);
+  // groffには折り返させない(wrapRoffTextLines()参照)ので、.llは本文のどの行より長くしておく。
+  int lineLength = markupLineLengthForRoff(markup) + 100;
   out += ".\\\" usilic -n: -m(usilic自身の表示)と同じ見た目にするための前置き\n"
          ".nr PO 0\n.po 0\n.nr HM 0\n.nr FM 0\n.nr PL 100000v\n.pl 100000v\n.ds CH\n"
          ".nr LL " + std::to_string(lineLength) + "n\n.ll " + std::to_string(lineLength) + "n\n.nh\n.ad l\n"
@@ -353,7 +422,7 @@ std::string convertMarkupToMsRoffSource(const std::string &markup) {
   // (man自身の連続表示と同じ定番の手法)。
   ensureFreshLine();
   out += ".br\n.pl \\n(nlu+1v\n";
-  return out;
+  return wrapRoffTextLines(out, kRoffWrapWidth);
 }
 
 }  // namespace fm
