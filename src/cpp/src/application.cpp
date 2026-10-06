@@ -3231,8 +3231,6 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::ShowShellLog);
       case 'u':  // ^J ^O u : ~/.usilic/usilicrc(2026-10-02、Command::OpenUserUsilicrc参照)
         return handleCommand(Command::OpenUserUsilicrc);
-      case 'h':  // ^J ^O h : 平文のHELP(2026-10-02、Command::OpenPlainHelp参照)
-        return handleCommand(Command::OpenPlainHelp);
       case 'd':  // ^J ^O d : ~/.usilic/data/(K-96、2026-09-27)
         return handleCommand(Command::OpenDataDirectory);
       case 'w':  // ^J ^O w : WORK(K-97、2026-09-27)
@@ -3302,10 +3300,13 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     leaderOPending_ = false;
     if (special) return false;
     switch (byte) {
-      case 'h':  // ^O h : モードライン表示/非表示を切り替え(K-25、
-                 // 2026-09-12にToggleScrollModeから付け替え。
+      // 2026-10-06、直接のユーザー依頼("^Ohを^Osに変更後、HELP表示のCUTと平文の切り換えトグルを^Ohとし
+      // ^J^Ohを削除"): モードラインの表示/非表示は^Osへ、^Ohは平文のHELP(旧^J^Oh)。
+      case 's':  // ^O s : モードライン表示/非表示を切り替え(K-23、旧^O h。
                  // Command::ToggleModeLineVisibility自身のコメント参照)
         return handleCommand(Command::ToggleModeLineVisibility);
+      case 'h':  // ^O h : HELPの目次(CUT)と平文の切り替え(K-87、旧^J^Oh、Command::OpenPlainHelp参照)
+        return handleCommand(Command::OpenPlainHelp);
       // 2026-09-08、直接のユーザー依頼によるキー再編("^Ol⇒^Oo（←
       // ファイル名以外はomission）")で'l'から移行。
       case 'o':  // ^O o : `ls`出力の形式を切り替え(K-26、旧^O l)
@@ -4886,7 +4887,7 @@ bool Application::handleCommandImpl(Command command) {
       // KEYの中では、選んでいる行の、平文のHELPの同じ行へ(2026-10-02、それまでのh(K-95)を統合。
       // 'h'はusilicrcのMACRO(h→^J^Oh)になった)。
       if (currentMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Key) return jumpFromKeyToHelp();
-      return openPlainHelp();
+      return toggleHelpView();
     case Command::OpenUserUsilicrc: {
       std::string home = std::filesystem::path(usilicrcPath_).parent_path().parent_path().string();
       usilicrc::ensureUser(home);
@@ -17265,7 +17266,49 @@ bool Application::jumpFromKeyToHelp() {
   return openPlainHelp(content.front().rawLineNumber);
 }
 
-// 平文のHELP(helpPath_のファイルをそのまま、^J^Oh)。rawLineがあればその行へ。KEYから来たなら^GでKEYへ戻る。
+// ^Oh(K-87、2026-10-06、直接のユーザー依頼"HELP表示のCUTと平文の切り換えトグルを^Oh"): HELPの目次・本文
+// (CUT/CutContent)では選んでいる所の平文のHELPへ、平文のHELPでは今の行を含む章を選んだ目次へ。どちらも
+// ^Gで戻る先はHELPへ入る前の所(行き来を^Gでたどらない)。HELPの外では平文のHELP。
+bool Application::toggleHelpView() {
+  bool inHelpCut = (currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
+                   cutOrigin_ == CutOrigin::Help;
+  auto outside = [](ApplicationMode mode) {
+    return (mode == ApplicationMode::Cut || mode == ApplicationMode::CutContent) ? ApplicationMode::Directory : mode;
+  };
+  if (inHelpCut) {
+    std::optional<int> raw;
+    if (currentMode_ == ApplicationMode::CutContent) {
+      const auto &lines = cutContentView_.lines();
+      int idx = cutContentView_.cursorIndex();
+      if (idx >= 0 && idx < static_cast<int>(lines.size())) raw = lines[idx].rawLineNumber;
+    } else if (const CutSegment *segment = cutMode_.selectedSegment()) {
+      std::vector<StyledLine> content = cutMode_.segmentContent(*segment);
+      if (!content.empty()) raw = content.front().rawLineNumber;
+    }
+    ApplicationMode back = outside(cutReturnMode_);
+    if (!openPlainHelp(raw)) return false;
+    fileReturnMode_ = back;
+    return true;
+  }
+  if (currentMode_ == ApplicationMode::File && !plainHelpPath_.empty() && fileMode_.currentFile() == plainHelpPath_) {
+    int raw = fileRawLineAtCursor();
+    ApplicationMode back = outside(fileReturnMode_);
+    if (!startHelp()) return false;
+    cutReturnMode_ = back;
+    const auto &segments = cutMode_.segments();
+    int index = 0;
+    for (int i = 0; i < static_cast<int>(segments.size()); i++) {
+      std::vector<StyledLine> content = cutMode_.segmentContent(segments[i]);
+      if (!content.empty() && content.front().rawLineNumber > 0 && content.front().rawLineNumber <= raw) index = i;
+    }
+    cutView_.setCursorIndex(index);
+    cutView_.redraw();
+    return true;
+  }
+  return openPlainHelp();
+}
+
+// 平文のHELP(helpPath_のファイルをそのまま、^Oh)。rawLineがあればその行へ。KEYから来たなら^GでKEYへ戻る。
 bool Application::openPlainHelp(std::optional<int> rawLine) {
   bool fromKey = currentMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Key;
   std::string path = helpPath_;
@@ -17287,6 +17330,7 @@ bool Application::openPlainHelp(std::optional<int> rawLine) {
     }
   }
   if (!fileMode_.loadFile(path)) return false;
+  plainHelpPath_ = fileMode_.currentFile();  // toggleHelpView()参照
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = fromKey ? ApplicationMode::Cut : ApplicationMode::Directory;
   if (rawLine) {

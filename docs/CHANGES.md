@@ -28933,3 +28933,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼("「―」も縦書き用の字形にして")。項目657の続き。
    - **実装**: renderCell()の縦書き用の字形の対象に「―」(U+2015、—/―の縦書き(U+FE31)の置き換え先)を足した。
      ヒラギノ明朝・ヒラギノ角ゴ・Noto Sans CJKでTTF_DIRECTION_TTBの字形が縦の線になることを確認。
+
+659. **2026-10-06: モードラインの表示/非表示を^Osへ、^OhをHELPの目次と平文の切り替えに(^J^Ohは廃止)**
+   - **経緯**: 直接のユーザー依頼("^Ohを^Osに変更後、HELP表示のCUTと平文の切り換えトグルを^Ohとし^J^Ohを削除")。
+   - **実装**: K-23(モードライン)を`F-2 s`、K-87(平文のHELP)を`F-2 h`へ(key_bindings.cpp・usilicrc・usilicrc.en、
+     利用者の~/.usilic/usilicrcもバックアップ(usilicrc.20261006.bak)を取って同じ3行を直した)。^J^Ohの分岐を削除。
+     Command::OpenPlainHelpはKEYの中では今まで通り(jumpFromKeyToHelp())、それ以外はtoggleHelpView():
+     HELPの目次・本文(cutOrigin_==Help)では選んでいる章(本文ではカーソルの行)の平文のHELPへ、平文のHELP
+     (openPlainHelp()が記録するplainHelpPath_)では今の行を含む章を選んだ目次へ。^Gの戻り先はどちらもHELPへ
+     入る前の所。HELPの外では平文のHELP。src/HELP.txt・HELP_en.txt・KEY.txtの^Oh・^J^Ohの記述を直した。

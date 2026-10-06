@@ -358,7 +358,7 @@ KEY
 	K-20	C-g         # ^G      Return to previous mode
 	K-21	C-l         # ^L      Redraw
 	K-22	C-z         # ^Z      Suspend
-	K-23	F-2 h       # ^Oh     Show/hide mode-line
+	K-23	F-2 s       # ^Os     Show/hide mode-line
 	K-24	F-1 C-c     # ^J^C    Go to current directory
 	K-25	C-]         # ^]      Go to the current directory (same as ^J^C)
 	K-26	F-1 C-b     # ^J^B    Go to parent directory
@@ -421,7 +421,7 @@ KEY
 	K-84	F-4 u       # ^J^Ou   ~/.usilic/usilicrc
 	K-85	F-4 e       # ^J^Oe   ERROR
 	K-86	F-4 s       # ^J^Os   SHELL log
-	K-87	F-4 h       # ^J^Oh   Plain HELP (in KEY, at the selected line)
+	K-87	F-2 h       # ^Oh     HELP: switch contents/plain (in KEY, plain HELP at the selected line)
 	K-88	F-4 d       # ^J^Od   ~/.usilic/data/
 	K-89	F-4 w       # ^J^Ow   WORK
 	K-90	C-h         # ^H      HELP
@@ -452,5 +452,5 @@ MACRO
 	M-9	{	K-84 K-51 "MACRO" K-28 K-67	# ^J^Ou^S"MACRO"^M^[e
 	M-10	}	K-86 K-53 "usilic-1.5b:" K-28	# ^J^Os^Cb"usilic-1.5b:"^M
 	M-11	e	K-67				# ^[e		EDIT
-	M-12	h	K-87				# ^J^Oh		From KEY to plain HELP at that line (plain HELP outside KEY)
+	M-12	h	K-87				# ^Oh		From KEY to plain HELP at that line (contents/plain switch outside KEY)
 	--

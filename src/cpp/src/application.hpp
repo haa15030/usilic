@@ -3450,6 +3450,9 @@ private:
   // いた行(startKey()が戻す)、hで飛んだ先の行をハイライトしている間(clearTransientNotice()が消す)。
   int keyCursorIndex_ = 0;
   bool helpJumpHighlight_ = false;
+  // 平文のHELPとして最後に開いたファイル(toggleHelpView()が「平文のHELPを見ている」と判断する)。
+  std::string plainHelpPath_;
+  bool toggleHelpView();
   void saveKeyCursor();  // executeSelectedKeyLine()がキーを流している間(startKey()参照)
   // ^J^W・^Jwが最後にSHELLのコマンド行へ入れたコマンド(SHELLの^Wで出し直す、2026-10-03)。
   std::string lastShellInsertCommand_;

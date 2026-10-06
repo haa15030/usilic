@@ -53,7 +53,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {20, "C-g"},       // ^G    前のモードへ戻る
       {21, "C-l"},       // ^L    再表示
       {22, "C-z"},       // ^Z    サスペンド
-      {23, "F-2 h"},     // ^Oh   mode-line の表示/非表示
+      {23, "F-2 s"},     // ^Os   mode-line の表示/非表示(2026-10-06、^Ohから)
       {24, "F-1 C-c"},   // ^J^C  カレントディレクトリへ
       {25, "C-]"},       // ^]    カレントディレクトリへ(^J^Cと同じ)
       {26, "F-1 C-b"},   // ^J^B  親ディレクトリへ(2026-10-02、^J^Kから)
@@ -117,7 +117,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {84, "F-4 u"},     // ^J^Ou ~/.usilic/usilicrc
       {85, "F-4 e"},     // ^J^Oe ERROR
       {86, "F-4 s"},     // ^J^Os SHELLのログ(2026-09-27、^J^Olから)
-      {87, "F-4 h"},     // ^J^Oh 平文のHELP
+      {87, "F-2 h"},     // ^Oh   HELPの目次(CUT)と平文の切り替え(2026-10-06、^J^Ohから)
       {88, "F-4 d"},     // ^J^Od ~/.usilic/data/
       {89, "F-4 w"},     // ^J^Ow WORK
       {90, "C-h"},       // ^H    HELP
