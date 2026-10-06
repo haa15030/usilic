@@ -1554,7 +1554,11 @@ void GraphicalDisplay::renderCell(int row, int col) {
       substituteGlyph = "\xE2\x80\x95";  // ―
       rotation = 90.0;
     } else if (codepoint == 0x301D || codepoint == 0x301F) {
-      substituteGlyph = "\xE3\x80\x9E";  // 〞(開きは右上、閉じは左下、下のcornerMark参照)
+      // ″(開きは右上、閉じは左下、下のcornerMark参照)。2026-10-06、直接のユーザー報告(WSLの
+      // スクリーンショット=ia/=ib、"〝原因〟の〝〟が変"): 以前は「〞」(U+301E)を描いていたが、
+      // Noto Sans CJKの「〞」は横に寝た2本線で、ヒラギノの縦寄りの2本線と字形が違う。二重
+      // プライム「″」(U+2033)はNoto・ヒラギノ角ゴ/明朝・MSゴシックのどれでも縦寄りの2本線。
+      substituteGlyph = "\xE2\x80\xB3";
     }
     if (!substituteGlyph.empty()) codepoint = decodeUtf8Codepoint(substituteGlyph);
   }
