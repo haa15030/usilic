@@ -141,8 +141,9 @@ std::string convertMarkupToLegacyHelpText(const std::string &markup) {
 // ある"): 行長を78桁に決め打ちしていたため、それより長い行(HELP.txtは80桁で折り返してある、全角は
 // 2桁)をgroffが折り返し、折り返した続きの行が字下げ無しで出ていた。タグを除いた元の行の表示幅
 // (<indentN>の字下げ込み)の最大に合わせ、元の1行が折り返されないようにする(78桁未満なら78桁)。
-// wrapRoffTextLines()で折り返す幅。HELP.txtの折り返しの幅(80桁、markupLineLengthForRoff()のコメント参照)。
-constexpr int kRoffWrapWidth = 80;
+// wrapRoffTextLines()で折り返す幅。manの既定と同じ78桁(2026-10-06、直接のユーザー判断。80桁ではちょうど80桁の
+// 行が80桁未満の画面で最後の1字だけ折り返された)。
+constexpr int kRoffWrapWidth = 78;
 
 static int markupLineLengthForRoff(const std::string &markup) {
   int longest = 78, width = 0, indent = 0;
