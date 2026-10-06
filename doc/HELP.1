@@ -1,0 +1,2384 @@
+.nr LL 76n
+.TH USILIC 1 "2026\[u002D]10\[u002D]06" "usilic 1.5b" "ユーザーコマンド"
+.\" usilic -n: -m(usilic自身の表示)と同じ見た目にするための前置き
+.nr PO 0
+.po 0
+.nr HM 0
+.nr FM 0
+.nr PL 100000v
+.pl 100000v
+.ds CH
+.nr LL 76n
+.ll 776n
+.nh
+.ad l
+.char - \[u002D]
+.char ' \[u0027]
+.char ^ \[u005E]
+.char ~ \[u007E]
+.char ` \[u0060]
+.class [CJKprepunct] , : ; > } \[u3001] \[u3002] \[uFF0C] \[uFF0E] \[u30FB] \[uFF1A] \[uFF1B] \[uFF1F] \[uFF01] \[uFF09] \[u3015] \[uFF3D] \[uFF5D] \[u300D] \[u300F] \[u3011] \[u3041] \[u3043] \[u3045] \[u3047] \[u3049] \[u3063] \[u3083] \[u3085] \[u3087] \[u30FC] \[u30A1] \[u30A3] \[u30A5] \[u30A7] \[u30A9] \[u30C3] \[u30E3] \[u30E5] \[u30E7]
+.class [CJKpostpunct] \[uFF08] \[u3014] \[uFF3B] \[uFF5B] \[u300C] \[u300E] \[u3010]
+.class [CJKnormal] \[u3041]-\[u3096] \[u30A0]-\[u30FF] \[u4E00]-\[u9FFF]
+.cflags 128 \C'[CJKprepunct]'
+.cflags 256 \C'[CJKpostpunct]'
+.cflags 512 \C'[CJKnormal]'
+.in 2n
+名称
+.in 0
+.in 6n
+usilic - ページャー兼ファイルマネージャー
+.in 0
+.sp
+.in 2n
+概要
+.in 0
+.in 6n
+usilic [-c|-g] [-f font] [-u usec ...] [-i pixel ...]
+.br
+         [< file] [file ...] [directory]
+.in 0
+.sp
+.in 2n
+説明
+.in 0
+.in 6n
+usilicは、標準入力および通常ファイルを引数として起動した場合はページャー
+.br
+（以後 Pager）、ディレクトリ引数ではファイルマネージャー（File Manager）
+.br
+として機能します。
+.br
+起動後は、^I（\fBSHELL\fP では ^J^I）で表示される \fBINFO\fP 画面の「Boot options」
+.br
+で引数を確認できます。
+.br
+動作中、ファイル（file）およびディレクトリ（Directory）へのアクセス履歴
+.br
+は次回起動時も継続して使用可能です。
+.br
+なお、本マニュアルページを \fBHELP\fP で閲覧している場合は、; / : キーでそれぞ
+.br
+れ一つ上 / 下の章に移動します。具体的なキーアサインは後述 \fBMACRO\fP の章を参
+.br
+照してください。
+.br
+.sp
+本文中で使用している主な表記は以下の通りです。
+.br
+.sp
+           "" : キーアサイン以外の文字入力
+.br
+           \fI~/\fP : ホームディレクトリ（"echo $HOME" enter で表示）
+.br
+           \fI./\fP : カレントディレクトリ（操作上は \fI.\fP でも可）
+.br
+          \fI../\fP : 親ディレクトリ（同じく \fI..\fP）
+.br
+           ^[ : control を押しながら "["
+.br
+           ^[ : esc
+.br
+           ^M : enter（return）
+.br
+           ^I : tab
+.br
+            ␣ : space
+.br
+         ^J^H : ^J の後 ^H
+.br
+          ^Jb : ^J の後 "b"
+.br
+        ^X^Ke : ^X の後 ^K の後 "e"
+.br
+          ^[N : esc の後 N（桁数任意の数字）
+.br
+          cmd : command
+.br
+       [\fBmode\fP] : 当該 \fBmode\fP 名
+.br
+    \fIusilic(1)\fP : usilicコマンド自体
+.br
+     \fIusilicrc\fP : 各種設定（^J^Ou で同ファイル選択後 "e" で編集可）
+.br
+         「」 : \fIusilic(1)\fP が出力するメッセージ
+.br
+          PID : プロセスID
+.br
+          GUI : -g オプションで起動した \fIusilic(1)\fP
+.br
+          CUI : GUI 以外
+.br
+         file : ディレクトリおよび特殊デバイス以外のファイル
+.br
+        SHELL : 仮想端末
+.br
+       suffix : 拡張子
+.br
+    mode-line : ステータス表示（画面最下行）
+.in 0
+.sp
+.in 2n
+Pager        ：標準入力および通常ファイル引数起動	
+.in 0
+.in 6n
+file 引数（"usilic file"^M）または引数無しの標準入力経由（"usilic < file
+.br
+"^M 等）で起動した場合、\fIusilic(1)\fP はページャーとして動作します。
+.br
+複数の file 引数起動の場合は、n/p でそれぞれ 次/前 の file へ、x/f で 最
+.br
+初/最後 の file へ移り、q で終了します。
+.br
+起動後、\fIusilic(1)\fP は画面最下行に下記のようなステータス行（以下 mode-line
+.br
+）を表示します。
+.in 0
+.sp
+.in 10n
+\fI/Users/usilic/.usilic/usilicrc\fP \fI00030/00062\fP \fI48%\fP \fI1918\fP \fIusilic-1.5b\fP
+.br
+(1)                            (2)         (3) (4)  (5)
+.br
+.sp
+(1) : モード名
+.br
+(2) : カレント行 / 総行
+.br
+(3) : カレントページ / 総ページ * 100
+.br
+(4) : 表示サイズ
+.br
+(5) : バージョン表示
+.in 0
+.sp
+.in 6n
+ページャーで使う主なキーは以下の通りです（ファイルマネージャーで file を
+.br
+表示している時も同じ）。
+.br
+.sp
+        j：画面を１行下へ
+.br
+        k：画面を１行上へ
+.br
+       ^N：カーソルを１行下へ
+.br
+       ^P：カーソルを１行上へ
+.br
+        ␣：ページ送り（\fB(ls)\fP ではクイックルック）
+.br
+       ^V：ページ送り
+.br
+       ^F：ページ送り
+.br
+        b：ページ戻し
+.br
+       ^B：ページ戻し
+.br
+      ^[v：ページ戻し
+.br
+      ^[<：先頭へ
+.br
+      ^[>：末尾へ
+.br
+      ^[N：N 行目へ
+.br
+     ^X^X：大きく移動する前の行と行き来
+.br
+        n：次の file へ
+.br
+        p：前の file へ
+.br
+        x：最初の file へ
+.br
+        f：最後の file へ
+.br
+        q：ページャーを終了
+.br
+       ^G：前のモードへ戻る
+.br
+       ^L：画面を再表示
+.br
+       ^Z：サスペンド
+.br
+      ^Oh：mode-line の表示/非表示
+.in 0
+.sp
+.in 2n
+File Manager ：ディレクトリまたは標準入力無しかつ引数無し起動	
+.in 0
+.in 6n
+入力も引数も無い起動では、前回終了時、例えば \fIusilic.1\fP を閲覧していた場合
+.br
+、mode-line は下記のようになります。
+.in 0
+.sp
+.in 10n
+\fIusilic.1\fP \fI01/66\fP \fI43%\fP \fI2000\fP \fI(groff)\fP \fI/Users/usilic/.usilic/\fP
+.br
+(1)      (2)   (3) (4)  (5)     (6)
+.br
+.sp
+(1) : モード名
+.br
+(2) : カレント行 / 総行
+.br
+(3) : カレントページ / 総ページ * 100
+.br
+(4) : 表示サイズ
+.br
+(5) : プログラム名
+.br
+(6) : 以前のモード
+.in 0
+.sp
+.in 6n
+以前のモード名は mode-line(6) に表示され、^G でそこへ移動します。
+.in 0
+.sp
+.in 10n
+\fI/Users/usilic/.usilic/\fP \fI01/66\fP \fI43%\fP \fI2000\fP \fI(ls)\fP \fIusilic-1.5b\fP
+.br
+(1)                    (2)   (3) (4)  (5)  (6)
+.in 0
+.sp
+.in 6n
+(1) の末尾が「/」かつ(6) が非反転表示の「\fBusilic-1.5b\fP」の場合（以下 \fB(ls)\fP
+.br
+）、^G の連打で以前のディレクトリと行き来します。
+.in 0
+.sp
+.in 6n
+ディレクトリ移動
+.in 0
+.in 10n
+\fB(ls)\fP で行頭が「d」（「drwxr-xr-x ...」等）かつ行末が「/」で終わって
+.br
+いる行はディレクトリです。^M を押すとそこへ移動し、「\fI./\fP」を選択 また
+.br
+は ^Xd"."^M（後述 [\fBDIR\fP]）とすると、カレントディレクトリ表示内容が更
+.br
+新されます
+.in 0
+.sp
+.in 8n
+     ^]：カレントディレクトリへ移動
+.br
+   ^J^C：カレントディレクトリへ移動
+.in 0
+.in 17n
+ファイル閲覧中あるいは \fBSHELL\fP 稼働中であっても、カレントディレ
+.br
+クトリの \fB(ls)\fP へ移動します。
+.br
+\fB(ls)\fP で再度 ^J^C とすると「\fI./\fP」を選択した場合と同様、表示内容
+.br
+が更新されます。
+.br
+.sp
+.in 8n
+   ^J^B：親ディレクトリへ移動
+.in 0
+.in 17n
+^J^C と同じくファイル閲覧中あるいは \fBSHELL\fP 稼働中であっても親
+.br
+ディレクトリへ移動します。
+.in 0
+.sp
+.in 8n
+    ^JN：N番目のディレクトリへ移動
+.in 0
+.in 17n
+文字列表示上先頭の「/」（スラッシュ）を 0 からカウント後、N 
+.br
+番目の「/」に相当するディレクトリへ移動します。たとえば
+.in 0
+.sp
+.in 21n
+\fI/Users/usilic/.usilic/data/\fP
+.in 0
+.sp
+.in 17n
+での ^J2 は下記へ、
+.in 0
+.sp
+.in 21n
+\fI/Users/usilic/\fP
+.in 0
+.sp
+.in 17n
+^J2の代わりに ^J^B とした時は親ディレクトリ
+.in 0
+.sp
+.in 21n
+\fI/Users/usilic/.usilic/\fP
+.in 0
+.sp
+.in 17n
+へ移動し、画面最下行 mode-line 上での入力の場合、文字列の先頭
+.br
+がスラッシュの時は、対応するディレクトリへ移ります。たとえば 
+.br
+^Xf"\fI~/.usilic/usilicrc\fP"^M（後述 [\fBFILE\fP]）で \fIusilicrc\fP を参照後 
+.br
+^X^F とタイプした後、
+.in 0
+.sp
+.in 21n
+\fI/Users/usilic/.usilic/usilicrc\fP
+.in 0
+.sp
+.in 17n
+のカーソル行で ^J2 とすると
+.in 0
+.sp
+.in 21n
+\fI/Users/usilic/\fP
+.in 0
+.sp
+.in 17n
+へ移動します。
+.in 0
+ 
+.br
+.in 2n
+Directory    ：\fB(ls)\fP	
+.in 0
+.in 8n
+     ^M：ファイル内容を表示
+.in 0
+.in 17n
+行頭が「-」（「-rxwr-xr-x ...」等）の行は file（通常ファイル
+.br
+）です。^M でファイルの内容が画面に表示され、file の suffix 
+.br
+が \fIusilicrc\fP の FILE に設定されている場合、指定 program の出力
+.br
+を表示します（.gz ファイルを "gzip -dc" で表示等）。
+.br
+EXEC に設定されている suffix の場合は、\fIusilic(1)\fP 画面を一旦抜
+.br
+けた上で 指定 program を実行します（.info ファイルを "info -f
+.br
+"で実行等）。
+.br
+ファイルサイズが \fIusilicrc\fP の BUFFER で指定した値を超えた場合
+.br
+は、^O^M と同じく画面に出る分だけ読み込む方法で開き、「Not en
+.br
+ough buffer」のメッセージが表示されます（いずれかのキーで消え
+.br
+ます）。
+.br
+\fIusilicrc\fP の CODE の設定でバイナリと判定された file は、最初に
+.br
+見つかった制御コードと \fIfile(1)\fP によるファイルの種類を表示しま
+.br
+す。ただし macOS では、画像・PDF、およびクイックルックが扱え
+.br
+る種類（\fI.numbers\fP \fI.docx\fP 等、後述）の file は、\fIfile(1)\fP 表示の代
+.br
+わりにクイックルックで開きます。
+.br
+GUI では、画像ファイル（\fI.jpg\fP \fI.jpeg\fP \fI.png\fP \fI.gif\fP .bmp、GIF は最初
+.br
+のコマのみ）は \fIusilic(1)\fP 画面に表示します（画面の幅と高さに収
+.br
+まるよう縮小し、小さい画像は拡大しません）。
+.br
+表示中に ^L を押すと読み直すので、画像を書き出し直した時の確
+.br
+認に使えます（開き直した時も読み直します）。
+.in 0
+.sp
+.in 8n
+   ^O^M：ファイルを１行ずつ読み込む
+.in 0
+.in 17n
+このキーで file を選択した時は、行単位入力で表示分まで読み込
+.br
+みます（巨大な file やアーカイブの内容一覧向け）。
+.br
+アクセス履歴には残りません。\fBLOCATE\fP、\fBDU\fP、\fBFILE\fP、\fBUSILIC\fP の一覧で
+.br
+も同じように使えます。
+.in 0
+.sp
+.in 8n
+   ^[^M：制御コードをそのまま可視化
+.in 0
+.in 17n
+0x7f および 0x20 未満の制御コードを、反転表示（0x0d の場合は
+.br
+反転の「M」）で表示します。
+.br
+アクセス履歴にも残らず \fIusilicrc\fP の FILE 設定も適用されません
+.br
+。
+.br
+読み込み中は任意のキーで中断できます。\fBLOCATE\fP、\fBDU\fP、\fBFILE\fP、\fBUSILI
+.br
+C\fP の一覧でも同じように使えます。
+.br
+.sp
+.in 8n
+   ^J^J：以前の file へ戻る
+.in 0
+.in 17n
+\fB(ls)\fP での ^G と同じく、一つ前の file と行き来します。
+.in 0
+.sp
+.in 6n
+\fB(ls)\fP の表示モード切り換え
+.in 0
+.in 8n
+    ^Oo：\fIls(1)\fP の表示形式切替
+.br
+    ^Ol：ソートキーの巡回
+.br
+   ^O^L：ソート順を逆順に
+.in 0
+.sp
+.in 10n
+^Oo は \fIls(1)\fP 出力形式の切り換えキーですが、ファイル名の長さが 16 バ
+.br
+イト未満になると、自動的にファイル名表示のみ形式に固定されます。
+.br
+\fIls(1)\fP 出力の表示順は、^Ol のたびに、日付（Date）⇒ サイズ（Size）⇒ 種
+.br
+類（Kind）⇒ 名称（Name）に切り替わり、^O^L で逆順にソートします。
+.in 0
+.sp
+.in 6n
+ファイル選択
+.br
+        .：現在行選択/非選択トグル
+.br
+       ^␣：現在行選択/非選択トグル（\fBFILE\fP、\fBDIR\fP の一覧ではこちらのみ）
+.br
+        [：現在行選択ののち上の行へ（\fBMACRO\fP）
+.br
+        ]：現在行選択ののち下の行へ（\fBMACRO\fP）
+.br
+      ^Oy：全行選択
+.br
+      ^On：全行解除
+.br
+      ^[p：一時的な選択対象の貼り付け
+.in 0
+.sp
+.in 10n
+\fB(ls)\fP では、行を選択すると、アンダーラインが付加されてファイル操作/閲
+.br
+覧/展開の対象となります（選択が無い時の閲覧/実行はカーソル行が対象）
+.br
+。
+.br
+ディレクトリを選択できるのは一度に一つだけで、二つ目を選ぼうとすると
+.br
+「Cannot select multiple directories」と表示されます。
+.br
+同じ操作は \fBLOCATE\fP、\fBDU\fP、\fBFILE\fP、\fBDIR\fP、\fBUSILIC\fP の一覧でも使えます。
+.br
+\fBCP\fP/\fBMV\fP/\fBARC\fP が終わると、複写先/移動先/展開先の \fB(ls)\fP では処理後のファイ
+.br
+ルにアンダーラインが付いています（一時的な選択）。これは通常の選択と
+.br
+同じく ^Jp 等の対象になります。一時的な選択は ^L で消え、. や ^On で
+.br
+も外せます。
+.in 0
+.sp
+.in 4n
+\fBCP\fP/\fBMV\fP      ：ファイル複写/移動	
+.br
+        ^Oc：複写
+.br
+        ^Om：移動
+.in 0
+.sp
+.in 8n
+^Oc/^Om を押すと mode-line に「Destination? 」のプロンプトが表示されま
+.br
+す。それぞれ複写先/移動先を入力し ^M（のみで指定無しの場合は \fI~/.usilic
+.br
+/data/\fP、それ以外の相対パスはカレントディレクトリ基準、^W で以前のディ
+.br
+レクトリ名を挿入）で実行します。
+.br
+処理は \fBSHELL\fP で行われ、成功すると複写先/移動先の \fB(ls)\fP へ移動後のディレ
+.br
+クトリでは、処理されたファイルにもアンダーラインが付加されています。
+.br
+何も選択していない時は実行されません。
+.in 0
+.sp
+.in 4n
+\fBRM\fP         ：ファイル削除	
+.br
+        ^Or：削除
+.in 0
+.sp
+.in 8n
+^Or のプロンプト「Delete? (y/n)」で "y"^M とすると、選択したファイルを
+.br
+削除します。それ以外の入力では何もしません。
+.br
+読み出し専用等、パーミッションに違反する対象がある場合は「Permission d
+.br
+enied」と表示し、処理を行いません。
+.br
+処理の経過は \fBSHELL\fP に残るので、^[s または ^O^Js で確認できます。
+.in 0
+.sp
+.in 4n
+\fBPROGRAM\fP    ：プログラム実行
+.br
+        ^Jp：プログラム名を入力
+.br
+       ^J^P：閲覧履歴一覧から選択
+.in 0
+.sp
+.in 8n
+^Jp のプロンプトにはカーソル行（選択があればその全部）の file 名が入っ
+.br
+た状態で表示されるので、その前にプログラム名を入力して ^M で実行します
+.br
+。
+.br
+\fIusilicrc\fP の PROGRAM に載っているプログラムは \fIusilic(1)\fP の画面を一旦抜
+.br
+けてそのまま実行し、終了後に元の画面へ戻ります。
+.br
+一覧に載っていないプログラムは \fBSHELL\fP で実行されます。
+.br
+エディター等端末設定が変わってしまうアプリを \fBSHELL\fP で起動した場合は ^J
+.br
+s で \fBSHELL\fP を再起動してください。
+.br
+なお "usilic"で始まる場合は、PROGRAM に載っていなくても \fBSHELL\fP での実行
+.br
+ではなく、下記 \fBUSILIC\fP モードになります。
+.br
+^J^P の時は、今まで \fBPROGRAM\fP および \fBSHELL\fP で実行したプログラムのソート
+.br
+済みの一覧が表示され、さらに ^R で実行順の履歴が表示されます。
+.in 0
+.sp
+.in 4n
+\fBUSILIC\fP     ：ファイル閲覧	
+.br
+        ^Ou：閲覧
+.in 0
+.sp
+.in 8n
+^Ou ではアンダーラインのファイル群一覧から最初の行を選択後の画面が表示
+.br
+されます。
+.br
+; および : キーで前後のファイルへ移動し、^G では一覧へ戻ります。
+.br
+このモードでは、\fBPROGRAM\fP のプロンプトから "usilic " で起動したというだ
+.br
+けの理由で \fBUSILIC\fP となっていますが、表示されるファイル群一覧は、後述の
+.br
+\fBUSILIC\fP 履歴にもちゃんと保存されます。
+.in 0
+.sp
+.in 4n
+\fBARC\fP        ：アーカイブ内容閲覧および展開	
+.br
+        ^Oa：アーカイブ展開
+.br
+       ^J^A：閲覧履歴一覧から選択
+.in 0
+.sp
+.in 8n
+\fB(ls)\fP で下記の suffix を持つファイルを ^M で選択すると内容一覧が表示さ
+.br
+れます（^O^M でも一覧は表示されますが項目毎の選択はできません）。
+.br
+どれかを ^M で選んで内容（内のアーカイブはさらにその一覧）を閲覧できま
+.br
+す。
+.br
+\fB(ls)\fP 同様 ␣ ではカーソル行の file がクイックルックで表示され、.[] キー
+.br
+で複数選択後、^Oa により展開先を指定すればそこへ展開されます（選択が無
+.br
+ければ全体）。
+.br
+\fB(ls)\fP で同じ suffix ファイルを ^Oa とした場合も全体を展開します。
+.br
+^J^A では閲覧履歴（\fBFILE\fP）のうちアーカイブファイルのみのリストとなり、
+.br
+選ぶと内容一覧が表示されます（.epub は ^J^E の一覧へ）。
+.br
+展開先を指定せず ^M のみの場合 \fI~/.usilic/data/\fP が展開先となる点は \fBCP\fP/\fBM
+.br
+V\fP と同じですが、\fB(ls)\fP で複数のファイルが選択されている場合、\fBARC\fP は起動
+.br
+できません。
+.br
+内容一覧が取れないファイルは通常の file として開きます。
+.in 0
+.sp
+.in 8n
+\fI.tar\fP \fI.tar.gz\fP \fI.tgz\fP \fI.taz\fP \fI.tar.z\fP \fI.tar.bz2\fP \fI.tbz2\fP \fI.tar.xz\fP \fI.txz\fP \fI.tar.zst\fP \fI.tz
+.br
+st\fP \fI.lzh\fP \fI.zip\fP \fI.jar\fP \fI.rpm\fP \fI.deb\fP \fI.rar\fP \fI.7z\fP
+.in 0
+.sp
+.in 4n
+\fBEPUB\fP       ：Epub ファイル閲覧	
+.br
+        ^Oe：内容一覧
+.br
+       ^O^E：スクロールモード切替
+.br
+        ^Je：ファイル名を入力
+.br
+       ^J^E：閲覧履歴一覧から選択
+.br
+        ^[←：次の章へ（横書きでは^[↓）
+.br
+        ^[→：今の章の冒頭へ、冒頭にいれば前の章へ（横書きでは^[↑）
+.in 0
+.sp
+.in 8n
+GUI の場合、\fB(ls)\fP で .epub の suffix を持つファイルを ^M で選ぶとアーカ
+.br
+イブに同梱の CSS 設定に従い成形された文章による画面を表示します（ただ
+.br
+し CUI では限られた制約内でしか表示できません）。
+.br
+^Oe では \fBARC\fP と同じく内容一覧から項目を選択しての閲覧が可能です（成形
+.br
+はされません）。
+.br
+\fBFILE\fP の履歴一覧には、それぞれ (epub)、(unzip) がファイ名の後ろに付加さ
+.br
+れます。
+.br
+^O^M では一覧のみで選択不能である点は \fBARC\fP と同じですが、\fIusilicrc\fP の AR
+.br
+CHIVE に .epub を設定しても \fBARC\fP では開けません。
+.br
+^Je のプロンプトでは、カレントディレクトリにある .epub ファイルのみ受
+.br
+け付けます（^I で補完してみてください）。^J^E の一覧にも .epub 以外の
+.br
+ファイルは表示されません。
+.br
+^O^E はスクロールを連続および章毎（画面には単一の章のみ表示）で切り換
+.br
+えを行い、^[←^[→（または^[↑^[↓）では章の冒頭へ飛びます。縦書きは右から
+.br
+左へ読むので、← が先、→ が戻る向きです（連続・章毎いずれでも使えます）
+.br
+。
+.br
+^[ の代わりに shift なら矢印キーとの同時押しが可能ですが、端末によって
+.br
+は設定が必要です。
+.br
+本文中のリンクへは ^M（またはクリック）で飛び、^X^X で元の位置へ戻りま
+.br
+す。
+.br
+Web のリンク（http 等）は \fIusilicrc\fP の URL の設定に従って処理し、^Ow を
+.br
+押すたびに下記のモードに切り換えて名称を mode-line に表示します（いず
+.br
+れかのキーで消えます）。
+.br
+既定は「Open」で、処理が終わると既定に戻ります。
+.br
+.sp
+.in 8n
+.in 15n
+.ti 8n
+Open : 既定のブラウザで開く
+.in 0
+.in 8n
+.in 15n
+.ti 8n
+Pdf  : ページ全体を縦長の１ページの PDF にして \fI~/Downloads\fP へ保存し、
+.br
+クイックルックで開く（要 Playwright、後述 URL 参照）
+.in 0
+.in 8n
+.in 15n
+.ti 8n
+Dump : w3m -dump の出力を usilic の画面で読む（^G で本へ戻る）
+.in 0
+.in 8n
+.in 15n
+.ti 8n
+Term : 端末のブラウザ（w3m）で開く
+.in 0
+.in 8n
+.in 15n
+.ti 8n
+Copy : URL をクリップボードへコピー
+.in 0
+.in 8n
+.in 15n
+.ti 8n
+Look : クイックルックで開く（macOS のみ）
+.in 0
+.sp
+.in 2n
+ Mode        ：\fB(ls)\fP 以外でも実行可能
+.br
+.in 6n
+\fIusilic(1)\fP は新しいモードを起動する前に、現在の mode-line をスタックに積
+.br
+んだうえで表示を更新します（^G キーでは最後に積まれた表示に戻ります）。
+.br
+これらのスタックの内容は \fB(ls)\fP でディレクトリを指定するか、または ^J2 等
+.br
+でディレクトリを移動するとクリアされ、mode-line(6) の位置に「\fBusilic-1.5b\fP
+.br
+」の文字列を表示します。
+.br
+\fBLOCATE\fP、\fBDU\fP 等の一覧表示画面でディレクトリを選ぶと \fB(ls)\fP 画面になりますが
+.br
+、そこでさらにディレクトリを選んだ時も上記スタックがクリアされます。
+.br
+\fBLOCATE\fP 中の ^J^L のように、モード内で同じ実行キーを押した場合は、途中の
+.br
+履歴を捨てて（^G の戻り先は最初にモードを立ち上げた場所のまま）改めて起
+.br
+動します。
+.br
+.in 0
+.sp
+.in 4n
+\fBHISTORY\fP    ：アクセス履歴	
+.br
+         ^R：履歴一覧を表示
+.in 0
+.sp
+.in 8n
+\fBFILE\fP、\fBDIR\fP、\fBMAN\fP、\fBLOCATE\fP、\fBFGREP\fP、\fBEGREP\fP、\fBCUT\fP の各プロンプトで ^R キーを押
+.br
+した場合は、入力順に保存された文字列で \fBHISTORY\fP リストを表示します（最
+.br
+新が最下行）。
+.br
+カーソル行で ^M を押すかそのまま文字を入力すると、その文字列がプロンプ
+.br
+トに入ります。
+.br
+\fBPROGRAM\fP および \fBSHELL\fP から入力された文字列は \fBPROGRAM\fP リストに保存され、
+.br
+^R で実行履歴一覧が表示されます。
+.br
+一覧の画面で再度 ^R を押すと、ソート後に重複を除いた一覧と、入力順の \fBH
+.br
+ISTORY\fP リストとを切り替えます。
+.br
+\fBEGREP\fP と \fBCUT\fP では、最初の ^R で \fIusilicrc\fP の \fBEGREP\fP に書かれた正規表現の
+.br
+実例を先頭に並べた一覧（カーソルは最後に使った正規表現の行）表示します
+.br
+。履歴は \fI~/.usilic/history\fP に保存され、次回の起動後も使えます。
+.br
+種類ごとに残す行数は \fIusilicrc\fP の LINE で指定します（デフォルトは無制限
+.br
+）。
+.in 0
+.sp
+.in 4n
+\fBFGREP\fP/\fBEGREP\fP：文字列検索
+.br
+           ：文字列検索	
+.br
+         ^S：逐次検索
+.br
+       ^J^S：拡張正規表現で検索
+.in 0
+.sp
+.in 8n
+検索でマッチした文字列はハイライト表示され、^N/^P で 次/前 のマッチ文
+.br
+字列へ移動します。
+.br
+逐次検索では文字が入力されるたびにリテラルな（文字どおりの）検索が行わ
+.br
+れ、^M で確定します。マッチしない時は「No String」と表示されます。
+.br
+\fBEGREP\fP は grep -E で検索します（macOS の BSD grep と Linux の GNU grep 
+.br
+の両方で同じ意味になるものだけを挙げます）。主なメタ文字（特殊文字）は
+.br
+次のとおりです。
+.br
+.sp
+.in 8n
+位置・境界
+.in 0
+.in 12n
+.in 17n
+.ti 12n
+ ^ : 行の先頭（例: ^A は行頭のAにマッチ）
+.in 0
+.in 12n
+.in 17n
+.ti 12n
+ $ : 行の末尾（例: Z$ は行末のZにマッチ）
+.in 0
+.in 12n
+.in 17n
+.ti 12n
+\eb : 単語の境界（例: \ebcat\eb は「cat」単独にマッチし、「concatenat
+.br
+e」にはマッチしない）
+.in 0
+.in 12n
+.in 17n
+.ti 12n
+\eB : 単語の境界以外
+.in 0
+.sp
+.in 8n
+任意の文字・文字の集合（文字クラス）
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+    . : 改行を除く任意の1文字
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+  [ ] : 括弧内のいずれか1文字（例: [abc] は a, b, c のどれか1文字
+.br
+）
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+ [^ ] : 括弧内の文字以外の1文字（例: [^0-9] は数字以外の1文字）
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+[a-z] : 範囲指定（例: [a-z] は小文字アルファベット、[0-9] は数字）
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+   \ed : 任意の数字（[0-9] と同じ）
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+   \eD : 数字以外の任意の文字（[^0-9] と同じ）
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+   \ew : 英数字とアンダースコア（[a-zA-Z0-9_] とほぼ同じ）
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+   \eW : 英数字とアンダースコア以外
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+   \es : 任意の空白文字（スペース、タブ、改行など）
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+   \eS : 空白文字以外の任意の文字
+.in 0
+.sp
+.in 8n
+繰り返しの回数を表す（量指定子）
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+    * : 0回以上の繰り返し（なくても良いし、いくつあっても良い）
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+    + : 1回以上の繰り返し（最低1回は必要）
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+    ? : 0回または1回だけ存在（あってもなくても良い）
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+  {n} : ちょうどn回の繰り返し（例: \ed{4}）は数字4桁
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+ {n,} : n回以上の繰り返し
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+{n,m} : n回以上、m回以下の繰り返し
+.in 0
+.sp
+.in 8n
+グループ化と条件分岐（OR）
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+    | : OR（または）（例: cat|dog は「cat」または「dog」）
+.in 0
+.in 12n
+.in 20n
+.ti 12n
+ （ ) : グループ化。文字列を1つの単位としてまとめ、後から再利用（
+.br
+キャプチャ）できるようにする
+.in 0
+.sp
+.in 8n
+エスケープ処理（\e）について
+.in 0
+.in 12n
+.in 17n
+.ti 12n
+\e. : ドット文字そのものを検索
+.in 0
+.in 12n
+.in 17n
+.ti 12n
+\e? : 質問マークそのものを探したい
+.in 0
+.in 12n
+.in 17n
+.ti 12n
+\e( : 丸括弧そのものを検索
+.in 0
+.sp
+.in 8n
+grep -E には、最短一致（*? +?)、非キャプチャグループ（?: )、先読み・後
+.br
+読み（(?= )（?! )（?<= )（?<! )）はありません。
+.br
+.sp
+.in 8n
+参考
+.in 0
+.in 12n
+基本正規表現（素の grep）では、一部のメタ文字を \e（バックスラッシ
+.br
+ュ）付きで書く必要があります。\fIusilic(1)\fP の検索では使いませんが、他
+.br
+のツールで出会った時のために挙げておきます。
+.in 0
+.in 12n
+.in 24n
+.ti 12n
+       ¥+ : 1回以上の繰り返し
+.in 0
+.in 12n
+.in 24n
+.ti 12n
+       ¥? : 存在するかしないか
+.in 0
+.in 12n
+.in 24n
+.ti 12n
+¥( ... ¥) : 複数の文字を一つにまとめる
+.in 0
+.in 12n
+.in 24n
+.ti 12n
+  ¥{n,m¥} : n回からm回の繰り返し
+.in 0
+.sp
+.in 4n
+\fBCUT\fP        ：バッファ/ファイル分割	
+.br
+        ^Cb：指定文字列でバッファを分割
+.br
+        ^Cf：指定文字列でファイルを分割
+.in 0
+.sp
+.in 8n
+検索文字列を入力すると、表示中のバッファに対して拡張正規表現（\fBEGREP\fP と
+.br
+同じ grep -E）による検索を行い、マッチした文字列を含む行でバッファ内容
+.br
+を分割したうえで、当該行の目次一覧を作成します。
+.br
+目次一覧の mode-line には「(egrep)」が表示され、^M で選んだ部分を表示
+.br
+している時の mode-line には「\fBCUT\fP: 検索文字列」が表示されます。
+.br
+^Cf ではファイル名を入力し、そのファイル自身を分割します。後述 [\fBFILE\fP] 
+.br
+のアクセス履歴一覧では「ファイル名 "文字列"」で表示され、そこから選ぶ
+.br
+と同じ分割をやり直します。
+.br
+\fBHELP\fP 自身もこの仕組みで行末のタブコードで分割して表示しています。
+.br
+目次一覧の画面でも ^S / ^J^S で見出しを検索できます。
+.in 0
+.sp
+.in 4n
+\fBDU\fP         ：ディスク使用量	
+.br
+        ^Jd：ディスク使用量を \fIdu(1)\fP で集計
+.br
+       ^J^D：集計結果画面へ戻る
+.in 0
+.sp
+.in 8n
+^Jd で \fBDU\fP を起動した場合、カレントディレクトリを対象に \fIdu(1)\fP を実行し
+.br
+、サイズ順の一覧を表示します。
+.br
+集計中に ^G を押すと中断し、それまでの集計結果へ移動します。
+.br
+^J^D の場合は既存の結果にアクセスするだけなので、カレントディレクトリ
+.br
+を変更しても一覧は更新されません。\fBDU\fP の一覧で ^Jd を押すとカーソル行の
+.br
+、file ではレントディレクトリで集計し直します。
+.in 0
+.sp
+.in 4n
+\fBLOCATE\fP     ：ファイル位置検索	
+.br
+        ^Jl：\fI<u>locate(1)</u>\fP 用データベースを作成
+.br
+       ^J^L：\fBLOCATE\fP 画面へ戻る
+.in 0
+.sp
+.in 8n
+mode-line のプロンプトで、例えば "\fI.tgz\fP"^M とすれば、システムに含まれる
+.br
+\fI.tgz\fP という suffix を持つ全ファイル名を表示します。プロンプトには前回
+.br
+の検索文字列が入っているので、そのまま ^M とすれば再検索せずに前回の結
+.br
+果を表示します。^Jl ではデータベースを作成（更新）します。作成中に ^G 
+.br
+を押すと中断し、それまでに作成したデータベースで検索できます。
+.in 0
+.sp
+.in 4n
+\fBMAN\fP        ：マニュアルページ閲覧	
+.br
+        ^Jm：マニュアルページを表示
+.br
+       ^J^M：閲覧履歴一覧を表示
+.in 0
+ 
+.br
+.in 8n
+入力文字列が既存のページにマッチした場合、\fIman(1)\fPにより当該マニュアルを
+.br
+表示します。
+.br
+^J^M では履歴一覧から選択するか、または新たに入力された文字列に該当す
+.br
+るマニュアルページを表示します。
+.br
+入力文字列が既存のページにマッチした場合、\fIman(1)\fP により当該マニュアル
+.br
+を表示します。
+.br
+^J^M では履歴一覧から選択するか、または新たに入力された文字列に該当す
+.br
+るマニュアルページを表示します。
+.in 0
+.sp
+.in 4n
+\fBFILE\fP       ：ファイル名入力	
+.br
+        ^Xf：ファイル名を入力
+.br
+       ^X^F：閲覧履歴一覧から選択
+.in 0
+.sp
+.in 8n
+mode-line 行で入力、または今までにアクセスしたリストから選択したファイ
+.br
+ルを表示します。
+.br
+\fBFILE\fP のファイルリストでは、使用したプログラムがあれば、file 名に「(プ
+.br
+ログラム名)」を付加して、また \fBCUT\fP で使用された文字列はダブルクォート（
+.br
+"）で括って表示します。ただし File-selector で ^O^M または ^[^M で選択
+.br
+したファイルは ^J^J キーや \fBFILE\fP リストでは表示されません。
+.in 0
+.sp
+.in 4n
+\fBDIR\fP        ：ディレクトリ名入力	
+.br
+        ^Xd：ディレクトリ名を入力
+.br
+       ^X^D：閲覧履歴一覧から選択
+.in 0
+ 
+.br
+.in 8n
+mode-line 行で入力、または今までにアクセスしたリストから選択したディレ
+.br
+クトリに移動します。^G でリストへ戻りますが、^J^C、^J^B、^J2 等ディレ
+.br
+クトリ移動キーを入力すると \fBDIR\fP からは離脱します。
+.in 0
+.sp
+.in 4n
+\fBCOPY\fP       ：文字列コピー	
+.br
+       ^O^C：モードを開始
+.br
+      ^@/^␣：範囲指定開始/終了トグル
+.br
+        ^X␣：矩形範囲指定開始/終了トグル
+.br
+        ^[w：指定範囲をクリップボードへコピー
+.br
+        ^[p：指定範囲をコピーして \fBPROGRAM\fP のプロンプトへ入れる
+.br
+       ^O^Y：プロンプトの入力中にクリップボードの内容を挿入
+.in 0
+.sp
+.in 8n
+mode-line 以外の画面の文字列をクリップボードへコピーします。
+.br
+^O^C の後、^N/^P/^F/^B/^A/^E（または矢印キー）でカーソルを移動し、^@ 
+.br
+で範囲指定を開始した後は、カーソル移動後のハイライト表示がコピー対象エ
+.br
+リアとなります。
+.br
+一旦 ^@ で範囲指定を解除したあとも、再度 ^@ により複数のエリアが作成さ
+.br
+れ、同様の切り替えは ^X␣（矩形範囲指定）でも機能します。
+.br
+^[N（N は数字）で N 行目へ移動し、^G で \fBCOPY\fP を中止します。
+.br
+^[p も同じく全エリアをクリップボードへコピーしますが、そのまま \fBCOPY\fP を
+.br
+終了して \fBPROGRAM\fP のプロンプト（^Jp）を開き、コピーした内容をペーストし
+.br
+たうえでプログラム名の入力待ちとなります。画面上のファイル名や URL 等
+.br
+をプログラムへ渡せる形へ編集し直せばそのまま ^M で実行できます。
+.br
+矩形ではないエリアが複数ある場合は、改行（ハイライト表示のJ）の代わり
+.br
+に半角スペースを挟んでつなげます。作成された全エリアは ^[w でクリップ
+.br
+ボードへコピーされ、^O^Y でペースト可能です。
+.br
+なお、macOS ではシステムのクリップボードにもコピーされるので、他のアプ
+.br
+リへもペーストできますが、「ユニバーサルクリップボード」が有効な場合は
+.br
+、同じ Apple アカウントの他の機器へも反映されてしまいます。予期せぬ文
+.br
+字列がペーストされる事態を回避したければ、「システム設定」⇒「一般」⇒「
+.br
+AirDropとHandoff」で「Handoff」を無効にしてください。
+.in 0
+.sp
+.in 4n
+\fBEDIT\fP       ：ファイル編集	
+.br
+        ^[e：環境変数 $EDITOR で編集
+.in 0
+.sp
+.in 8n
+ファイル名（mode-line(1）が file で、プログラム名（mode-line(5)）が空
+.br
+白の時は \fIusilicrc\fP に定義されているエディターを起動します。
+.br
+カレント行番号 N を +N オプションでエディターへ渡して起動するので、同
+.br
+オプションが使用できるエディターを設定しておくと便利です。デフォルトで
+.br
+は \fIpico(1)\fP に設定してあります。
+.in 0
+.sp
+.in 4n
+\fBSHELL\fP      ：仮想端末	
+.br
+        ^[s：\fBSHELL\fPへ移動
+.br
+        ^Js：\fBSHELL\fPを再起動
+.br
+        ^J.：カレントディレクトリへ移動
+.br
+        ^J,：カレントディレクトリ一覧
+.br
+        ^Jw：バッファ名表示
+.br
+       ^J^W：バッファの内容表示
+.br
+        ^O/：出力の検索
+.br
+       ^O^F：ページ送り
+.br
+       ^O^B：ページ戻し
+.br
+       ^O^L：再表示
+.in 0
+.sp
+.in 8n
+^J. で \fBSHELL\fP プロンプトのカレントディレクトリを \fB(ls)\fP の位置に設定しま
+.br
+す（^J, では "ls -l" を実行）。
+.br
+^J^W ではバッファの内容を \fI~/.usilic/data/\fP（または WORK）に保存し、"cat
+.br
+ファイル名" をプロンプトに挿入します。
+.br
+\fBSHELL\fP の中からは ^O/ で出力の検索、^O^F/^O^B でページ送り/戻し、^O^L 
+.br
+で再表示、^J^I で \fBINFO\fP を使えます。^G で元のモードへ戻ります。
+.br
+異常動作およびプログラム実行中によりプロンプトが戻っていない場合、\fBCP\fP 
+.br
+や \fBPROGRAM\fP 等 \fBSHELL\fP プロンプトを使用する機能および \fBEXIT\fP を実行しようと
+.br
+すると、\fBSHELL\fP 画面に切り替わります。
+.br
+\fBSHELL\fP プロンプトでパイプ（"ls | usilic"^M）または file 引数（"usilic f
+.br
+ile"^M）で \fIusilic(1)\fP を起動した場合は、それぞれファイル名「(stdin)」、
+.br
+「file」で内容を今の \fIusilic(1)\fP に表示し、directory 引数（"usilic direc
+.br
+tory"^M）ではそのディレクトリの \fB(ls)\fP になります。また "man bash"^M 等
+.br
+の出力は、一時的な PAGER 環境変数により \fIusilic(1)\fP へのパイプ入力へ切り
+.br
+替わるため「(stdin)」で表示されます。この機能では、モード切り替えで使
+.br
+用する \fIsocket(2)\fP の認証に shell のプロセス ID を使用しているので、\fBSHEL
+.br
+L\fP プロンプトで \fIsu(1)\fP 等を実行した場合、そのプロンプトからはモードが切
+.br
+り替わりません(補足の章の \fIsocket(2)\fP 参照)。
+.br
+\fIusilic(1)\fP の \fBSHELL\fP は \fBCP\fP/\fBMV\fP/\fBRM\fP 等のファイル操作を行うために用意した仮
+.br
+想端末なので最小限の機能しかなく、エディタやページャ等、端末設定を操作
+.br
+するプログラムは正常に動作しません。ただしプログラム名が program リス
+.br
+トに載っている場合は、\fBPROGRAM\fP に画面を切り替えて実行されます。そうでな
+.br
+いプログラムを意図せず起動してしまった時は、キー入力で終了可能なら終了
+.br
+を、それ以外のケースでは ^Js により \fBSHELL\fP を再起動してください。対応し
+.br
+ている shell は bash、zsh、tcsh、csh です（\fIusilicrc\fP の \fBSHELL\fP 参照)。
+.in 0
+.sp
+.in 8n
+補完
+.in 0
+.in 8n
+\fBSHELL\fP プロンプトの直後に ^I を押すと実行可能なファイルリストを表示しま
+.br
+す。これは環境変数 $PATH が示すディレクトリ下に配置された実行可能ファ
+.br
+イル一覧です。どれかを選択するか、または入力された文字列にマッチする名
+.br
+称のプログラムが $PATH 上に存在する場合はカーソル位置に挿入され、複数
+.br
+の候補があればビープ音で通知します。さらに ^I で今度はそれらのリストが
+.br
+表示され、同じ手順によりプログラムの絞り込みが可能です。そうして確定し
+.br
+たプログラム名に続き ␣ のあとの ^I ではカレントディレクトリの内容一覧
+.br
+が表示されるので引数の特定にも同じ手順を使用でき、^Jp（\fBPROGRAM\fP）および
+.br
+^Jm（\fBMAN\fP）のプロンプトでも ^I による実行ファイル名補完は機能します。
+.br
+\fBFILE\fP および \fBDIR\fP では、$PATH 上の実行ファイル検索は行いません。カレント
+.br
+ディレクトリ内の file およびディレクトリだけが補完の対象になります。
+.in 0
+.sp
+.in 2n
+Command Line ：
+.in 0
+.in 8n
+下記のキーは、行頭が「usilic v1.5b:」（一時的な PS1 環境変数）のプロン
+.br
+プトでしか使用できません。
+.in 0
+.in 10n
+   ^W：^J^W、^Jw のコマンドを再表示
+.br
+   ^C：入力を中断
+.in 0
+.sp
+.in 8n
+\fBSHELL\fP および mode-line の文字入力プロンプトでは下記のキーも使用できま
+.br
+す。
+.in 0
+.in 10n
+   ^H：カーソル位置から左へ１文字削除
+.br
+   ^K：カーソル位置から表示行末まで削除
+.br
+   ^U：カーソル位置から表示行頭まで削除
+.br
+   ^Y：カーソル位置に削除内容を挿入
+.br
+   ^D：カーソル位置の文字削除
+.br
+   ^E：表示行末へ移動
+.br
+   ^A：表示行頭へ移動
+.br
+   ^B：左へ１文字移動
+.br
+   ^F：右へ１文字移動
+.br
+   ^I：ファイル名補完
+.br
+   ^L：画面を再表示
+.br
+   ^Q：機能キャラクタ入力
+.in 0
+.sp
+.in 4n
+\fBUSILIC\fP     ：アクセス履歴の一覧	
+.br
+        ^[u：目次
+.br
+       ^J^U：種類ごとの一覧
+.br
+        ^Ju：時系列の一覧
+.br
+       ^X^W：バッファを作業ファイル（WORK）へ保存
+.in 0
+.sp
+.in 8n
+今までにアクセスした file、ディレクトリ、マニュアルページの履歴を一覧
+.br
+表示します。
+.br
+^[u の目次には \fBMAN\fP、\fBDIR\fP、\fBFILE\fP、\fBPROGRAM\fP、WORK の見出しが並び、^M でそれ
+.br
+ぞれの一覧を開きます。
+.br
+\fBPROGRAM\fP の項目で ^M を押すと、その文字列が \fBPROGRAM\fP のプロンプトに入り
+.br
+ます。
+.br
+WORK は ^X^W で保存した作業ファイルの一覧です。
+.br
+^J^U は種類を問わずソートした一覧、^Ju はアクセスした順（最新が最下行
+.br
+）の一覧です。
+.br
+一覧では \fB(ls)\fP と同じくファイル操作（.[]、^Ou、^Oc 等）が使えます。
+.br
+^Ou で開いた選択ファイル群も、\fBUSILIC\fP 一覧へ登録されます。
+.in 0
+.sp
+.in 4n
+\fBINFO\fP       ：\fIusilic(1)\fP 情報	
+.br
+         ^I：主な情報を表示
+.br
+       ^J^I：\fBSHELL\fP から実行
+.in 0
+.sp
+.in 8n
+\fIusilic(1)\fP に関する下記の情報を表示します。
+.in 0
+.sp
+.in 12n
+Boot options : 起動オプション
+.br
+Startup file : 設定ファイル
+.br
+       \fBERROR\fP : 稼働中のエラーメッセージ
+.br
+       \fBSHELL\fP : 仮想端末からの出力
+.br
+        \fBHELP\fP : 平文の\fBHELP\fP
+.br
+        DATA : \fI~/.usilic/data/\fPの \fB(ls)\fP
+.br
+        WORK : 作業ファイル
+.in 0
+.sp
+.in 8n
+下記のキーで、それぞれを直接開くこともできます。
+.in 0
+.sp
+.in 10n
+^J^Ou：\fI~/.usilic/usilicrc\fP
+.br
+^J^Oe：\fBERROR\fP
+.br
+^J^Os：\fBSHELL\fP の出力
+.br
+^J^Od：\fI~/.usilic/data/\fP の \fB(ls)\fP
+.br
+^J^Ow：WORK の一覧（後述 [\fBUSILIC\fP] の目次の WORK と同じ）
+.in 0
+.sp
+.in 4n
+\fBHELP\fP       ：マニュアルを表示	
+.br
+         ^H：\fBHELP\fP
+.br
+       ^J^H：プロンプトから \fBHELP\fP
+.br
+        ^Ja：日本語/英語を切り替え
+.in 0
+.sp
+.in 8n
+通常ファイル $PREFIX/lib/usilic/HELP（\fI~/.local/lib/usilic/\fPHELP 等）を
+.br
+章ごとに \fBCUT\fP した目次の冒頭章から始まります。
+.br
+\fBHELP\fP では ^Cf"^I"^M（タブコードで \fBCUT\fP） ですが、検索文字を " : "（全角
+.br
+コロン）にするとキーアサイン一覧となります（\fBKEY\fP はその画面を流用）。
+.br
+.in 0
+.sp
+.in 4n
+\fBKEY\fP        ：キーアサインを表示	
+.br
+         ^K：使用キー一覧を表示
+.br
+       ^J^K：\fBSHELL\fP から \fBKEY\fP を起動
+.br
+      ^J^Oh：平文 \fBHELP\fP の当該位置へ
+.in 0
+.sp
+.in 8n
+ハイライト行で ^M を押すと表示の機能が実行されます。
+.br
+h キーでは「^H : HELP を表示」行を ^M した場合とは違い、平文の HELP の
+.br
+当該位置へジャンプします。平文表示なので目次一覧はありません（"^Cb[0-9
+.br
+]."^M で一覧化は可能）。
+.in 0
+.sp
+.in 4n
+\fBMACRO\fP      ：キーボードマクロ設定	
+.br
+        ^X(：キーボードマクロの記録開始
+.br
+        ^X)：キーボードマクロの記録終了
+.br
+        ^Xe：記録したマクロを実行
+.br
+        ^Xs：記録したマクロを保存
+.in 0
+.sp
+.in 8n
+^X( から ^X）までに押したキーを記録し（その間 mode-line のモード名は \fBM
+.br
+ACRO\fP）、^Xe で繰り返します。実行の間隔は \fIusilicrc\fP の WAIT で指定できま
+.br
+す。
+.br
+^Xe の直後の ^Xs では、記録したキーを \fIusilicrc\fP の \fBMACRO\fP の「--」の行へ
+.br
+保存し、\fBMACRO\fP の設定一覧を表示して実行キー（１文字）を尋ねます。キーを
+.br
+押すと「M-N キー K-n ...」として設定し、次の行に「--」を入れます（有効
+.br
+になるのは次回の起動から）。
+.br
+^Xe の直後でなければ既存設定の編集モードとなります。
+.br
+; : [ ] l e h は設定済みで内容は以下の通りです。
+.in 0
+.sp
+              ;：^G^P^M  前の項目を開く
+.br
+              :：^G^N^M  次の項目を開く
+.br
+              [：.^P     選択して上へ
+.br
+              ]：.^N     選択して下へ
+.br
+              l：^[l     \fBSHELL\fPのログ
+.br
+              e：^[e     \fBEDIT\fP
+.br
+              h：^J^Oh   平文の\fBHELP\fP（\fBKEY\fPでは現在行へ）
+.br
+       
+.br
+.in 4n
+\fBEXIT\fP       ：usilic を終了	
+.br
+       ^X^C：終了
+.br
+       ^[^[：終了 
+.in 0
+.sp
+.in 8n
+mode-line に「ＥＸＩＴ (y/n)?」を表示し、"y"^M で \fIusilic(1)\fP を終了しま
+.br
+す。
+.br
+\fIusilic(1)\fP をディレクトリ引数で起動した場合、各モードを実行する際、前回
+.br
+終了時のカーソル位置等の情報を \fI~/.usilic/history\fP から読み取って同じ状
+.br
+態を復元します。モード終了時も次回実行のために同ファイルへ状態が保存さ
+.br
+れ、\fIusilic(1)\fP 自体を起動する際も、標準入力無しかつ引数無しの時は、前回
+.br
+終了時の状態を復元します。
+.br
+それらの全履歴は単一の file \fI~/.usilic/history\fP を介してやり取りするため
+.br
+、複数の \fIusilic(1)\fP を同じ引数で起動する場合、今稼働中の \fIusilic(1)\fP を \fIk
+.br
+ill(1)\fP した上で起動し直します。
+.br
+\fBSHELL\fP busy の状態で \fBSHELL\fP 画面に切り替わった時は、プログラムを終了させ
+.br
+てから ^X^C または ^[^[ キーで \fBEXIT\fP を再実行して下さい。
+.in 0
+.sp
+.in 2n
+設定	
+.in 0
+.in 6n
+\fIusilic(1)\fP は起動時に \fI~/.usilic/usilicrc\fP を読み込んで環境設定を行います。
+.br
+同ファイルが存在しなければ、\fI~/.local/lib/usilic/\fP から \fIusilicrc\fP を \fI~/.usi
+.br
+lic/\fP へコピーしたうえで内容を読み込みます。
+.br
+.sp
+以下は \fIusilicrc\fP で定義されている内容です。
+.in 0
+.sp
+.in 6n
+ARCHIVE	
+.in 0
+.in 10n
+書式 : suffix0   suffix1
+.br
+用例 : .tar.gz   .tgz
+.br
+.sp
+suffix0 を持つアーカイブファイルの内容を、下記の suffix1 の設定で表
+.br
+示。
+.br
+.sp
+suffix1   program  （option)
+.br
+\&.tar      tar       tvf
+.br
+\&.tgz      gzip      -dc | tar tvf -
+.br
+\&.tar.bz2  bzip2     -dc | tar tvf -
+.br
+\&.lzh      lha
+.br
+\&.zip      unzip     -l
+.br
+\&.rpm      rpm       -qplv
+.br
+\&.deb      ar        tv
+.in 0
+.sp
+.in 6n
+FILE	
+.in 0
+.in 10n
+書式 : suffix program（option)
+.br
+用例 : .gz    gzip    -dc
+.br
+.sp
+program を実行して suffix を持つファイルの内容を平文表示。
+.in 0
+.sp
+.in 6n
+PROGRAM	
+.in 0
+.in 10n
+書式 : suffix program（option)
+.br
+用例 : .html  lynx
+.br
+.sp
+suffix を持つファイル引数で program を実行。
+.in 0
+.sp
+.in 6n
+EDITOR	
+.in 0
+.in 10n
+書式 : editor
+.br
+用例 : vi
+.br
+.sp
+\fBEDIT\fP で起動されるエディター。
+.in 0
+.sp
+.in 6n
+BUFFER	
+.in 0
+.in 10n
+書式 : size
+.br
+用例 : 2
+.br
+.sp
+file に割り当てるバッファ size（MB）。
+.in 0
+.sp
+.in 6n
+CODE	
+.in 0
+.in 10n
+書式 : code0 code1
+.br
+用例 : 1     8     ...
+.br
+.sp
+ここでの設定以外の 0x20 未満の機能キャラクタが、上記の suffix を持た
+.br
+ない file に含まれていて、ファイルの漢字コード（Note の章の 漢字コー
+.br
+ド 参照）が jis でない場合には、バイナリファイルとみなして \fIfile(1)\fP 
+.br
+を実行し、該当コードとファイルタイプを表示。
+.in 0
+.sp
+.in 6n
+SHELL	
+.in 0
+.in 10n
+書式 : shell
+.br
+用例 : tcsh
+.br
+.sp
+shell で \fBSHELL\fP を起動。（"\fBSHELL\fP" 環境変数に使用されている値が "bash"
+.br
+および "tcsh" 以外の場合は、この設定（bash(1) または tcsh(1) を指定
+.br
+可能）が必要）
+.in 0
+.sp
+.in 6n
+LINE	
+.in 0
+.in 10n
+書式 : line
+.br
+用例 : 500
+.br
+.sp
+アクセス履歴の種類ごとに保存する最大 line（0 は無制限）。line を超え
+.br
+ると、一番古い行から削除。usilic -l で試し、usilic -L で書き込めます
+.br
+（旧 \fBHISTORY\fP)。
+.in 0
+ 
+.br
+.in 6n
+WAIT	
+.in 0
+.in 10n
+書式 : wait
+.br
+用例 : 10
+.br
+.sp
+組み込みまたはキーボードマクロキーを wait（10 msec）間隔で実行。
+.in 0
+.sp
+.in 6n
+CP	
+.in 0
+.in 10n
+書式 : cp（option）
+.br
+用例 : cp -rvi
+.br
+.sp
+\fBCP\fP の \fIcp(1)\fP 起動オプション。（デフォルト: cp -rvf）
+.in 0
+.sp
+.in 6n
+MV	
+.in 0
+.in 10n
+書式 : mv（option）
+.br
+用例 : mv -vi
+.br
+.sp
+\fBMV\fP の \fImv(1)\fP 起動オプション。（デフォルト: mv -vf）
+.in 0
+.sp
+.in 6n
+RM	
+.in 0
+.in 10n
+書式 : rm（option）
+.br
+用例 : rm -rvi
+.br
+.sp
+\fBRM\fP の \fIrm(1)\fP 起動オプション。（デフォルト: rm -rvf）
+.in 0
+.sp
+.in 6n
+SPEED⁠	
+.in 0
+.in 10n
+書式 : usec1  usec2 ...
+.br
+用例 : 90000 20000 10000 5000 3000 2000 1000 500 200 100
+.br
+.sp
+慣性スクロールの 10 段階の速度（1 行進むごとの待ち時間、マイクロ秒）
+.br
+。
+.br
+usilic -s で試し、usilic -S で書き込めます。
+.in 0
+.sp
+.in 6n
+DRAG⁠	
+.in 0
+.in 10n
+書式 : dot1  dot2 ...
+.br
+用例 : 1 2 4 8 16 30 40 50 60 70
+.br
+.sp
+ドラッグを離した時に慣性スクロールの何段目で動き出すかを決める距離（
+.br
+ドット）。
+.br
+usilic -d で試し、usilic -D で書き込めます。
+.in 0
+.sp
+.in 6n
+FONT⁠	
+.in 0
+.in 10n
+書式 : フォントファイル
+.br
+用例 : /Library/Fonts/MS-Gothic.ttf
+.br
+.sp
+-g の画面の基本の等幅フォント。usilic -f で試し、usilic -F で書き込
+.br
+めます。
+.in 0
+.sp
+.in 6n
+URL	
+.in 0
+.in 10n
+書式 : 名前 program（option）
+.br
+用例 : Dump lynx -dump
+.br
+.sp
+\fBEPUB\fP の本文にある Web リンクを踏んだ時の対処（前述 [\fBEPUB\fP] 参照）。書
+.br
+いた順に ^Ow で巡回し、最初の行が既定。名前は Open、Pdf、Dump、Term
+.br
+、Copy、Lookのいずれかで、program に URL を渡して起動します（Copy は
+.br
+標準入力へ渡し、Look は program 不要）。この設定が無い場合は、Open（
+.br
+macOS は open、Linux は xdg-open）、Pdf（url2pdf がある時のみ）、Dum
+.br
+p（w3m -dump）、Term（w3m）、Copy（macOS は pbcopy、Linux は xclip -
+.br
+selection clipboard）、Look（macOS のみ）の順。Pdf の url2pdf（\fI~/.lo
+.br
+cal/lib/usilic/url2pdf\fP、make install で導入）は、画面無しの Chromium
+.br
+を Playwright で動かします。事前に次の準備が必要で、さらに Linux で
+.br
+は playwright install-deps（要 sudo）と日本語フォントが必要です。
+.in 0
+.sp
+.in 8n
+python3 -m venv \fI~/.local/lib/usilic/venv\fP
+.br
+\fI~/.local/lib/usilic/venv/bin/pip\fP install playwright
+.br
+\fI~/.local/lib/usilic/venv/bin/python\fP -m playwright install chromium
+.in 0
+.sp
+.in 6n
+KEY	
+.in 0
+.in 10n
+\fBKEY\fP で表示されるキーのカスタマイズ。
+.in 0
+.sp
+.in 6n
+MACRO	
+.in 0
+.in 10n
+\fBMACRO\fP で設定したキーシーケンスを保存。
+.in 0
+.sp
+.in 2n
+起動オプション	
+.in 0
+.in 6n
+usilic [-c|-g] [-s|-S usec ...] [-d|-D dot ...] [-f|-F font] [-w|-W wait
+.br
+] [-b|-B size] [-l|-L line] [<file] [file ...] [directory]
+.in 0
+.sp
+.in 6n
+.in 14n
+.ti 6n
+-c : 端末上（CUI）で起動
+.in 0
+.in 11n
+端末から起動した時のデフォルトです。
+.in 0
+.sp
+.in 6n
+.in 14n
+.ti 6n
+-g : GUI のウィンドウで起動
+.in 0
+.in 11n
+macOS で、Finder から usilic.app を開いた時（端末が無い時）は、指定
+.br
+が無くても GUI で起動します。-c と -g は同時に指定できません。
+.in 0
+.sp
+.in 6n
+以下は \fIusilicrc\fP の設定をこの起動だけ変えるオプションです。大文字の方は同
+.br
+じ
+.br
+効果に加えて \fI~/.usilic/usilicrc\fP の該当する設定へ書き込み、以後はオプショ
+.br
+ン
+.br
+無しでもその値になります。
+.in 0
+.sp
+.in 6n
+.in 24n
+.ti 6n
+-s usec ...（-S）: 慣性スクロールの速度（\fIusilicrc\fP の SPEED）
+.br
+.in 25n
+慣性スクロールの 10 段階の速度を、遅い方から順に、1 
+.br
+行進むごとの待ち時間（マイクロ秒）で指定します。指定
+.br
+した個数の段階だけが置き換わり、値が小さいほど速くな
+.br
+ります（デフォルト : 90000 20000 10000 5000 3000 2000
+.br
+1000 500 200 100）。
+.in 0
+.sp
+.in 6n
+.in 24n
+.ti 6n
+-d dot ...（-D）: 慣性スクロールに移るドラッグの距離（\fIusilicrc\fP の DRAG）
+.br
+.in 24n
+マウスのドラッグを離した時、慣性スクロールの何段目の速
+.br
+度で動き出すかを決める距離（ドット）を、1 段目から順に
+.br
+指定します。例えば -d 20 40 80 160 320 では、離す直前
+.br
+の動きが 20 ドット未満なら止まり、20〜39 なら 1 段目、
+.br
+\&... となります（デフォルト : 1 2 4 8 16 30 40 50 60 70
+.br
+）。
+.br
+.in 0
+.sp
+.in 6n
+.in 24n
+.ti 6n
+-f font（-F）: GUI で使うフォントファイル（\fIusilicrc\fP の FONT）
+.in 0
+.in 18n
+.in 24n
+.ti 18n
+例: -f /Library/Fonts/MS-Gothic.ttf
+.in 0
+.in 24n
+.ti 0n
+㉒-w wait（-W）: マクロの実行間隔（\fIusilicrc\fP の WAIT、単位は 10 msec）
+.br
+㉒-b size（-B）: バッファの大きさ（\fIusilicrc\fP の BUFFER
+.br
+、単位は MB、1〜100）
+.br
+㉒-l line（-L）: 履歴の行数（\fIusilicrc\fP の LINE、0 は無
+.br
+制限）
+.br
+.in 0n
+.ti 24n
+㉒-h : 使い方を表示して終了
+.in 0
+.sp
+.in 6n
+GUI（-g）
+.in 0
+.in 10n
+起動
+.in 0
+.in 8n
+-g で起動すると、\fIusilic(1)\fP は端末とは別のウィンドウで動作します。
+.br
+ウィンドウを閉じるか、起動した端末で ^C を押すと終了します（ページャー
+.br
+として起動した時も同じ）。
+.in 0
+.sp
+.in 8n
+表示
+.in 0
+.in 8n
+cmd + "=" : 文字を大きく
+.br
+cmd + "-" : 文字を小さく
+.br
+cmd + "0" : 文字の大きさを元に戻す
+.br
+cmd + "k" : 配色の切り替え（黒地に灰、黒地に緑、黒地に琥珀、白地に黒）
+.br
+.sp
+ウィンドウの大きさを変えると、行数・桁数もそれに合わせて変わります。右
+.br
+端のスクロールバーのつまみをドラッグすると、その位置へ移動します。
+.in 0
+.sp
+.in 8n
+マウス
+.in 0
+.in 8n
+マウスを動かすと、ポインターの下の行がカーソル行になります。カーソル行
+.br
+をクリックすると ^M と同じく開き、他の行をクリックするとその行へカーソ
+.br
+ルが移ります。
+.br
+画面をつかんでドラッグするとスクロールし、動かしながら離すと、その勢い
+.br
+に応じた速さで慣性スクロールが続きます。慣性スクロール中にクリックする
+.br
+と止まり、ハイライト行の文字の上ならその行を開きます。止めた後、マウス
+.br
+を動かさずにクリックしてもハイライト行を開きます。
+.br
+マウスホイールは画面を 1 行ずつスクロールします。
+.br
+←/→ で慣性スクロールを始めます（→ で先へ）。慣性スクロール中は、同じ向
+.br
+きなら速く、逆向きなら遅く、最も遅い状態からさらに逆向きなら逆向きの最
+.br
+も遅い速さになります（縦書きの \fBEPUB\fP では ↓/↑）。
+.br
+速さは -s、動き出しの距離は -d で調整できます。
+.br
+.in 0
+.sp
+.in 8n
+ファイルのドロップ
+.in 0
+.in 8n
+Finder から file をウィンドウへドロップすると、その file を開きます（
+.br
+ディレクトリならその \fB(ls)\fP）。複数の file をドロップした場合は、^Ou と
+.br
+同じ一覧にして最初の file を開きます。Finder の「このアプリケーション
+.br
+で開く」で usilic.app を選んだ場合も同じです。
+.in 0
+.sp
+.in 8n
+端末でのマウス
+.in 0
+.in 8n
+CUI でも、マウス操作をアプリへ伝えられる端末（Terminal.app、iTerm2 等
+.br
+）では、ドラッグによるスクロール、慣性スクロール、ホイールでのスクロー
+.br
+ルが使えます。←/→（縦書きの \fBEPUB\fP では ↓/↑）も GUI と同じです。
+.in 0
+.sp
+.in 2n
+補足	
+.in 0
+.in 6n
+環境	
+.in 0
+.in 10n
+usilic は最初に起動する際 \fI~/.usilic/\fP および \fI/tmp/.usilic/\fP（ソースフ
+.br
+ァイルの \fIconfig.sh\fP で定義）の作業ディレクトリを作成します。
+.br
+\fIusilic(1)\fP は今の端末が \fBSHELL\fP かどうかを判別するのに "USILIC" 環境変
+.br
+数を使用しています。特にこの変数が定義されている端末では \fIusilic(1)\fP 
+.br
+はfile manager で起動できません。
+.br
+ページャーで使用する場合は、端末で一旦 "export PAGER=usilic"^M とし
+.br
+ておけば \fIdvi2tty(1)\fP や \fIman(1)\fP の出力を \fIusilic(1)\fP で参照できます。た
+.br
+だし \fBSHELL\fP では、この "PAGER" 環境変数の値は変更できません。
+.in 0
+.sp
+.in 6n
+漢字コード	
+.in 0
+.in 10n
+sjis（shift-jis）または 7bit-jis の漢字コードを含むファイルは、内容
+.br
+をバッファに読み込んだ後 euc（内部コード）に変換します。それに伴い、
+.br
+mode-line(4)（表示サイズ）が実際のファイルサイズとは異なって表示され
+.br
+る事があります。
+.br
+バッファ内（内部コード変換前）の漢字コードの判別は、バッファの先頭か
+.br
+ら行い jis については、コードを検出した時点で終了しますが euc および
+.br
+sjis では、バッファの末尾までチェックした後、多く含まれている方のコ
+.br
+ードで判別します。
+.br
+^O^M でファイル表示した場合や \fIusilic(1)\fP をページャーで起動した時は、
+.br
+入力行毎に、判別およびコード変換を行いますが、行内に１バイト半角カナ
+.br
+が多用されている場合や、quote 系フォーマットで継続行を含むファイルで
+.br
+は、正常に判別できない場合があります。
+.br
+^[M でベタ表示した場合、内部コードの変換も行わないので例えば ^X^W で
+.br
+\fI~/.usilic/data/\fP へ保存したバッファの内容に、元のファイルの漢字コード
+.br
+を反映させたい場合（例えば sjis コードを含む差分ファイルなど）に使用
+.br
+できます。
+.br
+.sp
+.in 6n
+プロセス間通信	
+.in 0
+.in 10n
+\fIsocket(2)\fP
+.in 0
+.in 14n
+\fBSHELL\fP の章の shell プロンプトで、プログラムの出力を \fIusilic(1)\fP へ
+.br
+リダイレクトした場合、その \fIusilic(1)\fP（shell の子プロセス）は she
+.br
+ll のプロセス ID を含むファイル名の \fIsocket(2)\fP を作成して、自分に
+.br
+リダイレクトされた内容を、そこへ書き込みます。
+.br
+一方 shell を起動した \fIusilic(1)\fP（shell の親プロセス）が、その \fIso
+.br
+cket(2)\fP を見つけた場合、上記のリダイレクト内容を、ファイル名「(s
+.br
+tdin)」で、その \fIsocket(2)\fP から読み込みます。
+.br
+shell のプロンプトから file 引数で \fIusilic(1)\fP を起動した場合は、\fIs
+.br
+ocket(2)\fP の代わりに同じ名前の file を使用します。
+.in 0
+.sp
+.in 10n
+\fIpipe(8)\fP
+.in 0
+.in 14n
+上記の \fIsocket(2)\fP の使用以外では、 file の内容をバッファへ読み込
+.br
+む際に \fIfork(2)\fP した子プロセスとの間で、\fIpipe(8)\fP によるプロセス間
+.br
+通信を使用しています。
+.in 0
+.sp
+.in 6n
+バックスラッシュ（\e）の入力⁠ 
+.in 0
+.in 10n
+\fBEGREP\fP、\fBCUT\fP の正規表現等で使う \e（バックスラッシュ）は、macOS の JIS 
+.br
+キーボード（日本語配列）では option を押しながら ¥ キーを押すと入力
+.br
+できます。
+.br
+常に \e を入力したい場合は、「システム設定」⇒「キーボード」⇒「入力ソ
+.br
+ース」⇒「日本語 - ローマ字入力」の「"¥"キーで入力する文字」を「\e（バ
+.br
+ックスラッシュ）」に変えると、¥ キー単独で \e になります（option を押
+.br
+しながら ¥ キーで ¥）。
+.br
+US キーボードでは、enter の上（または左）にある \e キーでそのまま入力
+.br
+できます。
+.in 0
+.sp
+.in 6n
+Web ページの PDF 化
+.in 0
+.in 10n
+\fI~/.local/lib/usilic/\fP（make install で導入）にある下記の２つのスクリ
+.br
+プトで、Web ページをページ全体の高さの縦長の１ページの PDF にできま
+.br
+す（文字は選択可能）。画面無しの Chromium を Playwright で動かすので
+.br
+、前述の\fIusilicrc\fP の URL にある準備が必要で、url2pdf ではさらに pypdf
+.br
+も必要です。
+.in 0
+.sp
+.in 14n
+\fI~/.local/lib/usilic/venv/bin/pip\fP install pypdf
+.in 0
+.sp
+.in 10n
+url2pdf URL [directory]
+.in 0
+.in 14n
+URL のページを PDF にして directory（省略時は \fI~/Downloads\fP）へ「
+.br
+ページの題名.pdf」で保存し、そのパスを出力します（同名があれば -
+.br
+2 等を付加）。\fBEPUB\fP の Web リンクの Pdf（前述 [\fBEPUB\fP] 参照）はこれ
+.br
+を使います。
+.in 0
+.sp
+.in 10n
+url2pdf [option] URL
+.in 0
+.in 14n
+目次のページ URL の中のリンク先をそれぞれ PDF にして、目次のペー
+.br
+ジ自身を先頭に１本の PDF にまとめます（章ごとのしおり付き）。リ
+.br
+ンクは Chromiumで表示した後のページから集めるので、JavaScript で
+.br
+作られるリンクも取れます。
+.br
+既定では本文（<main>、<article> 等の中、無ければ見出しを含み、サ
+.br
+イドバー等と合流してリンクの数が急に増える手前まで）にある、同じ
+.br
+サイトへのリンクを出てきた順に取ります。
+.br
+robots.txt で禁止されたリンクは取らず、ログインが必要なページは
+.br
+取れません。
+.br
+１件ごとの PDF は \fI~/Downloads/目次の題名/\fP に、まとめた PDF は\fI~/D
+.br
+ownloads/目次の題名.pdf\fP に保存し、最後にまとめた PDF のパスを出
+.br
+力します（途中経過は標準エラー出力）。
+.in 0
+.sp
+.in 14n
+.in 28n
+.ti 14n
+         -l : 取るリンクの一覧（URL と文字列）を表示するだけ
+.in 0
+.in 14n
+.in 28n
+.ti 14n
+-m 正規表現 : URL がこれにマッチするリンクだけを取る（例: -m 'he
+.br
+lp/'）
+.in 0
+.in 14n
+.in 28n
+.ti 14n
+         -a : 本文だけでなくページ全体のリンクから取る
+.in 0
+.in 14n
+.in 28n
+.ti 14n
+         -x : 他のサイトへのリンクも取る
+.in 0
+.in 14n
+.in 28n
+.ti 14n
+      -w 秒 : １件ごとに待つ秒数（デフォルト: 1）
+.in 0
+.in 14n
+.in 28n
+.ti 14n
+     -d dir : １件ごとの PDF の置き場所
+.in 0
+.in 14n
+.in 28n
+.ti 14n
+    -o file : まとめた PDF のパス
+.in 0
+.in 14n
+.in 28n
+.ti 14n
+ --no-index : 目次のページ自身を入れない
+.in 0
+.in 14n
+.in 28n
+.ti 14n
+ --no-merge : １本にまとめない（１件ごとの PDF のパスを出力）
+.in 0
+.in 14n
+.in 0n
+.ti 14n
+         -h : 使い方を表示
+.in 0
+.sp
+.in 14n
+例えば
+.in 0
+.sp
+.in 18n
+\fI~/.local/lib/usilic/url2pdf\fP -l https://example.com/guide/
+.in 0
+.sp
+.in 14n
+で取るリンクを確かめ、多すぎる時は -m で絞り、足りない時は -a や
+.br
+-x を付けてから -l を外して実行します。
+.br
+^Jp や \fBSHELL\fP からも使えます。
+.br
+PDF の１ページの大きさには上限（約 200 インチ）があり、それより
+.br
+長いページは複数のページに分かれます。
+.in 0
+.sp
+.in 6n
+必要なソフトウェア⁠    
+.in 0
+.in 10n
+\fIusilic(1)\fP は \fIgroff(1)\fP（\fBHELP\fP・\fBMAN\fP の整形）、\fImg(1)\fP、\fIinfo(1)\fP、\fI7zz(1)\fP（\fBA
+.br
+RC\fP の \fI.7z\fP ）、\fIw3m(1)\fP（\fBEPUB\fP の Web のリンクの Dump/Term）等の外部プロ
+.br
+グラムを使います。 最初の起動時、これらのうち見つからないものがあれ
+.br
+ば \fBSHELL\fP に切り替わり、プロンプトにインストール用のコマンド（macOS 
+.br
+では「brew install ...」、Ubuntu では「sudo apt install -y ...」）を
+.br
+置いて ^M を待ちます（実行するかどうかはお任せします。この案内は一度
+.br
+だけです）。
+.br
+macOS で Homebrew（brew）が無い場合は、代わりに Homebrew 自体のイン
+.br
+ストールコマンド（https://brew.sh にあるもの）を置きます。^M で実行
+.br
+すると、パスワードの入力や確認を求められた後に Homebrew がインストー
+.br
+ルされ、プロンプトが戻ると続けて「brew install ...」が置かれます。
+.br
+手動で入れる場合は、ターミナルで https://brew.sh のコマンドを実行し
+.br
+た後、表示される案内に従って brew に PATH を通してください（Apple Si
+.br
+licon では「eval "$(/opt/homebrew/bin/brew shellenv)"」を \fI~/\fP.zprofil
+.br
+e へ追記）。
+.br
+Homebrew や usilic 自身のビルド（make）には Xcode の Command Line To
+.br
+ols（コンパイラや git 等）が必要です。Homebrew のインストーラは無け
+.br
+れば自動で入れますが、先に入れておく場合はターミナルで「xcode-select
+.br
+--install」を実行してください（App Store の Xcode 本体は不要です）。
+.br
+Command Line Tools が入っているかは "xcode-select -p"^M でパスが表示
+.br
+されるかで確かめられます。macOS をアップデートした後に brew や make 
+.br
+が「invalid active developer path」等で失敗する場合も、"xcode-select
+.br
+--install"^M で入れ直してください。Windows では WSL2（Windows の中の
+.br
+Ubuntu）で動きます。ビルドの手順は Linux と同じで、-g のウィンドウは
+.br
+WSLg で Windows のデスクトップに出ます（日本語の表示には fonts-noto-
+.br
+cjk が必要で、無ければ最初の起動時の案内に加わります）。
+.br
+WSL2 では、動画や \fBEPUB\fP の Web のリンク（Open）は Windows の既定のア
+.br
+プリで開き、\fBCOPY\fP の内容は Windows のクリップボードへ入ります。
+.br
+.in 0
+.sp
+.in 2n
+著者	
+.in 0
+.in 6n
+usilic@X.com
+.in 0
+.sp
+.in 2n
+関連項目	
+.in 0
+.in 6n
+\fIgroff(1)\fP、\fIman(1)\fP
+.in 0
+.br
+.ll \n(LLu
+.if !d an-footer .pl \n(nlu+1v
