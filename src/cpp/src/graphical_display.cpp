@@ -1809,9 +1809,9 @@ void GraphicalDisplay::renderCell(int row, int col) {
         return;
       }
       if (kRotated.count(codepoint)) rotation = 90.0;
-      // 縦書きの「ー」はフォント自身の縦書き用の字形(cachedVerticalGlyphTexture()参照)。墨の範囲を、横書きの
-      // 字と同じ縮尺でマスの中央に置く。
-      if (rotation != 0.0 && renderGlyph == "\xE3\x83\xBC") {
+      // 縦書きの「ー」「―」はフォント自身の縦書き用の字形(cachedVerticalGlyphTexture()参照)。墨の範囲を、横書きの
+      // 字と同じ縮尺でマスの中央に置く。「―」は2026-10-06、直接のユーザー依頼("「―」も縦書き用の字形にして")。
+      if (rotation != 0.0 && (renderGlyph == "\xE3\x83\xBC" || renderGlyph == "\xE2\x80\x95")) {
         int vw = 0, vh = 0;
         if (SDL_Texture *vertical = cachedVerticalGlyphTexture(*impl_, renderFont, renderGlyph, style, hinting, fg, vw, vh)) {
           double scale = static_cast<double>(dst.w) / std::max(w, 1);
