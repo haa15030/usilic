@@ -549,7 +549,9 @@ struct GlyphCacheKey {
   int hinting;
   unsigned char r, g, b;
   bool narrow;  // boostGlyphAlpha()が適用されたかどうか――キャッシュされるピクセルに影響する
-  bool rotated = false;  // 時計回りに90度回した画素(cachedGlyphTexture()のrotate90参照)
+  // 0: そのまま、1: 時計回りに90度回した画素(cachedGlyphTexture()のrotate90参照)、
+  // 2: 縦書き用の字形の墨の範囲だけ(cachedVerticalGlyphTexture()参照)
+  int rotated = 0;
   bool operator<(const GlyphCacheKey &other) const {
     return std::tie(glyph, font, style, hinting, r, g, b, narrow, rotated) <
            std::tie(other.glyph, other.font, other.style, other.hinting, other.r, other.g, other.b, other.narrow,
@@ -990,7 +992,7 @@ TTF_Font *serifFontFor(ImplT &impl, unsigned int codepoint) {
 template <typename ImplT>
 SDL_Texture *cachedGlyphTexture(ImplT &impl, TTF_Font *font, const std::string &glyph, int style, int hinting,
                                  SDL_Color color, bool narrow, int &outW, int &outH, bool rotate90 = false) {
-  GlyphCacheKey key{glyph, font, style, hinting, color.r, color.g, color.b, narrow, rotate90};
+  GlyphCacheKey key{glyph, font, style, hinting, color.r, color.g, color.b, narrow, rotate90 ? 1 : 0};
   auto it = impl.glyphCache.find(key);
   if (it != impl.glyphCache.end()) {
     outW = it->second.w;
@@ -1032,6 +1034,62 @@ SDL_Texture *cachedGlyphTexture(ImplT &impl, TTF_Font *font, const std::string &
   outH = surface->h;
   SDL_FreeSurface(surface);
   impl.glyphCache.emplace(std::move(key), CachedGlyph{texture, outW, outH});
+  return texture;
+}
+
+// 2026-10-06追加、直接のユーザー指摘(Kinoppyと見比べて"横書き明朝体の「ー」は...左上に尖った先がある。
+// それを単純に右90度回転させると、右上が尖った先になる...実際に縦書きで「｜」を書いたように見えるフォント"):
+// 縦書き用の字形(OpenTypeのvert)。SDL_ttfの向きを上から下(TTF_DIRECTION_TTB、HarfBuzzが要る)にして描くと
+// フォント自身の縦書き用の字形になる。その時の面は余白の取り方が横書きと違うので、墨の範囲だけを切り出す。
+// HarfBuzz無しのSDL_ttf等で向きを変えられなければnullptr(呼び出し側は今まで通り90度回す)。
+template <typename ImplT>
+SDL_Texture *cachedVerticalGlyphTexture(ImplT &impl, TTF_Font *font, const std::string &glyph, int style, int hinting,
+                                        SDL_Color color, int &outW, int &outH) {
+  GlyphCacheKey key{glyph, font, style, hinting, color.r, color.g, color.b, false, 2};
+  auto it = impl.glyphCache.find(key);
+  if (it != impl.glyphCache.end()) {
+    outW = it->second.w;
+    outH = it->second.h;
+    return it->second.texture;
+  }
+  TTF_SetFontStyle(font, style);
+  TTF_SetFontHinting(font, hinting);
+  if (TTF_SetFontDirection(font, TTF_DIRECTION_TTB) != 0) {
+    impl.glyphCache.emplace(std::move(key), CachedGlyph{nullptr, 0, 0});  // 向きを変えられない(次も同じ)
+    return nullptr;
+  }
+  SDL_Surface *rendered = TTF_RenderUTF8_Blended(font, glyph.c_str(), color);
+  TTF_SetFontDirection(font, TTF_DIRECTION_LTR);
+  SDL_Surface *surface = rendered ? SDL_ConvertSurfaceFormat(rendered, SDL_PIXELFORMAT_ARGB8888, 0) : nullptr;
+  if (rendered) SDL_FreeSurface(rendered);
+  SDL_Texture *texture = nullptr;
+  if (surface) {
+    SDL_LockSurface(surface);
+    int minX = surface->w, minY = surface->h, maxX = -1, maxY = -1;
+    for (int y = 0; y < surface->h; y++) {
+      const Uint32 *row = reinterpret_cast<const Uint32 *>(static_cast<const Uint8 *>(surface->pixels) + y * surface->pitch);
+      for (int x = 0; x < surface->w; x++)
+        if ((row[x] >> 24) > 8) {
+          minX = std::min(minX, x), maxX = std::max(maxX, x);
+          minY = std::min(minY, y), maxY = std::max(maxY, y);
+        }
+    }
+    SDL_UnlockSurface(surface);
+    if (maxX >= minX && maxY >= minY) {
+      SDL_Rect ink{minX, minY, maxX - minX + 1, maxY - minY + 1};
+      SDL_Surface *cropped = SDL_CreateRGBSurfaceWithFormat(0, ink.w, ink.h, 32, SDL_PIXELFORMAT_ARGB8888);
+      if (cropped) {
+        SDL_SetSurfaceBlendMode(surface, SDL_BLENDMODE_NONE);
+        SDL_BlitSurface(surface, &ink, cropped, nullptr);
+        texture = SDL_CreateTextureFromSurface(impl.renderer, cropped);
+        outW = ink.w;
+        outH = ink.h;
+        SDL_FreeSurface(cropped);
+      }
+    }
+    SDL_FreeSurface(surface);
+  }
+  impl.glyphCache.emplace(std::move(key), CachedGlyph{texture, texture ? outW : 0, texture ? outH : 0});
   return texture;
 }
 
@@ -1751,6 +1809,18 @@ void GraphicalDisplay::renderCell(int row, int col) {
         return;
       }
       if (kRotated.count(codepoint)) rotation = 90.0;
+      // 縦書きの「ー」はフォント自身の縦書き用の字形(cachedVerticalGlyphTexture()参照)。墨の範囲を、横書きの
+      // 字と同じ縮尺でマスの中央に置く。
+      if (rotation != 0.0 && renderGlyph == "\xE3\x83\xBC") {
+        int vw = 0, vh = 0;
+        if (SDL_Texture *vertical = cachedVerticalGlyphTexture(*impl_, renderFont, renderGlyph, style, hinting, fg, vw, vh)) {
+          double scale = static_cast<double>(dst.w) / std::max(w, 1);
+          int dw = std::max(1, static_cast<int>(vw * scale + 0.5)), dh = std::max(1, static_cast<int>(vh * scale + 0.5));
+          SDL_Rect ink{box.x + (maxW - dw) / 2, box.y + (impl_->cellHeight - dh) / 2, dw, dh};
+          SDL_RenderCopy(impl_->renderer, vertical, nullptr, &ink);
+          return;
+        }
+      }
       if (rotation != 0.0) {
         // 画素を回したテクスチャ(cachedGlyphTexture()のrotate90参照)を、dstを中心で90度回した枠へ回さずに貼る。
         int rw = 0, rh = 0;
