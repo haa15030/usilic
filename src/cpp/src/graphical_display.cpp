@@ -1820,6 +1820,13 @@ void GraphicalDisplay::renderCell(int row, int col) {
           double scale = static_cast<double>(dst.w) / std::max(w, 1);
           int dw = std::max(1, static_cast<int>(vw * scale + 0.5)), dh = std::max(1, static_cast<int>(vh * scale + 0.5));
           SDL_Rect ink{box.x + (maxW - dw) / 2, box.y + (impl_->cellHeight - dh) / 2, dw, dh};
+          // 2026-10-07、直接のユーザー報告(=ic.png、縦書きの見出し「時間ループの完結」の「ー」が無い): 大きい字
+          // (cell.size > 0)はマス目から外して置く(上のplaceLargeGlyph()でdstをずらしてある)のに、ここでは元の
+          // マスの中央に描いていたので、前の大きい字(「ル」)の所に重なっていた。大きい字はdstの中央に置く。
+          if (cell.size > 0) {
+            ink.x = dst.x + (dst.w - dw) / 2;
+            ink.y = dst.y + (dst.h - dh) / 2;
+          }
           SDL_RenderCopy(impl_->renderer, vertical, nullptr, &ink);
           return;
         }
@@ -4350,7 +4357,22 @@ void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &
     if (lines[lineIndex].ellipsisEligible) {
       composed = middleEllipsisTruncateByWidth(composed, std::max(0, impl_->columns - 1));
     }
-    renderTextRun(y, composed, Color{impl_->fg.r, impl_->fg.g, impl_->fg.b}, 0, lines[lineIndex].attributes);
+    // 2026-10-07、直接のユーザー報告(-gの.DS_Storeの表示が"`←`（慣性スクロール開始）した途端"、反転表示の
+    // 制御コードが消えて空白になる): ContentView::renderLine()と同じく、制御バイトは反転表示の
+    // c+'@'(0x7fは'?')で描く。行の途中のタブは空白、行末のタブは反転のI(renderLine()のtrailingTab参照)。
+    // 1バイトを1バイトに置き換えるので、他の属性のバイト位置はずれない。
+    std::vector<Display::AttributeRun> attributes = lines[lineIndex].attributes;
+    for (std::size_t pos = 0; pos < composed.size(); pos++) {
+      unsigned char c = static_cast<unsigned char>(composed[pos]);
+      if (!c || (c >= ' ' && c != 0x7f)) continue;
+      if (c == '\t' && pos + 1 != composed.size()) {
+        composed[pos] = ' ';
+        continue;
+      }
+      composed[pos] = static_cast<char>(c == 0x7f ? '?' : c + '@');
+      attributes.push_back({static_cast<int>(pos), static_cast<int>(pos) + 1, Display::Attribute::Standout});
+    }
+    renderTextRun(y, composed, Color{impl_->fg.r, impl_->fg.g, impl_->fg.b}, 0, attributes);
     // ブロックカーソル(setScrolledCursor()): 桁の字を覆う箱を描き、字を背景色で描き直す
     if (impl_->scrolledCursor && impl_->scrolledCursor->first == lineIndex) {
       int column = std::max(0, impl_->scrolledCursor->second);
