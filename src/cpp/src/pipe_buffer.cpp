@@ -275,6 +275,9 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
   int lastCharAttrCount = 0;      // その文字のためだけにwrapAttrs_へ積んだ要素数(2026-09-22:
                                    // currentBold_/currentUnderline_追加により、本物の重ね打ち+
                                    // 斜体/太字/下線トグルの組み合わせで最大4)
+  // 2026-10-07追加、直接のユーザー報告("33x55にするとusilicが暴走"): 今の行に置いた文字の数(字下げの空白は
+  // 数えない)。行の最初の1文字は差し戻さない(popLastCharForKinsoku()参照)。
+  int charsOnLine = 0;
 
   auto finalize = [&](bool endsWithNewline) {
     lines_.push_back({wrapText_, wrapAttrs_, endsWithNewline, nextRawLineNumber_});
@@ -285,6 +288,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     wrapAttrs_.clear();
     wrapCol_ = 0;
     lastCharSeqStart = -1;
+    charsOnLine = 0;
   };
   // 直近に配置した1文字を取り消し、その処理を始めた位置まで`i`を
   // 巻き戻す――呼び出し元がすぐ後にfinalize()+continueすることで、
@@ -295,8 +299,11 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
   // 以上のAttributeRunがこの1文字に対して積まれることは無い
   // (currentItalic_自身のコメント参照)ので、lastCharAttrCount個
   // だけ末尾からpop_back()すれば正確に取り消せる。
+  // 2026-10-07: 行の最初の1文字(字下げの後の)は差し戻さない。字下げが深くて(<indentN>、33桁のHELP.txt等)
+  // 新しい行にも1文字しか入らない時、差し戻した文字がまた1文字で行を埋めて、差し戻し→同じ行、を限りなく
+  // 繰り返していた(禁則対象の文字が行頭に来る方を取る)。
   auto popLastCharForKinsoku = [&]() -> bool {
-    if (lastCharSeqStart < 0) return false;
+    if (lastCharSeqStart < 0 || charsOnLine <= 1) return false;
     wrapText_.resize(wrapText_.size() - static_cast<std::size_t>(lastCharRenderedBytes));
     for (int k = 0; k < lastCharAttrCount && !wrapAttrs_.empty(); k++) wrapAttrs_.pop_back();
     wrapCol_ -= lastCharWidth;
@@ -854,6 +861,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       wrapCol_ += w;
       i = keepStart + keepBytes;
       lastCharSeqStart = placementStart;
+      charsOnLine++;
       lastCharRenderedBytes = keepBytes;
       lastCharWidth = w;
       // 実際にwrapAttrs_へ積んだ要素数と一致させる(popLastCharForKinsoku()が
@@ -911,6 +919,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     wrapCol_ += w;
     i += charBytes;
     lastCharSeqStart = placementStart;
+    charsOnLine++;
     lastCharRenderedBytes = charBytes;
     lastCharWidth = w;
     lastCharAttrCount = charAttrCount;

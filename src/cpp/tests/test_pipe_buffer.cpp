@@ -812,3 +812,17 @@ TEST_CASE("PipeBuffer: with detectOverstrike=false (^[^M \"as is\"), escapes sta
   REQUIRE(buf.lines().size() == 1);
   CHECK(buf.lines()[0].text == "\x1b[33mA");
 }
+
+// 2026-10-07追加、直接のユーザー報告("33x55にするとusilicが暴走"): 字下げが深くて行に1文字しか入らない時、
+// 禁則(行頭の「）」)のためにその1文字を次の行へ差し戻すと、次の行もまた同じ1文字で埋まり、差し戻しを
+// 限りなく繰り返していた。行の最初の1文字は差し戻さない(「）」が行頭に来る)。
+TEST_CASE("kinsoku: a deep indent leaving room for one character does not loop forever") {
+  PipeBuffer buf(Charset::Encoding::Utf8, 6, 1 << 20);
+  std::string raw;
+  raw.push_back('\x01');
+  raw += "4";
+  raw += "\xE3\x81\x82\xE3\x81\x84\xEF\xBC\x89\n";  // あい）
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 3);
+  CHECK(buf.lines()[2].text.find("\xEF\xBC\x89") != std::string::npos);
+}
