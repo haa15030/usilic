@@ -17571,6 +17571,8 @@ std::string Application::macroNotation(const std::string &items) {
 
 // macroNotation()の逆。^X(制御文字)、^[(ESC)、^?(DEL)、^␣、␣、それ以外の字はそのまま、「"..."」は
 // 文字列として読み、要素の並びにする。読めない(当てはまるK番号の無い制御文字がある)ならnullopt。
+// 2026-10-07、直接のユーザー依頼("usilicrcのMACROの記述で項目の区切りはspaceでもＯＫにしてほしい"):
+// 「"..."」の外の空白・タブは区切りとして読み飛ばす(「^G ^P ^M」も書ける)。スペースキーは␣で書く。
 std::optional<std::string> Application::macroItemsFromNotation(const std::string &notation) {
   static const std::string kSpaceMark = "\xE2\x90\xA3";  // ␣
   std::string items;
@@ -17602,6 +17604,8 @@ std::optional<std::string> Application::macroItemsFromNotation(const std::string
       else if (n >= '@' && n <= '_') bytes.push_back(n - '@');
       else return std::nullopt;
       p += 2;
+    } else if (c == ' ' || c == '\t') {
+      p++;
     } else if (notation.compare(p, kSpaceMark.size(), kSpaceMark) == 0) {
       bytes.push_back(' ');
       p += kSpaceMark.size();

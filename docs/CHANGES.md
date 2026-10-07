@@ -29027,3 +29027,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      含まない原稿(QUICK.txt・TUTORIAL.txt・今までのHELP.txt)はそのまま。expandHelpMarkup()(usilicでHELP.txt/
      QUICK.txtを開いた時)・-m(convertMarkupToLegacyHelpText())・-n(convertMarkupToMsRoffSource())がそれぞれ
      最初に通す。日本語・英語・段落の見本で、-m・-n(groff -mandoc)・-cでの表示を確認。
+670. **2026-10-07: ^Xsのマクロ一覧の編集で、キーの間を空白で区切れるように**
+   - **経緯**: 直接のユーザー依頼("usilicrcのMACROの記述で項目の区切りはspaceでもＯＫにしてほしい")。
+   - **調査**: usilicrcのMACRO節そのもの(Configuration・usilicrc_file.cppのparseMacroLine())は、もともとM-n・キー・
+     K-nの間を空白でもタブでも区切れていた(空白区切りの行を書いたusilicrcで実機確認、テストも追加)。区切れなかった
+     のは^Xs(^Xeの直後以外)のマクロ一覧の編集プロンプトで、「^G ^P ^M」のように空白を挟むと、その空白を
+     スペースキーとして記録していた。
+   - **実装**: Application::macroItemsFromNotation()で、「"..."」の外の空白・タブは区切りとして読み飛ばす
+     (スペースキーは従来どおり␣で書く)。src/HELP.txtの[MACRO]に一文を足した。

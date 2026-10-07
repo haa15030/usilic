@@ -256,6 +256,18 @@ TEST_CASE("MACRO directive: M-n key K-numbers, skipping the -- marker and empty 
   CHECK(config.macros()[0].items[2].keyNumber == 14);
 }
 
+// 2026-10-07追加、直接のユーザー依頼("usilicrcのMACROの記述で項目の区切りはspaceでもＯＫにしてほしい"):
+// M-n・キー・要素の間をタブではなく空白で区切った行も読める。
+TEST_CASE("MACRO directive: fields separated by spaces instead of tabs") {
+  Configuration config;
+  REQUIRE(config.loadRcText("MACRO\n  M-1 ; K-1 K-2 K-14   # ^G^P^M\nM-2 h K-87\n", true));
+  REQUIRE(config.macros().size() == 2);
+  CHECK(config.macros()[0].keySpec == ";");
+  CHECK(config.macros()[0].items.size() == 3);
+  CHECK(config.macros()[1].keySpec == "h");
+  CHECK(config.errors().empty());
+}
+
 TEST_CASE("MACRO directive: a quoted string item is passed through as-is") {
   Configuration config;
   REQUIRE(config.loadRcText("MACRO\n\tM-10\t}\tK-41 \"usilic-1.5b: x\" K-14\n", true));
