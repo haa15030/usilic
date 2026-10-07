@@ -990,9 +990,24 @@ bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()>
   if (auto pos = history_.positionFor(PositionCategory::File, currentFile_)) {
     int idx = pos->row;
     int last = static_cast<int>(view_.lines().size()) - 1;
+    // 2026-10-07、直接のユーザー報告("34x55でインデント修正中、HELP.txtを`平文`と`「：」でCUT`の間で^J^J
+    // しながら確認しているんだが前者のカーソル位置が保存されない"): rowは折り返した後の行なので、ファイルを
+    // 直して折り返しが変わると(行数が違えば)別の所へ戻っていた。その時は元のファイルの行(lineNumber、
+    // saveCursorPosition()参照)で探す。
+    if (pos->lineNumber > 0 && pos->totalRows != last + 1) {
+      const auto &lines = view_.lines();
+      for (int i = 0; i <= last; i++)
+        if (lines[i].rawLineNumber && *lines[i].rawLineNumber >= pos->lineNumber) {
+          idx = i;
+          break;
+        }
+    }
     if (idx < 0) idx = 0;
     if (idx > last) idx = (last < 0) ? 0 : last;
     view_.setCursorIndex(idx);
+    // 画面の上から何行目にいたか(top)も戻す(同じ高さに収まる時だけ)。
+    int offset = static_cast<int>(pos->top);
+    if (offset > 0 && offset < view_.height()) view_.setTopIndex(idx - offset);
   } else {
     view_.setCursorIndex(0);
   }
@@ -1121,8 +1136,16 @@ void FileMode::saveCursorPosition() {
   History::CursorPosition pos;
   pos.row = view_.cursorIndex();
   pos.totalRows = static_cast<int>(view_.lines().size());
-  pos.top = 0;
+  // 2026-10-07: 画面の上から何行目か(top)と、元のファイルの行(lineNumber、折り返しの続きの行ならその頭の行)も
+  // 残す(loadFileImpl()の読み戻し参照)。
+  pos.top = static_cast<unsigned>(std::max(0, pos.row - view_.topIndex()));
   pos.lineNumber = -1;
+  const auto &lines = view_.lines();
+  for (int i = std::min(pos.row, pos.totalRows - 1); i >= 0; i--)
+    if (lines[i].rawLineNumber) {
+      pos.lineNumber = *lines[i].rawLineNumber;
+      break;
+    }
   history_.setPosition(PositionCategory::File, currentFile_, pos);
 }
 
