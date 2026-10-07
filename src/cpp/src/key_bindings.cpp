@@ -122,7 +122,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {89, "F-4 w"},     // ^J^Ow WORK
       {90, "C-h"},       // ^H    HELP
       {91, "F-1 C-h"},   // ^J^H  HELP
-      {92, "F-1 a"},     // ^Ja   HELP の言語切替
+      {92, "F-2 j"},     // ^Oj   HELP の言語切替(2026-10-07、^Jaから。トグルは^Oに揃える)
       {93, "C-k"},       // ^K    KEY
       {94, "F-1 C-k"},   // ^J^K  KEY(SHELL・プロンプトから)
       {95, "F-0 ("},     // ^X(   マクロの記録開始
@@ -134,7 +134,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {101, "F-2 C-e"},  // ^O^E  EPUB: 章区切り/連続スクロール(2026-10-03、既存のK番号をずらさないよう末尾へ)
       {102, "F-2 w"},    // ^Ow   EPUB: Webのリンクの対処を巡回(2026-10-04、usilicrcのURL)
       {103, "F-1 C-a"},  // ^J^A  ARC: 一覧(2026-10-05、アーカイブだけのFILE履歴)
-      {104, "F-2 f"},    // ^Of   -g: フォント一覧(2026-10-06)
+      {104, "F-1 C-f"},  // ^J^F  -g: フォント一覧(2026-10-06、2026-10-07に^Ofから)
   };
   return entries;
 }

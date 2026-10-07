@@ -426,7 +426,7 @@ KEY
 	K-89	F-4 w       # ^J^Ow   WORK
 	K-90	C-h         # ^H      HELP
 	K-91	F-1 C-h     # ^J^H    HELP
-	K-92	F-1 a       # ^Ja     Switch HELP language
+	K-92	F-2 j       # ^Oj     Switch HELP language
 	K-93	C-k         # ^K      KEY
 	K-94	F-1 C-k     # ^J^K    KEY (from a prompt)
 	K-95	F-0 (       # ^X(     Begin macro
@@ -438,7 +438,7 @@ KEY
 	K-101	F-2 C-e     # ^O^E    EPUB: chapter breaks / continuous scroll
 	K-102	F-2 w       # ^Ow     EPUB: cycle the web link action (URL)
 	K-103	F-1 C-a     # ^J^A    ARC: list (archives in the FILE history)
-	K-104	F-2 f       # ^Of     -g: font list (FONT, SANS-SERIF, SERIF)
+	K-104	F-1 C-f     # ^J^F    -g: font list (FONT, SANS-SERIF, SERIF)
 
 MACRO
 	M-1	;	K-20 K-4 K-28			# ^G^P^M	Open previous entry

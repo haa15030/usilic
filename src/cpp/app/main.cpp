@@ -1589,7 +1589,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       app.requestImmediateExit();
       return leavePhase(true);
     }
-    if (app.takeFontListRequest()) app.showNotice("Font list: -g only");  // ^Of(buildFontList()参照)
+    if (app.takeFontListRequest()) app.showNotice("Font list: -g only");  // ^J^F(buildFontList()参照)
     // See Application::awaitingLocateUpdateDb()'s own comment: this
     // loop's own poll() below already ticks every ~100ms regardless of
     // input, so a detached `updatedb` launched by ^Jl is noticed and
@@ -2356,7 +2356,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       return;
     }
     if (!gui.pumpEvents()) return;  // the window's own close button was clicked
-    if (app.takeFontListRequest()) app.showFontList(buildFontList(gui));  // ^Of(buildFontList()参照)
+    if (app.takeFontListRequest()) app.showFontList(buildFontList(gui));  // ^J^F(buildFontList()参照)
     if (auto choice = app.takeFontChoice()) applyFontChoice(app, gui, choice->first, choice->second);
     // See Application::awaitingLocateUpdateDb()'s own comment: this is
     // exactly the call whose ABSENCE (before this fix) let a real ^G

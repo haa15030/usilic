@@ -575,7 +575,7 @@ enum class Command {
   ToggleEpubChapterBreaks,
   // K-102(^Ow、2026-10-04): EPUBのWebのリンクを踏んだ時の対処(Configuration::urlHandlers())を次へ巡回。
   CycleUrlHandler,
-  // K-104(^Of、2026-10-06): -gのフォント一覧(Application::takeFontListRequest()参照)。
+  // K-104(^J^F、2026-10-06、10-07に^Ofから): -gのフォント一覧(Application::takeFontListRequest()参照)。
   StartFontList,
   // ESC l("LOG"): Application::executeStartLog()自身のコメント参照。
   StartLog,

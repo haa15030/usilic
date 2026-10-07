@@ -3135,8 +3135,9 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // ディレクトリ)を引き継ぐ。
       case kControlC:  // ^J ^C : カレントディレクトリ(ファイルセレクタ)へ移動(旧^J^K、K-18)
         return handleCommand(Command::GoToFileSelector);
-      case 'a':  // ^J a : HELP/HELP.en切替(Command::ToggleHelpLanguage自身のコメント参照)
-        return handleCommand(Command::ToggleHelpLanguage);
+      // 2026-10-07、直接のユーザー依頼("フォント一覧表示を^Of→^J^F"): ^Ofから移した。
+      case 0x06:  // ^J ^F : -gのフォント一覧(K-104)
+        return handleCommand(Command::StartFontList);
       // K-43/K-44、K-41/K-42(CLAUDE.mdの経緯の項目289の追跡): LOCATE/
       // DUとは異なり、この2つのペアについてのusilicrc自身の表現は本当
       // に「Input」/「Select」である――EGREPの^J^Sと同じ形――なので、
@@ -3394,8 +3395,9 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::ToggleEpubChapterBreaks);
       case 'w':  // ^O w : EPUBのWebのリンクの対処を巡回(K-102、2026-10-04)
         return handleCommand(Command::CycleUrlHandler);
-      case 'f':  // ^O f : -gのフォント一覧(K-104、2026-10-06)
-        return handleCommand(Command::StartFontList);
+      // 2026-10-07、直接のユーザー依頼("トグルキーのプレフィックスは皆^Oなので^Jaを^Ojで"): ^Jaから移した。
+      case 'j':  // ^O j : HELP/HELP.en切替(K-92、Command::ToggleHelpLanguage自身のコメント参照)
+        return handleCommand(Command::ToggleHelpLanguage);
       case 'a':  // ^O a : ARC展開(旧^X a、K-58)――^O aはここへ移る
                  // 前にHELP/KEYの表示言語切り替えが占めていたが、
                  // それは^J aへ先に移した(kKeyTable自身の"^Ja"コメント
@@ -6327,7 +6329,7 @@ bool Application::openSelectedListEntry() { return openSelectedListEntryImpl(); 
 bool Application::openSelectedListEntryImpl() {
   const std::string *item = listBrowserMode_.selectedItem();
   if (!item) return false;
-  if (fontListShowing()) {  // ^Of(takeFontListRequest()参照)
+  if (fontListShowing()) {  // ^J^F(takeFontListRequest()参照)
     int idx = listBrowserView_.cursorIndex();
     if (idx >= 0 && idx < static_cast<int>(fontListEntries_.size()))
       pendingFontChoice_ = std::make_pair(fontListEntries_[idx].section, fontListEntries_[idx].path);
@@ -9784,7 +9786,7 @@ void Application::handleShellChildExited() {
 }
 
 bool Application::returnFromListBrowser() {
-  if (fontListShowing()) {  // ^Of(takeFontListRequest()参照)
+  if (fontListShowing()) {  // ^J^F(takeFontListRequest()参照)
     fontListActive_ = false;
     currentMode_ = fontListReturnMode_;
     activeView().redraw();
@@ -17855,6 +17857,16 @@ bool Application::handleMouseClickImpl(int row, int column) {
     if (idx < 0) return false;
     if (idx == listBrowserView_.cursorIndex()) return feedCanonicalByte(0x0d);
     return hoverDirectEntryList(row);
+  }
+  // 2026-10-07追加、直接のユーザー依頼("フォント一覧からはクリックでも選択可能に"): ^J^Fのフォント一覧も
+  // Directory等と同じ「1回目で選択、2回目でそのフォントに」。決めるのはEnterと同じ経路。
+  if (fontListShowing()) {
+    int idx = listBrowserView_.lineIndexAtRow(row);
+    if (idx < 0) return false;
+    if (idx == listBrowserView_.cursorIndex()) return openSelectedListEntry();
+    listBrowserView_.setCursorIndex(idx);
+    listBrowserView_.redraw();
+    return true;
   }
   if (currentMode_ == ApplicationMode::Directory) {
     int idx = directoryView_.lineIndexAtRow(row);

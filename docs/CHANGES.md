@@ -29035,3 +29035,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      スペースキーとして記録していた。
    - **実装**: Application::macroItemsFromNotation()で、「"..."」の外の空白・タブは区切りとして読み飛ばす
      (スペースキーは従来どおり␣で書く)。src/HELP.txtの[MACRO]に一文を足した。
+671. **2026-10-07: HELPの言語切替を^Ja→^Oj、フォント一覧を^Of→^J^Fへ、フォント一覧をクリックでも選べるように**
+   - **経緯**: 直接のユーザー依頼("トグルキーのプレフィックスは皆^Oなので^Jaを^Ojで"、"フォント一覧表示を^Of→^J^F、
+     -cでは「-gのみ」みたいなエラーメッセージよろしく。フォント一覧からはクリックでも選択可能に")。
+   - **実装**: K-92を"F-2 j"、K-104を"F-1 C-f"へ(key_bindings.cpp・usilicrc・usilicrc.en)。^Jの分岐の'a'を^Oの'j'へ、
+     ^Oの'f'を^Jの^Fへ移した。-cのメッセージは既に"Font list: -g only"を出していたのでそのまま。
+     handleMouseClickImpl()にフォント一覧の分岐を足し、Directory等と同じく1回目のクリックで選び、2回目で
+     そのフォントに(Enterと同じopenSelectedListEntry())。
+   - **文書**: src/HELP.txt([HELP]の^Ja、FONTの節と-gの表示の節の^Of、クリックと-cのメッセージ)、src/HELP_en.txt。
+     ~/.usilic/usilicrcのK-92(F-1 a)もF-2 jへ直した(元のファイルはスクラッチパッドに控えた)。
