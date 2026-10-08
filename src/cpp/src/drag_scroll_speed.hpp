@@ -68,9 +68,9 @@ extern std::vector<ScrollStep> kScrollSpeedLevels;
 // 事故で着地すべきものではないため。
 void applyScrollSpeedOverride(const std::vector<long> &values);
 
-// 横書きの画面の慣性スクロール(矢印キー、ドラッグで始めたものも)の段ごとの速さ(usilicrcのARROW、
+// 慣性スクロール(横書きの画面の矢印キー、2026-10-09から縦書きのEPUBの左右も、ドラッグで始めたものも)の段ごとの速さ(usilicrcのARROW、
 // 2026-10-08)。applyArrowSpeedOverride()で値を与えるまではkScrollSpeedLevels(SPEED)と同じ。0以下の値の段は
-// SPEEDの段のまま。縦書きのEPUBの左右はkScrollSpeedLevelsを使う。
+// SPEEDの段のまま。
 void applyArrowSpeedOverride(const std::vector<long> &values);
 const ScrollStep &arrowSpeedStep(int level);
 // 2026-10-08、直接のユーザー依頼("マウスでは設定を2つずらして25000を最低速の開始としてみてほしい"): マウスの

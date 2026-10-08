@@ -1147,9 +1147,9 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
   // 同じく、横書きの範囲(奥付等)へ入ったら同じ段階の上下の慣性として続ける。
   bool columns = app.epubVerticalDragActive();
   fm::ContentView *viewPtr = &app.activeContentView();
-  // 横書きの慣性は、マウスで始めたら段を2つ速い方へずらして始める(fm::kDragArrowSpeedOffset参照)。
-  int level = columns ? initialLevel
-                      : std::min(initialLevel + (fromDrag ? fm::dragArrowSpeedOffset() : 0), fm::arrowSpeedMaxLevel());
+  // マウスで始めたら段を2つ速い方へずらして始める(fm::kDragArrowSpeedOffset参照)。2026-10-09から縦書きの
+  // 左右も同じ(直接のユーザー依頼"慣性スクロール機能を縦書きへも反映")。
+  int level = std::min(initialLevel + (fromDrag ? fm::dragArrowSpeedOffset() : 0), fm::arrowSpeedMaxLevel());
   int direction = initialDirection;
   TerminalCoastResult result;
   gTerminalClickTargetsCursor = false;
@@ -1165,9 +1165,8 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
     // CUIだけ倍率上げてみて"): 1行あたりの遅延を16ドット分ではなく8ドット分にする(-gの約2倍の
     // 「1秒あたりの行数」)。
     constexpr int kTerminalDotsPerRow = 8;
-    // 横書きの上下は矢印キー用の表(usilicrcのARROW、fm::arrowSpeedStep())、縦書きの左右はSPEED。
-    fm::ScrollStep step =
-        fm::scaledForRow(columns ? fm::kScrollSpeedLevels[level] : fm::arrowSpeedStep(level), kTerminalDotsPerRow);
+    // 矢印キー用の表(usilicrcのARROW、fm::arrowSpeedStep())。2026-10-09から縦書きの左右も(以前はSPEED)。
+    fm::ScrollStep step = fm::scaledForRow(fm::arrowSpeedStep(level), kTerminalDotsPerRow);
     // 2026-10-02変更、直接のユーザー報告("-cではそもそも左クリックでスクロールが止まらない"、疑似
     // 端末では止まるのに実機では止まらない): 以前は1行進むごとに入力を1件しか読まず、待ちは
     // usleep()だった。実機のTerminal.appはマウスを動かすたびに移動の報告(?1003)を送るので、最低速
@@ -1230,8 +1229,7 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
       // 2026-10-06: 慣性中は進む向きの矢印(一覧の↓↑、縦書きの←→)でも(runGuiPhase()の同じ日の追加参照)。
       if (int arrow = peekArrow(keyInput, "ABCD")) {
         bool forward = columns ? (arrow == 'B' || arrow == 'D') : (arrow == 'C' || arrow == 'B');
-        stepCoastByKey(level, direction, forward ? 1 : -1,
-                       columns ? static_cast<int>(fm::kScrollSpeedLevels.size()) - 1 : fm::arrowSpeedMaxLevel());
+        stepCoastByKey(level, direction, forward ? 1 : -1, fm::arrowSpeedMaxLevel());
         continue;
       }
       // Neither a Left/Right nor a mouse report -- some other ESC
@@ -2736,7 +2734,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // 矢印(一覧の↓↑、縦書きの本文の←→)でも速さを変える。開始は今まで通り交差する向き(一覧は←→、
         // 縦書きは↓↑)だけ。
         if (app.epubVerticalDragActive() && epubCoastLevel > 0 && (leftKey || rightKey)) {
-          stepCoastByKey(epubCoastLevel, epubCoastDirection, leftKey ? 1 : -1);  // ←で先へ(右から左へ読む)
+          stepCoastByKey(epubCoastLevel, epubCoastDirection, leftKey ? 1 : -1, fm::arrowSpeedMaxLevel());  // ←で先へ(右から左へ読む)
           consecutiveEscapes = 0;
           continue;
         }
@@ -2746,7 +2744,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           continue;
         }
         if (app.epubVerticalDragActive() && (upKey || downKey)) {
-          stepCoastByKey(epubCoastLevel, epubCoastDirection, downKey ? 1 : -1);
+          stepCoastByKey(epubCoastLevel, epubCoastDirection, downKey ? 1 : -1, fm::arrowSpeedMaxLevel());
           consecutiveEscapes = 0;
           continue;
         }
@@ -3052,6 +3050,9 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
               if (sample.first >= cutoff) releaseDistance += sample.second;
             epubCoastLevel =
                 resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, std::max(gui.cellHeightPixels(), 1)));
+            // 横書きと同じく、マウスで始めた慣性は段を2つ速い方へずらす(fm::kDragArrowSpeedOffset参照、2026-10-09)
+            if (epubCoastLevel > 0)
+              epubCoastLevel = std::min(epubCoastLevel + fm::dragArrowSpeedOffset(), fm::arrowSpeedMaxLevel());
             if (epubCoastLevel > 0) {  // 慣性で流す(ずれはそのまま、下のフレームごとの処理)
               epubCoastDirection = releaseDistance > 0 ? 1 : -1;
               epubDragging = false;
@@ -3483,7 +3484,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     if (epubCoastLevel > 0) {
       bool stop = !app.epubVerticalDragActive();
       if (!stop) {
-        const fm::ScrollStep &step = fm::kScrollSpeedLevels[epubCoastLevel];
+        const fm::ScrollStep &step = fm::arrowSpeedStep(epubCoastLevel);  // usilicrcのARROW(2026-10-09から縦書きも)
         int pitch = std::max(1, gui.cellWidthPixels() * fm::epubVerticalColumnPitch());
         auto frameDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(16);
         do {

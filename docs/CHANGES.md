@@ -29256,3 +29256,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **修正**: ずらし(setArrowSpeedOffset())をやめ、ドラッグを離した時(-g)とrunCoastLoop()のfromDrag(-c)で、
      ドラッグの距離で決まる段に2(dragArrowSpeedOffset()、ARROWが無ければ0)を足して始めるだけにした。その後の
      矢印キーはARROWの全部の段(200000まで)を使う。src/usilicrc・usilicrc.en・src/HELP.txt(追跡対象外)の説明も直した。
+696. **2026-10-09: 縦書きのEPUBの左右の慣性スクロールにも、usilicrcのARROW(と、ドラッグで始めた時の2段のずらし)を使う**
+   - **経緯**: 直接のユーザー依頼("慣性スクロール機能を縦書きへも反映")。項目692〜695のARROWは横書きの画面の慣性
+     だけで、縦書きのEPUBの左右(-gのepubCoastLevel、-cのrunCoastLoop()の列送り)はSPEEDの10段のままだった。
+   - **変更**: 縦書きの左右も、段の速さはfm::arrowSpeedStep()、最速の段はfm::arrowSpeedMaxLevel()(ARROWの数)にし、
+     ドラッグを離して始めた慣性(-gのepubCoastLevel、-cのfromDrag)はdragArrowSpeedOffset()だけ速い段から始める。
+     縦書き⇔横書きの範囲(奥付等)をまたいで慣性を続ける時は、両方とも同じ表なので段はそのまま引き継ぐ。
+     src/usilicrc・usilicrc.enのARROWの説明を直した。src/HELP.txt(追跡対象外)のARROWの「縦書きの EPUB の左右は
+     常に SPEED です」はユーザーが清書する(src/HELP.txt:824)。

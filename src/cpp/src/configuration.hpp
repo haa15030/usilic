@@ -342,7 +342,7 @@ class Configuration {
   const std::vector<long> &dragValues() const { return dragValues_; }
   // ARROW(2026-10-08、直接のユーザー依頼"横書き画面の最低速スクロールが速すぎるのと次速への段差も大きいので
   // それ用のオプションは欲しい...矢印キー用のみ10段階で"): 横書きの画面の慣性スクロールの段ごとの速さ
-  // (SPEEDと同じ書式、fm::applyArrowSpeedOverride()へ)。無ければSPEEDの表。縦書きのEPUBの左右はSPEEDのまま。
+  // (SPEEDと同じ書式、fm::applyArrowSpeedOverride()へ)。無ければSPEEDの表。2026-10-09から縦書きのEPUBの左右も。
   const std::vector<long> &arrowSpeedValues() const { return arrowSpeedValues_; }
   const std::string &fontPath() const { return fontPath_; }
   // MACRO(2026-10-02新設): 「M-n キー K-a K-b ...」の行。キーはKEY節と同じ表記、K番号の並びは
