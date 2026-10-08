@@ -3654,8 +3654,14 @@ bool Application::stopMacroRecording() {
 bool Application::playRecordedMacro() {
   macroControlKey_ = true;
   if (recordedMacro_.empty()) return false;
-  // 記録中の^Xeは実行しない(実行すると^Xe自身が記録に入り、後の実行で限りなく自分を呼ぶ)。
-  if (recordingMacro_) return false;
+  // 記録中の^Xeは、Emacs(kmacro-end-and-call-macro)と同じく記録を終えてから実行する(^Xe自身は記録に入れない、
+  // macroControlKey_参照)。2026-10-08、直接のユーザー報告("`^X(^[s...^G^L^X)^Xe^Xs`→カーソルが最下行に無い"):
+  // SHELLの中等で^X)が記録の終わりとして効かないまま^Xeを押すと、以前は何もせず、続く^Xsも記録した並びを
+  // 書かずに一覧を出していた。
+  if (recordingMacro_) {
+    stopMacroRecording();
+    if (recordedMacro_.empty()) return false;
+  }
   int wait = configuration_.waitIntervalMicros();
   std::vector<RecordedStep> steps = recordedMacro_;
   for (std::size_t i = 0; i < steps.size(); i++) {
@@ -17472,7 +17478,10 @@ bool Application::saveMacroToUsilicrc() {
   // 画面になる。それは別のマクロに担当させたいので、FILE風の一覧にしてほしい"): 以前はusilicrcをFILEで
   // 開いてMACROの節へ飛び、"MACRO Key:"で実行キーを1文字待っていた。今はマクロの一覧を出す
   // (startMacroList()参照)。記録した直後なら「--」の行(今記録した並び)にカーソルを置く。
-  return startMacroList(recorded);
+  // 2026-10-08、直接のユーザー提案("`^Xe`のあとじゃない`^Xs`ではusilicrcを表示して`--`がカレント行、でいいんじゃない？"):
+  // 記録した直後でなくても「--」の行(新しいマクロを書く行)にカーソルを置く。
+  (void)recorded;
+  return startMacroList(/*selectMarker=*/true);
 }
 
 // ^X^Sのマクロ一覧(2026-10-03、saveMacroToUsilicrc()参照)。usilicrcのMACRO節の行を「キー   キーの並び」
