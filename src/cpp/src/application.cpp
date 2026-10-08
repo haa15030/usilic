@@ -17096,7 +17096,8 @@ bool Application::executeEdit() {
   return true;
 }
 
-std::vector<StyledLine> Application::wrapHelpText(int width) const {
+std::vector<StyledLine> Application::wrapHelpText(int width) {
+  if (!helpRoff_.empty() && width != helpRenderedWidth_) renderHelpRoff(width);  // helpRoff_参照
   PipeBuffer pipe(encoding_, width, 16L * 1024 * 1024);
   pipe.feed(helpText_);
   pipe.flush();
@@ -17126,6 +17127,35 @@ bool Application::reloadHelpText() {
     path = "/usr/local/lib/usilic/" + name;
     in.open(path, std::ios::binary);
   }
+  // roff版(helpRoff_参照): 見つけたHELPと同じ場所(無ければ同じ順で探す)のHELP.ja.1/HELP.1。
+  helpRoff_.clear();
+  helpRenderedWidth_ = -1;
+  {
+    std::string roffName = name.size() > 3 && name.compare(name.size() - 3, 3, ".en") == 0
+                               ? name.substr(0, name.size() - 3) + ".1"
+                               : name + ".ja.1";
+    std::vector<std::string> candidates;
+    if (in) candidates.push_back((std::filesystem::path(path).parent_path() / roffName).string());
+    candidates.push_back((std::filesystem::path(helpPath_).parent_path() / roffName).string());
+    if (!installLibDirectory_.empty()) candidates.push_back(installLibDirectory_ + roffName);
+    candidates.push_back("/usr/local/lib/usilic/" + roffName);
+    for (const auto &candidate : candidates) {
+      std::ifstream roffIn(candidate, std::ios::binary);
+      if (!roffIn) continue;
+      std::ostringstream roff;
+      roff << roffIn.rdbuf();
+      helpRoff_ = roff.str();
+      if (!helpRoff_.empty() && renderHelpRoff(display_.columns())) {
+        std::error_code ec;
+        helpLoadedPath_ = candidate;
+        helpLoadedTime_ = std::filesystem::last_write_time(candidate, ec);
+        return true;
+      }
+      helpRoff_.clear();  // groffが使えない等: 平文のHELPへ
+      helpRenderedWidth_ = -1;
+      break;
+    }
+  }
   if (!in) return false;
   std::ostringstream buffer;
   buffer << in.rdbuf();
@@ -17135,6 +17165,46 @@ bool Application::reloadHelpText() {
   helpLoadedTime_ = std::filesystem::last_write_time(path, ec);
   // usilicrcのKEY節で変えたキーを、HELPの表記にも反映する(KeyBindings::rewriteHelpText()参照)。
   helpText_ = configuration_.keyBindings().rewriteHelpText(buffer.str());
+  return true;
+}
+
+// helpRoff_参照。groffで`width`桁に組み(-rusilic-help=1で行頭・行末のタブの印U+E000を出させる、
+// convertMarkupToMsRoffSource()の前置き参照)、印をタブに戻してhelpText_にする。行頭の印はタブ(PipeBufferが
+// 8桁へ広げる)と、groffが組んだ字下げの残りの空白に、行末の印はタブにする(HELPの目次・ページャー起動の
+// KEYのCUTは、今まで通り行末・行頭のタブで切れる)。
+bool Application::renderHelpRoff(int width) {
+  ProgramCommand groff = configuration_.commandFor(ConfiguredRole::Groff);
+  if (groff.argv.empty()) return false;
+  std::vector<std::string> argv = groff.argv;
+  argv.push_back("-rLL=" + std::to_string(std::max(width, 20)) + "n");
+  argv.push_back("-rusilic-help=1");
+  ChildProcessOptions options;
+  options.input = &helpRoff_;
+  ChildProcess::Result result = ChildProcess::run(argv, options);
+  if (!result.ok || result.output.empty()) return false;
+  const std::string marker = "\xEE\x80\x80";  // U+E000
+  std::string text;
+  text.reserve(result.output.size());
+  std::istringstream in(result.output);
+  for (std::string line; std::getline(in, line);) {
+    std::size_t at = line.find(marker);
+    if (at == std::string::npos) {
+      text += line + "\n";
+      continue;
+    }
+    std::string before = line.substr(0, at), after = line.substr(at + marker.size());
+    if (before.find_first_not_of(' ') == std::string::npos) {
+      std::size_t body = after.find_first_not_of(' ');
+      int columns = static_cast<int>(before.size() + (body == std::string::npos ? after.size() : body));
+      text += "\t" + std::string(static_cast<std::size_t>(std::max(0, columns - 8)), ' ') +
+              (body == std::string::npos ? std::string() : after.substr(body)) + "\n";
+    } else {
+      while (!before.empty() && before.back() == ' ') before.pop_back();
+      text += before + "\t\n";
+    }
+  }
+  helpText_ = configuration_.keyBindings().rewriteHelpText(text);
+  helpRenderedWidth_ = width;
   return true;
 }
 
@@ -17350,7 +17420,15 @@ bool Application::openPlainHelp(std::optional<int> rawLine) {
     path = "/usr/local/lib/usilic/" + std::filesystem::path(helpPath_).filename().string();
   // KEY節でキーを変えていれば、キーの表記を置き換えたもの(KeyBindings::rewriteHelpText())を作業用の
   // 一時ディレクトリに書いて、それを開く。
-  if (!configuration_.keyBindings().isIdentity()) {
+  if (!helpRoff_.empty()) {
+    // roff版(helpRoff_参照): 今の幅で組んだものを一時ファイルにして開く(KEY置き換えも済み)。
+    if (helpRenderedWidth_ != display_.columns()) renderHelpRoff(display_.columns());
+    std::string temp = tempRootDirectory_ + "/" + std::filesystem::path(helpPath_).filename().string();
+    std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+    out << helpText_;
+    out.close();
+    if (out) path = temp;
+  } else if (!configuration_.keyBindings().isIdentity()) {
     std::ifstream in(path, std::ios::binary);
     std::ostringstream buffer;
     buffer << in.rdbuf();
@@ -17675,6 +17753,8 @@ void Application::reloadUsilicrcKeys() {
 }
 
 bool Application::loadHelpText(const std::string &text) {
+  helpRoff_.clear();
+  helpRenderedWidth_ = -1;
   helpText_ = configuration_.keyBindings().rewriteHelpText(text);  // reloadHelpText()と同じ
   return !helpText_.empty();
 }
@@ -17790,6 +17870,25 @@ void Application::handleResize() {
   std::optional<int> epubRaw;  // 縦書きは、今のページの最初の行を保って組み直す
   if (currentMode_ == ApplicationMode::File && epubVerticalActive()) epubRaw = epubVerticalCurrentRaw();
   if (currentMode_ == ApplicationMode::File) fileMode_.reflow(display_.columns());
+  // 平文のHELP(roff版、helpRoff_参照)は、groffで今の幅に組み直して開き直す(行は今の割合の所へ)。
+  // 書き直すのはopenPlainHelp()が作った一時ファイルだけ(インストールしたHELPは書き換えない)。
+  if (currentMode_ == ApplicationMode::File && !helpRoff_.empty() && !plainHelpPath_.empty() &&
+      fileMode_.currentFile() == plainHelpPath_ && !tempRootDirectory_.empty() &&
+      plainHelpPath_.compare(0, tempRootDirectory_.size(), tempRootDirectory_) == 0 &&
+      renderHelpRoff(display_.columns())) {
+    int oldCursor = fileView_.cursorIndex();
+    int oldCount = std::max(1, static_cast<int>(fileView_.lines().size()));
+    std::ofstream out(plainHelpPath_, std::ios::binary | std::ios::trunc);
+    out << helpText_;
+    out.close();
+    if (fileMode_.loadFile(plainHelpPath_)) {
+      int count = static_cast<int>(fileView_.lines().size());
+      fileView_.setCursorIndex(std::clamp(static_cast<int>(static_cast<long long>(oldCursor) * count / oldCount), 0,
+                                          std::max(0, count - 1)));
+      fileView_.centerOnCursor();
+      fileView_.redraw();
+    }
+  }
   if (epubRaw) rebuildEpubVertical(*epubRaw);
   if (currentMode_ == ApplicationMode::Cut && epubTocVerticalActive()) refreshEpubTocVertical();
   if (currentMode_ == ApplicationMode::Man) manMode_.reflow(display_.columns());

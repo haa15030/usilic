@@ -131,6 +131,43 @@ std::string convertMarkupToLegacyHelpText(const std::string &source) {
   return out;
 }
 
+// 2026-10-09、直接のユーザー依頼("HELPを不可視コードなしで表示できるようにしてみて"): 日本語の原稿も
+// 自分では折り返さず、groff・manに今の画面の幅で組ませる(以前の78桁の決め打ちwrapRoffTextLines()は削除)。
+// groff(1.24.1)の端末用のフォントdevutf8/Rは、濁点・半濁点の付いた仮名58字(「で」等、分解した字形
+// u3066_3099)の幅を1桁に数え、行が画面の幅をはみ出す。groff同梱の日本語のフォントJPM(明朝)・JPG
+// (ゴシック)ではどれも正しく2桁なので、その字だけJPM(太字の時はJPG、端末ではJPGが太字になる)で出す。
+// 斜体(下線)の時もJPMなので、この58字だけ下線が外れる。
+static bool isMiscountedKana(char32_t cp) {
+  static const char32_t kKana[] = {
+      0x304C, 0x304E, 0x3050, 0x3052, 0x3054, 0x3056, 0x3058, 0x305A, 0x305C, 0x305E, 0x3060, 0x3062,
+      0x3065, 0x3067, 0x3069, 0x3070, 0x3071, 0x3073, 0x3074, 0x3076, 0x3077, 0x3079, 0x307A, 0x307C,
+      0x307D, 0x3094, 0x309E, 0x30AC, 0x30AE, 0x30B0, 0x30B2, 0x30B4, 0x30B6, 0x30B8, 0x30BA, 0x30BC,
+      0x30BE, 0x30C0, 0x30C2, 0x30C5, 0x30C7, 0x30C9, 0x30D0, 0x30D1, 0x30D3, 0x30D4, 0x30D6, 0x30D7,
+      0x30D9, 0x30DA, 0x30DC, 0x30DD, 0x30F4, 0x30F7, 0x30F8, 0x30F9, 0x30FA, 0x30FE};
+  for (char32_t k : kKana)
+    if (k == cp) return true;
+  return false;
+}
+
+// `text`(UTF-8)の中の上の58字を、`font`の字の時はJPM/JPGへ切り替えて出し、`font`へ戻す。
+static std::string wrapMiscountedKana(const std::string &text, char font) {
+  std::string out;
+  for (std::size_t i = 0; i < text.size();) {
+    unsigned char c = static_cast<unsigned char>(text[i]);
+    if (c == 0xE3 && i + 2 < text.size()) {
+      char32_t cp = ((c & 0x0F) << 12) | ((static_cast<unsigned char>(text[i + 1]) & 0x3F) << 6) |
+                    (static_cast<unsigned char>(text[i + 2]) & 0x3F);
+      if (isMiscountedKana(cp)) {
+        out += std::string(font == 'B' ? "\\f[JPG]" : "\\f[JPM]") + text.substr(i, 3) + "\\f[" + font + "]";
+        i += 3;
+        continue;
+      }
+    }
+    out += text[i++];
+  }
+  return out;
+}
+
 // convertMarkupToMsRoffSource()自身のmarkup_to_roff.hpp宣言コメント
 // 参照。convertMarkupToLegacyHelpText()と同じ逐次スキャン方式・同じ
 // タグ集合(<b>/<u>/<i>/<indentN>)だが、出力先が「usilic自身の
@@ -140,117 +177,6 @@ std::string convertMarkupToLegacyHelpText(const std::string &source) {
 // (さもないと著者の本文がroffの制御行/エスケープと誤認される)、
 // (2)改行・空行の扱い(2026-09-25以降は元の1行=出力の1行の.brと、
 // 空行の.sp――関数本体冒頭の同日のコメント参照)。
-// 2026-10-02追加、直接のユーザー報告("usilic -nで出来たHELP.1を開くとインデントが利いていない行が
-// ある"): 行長を78桁に決め打ちしていたため、それより長い行(HELP.txtは80桁で折り返してある、全角は
-// 2桁)をgroffが折り返し、折り返した続きの行が字下げ無しで出ていた。タグを除いた元の行の表示幅
-// (<indentN>の字下げ込み)の最大に合わせ、元の1行が折り返されないようにする(78桁未満なら78桁)。
-// wrapRoffTextLines()で折り返す幅。manの既定と同じ78桁(2026-10-06、直接のユーザー判断。80桁ではちょうど80桁の
-// 行が80桁未満の画面で最後の1字だけ折り返された)。
-constexpr int kRoffWrapWidth = 78;
-
-static int markupLineLengthForRoff(const std::string &markup) {
-  int longest = 78, width = 0, indent = 0;
-  std::size_t i = 0;
-  while (i < markup.size()) {
-    if (markup[i] == '\n') {
-      longest = std::max(longest, indent + width);
-      width = 0;
-      i++;
-      continue;
-    }
-    bool tag = false;
-    for (const char *t : {"<b>", "</b>", "<u>", "</u>", "<i>", "</i>", "</indent>"}) {
-      std::size_t n = std::strlen(t);
-      if (markup.compare(i, n, t) == 0) {
-        if (t[1] == '/' && t[2] == 'i' && t[3] == 'n') indent = 0;
-        i += n;
-        tag = true;
-        break;
-      }
-    }
-    if (tag) continue;
-    if (markup.compare(i, 7, "<indent") == 0) {
-      std::size_t j = i + 7;
-      while (j < markup.size() && j < i + 9 && std::isdigit(static_cast<unsigned char>(markup[j]))) j++;
-      if (j > i + 7 && j < markup.size() && markup[j] == '>') {
-        indent = std::atoi(markup.substr(i + 7, j - i - 7).c_str());
-        i = j + 1;
-        continue;
-      }
-    }
-    int len = Utf8::sequence_length(static_cast<unsigned char>(markup[i]));
-    if (i + len > markup.size()) len = 1;
-    width += Utf8::display_width(reinterpret_cast<const unsigned char *>(markup.data() + i), len);
-    i += len;
-  }
-  return std::max(longest, indent + width);
-}
-
-// 2026-10-06追加、直接のユーザー報告("「Boot options」で、の続きの「引数」の「引」だけ行頭にあって「数」が
-// 字下げ箇所にある...みたいのがあちこちある"): groffは濁点・半濁点の付いた仮名(「で」等)を、分解した字形
-// (u3066_3099)として1桁の幅に数えるので(-Zで確認: 「あ」は2桁)、そういう字の多い行は.llを超えて
-// 出ていた。それを画面の幅で折り返すと、行末の1字だけが次の行の頭に出る。groffに折り返させず、本当の
-// 表示幅で自分で折り返す: 本文の行(制御行以外)を、.in/.tiの字下げを数えながらwidth桁で切り、続きの
-// 行は.inの字下げから(.brで改行)。続きの行の頭の空白は除く。
-static std::string wrapRoffTextLines(const std::string &roff, int width) {
-  std::string result;
-  int indent = 0;
-  std::optional<int> tempIndent;
-  auto readNumber = [](const std::string &line, std::size_t from) {
-    return std::atoi(line.c_str() + from);
-  };
-  std::size_t pos = 0;
-  while (pos < roff.size()) {
-    std::size_t end = roff.find('\n', pos);
-    if (end == std::string::npos) end = roff.size();
-    std::string line = roff.substr(pos, end - pos);
-    pos = end + 1;
-    if (!line.empty() && line[0] == '.' && line.compare(0, 2, "\\&") != 0) {
-      if (line.compare(0, 4, ".in ") == 0) indent = readNumber(line, 4);
-      if (line.compare(0, 4, ".ti ") == 0) tempIndent = readNumber(line, 4);
-      result += line + "\n";
-      continue;
-    }
-    int column = tempIndent.value_or(indent);
-    tempIndent.reset();
-    std::string chunk;
-    bool chunkHasText = false;
-    for (std::size_t i = 0; i < line.size();) {
-      std::size_t len;
-      int w;
-      if (line[i] == '\\' && i + 1 < line.size()) {
-        char kind = line[i + 1];
-        len = (kind == 'f' && i + 2 < line.size()) ? 3 : 2;  // \fB/\fI/\fP、\&、\e
-        w = kind == 'e' ? 1 : 0;
-      } else {
-        len = static_cast<std::size_t>(Utf8::sequence_length(static_cast<unsigned char>(line[i])));
-        if (len == 0 || i + len > line.size()) len = 1;
-        w = Utf8::display_width(reinterpret_cast<const unsigned char *>(line.data() + i), static_cast<int>(len));
-      }
-      if (w > 0 && chunkHasText && column + w > width) {
-        result += chunk + "\n.br\n";
-        chunk.clear();
-        chunkHasText = false;
-        column = indent;
-      }
-      if (w > 0 && !chunkHasText && line[i] == ' ' && column == indent && !result.empty() &&
-          result.compare(result.size() - 4, 4, ".br\n") == 0 && i > 0) {
-        i += len;  // 折り返した続きの行の頭の空白
-        continue;
-      }
-      std::string piece = line.substr(i, len);
-      if (!chunkHasText && w > 0 && (piece == "." || piece == "'") && chunk.empty()) chunk += "\\&";
-      chunk += piece;
-      if (w > 0) chunkHasText = true;
-      column += w;
-      i += len;
-    }
-    result += chunk + "\n";
-  }
-  if (!roff.empty() && roff.back() != '\n' && !result.empty()) result.pop_back();
-  return result;
-}
-
 std::string convertMarkupToMsRoffSource(const std::string &source) {
   const std::string markup = joinMarkupLinesAtBreaks(source);  // <br />(help_text.hpp参照)
   std::string out;
@@ -296,39 +222,30 @@ std::string convertMarkupToMsRoffSource(const std::string &source) {
   // 行長78桁(man既定と同じ)、両端揃え・ハイフネーション無し、上記の
   // ASCII記号はASCIIのまま、元の1行=出力の1行(行末ごとに.br)、空行は
   // .PPではなく素の.sp。
-  // groffには折り返させない(wrapRoffTextLines()参照)ので、.llは本文のどの行より長くしておく。
-  int lineLength = markupLineLengthForRoff(markup) + 100;
   // 2026-10-06追加、直接のユーザー依頼(man(-mandoc)で見た時の見出しの「() ()」を、.THで「USILIC(1) ...」に):
   // 名前はUSILIC、章は1、日付は-nを実行した日、版はusilic 1.5b(モードラインの透かしと同じ決め打ち)、
   // 手引きの名前は日本語の原稿(仮名・漢字を含む)なら「ユーザーコマンド」、他は「User Commands」。-msで
   // 組む時は.THが無視されるだけ。.THは前置きより前(manのマクロが.po等を決めた後に前置きで上書きする)。
-  // 見出し・末尾の行はLLレジスタの幅で組まれるので、LLは78桁、本文の.llは折り返させないため長く
-  // (wrapRoffTextLines()参照)。
+  // 2026-10-09から日本語の原稿も行長を決めない(英語と同じく、`man`が渡す画面の幅(MANWIDTH→-rLL)やusilicの
+  // HELPが渡す-rLLでgroffが折り返す)。数え違える仮名はwrapMiscountedKana()でJPM/JPGにする。
   bool japanese = false;
   for (std::size_t k = 0; k + 2 < markup.size() && !japanese; k++) {
     unsigned char c = static_cast<unsigned char>(markup[k]);
     japanese = c == 0xE3 || (c >= 0xE4 && c <= 0xE9);  // U+3000-U+9FFF(仮名・漢字)
   }
-  // 見出しの手引きの名前「ユーザーコマンド」の「ザ」「ド」を、groffは本文と同じく1桁に数える
-  // (wrapRoffTextLines()参照)ので、見出しの行が2桁長く出る。その分、見出し・末尾の行の幅(LL)を
-  // 縮めて、見出しを78桁に収める(末尾の行は76桁になる)。日付の"-"はハイフンの記号(‐)にならない
-  // よう\[u002D]で(前置きの.char -は.THの後なので効かない)。
+  // 日付の"-"はハイフンの記号(‐)にならないよう\[u002D]で(前置きの.char -は.THの後なので効かない)。
   char date[64] = "";
   std::time_t now = std::time(nullptr);
   std::strftime(date, sizeof(date), "%Y\\[u002D]%m\\[u002D]%d", std::localtime(&now));
-  // 2026-10-06追加、直接のユーザー提案("HELP.enの方は問題無いならHELP.1の同梱は英語版だけにするとか"):
-  // 英語の原稿は、groffが幅を数え違える字(濁点付きの仮名)が無いので、自分で折り返さず(wrapRoffTextLines()
-  // を通さない)、行長もここでは決めない――`man`が渡す画面の幅(MANWIDTH→-rLL)でgroffが折り返し、ls(1)等と
-  // 同じく画面の幅に追随する。日本語の原稿は今まで通り78桁で自分で折り返す。
-  int headerWidth = kRoffWrapWidth - (japanese ? 2 : 0);
-  if (japanese) out += ".nr LL " + std::to_string(headerWidth) + "n\n";
   out += ".TH USILIC 1 \"" + std::string(date) + "\" \"usilic 1.5b\" \"" +
-         (japanese ? "ユーザーコマンド" : "User Commands") + "\"\n";
+         (japanese ? wrapMiscountedKana("ユーザーコマンド", 'R') : "User Commands") + "\"\n";
   out += ".\\\" usilic -n: -m(usilic自身の表示)と同じ見た目にするための前置き\n"
          ".nr PO 0\n.po 0\n.nr HM 0\n.nr FM 0\n.nr PL 100000v\n.pl 100000v\n.ds CH\n"
-         + (japanese ? ".nr LL " + std::to_string(headerWidth) + "n\n.ll " + std::to_string(lineLength) + "n\n"
-                     : std::string()) +
          ".nh\n.ad l\n"
+         // 2026-10-09: 行頭・行末のタブ(HELPの目次・ページャー起動のKEYのCUTの目印)は、groffを通すと空白に
+         // なって消えるので、usilicのHELPが組む時(-rusilic-help=1)だけ印U+E000を出す(usilicが組んだ後で
+         // タブに戻す、Application::renderHelpRoff()参照)。manで読む時は何も出ない。
+         ".ie r usilic-help .ds usilic-tab \\[uE000]\n.el .ds usilic-tab\n"
          ".char - \\[u002D]\n.char ' \\[u0027]\n.char ^ \\[u005E]\n.char ~ \\[u007E]\n.char ` \\[u0060]\n"
          // 日本語の文字の間でも改行できるようにする(-mは任意の位置で
          // 折り返す)。groff 1.24のja.tmacの定義をそのまま取り込み、
@@ -419,7 +336,24 @@ std::string convertMarkupToMsRoffSource(const std::string &source) {
       }
     }
     if (atLineStart && (markup[i] == '.' || markup[i] == '\'')) out += "\\&";
+    bool firstOnLine = atLineStart;
     atLineStart = false;
+
+    // 行頭・行末のタブは印(前置きのusilic-tab参照)。行末のタブの後の空白は捨てる。
+    if (markup[i] == '\t') {
+      std::size_t rest = markup.find_first_not_of(" \t", i + 1);
+      std::size_t afterTags = rest;  // 行末の</indent>(1つ以上)の後も行末とみなす
+      while (afterTags != std::string::npos && markup.compare(afterTags, indentClose.size(), indentClose) == 0)
+        afterTags = markup.find_first_not_of(" \t", afterTags + indentClose.size());
+      bool atLineEnd = afterTags == std::string::npos || markup[afterTags] == '\n';
+      if (firstOnLine || atLineEnd) {
+        out += "\\*[usilic-tab]";
+        if (atLineEnd) {
+          i = rest == std::string::npos ? markup.size() : rest;
+          continue;
+        }
+      }
+    }
 
     bool isBold = markup.compare(i, boldOpen.size(), boldOpen) == 0;
     bool isUnderline = !isBold && markup.compare(i, underlineOpen.size(), underlineOpen) == 0;
@@ -440,13 +374,21 @@ std::string convertMarkupToMsRoffSource(const std::string &source) {
         i = contentStart;
         continue;
       }
+      // 終わりは\\fPではなく\\fR(中の仮名のJPM/JPGへの切り替えで「前のフォント」が変わるため)。
+      std::string span;
+      for (std::size_t j = contentStart; j < closePos; j++) span += markup[j] == '\\' ? std::string("\\e") : std::string(1, markup[j]);
       out += isBold ? "\\fB" : "\\fI";
-      for (std::size_t j = contentStart; j < closePos; j++) appendEscaped(markup[j]);
-      out += "\\fP";
+      out += japanese ? wrapMiscountedKana(span, isBold ? 'B' : 'I') : span;
+      out += "\\fR";
       i = closePos + closeTag.size();
       continue;
     }
 
+    if (japanese && static_cast<unsigned char>(markup[i]) == 0xE3 && i + 2 < markup.size()) {
+      out += wrapMiscountedKana(markup.substr(i, 3), 'R');
+      i += 3;
+      continue;
+    }
     appendEscaped(markup[i]);
     i++;
   }
@@ -456,8 +398,8 @@ std::string convertMarkupToMsRoffSource(const std::string &source) {
   ensureFreshLine();
   // 末尾の行(.TH)は見出しと同じ幅で。-mandoc(man)で組む時は、末尾の行をmanのマクロ自身が最後に出すので
   // ページ長を縮めない(縮めると末尾の行が出ない)。an-footerはgroffのan.tmacのマクロ。
-  out += std::string(".br\n") + (japanese ? ".ll \\n(LLu\n" : "") + ".if !d an-footer .pl \\n(nlu+1v\n";
-  return japanese ? wrapRoffTextLines(out, kRoffWrapWidth) : out;
+  out += ".br\n.if !d an-footer .pl \\n(nlu+1v\n";
+  return out;
 }
 
 }  // namespace fm

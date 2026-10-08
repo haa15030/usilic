@@ -140,7 +140,7 @@ namespace {
 std::string msBody(const std::string &out) {
   std::size_t prologueEnd = out.find(".cflags 512 ");
   std::string body = out.substr(out.find('\n', prologueEnd) + 1);
-  const std::string epilogue = ".br\n.pl \\n(nlu+1v\n";
+  const std::string epilogue = ".br\n.if !d an-footer .pl \\n(nlu+1v\n";
   if (body.size() >= epilogue.size() && body.compare(body.size() - epilogue.size(), epilogue.size(), epilogue) == 0)
     body.erase(body.size() - epilogue.size());
   return body;
@@ -150,23 +150,24 @@ std::string msBody(const std::string &out) {
 TEST_CASE("convertMarkupToMsRoffSource: the prologue makes groff render like -m -- no margin/page "
           "header, left-adjusted, no hyphenation, ASCII ^'~`- kept as ASCII, CJK line breaking") {
   std::string out = convertMarkupToMsRoffSource("x");
-  for (const char *request : {".po 0\n", ".nr HM 0\n", ".ds CH\n", ".ll 78n\n", ".nh\n", ".ad l\n",
+  for (const char *request : {".po 0\n", ".nr HM 0\n", ".ds CH\n", ".nh\n", ".ad l\n",
                               ".char ^ \\[u005E]\n", ".cflags 512 \\C'[CJKnormal]'\n"})
     CHECK(out.find(request) != std::string::npos);
-  CHECK(out.size() >= 20);
-  CHECK(out.compare(out.size() - 20, 20, "x\n.br\n.pl \\n(nlu+1v\n") == 0);
+  const std::string tail = "x\n.br\n.if !d an-footer .pl \\n(nlu+1v\n";
+  REQUIRE(out.size() >= tail.size());
+  CHECK(out.compare(out.size() - tail.size(), tail.size(), tail) == 0);
 }
 
 TEST_CASE("convertMarkupToMsRoffSource: <b>X</b> becomes \\fBX\\fP (roff font-change escape, "
           "package-agnostic, works under -ms same as -man)") {
-  CHECK(msBody(convertMarkupToMsRoffSource("<b>AB</b>")) == "\\fBAB\\fP\n");
+  CHECK(msBody(convertMarkupToMsRoffSource("<b>AB</b>")) == "\\fBAB\\fR\n");
 }
 
 TEST_CASE("convertMarkupToMsRoffSource: <u>X</u> and <i>X</i> both become \\fIX\\fP (italic) -- "
           "roff/troff has no underline primitive, matching convertMarkupToLegacyHelpText()'s own "
           "identical unification of the two tags") {
-  CHECK(msBody(convertMarkupToMsRoffSource("<u>AB</u>")) == "\\fIAB\\fP\n");
-  CHECK(msBody(convertMarkupToMsRoffSource("<i>AB</i>")) == "\\fIAB\\fP\n");
+  CHECK(msBody(convertMarkupToMsRoffSource("<u>AB</u>")) == "\\fIAB\\fR\n");
+  CHECK(msBody(convertMarkupToMsRoffSource("<i>AB</i>")) == "\\fIAB\\fR\n");
 }
 
 TEST_CASE("convertMarkupToMsRoffSource: <indentN>...</indent> becomes \".in Nn\" ... \".in 0\" -- "
@@ -208,4 +209,16 @@ TEST_CASE("convertMarkupToMsRoffSource: plain characters (^, ~, full-width：, -
 TEST_CASE("convertMarkupToMsRoffSource: a closing tag with no matching opener is passed through "
           "literally rather than corrupting or hanging (malformed-markup safety net)") {
   CHECK(msBody(convertMarkupToMsRoffSource("<b>unterminated")) == "<b>unterminated\n");
+}
+
+// 2026-10-09 (a direct user request, "HELPを不可視コードなしで表示できるようにしてみて"): the Japanese
+// source is no longer wrapped by -n itself; the kana groff miscounts go through JPM (JPG when bold), and
+// line-start/line-end tabs become the usilic-tab marker string.
+TEST_CASE("convertMarkupToMsRoffSource: Japanese kana with dakuten use JPM/JPG, tabs become usilic-tab markers") {
+  std::string out = convertMarkupToMsRoffSource("で<b>ば</b>\n\tキー\n章\t</indent>\n");
+  CHECK(out.find(".ll ") == std::string::npos);
+  CHECK(msBody(out).find("\\f[JPM]\xE3\x81\xA7\\f[R]\\fB\\f[JPG]\xE3\x81\xB0\\f[B]\\fR") != std::string::npos);
+  CHECK(msBody(out).find("\\*[usilic-tab]\t\xE3\x82\xAD") != std::string::npos);
+  CHECK(msBody(out).find("\xE7\xAB\xA0\\*[usilic-tab]") != std::string::npos);
+  CHECK(out.find(".ie r usilic-help .ds usilic-tab \\[uE000]\n") != std::string::npos);
 }

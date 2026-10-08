@@ -29303,3 +29303,29 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
        ページ送りでも最初の1回だけ記録する。
    - テスト: FILEでの^SPC・^X^X・続けてのページ送り・^U^SPCの巡回、(ls)では^SPCが選択のままであること。
    - src/HELP.txt(追跡対象外)の^X^Xの説明への追記(^SPC・^U^SPC・マークリング・自動で記録する操作)はユーザーが清書する。
+699. **2026-10-09: HELP・KEY・平文のHELPを、roff版(doc/HELP.ja.1)からgroffで今の幅に組んで出す(字下げの印U+FEFF等の不可視コード無しで幅に追随)**
+   - **経緯**: 直接のユーザー依頼("子のusilicだけでなく、HELPを不可視コードなしで表示できるようにしてみて")。
+     HISTORY.md:31944の案1〜3(日本語の-nを自分で折り返さない、日本語のroffを同梱、usilicがgroffで組む)にあたる。
+     MANモードが幅の変更のたびに`man`を動かし直すのと同じ考え方。
+   - **-n(convertMarkupToMsRoffSource())**:
+     - 日本語の原稿も自分では折り返さず、行長(.ll・.nr LL)も決めない(wrapRoffTextLines()・78桁の決め打ちを削除)。
+     - groffのdevutf8/Rが1桁に数え違える濁点・半濁点付きの仮名58字は、その字だけ\f[JPM](太字の中は\f[JPG]、端末では
+       太字になる)で出す(wrapMiscountedKana()、.THの「ユーザーコマンド」も)。斜体(下線)の中もJPMなので、この58字だけ
+       下線が外れる。<b>/<i>の終わりは\fPではなく\fR(仮名の切り替えで「前のフォント」が変わるため)。
+     - 行頭・行末のタブ(HELPの目次、ページャー起動のKEYのCUTの目印)は、groffでは空白になって消えるので、印の文字列
+       \*[usilic-tab]にする。前置きで、-rusilic-help=1を付けて組んだ時だけU+E000、それ以外(manで読む時等)は空。
+       行末の</indent>の前のタブも行末とみなす。
+   - **usilic(Application)**: reloadHelpText()は、HELPと同じ場所のroff版(日本語のHELPはHELP.ja.1、英語のHELP.enは
+     HELP.1)を探し、あればrenderHelpRoff()でgroff(usilicrcのgroffの設定、`-rLL=幅n -rusilic-help=1`を足す)に組ませ、
+     U+E000を戻したもの(行末の印→タブ、行頭の印→タブ+groffの字下げの残りの空白)をhelpText_にする(KEY節の置き換えも)。
+     wrapHelpText()は幅が変わっていれば組み直す(HELP・KEYのCUTは、幅の変更で今まで通りここを通って組み直る)。
+     平文のHELP(openPlainHelp()、^J^Oh・KEYのh)は、組んだものを一時ファイルにして開き、幅が変わったら組み直して開き
+     直す(行は割合で保つ。書き直すのは一時ファイルだけ)。roff版が無い・groffが使えない時は今まで通りHELP(-mの平文)。
+   - make installはdoc/HELP.ja.1があれば<LIB>/HELP.ja.1へ。doc/HELP.ja.1は~/HELP.txtから`usilic -n ~/HELP.txt >
+     doc/HELP.ja.1`で作った(以後、原稿を直したらHELPと同じくこれも作り直す)。
+   - **確認**: 疑似端末(80桁・56/60桁へ変更)で、HELPの目次57件、章の本文が幅の変更で字下げをそろえて組み直ること、
+     KEY(162件)、ページャー起動のKEY(行頭のタブで23件、以前のHELPには行頭のタブが無く空だった)、平文のHELPの組み直し。
+     groffで50/60/80/100桁に組み、幅を超える行は50桁の2行(区切れない長いパス等)だけ。
+   - テスト: test_markup_to_roff.cppの古いままだった期待値(末尾の.if !d an-footer、.ll 78n、\fP)を今の出力に合わせ、
+     日本語の仮名・タブの印のテストを足した。HELP・KEY関連のテストのうち8件(test_application.cpp:7052・12563・15352、
+     test_copy_mode.cpp:186、test_epub_to_help_markup.cppの4件)は今回の変更と関係の無い所で失敗している(未調査)。

@@ -2938,7 +2938,14 @@ public:
   std::string helpLoadedPath_;
   std::filesystem::file_time_type helpLoadedTime_{};
 private:
-  std::vector<StyledLine> wrapHelpText(int width) const;
+  std::vector<StyledLine> wrapHelpText(int width);
+  // 2026-10-09、直接のユーザー依頼("HELPを不可視コードなしで表示できるようにしてみて"): HELPと同じ場所に
+  // roff版(日本語のHELPはHELP.ja.1、英語のHELP.enはHELP.1、usilic -nで作る)があり、groffが使えれば、
+  // HELP・KEY・平文のHELPは、それをgroffで今の幅に組んだもの(helpText_)を出し、幅が変わったら組み直す
+  // (字下げの印U+FEFF等の不可視コードは使わない)。無ければ今まで通りHELP(-mで作る平文)。
+  std::string helpRoff_;
+  int helpRenderedWidth_ = -1;
+  bool renderHelpRoff(int width);
 
   Display &display_;  // handleResize()自身のrows()/columns()の参照――現在他のどのメンバーもこれを必要としない
   // Command::Suspend(^Z)自身のコメント参照。他の*Mode(ExecMode等)は

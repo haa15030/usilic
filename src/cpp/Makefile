@@ -174,6 +174,8 @@ install: $(BUILD_DIR)/usilic
 	# "usilic"はHELPの本文を出すので使わない、usilicの外の`man ~/.local/lib/usilic/HELP.1`用。公的なmanの
 	# ディレクトリには入れない。日本語版は同梱しない(groffが濁点付きの仮名の幅を数え違え、78桁に決め打ちになる)。
 	if [ -f ../../doc/HELP.1 ]; then install -m 644 ../../doc/HELP.1 $(LIB_DIR)/HELP.1; fi
+	# 2026-10-09: HELPのroff版(usilic -nで作る、日本語)。あればusilicはHELPをこれからgroffで今の幅に組む。
+	if [ -f ../../doc/HELP.ja.1 ]; then install -m 644 ../../doc/HELP.ja.1 $(LIB_DIR)/HELP.ja.1; fi
 	# 2026-10-04: EPUBのWebのリンクのPdf(usilicrcのURL節)。Playwrightの準備はtools/url2pdf自身のコメント参照。
 	install -m 755 tools/url2pdf $(LIB_DIR)/url2pdf
 	install -m 644 tools/url2pdf.py $(LIB_DIR)/url2pdf.py
