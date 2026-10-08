@@ -29138,3 +29138,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。
      テストを追加し、既存のEDITORのテストは環境変数を消してから行う。src/usilicrc・usilicrc.en・`~/.usilic/usilicrc`
      のEDITOR節の説明、src/HELP.txt・HELP_en.txtのEDITORの節に一言足した。
+683. **2026-10-08: インストールされた既定のusilicrcの方が新しければ、起動時に~/.usilic/usilicrcを置き換える**
+   - **経緯**: 直接のユーザー報告と依頼("miniでgit pull後に^Xsを検証しようとしたら`--`が出て来ない...内容はずっと以前の
+     やつのまま"、"push/pullのあとでusilicを起動する際に、~/.local/lib/usilic/usilicrc(←リポジトリ内なら更新済み)よりも
+     ~/.usilic/usilicrcの方が古ければ前者を後者へコピーしてほしい")。~/.usilic/usilicrcは無い時にコピーされるだけ
+     (ensureUser())で、pull・make installの後も古い形式のまま残っていた。
+   - **実装**: usilicrc::updateUserIfOlder()を新設し、main()のensureUser()の直後に呼ぶ。インストールされたもの
+     (installedPath()、~/.local/lib/usilic/usilicrc等)の更新時刻が~/.usilic/usilicrcより新しければ、利用者のものを
+     `~/.usilic/usilicrc.YYYYMMDD.bak`(既にあれば`.YYYYMMDDhhmmss.bak`)へ控えてから上書きする。^[e等で利用者の
+     ものを直せばそちらが新しくなるので、次のmake installまでは置き換えない。

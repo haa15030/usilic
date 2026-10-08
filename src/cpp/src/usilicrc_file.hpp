@@ -20,6 +20,11 @@ std::string userPath(const std::string &home);
 std::optional<std::string> installedPath(const std::string &home);
 // 利用者のusilicrcが無ければ既定のものをコピーする。利用者のusilicrcがある(コピーできた)ならtrue。
 bool ensureUser(const std::string &home);
+// 2026-10-08、直接のユーザー依頼("push/pullのあとでusilicを起動する際に、~/.local/lib/usilic/usilicrcよりも
+// ~/.usilic/usilicrcの方が古ければ前者を後者へコピーしてほしい"): インストールされた既定のusilicrcの方が
+// 利用者のものより新しければ、利用者のものを~/.usilic/usilicrc.YYYYMMDD.bak(既にあれば.YYYYMMDDhhmmss.bak)へ
+// 控えてから上書きする。上書きしたら控えのパス、しなければ空。
+std::string updateUserIfOlder(const std::string &home);
 
 // 節`section`(行頭のキーワード)の値の行を`values`(1行=1要素、行頭のタブは付けて書く)で置き換える。
 // 節の見出しと値の間のコメントは残す。節が無ければ、既定のusilicrcにある同じ節(コメントごと)を

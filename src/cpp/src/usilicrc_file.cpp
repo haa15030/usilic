@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -92,6 +93,28 @@ bool ensureUser(const std::string &home) {
   if (!installed) return false;
   std::filesystem::create_directories(home + "/.usilic", ec);
   return std::filesystem::copy_file(*installed, user, ec) && !ec;
+}
+
+std::string updateUserIfOlder(const std::string &home) {
+  if (home.empty()) return {};
+  std::string user = userPath(home);
+  auto installed = installedPath(home);
+  if (!installed) return {};
+  std::error_code ec;
+  auto userTime = std::filesystem::last_write_time(user, ec);
+  if (ec) return {};
+  auto installedTime = std::filesystem::last_write_time(*installed, ec);
+  if (ec || installedTime <= userTime) return {};
+  std::time_t now = std::time(nullptr);
+  char day[16], stamp[32];
+  std::strftime(day, sizeof day, "%Y%m%d", std::localtime(&now));
+  std::strftime(stamp, sizeof stamp, "%Y%m%d%H%M%S", std::localtime(&now));
+  std::string backup = user + "." + day + ".bak";
+  if (std::filesystem::exists(backup, ec)) backup = user + "." + stamp + ".bak";
+  if (!std::filesystem::copy_file(user, backup, ec) || ec) return {};
+  if (!std::filesystem::copy_file(*installed, user, std::filesystem::copy_options::overwrite_existing, ec) || ec)
+    return {};
+  return backup;
 }
 
 std::string replaceSection(const std::string &text, const std::string &section, const std::vector<std::string> &values,

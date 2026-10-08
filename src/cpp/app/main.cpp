@@ -4932,6 +4932,9 @@ int main(int argc, char **argv) {
     installLibDir = std::filesystem::path(exe).parent_path().parent_path().string() + "/lib/usilic/";
   // 2026-10-02追加(fm::usilicrc::ensureUser()参照): ~/.usilic/usilicrcが無ければ既定のものをコピーする。
   if (homeEnv) fm::usilicrc::ensureUser(homeEnv);
+  // 2026-10-08: インストールされた既定のusilicrcの方が新しければ、控えを取ってから~/.usilic/usilicrcを
+  // 置き換える(fm::usilicrc::updateUserIfOlder()参照)。
+  if (homeEnv) fm::usilicrc::updateUserIfOlder(homeEnv);
   std::string rcText = readFileIfExists(usilicDir + "usilicrc");
   if (rcText.empty() && homeEnv) rcText = readFileIfExists(std::string(homeEnv) + "/.local/lib/usilic/usilicrc");
   if (rcText.empty() && !installLibDir.empty()) rcText = readFileIfExists(installLibDir + "usilicrc");
