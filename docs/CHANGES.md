@@ -29094,3 +29094,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (KEYの中では選んでいる行の平文のHELPへ、外では平文のHELP)。^Oh(Command::OpenPlainHelp)はどこでも目次と
      平文の切り替え(toggleHelpView())だけにした。src/usilicrc・usilicrc.enのK-105とMACROのh(K-87→K-105)、
      src/HELP.txt・HELP_en.txtの[KEY]と[MACRO]のhを直した。`~/.usilic/usilicrc`のMACROのh・K-87の説明も直した。
+678. **2026-10-08: ^J^Os(SHELLのログ)が、そのセッションでSHELLを起動していないと開かなかった**
+   - **経緯**: 直接のユーザー報告("^J^Osが利かない")。
+   - **原因**: refreshShellLogFile()は、このセッションでSHELLを起動していなければ何もせずfalseを返していた。
+     ログは項目589でセッションをまたいで`~/.usilic/shell`に残るようになったのに、開くこと自体を止めていた。
+   - **修正**: SHELLを起動していればsaveShellLog()で書いてから、起動していなければ書かずに、既存のファイルを開く
+     (^[lのLOGも同じ)。

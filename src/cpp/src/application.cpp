@@ -10761,8 +10761,9 @@ bool Application::executeOpenWorkList() {
 // されていない(スナップショットするものが無い)か、ファイルが書き込
 // みのために開けなかった場合はfalse。
 bool Application::refreshShellLogFile() {
-  if (!shellStarted_) return false;
-  saveShellLog();
+  // 2026-10-08、直接のユーザー報告("^J^Osが利かない"): このセッションでSHELLを起動していないと何も開かな
+  // かった。ログはセッションをまたいで残る(項目589)ので、SHELLが無ければ書かずに既存のファイルを開く。
+  if (shellStarted_) saveShellLog();
   std::error_code ec;
   return std::filesystem::exists(logFilePath_, ec);
 }
