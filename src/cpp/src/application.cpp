@@ -17480,7 +17480,11 @@ bool Application::startMacroList(bool selectMarker) {
   std::vector<usilicrc::MacroLine> lines = usilicrc::macroLines(text);
   // MACROの節(や「--」の行)が無くても、新しいマクロを書けるよう「--」の行を1つ出す(書く時に
   // setMacroMarker()が節ごと足す)。
-  if (lines.empty()) lines.push_back(usilicrc::MacroLine{});
+  // 2026-10-08、直接のユーザー報告("miniで^Xsを検証しようとしたら`--`が出て来ない"): 「--」の行の無い
+  // (古い)usilicrcでも、新しいマクロを書く「--」の行を末尾に出す。
+  bool hasMarker = false;
+  for (const auto &line : lines) hasMarker = hasMarker || line.number == 0;
+  if (!hasMarker) lines.push_back(usilicrc::MacroLine{});
   std::vector<std::string> items, displays;
   macroListNumbers_.clear();
   int selected = 0;
