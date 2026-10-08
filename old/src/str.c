@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <sys/stat.h>
 #include <signal.h>
+#include <fcntl.h>
 
 static struct {
   u_char *S[S_nn];
@@ -861,7 +862,13 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
     close(pv[0]);
     pipe(pv);
     if (!fork()) {
-      dup_error();
+      int fd;
+      /* -Nの有無を試すだけなので、BSDのls(macOS)の「invalid option」は
+	 ERRORへ流さず捨てる(2026-10-08) */
+      if ((fd = open("/dev/null", O_WRONLY)) >= 0) {
+	dup2(fd, 2);
+	close(fd);
+      }
       close(0);
       close(1);
       dup2(pv[1], 1);

@@ -29079,3 +29079,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: src/HELP.txtの[USILIC]のバイナリ判定の段落(「…クイックルックで開きます。」の後)に、動画(.mp4 .mov .mkv等)は
      IINA(無ければVLC、どちらも無ければ既定のアプリ)で開くこと、.[]で選んだ動画はまとめて渡すこと(␣でも同じ)、
      usilicrcのEXECが優先、WSL2ではWindowsの既定のアプリ、を足した。
+676. **2026-10-08: ERRORを起動のたびに空にする、旧(legacy)の`ls -N`の試しがmacOSでERRORに「invalid option」を残す件**
+   - **経緯**: 直接のユーザー報告("ERRORに「ls: invalid option -- N」")と依頼("ERRORは継続しなくていい。起動毎に新規で")。
+   - **原因**: `ls -N`はC++版ではなく旧の`old/src/str.c`の`conf()`が、GNU lsの`-N`が使えるかを試すために実行して
+     いたもの。子の標準エラーをERRORへつないでいた(`dup_error()`)ので、BSDのls(macOS)の「invalid option」と
+     usageがERRORに残っていた。新は引数無しの起動で`~/.usilic/error`へ追記するだけで空にしないので、前回までの
+     分(旧が書いた行を含む)が溜まり続けていた。
+   - **修正**: 旧はこの試しの標準エラーを/dev/nullへ。新はmain()で、起動のたびにERROR(引数無しなら
+     `~/.usilic/error`、ページャーなら`/tmp/.usilic.<pid>/error`)を空にする(SHELLのログ(項目589)とは違い、続けない)。

@@ -4881,6 +4881,9 @@ int main(int argc, char **argv) {
   // stdin、何個でも並行稼働してよい)だけがこの2026-08-18追加の
   // per-pid隔離(ERROR/SHELLログの相互汚染防止)の対象になる。
   std::string tempRootDirectory = consultHistoryOnStart ? "" : pidTempDirectory;
+  // 2026-10-08、直接のユーザー依頼("ERRORは継続しなくていい。起動毎に新規で"): SHELLのログ(項目589)とは
+  // 違い、ERRORは起動のたびに空にする(引数無しの~/.usilic/errorが前回までの分を溜め続けていた)。
+  { std::ofstream((tempRootDirectory.empty() ? usilicDir : tempRootDirectory + "/") + "error", std::ios::trunc); }
   std::string workRootDirectory = pidTempDirectory;
   // ^T's own new "Boot options" field (see executeShowUsilicBanner()'s own
   // comment): the literal argv[1..] this process was launched with, in
