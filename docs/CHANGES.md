@@ -29115,3 +29115,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      には効かせていない(1キーごとに待つと;等が遅くなるため)。
    - **^Xe^Xsr^Mの最後の^Mが利かない件**(同時の報告): 疑似端末で`^X(^Jp^R^M^G^L^X)^Xe^Xsr^M`を試すと、`M-8 r
      K-43 K-50 K-28 K-20 K-21`として保存でき、再現しなかった。
+680. **2026-10-08: FILEのモードラインに、表示に通したプログラム("(groff)"・"(gzip)")を出す**
+   - **経緯**: 直接のユーザー報告("~/git/usilic/src/doc/usilic.1を開いた時のモードラインに(groff)表示が無い(マニュアル
+     への記載事項なのでフェイクでもいいので表示よろしく)。そういえば.../emacs.1.gzは.gzなのに(gzip)も無い。最後に
+     使用のアプリを表示で(groff)ならいいけどそれ以外では(gzip)も入れてくれないと")。HELPの「usilic.1 01/66 43% 2000
+     (groff) /Users/usilic/.usilic/」の(5)プログラム名が、FILEでは一度も出ていなかった。
+   - **実装**: FileMode::loadAndTransformContent()で、usilicrcのFILE節のフィルタ(gzip -dc等)を通したらそのプログラム
+     名、roffと判定したら"groff"(groffが使えなくても)をcontentProgram_に残す(後のものが勝つので.1.gzはgroff、
+     .txt.gzはgzip)。モードラインはサイズの次に"(名前)"、その後ろにディレクトリ((ls)の"(ls)"と同じ並び)。
+     検索等の注記(annotations_)がある間とページャー起動の分岐は今まで通り。疑似端末でb.txt.gz→(gzip)、
+     usilic.1・c.1.gz→(groff)を確認。

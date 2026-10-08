@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <set>
@@ -620,12 +622,17 @@ class FileMode {
   // followEpubLink()用: EPUBの本文のリンクがある行→リンク先の行(どちらも
   // rawLineNumber)。loadAndTransformContent()(const)が変換のたびに作り直す。
   mutable std::map<int, int> epubLinks_;
+  // 表示用に最後に通したプログラム(FILE節のgzip等、roffならgroff)。モードラインの"(groff)"等
+  // (loadAndTransformContent()参照、2026-10-08)。
+  mutable std::string contentProgram_;
   mutable EpubLayoutHints epubLayoutHints_;  // epubLinks_と同じく変換のたびに作り直す
   std::vector<ContentView::Line> expandEpubImageLines(std::vector<ContentView::Line> lines, const std::string &path,
                                                      int width) const;
   EpubImageRows epubImageRows_;  // setEpubImageRows()参照
   std::function<void()> beforeLoad_;  // setBeforeLoad()参照
   std::string currentFile_;
+  std::filesystem::file_time_type loadedWriteTime_{};  // reloadIfChanged()参照
+  std::uintmax_t loadedSize_ = 0;
   bool skipNextRecentPush_ = false;  // skipNextRecentPush()参照
   bool skipRecentPushNow_ = false;   // 今のloadFile()の間だけのskipNextRecentPush_
   AnnotationStack<FileAnnotationKind> annotations_;

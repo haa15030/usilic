@@ -359,6 +359,13 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
     // DirectoryMode自身の`(ls)`一覧がまさにこの同一の修正を受けた
     // のと同じ種類のバグ。
     fields.splitLayoutWhenCrowded = true;
+    // 2026-10-08、直接のユーザー依頼(HELPの「usilic.1 01/66 43% 2000 (groff) /Users/usilic/.usilic/」の(5)
+    // プログラム名): 表示に通したプログラム(最後のもの、.1.gzならgroff、.txt.gzならgzip)をサイズの次に出し、
+    // ディレクトリはその後ろへ(DirectoryModeの"(ls)"と同じ並び)。
+    if (!contentProgram_.empty() && !originFrame && !ec) {
+      fields.trailing2 = "(" + contentProgram_ + ")";
+      fields.trailing3 = directory;
+    }
     // DirectoryMode::setGrepInPlaceOverlay()/reportGrepNoMatchMessage()
     // 自身のコメント参照(2026-09-09追加、2026-09-10改訂): pagerMode_
     // のファイルについては上で既にreturn済みのため、ここに到達するのは
@@ -527,6 +534,7 @@ std::string FileMode::loadAndTransformContent(const std::string &path) const {
   // 文字をエスケープする。変換できなければ従来どおり(バイナリの種類表示)。
   epubLinks_.clear();
   epubLayoutHints_ = {};
+  contentProgram_.clear();
   if (!rawControlCodesMode_ && isEpubFile(path)) {
     if (auto markup = epubToHelpMarkup(epubMemberReader(path), &epubLinks_, &epubLayoutHints_))
       return expandHelpMarkup(*markup);
@@ -548,6 +556,7 @@ std::string FileMode::loadAndTransformContent(const std::string &path) const {
       if (result.ok) {
         content = result.output;
         filtered = true;
+        contentProgram_ = std::filesystem::path(argv.front()).filename().string();
       }
     }
   }
@@ -594,6 +603,9 @@ std::string FileMode::loadAndTransformContent(const std::string &path) const {
     // フォールバックするのに倣い、contentを未加工のまま表示する
     // (この通常ファイル閲覧という文脈で、失敗時に画面を完全に
     // 諦めさせるほどの理由は無い)。
+    // 2026-10-08、直接のユーザー依頼("usilic.1を開いた時のモードラインに(groff)表示が無い(マニュアルへの
+    // 記載事項なのでフェイクでもいいので表示よろしく)"): groffが使えなくても"(groff)"とする。
+    contentProgram_ = "groff";
     ProgramCommand groff = configuration_.commandFor(ConfiguredRole::Groff);
     if (!groff.argv.empty()) {
       ChildProcessOptions options;
