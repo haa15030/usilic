@@ -29100,3 +29100,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ログは項目589でセッションをまたいで`~/.usilic/shell`に残るようになったのに、開くこと自体を止めていた。
    - **修正**: SHELLを起動していればsaveShellLog()で書いてから、起動していなければ書かずに、既存のファイルを開く
      (^[lのLOGも同じ)。
+679. **2026-10-08: ^X(・^X)・^XeでEmacsと同じメッセージ、^Xeの直後のeで繰り返し、マクロの実行でWAITを効かせる**
+   - **経緯**: 直接のユーザー依頼("`^X(`では「Defining kbd macro...」、`^X)`では「Keyboard macro defined」、`^Xe`では
+     「Type e to repeat macro」(`^Xe`実行中はマクロキー`e`の無効化が必要)、`^X(`無しで`^X)`の場合は「Not defining kbd
+     macro」、すでに`^X(`しているのにさらに`^X(`では「Already defining kbd macro」"、src/HELP.txtには追記不要)と報告
+     ("マクロ実行時usilicrcのWAITが利かない(設定100なら1秒間隔のはず)")。
+   - **メッセージ**: startMacroRecording()・stopMacroRecording()・playRecordedMacro()でshowTransientNotice()。記録中の
+     ^X(は記録をやり直さない。^X(・^X)・^Xeとして解決したキーは記録に入れない(macroControlKey_)。記録中の^Xeは
+     実行しない(以前は^Xe自身が記録に入り、後で実行すると限りなく自分を呼び得た)。
+   - **eで繰り返し**: ^Xeの後はmacroRepeatArmed_を立て、feedByte()でusilicrcのKEY・MACROの置き換えより先に見て、
+     次のキーが'e'ならマクロをもう一度実行する(usilicrcのMACROの'e'(EDIT)は効かない)。他のキーで下ろす。
+   - **WAIT**: Configuration::waitIntervalMicros()を読むだけでどこでも使っていなかった。legacy(key.cの
+     `usleep(k_wait)`)と同じく、記録したマクロの1キーごとに画面を出して待つ。usilicrcのMACRO(;等の1文字のキー)
+     には効かせていない(1キーごとに待つと;等が遅くなるため)。
+   - **^Xe^Xsr^Mの最後の^Mが利かない件**(同時の報告): 疑似端末で`^X(^Jp^R^M^G^L^X)^Xe^Xsr^M`を試すと、`M-8 r
+     K-43 K-50 K-28 K-20 K-21`として保存でき、再現しなかった。

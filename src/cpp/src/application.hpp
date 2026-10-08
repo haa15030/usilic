@@ -3444,6 +3444,11 @@ private:
   // ^X^S(saveMacroToUsilicrc()参照): 直前に^Xeでマクロを実行した(^X^S以外のキーで下ろす)、
   // 実行キーの1文字を待っている、保存するK番号の並び。
   bool macroJustPlayed_ = false;
+  // ^Xeの直後(2026-10-08、Emacsの"Type e to repeat macro"): 次のキーが'e'なら、usilicrcのMACROの'e'ではなく
+  // 記録したマクロをもう一度実行する。それ以外のキーで下ろす(feedByte()参照)。
+  bool macroRepeatArmed_ = false;
+  // ^X(・^X)・^Xeとして解決したキー(feedByteImpl()がマクロに記録しない、2026-10-08)。
+  bool macroControlKey_ = false;
   bool executingKeyLine_ = false;
   // 2026-10-02追加、直接のユーザー報告("KEYではカーソル位置が保存されない"、"hを押してHELPへ移動したあとの
   // 対象位置がわかりにくい。一行に渡るハイライトでよろしく（任意のキーで消える）"): KEYの一覧で最後に

@@ -3539,6 +3539,14 @@ KeyBindings::Context Application::keyBindingContext() const {
 // (isIdentity())なら素通しで、挙動は一切変わらない。特殊キー(矢印等)はKEY節の
 // 対象外なので、溜めているキーがあれば先にそのまま渡してから処理する。
 bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  // ^Xeの直後の'e'は、記録したマクロの再実行(macroRepeatArmed_参照)。usilicrcのMACROの'e'(EDIT)より先に見る。
+  if (macroRepeatArmed_) {
+    macroRepeatArmed_ = false;
+    if (!special && byte == 'e') {
+      clearTransientNotice();
+      return playRecordedMacro();
+    }
+  }
   const KeyBindings &bindings = configuration_.keyBindings();
   if (bindings.isIdentity()) return feedUntranslatedByte(byte, special);
   if (special) {
@@ -3576,12 +3584,13 @@ bool Application::feedByteImpl(int byte, std::optional<KeyInput::SpecialKey> spe
   if (!leaderXPending_ && !(byte == kLeaderX && !special)) macroJustPlayed_ = false;
   bool wasLeaderXPending = leaderXPending_;
   bool wasRecording = recordingMacro_;
+  macroControlKey_ = false;
 
   bool result = dispatchByte(byte, special);
 
   if (wasRecording) {
     if (wasLeaderXPending) {
-      if (recordingMacro_) {
+      if (recordingMacro_ && !macroControlKey_) {
         // 依然として記録中――このバイトはStartMacroRecord/
         // StopMacroRecord/PlayMacroへは解決されなかったので、
         // 保留していた先頭の^Xバイトとこのバイトの両方をコミットする。
@@ -3601,30 +3610,59 @@ bool Application::feedByteImpl(int byte, std::optional<KeyInput::SpecialKey> spe
   return result;
 }
 
+// 2026-10-08、直接のユーザー依頼: ^X(・^X)・^XeでEmacsと同じメッセージをモードラインに出す
+// ("Defining kbd macro..."、"Keyboard macro defined"、"Type e to repeat macro"、記録中でない^X)は
+// "Not defining kbd macro"、記録中の^X(は"Already defining kbd macro"で記録をやり直さない)。
 bool Application::startMacroRecording() {
+  macroControlKey_ = true;
+  if (recordingMacro_) {
+    showTransientNotice(activeView(), "Already defining kbd macro");
+    return true;
+  }
   recordingMacro_ = true;
   recordedMacro_.clear();
   pendingLeaderXByte_.reset();
   ContentView::modeNameOverride() = "MACRO";  // ContentView::modeNameOverride()参照
   activeView().redraw();
+  showTransientNotice(activeView(), "Defining kbd macro...");
   return true;
 }
 
 bool Application::stopMacroRecording() {
-  if (!recordingMacro_) return false;
+  macroControlKey_ = true;
+  if (!recordingMacro_) {
+    showTransientNotice(activeView(), "Not defining kbd macro");
+    return true;
+  }
   recordingMacro_ = false;
   ContentView::modeNameOverride().clear();
   activeView().redraw();
+  showTransientNotice(activeView(), "Keyboard macro defined");
   return true;
 }
 
 // 記録された各バイトを、feedByte()では「なく」dispatchByte()経由で
 // 直接再生する、これでアクティブな記録セッションの内部から再生された
 // マクロが誤って自己記録されることは決して無い――クラスコメント参照。
+// 2026-10-08、直接のユーザー報告("マクロ実行時usilicrcのWAITが利かない(設定100なら1秒間隔のはず)"): 読んで
+// いたWAITをどこでも使っていなかった。legacy(key.cのusleep(k_wait))と同じく、1キーごとに画面を出して待つ。
 bool Application::playRecordedMacro() {
+  macroControlKey_ = true;
   if (recordedMacro_.empty()) return false;
-  for (const auto &step : recordedMacro_) dispatchByte(step.byte, step.special);
+  // 記録中の^Xeは実行しない(実行すると^Xe自身が記録に入り、後の実行で限りなく自分を呼ぶ)。
+  if (recordingMacro_) return false;
+  int wait = configuration_.waitIntervalMicros();
+  std::vector<RecordedStep> steps = recordedMacro_;
+  for (std::size_t i = 0; i < steps.size(); i++) {
+    if (i && wait > 0) {
+      display_.flush();
+      ::usleep(static_cast<useconds_t>(wait));
+    }
+    dispatchByte(steps[i].byte, steps[i].special);
+  }
   macroJustPlayed_ = true;  // saveMacroToUsilicrc()参照(実行した後で立てる――実行中のキーで下ろされないよう)
+  macroRepeatArmed_ = true;
+  showTransientNotice(activeView(), "Type e to repeat macro");
   return true;
 }
 
