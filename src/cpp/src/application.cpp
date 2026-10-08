@@ -10461,6 +10461,20 @@ bool Application::saveBufferToFile() {
 bool Application::shellChangeDirectory() {
   if (refuseIfShellBusy()) return false;
   std::string dir = directoryMode_.currentDirectory();
+  // 2026-10-08、直接のユーザー報告("/usr/share/man/man1にいる状態で^J^J→HELP.txt→^J.のあと...SHELLプロンプト
+  // 現在地が/Users/haa15030/じゃない...^J^Jの際、レギュラーファイル所在地が更新がなされてない"): ^J^J・FILE
+  // 履歴・LOCATE等で(ls)とは別のディレクトリのファイルを見ている時は、(ls)のディレクトリではなくその
+  // ファイルのディレクトリへ。usilic自身の一時ファイル(ARCの展開先、ERROR等)はこれまで通り(ls)のディレクトリ。
+  if (currentMode_ == ApplicationMode::File && !fileMode_.isPagerMode()) {
+    const std::string &file = fileMode_.currentFile();
+    auto under = [&](const std::string &root) { return !root.empty() && file.compare(0, root.size(), root) == 0; };
+    std::error_code ec;
+    if (!file.empty() && std::filesystem::is_regular_file(file, ec) && !under(tempRootDirectory_) &&
+        !under(workRootDirectory_)) {
+      std::string parent = std::filesystem::path(file).parent_path().string();
+      if (!parent.empty()) dir = parent + (parent.back() == '/' ? "" : "/");
+    }
+  }
   if (dir.empty()) return false;
   if (!ensureShellActive()) return false;
   shell_.commandLine().setText("cd '" + dir + "'");

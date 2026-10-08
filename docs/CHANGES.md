@@ -29147,3 +29147,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (installedPath()、~/.local/lib/usilic/usilicrc等)の更新時刻が~/.usilic/usilicrcより新しければ、利用者のものを
      `~/.usilic/usilicrc.YYYYMMDD.bak`(既にあれば`.YYYYMMDDhhmmss.bak`)へ控えてから上書きする。^[e等で利用者の
      ものを直せばそちらが新しくなるので、次のmake installまでは置き換えない。
+684. **2026-10-08: ^J^J等で(ls)と別のディレクトリのファイルを見ている時の^J.は、そのファイルのディレクトリへcd**
+   - **経緯**: 直接のユーザー報告("/usr/share/man/man1にいる状態で^J^J→HELP.txt→^J.のあと^R後スクリプトを実行しようとしたら
+     SHELLプロンプト現在地が/Users/haa15030/じゃない...^J^Jの際、レギュラーファイル所在地が更新がなされてない模様")。
+   - **原因**: shellChangeDirectory()(^J.)は常に(ls)のディレクトリ(directoryMode_.currentDirectory())へcdしていた。
+     ^J^J・FILE履歴・LOCATE等で開いたファイルは(ls)のディレクトリを変えない。
+   - **修正**: FILEで通常のファイルを見ている時(ページャー起動、usilic自身の一時ファイル(tempRootDirectory_・
+     workRootDirectory_の下)を除く)は、そのファイルのディレクトリへcdする。疑似端末で、work/a.txtを開いた後に親の
+     ディレクトリへ移り、^J^J→^J.で`cd '…/work/'`になるのを確認。
