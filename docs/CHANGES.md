@@ -29133,3 +29133,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      以外)で違っていれば、カーソルの位置を保存してから同じ読み方(折り返し無し・制御文字そのまま・通常)で読み直す
      (FILE履歴には積まない)。ページャー(標準入力・引数)やストリームで開いたものは対象外。疑似端末で、開いた後に
      書き換えたファイルが^Lで1/1→1/5になるのを確認。
+682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
+   - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
+   - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。
+     テストを追加し、既存のEDITORのテストは環境変数を消してから行う。src/usilicrc・usilicrc.en・`~/.usilic/usilicrc`
+     のEDITOR節の説明、src/HELP.txt・HELP_en.txtのEDITORの節に一言足した。

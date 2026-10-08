@@ -134,7 +134,7 @@ PROGRAM
 EDITOR
 # 書式: エディター
 #
-# EDIT で起動するエディター。
+# EDIT で起動するエディター。環境変数 EDITOR があればそちらを優先します。
 
 	pico
 #	vi

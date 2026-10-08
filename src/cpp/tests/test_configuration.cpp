@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 
@@ -181,11 +182,22 @@ TEST_CASE("ARCHIVE directive: a search text matching no built-in entry is silent
 }
 
 TEST_CASE("EDITOR/SHELL directives build the full launch argv") {
+  ::unsetenv("EDITOR");
   Configuration config;
   REQUIRE(config.loadRcText("EDITOR\n vi\nSHELL\n bash\n", true));
   CHECK(config.editorArgv("/tmp/file.txt", 42) ==
         std::vector<std::string>{"vi", "+42", "/tmp/file.txt"});
   CHECK(config.shellArgv("") == std::vector<std::string>{"bash"});
+}
+
+// 2026-10-08: 環境変数EDITORがあれば、usilicrcのEDITORより優先する。
+TEST_CASE("editorArgv: $EDITOR overrides usilicrc's EDITOR") {
+  Configuration config;
+  REQUIRE(config.loadRcText("EDITOR\n pico\n", true));
+  ::setenv("EDITOR", "vi -n", 1);
+  CHECK(config.editorArgv("/tmp/f", 3) == std::vector<std::string>{"vi", "-n", "+3", "/tmp/f"});
+  ::unsetenv("EDITOR");
+  CHECK(config.editorArgv("/tmp/f", 3) == std::vector<std::string>{"pico", "+3", "/tmp/f"});
 }
 
 // Configuration::shellArgv()自身の宣言コメント参照(2026-09-25)。

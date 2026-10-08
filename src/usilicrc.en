@@ -138,7 +138,7 @@ PROGRAM
 EDITOR
 # Format: `editor'
 #
-# The editor launched by EDIT.
+# The editor launched by EDIT. The EDITOR environment variable, if set, takes precedence.
 
 	pico
 #	vi

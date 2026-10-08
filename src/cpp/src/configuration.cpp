@@ -848,6 +848,14 @@ bool Configuration::isExec(const std::string &filename) const {
 
 std::vector<std::string> Configuration::editorArgv(const std::string &path, int lineNumber) const {
   std::vector<std::string> result = editorProgram_;
+  // 2026-10-08、直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で"): 環境変数
+  // EDITORがあれば、usilicrcのEDITORより先にそれを使う(空白で区切って引数にする)。
+  if (const char *env = std::getenv("EDITOR")) {
+    std::vector<std::string> words;
+    std::istringstream in(env);
+    for (std::string word; in >> word;) words.push_back(word);
+    if (!words.empty()) result = words;
+  }
   result.push_back("+" + std::to_string(lineNumber));
   result.push_back(path);
   return result;

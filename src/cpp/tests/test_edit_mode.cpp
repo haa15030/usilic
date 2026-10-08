@@ -27,6 +27,7 @@ fs::path makeTempFile() {
 }
 
 struct Fixture {
+  Fixture() { ::unsetenv("EDITOR"); }  // 環境変数EDITORはusilicrcのEDITORより優先される(editorArgv())
   RecordingDisplay display{24, 80};
   KeyInput keyInput{display};
   Configuration configuration;
