@@ -15861,7 +15861,7 @@ TEST_CASE_FIXTURE(Fixture, "^X^S: the MACRO list shows \"key notation\" rows; ed
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.promptActive());
   CHECK(app.promptText() == "; ^G^P^M");
-  CHECK(app.listBrowserMode().items().size() == 3);
+  CHECK(app.listBrowserMode().items().size() == 2);  // ^Xeの直後でなければ「--」の行は出さない(2026-10-08)
 
   REQUIRE(app.feedByte(0x0e, std::nullopt));  // ^N: M-2の行へ
   CHECK(app.promptText() == ": ^G^N^M");
@@ -15880,15 +15880,18 @@ TEST_CASE_FIXTURE(Fixture, "^X^S: the MACRO list shows \"key notation\" rows; ed
 }
 
 TEST_CASE_FIXTURE(Fixture, "^X^S: a key already used by another macro is refused (stays in the prompt)") {
+  // 2026-10-08: ^Xeの直後でなければ「--」の行は出ないので、既存のM-2のキーを変える形で確かめる。
   {
     std::ofstream(root / ".usilic" / "usilicrc") << "MACRO\n"
                                                     "\tM-1\t;\tK-20 K-4 K-28\t\t# ^G^P^M\n"
-                                                    "\t--\tK-70\n";
+                                                    "\tM-2\tx\tK-70\t\t# ^[l\n"
+                                                    "\t--\n";
   }
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::SaveMacro));
-  REQUIRE(app.feedByte(0x0e, std::nullopt));  // ^N: 「--」の行
-  CHECK(app.promptText() == " ^[l");
+  REQUIRE(app.feedByte(0x0e, std::nullopt));  // ^N: M-2の行
+  CHECK(app.promptText() == "x ^[l");
+  REQUIRE(app.feedByte(0x04, std::nullopt));  // ^D: キーの"x"を消す
   REQUIRE(app.feedByte(';', std::nullopt));
   app.feedByte(0x0d, std::nullopt);
   CHECK(app.promptActive());  // ;はM-1が使っている
