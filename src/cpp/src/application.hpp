@@ -3468,8 +3468,11 @@ private:
   // ^X^Sのマクロ一覧(2026-10-03、startMacroList()参照)。一覧の行ごとのM番号(0は「--」の行)と、
   // 閉じた時に戻る画面。
   std::vector<int> macroListNumbers_;
+  std::vector<std::string> macroListItems_;  // 行ごとのusilicrcの要素の並び(executeMacroEdit()参照)
+  bool macroListLocked_ = false;             // ^Xe^Xs: 「--」の行だけ(^N/^Pは効かない)
+  int macroListLastNumber_ = 0;              // 前回書いたマクロのM番号(^Xe直後でない^Xsの最初の位置)
   ApplicationMode macroListReturnMode_ = ApplicationMode::Directory;
-  bool startMacroList(bool selectMarker);
+  bool startMacroList(bool recorded);
   bool closeMacroList();
   bool executeMacroEdit(const std::string &text);
   static std::string macroItemsFromBytes(const std::vector<int> &bytes, bool *failed = nullptr);

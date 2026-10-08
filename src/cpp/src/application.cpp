@@ -13755,6 +13755,10 @@ bool Application::feedPromptByteInner(int byte) {
   // 巡回すべきリストから来たものではないので、そこでの^N/^Pは依然
   // として下の通常の拒否へ流れ落ちる。
   if ((byte == 0x0e || byte == 0x10) && promptCandidateListActive_) {
+    if (promptKind_ == PromptKind::MacroEdit && macroListLocked_) {  // ^Xe^Xsは「--」の行だけ(startMacroList()参照)
+      display_.putChar(7);
+      return true;
+    }
     if (byte == 0x0e) listBrowserView_.moveDown();
     else listBrowserView_.moveUp();
     listBrowserView_.redraw();
@@ -17477,18 +17481,20 @@ bool Application::saveMacroToUsilicrc() {
   // 2026-10-03変更、直接のユーザー依頼("^X^SではMACRO登録後の動作が~/.usilic/usilicrcを開いて編集を促す
   // 画面になる。それは別のマクロに担当させたいので、FILE風の一覧にしてほしい"): 以前はusilicrcをFILEで
   // 開いてMACROの節へ飛び、"MACRO Key:"で実行キーを1文字待っていた。今はマクロの一覧を出す
-  // (startMacroList()参照)。記録した直後なら「--」の行(今記録した並び)にカーソルを置く。
-  // 2026-10-08、直接のユーザー提案("`^Xe`のあとじゃない`^Xs`ではusilicrcを表示して`--`がカレント行、でいいんじゃない？"):
-  // 記録した直後でなくても「--」の行(新しいマクロを書く行)にカーソルを置く。
-  (void)recorded;
-  return startMacroList(/*selectMarker=*/true);
+  // (startMacroList()参照)。記録した直後なら「--」の行(今記録した並び)だけを選べる。
+  return startMacroList(recorded);
 }
 
 // ^X^Sのマクロ一覧(2026-10-03、saveMacroToUsilicrc()参照)。usilicrcのMACRO節の行を「キー   キーの並び」
 // (^X^Fの一覧のように、カーソル行の文字列をプロンプトで編集できる)で出す。「--」の行(次に書き込む
 // 位置、^X^Sが記録した並びがあればそれ)はキーを「_」で出す。プロンプトは「キー キーの並び」で、
 // カーソルはキーの位置(文字列の先頭)。^Mで書き換え(executeMacroEdit())、^Gでやめる。
-bool Application::startMacroList(bool selectMarker) {
+// 2026-10-08、直接のユーザー依頼("`^Xe^Xs`の時だけは^N/^Pが利かない方がいい(`--`１択)。それ以外の^Xsでは前回
+// 編集位置とする...^Xeの直後じゃない^Xsでも同じ位置だが`--`ではなくなっていて^N/^Pも利く。ただし今度は`--`が
+// 選べない"、"一覧では`--`ではなく`_`になっている...ちゃんと`--`で"): recordedなら「--」の行(今記録した並び)に
+// 固定し(macroListLocked_)、プロンプトはキーだけを尋ねる(^Mで並びはその行のまま)。そうでなければ「--」の行は
+// 出さず、前回書いたマクロ(macroListLastNumber_)の行から。
+bool Application::startMacroList(bool recorded) {
   // 別のプロンプトの入力中は開かない(そのプロンプトを壊すため)。
   if (promptKind_ != PromptKind::None && promptKind_ != PromptKind::MacroEdit) {
     display_.putChar(7);
@@ -17503,18 +17509,30 @@ bool Application::startMacroList(bool selectMarker) {
   bool hasMarker = false;
   for (const auto &line : lines) hasMarker = hasMarker || line.number == 0;
   if (!hasMarker) lines.push_back(usilicrc::MacroLine{});
+  // ^Xeの直後でなければ「--」の行は選べない(マクロが1つも無ければ、空の一覧にしないよう残す)。
+  if (!recorded) {
+    std::vector<usilicrc::MacroLine> numbered;
+    for (const auto &line : lines)
+      if (line.number) numbered.push_back(line);
+    if (!numbered.empty()) lines = numbered;
+  }
+  macroListLocked_ = recorded;
   std::vector<std::string> items, displays;
   macroListNumbers_.clear();
+  macroListItems_.clear();
   int selected = 0;
   for (std::size_t i = 0; i < lines.size(); i++) {
     std::string notation = macroNotation(lines[i].items);
     std::string key = lines[i].number ? lines[i].key : std::string();
-    items.push_back(key + " " + notation);
-    std::string shown = key.empty() ? "_" : key;
+    // 「--」の行は、キーだけを尋ねる(並びは^Mでその行のものを使う、executeMacroEdit()参照)。
+    items.push_back(lines[i].number ? key + " " + notation : std::string());
+    std::string shown = lines[i].number ? key : "--";
     shown.append(shown.size() < 4 ? 4 - shown.size() : 1, ' ');
     displays.push_back(shown + notation);
     macroListNumbers_.push_back(lines[i].number);
-    if (selectMarker && lines[i].number == 0) selected = static_cast<int>(i);
+    macroListItems_.push_back(lines[i].items);
+    if (recorded ? lines[i].number == 0 : (macroListLastNumber_ && lines[i].number == macroListLastNumber_))
+      selected = static_cast<int>(i);
   }
   // 戻り先: ^X^Fの一覧等(ListBrowser)から開いた場合は、一覧を作り直すとその一覧は消えるので、
   // その一覧の戻り先へ戻る。
@@ -17576,7 +17594,10 @@ bool Application::executeMacroEdit(const std::string &text) {
       if (sp != std::string::npos) description = line.comment.substr(line.comment.find_first_not_of(" \t", sp));
     }
   }
-  std::optional<std::string> items = macroItemsFromNotation(notation);
+  // 並びを書かなければ(「--」の行はキーだけを尋ねる、startMacroList()参照)、その行の並びのまま。
+  std::optional<std::string> items = notation.empty() && idx < static_cast<int>(macroListItems_.size())
+                                         ? std::optional<std::string>(macroListItems_[idx])
+                                         : macroItemsFromNotation(notation);
   if (!items || items->empty()) return stay("Invalid keys");
   int written = number ? number : usilicrc::nextMacroNumber(rcText);
   std::string line = "\tM-" + std::to_string(written) + "\t" + key + "\t" + *items + "\t\t# " + macroNotation(*items);
@@ -17584,6 +17605,7 @@ bool Application::executeMacroEdit(const std::string &text) {
   bool ok = number ? usilicrc::setMacroLine(home, number, line) : usilicrc::setMacroMarker(home, {line, "\t--"});
   if (!ok) return stay("Cannot write usilicrc");
   reloadUsilicrcKeys();
+  macroListLastNumber_ = written;  // 次の^Xs(^Xeの直後でない)はこの行から(startMacroList()参照)
   closeMacroList();
   showTransientNotice(activeView(), "M-" + std::to_string(written) + " " + key);
   return true;
