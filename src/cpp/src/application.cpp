@@ -17594,10 +17594,13 @@ bool Application::executeMacroEdit(const std::string &text) {
       if (sp != std::string::npos) description = line.comment.substr(line.comment.find_first_not_of(" \t", sp));
     }
   }
-  // 並びを書かなければ(「--」の行はキーだけを尋ねる、startMacroList()参照)、その行の並びのまま。
-  std::optional<std::string> items = notation.empty() && idx < static_cast<int>(macroListItems_.size())
-                                         ? std::optional<std::string>(macroListItems_[idx])
-                                         : macroItemsFromNotation(notation);
+  // 並びを書かなければ(「--」の行はキーだけを尋ねる、startMacroList()参照)、または一覧に出した表記のまま
+  // なら(キーだけを変えた等)、表記を読み戻さずにその行の並び(usilicrcの「#」より左)のまま。表記を書き換えた
+  // 時だけ読み戻す(文字の「^」「␣」は「"..."」で囲んで書く)。
+  bool keepItems = idx < static_cast<int>(macroListItems_.size()) &&
+                   (notation.empty() || notation == macroNotation(macroListItems_[idx]));
+  std::optional<std::string> items = keepItems ? std::optional<std::string>(macroListItems_[idx])
+                                               : macroItemsFromNotation(notation);
   if (!items || items->empty()) return stay("Invalid keys");
   int written = number ? number : usilicrc::nextMacroNumber(rcText);
   std::string line = "\tM-" + std::to_string(written) + "\t" + key + "\t" + *items + "\t\t# " + macroNotation(*items);
@@ -17668,15 +17671,12 @@ std::string Application::macroNotation(const std::string &items) {
     if (items[p] == '"') {
       std::size_t close = items.find('"', p + 1);
       p = close == std::string::npos ? items.size() : close + 1;
-      // 2026-10-08、直接のユーザー依頼("を無しにすると人間には分かりにくいかもしれんが...それでやってみて"):
-      // 文字列は「"」で囲まずに出す(空白は␣、macroItemsFromNotation()がそのまま読み戻す)。「^」「␣」を含む
-      // 時だけは、キーの表記と区別できないので囲んだまま。
+      // 2026-10-08、直接のユーザー依頼("を無しにすると人間には分かりにくいかもしれんが...それでやってみて"、
+      // "キーのシーケンスはそれより左から読めばいいのでは？...読み込み済みのキーシーケンスと照合すれば違いは
+      // わかる"): 文字列は「"」で囲まずに出す(空白は␣)。「^J」等の字を含む文字列も囲まない――^Xsの一覧で表記を
+      // 変えずに^Mした時は、表記を読み戻さずusilicrcの定義をそのまま使う(executeMacroEdit()参照)ので化けない。
       std::string body = items.substr(start + 1, (close == std::string::npos ? items.size() : close) - start - 1);
-      if (body.find('^') != std::string::npos || body.find("\xE2\x90\xA3") != std::string::npos) {
-        out += items.substr(start, p - start);
-      } else {
-        for (char c : body) out += c == ' ' ? std::string("\xE2\x90\xA3") : std::string(1, c);
-      }
+      for (char c : body) out += c == ' ' ? std::string("\xE2\x90\xA3") : std::string(1, c);
       continue;
     }
     while (p < items.size() && items[p] != ' ' && items[p] != '\t') p++;
