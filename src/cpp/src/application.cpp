@@ -12149,6 +12149,22 @@ std::vector<std::string> Application::egrepListItems() const {
   return items;
 }
 
+// 2026-10-08、直接のユーザー依頼("検索履歴の増加に伴いusilicrcのお手本文字列が見えなくなるので元からあるリストと
+// しての差別化を図るためusilicrcの記述をそのまま載せたらどうかなと。usilicとしては＃以降を無視するだけ"): EGREPの
+// 一覧で、usilicrcのEGREP節の実例はその行のまま(「# 説明」付き)表示する。選んだ時に使うのは今まで通り検索文字列
+// だけ(egrepListItems())。
+std::vector<std::string> Application::egrepListDisplayTexts(const std::vector<std::string> &items) const {
+  const auto &presets = configuration_.grepPresets();
+  const auto &lines = configuration_.grepPresetLines();
+  std::vector<std::string> texts;
+  for (const auto &item : items) {
+    auto it = std::find(presets.begin(), presets.end(), item);
+    std::size_t at = static_cast<std::size_t>(it - presets.begin());
+    texts.push_back(it != presets.end() && at < lines.size() ? lines[at] : item);
+  }
+  return texts;
+}
+
 bool Application::toggleListBrowserHistory() {
   if (currentMode_ != ApplicationMode::ListBrowser) return false;
   // プロンプトから起動される呼び出し(startPromptHistoryRecall())には、
@@ -12228,7 +12244,7 @@ bool Application::toggleListBrowserHistory() {
                                 [this](const std::string &item) { return !isArchiveHistoryEntry(item); }),
                 items.end());
   listBrowserMode_.show(items, fileHistoryBadges(configuration_, listBrowserCategory_, items),
-                        recentFileDisplayTexts(listBrowserCategory_, items));
+                        egrepList ? egrepListDisplayTexts(items) : recentFileDisplayTexts(listBrowserCategory_, items));
   if (listBrowserChronological_ && !items.empty()) {
     // show()自体は既に、cursorIndex_を新たに0へリセットした状態で
     // 一度再描画済みである――下の「末尾へ動かされた」カーソルを
@@ -14345,7 +14361,7 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
                                 [this](const std::string &item) { return !isArchiveHistoryEntry(item); }),
                 items.end());
   listBrowserMode_.show(items, fileHistoryBadges(configuration_, category, items),
-                        recentFileDisplayTexts(category, items));
+                        egrepList ? egrepListDisplayTexts(items) : recentFileDisplayTexts(category, items));
   currentMode_ = ApplicationMode::ListBrowser;
   if (!items.empty()) {
     if (egrepList) {

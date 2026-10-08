@@ -2364,6 +2364,7 @@ class Application {
   bool toggleListBrowserHistory();
   std::vector<std::string> sortedUniqueRecentEntries(RingCategory category) const;
   std::vector<std::string> egrepListItems() const;  // EGREPの一覧(2026-09-27)
+  std::vector<std::string> egrepListDisplayTexts(const std::vector<std::string> &items) const;  // その表示(2026-10-08)
   int egrepListCursorIndex(const std::vector<std::string> &items) const;
   // isGrepInPlaceEligibleMode()自身のコメント参照(application.cpp、
   // 2026-09-11追加)。

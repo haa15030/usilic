@@ -110,6 +110,7 @@ EGREP
 	[0-9]+%                  # +     : 48% など
 	\.tar(\.gz)?             # ?     : .tar .tar.gz
 	[0-9]{4}                 # {n}   : 1918 2000 など
+	"^[^	].*	"              # \t    : HELP chapter headings (no leading tab, contains a tab)
 	[0-9]{2,}                # {n,}  : 2桁以上の数
 	\b[a-z]{2,3}\(1\)        # {n,m} : ls(1) man(1) vi(1) など
 	CP|MV|RM                 # |     : CP MV RM

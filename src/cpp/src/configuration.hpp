@@ -302,6 +302,9 @@ class Configuration {
   // GREP(2026-09-25再実装): EGREP/CUT(正規表現)の履歴の一覧に常に加える
   // 検索文字列。Application::startPromptHistoryRecall()参照。
   const std::vector<std::string> &grepPresets() const;
+  // grepPresets()と同じ並びの、usilicrcのEGREP節の行そのもの(行頭の空白を除き「#」以降のコメントも含む)。
+  // EGREPの一覧の表示用(2026-10-08、Application::egrepListItems()参照)。
+  const std::vector<std::string> &grepPresetLines() const;
   // KEY(2026-09-25実装): usilicrcのKEY節のF-n/K-n行のキー表記(番号→表記、
   // 空なら割り当て無し)。解釈と検査はKeyBindings::configure()が行う。
   const std::map<int, std::string> &keyPrefixSpecs() const;
@@ -408,6 +411,7 @@ class Configuration {
 
   std::string allowedControlBytes_;
   std::vector<std::string> grepPresets_;  // GREP
+  std::vector<std::string> grepPresetLines_;
   std::map<int, std::string> keyPrefixSpecs_;  // KEY: F-n
   std::map<int, std::string> keyEntrySpecs_;   // KEY: K-n
   KeyBindings keyBindings_;

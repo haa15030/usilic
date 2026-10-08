@@ -564,7 +564,13 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
           } else {
             token = line.substr(0, line.find_first_of(" \t"));
           }
-          if (!token.empty()) grepPresets_.push_back(token);
+          if (!token.empty()) {
+            grepPresets_.push_back(token);
+            std::string raw = lines[i - 1];  // nextDataLine()はコメントを除くので、表示には元の行を使う
+            raw.erase(0, raw.find_first_not_of(" \t"));
+            while (!raw.empty() && (raw.back() == '\r' || raw.back() == ' ' || raw.back() == '\t')) raw.pop_back();
+            grepPresetLines_.push_back(raw);
+          }
         }
         break;
       }
@@ -914,6 +920,7 @@ const std::vector<std::string> &Configuration::programSeedCommands() const { ret
 
 const std::string &Configuration::allowedControlBytes() const { return allowedControlBytes_; }
 const std::vector<std::string> &Configuration::grepPresets() const { return grepPresets_; }
+const std::vector<std::string> &Configuration::grepPresetLines() const { return grepPresetLines_; }
 const std::map<int, std::string> &Configuration::keyPrefixSpecs() const { return keyPrefixSpecs_; }
 const std::map<int, std::string> &Configuration::keyEntrySpecs() const { return keyEntrySpecs_; }
 const KeyBindings &Configuration::keyBindings() const { return keyBindings_; }
