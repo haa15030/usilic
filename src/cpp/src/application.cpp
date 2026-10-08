@@ -17627,7 +17627,13 @@ std::string Application::macroItemsFromBytes(const std::vector<int> &bytes, bool
   while (i < bytes.size()) {
     int bestNumber = 0;
     std::size_t bestLength = 0;
+    // 2026-10-08、直接のユーザー報告("`r`行がb"u"."sh"となっている。`.`は確かにアサインキーだがここでは現在行選択の
+    // 機能じゃ無い"): SHELL等で打った字まで「.」(K-35)等の1文字のキーに当てていた。印字できる字(制御文字で
+    // 始まらないもの)は常に文字列にする。再生は既定のキー列も文字列もバイトのまま流すので、動きは同じ。
+    int head = bytes[i];
+    bool control = head < 0x20 || head == 0x7f || head == 0x80;
     for (const auto &[number, seq] : sequences) {
+      if (!control) break;
       if (seq.size() <= bestLength || i + seq.size() > bytes.size()) continue;
       if (std::equal(seq.begin(), seq.end(), bytes.begin() + static_cast<long>(i))) {
         bestNumber = number;
@@ -17662,7 +17668,15 @@ std::string Application::macroNotation(const std::string &items) {
     if (items[p] == '"') {
       std::size_t close = items.find('"', p + 1);
       p = close == std::string::npos ? items.size() : close + 1;
-      out += items.substr(start, p - start);
+      // 2026-10-08、直接のユーザー依頼("を無しにすると人間には分かりにくいかもしれんが...それでやってみて"):
+      // 文字列は「"」で囲まずに出す(空白は␣、macroItemsFromNotation()がそのまま読み戻す)。「^」「␣」を含む
+      // 時だけは、キーの表記と区別できないので囲んだまま。
+      std::string body = items.substr(start + 1, (close == std::string::npos ? items.size() : close) - start - 1);
+      if (body.find('^') != std::string::npos || body.find("\xE2\x90\xA3") != std::string::npos) {
+        out += items.substr(start, p - start);
+      } else {
+        for (char c : body) out += c == ' ' ? std::string("\xE2\x90\xA3") : std::string(1, c);
+      }
       continue;
     }
     while (p < items.size() && items[p] != ' ' && items[p] != '\t') p++;
