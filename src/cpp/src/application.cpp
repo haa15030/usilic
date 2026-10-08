@@ -5165,6 +5165,9 @@ bool Application::handleCommandImpl(Command command) {
       if (currentMode_ == ApplicationMode::File && isViewableImageFile(fileMode_.currentFile()) &&
           !fileView_.lines().empty() && !fileView_.lines().front().imageKey.empty())
         fileMode_.loadFile(fileMode_.currentFile());
+      // 2026-10-08: 通常のファイルも、書き換えられていれば読み直す(FileMode::reloadIfChanged()参照)。
+      else if (currentMode_ == ApplicationMode::File && !isEpubFile(fileMode_.currentFile()))
+        fileMode_.reloadIfChanged();
       // 2026-09-08追加、直接のユーザー要望("^Lで消去"、DirectoryMode::
       // setTransientMarkedNames()自身のコメント参照)――CP/MV/ARC完了後
       // の一時マーキングを^Lで消す。CP/MV/RM着手前の複数選択

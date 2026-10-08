@@ -875,6 +875,22 @@ bool FileMode::loadFile(const std::string &path, const std::function<bool()> &sh
   return loadFileImpl(path, shouldAbort);
 }
 
+bool FileMode::reloadIfChanged() {
+  if (currentFile_.empty() || pagerMode_ || streamPipe_) return false;
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(currentFile_, ec)) return false;
+  auto time = std::filesystem::last_write_time(currentFile_, ec);
+  if (ec) return false;
+  auto size = std::filesystem::file_size(currentFile_, ec);
+  if (ec || (time == loadedWriteTime_ && size == loadedSize_)) return false;
+  saveCursorPosition();
+  skipNextRecentPush();
+  std::string path = currentFile_;
+  if (noWrapMode_) return loadFileNoWrap(path);
+  if (rawControlCodesMode_) return loadFileRaw(path);
+  return loadFile(path);
+}
+
 bool FileMode::loadFileNoWrap(const std::string &path) {
   noWrapMode_ = true;
   rawControlCodesMode_ = false;
@@ -993,6 +1009,11 @@ bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()>
   // 2026-09-16追加、loadFileRaw()自身の宣言コメント参照。
   view_.setLines(rawControlCodesMode_ && shouldAbort ? readAndWrapChunked(path, shouldAbort) : readAndWrap(path, shouldAbort));
   currentFile_ = path;
+  {
+    std::error_code ec;
+    loadedWriteTime_ = std::filesystem::last_write_time(path, ec);
+    loadedSize_ = std::filesystem::file_size(path, ec);
+  }
   // 新しい読み込みは古い検索を無効にする――AnnotationStack自身のコメント参照
   annotations_.clear();
   // K-46(^X^F、「FILE: Select file name」)自身のデータソース――

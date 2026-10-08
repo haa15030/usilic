@@ -228,6 +228,10 @@ class FileMode {
   // saveCurrentCursorPosition()パターン、そちらではopenSelected()/
   // goBack()から呼ばれる、と同じ)。
   void saveCursorPosition();
+  // 2026-10-08、直接のユーザー依頼("通常ファイル上での^Lでは日時の更新を表示にも反映して欲しい"): 今のファイルが
+  // 読み込んだ後に書き換えられていれば(更新時刻か大きさが違えば)、同じ読み方でカーソルの位置を保って読み直す。
+  // 読み直したらtrue。ページャー(標準入力・引数)やストリームで開いたものは対象外。
+  bool reloadIfChanged();
   // 2026-10-01追加、直接のユーザー報告("^Cf^I^Mで file をカットする場合、FILE履歴には file "^I"が
   // 入るだけのはずなのに file が必ず入る...file "^I"とfileが延々FILE履歴リストに積み上がる"):
   // 次の1回のloadFile()では、FILE履歴(RingCategory::RecentFile)にパスを積まない。ファイルCUT
