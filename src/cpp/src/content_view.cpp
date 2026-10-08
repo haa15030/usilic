@@ -325,7 +325,7 @@ void ContentView::setViewport(int row0, int height) {
 
 void ContentView::setLines(std::vector<Line> lines) {
   lines_ = std::move(lines);
-  jumpMark_.reset();  // markJumpOrigin()参照――別の内容の行番号は意味を成さない
+  markRing_.clear();  // markJumpOrigin()参照――別の内容の行番号は意味を成さない
   if (cursorIndex_ >= static_cast<int>(lines_.size()))
     cursorIndex_ = std::max(0, static_cast<int>(lines_.size()) - 1);
   // topIndex_は、下のhoverIndex_と同様、この「ビューが」以前表示
@@ -535,13 +535,28 @@ void ContentView::setTopIndex(int index) {
 
 void ContentView::centerOnCursor() { setTopIndex(cursorIndex_ - height_ / 2); }
 
-void ContentView::markJumpOrigin() { jumpMark_ = cursorIndex_; }
+void ContentView::markJumpOrigin() {
+  if (!markRing_.empty() && markRing_.front() == cursorIndex_) return;
+  markRing_.push_front(cursorIndex_);
+  if (static_cast<int>(markRing_.size()) > kMarkRingSize) markRing_.pop_back();
+}
 
 bool ContentView::exchangeJumpMark() {
-  if (!jumpMark_ || lines_.empty()) return false;
-  int target = std::clamp(*jumpMark_, 0, static_cast<int>(lines_.size()) - 1);
-  jumpMark_ = cursorIndex_;
+  if (markRing_.empty() || lines_.empty()) return false;
+  int target = std::clamp(markRing_.front(), 0, static_cast<int>(lines_.size()) - 1);
+  markRing_.front() = cursorIndex_;
   cursorIndex_ = target;
+  if (cursorIndex_ < topIndex_ || cursorIndex_ >= topIndex_ + height_) centerOnCursor();
+  redraw();
+  return true;
+}
+
+bool ContentView::popJumpMark() {
+  if (markRing_.empty() || lines_.empty()) return false;
+  int mark = markRing_.front();
+  markRing_.pop_front();
+  markRing_.push_back(mark);
+  cursorIndex_ = std::clamp(mark, 0, static_cast<int>(lines_.size()) - 1);
   if (cursorIndex_ < topIndex_ || cursorIndex_ >= topIndex_ + height_) centerOnCursor();
   redraw();
   return true;

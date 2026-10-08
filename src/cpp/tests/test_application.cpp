@@ -4500,45 +4500,71 @@ TEST_CASE_FIXTURE(Fixture, "LIST: PROGRAM-originated editing also keeps the list
 // executable's own name to their usilicrc for PROGRAM to allow
 // recursively launching it, any more than SHELL requires that.
 //
-// 2026-09-17 REDESIGN, a real-machine report ("D. が直ってない") + a
-// direct user proposal ("実行後SHELLへ戻る案、戻らずに仕様だけ頂く"):
-// "usilic" no longer reaches ProgramMode::run()/ChildProcess::
-// runInteractive() (the generic foreground launcher, formerly asserted
-// here via receivedCommand) at all -- see runNestedUsilicProgram()'s own
-// declaration comment for the full story. It now takes a dedicated path
-// (ChildProcess::spawnInteractive() + a rendezvous-polling loop) so that
-// a nested "usilic" launched this way can still hand off to the SAME
-// session (via main.cpp's tryHandoffToParentShell(), the same mechanism
-// SHELL-typed "usilic" already used) instead of always spawning an
-// independent process. This test now confirms the *routing* only (never
-// reaches the old foreground-launcher hook) -- like the SHELL-side
-// sibling test just above, it restricts PATH to /usr/bin:/bin first so
-// the real ~/.local/bin/usilic on this machine (see this session's own
-// `make install`) can't actually be found and run (sh's own "command not
-// found" makes the spawned child exit almost immediately, keeping this
-// safe and fast without needing a real nested usilic).
-TEST_CASE_FIXTURE(Fixture, "PROGRAM: \"usilic\" itself is launched via the dedicated rendezvous-polling path "
-                           "(runNestedUsilicProgram()), never through the generic ProgramMode::run() foreground "
-                           "launcher") {
+// 2026-10-09 (a direct user request): "usilic" is launched as an external pager (the 2026-09-17
+// handoff into this session's USILIC list was dropped) -- see Application::runExternalUsilicPager().
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: \"usilic\" is launched as an external pager without the handoff "
+                           "variables, adding -c in terminal mode (2026-10-09)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartProgram));
   feedText("usilic subdir");
 
-  bool foregroundLauncherCalled = false;
-  app.programMode().setForegroundLauncher([&](const std::string &) {
-    foregroundLauncherCalled = true;
+  std::string launched;
+  app.programMode().setForegroundLauncher([&](const std::string &command) {
+    launched = command;
     return true;
   });
-
-  const char *oldPath = std::getenv("PATH");
-  std::string savedPath = oldPath ? oldPath : "";
-  setenv("PATH", "/usr/bin:/bin", 1);
   CHECK(app.feedByte(0x0d, std::nullopt));
-  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
-  else unsetenv("PATH");
+  CHECK(launched.find("unset USILIC USILIC_HANDOFF; ") == 0);
+  CHECK(launched.find("usilic -c subdir") != std::string::npos);
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
 
-  CHECK_FALSE(foregroundLauncherCalled);  // never routed through ProgramMode::run()
-  CHECK(app.currentMode() == ApplicationMode::Directory);  // PATH-restricted "usilic" never ran, so no handoff landed
+// 2026-10-09 (a direct user request, the Emacs mark features of =ih.pdf except yank): ^SPC sets a mark
+// where it isn't a selection key, the marks form a ring, consecutive page scrolls push only once, and ^U^SPC
+// jumps to the newest mark and rotates it to the end of the ring.
+TEST_CASE_FIXTURE(Fixture, "Mark ring: ^SPC/^X^X/^U^SPC and page scrolls in File mode") {
+  { std::ofstream f(root / "manylines.txt"); for (int i = 0; i < 300; i++) f << "line " << i << "\n"; }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("manylines.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  fm::ContentView &view = app.activeContentView();
+
+  for (int i = 0; i < 3; i++) REQUIRE(app.handleCommand(Command::MoveDown));
+  REQUIRE(app.feedByte(0x80, std::nullopt));  // ^SPC: mark at line 3
+  CHECK(view.modeLineText().find("Mark set") != std::string::npos);
+  for (int i = 0; i < 5; i++) REQUIRE(app.handleCommand(Command::MoveDown));  // line 8
+  REQUIRE(app.feedByte(0x18, std::nullopt));
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X^X
+  CHECK(view.cursorIndex() == 3);
+  REQUIRE(app.feedByte(0x18, std::nullopt));
+  REQUIRE(app.feedByte(0x18, std::nullopt));
+  CHECK(view.cursorIndex() == 8);
+
+  // Two page scrolls in a row push only the starting line (8).
+  REQUIRE(app.handleCommand(Command::PageDown));
+  REQUIRE(app.handleCommand(Command::PageDown));
+  int afterPages = view.cursorIndex();
+  REQUIRE(afterPages > 8);
+  // Ring (newest first): 8, 3. ^U^SPC jumps to 8 and rotates it; again jumps to 3.
+  REQUIRE(app.feedByte(0x15, std::nullopt));
+  REQUIRE(app.feedByte(0x80, std::nullopt));
+  CHECK(view.cursorIndex() == 8);
+  REQUIRE(app.feedByte(0x15, std::nullopt));
+  REQUIRE(app.feedByte(0x80, std::nullopt));
+  CHECK(view.cursorIndex() == 3);
+  REQUIRE(app.feedByte(0x15, std::nullopt));
+  REQUIRE(app.feedByte(0x80, std::nullopt));
+  CHECK(view.cursorIndex() == 8);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Mark ring: ^SPC is still the selection key in (ls)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.feedByte(0x80, std::nullopt));
+  CHECK(app.directoryMode().isMarked(idx));
 }
 
 TEST_CASE_FIXTURE(Fixture, "PROGRAM: an empty command fails cleanly") {

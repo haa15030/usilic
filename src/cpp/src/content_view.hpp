@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <deque>
 #include <optional>
 #include <string>
 #include <utility>
@@ -441,8 +442,15 @@ class ContentView {
   // バーのクリック等、大きく飛ぶ操作の直前に呼ぶ。exchangeJumpMark()は
   // 記録位置と現在位置を入れ替える(連打で行き来)。記録が無ければfalse。
   // 内容が丸ごと置き換わる(setLines())と記録は捨てる。
+  //
+  // 2026-10-09、直接のユーザー依頼(EmacsのC-x C-xの説明=ih.pdfの機能をヤンク以外): 記録は1つではなく
+  // Emacsのマークリングと同じく最大kMarkRingSize個の履歴にした。markJumpOrigin()は今の行をリングの先頭へ
+  // 積み(先頭と同じ行なら積まない)、exchangeJumpMark()は先頭と今の行を入れ替える。popJumpMark()
+  // (EmacsのC-u C-SPC)は先頭の行へ飛び、その記録をリングの最後へ回す(連打で古い記録へ遡る)。
+  static constexpr int kMarkRingSize = 16;
   void markJumpOrigin();
   bool exchangeJumpMark();
+  bool popJumpMark();
 
   // topIndex_を`direction`(>0は「より後の」内容を明かし、<0は
   // 「より前の」内容を明かす――GraphicalDisplay::renderScrolled()の
@@ -1447,7 +1455,7 @@ class ContentView {
   std::vector<Line> lines_;
   std::vector<Display::ContentImage> images_;  // setContentImages()参照
   int cursorIndex_ = 0;
-  std::optional<int> jumpMark_;  // markJumpOrigin()参照
+  std::deque<int> markRing_;  // markJumpOrigin()参照、先頭が最新
   int topIndex_ = 0;
   std::optional<int> hoverIndex_;
   bool cursorHighlightEnabled_ = true;

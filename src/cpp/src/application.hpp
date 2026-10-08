@@ -359,6 +359,11 @@ enum class Command {
   // ^X^X(K-16、M_jump相当): ContentView::markJumpOrigin()自身の宣言
   // コメント参照(2026-09-25追加)。
   ExchangeJumpMark,
+  // 2026-10-09、直接のユーザー依頼(EmacsのC-x C-xの説明=ih.pdfの機能をヤンク以外): ^SPC(Emacsの
+  // C-SPC、選択の無い画面だけ。DIR・ARC・一覧では今まで通り選択)で今の行をマークリングへ積む、
+  // ^U^SPC(C-u C-SPC)で最新のマークへ飛んでそれをリングの最後へ回す(ContentView::popJumpMark())。
+  SetMark,
+  PopMark,
   // K-70('q'、M_quit): (StartExit/^X^Cとは異なり)y/nの確認無しで
   // 即座に終了する――usilicrcはこれをページャー専用("Exit usilic
   // (pager)")として文書化しているので、handleCommand()はDirectory
@@ -1538,6 +1543,14 @@ class Application {
   // currentMode_ != Directoryなら何もせずfalse。対象0件でもfalse。
   // underlineMode_.show()でApplicationMode::Underlineへ切り替える。
   bool startUnderlineFileView();
+  // ^SPCが選択(Command::ToggleMark)になる画面か(DIR・ARC・USILIC・選択のある一覧)。それ以外ではマークを
+  // 置く(Command::SetMark、2026-10-09)。
+  bool markTogglesHere();
+  void markBeforePageScroll();
+  // ^U(EmacsのC-u)を押した直後か。次の^SPCをCommand::PopMarkにする(2026-10-09)。
+  bool universalArgPending_ = false;
+  // 直前にhandleCommand()で処理したコマンド。続けてのページ送りでは最初の1回だけマークを積む(2026-10-09)。
+  Command previousCommand_ = Command::None;
   // 2026-09-21追加: アクセス履歴(RingCategory::Usilic)をUSILIC一覧として
   // 表示する。sorted=trueはファイル/ディレクトリ/manの順に、各々ソート
   // 済み重複排除。falseは記録順(直近が一番下、カーソルもそこ)。

@@ -190,6 +190,8 @@ bool isGrepInPlaceSafeCommand(Command command) {
     case Command::GoToTop:
     case Command::GoToBottom:
     case Command::ExchangeJumpMark:
+    case Command::SetMark:
+    case Command::PopMark:
     case Command::Redraw:
       return true;
     default:
@@ -2634,7 +2636,20 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // キーも): SHELL・プロンプトの文字入力でだけ使うキー(^W ^U ^Y ^D ^E ^A ^Q、HELPの[SHELL]の
   // 「コマンド行」)は、ここ(一覧・閲覧の画面)では何もしないので、そう知らせる。^H/^K/^I/^L/^B/^F/^C
   // は、ここでは別の機能に割り当てられているので対象外。
+  // 2026-10-09: ^U^SPC(EmacsのC-u C-SPC)で最新のマークへ飛ぶ(Command::PopMark参照)。^Uの後が^SPC
+  // でなければ、^Uは無かったことにしてそのキーを普通に処理する。
+  if (!special && byte == 0x15 && currentMode_ != ApplicationMode::Shell) {
+    universalArgPending_ = true;
+    showTransientNotice(activeView(), "C-u-");
+    return true;
+  }
+  if (universalArgPending_) {
+    universalArgPending_ = false;
+    if (!special && byte == 0x80) return handleCommand(Command::PopMark);
+  }
   Command command = resolveCommand(byte, special);
+  // 2026-10-09: 選択の無い画面の^SPCはEmacsのC-SPCと同じくマークを置く(Command::SetMark参照)
+  if (!special && byte == 0x80 && command == Command::ToggleMark && !markTogglesHere()) command = Command::SetMark;
   if (!special && command == Command::None &&
       (byte == 0x17 || byte == 0x15 || byte == 0x19 || byte == 0x04 || byte == 0x05 || byte == 0x01 || byte == 0x11)) {
     showTransientNotice(activeView(), "SHELL/prompt only");
@@ -4341,6 +4356,7 @@ bool Application::handleCommand(Command command) {
   ++stdinPagerCheckDepth_;
   bool result = handleCommandImpl(command);
   --stdinPagerCheckDepth_;
+  if (outermost) previousCommand_ = command;
   if (outermost) saveCutPositionIfLeft(cutBefore);
   if (wasStdin && currentMode_ != ApplicationMode::File) discardStdinPager(wasReturnsToShell);
   if (outermost) showBufferLimitNoticeIfHit();
@@ -4398,6 +4414,7 @@ void Application::clearTransientNotice() {
 }
 
 bool Application::handleCommandImpl(Command command) {
+  universalArgPending_ = false;  // ^Uの後に別のコマンドが来た(dispatchByte()の^U参照)
   clearTransientNotice();  // showTransientNotice()自身の宣言コメント参照
   if ((command == Command::MoveDown || command == Command::MoveUp) &&
       selectAdjacentEpubHorizontalLink(command == Command::MoveDown ? 1 : -1))
@@ -4598,12 +4615,14 @@ bool Application::handleCommandImpl(Command command) {
       return true;
     case Command::PageUp:
       activeView().setHoverIndex(std::nullopt);
+      markBeforePageScroll();
       activeView().pageUp();
       activeView().syncVisibleCursor();
       refreshDirectEntryModeLine();  // ScrollLineUp自身のコメント参照(⑤)
       return true;
     case Command::PageDown:
       activeView().setHoverIndex(std::nullopt);
+      markBeforePageScroll();
       // 2026-09-06追加、直接のユーザー報告("^V/^F/spaceで（どれも
       // ページ送りキーのはずなのに）行送りすると...摩訶不思議な症状"、
       // 修正後も再度「spaceの不可解な挙動が直ってない」との指摘)――
@@ -5235,7 +5254,24 @@ bool Application::handleCommandImpl(Command command) {
       // 兼ねる別物(上のGoToTop/GoToBottom参照)なので対象外。
       if (currentMode_ == ApplicationMode::Shell) return false;
       activeView().setHoverIndex(std::nullopt);
-      if (!activeView().exchangeJumpMark()) return false;
+      if (!activeView().exchangeJumpMark()) {
+        showTransientNotice(activeView(), "No mark set");
+        return false;
+      }
+      activeView().syncVisibleCursor();
+      return true;
+    case Command::SetMark:  // ^SPC(2026-10-09、Command::SetMark参照)
+      if (currentMode_ == ApplicationMode::Shell) return false;
+      activeView().markJumpOrigin();
+      showTransientNotice(activeView(), "Mark set");
+      return true;
+    case Command::PopMark:  // ^U^SPC
+      if (currentMode_ == ApplicationMode::Shell) return false;
+      activeView().setHoverIndex(std::nullopt);
+      if (!activeView().popJumpMark()) {
+        showTransientNotice(activeView(), "No mark set");
+        return false;
+      }
       activeView().syncVisibleCursor();
       return true;
     case Command::QuitPager:
@@ -6686,6 +6722,22 @@ bool Application::goToRecentDirectory() {
 // 共有された^Space/ToggleMarkコマンドへ単純化するという、このポート
 // の確立された選択(その選択についてはDirectoryMode自身のクラス
 // コメント参照)に合わせている。
+bool Application::markTogglesHere() {
+  if (currentMode_ == ApplicationMode::Directory || currentMode_ == ApplicationMode::Archive ||
+      currentMode_ == ApplicationMode::Underline)
+    return true;
+  int size = 0;
+  return activeListMarks(&size) != nullptr;
+}
+
+// 2026-10-09(Command::SetMark参照): EmacsのC-v/M-vと同じく、ページ送りの前の行をマークリングへ。続けて
+// ページ送りした時は最初の1回だけ(全部積むと^X^Xが1ページ前へ戻るだけになる)。
+void Application::markBeforePageScroll() {
+  if (currentMode_ == ApplicationMode::Shell) return;
+  if (previousCommand_ == Command::PageUp || previousCommand_ == Command::PageDown) return;
+  activeView().markJumpOrigin();
+}
+
 bool Application::toggleMark() {
   if (currentMode_ == ApplicationMode::Archive) {
     if (!archiveMode_.selectedEntry()) return false;
@@ -8424,12 +8476,27 @@ std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
     case Command::ScrollLineUp:  // k
       if (!stepEpubVerticalFirst(-1) && enterEpubHorizontalAtEdge(-1)) return true;
       break;
+    // 2026-10-09(Command::SetMark参照): 縦書きの記録は1つ(epubVerticalMark_)のまま。^SPCで今の列を
+    // 記録し、^U^SPCはその列へ飛ぶ(^X^Xと違い、今の列は記録しない)。続けてのページ送りは最初の1回だけ記録。
+    case Command::SetMark:
+      epubVerticalMark_ = cursor;
+      showTransientNotice(activeView(), "Mark set");
+      return true;
+    case Command::PopMark:
+      if (!epubVerticalMark_) {
+        showTransientNotice(activeView(), "No mark set");
+        return false;
+      }
+      setEpubVerticalView(*epubVerticalMark_, *epubVerticalMark_);
+      break;
     case Command::PageDown:
+      if (previousCommand_ != Command::PageUp && previousCommand_ != Command::PageDown) epubVerticalMark_ = cursor;
       setEpubVerticalView(first + perScreen, cursor + perScreen);
       snapEpubVerticalToPage(true);
       if (crossing(true)) return true;
       break;
     case Command::PageUp:
+      if (previousCommand_ != Command::PageUp && previousCommand_ != Command::PageDown) epubVerticalMark_ = cursor;
       setEpubVerticalView(first - perScreen, cursor - perScreen);
       snapEpubVerticalToPage(false);
       if (crossing(false)) return true;
@@ -12804,6 +12871,8 @@ bool Application::startIncrementalGrepPrompt() {
   if (!isGrepInPlaceEligibleMode(currentMode_)) return false;
   grepSyntax_ = GrepSyntax::Fixed;
   grepReturnMode_ = currentMode_;
+  // 2026-10-09: EmacsのC-sと同じく、検索を始めた行をマークリングへ(^X^Xで戻れる、Command::SetMark参照)
+  if (currentMode_ != ApplicationMode::Shell) activeView().markJumpOrigin();
   incrementalGrepActive_ = true;
   activatePrompt(PromptKind::GrepPattern, "");
   return true;
