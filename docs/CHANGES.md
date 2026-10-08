@@ -29250,3 +29250,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      fromDrag(ドラッグの後はtrue、矢印キーはfalse)。stepCoastByKey()に最速の段(maxLevel)を渡せるようにし、横書きは
      arrowSpeedMaxLevel()(ARROWの値の数−ずらし)まで上がる。ARROWの値は10個より多くてもよい(SPEEDは10段のまま)。
      src/usilicrc・usilicrc.enの既定をユーザーの値(11個)にし、説明とsrc/HELP.txt(追跡対象外)のARROWを直した。
+695. **2026-10-08: ドラッグで始めた慣性のずらしは開始の段だけにし、その後の矢印キーでは最低速まで下げられるように(項目694の訂正)**
+   - **経緯**: 直接のユーザー報告("最低速まで行けない。値で言えば25000の次である100000へ行かずに逆方向の25000になって
+     以後は加速")。項目694は慣性中ずっと段をずらしていたので、ずらした後の段1(25000)が最低速になっていた。
+   - **修正**: ずらし(setArrowSpeedOffset())をやめ、ドラッグを離した時(-g)とrunCoastLoop()のfromDrag(-c)で、
+     ドラッグの距離で決まる段に2(dragArrowSpeedOffset()、ARROWが無ければ0)を足して始めるだけにした。その後の
+     矢印キーはARROWの全部の段(200000まで)を使う。src/usilicrc・usilicrc.en・src/HELP.txt(追跡対象外)の説明も直した。

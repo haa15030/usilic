@@ -84,16 +84,15 @@ void applyScrollSpeedOverride(const std::vector<long> &values) {
 namespace {
 std::vector<ScrollStep> gArrowSpeedLevels;  // 空ならkScrollSpeedLevels(applyArrowSpeedOverride()参照)
 std::vector<long> gArrowSpeedValues;
-int gArrowSpeedOffset = 0;  // setArrowSpeedOffset()参照
 }  // namespace
 
 void applyArrowSpeedOverride(const std::vector<long> &values) { gArrowSpeedValues = values; gArrowSpeedLevels.clear(); }
 
-void setArrowSpeedOffset(int offset) { gArrowSpeedOffset = offset; }
+int dragArrowSpeedOffset() { return gArrowSpeedValues.empty() ? 0 : kDragArrowSpeedOffset; }
 
 int arrowSpeedMaxLevel() {
   if (gArrowSpeedValues.empty()) return static_cast<int>(kScrollSpeedLevels.size()) - 1;
-  return std::max(1, static_cast<int>(gArrowSpeedValues.size()) - gArrowSpeedOffset);
+  return static_cast<int>(gArrowSpeedValues.size());
 }
 
 const ScrollStep &arrowSpeedStep(int level) {
@@ -110,7 +109,7 @@ const ScrollStep &arrowSpeedStep(int level) {
     }
   }
   if (level <= 0) return gArrowSpeedLevels[0];
-  int index = std::clamp(level + gArrowSpeedOffset, 1, static_cast<int>(gArrowSpeedValues.size()));
+  int index = std::clamp(level, 1, static_cast<int>(gArrowSpeedValues.size()));
   return gArrowSpeedLevels[static_cast<size_t>(index)];
 }
 

@@ -73,13 +73,14 @@ void applyScrollSpeedOverride(const std::vector<long> &values);
 // SPEEDの段のまま。縦書きのEPUBの左右はkScrollSpeedLevelsを使う。
 void applyArrowSpeedOverride(const std::vector<long> &values);
 const ScrollStep &arrowSpeedStep(int level);
-// 2026-10-08、直接のユーザー依頼("マウスでは設定を2つずらして25000を最低速の開始としてみてほしい...矢印キーに
-// よる速度調整も慣性スクロール中に限っては設定を2つ速い方へズラしてから調整を行う"): ARROWの段をいくつ速い方へ
-// ずらして使うか。マウスのドラッグで始めた慣性はkDragArrowSpeedOffset、矢印キーで始めた慣性は0(慣性の開始の
-// たびに呼び出し側が設定する)。ARROWの値は10個より多くてもよく、arrowSpeedMaxLevel()がずらした後の最速の段。
+// 2026-10-08、直接のユーザー依頼("マウスでは設定を2つずらして25000を最低速の開始としてみてほしい"): マウスの
+// ドラッグで始めた横書きの慣性は、ドラッグの距離で決まる段をこれだけ速い方へずらして始める。始めた後の矢印キー
+// での加減速はARROWの全部の段を使う(同日の訂正"最低速まで行けない...100000へ行かずに逆方向の25000になって"、
+// 以前は慣性中ずっとずらしていた)。ARROWの値は10個より多くてもよく、arrowSpeedMaxLevel()が最速の段。
 constexpr int kDragArrowSpeedOffset = 2;
-void setArrowSpeedOffset(int offset);
 int arrowSpeedMaxLevel();
+// ドラッグで始めた慣性の段のずらし(ARROWが無ければ0、SPEEDの表は今まで通り)。
+int dragArrowSpeedOffset();
 
 // ドラッグが離される直前の短い時間窓で移動したピクセル距離の合計を、
 // 離散的なレベルへマッピングする: 0(フリックと数えるには小さすぎる

@@ -271,9 +271,9 @@ ARROW
 #
 # Per-level speed of the inertial scrolling moved with the arrow keys on
 # horizontal-text screens (same format as SPEED). Coasting started by a mouse
-# drag uses the levels shifted two steps faster (25000 with the values below),
-# and the arrow keys keep that shift while it coasts. Without this section,
-# SPEED is used. Vertical EPUB uses SPEED.
+# drag starts two levels faster (25000 with the values below); the arrow keys
+# then use all the levels. Without this section, SPEED is used. Vertical EPUB
+# uses SPEED.
 
 	200000 100000 25000 10000 5000 2000 1000 500 200 100 50
 
