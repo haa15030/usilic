@@ -506,6 +506,11 @@ std::string truncateToPathPrefix(const std::string &path, int digit) {
 // 同じU+2060へ変換してから検索するので、この定数はそのまま生の
 // '\t'でよい(^Q^Iで打ち込む本物のCUT検索と全く同じ変換経路を共有)。
 const char *const kHelpPattern = "\t";
+// HELPの目次の章の行(2026-10-08、直接のユーザー依頼"HELPの検索も「行頭に^Iが無い」かつ「行末が^I」"): 行頭が
+// タブの行はページャー起動のKEYの行(startKey()参照)なので、章の見出し(行末がタブ)から外す。GrepSyntax::Basic。
+// 折り返し(PipeBuffer::wrapLine())でタブはU+2060+次のタブ位置までの空白になり(CutMode::split()がパターンの
+// タブも同じU+2060にする)、行末のタブの後には字下げの印(U+FEFF)も続くことがある。
+const char *const kHelpChapterPattern = "^[^\t].*\t[ \xEF\xBB\xBF]*$";
 
 // tempRootDirectory_自身のコメント(application.hpp)参照: 明示的な
 // `tempRootDirectory`(main()自身の/tmp/.usilic.<pid>、引数付きで
@@ -17257,8 +17262,12 @@ bool Application::startKey() {
   bool fromCut = currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent;
   if (!fromCut) cutReturnMode_ = currentMode_;
   cutOrigin_ = CutOrigin::Key;
-  cutSyntax_ = GrepSyntax::Fixed;
-  if (!cutMode_.split(lines, "\xEF\xBC\x9A", GrepSyntax::Fixed)) return false;
+  // 2026-10-08、直接のユーザー依頼("ページャー起動の時だけはKEYで検索する文字列を「：」ではなく「行頭^I」...
+  // Pagerでは「行頭^I」、FileManagerでは「：」で検索後の文字列でKEYを構成"): ページャーとして起動した時は、
+  // 行頭がタブの行で切る(HELPの原稿にはまだ行頭のタブが無いので、今は一覧が空になる)。
+  bool pagerKeys = pagerLaunch_;
+  cutSyntax_ = pagerKeys ? GrepSyntax::Basic : GrepSyntax::Fixed;
+  if (!cutMode_.split(lines, pagerKeys ? "^\t" : "\xEF\xBC\x9A", cutSyntax_)) return false;
   cutMode_.dropLeadingFiller();
   int last = static_cast<int>(cutMode_.segments().size()) - 1;
   if (keyCursorIndex_ > 0 && keyCursorIndex_ <= last) {  // 前回KEYを離れた行(keyCursorIndex_参照)
@@ -17743,7 +17752,7 @@ bool Application::startHelp() {
     // ままにしておくことで、保存されている本物のcutが既に持っていた
     // ものが保たれる――HELP自身の都合でそれらを設定すると、^Gがそれ
     // を復元した時点で、その本物のcut自身の状態を壊してしまう。
-    ok = cutMode_.pushSplit(helpLines, kHelpPattern, GrepSyntax::Fixed);
+    ok = cutMode_.pushSplit(helpLines, kHelpChapterPattern, GrepSyntax::Basic);
   } else {
     // 2026-09-14追加、直接のユーザー報告("-g: HELPのカーソル行が
     // 保存されていない（^Hで常に最上行）"): cutOrigin_はCUT系セッション
@@ -17768,8 +17777,8 @@ bool Application::startHelp() {
     // 内の他の全てのcutOrigin_の代入にも影響していたと判明した、
     // HELP自身のものも含めて)。
     cutOrigin_ = CutOrigin::Help;
-    cutSyntax_ = GrepSyntax::Fixed;  // ここで設定しても安全: この分岐では古い値に依存する本物のものは何も無い
-    ok = cutMode_.split(helpLines, kHelpPattern, GrepSyntax::Fixed);
+    cutSyntax_ = GrepSyntax::Basic;  // ここで設定しても安全: この分岐では古い値に依存する本物のものは何も無い
+    ok = cutMode_.split(helpLines, kHelpChapterPattern, GrepSyntax::Basic);
     if (ok && resumingHelpSession && previousCursorIndex > 0) {
       int last = static_cast<int>(cutMode_.segments().size()) - 1;
       cutView_.setCursorIndex(std::clamp(previousCursorIndex, 0, std::max(0, last)));

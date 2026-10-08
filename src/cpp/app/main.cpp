@@ -5070,6 +5070,7 @@ int main(int argc, char **argv) {
   // HELP(Application::helpPath_、~/.local/lib/usilic/HELP、無ければ/usr/local/lib/usilic/HELP)を読む。
   // ^HはこれをタブでCUTし、^Kは「：」でCUTする(KEY)。
   app.setInstallLibDirectory(installLibDir);
+  app.setPagerLaunch(!consultHistoryOnStart);  // KEYの検索文字列(Application::startKey()参照)
   if (const char *overridePath = std::getenv("USILICHELP")) {
     std::string text = readFileIfExists(overridePath);
     if (!text.empty()) app.loadHelpText(text);

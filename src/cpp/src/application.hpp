@@ -2954,6 +2954,8 @@ public:
   // 実行ファイルの場所から見た<PREFIX>/lib/usilic/(末尾に/、main.cppが設定する)。HELPを~/.local/lib/usilic/・
   // /usr/local/lib/usilic/に無い時に探す(2026-10-05、MSYS2でPREFIXを変えて入れた時のため)。
   void setInstallLibDirectory(const std::string &dir) { installLibDirectory_ = dir; }
+  // ページャーとして起動したか(ファイル引数・標準入力、main()のconsultHistoryOnStartの逆)。startKey()参照。
+  void setPagerLaunch(bool pager) { pagerLaunch_ = pager; }
   // HELP(helpPath_のファイル)を読み直す(起動時・^Ja)。読めなければfalse(helpText_はそのまま)。
   bool reloadHelpText();
   // reloadHelpText()が読んだHELPのファイルとその更新時刻(startHelp()が、書き換えられていれば読み直す)。
@@ -3449,6 +3451,7 @@ private:
   bool macroRepeatArmed_ = false;
   // ^X(・^X)・^Xeとして解決したキー(feedByteImpl()がマクロに記録しない、2026-10-08)。
   bool macroControlKey_ = false;
+  bool pagerLaunch_ = false;  // setPagerLaunch()参照
   bool executingKeyLine_ = false;
   // 2026-10-02追加、直接のユーザー報告("KEYではカーソル位置が保存されない"、"hを押してHELPへ移動したあとの
   // 対象位置がわかりにくい。一行に渡るハイライトでよろしく（任意のキーで消える）"): KEYの一覧で最後に
