@@ -340,6 +340,10 @@ class Configuration {
   // -gの画面の基本の等幅フォントのファイル。空なら組み込みの既定のまま。
   const std::vector<long> &speedValues() const { return speedValues_; }
   const std::vector<long> &dragValues() const { return dragValues_; }
+  // ARROW(2026-10-08、直接のユーザー依頼"横書き画面の最低速スクロールが速すぎるのと次速への段差も大きいので
+  // それ用のオプションは欲しい...矢印キー用のみ10段階で"): 横書きの画面の慣性スクロールの段ごとの速さ
+  // (SPEEDと同じ書式、fm::applyArrowSpeedOverride()へ)。無ければSPEEDの表。縦書きのEPUBの左右はSPEEDのまま。
+  const std::vector<long> &arrowSpeedValues() const { return arrowSpeedValues_; }
   const std::string &fontPath() const { return fontPath_; }
   // MACRO(2026-10-02新設): 「M-n キー K-a K-b ...」の行。キーはKEY節と同じ表記、K番号の並びは
   // それぞれの既定のキー列を続けて本体へ渡す(KeyBindings::configure()参照)。K番号の無い行は無視。
@@ -427,6 +431,7 @@ class Configuration {
   std::vector<std::string> sansSerifFontCandidates_;  // SANS-SERIF
   std::vector<long> speedValues_;  // SPEED
   std::vector<long> dragValues_;   // DRAG
+  std::vector<long> arrowSpeedValues_;  // ARROW
   std::string fontPath_;           // FONT
   std::vector<MacroEntry> macros_;  // MACRO
   std::vector<UrlHandler> urlHandlers_;  // URL

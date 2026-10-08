@@ -1161,7 +1161,9 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
     // CUIだけ倍率上げてみて"): 1行あたりの遅延を16ドット分ではなく8ドット分にする(-gの約2倍の
     // 「1秒あたりの行数」)。
     constexpr int kTerminalDotsPerRow = 8;
-    fm::ScrollStep step = fm::scaledForRow(fm::kScrollSpeedLevels[level], kTerminalDotsPerRow);
+    // 横書きの上下は矢印キー用の表(usilicrcのARROW、fm::arrowSpeedStep())、縦書きの左右はSPEED。
+    fm::ScrollStep step =
+        fm::scaledForRow(columns ? fm::kScrollSpeedLevels[level] : fm::arrowSpeedStep(level), kTerminalDotsPerRow);
     // 2026-10-02変更、直接のユーザー報告("-cではそもそも左クリックでスクロールが止まらない"、疑似
     // 端末では止まるのに実機では止まらない): 以前は1行進むごとに入力を1件しか読まず、待ちは
     // usleep()だった。実機のTerminal.appはマウスを動かすたびに移動の報告(?1003)を送るので、最低速
@@ -3236,7 +3238,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     }
 
     if (coastLevel > 0 && !dragging) {
-      const fm::ScrollStep &step = fm::kScrollSpeedLevels[coastLevel];
+      const fm::ScrollStep &step = fm::arrowSpeedStep(coastLevel);  // usilicrcのARROW(無ければSPEED)
       auto frameDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(16);
       // Move-THEN-delay, not delay-then-move (this used to be the
       // other way around) -- a real user report (2026-08-06): the
@@ -4407,6 +4409,7 @@ struct RcOption {
 void applyRcOptions(fm::Configuration &configuration, const std::vector<RcOption> &rcOptions, const std::string &home,
                     std::string *fontPath) {
   if (!configuration.speedValues().empty()) fm::applyScrollSpeedOverride(configuration.speedValues());
+  if (!configuration.arrowSpeedValues().empty()) fm::applyArrowSpeedOverride(configuration.arrowSpeedValues());
   if (!configuration.dragValues().empty()) fm::applyReleaseDistanceOverride(configuration.dragValues());
   *fontPath = configuration.fontPath();
   auto numbers = [](const std::vector<std::string> &values) {

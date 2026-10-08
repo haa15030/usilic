@@ -68,6 +68,12 @@ extern std::vector<ScrollStep> kScrollSpeedLevels;
 // 事故で着地すべきものではないため。
 void applyScrollSpeedOverride(const std::vector<long> &values);
 
+// 横書きの画面の慣性スクロール(矢印キー、ドラッグで始めたものも)の段ごとの速さ(usilicrcのARROW、
+// 2026-10-08)。applyArrowSpeedOverride()で値を与えるまではkScrollSpeedLevels(SPEED)と同じ。0以下の値の段は
+// SPEEDの段のまま。縦書きのEPUBの左右はkScrollSpeedLevelsを使う。
+void applyArrowSpeedOverride(const std::vector<long> &values);
+const ScrollStep &arrowSpeedStep(int level);
+
 // ドラッグが離される直前の短い時間窓で移動したピクセル距離の合計を、
 // 離散的なレベルへマッピングする: 0(フリックと数えるには小さすぎる
 // ――残留する動きの無い普通のリリースはそのまま止まる、実際の

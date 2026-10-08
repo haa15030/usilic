@@ -6,7 +6,7 @@
 # other line is an error.
 #
 # ARCHIVE, FILE, EXEC, EGREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
-# LINE, WAIT, CP, MV, RM, SERIF, SANS-SERIF, SPEED, DRAG, FONT, URL, KEY, MACRO
+# LINE, WAIT, CP, MV, RM, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT, URL, KEY, MACRO
 #
 # usilicrc is the same file with Japanese comments.
 # -------------------------------------------------------------
@@ -265,6 +265,16 @@ DRAG
 # writes them here.
 
 	1 2 4 8 16 30 40 50 60 70
+
+ARROW
+# Format: `usec1' `usec2' ...  (levels 1-10)
+#
+# Per-level speed of the inertial scrolling moved with the arrow keys on
+# horizontal-text screens (same format as SPEED; coasting started by a drag
+# uses the same table). Level 1 is the slowest, with an even ratio between
+# levels. Without this section, SPEED is used. Vertical EPUB uses SPEED.
+
+	180000 78000 34000 15000 6400 2800 1200 520 230 100
 
 FONT
 # Format: `font file'

@@ -81,6 +81,27 @@ void applyScrollSpeedOverride(const std::vector<long> &values) {
   }
 }
 
+namespace {
+std::vector<ScrollStep> gArrowSpeedLevels;  // 空ならkScrollSpeedLevels(applyArrowSpeedOverride()参照)
+std::vector<long> gArrowSpeedValues;
+}  // namespace
+
+void applyArrowSpeedOverride(const std::vector<long> &values) { gArrowSpeedValues = values; gArrowSpeedLevels.clear(); }
+
+const ScrollStep &arrowSpeedStep(int level) {
+  if (gArrowSpeedValues.empty()) return kScrollSpeedLevels[level];
+  // SPEED(-s等)の上書きの後に作る(起動時の順序に依らないよう、最初に使う時に)。
+  if (gArrowSpeedLevels.empty()) {
+    gArrowSpeedLevels = kScrollSpeedLevels;
+    for (size_t i = 1; i < gArrowSpeedLevels.size() && i - 1 < gArrowSpeedValues.size(); i++) {
+      if (gArrowSpeedValues[i - 1] <= 0) continue;
+      gArrowSpeedLevels[i].busyLoop = false;
+      gArrowSpeedLevels[i].microseconds = gArrowSpeedValues[i - 1];
+    }
+  }
+  return gArrowSpeedLevels[static_cast<size_t>(level)];
+}
+
 // applyReleaseDistanceOverride()自身のヘッダーコメント参照。
 // 2026-08-21: 空ではなく、ユーザー自身が実機で調整した値
 // ("-i 1 2 4 8 16 30 40 50 60 70"、実際に手を動かしてテストした後に

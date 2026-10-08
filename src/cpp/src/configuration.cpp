@@ -57,6 +57,8 @@ const std::vector<std::string> &directiveKeywords() {
       "SPEED", "DRAG", "FONT", "MACRO",
       // 2026-10-04追加(urlHandlers()参照)。
       "URL",
+      // 2026-10-08追加(arrowSpeedValues()参照)。
+      "ARROW",
   };
   return kKeywords;
 }
@@ -688,13 +690,15 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         break;
       }
       case 20:    // SPEED
-      case 21: {  // DRAG(speedValues()自身のコメント参照)
-        auto &values = (index == 20) ? speedValues_ : dragValues_;
+      case 21:    // DRAG(speedValues()自身のコメント参照)
+      case 25: {  // ARROW(arrowSpeedValues()参照)
+        auto &values = (index == 20) ? speedValues_ : (index == 21) ? dragValues_ : arrowSpeedValues_;
         values.clear();
         while (auto data = nextDataLine(lines, i))
           for (const auto &token : tokenize(*data)) {
             if (token.empty() || token.find_first_not_of("0123456789") != std::string::npos) {
-              errors_.push_back(std::string(index == 20 ? "SPEED" : "DRAG") + ": not a number: " + token);
+              errors_.push_back(std::string(index == 20 ? "SPEED" : index == 21 ? "DRAG" : "ARROW") +
+                                ": not a number: " + token);
               continue;
             }
             values.push_back(std::atol(token.c_str()));
