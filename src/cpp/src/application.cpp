@@ -3257,6 +3257,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::ShowShellLog);
       case 'u':  // ^J ^O u : ~/.usilic/usilicrc(2026-10-02、Command::OpenUserUsilicrc参照)
         return handleCommand(Command::OpenUserUsilicrc);
+      case 'h':  // ^J ^O h : KEYから平文のHELPの当該位置へ(K-105、2026-10-08復活、Command::KeyJumpToHelp参照)
+        return handleCommand(Command::KeyJumpToHelp);
       case 'd':  // ^J ^O d : ~/.usilic/data/(K-96、2026-09-27)
         return handleCommand(Command::OpenDataDirectory);
       case 'w':  // ^J ^O w : WORK(K-97、2026-09-27)
@@ -4909,11 +4911,12 @@ bool Application::handleCommandImpl(Command command) {
     case Command::StartKey:
       return startKey();
     case Command::KeyJumpToHelp:
-      return jumpFromKeyToHelp();
-    case Command::OpenPlainHelp:
-      // KEYの中では、選んでいる行の、平文のHELPの同じ行へ(2026-10-02、それまでのh(K-95)を統合。
-      // 'h'はusilicrcのMACRO(h→^J^Oh)になった)。
+      // ^J^Oh(K-105、2026-10-08復活、直接のユーザー依頼"KEYからは、トグルのはずの^Ohで常時平文、がどうも
+      // 違和感なので^J^Ohを復活させてhのマクロにあてたい"): KEYの中では選んでいる行の平文のHELPの同じ行へ、
+      // KEYの外では平文のHELP。^Ohはどこでも目次と平文の切り替え(toggleHelpView())だけにした。
       if (currentMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Key) return jumpFromKeyToHelp();
+      return openPlainHelp();
+    case Command::OpenPlainHelp:
       return toggleHelpView();
     case Command::OpenUserUsilicrc: {
       std::string home = std::filesystem::path(usilicrcPath_).parent_path().parent_path().string();

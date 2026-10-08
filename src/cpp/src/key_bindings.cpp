@@ -135,6 +135,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {102, "F-2 w"},    // ^Ow   EPUB: Webのリンクの対処を巡回(2026-10-04、usilicrcのURL)
       {103, "F-1 C-a"},  // ^J^A  ARC: 一覧(2026-10-05、アーカイブだけのFILE履歴)
       {104, "F-1 C-f"},  // ^J^F  -g: フォント一覧(2026-10-06、2026-10-07に^Ofから)
+      {105, "F-4 h"},    // ^J^Oh KEYから平文のHELPの当該位置へ(2026-10-08復活、usilicrcのMACROのh)
   };
   return entries;
 }

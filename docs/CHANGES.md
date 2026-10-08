@@ -29087,3 +29087,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      分(旧が書いた行を含む)が溜まり続けていた。
    - **修正**: 旧はこの試しの標準エラーを/dev/nullへ。新はmain()で、起動のたびにERROR(引数無しなら
      `~/.usilic/error`、ページャーなら`/tmp/.usilic.<pid>/error`)を空にする(SHELLのログ(項目589)とは違い、続けない)。
+677. **2026-10-08: ^J^Oh(K-105)を復活し、KEYから平文のHELPの当該位置へ飛ぶのはこちらに(MACROのhも)**
+   - **経緯**: 直接のユーザー依頼("KEYからは、トグルのはずの^Ohで常時平文、がどうも違和感なので^J^Ohを復活させて
+     hのマクロにあてたい")。項目659で^J^Ohを廃し、^Oh(K-87)がKEYの中だけ平文のHELPの当該位置へ飛んでいた。
+   - **変更**: ^J^Oh(K-105、`F-4 h`、既存のK番号をずらさないよう末尾へ)を足し、Command::KeyJumpToHelpに当てた
+     (KEYの中では選んでいる行の平文のHELPへ、外では平文のHELP)。^Oh(Command::OpenPlainHelp)はどこでも目次と
+     平文の切り替え(toggleHelpView())だけにした。src/usilicrc・usilicrc.enのK-105とMACROのh(K-87→K-105)、
+     src/HELP.txt・HELP_en.txtの[KEY]と[MACRO]のhを直した。`~/.usilic/usilicrc`のMACROのh・K-87の説明も直した。
