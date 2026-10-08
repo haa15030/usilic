@@ -84,22 +84,34 @@ void applyScrollSpeedOverride(const std::vector<long> &values) {
 namespace {
 std::vector<ScrollStep> gArrowSpeedLevels;  // 空ならkScrollSpeedLevels(applyArrowSpeedOverride()参照)
 std::vector<long> gArrowSpeedValues;
+int gArrowSpeedOffset = 0;  // setArrowSpeedOffset()参照
 }  // namespace
 
 void applyArrowSpeedOverride(const std::vector<long> &values) { gArrowSpeedValues = values; gArrowSpeedLevels.clear(); }
 
+void setArrowSpeedOffset(int offset) { gArrowSpeedOffset = offset; }
+
+int arrowSpeedMaxLevel() {
+  if (gArrowSpeedValues.empty()) return static_cast<int>(kScrollSpeedLevels.size()) - 1;
+  return std::max(1, static_cast<int>(gArrowSpeedValues.size()) - gArrowSpeedOffset);
+}
+
 const ScrollStep &arrowSpeedStep(int level) {
-  if (gArrowSpeedValues.empty()) return kScrollSpeedLevels[level];
-  // SPEED(-s等)の上書きの後に作る(起動時の順序に依らないよう、最初に使う時に)。
+  int last = static_cast<int>(kScrollSpeedLevels.size()) - 1;
+  if (gArrowSpeedValues.empty()) return kScrollSpeedLevels[static_cast<size_t>(std::clamp(level, 0, last))];
+  // SPEED(-s等)の上書きの後に作る(起動時の順序に依らないよう、最初に使う時に)。0以下の値の段はSPEEDの段。
   if (gArrowSpeedLevels.empty()) {
-    gArrowSpeedLevels = kScrollSpeedLevels;
-    for (size_t i = 1; i < gArrowSpeedLevels.size() && i - 1 < gArrowSpeedValues.size(); i++) {
+    gArrowSpeedLevels.assign(gArrowSpeedValues.size() + 1, kScrollSpeedLevels[0]);
+    for (size_t i = 1; i <= gArrowSpeedValues.size(); i++) {
+      gArrowSpeedLevels[i] = kScrollSpeedLevels[std::min(i, static_cast<size_t>(last))];
       if (gArrowSpeedValues[i - 1] <= 0) continue;
       gArrowSpeedLevels[i].busyLoop = false;
       gArrowSpeedLevels[i].microseconds = gArrowSpeedValues[i - 1];
     }
   }
-  return gArrowSpeedLevels[static_cast<size_t>(level)];
+  if (level <= 0) return gArrowSpeedLevels[0];
+  int index = std::clamp(level + gArrowSpeedOffset, 1, static_cast<int>(gArrowSpeedValues.size()));
+  return gArrowSpeedLevels[static_cast<size_t>(index)];
 }
 
 // applyReleaseDistanceOverride()自身のヘッダーコメント参照。

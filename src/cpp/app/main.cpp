@@ -949,12 +949,14 @@ void performScrollStepDelay(const fm::ScrollStep &step) {
 // 逆向き最低速、以後は加速"): 慣性スクロールを始める/速さを変えるキー(←→、縦書きでは↓↑)の1回分。
 // 止まっていれば`pressed`の向きに最低速で始め、同じ向きなら1段速く、逆向きなら1段遅く、最低速から
 // さらに逆を押すと逆向きの最低速(以後同じキーで加速)。
-void stepCoastByKey(int &level, int &direction, int pressed) {
+// maxLevelは最速の段(横書きはfm::arrowSpeedMaxLevel()、usilicrcのARROWの数とずらし方による)。
+void stepCoastByKey(int &level, int &direction, int pressed,
+                    int maxLevel = static_cast<int>(fm::kScrollSpeedLevels.size()) - 1) {
   if (level == 0) {
     level = resolveCoastLevel(1);
     direction = pressed;
   } else if (pressed == direction) {
-    level = resolveCoastLevel(std::min(level + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1));
+    level = resolveCoastLevel(std::min(level + 1, maxLevel));
   } else if (level > 1) {
     level = resolveCoastLevel(level - 1);
   } else {
@@ -1138,14 +1140,16 @@ void applyHoverRowAndRedraw(fm::ContentView &view, int mouseRow, bool moveCursor
 // key is handed back to the caller to feed through normally, exactly
 // as if this function had never run.
 TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm::KeyInput &keyInput,
-                                  int initialLevel, int initialDirection) {
+                                  int initialLevel, int initialDirection, bool fromDrag) {
   // 2026-10-02追加、直接のユーザー報告("-cの縦書きEPUBでは↑↓で横スクロールが始まらず、←→で行移動
   // しない。-gは問題無し"): 縦書きのEPUBの本文では、-gの左右の慣性(runGuiPhase()のepubCoastLevel)
   // と同じく1列ずつ(Application::scrollEpubVertical()、+1で先へ)送り、速さは↓↑で変える。-gと
   // 同じく、横書きの範囲(奥付等)へ入ったら同じ段階の上下の慣性として続ける。
   bool columns = app.epubVerticalDragActive();
+  // 横書きの慣性は、マウスで始めたらARROWを2つ速い方へずらす(fm::setArrowSpeedOffset()参照)。
+  fm::setArrowSpeedOffset(fromDrag ? fm::kDragArrowSpeedOffset : 0);
   fm::ContentView *viewPtr = &app.activeContentView();
-  int level = initialLevel;
+  int level = std::min(initialLevel, columns ? initialLevel : fm::arrowSpeedMaxLevel());
   int direction = initialDirection;
   TerminalCoastResult result;
   gTerminalClickTargetsCursor = false;
@@ -1226,7 +1230,8 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
       // 2026-10-06: 慣性中は進む向きの矢印(一覧の↓↑、縦書きの←→)でも(runGuiPhase()の同じ日の追加参照)。
       if (int arrow = peekArrow(keyInput, "ABCD")) {
         bool forward = columns ? (arrow == 'B' || arrow == 'D') : (arrow == 'C' || arrow == 'B');
-        stepCoastByKey(level, direction, forward ? 1 : -1);
+        stepCoastByKey(level, direction, forward ? 1 : -1,
+                       columns ? static_cast<int>(fm::kScrollSpeedLevels.size()) - 1 : fm::arrowSpeedMaxLevel());
         continue;
       }
       // Neither a Left/Right nor a mouse report -- some other ESC
@@ -1459,7 +1464,7 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
       return TerminalCoastResult{};
     }
     int direction = releaseDistance > 0 ? -1 : 1;  // same natural-scrolling sign as the live-drag step above
-    return runCoastLoop(app, display, keyInput, level, direction);
+    return runCoastLoop(app, display, keyInput, level, direction, /*fromDrag=*/true);
   }
 }
 
@@ -1678,7 +1683,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
           consecutiveEscapes = 0;
           app.noteUserActivity();  // 慣性の開始でも一時的な表示を消す(Application::noteUserActivity()参照)
           int delta = arrow == 'B' || arrow == 'C' ? 1 : -1;
-          TerminalCoastResult coast = runCoastLoop(app, display, keyInput, resolveCoastLevel(1), delta);
+          TerminalCoastResult coast = runCoastLoop(app, display, keyInput, resolveCoastLevel(1), delta, /*fromDrag=*/false);
           if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
           continue;
         }
@@ -2736,7 +2741,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           continue;
         }
         if (!app.epubVerticalScrollActive() && coastLevel > 0 && (upKey || downKey)) {
-          stepCoastByKey(coastLevel, coastDirection, downKey ? -1 : 1);  // ↓で先へ(-1、coastDirection参照)
+          stepCoastByKey(coastLevel, coastDirection, downKey ? -1 : 1, fm::arrowSpeedMaxLevel());  // ↓で先へ(-1、coastDirection参照)
           consecutiveEscapes = 0;
           continue;
         }
@@ -2746,8 +2751,11 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           continue;
         }
         if (!app.epubVerticalScrollActive() && (leftKey || rightKey)) {
-          if (coastLevel == 0) app.activeContentView().setHoverIndex(std::nullopt);  // ホイールで始めていた時と同じ(2026-09-03)
-          stepCoastByKey(coastLevel, coastDirection, rightKey ? -1 : 1);  // coastDirection自身のコメント参照: -1で先へ
+          if (coastLevel == 0) {
+            app.activeContentView().setHoverIndex(std::nullopt);  // ホイールで始めていた時と同じ(2026-09-03)
+            fm::setArrowSpeedOffset(0);  // 矢印キーで始めた慣性はARROWをずらさない(fm::setArrowSpeedOffset()参照)
+          }
+          stepCoastByKey(coastLevel, coastDirection, rightKey ? -1 : 1, fm::arrowSpeedMaxLevel());  // coastDirection自身のコメント参照: -1で先へ
           consecutiveEscapes = 0;
           continue;
         }
@@ -3102,7 +3110,10 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
             int releaseDistance = 0;
             for (auto &sample : recentMotion)
               if (sample.first >= cutoff) releaseDistance += sample.second;
-            coastLevel = resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, cellHeight));
+            // マウスで始めた慣性はARROWを2つ速い方へずらす(fm::setArrowSpeedOffset()参照)。
+            fm::setArrowSpeedOffset(fm::kDragArrowSpeedOffset);
+            coastLevel = std::min(resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, cellHeight)),
+                                  fm::arrowSpeedMaxLevel());
             coastDirection = coastLevel > 0 ? (releaseDistance > 0 ? 1 : -1) : 0;
           } else {
             coastLevel = 0;
@@ -3492,7 +3503,8 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // 変えてそのまま縦方向に継続してほしい"): 左右の慣性で横書きの範囲(奥付等)へ入ったら
       // (scrollEpubVertical()が入る)、同じ段階の上下の慣性として続ける(先へなら下へ)。
       if (stop && app.epubHorizontalSectionActive() && app.currentMode() == fm::ApplicationMode::File) {
-        coastLevel = epubCoastLevel;
+        fm::setArrowSpeedOffset(0);
+        coastLevel = std::min(epubCoastLevel, fm::arrowSpeedMaxLevel());
         coastDirection = epubCoastDirection > 0 ? -1 : 1;
         pixelOffset = 0;
       }

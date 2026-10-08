@@ -155,7 +155,7 @@ TEST_CASE("src/usilicrc and src/usilicrc.en: read without errors, their KEY sect
     }
     CHECK(config.grepPresets().size() == 25);  // 2026-10-08にタブの実例を追加
     CHECK(config.grepPresetLines().size() == config.grepPresets().size());
-    CHECK(config.arrowSpeedValues().size() == 10);  // ARROW(2026-10-08)
+    CHECK(config.arrowSpeedValues().size() == 11);  // ARROW(2026-10-08)
     CHECK(config.allowedControlBytes().find('\x07') != std::string::npos);  // CODEのBEL(2026-09-25追加)
   }
 }
