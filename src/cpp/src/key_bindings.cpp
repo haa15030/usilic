@@ -75,7 +75,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {42, "F-2 r"},     // ^Or   RM
       {43, "F-1 p"},     // ^Jp   PROGRAM: 入力
       {44, "F-1 C-p"},   // ^J^P  PROGRAM: 一覧
-      {45, "F-2 u"},     // ^Ou   選択したfileの一覧(USILIC)
+      {45, "F-2 u"},     // ^Ou   選択したfileを外部ページャーのusilicで閲覧(2026-10-09)
       {46, "F-2 a"},     // ^Oa   ARC: 展開
       {47, "F-1 e"},     // ^Je   EPUB: 入力
       {48, "F-1 C-e"},   // ^J^E  EPUB: 一覧

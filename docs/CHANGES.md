@@ -29264,3 +29264,20 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      縦書き⇔横書きの範囲(奥付等)をまたいで慣性を続ける時は、両方とも同じ表なので段はそのまま引き継ぐ。
      src/usilicrc・usilicrc.enのARROWの説明を直した。src/HELP.txt(追跡対象外)のARROWの「縦書きの EPUB の左右は
      常に SPEED です」はユーザーが清書する(src/HELP.txt:824)。
+697. **2026-10-09: ^Jpの"usilic ..."と^Ouを、USILICの一覧ではなく外部ページャー(別のusilic)として起動する(^OuのUSILIC一覧は廃止)**
+   - **経緯**: 直接のユーザー依頼("ファイルを参照しながらの操作を可能にしたいので`^Jpusilic ...^M`および
+     アンダーライン上の`^Ou`を、USILICではなく外部ページャー機能として立ち上げてほしい（`^Ou`→USILIC一覧は廃止）")。
+   - **変更**: Application::runExternalUsilicPager()を新設し、runNestedUsilicProgram()/tryPollProgramHandoff()
+     (2026-09-17〜、子のusilicからUSILIC_HANDOFFで受け渡してこのusilicのUSILICの一覧に出していた)を削除した。
+     子には受け渡しの目印(USILIC・USILIC_HANDOFF)を渡さず(`unset USILIC USILIC_HANDOFF; usilic ...`)、-c/-gが
+     無ければ今の画面と同じ方を足す。-gでは別のウィンドウとして待たずに起動する(shで背後に回す、標準入出力は
+     /dev/null)ので、元のウィンドウもそのまま操作できる。-cではlessと同じく端末を明け渡し(ProgramMode::run())、
+     子を終えると戻る。^Ou(startUnderlineFileView())は、(ls)では選択(無ければカーソル)のファイル、一覧
+     (LOCATE等)では選択(無ければハイライト行)を`usilic '…' '…'`として同じ経路で開く。子のusilicは複数の
+     ファイルならn/pで前後へ移れる(ページャーのファイル一覧)。
+   - 子のusilicの側の受け渡し(main.cppのUSILIC_HANDOFFの扱い)は、SHELLから打った`usilic`の受け渡し
+     (USILIC)と共用の部分があるので残した。Finderから複数のファイルをドロップした時のUSILICの一覧は変えていない。
+   - テスト: ^OuのUSILIC一覧のテスト6件を削除し、^Ou・LOCATEの^Ou・^Jpの"usilic"が外部ページャーのコマンド
+     (`usilic -c '…'`)になるテストに置き換えた。src/HELP.txt(追跡対象外)の[USILIC]の節(src/HELP.txt:262〜274、
+     「^Ou ではアンダーラインのファイル群一覧から…」「^G では一覧へ戻ります」等)と620〜621行の「^Ou で開いた
+     選択ファイル群も、USILIC 一覧へ登録されます」はユーザーが清書する。

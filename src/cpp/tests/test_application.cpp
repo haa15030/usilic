@@ -13545,155 +13545,6 @@ TEST_CASE_FIXTURE(Fixture, "startPagerFileList: ^G stays a no-op even AFTER the 
 // all -- JumpNext/Previous's own Back+Move+Enter already cycles through
 // this list once Back correctly routes back into it.
 
-TEST_CASE_FIXTURE(Fixture, "^Ou: with no explicit mark, the cursor's single regular-file entry is the "
-                           "sole entry in the UNDER list") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-
-  REQUIRE(app.handleCommand(Command::StartUnderlineView));
-  REQUIRE(app.handleCommand(Command::Back));  // 2026-10-05(項目632): ^Ouは最初の行を開いた画面から、^Gで一覧へ
-  CHECK(app.currentMode() == ApplicationMode::Underline);
-  REQUIRE(app.underlineMode().entries().size() == 1);
-  CHECK(app.underlineMode().entries()[0] == (root / "plain.txt").string());
-}
-
-TEST_CASE_FIXTURE(Fixture, "^Ou: with two regular files marked, both appear in listing order, and "
-                           "a marked directory is listed too (2026-09-21, like DU/LOCATE)") {
-  REQUIRE(app.start(path()));
-  int plainIdx = indexOf("plain.txt");
-  int logIdx = indexOf("log.txt");
-  REQUIRE(plainIdx >= 0);
-  REQUIRE(logIdx >= 0);
-  int idxA = std::min(plainIdx, logIdx);
-  std::string nameA = (idxA == plainIdx) ? "plain.txt" : "log.txt";
-  std::string nameB = (idxA == plainIdx) ? "log.txt" : "plain.txt";
-  int idxB = std::max(plainIdx, logIdx);
-
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idxA) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::ToggleMark));
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idxB) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::ToggleMark));
-
-  REQUIRE(app.handleCommand(Command::StartUnderlineView));
-  REQUIRE(app.handleCommand(Command::Back));  // 2026-10-05(項目632): ^Ouは最初の行を開いた画面から、^Gで一覧へ
-  CHECK(app.currentMode() == ApplicationMode::Underline);
-  REQUIRE(app.underlineMode().entries().size() == 2);
-  CHECK(app.underlineMode().entries()[0] == (root / nameA).string());
-  CHECK(app.underlineMode().entries()[1] == (root / nameB).string());
-
-  // returnFromUnderline() never touches directoryMode_'s own marks (no
-  // enterDirectory() call, same listing throughout), so nameA/nameB are
-  // still marked here -- clear them before exercising the
-  // directory-only case below.
-  REQUIRE(app.handleCommand(Command::Back));
-  app.directoryMode().clearMarks();
-  int dirIdx = indexOf("subdir/");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != dirIdx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::ToggleMark));
-  REQUIRE(app.handleCommand(Command::StartUnderlineView));
-  REQUIRE(app.handleCommand(Command::Back));  // 2026-10-05(項目632): ^Ouは最初の行を開いた画面から、^Gで一覧へ
-  REQUIRE(app.underlineMode().entries().size() == 1);
-  CHECK(app.underlineMode().entries()[0] == (root / "subdir").string());
-
-  // Selecting the directory enters it with the USILIC return annotation;
-  // Back returns to the list, and a second Back to the origin directory.
-  REQUIRE(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
-  REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Underline);
-  REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK(app.directoryMode().currentDirectory() == root.string() + "/");
-}
-
-TEST_CASE_FIXTURE(Fixture, "^J^U: moving to another directory from a listed directory clears the USILIC "
-                           "return annotation, so Back no longer returns to the list") {
-  REQUIRE(app.start(path()));
-  int dirIdx = indexOf("subdir/");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != dirIdx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::ToggleMark));
-  REQUIRE(app.handleCommand(Command::StartUnderlineView));
-  REQUIRE(app.handleCommand(Command::Back));  // 2026-10-05(項目632): ^Ouは最初の行を開いた画面から、^Gで一覧へ
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.directoryMode().primaryAnnotations().topKind() == fm::DirectoryMode::DirAnnotationKind::Usilic);
-  REQUIRE(app.handleCommand(Command::GoToParentDirectory));
-  CHECK(app.directoryMode().primaryAnnotations().empty());
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-}
-
-TEST_CASE_FIXTURE(Fixture, "^Ou: Enter opens the selected entry (fileReturnMode_ = Underline), Back "
-                           "returns to the UNDER list with the cursor preserved, and a second Back "
-                           "returns to Directory") {
-  REQUIRE(app.start(path()));
-  int plainIdx = indexOf("plain.txt");
-  int logIdx = indexOf("log.txt");
-  int idxA = std::min(plainIdx, logIdx);
-  std::string nameA = (idxA == plainIdx) ? "plain.txt" : "log.txt";
-  std::string nameB = (idxA == plainIdx) ? "log.txt" : "plain.txt";
-  int idxB = std::max(plainIdx, logIdx);
-
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idxA) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::ToggleMark));
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idxB) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::ToggleMark));
-  REQUIRE(app.handleCommand(Command::StartUnderlineView));
-  REQUIRE(app.handleCommand(Command::Back));  // 2026-10-05(項目632): ^Ouは最初の行を開いた画面から、^Gで一覧へ
-
-  REQUIRE(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::File);
-  CHECK(app.fileMode().currentFile() == (root / nameA).string());
-
-  // JumpNext (':') is the ordinary, UNMODIFIED Back+MoveDown+Enter
-  // macro -- no ^Ou-specific interception exists at all. Pressed while
-  // VIEWING nameA's content (not while sitting on the UNDER list
-  // overview itself -- see the dedicated test below for that case),
-  // Back returns to the UNDER list with the cursor still on nameA's
-  // row (this Back path never touched the cursor), so MoveDown+Enter
-  // opens nameB directly -- exactly the "cycle through the marked
-  // files" behavior this feature exists for.
-  REQUIRE(app.handleCommand(Command::JumpNext));
-  CHECK(app.currentMode() == ApplicationMode::File);
-  CHECK(app.fileMode().currentFile() == (root / nameB).string());
-
-  REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Underline);
-  REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-}
-
-TEST_CASE_FIXTURE(Fixture, "^Ou: JumpNext/JumpPrevious pressed on the UNDER list screen itself (not "
-                           "while viewing one of its files) keep their ordinary, generic meaning -- "
-                           "Back leaves the list entirely, landing in Directory -- since that generic "
-                           "macro was never given any ^Ou-specific special-casing") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::ToggleMark));
-  REQUIRE(app.handleCommand(Command::StartUnderlineView));
-  REQUIRE(app.handleCommand(Command::Back));  // 2026-10-05(項目632): ^Ouは最初の行を開いた画面から、^Gで一覧へ
-  REQUIRE(app.currentMode() == ApplicationMode::Underline);
-
-  app.handleCommand(Command::JumpNext);  // Back(-> Directory) + MoveDown + Enter, generic and unmodified
-  CHECK(app.currentMode() != ApplicationMode::Underline);
-}
-
-TEST_CASE_FIXTURE(Fixture, "^Ou: a file opened from the UNDER list shows its own path as the mode-line "
-                           "name and the literal \"UNDER\" as the return-value field (2026-09-20 "
-                           "convention: name = what you're looking at, not how you got there)") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::StartUnderlineView));
-  REQUIRE(app.handleCommand(Command::Back));  // 2026-10-05(項目632): ^Ouは最初の行を開いた画面から、^Gで一覧へ
-  REQUIRE(app.handleCommand(Command::Enter));
-
-  std::string modeLine = app.activeContentView().modeLineText();
-  CHECK(modeLine.find((root / "plain.txt").string()) != std::string::npos);
-  CHECK(modeLine.find("USILIC") != std::string::npos);
-}
-
 TEST_CASE_FIXTURE(Fixture, "^Ou: ';'/':' keep their ordinary JumpPrevious/JumpNext resolution -- no "
                            "dedicated Command exists for this feature, unlike the withdrawn first "
                            "implementation") {
@@ -15721,7 +15572,7 @@ TEST_CASE_FIXTURE(Fixture, "EGREP: ^R opens the EGREP list with usilicrc's examp
 
 // 2026-09-27追加、直接のユーザー依頼("（ls）で可能なファイル操作には「閲覧」
 // （^Ou）もあるのでよろしく"): LOCATEの選択を^Ouで閲覧し、^GでLOCATEへ戻る。
-TEST_CASE_FIXTURE(Fixture, "LOCATE: ^Ou views the selected results, ^G returns to LOCATE") {
+TEST_CASE_FIXTURE(Fixture, "LOCATE: ^Ou opens the selected results in an external usilic pager (2026-10-09), staying in LOCATE") {
   fs::path a = root / "ou_one.txt";
   fs::path b = root / "ou_two.txt";
   { std::ofstream(a) << "x"; }
@@ -15742,12 +15593,30 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: ^Ou views the selected results, ^G returns t
   REQUIRE(app.handleCommand(Command::MoveDown));
   REQUIRE(app.handleCommand(Command::ToggleMark));  // 2行目だけ選択
 
+  std::string launched;
+  app.programMode().setForegroundLauncher([&](const std::string &command) {
+    launched = command;
+    return true;
+  });
   REQUIRE(app.handleCommand(Command::StartUnderlineView));
-  REQUIRE(app.handleCommand(Command::Back));  // 2026-10-05(項目632): ^Ouは最初の行を開いた画面から、^Gで一覧へ
-  CHECK(app.currentMode() == ApplicationMode::Underline);
-  CHECK(app.underlineMode().entries() == std::vector<std::string>{b.string()});
-  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(launched.find("unset USILIC USILIC_HANDOFF; usilic -c '" + b.string() + "'") != std::string::npos);
+  CHECK(launched.find(a.string()) == std::string::npos);
   CHECK(app.currentMode() == ApplicationMode::Locate);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^Ou: the marked files are opened in an external usilic pager, not a USILIC list "
+                           "(2026-10-09)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  std::string launched;
+  app.programMode().setForegroundLauncher([&](const std::string &command) {
+    launched = command;
+    return true;
+  });
+  REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  CHECK(launched.find("usilic -c '" + (root / "plain.txt").string() + "'") != std::string::npos);
+  CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
 // 同日、"EGREP一覧のカーソル位置が保存されない": 最後に使った正規表現の行。

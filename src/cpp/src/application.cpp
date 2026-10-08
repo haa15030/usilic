@@ -6898,34 +6898,21 @@ bool Application::startListCpMvRmPrompt(PromptKind kind) {
   return true;
 }
 
+// 2026-10-09、直接のユーザー依頼("アンダーライン上の`^Ou`を、USILICではなく外部ページャー機能として
+// 立ち上げてほしい（`^Ou`→USILIC一覧は廃止）"): 選んだファイル(一覧では選択、無ければハイライト行)を
+// 外部ページャーのusilicで開く(runExternalUsilicPager()参照)。以前はUSILICの一覧に出していた。
 bool Application::startUnderlineFileView() {
+  std::vector<std::string> paths;
   if (currentMode_ != ApplicationMode::Directory) {
-    // 一覧から(2026-09-27、underlineReturn_自身の宣言コメント参照): 選択
-    // (無ければハイライト行)を閲覧の一覧にする。
     int size = 0;
     if (!activeListMarks(&size)) return false;
-    std::vector<std::string> paths = listTargetPaths();
-    if (paths.empty()) return false;
-    UnderlineReturn back{currentMode_, {}, usilicLevel_, usilicGroupKind_, activeView().cursorIndex()};
-    if (currentMode_ == ApplicationMode::Underline) back.entries = underlineMode_.entries();
-    underlineReturn_ = std::move(back);
-    usilicLevel_ = UsilicLevel::None;
-    underlineMode_.show(std::move(paths));
-    currentMode_ = ApplicationMode::Underline;
-    openSelectedUnderlineEntry();
-    return true;
+    paths = listTargetPaths();
+  } else {
+    paths = collectTargetFilePaths();
   }
-  underlineReturn_.reset();
-  std::vector<std::string> paths = collectTargetFilePaths();
   if (paths.empty()) return false;
-  underlineOriginDirectory_ = directoryMode_.currentDirectory();
-  usilicLevel_ = UsilicLevel::None;
-  underlineMode_.show(std::move(paths));
-  currentMode_ = ApplicationMode::Underline;
-  // 2026-10-05、直接のユーザー依頼("^OuのUSILICでもCUTと同じく一覧の最初の行を^Mした内容を表示で"):
-  // 一覧の最初の行をそのまま開く(^Gで一覧へ)。開けなければ一覧のまま。
-  openSelectedUnderlineEntry();
-  return true;
+  programPromptDirectory_.clear();
+  return runExternalUsilicPager("usilic " + shellQuoteArgv(paths));
 }
 
 bool Application::startUsilicHistory(UsilicStyle style) {
@@ -14858,16 +14845,6 @@ void Application::ensurePagerStreamLoaded(int targetLineIndex, bool bypassPacing
 // `$PAGER`経由の起動でも、最初の1画面は瞬時に、以後のスクロールは
 // current+1で育つ。
 void Application::pollPagerExitNotice(bool suppressDraw) {
-  // 2026-09-17追加、pendingProgramChildPid_自身の宣言コメント参照
-  // (runNestedUsilicProgram()自身のコメントも参照): ハンドオフ後に
-  // 待たずに手放した子(sh経由の入れ子usilic、ソケットの送信バッファ
-  // が満杯になりwrite()でブロックされたままかもしれない)を、この
-  // メインループ毎回の反復のついでに(ゾンビ化を防ぐため)機会がある
-  // たびにopportunisticに回収する――hasExited()自身のコメント通り
-  // WNOHANGなので、まだ生きていれば単に0を返すだけで何も変えない。
-  if (pendingProgramChildPid_ > 0 && ChildProcess::hasExited(pendingProgramChildPid_)) {
-    pendingProgramChildPid_ = -1;
-  }
   if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream()) {
     int topIndex = activeView().topIndex();
     bool stillCatchingUpFirstScreen = static_cast<int>(activeView().lines().size()) < display_.rows();
@@ -15911,11 +15888,8 @@ bool Application::executeProgram(const std::string &command) {
     return true;
   }
 
-  // 2026-09-17追加、実機報告("D. が直ってない")+提案(runNestedUsilicProgram()
-  // 自身のapplication.hpp宣言コメント参照): "usilic"だけは通常の
-  // programMode_.run()を経由せず、ランデブーのポーリングに参加できる
-  // 専用の起動経路を使う。
-  if (firstWord == "usilic") return runNestedUsilicProgram(command);
+  // "usilic"は外部ページャーとして起動する(runExternalUsilicPager()参照、2026-10-09)。
+  if (firstWord == "usilic") return runExternalUsilicPager(command);
 
   // programPromptDirectory_: それ自身の宣言コメント参照――
   // startProgramPrompt()の素のファイル名の事前入力(例えば
@@ -16554,167 +16528,36 @@ bool Application::pollShellHandoff() {
   return true;
 }
 
-// runNestedUsilicProgram()自身の宣言コメント参照。pollShellHandoff()
-// の核心部分の複製(パイプされたstdin/プレーンなパス/ファイルの
-// 3分岐とも同一のロジック)――違いはshell_.childPid()の代わりに引数の
-// pidを使うこと、currentMode_ == Shellのゲートが無いこと。
-// 2026-09-17追加、直接のユーザー指摘("戻り値がPROGRAMならPROGRAMへ
-// 戻らないと。なんだけど、PROGRAMは^J^P(program一覧)でも発動する
-// ので話がややこしくなる。そこで戻り値は~/git/usilic/でいいかなと"):
-// 以前はパイプされたstdinのケースだけ戻り先ラベルを固定文字列
-// "PROGRAM"にしていたが、"PROGRAM"という語自体がusilicrc設定一覧
-// (^J^P、startProgramList())と紛らわしく、しかも実際の^Gの戻り先は
-// 常にcapturedModeが指す「実際の場所」であって「PROGRAM画面」という
-// 独立した何かではない――ARCHIVE再設計(①)/K-23(⑥)と同じ理屈で、
-// ラベルではなく実際の戻り先パスをtrailing3に出す。capturedModeが
-// Directoryの場合(最も一般的、PROGRAMがディレクトリ一覧から発動
-// された場合)はdirectoryMode_.currentDirectory()をそのまま使う――
-// programPromptDirectory_(マークされたファイル/カーソル位置の
-// エントリが無いと空のまま)には依存しない、こちらは常に有効。
-// それ以外のcapturedMode(File/Grep/Locate/Du等からのPROGRAM発動)は
-// 今のところ対象外(pagerListingDirectory_が空のままなのでtrailing3
-// 自体が単に表示されない、独立起動と同じ既定の見た目に留まる)――
-// フェーズ2の他モード監査で改めて扱う。
-bool Application::tryPollProgramHandoff(pid_t pid, ApplicationMode capturedMode) {
-  (void)pid;
-  // 2026-10-05: 目印は子のpidではなく自分のpid(runNestedUsilicProgram()がUSILIC_HANDOFFで渡す)。
-  std::string path = "/tmp/.usilic-shell/s." + std::to_string(::getuid()) + "." + std::to_string(::getpid());
-  struct stat st;
-  if (::stat(path.c_str(), &st) != 0) return false;
-
-  if (S_ISSOCK(st.st_mode)) {
-    int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
-    if (fd < 0) return false;
-    sockaddr_un addr{};
-    addr.sun_family = AF_UNIX;
-    std::strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
-    if (::connect(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
-      ::close(fd);
-      return false;
-    }
-    currentMode_ = ApplicationMode::File;
-    fileReturnMode_ = capturedMode;
-    fileMode_.loadStream(fd, /*ownsFd=*/true, "", 1);
-    fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, "", "(stdin)");
-    fileMode_.setPagerReturnsToProgram(true);
-    if (capturedMode == ApplicationMode::Directory) {
-      fileMode_.setPagerListingDirectory(truncatedTrailingPath(directoryMode_.currentDirectory()));
-    }
-    activeView().redraw();
-    return true;
+// 2026-10-09、直接のユーザー依頼("ファイルを参照しながらの操作を可能にしたいので`^Jpusilic ...^M`および
+// アンダーライン上の`^Ou`を、USILICではなく外部ページャー機能として立ち上げてほしい（`^Ou`→USILIC一覧は
+// 廃止）"): 以前(2026-09-17〜)は子のusilicから受け渡し(USILIC_HANDOFF)でファイルを受け取り、この
+// usilicのUSILICの一覧に出していた。今は子のusilicをそのまま外部ページャーとして動かす(受け渡しの
+// 目印のUSILIC/USILIC_HANDOFFは子へ渡さない)。-gでは別のウィンドウ(-g)として待たずに起動し、元の
+// ウィンドウもそのまま使える。-cではlessと同じく端末を明け渡し、子を終えたら戻る(ProgramMode::run())。
+// `command`は"usilic 引数..."。-c/-gが無ければ今の画面と同じ方を足す。
+bool Application::runExternalUsilicPager(const std::string &command) {
+  bool graphical = display_.isGraphical();
+  std::size_t start = command.find("usilic");
+  std::string args = start == std::string::npos ? std::string() : command.substr(start + 6);
+  bool hasUiFlag = false;
+  for (std::size_t i = 0; i < args.size();) {
+    std::size_t j = args.find_first_not_of(" \t", i);
+    if (j == std::string::npos) break;
+    std::size_t k = args.find_first_of(" \t", j);
+    std::string word = args.substr(j, k == std::string::npos ? std::string::npos : k - j);
+    if (word == "-c" || word == "-g") hasUiFlag = true;
+    i = k == std::string::npos ? args.size() : k;
   }
-
-  std::ifstream in(path);
-  std::vector<std::string> paths;
-  for (std::string line; std::getline(in, line);)
-    if (!line.empty()) paths.push_back(line);
-  in.close();
-  ::unlink(path.c_str());
-  if (paths.empty()) return false;
-
-  if (paths.size() == 1 && std::filesystem::is_directory(paths.front())) {
-    currentMode_ = ApplicationMode::Directory;
-    return directoryMode_.enterDirectory(paths.front(), /*consultHistory=*/false);
-  }
-  // 2026-10-05、直接のユーザー報告(^Jp"usilic ファイル..."が"複数指定しても最初のファイルのみで戻り値が
-  // USILICでなくディレクトリ"): HELPの通り、^Ouと同じUSILICの一覧にして最初の行を開く(^Gで一覧へ)。
-  underlineReturn_.reset();
-  underlineOriginDirectory_ = directoryMode_.currentDirectory();
-  usilicLevel_ = UsilicLevel::None;
-  underlineMode_.show(std::move(paths));
-  currentMode_ = ApplicationMode::Underline;
-  openSelectedUnderlineEntry();
-  activeView().redraw();
-  return true;
-}
-
-// 2026-09-17追加、直接のユーザー報告+提案参照(このメソッド自身の
-// application.hpp宣言コメント)。executeProgram()自身の"usilic"分岐
-// から呼ばれる――ProgramMode::run()(完全同期のChildProcess::
-// runInteractive())を経由せず、ここで直接ChildProcess::
-// spawnInteractive()+ポーリングループを組み立てる。
-bool Application::runNestedUsilicProgram(const std::string &command) {
-  ApplicationMode capturedMode = currentMode_;
-  // USILIC=1(Shell::start()自身のsetenv()と同じ意味だが、こちらは
-  // Shellの管理下のptyではなくusilic自身がここで直接fork/execする
-  // ので、コマンドライン自体に付与する)――cdWrap()が生成する
-  // "cd '<dir>' && <command>"全体の先頭にではなく、<command>自体の
-  // 先頭に付ける(cdだけに変数代入が掛かってしまわないよう、cdWrap()
-  // へ渡す前に付与する)。
-  // USILIC_HANDOFF(2026-10-05): 子のusilicが受け渡しの目印にする自分のpid(tryPollProgramHandoff()参照)。
-  std::string toRun =
-      cdWrap(programPromptDirectory_, "USILIC=1 USILIC_HANDOFF=" + std::to_string(::getpid()) + " " + command);
+  std::string run = "usilic" + std::string(hasUiFlag ? "" : (graphical ? " -g" : " -c")) + args;
+  std::string toRun = "unset USILIC USILIC_HANDOFF; " + cdWrap(programPromptDirectory_, run);
   programPromptDirectory_.clear();  // 結果に関わらず正確に一度消費される、executeProgram()自身の慣習通り
-
-  display_.leaveForExternalProgram();
-  keyInput_.leaveRawMode();
-  pid_t pid = ChildProcess::spawnInteractive({"sh", "-c", toRun});
-  if (pid > 0) {
-    bool handedOff = false;
-    while (!handedOff && !ChildProcess::hasExited(pid)) {
-      if (tryPollProgramHandoff(pid, capturedMode)) handedOff = true;
-      ::usleep(20000);
-    }
-    // 子が既に終了済みでもランデブーファイルの受け取りが間に合って
-    // いない可能性への最後の一押し(ポーリング間隔20msに対し、子自身の
-    // 待ち合わせは最大2秒あるので通常はここに来る前にhandedOff済みの
-    // はずだが、念のため)。
-    if (!handedOff) tryPollProgramHandoff(pid, capturedMode);
-    // 2026-09-17追加、実機報告("00000/00000 END...キー入力すると
-    // 生データがターミナルに出てくる"、修正後さらに"表示はOKだが
-    // キーが一切効かなくなった/以前効いた^Cも効かなくなった")――
-    // 調査の結果、真因はこの直前まで存在していた「handedOff後も
-    // hasExited(pid)になるまで待ち続ける」というループ設計そのもの
-    // だったと判明した。main.cpp自身のtryHandoffToParentShell()の
-    // パイプされたstdin分岐(子側)は、読めたバイトをブロッキングの
-    // write()でソケットへそのまま流し込むだけで、こちら(親)側の
-    // 意図的なペーシング(loadStream()自身のコメント参照: 生きた
-    // パイプ/ライブなSHELLのpagerに配慮し、最初は1行、以後は
-    // ensureLoadedThrough()が「画面1枚分育ったら以後はユーザーが
-    // 実際にスクロールするまで追加要求しない」という設計)を一切
-    // 考慮しない――ある程度の大きさのファイル(このCLAUDE.md自身が
-    // 実例)では、画面1枚分を読み終えた時点で親側の要求が止まり、
-    // ソケットの送信バッファが満杯になった子側のwrite()がブロック
-    // されたまま二度と進まなくなる。そこへ「子が終了するまで待つ」
-    // という設計を重ねると、親自身がその子の完了を無期限に待ち続け、
-    // 結果としてkeyInput_.reenterRawMode()に一度も到達できないまま
-    // 固まる(cooked+echoのまま、SHELLのpollShellHandoff()相当の
-    // 「ハンドオフしたら即座に通常の対話ループへ戻る」という前提を、
-    // このメソッド自身が独自の待ち合わせループで踏みにじっていた)。
-    // 修正: ハンドオフが成立した時点(SHELLのpollShellHandoff()が
-    // メインループの1反復内で完結するのと同じ意味)で即座にループを
-    // 抜ける――子(sh、その子である入れ子usilic)がまだソケットへ
-    // 書き込み中/ブロック中でも構わない、以後はSHELLの生きたpager
-    // 同様、通常のメインループ自身のpollPagerExitNotice()呼び出し
-    // (この関数の外、main.cpp側)がユーザーの実際のスクロールに応じて
-    // 少しずつ読み進め、その都度ブロックされていた子のwrite()を
-    // 必要なだけ再開させる。子プロセス自体はここでは待たず、
-    // pendingProgramChildPid_自身の宣言コメント通り、以後
-    // pollPagerExitNotice()自身の冒頭のopportunisticな回収チェック
-    // 経由で機会があるたびに(ゾンビ化を防ぐため)回収する。
-    if (handedOff && !ChildProcess::hasExited(pid)) pendingProgramChildPid_ = pid;
-    // ここで一度だけ即座に呼ぶことで、画面へ戻る前に(次のメイン
-    // ループの反復を待たず)可能な範囲の続きを先読みしておく――
-    // 既にstillCatchingUpFirstScreen自身の条件で自然に止まるので、
-    // 上のブロッキングのdead lockには戻らない。
-    if (handedOff) pollPagerExitNotice(/*suppressDraw=*/false);
+  if (graphical) {
+    // 別のウィンドウ: 待たない(shは子を背後に回してすぐ終わるので、ここではshだけを回収する)。
+    ChildProcess::runInteractive({"sh", "-c", "(" + toRun + ") </dev/null >/dev/null 2>&1 &"});
+    history_.pushRecent(RingCategory::ShellCommand, command);
+  } else {
+    programMode_.run(toRun, command);
   }
-  // 2026-09-17追加、同じ実機報告の後半("キー入力すると生データが
-  // ターミナルに出てくる")向けの修正: 上のループの間、子(sh、その
-  // 子である入れ子usilic)のstdinはリダイレクトされたファイルであり
-  // 本物の端末を一切読まない――less/vi(ProgramMode::run()の既存の
-  // 経路、子が本物の端末を直接読む)と違い、この端末はleaveRawMode()
-  // でcooked+echoに戻ったまま、この間ずっと「誰も読んでいない」。
-  // その間にユーザーがキーを押すと、cookedモードのカーネル自身に
-  // よってそのバイトがそのまま画面へエコーされ(かつ入力キューに
-  // 溜まり)、これがまさに報告された「生データ」の正体――tcflush()
-  // で未読の入力キューを捨ててからraw modeへ戻すことで、その残骸が
-  // 以後のreadByte()に紛れ込むことも防ぐ。
-  if (keyInput_.fd() >= 0) ::tcflush(keyInput_.fd(), TCIFLUSH);
-  keyInput_.reenterRawMode();
-  display_.reenterFromExternalProgram();
-
-  history_.pushRecent(RingCategory::ShellCommand, command);
   activeView().redraw();
   return true;
 }
