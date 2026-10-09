@@ -16804,8 +16804,8 @@ bool Application::runExternalUsilicPager(const std::string &command) {
 // 2026-10-09、直接のユーザー依頼("Terminal.appの新しいウィンドウ方式で入れてみて"): -cの外部ページャーの
 // usilicを、-gの別のウィンドウと同じく待たずに使えるよう、macOSではTerminal.appの新しいウィンドウで動かす
 // (1つの端末を2つの全画面のプログラムで取り合うことはできないので、端末そのものを分ける)。新しいウィンドウの
-// シェルはこのusilicの作業ディレクトリを引き継がないので、明示的にcdする。usilicの終了でexitし、ウィンドウは
-// Terminal.appの設定(既定は「シェルが正常終了したら閉じる」)に従って閉じる。SSHの先ではウィンドウが手元に
+// シェルはこのusilicの作業ディレクトリを引き継がないので、明示的にcdする。usilicの終了でexitし、ウィンドウを
+// 閉じる(Terminal.appは設定に関わらず閉じるよう、下で自分で閉じる)。SSHの先ではウィンドウが手元に
 // 出ないので使わない。osascriptが失敗したら(Terminal.appの操作の許可を断られた等)falseを返し、呼び出し側は
 // 今まで通り端末を明け渡して待つ。
 bool Application::openInNewTerminalWindow(const std::string &directory, const std::string &command) {
@@ -16817,13 +16817,6 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
     dir = std::filesystem::current_path(ec).string();
     if (ec) dir.clear();
   }
-  std::string shellLine = cdWrap(dir, command) + "; exit";
-  std::string quoted = "\"";
-  for (char c : shellLine) {
-    if (c == '\\' || c == '"') quoted += '\\';
-    quoted += c;
-  }
-  quoted += "\"";
   // 2026-10-09、直接のユーザー依頼("iTerm2から起動した時はiTerm2の新しいウィンドウにして"): iTerm2は
   // TERM_PROGRAM=iTerm.app(tmux等の中ではLC_TERMINAL=iTerm2が残る)。新しいウィンドウの既定のシェルへ
   // write textで打ち込む(create windowのcommandで直接起動するとログインシェルのPATHが無い)。
@@ -16831,6 +16824,24 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
   const char *lcTerminal = std::getenv("LC_TERMINAL");
   bool iterm = (termProgram && std::string(termProgram) == "iTerm.app") ||
                (lcTerminal && std::string(lcTerminal) == "iTerm2");
+  std::string shellLine = cdWrap(dir, command) + "; ";
+  // 2026-10-09、直接のユーザー依頼("設定を変えずにusilic側で閉じるようにして"): Terminal.appは既定の設定だと
+  // シェルが終わっても「[プロセスが完了しました]」でウィンドウを残す(iTerm2は閉じる)。シェルを終える前に、
+  // このウィンドウのtty(新しいウィンドウなのでタブは1つ)のウィンドウを閉じるosascriptを背後に回しておく
+  // ――実行中のプロセスがあるウィンドウを閉じると確認を求められるので、シェルが終わるのをdelayで待ってから
+  // 閉じる。nohupとdisownで、シェルの終了時のSIGHUPとzshの「running jobs」の警告を避ける。
+  if (!iterm)
+    shellLine += "nohup osascript -e 'on run argv' -e 'delay 0.5' -e 'tell application \"Terminal\"' "
+                 "-e 'repeat with w in windows' -e 'if tty of selected tab of w is (item 1 of argv) then' "
+                 "-e 'close w' -e 'exit repeat' -e 'end if' -e 'end repeat' -e 'end tell' -e 'end run' "
+                 "\"$(tty)\" >/dev/null 2>&1 & disown; ";
+  shellLine += "exit";
+  std::string quoted = "\"";
+  for (char c : shellLine) {
+    if (c == '\\' || c == '"') quoted += '\\';
+    quoted += c;
+  }
+  quoted += "\"";
   std::vector<std::string> argv =
       iterm ? std::vector<std::string>{"osascript", "-e", "tell application \"iTerm\"", "-e",
                                        "set newWindow to (create window with default profile)", "-e",

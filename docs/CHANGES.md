@@ -29448,3 +29448,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ログインシェルのPATHが効く)→activate。それ以外は今まで通りTerminal.app。知らせの文言は
      「Opened in a new window」に。src/HELP_.txt・src/HELP_en_.txtの^Ouの説明にiTerm2を足した。
      ビルドのみ確認(実機確認待ち、初回はiTerm2の操作の許可のダイアログが出るはず)。
+711. **2026-10-09: 項目709のTerminal.appの新しいウィンドウを、子のusilicの終了後にusilic側で閉じる**
+   - **経緯**: 直接のユーザー報告("Terminal.appの方は子プロセスを終えると[プロセスが完了しました]となってウィンドウが
+     消えない")→Terminal.appのプロファイルの「シェルの終了時」の設定を案内→"設定を変えずにusilic側で閉じるようにして"。
+   - **実装**: openInNewTerminalWindow()のTerminal.appの時だけ、シェルの行の最後のexitの前に「nohup osascript ...
+     "$(tty)" >/dev/null 2>&1 & disown」を足す。osascriptは0.5秒待ってから(シェルが終わってから閉じないと実行中の
+     プロセスの確認を求められる)、selected tabのttyが同じウィンドウを閉じる。nohupはシェルの終了時のSIGHUP、disownは
+     zshの「running jobs」の警告を避けるため。iTerm2は既定で閉じるので足さない。AppleScriptはosacompileで構文だけ確認、
+     ビルドのみ確認(実機確認待ち)。
