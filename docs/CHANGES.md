@@ -29400,3 +29400,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **見送り(同じ依頼の候補のうち)**: 6.(save-place、開き直すと前回の位置)は既にある(History::positionFor()の
      FILE、~/.usilic/historyに残る)。8.(occur)はCUT(^Cb、一致した行の一覧から^Mでその行へ)が同じ働き。7.(行番号で
      移動)もESC数字・ESC g gで既にある。
+
+706. **2026-10-09: ~/.usilic/usilicrcが無い時のコピー元に、実行ファイルから見た<PREFIX>/lib/usilic/も加える(IDEAS.mdの「初回起動時のコピー」を実装済みに)**
+   - **経緯**: IDEAS.mdの未実装の一覧を挙げたところ、直接のユーザーの意見("1.インストール先が/usr/local/lib/usilic/
+     とかだったらユーザーは設定を変えるのにsudoを実行しなくてはならないので$HOME配下の方がいい")。調べると、
+     コピー自体は2026-10-02にfm::usilicrc::ensureUser()として入っていて、IDEAS.mdの記載が古かった。ただし候補が
+     ~/.local/lib/usilic/と/usr/local/lib/usilic/の決め打ちで、それ以外のPREFIX(MSYS2等、2026-10-05)へ入れた時は
+     読むだけでコピーされなかった。
+   - **変更**: fm::usilicrc::setInstallLibDirectory()を足し、main.cppのinstallLibDir(実行ファイルの<PREFIX>/lib/usilic/)を
+     installedPath()の2番目の候補にした(ensureUser()・updateUserIfOlder()とも)。IDEAS.mdの項目を【実装済み】に。
+   - **確認**: HOMEを空の一時ディレクトリにして起動し、~/.usilic/usilicrcが利用者の所有でコピーされることを見た。

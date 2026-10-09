@@ -73,9 +73,23 @@ std::string readFile(const std::string &path) {
 
 std::string userPath(const std::string &home) { return home + "/.usilic/usilicrc"; }
 
+namespace {
+std::string &installLibDirectory() {
+  static std::string dir;
+  return dir;
+}
+}  // namespace
+
+void setInstallLibDirectory(const std::string &dir) { installLibDirectory() = dir; }
+
 std::optional<std::string> installedPath(const std::string &home) {
   std::vector<std::string> candidates;
   if (!home.empty()) candidates.push_back(home + "/.local/lib/usilic/usilicrc");
+  if (!installLibDirectory().empty()) {
+    std::string dir = installLibDirectory();
+    if (dir.back() != '/') dir += '/';
+    candidates.push_back(dir + "usilicrc");
+  }
   candidates.push_back("/usr/local/lib/usilic/usilicrc");
   for (const auto &path : candidates) {
     std::error_code ec;

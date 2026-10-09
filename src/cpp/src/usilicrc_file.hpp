@@ -18,6 +18,9 @@ namespace usilicrc {
 std::string userPath(const std::string &home);
 // インストールされた既定のusilicrc(上の順で最初に見つかったもの)。無ければnullopt。
 std::optional<std::string> installedPath(const std::string &home);
+// 2026-10-09: 実行ファイルの場所から見た<PREFIX>/lib/usilic/(main.cppのinstallLibDir)も、~/.local/lib/usilic/の
+// 次の候補にする(~/.local・/usr/local以外のPREFIXへ入れた時も~/.usilic/usilicrcへコピーされるよう)。
+void setInstallLibDirectory(const std::string &dir);
 // 利用者のusilicrcが無ければ既定のものをコピーする。利用者のusilicrcがある(コピーできた)ならtrue。
 bool ensureUser(const std::string &home);
 // 2026-10-08、直接のユーザー依頼("push/pullのあとでusilicを起動する際に、~/.local/lib/usilic/usilicrcよりも

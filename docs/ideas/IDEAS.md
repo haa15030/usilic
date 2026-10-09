@@ -41,10 +41,12 @@ legacyの挙動。
 - 【実装済み】FGREP/EGREP: 検索後の画面でマッチした文字列をハイライト等で
   表示 [文字装飾無し]
   現状: マッチした文字列をハイライト表示し、^N/^Pで次/前のマッチへ移動。
-- 【未実装】tcb初回起動時、`~/.tcb`に`tcbrc`が無ければ`/usr/local/lib/tcb/tcbrc`を
+- 【実装済み】tcb初回起動時、`~/.tcb`に`tcbrc`が無ければ`/usr/local/lib/tcb/tcbrc`を
   tcb自身がコピー [ユーザーによる事前コピーが必要]
-  現状: `~/.usilic/usilicrc`が無ければ`~/.local/lib/usilic/usilicrc`→
-  `/usr/local/lib/usilic/usilicrc`の順に直接読むが、コピーはしない。
+  現状: `~/.usilic/usilicrc`が無ければ、インストールされた既定のusilicrc(`~/.local/lib/usilic/`→
+  実行ファイルから見た`<PREFIX>/lib/usilic/`→`/usr/local/lib/usilic/`の順)をHOME配下へコピーする
+  (fm::usilicrc::ensureUser()、2026-10-02。2026-10-09に<PREFIX>の候補を足した、docs/CHANGES.md項目706)。
+  /usr/local等へ入れてもsudo無しで設定を変えられる(直接のユーザーの意見、2026-10-09)。
 - 【要確認】`^J^H`で表示するマニュアルを、ウィンドウサイズ変更に対応して都度
   成形 [成形済みのためCOLUMN幅固定]
   現状: HELPはTUTORIALのCUTになり、リサイズ時に分割し直す処理はあるが、

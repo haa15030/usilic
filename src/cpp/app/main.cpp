@@ -4941,6 +4941,7 @@ int main(int argc, char **argv) {
   std::string installLibDir;
   if (std::string exe = resolveOwnExecutablePath(); !exe.empty())
     installLibDir = std::filesystem::path(exe).parent_path().parent_path().string() + "/lib/usilic/";
+  fm::usilicrc::setInstallLibDirectory(installLibDir);
   // 2026-10-02追加(fm::usilicrc::ensureUser()参照): ~/.usilic/usilicrcが無ければ既定のものをコピーする。
   if (homeEnv) fm::usilicrc::ensureUser(homeEnv);
   // 2026-10-08: インストールされた既定のusilicrcの方が新しければ、控えを取ってから~/.usilic/usilicrcを
