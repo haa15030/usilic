@@ -91,7 +91,7 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
     // 修正すべきだった=bd/=be報告の「usilic v1.5b」側の半分であり、
     // 保存すべきものではなかった。
     ContentView::ModeLineFields fields{currentDirectory_, std::to_string(view_.totalByteCount()),
-                                        /*fillTrailingToEdge=*/!primaryAnnotations_.empty(), "usilic v1.5b",
+                                        /*fillTrailingToEdge=*/!primaryAnnotations_.empty(), ContentView::programWatermark(),
                                         trailing2};
     // reportEditError()/clearEditError()自身のコメント参照――読み取り
     // 時にここではクリアされ「ない」。実際のユーザー報告

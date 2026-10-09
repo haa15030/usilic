@@ -29503,3 +29503,31 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      src/HELP_en_.txtの用例の先頭の「２０００0」(20000、2段目の100000より速くなり段の並びが崩れる)は
      usilicrcと同じ200000に直した。src/HELP_en_.txtにもユーザーがsrc/HELP_.txtで消した重複のSPEEDの節を
      消した。
+717. **2026-10-10: 外部起動した子のusilicの目印を「親のPID:USILIC」に、履歴に「(usilic)」、USILICの目次にUSILIC、^Tn/^Tp、親の終了で子も終了**
+   - **経緯**: 直接のユーザー提案(項目713の反転表示は"印象が薄いので紛らわしさは拭えない")→6項目の案
+     (1.右下ラベルは非ハイライトの「PID:USILIC」 2.INFOにPID：引数追加 3.履歴の項目名に"(usilic)"を付加
+     4.USILICにUSILIC一覧を追加 5.外部起動群の切り換えに^Tp/^Tnを追加 6.親が消えると全ての子も消える)の検証の
+     依頼→確認への回答("1. それでいい。2. 親は出さない。3. ^Jpにも付ける。5. Pagerと(ls)が別ウィンドウの(a)"、
+     "末尾の`/`ではなくて`(`の直前が`/`かどうかで判別はできないの？"→できる、manの" (man)"と同じ方式)。
+   - **1・2**: 子へ渡すUSILIC_TRANSIENTの値を親のPIDにした。main.cppはContentView::programWatermark()(右下の透かし
+     の文字列、既定「usilic v1.5b」、項目713のchildInstanceMarked()を置き換え)を「親のPID:USILIC」にし(太字のまま)、
+     INFOのBoot optionsの前に「親のPID: 」を付ける。親の表示は変えない。
+   - **3・4**: runExternalUsilicPager()(^Ouと^Jpの"usilic ..."の両方)が引数を語に分け(splitShellWords())、実在する
+     ファイル・ディレクトリを絶対パス(ディレクトリは末尾に/)+" (usilic)"(kUsilicTag)でUSILICの履歴
+     (RingCategory::Usilic)へ記録する。^X^F/^X^DのFILE/DIRの履歴には入れない(パスとして使う箇所が多く壊れるため)。
+     種別はstripUsilicTag()で印を除いてから判定する(usilicKindOf())ので、印付きの項目はUSILICのFILE/DIRの一覧と
+     時系列の一覧にも出る。^[uの目次に6番目の見出し「USILIC」(印付きだけ、ソート・重複排除)を足した。印付きの
+     項目の^Mは外部起動し直す(ファイルは子のページャー、ディレクトリは子の(ls))。listTargetPaths()も印を除くので、
+     選んで^Ou・^Oc等もできる。
+   - **5**: ファイルとディレクトリが混ざっていれば、ファイル(とオプション等の他の語)の子とディレクトリの子を別々に
+     起動する(launchExternalUsilic()を2回、macOSのCUIでは別ウィンドウ、SSH等では同じ端末で順に)。子のmain.cppは
+     ディレクトリの引数を全部Application::setLaunchDirectories()へ渡し、^Tn/^Tp(cycleLaunchDirectory()、移り方は
+     ^J0〜^J9と同じ、端で回る)で行き来する。1つ以下なら「No other launched directories」。
+   - **6**: 子は端末・GUIの実行ループの度にkill(親のPID, 0)で親の生存を確かめ(transientParentGone())、いなければ
+     終わる。子は端末の新しいウィンドウやGUIの背後のプロセスで親の直接の子ではないため。親のクラッシュや単一
+     インスタンスの決まりで終了させられた場合にも効く。Terminal.appのウィンドウは項目711の仕組みで閉じる。
+   - **確認**: 隔離したHOMEのPTYで、子(親の代わりにsleep)の右下が「PID:USILIC」(太字)、^Tnで2つのディレクトリを
+     行き来、INFOが「PID: -c ...」、sleepをkillすると子が終わることを確認。親(SSH_TTYを立てて同じ端末の経路)で
+     ファイルとディレクトリを選んで^Ouするとページャー→(ls)の順に起動し、^[uのUSILICに「f1.txt (usilic)」
+     「sd/ (usilic)」が並び、sd/の^Mで子の(ls)が開くことを確認。
+   - src/HELP_.txt・src/HELP_en_.txtの^Ou・INFO・(ls)のモードライン・^Jp・USILICの目次の説明を直した。

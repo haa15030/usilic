@@ -127,6 +127,7 @@
 #include <cctype>
 #include <chrono>
 #include <csignal>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -1523,6 +1524,15 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
 volatile std::sig_atomic_t gTerminationSignalReceived = 0;
 void handleTerminationSignal(int) { gTerminationSignalReceived = 1; }
 
+// 2026-10-10、直接のユーザー依頼("履歴の無い(ls)が健在では混乱を来すため親が消えるとすべての子も消える"):
+// 親のusilicが外部起動した子(USILIC_TRANSIENT=親のPID)は、親がいなくなったら終わる。子は端末の新しいウィンドウや
+// GUIの背後のプロセスとして起動され親の直接の子ではないので、実行ループの度に親のPIDの生存を確かめる(親の
+// クラッシュや、単一インスタンスの決まりで別の起動に終了させられた場合にも効く)。0なら確かめない。
+pid_t gTransientParentPid = 0;
+bool transientParentGone() {
+  return gTransientParentPid > 0 && ::kill(gTransientParentPid, 0) != 0 && errno == ESRCH;
+}
+
 bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display &display, bool forceCui) {
   bool mouseTrackingOn = false;
   // Counts consecutive bare ESC presses, for the ESC-ESC-Enter direct-
@@ -1590,7 +1600,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     // plain `kill`/SIGTERM or terminal-hangup SIGHUP, unlike SIGKILL,
     // is recoverable -- this lets that recovery actually happen,
     // matching legacy's own key_term()/Key.f.term).
-    if (gTerminationSignalReceived) {
+    if (gTerminationSignalReceived || transientParentGone()) {
       app.requestImmediateExit();
       return leavePhase(true);
     }
@@ -2357,7 +2367,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       app.requestImmediateExit();
       return;
     }
-    if (gTerminationSignalReceived) {
+    if (gTerminationSignalReceived || transientParentGone()) {
       app.requestImmediateExit();
       return;
     }
@@ -4772,12 +4782,19 @@ int main(int argc, char **argv) {
   // 「pagerモードはKEY-modeの機能しか使わない」という既存の制限どおり
   // historyに触れない。
   // 2026-10-09、直接のユーザー提案("履歴にはアクセスしないその場限りのディレクトリ仕様ということで^Ou経由でのみ
-  // 起動可能というのは？"): 親のusilicが外部ページャーとして起動した子(USILIC_TRANSIENT=1、
+  // 起動可能というのは？"): 親のusilicが外部ページャーとして起動した子(USILIC_TRANSIENT=親のPID、
   // Application::runExternalUsilicPager()参照)は、ディレクトリを含んでいてもページャーと同じく履歴に触れず、
   // 下の単一インスタンスの決まりで親を終了させない。孫へは引き継がない。
-  bool transientLaunch = std::getenv("USILIC_TRANSIENT") != nullptr;
+  // 2026-10-10: USILIC_TRANSIENTの値は親のPID。右下の透かしを「親のPID:USILIC」にし(ContentView::
+  // programWatermark()参照)、親がいなくなったら終わる(transientParentGone()参照)。
+  const char *transientEnv = std::getenv("USILIC_TRANSIENT");
+  bool transientLaunch = transientEnv != nullptr;
+  long transientParent = transientEnv ? std::atol(transientEnv) : 0;
   ::unsetenv("USILIC_TRANSIENT");
-  fm::ContentView::childInstanceMarked() = transientLaunch;
+  if (transientParent > 1) {
+    gTransientParentPid = static_cast<pid_t>(transientParent);
+    fm::ContentView::programWatermark() = std::to_string(transientParent) + ":USILIC";
+  }
   bool consultHistoryOnStart = !isFileLaunch && !stdinPiped && !transientLaunch;
 
   // Ported from str.c's set_usilicrc()/S_hist path-building: both files
@@ -4919,6 +4936,8 @@ int main(int argc, char **argv) {
     if (!bootOptions.empty()) bootOptions += " ";
     bootOptions += token;
   }
+  // 2026-10-10、直接のユーザー依頼("INFOの「Boot Options」に「PID：引数」"): 外部起動した子は親のPIDを前に置く。
+  if (gTransientParentPid > 0) bootOptions = std::to_string(gTransientParentPid) + ": " + bootOptions;
 
   fm::History history;
   fm::Configuration configuration;
@@ -5376,14 +5395,17 @@ int main(int argc, char **argv) {
                                                             : std::filesystem::path(cwdFallback))
             .lexically_normal()
             .string();
-    // ファイルとディレクトリが混ざった起動(^Ouの選択等)は、最初のディレクトリを開く。
+    // ファイルとディレクトリが混ざった起動は、最初のディレクトリを開く。2026-10-10: 外部起動した子へは親が
+    // ディレクトリだけを渡す(Application::runExternalUsilicPager()参照)。複数あれば^Tn/^Tpで行き来する
+    // (Application::setLaunchDirectories()参照)。
+    std::vector<std::string> launchDirectories;
     for (const auto &arg : positionalArgs) {
       std::error_code ec;
-      if (std::filesystem::is_directory(arg, ec)) {
-        startDirectory = std::filesystem::absolute(arg).lexically_normal().string();
-        break;
-      }
+      if (std::filesystem::is_directory(arg, ec))
+        launchDirectories.push_back(std::filesystem::absolute(arg).lexically_normal().string());
     }
+    if (!launchDirectories.empty()) startDirectory = launchDirectories.front();
+    if (launchDirectories.size() > 1) app.setLaunchDirectories(launchDirectories);
     // History-based cursor restoration (see DirectoryMode::enterDirectory()'s
     // own comment) only applies to an argument-LESS launch -- legacy's
     // own "resume last session" case. An explicit path argument

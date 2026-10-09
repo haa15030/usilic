@@ -220,7 +220,7 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
       bool hasOrigin = originFrame && originFrame->nameOverride;
       fields.name = hasOrigin ? *originFrame->nameOverride : currentFile_;
       fields.trailing = std::to_string(bytes);
-      fields.rightWatermark = hasReturnTarget ? "" : "usilic v1.5b";
+      fields.rightWatermark = hasReturnTarget ? "" : ContentView::programWatermark();
       fields.trailing2 = hasOrigin ? originFrame->text : "";
       // 2026-09-17追加、直接のユーザー指摘("戻り値がPROGRAMなら
       // PROGRAMへ戻らないと。なんだけど、PROGRAMは^J^P(program一覧)

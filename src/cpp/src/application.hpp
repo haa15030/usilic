@@ -1559,6 +1559,11 @@ class Application {
   // 2026-10-09: ^Uは回数の前置きも兼ねる(^U=4、^U^U=16、^U 数字=その数)。universalCount_に
   // 数え、次のコマンドの回数(pendingRepeatCount_)にする。
   bool universalArgPending_ = false;
+  // ^T(^Tn/^Tp、setLaunchDirectories()参照)の2番目のキー待ち。
+  bool leaderTPending_ = false;
+  std::vector<std::string> launchDirectories_;
+  std::size_t launchDirectoryIndex_ = 0;
+  bool cycleLaunchDirectory(int step);
   int universalCount_ = 4;
   bool universalDigits_ = false;
   int pendingRepeatCount_ = 1;
@@ -1765,6 +1770,8 @@ class Application {
   bool pollShellHandoff();
   // ^Jpの"usilic ..."・^Ouを外部ページャーとして起動する(.cpp側のコメント参照、2026-10-09)。
   bool runExternalUsilicPager(const std::string &command);
+  void launchExternalUsilic(const std::string &directory, const std::string &args, const std::string &command,
+                            bool *recorded);
   bool openInNewTerminalWindow(const std::string &directory, const std::string &command);
   // pollPagerExitNotice()自身の宣言コメント参照(2026-09-20追加)。
   // `suppressDraw`(2026-09-07追加、直接のユーザー報告"わかったのは
@@ -1796,6 +1803,9 @@ class Application {
   // 新しいウィンドウ(openInNewTerminalWindow())で開いた外部ページャーのusilicが終わったら(目印のファイルが
   // 消えたら)「Opened in a new window」を消す。端末の実行ループが毎回呼ぶ。
   void pollExternalPagerWindows();
+  // 2026-10-10、直接のユーザー依頼("外部起動群の切り換えに^Tp/^Tnを追加"): 外部起動した子が複数のディレクトリを
+  // 渡された時、それらを^Tn/^Tpで行き来する(main.cppが起動時に設定、1つ以下なら設定しない)。
+  void setLaunchDirectories(std::vector<std::string> directories) { launchDirectories_ = std::move(directories); }
   // 2026-09-06追加、直接のユーザー報告("％の行数が97と98を行き来...
   // -g起動ではスクロールバーの（つまみ長を短くする）描き直しでも
   // モードライン描画が起きるみたい")――Command::ScrollLineDown/
@@ -4141,7 +4151,7 @@ private:
   // USILIC一覧の階層: None=マーク一覧/時系列、Toc=MAN/DIR/FILE目次、Group=種別ごとの一覧。
   enum class UsilicLevel { None, Toc, Group };
   UsilicLevel usilicLevel_ = UsilicLevel::None;
-  int usilicGroupKind_ = 0;  // 目次で最後に選んだ種別(usilicTocTitles()の添字: 0=MAN、1=DIR、2=FILE、3=PROGRAM、4=WORK)
+  int usilicGroupKind_ = 0;  // 目次で最後に選んだ種別(usilicTocTitles()の添字: 0=MAN、1=DIR、2=FILE、3=PROGRAM、4=WORK、5=USILIC)
   // ^Ou(閲覧)を(ls)以外の一覧(LOCATE/DU/^X^F・^X^D/USILIC)から発動した時の
   // 戻り先(2026-09-27、直接のユーザー依頼"（ls）で可能なファイル操作には
   // 「閲覧」（^Ou）もあるのでよろしく")。^Gで発動元の一覧へ戻す。USILICから

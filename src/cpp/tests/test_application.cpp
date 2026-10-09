@@ -15380,7 +15380,7 @@ TEST_CASE_FIXTURE(Fixture, "^J^U/^Ju: FILE/DIR/MAN accesses are mirrored into th
   }
   REQUIRE(app.handleCommand(Command::Back));
   REQUIRE(app.handleCommand(Command::StartUsilicToc));
-  CHECK(app.underlineMode().entries() == std::vector<std::string>{"MAN", "DIR", "FILE", "PROGRAM", "WORK"});
+  CHECK(app.underlineMode().entries() == std::vector<std::string>{"MAN", "DIR", "FILE", "PROGRAM", "WORK", "USILIC"});
   REQUIRE(app.handleCommand(Command::MoveDown));
   REQUIRE(app.handleCommand(Command::MoveDown));
   REQUIRE(app.handleCommand(Command::Enter));
@@ -15669,7 +15669,7 @@ TEST_CASE_FIXTURE(Fixture, "^J^Ow opens the WORK group of the USILIC table of co
   CHECK(app.currentMode() == ApplicationMode::Underline);
   CHECK(app.underlineMode().entries().empty());  // まだ^X^Wしていない
   REQUIRE(app.handleCommand(Command::Back));  // 目次へ
-  CHECK(app.underlineMode().entries() == std::vector<std::string>{"MAN", "DIR", "FILE", "PROGRAM", "WORK"});
+  CHECK(app.underlineMode().entries() == std::vector<std::string>{"MAN", "DIR", "FILE", "PROGRAM", "WORK", "USILIC"});
 }
 
 // 同日、"EGREPの一覧を復活して欲しい": usilicrcのEGREP節(旧GREP)の実例が

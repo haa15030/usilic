@@ -1630,8 +1630,7 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments(bool t
       if (gap > 0) segments.push_back({std::string(static_cast<std::size_t>(gap), ' '), false});
       Display::ModeLineSegment watermarkSegment;
       watermarkSegment.text = watermark;
-      watermarkSegment.standout = childInstanceMarked();
-      watermarkSegment.bold = !childInstanceMarked();
+      watermarkSegment.bold = true;
       segments.push_back(watermarkSegment);
     }
   }
@@ -1643,9 +1642,9 @@ std::string &ContentView::modeNameOverride() {
   return name;
 }
 
-bool &ContentView::childInstanceMarked() {
-  static bool marked = false;
-  return marked;
+std::string &ContentView::programWatermark() {
+  static std::string watermark = "usilic v1.5b";
+  return watermark;
 }
 
 // modeLineFieldsProvider_の結果に、modeNameOverride()(^X(〜^X)の"MACRO")を当てたもの。
@@ -2373,10 +2372,9 @@ void ContentView::renderModeLine() {
     std::string watermark = " " + fields.rightWatermark + " ";
     if (cols > 0 && drawnLen + static_cast<int>(watermark.size()) <= cols) {
       display_.moveCursor(modeLineRow, cols - static_cast<int>(watermark.size()));
-      bool child = childInstanceMarked();  // 子のusilicは反転(childInstanceMarked()参照)
-      display_.setAttribute(child ? Display::Attribute::Standout : Display::Attribute::Bold);
+      display_.setAttribute(Display::Attribute::Bold);
       for (unsigned char c : watermark) display_.putChar(c);
-      display_.setAttribute(child ? Display::Attribute::StandoutOff : Display::Attribute::BoldOff);
+      display_.setAttribute(Display::Attribute::BoldOff);
     }
   }
 }

@@ -264,6 +264,54 @@ std::string shellQuoteArgv(const std::vector<std::string> &argv) {
   return line;
 }
 
+// シェルと同じ規則(空白で区切る、'...'はそのまま、"..."と裸の\はバックスラッシュで次の1文字)で語に分ける
+// (2026-10-10、Application::runExternalUsilicPager()が^Jpの"usilic ..."・^Ouの引数を分けるため。展開はしない)。
+std::vector<std::string> splitShellWords(const std::string &line) {
+  std::vector<std::string> words;
+  std::string word;
+  bool inWord = false;
+  for (std::size_t i = 0; i < line.size(); i++) {
+    char c = line[i];
+    if (c == ' ' || c == '\t' || c == '\n') {
+      if (inWord) words.push_back(word);
+      word.clear();
+      inWord = false;
+      continue;
+    }
+    inWord = true;
+    if (c == '\'') {
+      std::size_t close = line.find('\'', i + 1);
+      if (close == std::string::npos) close = line.size();
+      word += line.substr(i + 1, close - i - 1);
+      i = close;
+    } else if (c == '"') {
+      for (i++; i < line.size() && line[i] != '"'; i++) {
+        if (line[i] == '\\' && i + 1 < line.size() && std::string("\"\\$`").find(line[i + 1]) != std::string::npos) i++;
+        word += line[i];
+      }
+    } else if (c == '\\' && i + 1 < line.size()) {
+      word += line[++i];
+    } else {
+      word += c;
+    }
+  }
+  if (inWord) words.push_back(word);
+  return words;
+}
+
+// 2026-10-10、直接のユーザー依頼("^Ouで外部起動したページャーおよび(ls)には履歴に"(usilic)"を付加"): USILICの
+// 履歴(RingCategory::Usilic)で、外部起動したものの印。manページの" (man)"と同じく項目の文字列の末尾に付け、
+// 種別はこれを除いた残りで判定する(ディレクトリなら"/"の直後に付く)。
+constexpr const char *kUsilicTag = " (usilic)";
+
+// `entry`の末尾がkUsilicTagなら除いてtrue。
+bool stripUsilicTag(std::string &entry) {
+  static const std::string tag = kUsilicTag;
+  if (entry.size() <= tag.size() || entry.compare(entry.size() - tag.size(), tag.size(), tag) != 0) return false;
+  entry.erase(entry.size() - tag.size());
+  return true;
+}
+
 // `ls -alF`(Configuration::commandFor(ConfiguredRole::Ls)自身の
 // デフォルト、configuration.cpp参照)がDirectoryEntry::nameの末尾に
 // 付与する型マーカー(ディレクトリ'/'、実行可能'*'、シンボリックリンク
@@ -882,7 +930,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     fields.name = "SHELL";
     fields.trailing = std::to_string(bytes);
     fields.fillTrailingToEdge = hasPrev;
-    fields.rightWatermark = hasPrev ? "" : "usilic v1.5b";
+    fields.rightWatermark = hasPrev ? "" : ContentView::programWatermark();
     fields.trailing2 = "(" + shell_.programName() + ")";
     fields.trailing3 = shellReturnName_;
     // 2026-09-20再修正(直接のユーザー指摘、前回の対応は不十分だった):
@@ -2531,6 +2579,16 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   bool leaderPending = escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ ||
                        leaderXRPending_ || registerPending_ != RegisterAction::None || leaderOPending_ ||
                        leaderCPending_ || gotoLineGPending_ || gotoLineDigitsPending_;
+  // 2026-10-10: ^Tn/^Tp(外部起動した子の(ls)で、渡されたディレクトリを行き来する、setLaunchDirectories()参照)。
+  if (leaderTPending_) {
+    leaderTPending_ = false;
+    if (!special && (byte == 'n' || byte == 'p')) return cycleLaunchDirectory(byte == 'n' ? 1 : -1);
+    return false;
+  }
+  if (!special && byte == 0x14 && !leaderPending && !universalArgPending_) {
+    leaderTPending_ = true;
+    return true;
+  }
   if (repeatZPending_ && !leaderPending) {
     repeatZPending_ = false;
     if (!special && byte == 'z') return handleCommand(Command::RepeatLastCommand);
@@ -6567,6 +6625,27 @@ bool Application::jumpToPathPrefix() {
 // するか(Shellのコマンドラインを事前に埋めるのか?Shellが既に開始
 // されている必要があるのか?)を決めることは、当てずっぽうにする
 // のではなく意図的に未着手のままにしてあるため。
+// 2026-10-10、直接のユーザー依頼("外部起動群の切り換えに^Tp/^Tnを追加"): 外部起動した子に渡された複数の
+// ディレクトリ(setLaunchDirectories())を、^Tnで次、^Tpで前へ(端で反対の端へ回る)。移り方はjumpToPathPrefix()
+// (^J0〜^J9)と同じで、どの画面からでも(ls)へ移る。渡されたディレクトリが1つ以下なら知らせるだけ。
+bool Application::cycleLaunchDirectory(int step) {
+  if (launchDirectories_.size() < 2) {
+    showTransientNotice(activeView(), "No other launched directories");
+    return false;
+  }
+  std::size_t count = launchDirectories_.size();
+  launchDirectoryIndex_ = (launchDirectoryIndex_ + count + (step > 0 ? 1 : count - 1)) % count;
+  clearListReturnAnnotations();
+  std::string previousDirectory = directoryMode_.currentDirectory();
+  if (!directoryMode_.enterDirectory(launchDirectories_[launchDirectoryIndex_])) return false;
+  if (!previousDirectory.empty()) directoryMode_.resetNavigationToFloor(previousDirectory);
+  currentMode_ = ApplicationMode::Directory;
+  display_.hideVisibleCursor();
+  directoryView_.redraw();
+  showTransientNotice(directoryView_, std::to_string(launchDirectoryIndex_ + 1) + "/" + std::to_string(count));
+  return true;
+}
+
 bool Application::openSelectedListEntry() { return openSelectedListEntryImpl(); }
 
 bool Application::openSelectedListEntryImpl() {
@@ -6994,12 +7073,15 @@ std::vector<std::string> Application::collectTargetFilePaths() const {
 // "^J^P一覧をUSILICのMAN/FILE/DIR一覧にPROGRAMで加えてほしい"、"WORKも
 // そうしたい（^J^Ow）ので^[u（複数ファイル可）で対応")。usilicGroupKind_は
 // この並びの添字。
+// 2026-10-10: USILIC(外部起動したもの、kUsilicTag参照)を追加(直接のユーザー依頼"USILICには"(usilic)"のみの
+// 一覧をUSILICで追加する")。
 static const std::vector<std::string> &usilicTocTitles() {
-  static const std::vector<std::string> titles = {"MAN", "DIR", "FILE", "PROGRAM", "WORK"};
+  static const std::vector<std::string> titles = {"MAN", "DIR", "FILE", "PROGRAM", "WORK", "USILIC"};
   return titles;
 }
 static constexpr int kUsilicGroupProgram = 3;
 static constexpr int kUsilicGroupWork = 4;
+static constexpr int kUsilicGroupExternal = 5;
 
 // activeListMarks()/listTargetPaths()(2026-09-27): application.hpp自身の
 // 宣言コメント参照。^X^F/^X^Dの一覧(ListBrowser)はファイル/ディレクトリの
@@ -7078,6 +7160,7 @@ std::vector<std::string> Application::listTargetPaths() const {
   }
   std::vector<std::string> paths;
   for (auto &path : raw) {
+    stripUsilicTag(path);  // USILICの外部起動の印(2026-10-10、kUsilicTag参照)
     while (path.size() > 1 && path.back() == '/') path.pop_back();
     std::error_code ec;
     if (!path.empty() && path.front() == '/' && std::filesystem::exists(path, ec)) paths.push_back(path);
@@ -7151,8 +7234,10 @@ bool Application::startUsilicHistory(UsilicStyle style) {
 }
 
 // 履歴1行の種別: `/`で始まらなければMAN、`/`で始まり`/`で終わればDIR、それ以外はFILE。
+// 外部起動の印(kUsilicTag)は除いてから判定する(印の付いたものはDIR/FILEの一覧にも出る)。
 
-static int usilicKindOf(const std::string &e) {
+static int usilicKindOf(std::string e) {
+  stripUsilicTag(e);
   if (e.empty() || e[0] != '/') return 0;
   return e.back() == '/' ? 1 : 2;
 }
@@ -7167,6 +7252,13 @@ bool Application::openUsilicGroup(const std::string &title) {
   } else if (kind == kUsilicGroupWork) {
     // 作成順(w.1、w.2...)のまま。まだ無ければ空の一覧。
     entries = allocatedWorkFiles_;
+  } else if (kind == kUsilicGroupExternal) {
+    for (const auto &e : history_.recentEntries(RingCategory::Usilic)) {
+      std::string path = e;
+      if (stripUsilicTag(path)) entries.push_back(e);
+    }
+    std::sort(entries.begin(), entries.end());
+    entries.erase(std::unique(entries.begin(), entries.end()), entries.end());
   } else {
     const auto &ring = history_.recentEntries(RingCategory::Usilic);
     for (const auto &e : ring)
@@ -7190,6 +7282,16 @@ bool Application::openSelectedUnderlineEntry() {
     programPromptDirectory_.clear();
     activatePrompt(PromptKind::ProgramCommand, *path);
     return true;
+  }
+  // 2026-10-10、直接のユーザー依頼("FILEから選んだ時は外部ページャー、DIRからは外部(ls)となる"): 外部起動の印
+  // (kUsilicTag)の付いた項目は、もう一度外部起動する(ディレクトリなら子の(ls)、ファイルなら子のページャー)。
+  {
+    std::string target = *path;
+    if (stripUsilicTag(target)) {
+      while (target.size() > 1 && target.back() == '/') target.pop_back();
+      programPromptDirectory_.clear();
+      return runExternalUsilicPager("usilic " + shellQuoteArg(target));
+    }
   }
   // 2026-09-21追加: アクセス履歴の"名前 (man)"はmanページとして開き、^Gで
   // このUSILIC一覧へ戻る。
@@ -16777,50 +16879,83 @@ bool Application::pollShellHandoff() {
 // ウィンドウもそのまま使える。-cではlessと同じく端末を明け渡し、子を終えたら戻る(ProgramMode::run())。
 // `command`は"usilic 引数..."。-c/-gが無ければ今の画面と同じ方を足す。
 bool Application::runExternalUsilicPager(const std::string &command) {
-  bool graphical = display_.isGraphical();
   std::size_t start = command.find("usilic");
   std::string args = start == std::string::npos ? std::string() : command.substr(start + 6);
-  bool hasUiFlag = false;
-  for (std::size_t i = 0; i < args.size();) {
-    std::size_t j = args.find_first_not_of(" \t", i);
-    if (j == std::string::npos) break;
-    std::size_t k = args.find_first_of(" \t", j);
-    std::string word = args.substr(j, k == std::string::npos ? std::string::npos : k - j);
-    if (word == "-c" || word == "-g") hasUiFlag = true;
-    i = k == std::string::npos ? args.size() : k;
-  }
-  // 2026-10-09、直接のユーザー提案("履歴にはアクセスしないその場限りのディレクトリ仕様ということで^Ou経由でのみ
-  // 起動可能というのは？"): 選んだ中にディレクトリがあると子はファイルマネージャーとして起動し、単一インスタンスの
-  // 決まり(main.cppの~/.usilic/pid)で親を終了させていた。USILIC_TRANSIENT=1を付けて起動した子は、履歴に触れず
-  // 親も終了させない(main.cpp参照)。環境変数なので普通の端末から打った起動には付かない。
-  std::string run = "USILIC_TRANSIENT=1 usilic" + std::string(hasUiFlag ? "" : (graphical ? " -g" : " -c")) + args;
-  std::string toRun = "unset USILIC USILIC_HANDOFF; " + cdWrap(programPromptDirectory_, run);
   std::string directory = programPromptDirectory_;
   programPromptDirectory_.clear();  // 結果に関わらず正確に一度消費される、executeProgram()自身の慣習通り
-  if (!graphical && openInNewTerminalWindow(directory, "unset USILIC USILIC_HANDOFF; " + run)) {
-    history_.pushRecent(RingCategory::ShellCommand, command);
-    showTransientNotice(activeView(), "Opened in a new window");
-    externalPagerNoticeShown_ = true;  // showTransientNotice()が呼ぶclearTransientNotice()の後で立てる
-    return true;
+  // 2026-10-10、直接のユーザー依頼("FILEから選んだ時は外部ページャー、DIRからは外部(ls)"、"Pagerと(ls)が別
+  // ウィンドウ"): 引数を語に分け、実在するファイルとディレクトリが両方あれば、ファイル(とそれ以外の語)の
+  // ページャーとディレクトリの(ls)を別々に起動する(以前は子がディレクトリの方だけを開き、ファイルは捨てていた)。
+  // 実在するものは、USILICの履歴に" (usilic)"を付けて記録する(kUsilicTag参照)。
+  std::string base = directory;
+  if (base.empty()) {
+    std::error_code ec;
+    base = std::filesystem::current_path(ec).string();
   }
-  if (graphical) {
-    // 別のウィンドウ: 待たない(shは子を背後に回してすぐ終わるので、ここではshだけを回収する)。
-    ChildProcess::runInteractive({"sh", "-c", "(" + toRun + ") </dev/null >/dev/null 2>&1 &"});
-    history_.pushRecent(RingCategory::ShellCommand, command);
+  const char *home = std::getenv("HOME");
+  std::vector<std::string> options, files, directories;
+  for (const auto &word : splitShellWords(args)) {
+    if (word.empty() || word[0] == '-') {
+      options.push_back(word);
+      continue;
+    }
+    std::string path = word;
+    if (home && (path == "~" || path.rfind("~/", 0) == 0)) path = std::string(home) + path.substr(1);
+    std::filesystem::path resolved = std::filesystem::path(path).is_absolute() ? std::filesystem::path(path)
+                                                                               : std::filesystem::path(base) / path;
+    std::string normal = resolved.lexically_normal().string();
+    while (normal.size() > 1 && normal.back() == '/') normal.pop_back();
+    std::error_code ec;
+    if (std::filesystem::is_directory(normal, ec)) {
+      directories.push_back(word);
+      history_.pushRecent(RingCategory::Usilic, (normal == "/" ? normal : normal + "/") + kUsilicTag);
+    } else {
+      files.push_back(word);
+      if (std::filesystem::exists(normal, ec)) history_.pushRecent(RingCategory::Usilic, normal + kUsilicTag);
+    }
+  }
+  auto join = [&](const std::vector<std::string> &paths) {
+    std::string line;
+    for (const auto &w : options) line += " " + shellQuoteArgIfNeeded(w);
+    for (const auto &w : paths) line += " " + shellQuoteArgIfNeeded(w);
+    return line;
+  };
+  bool recorded = false;  // ProgramMode::run()はPROGRAMの履歴へ自分で記録する
+  if (!files.empty() && !directories.empty()) {
+    launchExternalUsilic(directory, join(files), command, &recorded);
+    launchExternalUsilic(directory, join(directories), command, &recorded);
   } else {
-    programMode_.run(toRun, command);
+    launchExternalUsilic(directory, args, command, &recorded);
   }
+  if (!recorded) history_.pushRecent(RingCategory::ShellCommand, command);
   activeView().redraw();
   return true;
 }
 
-// 2026-10-09、直接のユーザー依頼("Terminal.appの新しいウィンドウ方式で入れてみて"): -cの外部ページャーの
-// usilicを、-gの別のウィンドウと同じく待たずに使えるよう、macOSではTerminal.appの新しいウィンドウで動かす
-// (1つの端末を2つの全画面のプログラムで取り合うことはできないので、端末そのものを分ける)。新しいウィンドウの
-// シェルはこのusilicの作業ディレクトリを引き継がないので、明示的にcdする。usilicの終了でexitし、ウィンドウを
-// 閉じる(Terminal.appは設定に関わらず閉じるよう、下で自分で閉じる)。SSHの先ではウィンドウが手元に
-// 出ないので使わない。osascriptが失敗したら(Terminal.appの操作の許可を断られた等)falseを返し、呼び出し側は
-// 今まで通り端末を明け渡して待つ。
+// runExternalUsilicPager()の1つ分の起動。`args`は"usilic"の後ろ(先頭の空白込み)。子にはUSILIC_TRANSIENTで
+// このusilicのPIDを渡す(子は右下に「PID:USILIC」を出し、このusilicが終われば自分も終わる、main.cpp参照)。
+void Application::launchExternalUsilic(const std::string &directory, const std::string &args,
+                                       const std::string &command, bool *recorded) {
+  bool graphical = display_.isGraphical();
+  bool hasUiFlag = false;
+  for (const auto &word : splitShellWords(args))
+    if (word == "-c" || word == "-g") hasUiFlag = true;
+  std::string run = "USILIC_TRANSIENT=" + std::to_string(::getpid()) + " usilic" +
+                    std::string(hasUiFlag ? "" : (graphical ? " -g" : " -c")) + args;
+  std::string toRun = "unset USILIC USILIC_HANDOFF; " + cdWrap(directory, run);
+  if (!graphical && openInNewTerminalWindow(directory, "unset USILIC USILIC_HANDOFF; " + run)) {
+    showTransientNotice(activeView(), "Opened in a new window");
+    externalPagerNoticeShown_ = true;  // showTransientNotice()が呼ぶclearTransientNotice()の後で立てる
+    return;
+  }
+  if (graphical) {
+    ChildProcess::runInteractive({"sh", "-c", "(" + toRun + ") </dev/null >/dev/null 2>&1 &"});
+  } else {
+    programMode_.run(toRun, command);  // 2つ目(ページャーの後の(ls))は同じ文字列なので履歴では重ならない
+    *recorded = true;
+  }
+}
+
 bool Application::openInNewTerminalWindow(const std::string &directory, const std::string &command) {
 #ifdef __APPLE__
   if (std::getenv("SSH_CONNECTION") || std::getenv("SSH_TTY")) return false;
