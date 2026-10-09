@@ -29354,3 +29354,49 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      名前が「ユーザーコマンド」になっていた。
    - **変更**: convertMarkupToMsRoffSource()は、仮名(U+3041-U+30FF)・漢字(U+4E00-U+9FFF)を含む時だけ日本語とする。
      英訳の仮の変換で"User Commands"、日本語(~/HELP.txt等)は今まで通り「ユーザーコマンド」を確認。テスト1件。
+
+703. **2026-10-09: Emacsから移植(1): ^Uの回数(C-u)、^X zで直前のコマンドを繰り返す(C-x z)、^Lを続けて押すと中央⇒上端⇒下端(C-l)**
+   - **経緯**: 直接のユーザー依頼("emacs から、ファイル編集以外で移植できそうな機能がないか調べてみて"→挙げた候補の
+     推奨順(1・2・4、5・6、8・10)に"その順で実装してみて")。
+   - **変更**:
+     - ^U: 回数の前置き。^U=4、続けての^Uで4倍、^Uの後の数字はその数(^U 1 0 ^N)。次のコマンドが移動・繰り返しの
+       もの(Application::isRepeatableByCount(): ^N/^P/矢印、j/k、ページ送り、:/;、in-place GREPの^N/^P、[/]、
+       n/p、^Xe)ならhandleCommand()がその回数だけ繰り返す。^U^SPC(項目698)は回数に関わらず今まで通り。
+       回数はApplication::pendingRepeatCount_で、マクロの中の^Uにも効く。^Uの後の^J/^X/^O/ESCの列(^U ^Xe等)にも効く。
+     - ^X z(Command::RepeatLastCommand): 最後にキーから実行したコマンドを、その^Uの回数ごともう一度。続けてzだけで
+       繰り返す(Application::repeatZPending_、z以外のキーで解除)。マクロの実行(^Xe)の後ならマクロ全体を繰り返す。
+     - ^L: 今まで通り再表示して今の行を中央へ置くが、続けて押すと上端、下端、中央…と巡る(recenterPhase_)。
+   - **不具合の修正(項目698)**: handleCommand()の「一番外側か」の判定がstdinPagerCheckDepth_==0だったが、キーから
+     来たコマンドはfeedUntranslatedByte()が既にstdinPagerCheckDepth_を上げているので、キー操作では一度も
+     previousCommand_が記録されていなかった(テストはhandleCommand()を直接呼ぶので通っていた)。そのため「続けての
+     ページ送りではマークを積むのは最初の1回だけ」が実機では効かず、ページ送りのたびに積んでいたはず。コマンドの
+     入れ子の深さ(commandDepth_)で判定するようにした。
+   - **テスト**: "Emacs: ^U count, ^X z repeat, ^L cycle, registers and bookmarks"(項目704の分も含む)。
+
+704. **2026-10-09: Emacsから移植(2): レジスタ(^X r SPC c/^X r j c、C-x r SPC/C-x r j)とブックマーク(^X r m/^X r b/^X r l、C-x r m/b/l)**
+   - **経緯**: 項目703と同じ依頼。ブックマークはdocs/ideas/IDEAS.mdのEPUB 4.に【未実装】として載っていたもの
+     (2026-09-30、"読書に特化したモードなのでbookmarkも必要かと")。
+   - **変更**:
+     - 場所(Application::Place)はパスと元の行番号。FILEは今のファイルの元の行(縦書きの本は
+       epubVerticalCurrentRaw()、同じ行番号なので縦横どちらで開いても同じ位置)、(ls)は今のディレクトリ(行番号0)。
+       それ以外の画面では置けない("Can't set ... here")。
+     - 飛ぶ(jumpToPlace()): ディレクトリならそこへ、ファイルは今見ているものでなければopenRecentFileEntry()で開いて
+       (EPUBは本として)、その行へ(goToFileRawLine()、ESC数字と同じ。飛ぶ前の行はマークリングへ積むので^X^Xで戻れる)。
+     - レジスタ: ^X r SPC(または^X r ^SPC)の後の1文字に今の場所を、^X r jの後の1文字でそこへ。起動中だけ(registers_)。
+     - ブックマーク: ~/.usilic/bookmarks(usilicrcと同じディレクトリ)に「名前<TAB>行番号<TAB>パス」、使った順。
+       一覧(startBookmarkList())は^X^Sのマクロ一覧と同じく一覧の上のプロンプト(PromptKind::Bookmark、モード名
+       BOOKMARK)で、^N/^Pで一覧の名前を選ぶ。^X r mは"Set: "で名前(初期値はファイル名)を尋ね、同じ名前は置き換え。
+       ^X r b/^X r lは"Jump: "で^Mでその場所へ、「-名前」^Mで削除。^Gで元の画面へ。
+   - **HELP**: src/HELP_.txt・src/HELP_en_.txtのページャーのキーの表と、マークの説明の後に段落を足した(項目703の分も)。
+
+705. **2026-10-09: Emacsから移植(3): (ls)の'%'で名前が正規表現に合うもの、'*'で拡張子が同じものをまとめて選択(diredの% m、* .)**
+   - **経緯**: 項目703と同じ依頼。
+   - **変更**: Command::MarkByRegex('%')・MarkByExtension('*')。(ls)だけで、プロンプト(PromptKind::MarkPattern、モード名
+     MARK、"Regexp: "/"Extension: ")で尋ね、^Mで合う名前を選択に加える(executeMarkPattern())。正規表現はPOSIXの拡張
+     (std::regex::extended、部分一致)、書き間違いはベルでプロンプトのまま。'*'の初期値はカーソル行の拡張子。名前の末尾の
+     ls -Fの印は外して比べ、"."・".."は選ばない。件数を"N files marked"と出す。
+   - **HELP**: src/HELP_.txt・src/HELP_en_.txtの「ファイル選択」の表に2行。
+   - **テスト**: "Emacs dired: % marks by regexp, * by extension"。
+   - **見送り(同じ依頼の候補のうち)**: 6.(save-place、開き直すと前回の位置)は既にある(History::positionFor()の
+     FILE、~/.usilic/historyに残る)。8.(occur)はCUT(^Cb、一致した行の一覧から^Mでその行へ)が同じ働き。7.(行番号で
+     移動)もESC数字・ESC g gで既にある。

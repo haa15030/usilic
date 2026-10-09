@@ -13,6 +13,7 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <regex>
 #include <iostream>
 #include <limits>
 #include <set>
@@ -192,6 +193,7 @@ bool isGrepInPlaceSafeCommand(Command command) {
     case Command::ExchangeJumpMark:
     case Command::SetMark:
     case Command::PopMark:
+    case Command::RepeatLastCommand:
     case Command::Redraw:
       return true;
     default:
@@ -2383,6 +2385,10 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::StartHelp;
     // 'e'(EDIT)は2026-10-02に^[eへ移し、'e'はusilicrcのMACRO(e→^[e)にした(直接のユーザー依頼"e/hを
     // それぞれ^[e/^J^OhとしたうえでMACROに設定してはどうかな。1文字だし設定例として使える")。
+    case '%':  // (ls)で正規表現に合う名前を選ぶ(Emacsのdiredの% m、2026-10-09)
+      return Command::MarkByRegex;
+    case '*':  // (ls)で同じ拡張子を選ぶ(Emacsのdiredの* .、2026-10-09)
+      return Command::MarkByExtension;
     case 0x80:  // ^Space(M_mark)――KeyInputはリテラルなNUL/Ctrl-Spaceを0x80として報告する、そのクラスコメント参照
     case '.':   // 2026-08-23: 同じプレーンなトグル、移動は無い――ToggleMark自身のコメント参照
       return Command::ToggleMark;
@@ -2518,6 +2524,41 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // コメント参照): セッション中だけ、通常のresolveCommand()の^N/^P
   // (MoveDown/MoveUp)より先に横取りする――Shell/Copyの上の2分岐と
   // 同じ優先度・同じ理由。
+  // 2026-10-09、直接のユーザー依頼(Emacsから移植できる機能): ^U(EmacsのC-u)は回数の前置き。^U=4、
+  // 続けての^Uで4倍、^Uの後の数字はその数(^U 1 0 ^N で10行)。次のコマンドを
+  // handleCommand()がその回数だけ繰り返す(isRepeatableByCount())。^U^SPC(C-u C-SPC)は回数に
+  // 関わらず最新のマークへ飛ぶ(Command::PopMark参照)。^J/^X/^O/ESCの途中のキーは、ここでは扱わない。
+  bool leaderPending = escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ ||
+                       leaderXRPending_ || registerPending_ != RegisterAction::None || leaderOPending_ ||
+                       leaderCPending_ || gotoLineGPending_ || gotoLineDigitsPending_;
+  if (repeatZPending_ && !leaderPending) {
+    repeatZPending_ = false;
+    if (!special && byte == 'z') return handleCommand(Command::RepeatLastCommand);
+  }
+  if (universalArgPending_ && !leaderPending) {
+    if (!special && byte == 0x15) {
+      if (!universalDigits_) universalCount_ = std::min(universalCount_ * 4, 1 << 20);
+      showTransientNotice(activeView(), "C-u " + std::to_string(universalCount_) + "-");
+      return true;
+    }
+    if (!special && byte >= '0' && byte <= '9') {
+      int digit = byte - '0';
+      universalCount_ = universalDigits_ ? std::min(universalCount_ * 10 + digit, 1 << 20) : digit;
+      universalDigits_ = true;
+      showTransientNotice(activeView(), "C-u " + std::to_string(universalCount_) + "-");
+      return true;
+    }
+    universalArgPending_ = false;
+    clearTransientNotice();
+    if (!special && byte == 0x80) return handleCommand(Command::PopMark);
+    pendingRepeatCount_ = std::max(universalCount_, 0);
+  } else if (!special && byte == 0x15 && !leaderPending && currentMode_ != ApplicationMode::Shell) {
+    universalArgPending_ = true;
+    universalCount_ = 4;
+    universalDigits_ = false;
+    showTransientNotice(activeView(), "C-u-");
+    return true;
+  }
   if (grepInPlaceActive_ && !special && (byte == 0x0e || byte == 0x10)) {
     return handleCommand(byte == 0x0e ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
   }
@@ -2575,12 +2616,14 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     }
   }
   if (!special && byte == kControlC && !escPending_ && !leaderJPending_ && !leaderJOPending_ && !leaderXPending_ &&
+      !leaderXRPending_ && registerPending_ == RegisterAction::None &&
       !leaderOPending_ && !gotoLineGPending_ && !gotoLineDigitsPending_) {
     leaderCPending_ = true;
     return true;  // シーケンス継続中、no-opではない
   }
 
-  if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ ||
+  if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderXRPending_ ||
+      registerPending_ != RegisterAction::None || leaderOPending_ ||
       gotoLineGPending_ || gotoLineDigitsPending_ ||
       (!special && (byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape))) {
     return dispatchLeaderByte(byte, special);
@@ -2636,17 +2679,6 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // キーも): SHELL・プロンプトの文字入力でだけ使うキー(^W ^U ^Y ^D ^E ^A ^Q、HELPの[SHELL]の
   // 「コマンド行」)は、ここ(一覧・閲覧の画面)では何もしないので、そう知らせる。^H/^K/^I/^L/^B/^F/^C
   // は、ここでは別の機能に割り当てられているので対象外。
-  // 2026-10-09: ^U^SPC(EmacsのC-u C-SPC)で最新のマークへ飛ぶ(Command::PopMark参照)。^Uの後が^SPC
-  // でなければ、^Uは無かったことにしてそのキーを普通に処理する。
-  if (!special && byte == 0x15 && currentMode_ != ApplicationMode::Shell) {
-    universalArgPending_ = true;
-    showTransientNotice(activeView(), "C-u-");
-    return true;
-  }
-  if (universalArgPending_) {
-    universalArgPending_ = false;
-    if (!special && byte == 0x80) return handleCommand(Command::PopMark);
-  }
   Command command = resolveCommand(byte, special);
   // 2026-10-09: 選択の無い画面の^SPCはEmacsのC-SPCと同じくマークを置く(Command::SetMark参照)
   if (!special && byte == 0x80 && command == Command::ToggleMark && !markTogglesHere()) command = Command::SetMark;
@@ -2838,10 +2870,12 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
   if (!special && byte == 0x80 && promptHistoryContext_ &&
       (promptHistoryContext_->kind == PromptKind::RecentFile ||
        promptHistoryContext_->kind == PromptKind::RecentDirectory) &&
-      !(escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_)) {
+      !(escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderXRPending_ ||
+      registerPending_ != RegisterAction::None || leaderOPending_)) {
     return handleCommand(Command::ToggleMark);
   }
-  if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ ||
+  if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderXRPending_ ||
+      registerPending_ != RegisterAction::None || leaderOPending_ ||
       gotoLineGPending_ || gotoLineDigitsPending_ ||
       (!special && (byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape))) {
     return dispatchLeaderByte(byte, special);
@@ -3331,6 +3365,11 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StopMacroRecord);
       case 'e':  // ^X e : 記録済みマクロを実行
         return handleCommand(Command::PlayMacro);
+      case 'z':  // ^X z : 直前のコマンドをもう一度(EmacsのC-x z、2026-10-09、Command::RepeatLastCommand参照)
+        return handleCommand(Command::RepeatLastCommand);
+      case 'r':  // ^X r : ブックマーク・レジスタ(EmacsのC-x r、2026-10-09)
+        leaderXRPending_ = true;
+        return true;
       // 2026-10-03変更、直接のユーザー依頼("^X^Sだが^Xsに一本化"、"他が^X+1文字なので^Xsだけでいい"):
       // 以前の^X^S(マクロの保存・一覧)と^Xs(usilicrcの読み直し)を^Xsにまとめた。読み直してから一覧を
       // 出す(saveMacroToUsilicrc()参照)。
@@ -3341,6 +3380,30 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return false;
       default:
         return false;  // このスライスでは認識されない^Xシーケンス
+    }
+  }
+
+  if (registerPending_ != RegisterAction::None) return handleRegisterByte(special ? -1 : byte);
+  if (leaderXRPending_) {
+    leaderXRPending_ = false;
+    if (special) return false;
+    switch (byte) {
+      case 'm':  // ^X r m : ブックマークを置く(EmacsのC-x r m)
+        return startBookmarkList(/*setting=*/true);
+      case 'b':  // ^X r b : ブックマークへ飛ぶ(EmacsのC-x r b)
+      case 'l':  // ^X r l : ブックマークの一覧(EmacsのC-x r l、b と同じ一覧)
+        return startBookmarkList(/*setting=*/false);
+      case ' ':  // ^X r SPC : 今の場所をレジスタへ(EmacsのC-x r SPC)
+      case 0x80:
+        registerPending_ = RegisterAction::Set;
+        showTransientNotice(activeView(), "Point to register: ");
+        return true;
+      case 'j':  // ^X r j : レジスタの場所へ飛ぶ(EmacsのC-x r j)
+        registerPending_ = RegisterAction::Jump;
+        showTransientNotice(activeView(), "Jump to register: ");
+        return true;
+      default:
+        return false;
     }
   }
 
@@ -3540,7 +3603,8 @@ void Application::discardStdinPager(bool returnsToShell) {
 // 文字入力を受け付ける一覧では、文字キーは文字として入力されるので、接頭キー
 // (^X/^J/^O/ESC)で始まる列だけ(LeaderOnly)。それ以外の通常の画面ならAll。
 KeyBindings::Context Application::keyBindingContext() const {
-  if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ || leaderCPending_ ||
+  if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderXRPending_ ||
+      registerPending_ != RegisterAction::None || leaderOPending_ || leaderCPending_ ||
       gotoLineGPending_ || gotoLineDigitsPending_)
     return KeyBindings::Context::None;
   if (currentMode_ == ApplicationMode::Copy) return KeyBindings::Context::None;
@@ -3791,7 +3855,8 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   // shellLeaderPendingの処理(SHELLから抜けるモード切り替え)より前に行う。
   if (!special && applyWordEditEscape(shell_.commandLine(), byte)) return true;
   bool shellLeaderPending =
-      leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ || escPending_;
+      leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderXRPending_ ||
+      registerPending_ != RegisterAction::None || leaderOPending_ || escPending_;
   if (!special && (shellLeaderPending || byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape)) {
     // 2026-08-26のバグ修正(実際の報告: `df`/`ls`を実行してからESC-<
     // が、SHELLに留まる代わりに予期せずDirectory自身の(ls)へ着地
@@ -4346,6 +4411,29 @@ ContentView &Application::viewForMode(ApplicationMode mode) {
   }
 }
 
+bool Application::isRepeatableByCount(Command command) {
+  switch (command) {
+    case Command::MoveUp:
+    case Command::MoveDown:
+    case Command::ScrollLineUp:
+    case Command::ScrollLineDown:
+    case Command::PageUp:
+    case Command::PageDown:
+    case Command::JumpNext:
+    case Command::JumpPrevious:
+    case Command::GrepInPlaceNext:
+    case Command::GrepInPlacePrevious:
+    case Command::MarkAndAdvance:
+    case Command::MarkAndRetreat:
+    case Command::PagerNextFile:
+    case Command::PagerPreviousFile:
+    case Command::PlayMacro:
+      return true;
+    default:
+      return false;
+  }
+}
+
 bool Application::handleCommand(Command command) {
   // feedByte()自身の同じ判定参照(テスト等、handleCommand()を直接
   // 呼ぶ経路のため)。
@@ -4354,9 +4442,33 @@ bool Application::handleCommand(Command command) {
   bool wasReturnsToShell = wasStdin && fileMode_.pagerReturnsToShell();
   CutLeaveSnapshot cutBefore = cutLeaveSnapshot();
   ++stdinPagerCheckDepth_;
+  // キーから来たコマンドはfeedUntranslatedByte()が既にstdinPagerCheckDepth_を上げているので、
+  // 「マクロ等の中から呼ばれたのではない」はコマンドの入れ子(commandDepth_)で見る(2026-10-09)。
+  bool topCommand = commandDepth_++ == 0;
+  // ^Uの回数(dispatchByte()の^U参照)。マクロの中の^Uにも効くよう、深さに関わらずここで受け取る。
+  int repeat = std::exchange(pendingRepeatCount_, 1);
+  // ^X z(Command::RepeatLastCommand)は、外側で最後に実行したコマンド(マクロならマクロ全体)を繰り返す。
+  if (command == Command::RepeatLastCommand) {
+    command = lastRepeatableCommand_;
+    if (repeat == 1) repeat = lastRepeatCount_;
+    repeatZPending_ = command != Command::None;
+  } else if (topCommand && command != Command::None) {
+    lastRepeatableCommand_ = command;
+    lastRepeatCount_ = repeat;
+  }
   bool result = handleCommandImpl(command);
+  if (result && repeat > 1 && isRepeatableByCount(command)) {
+    for (int i = 1; i < repeat && result; i++) {
+      previousCommand_ = command;  // 続けてのページ送りでマークを積むのは最初の1回だけ(markBeforePageScroll())
+      result = handleCommandImpl(command);
+    }
+    result = true;
+  }
+  if (command == Command::None && lastRepeatableCommand_ == Command::None)
+    showTransientNotice(activeView(), "No command to repeat");
+  --commandDepth_;
   --stdinPagerCheckDepth_;
-  if (outermost) previousCommand_ = command;
+  if (topCommand) previousCommand_ = command;
   if (outermost) saveCutPositionIfLeft(cutBefore);
   if (wasStdin && currentMode_ != ApplicationMode::File) discardStdinPager(wasReturnsToShell);
   if (outermost) showBufferLimitNoticeIfHit();
@@ -5210,7 +5322,12 @@ bool Application::handleCommandImpl(Command command) {
       // emacsの^Lが同じ仕様")――ContentView::centerOnCursor()自身の
       // コメント参照。バッファのTOP/END付近ではsetTopIndex()自身の
       // 既存のクランプにより自然に「可能な範囲で」寄るだけになる。
-      activeView().centerOnCursor();
+      // 2026-10-09、直接のユーザー依頼(Emacsから移植できる機能、EmacsのC-lのrecenter-top-bottom): 続けて
+      // 押すと、カーソル行を中央→上端→下端の順に置く。
+      recenterPhase_ = previousCommand_ == Command::Redraw ? (recenterPhase_ + 1) % 3 : 0;
+      if (recenterPhase_ == 0) activeView().centerOnCursor();
+      else if (recenterPhase_ == 1) activeView().setTopIndex(activeView().cursorIndex());
+      else activeView().setTopIndex(activeView().cursorIndex() - activeView().height() + 1);
       activeView().redraw();
       activeView().syncVisibleCursor();
       return true;
@@ -5265,6 +5382,24 @@ bool Application::handleCommandImpl(Command command) {
       activeView().markJumpOrigin();
       showTransientNotice(activeView(), "Mark set");
       return true;
+    case Command::RepeatLastCommand:  // handleCommand()が直前のコマンドに置き換えるので、ここへは来ない
+      return false;
+    case Command::MarkByRegex:
+    case Command::MarkByExtension: {
+      if (currentMode_ != ApplicationMode::Directory) return false;
+      markPatternIsExtension_ = command == Command::MarkByExtension;
+      std::string initial;
+      if (markPatternIsExtension_) {
+        if (const auto *entry = directoryMode_.selectedEntry()) {
+          std::string name = entry->name;
+          if (!name.empty() && std::string("/*@=|").find(name.back()) != std::string::npos) name.pop_back();
+          std::size_t dot = name.rfind('.');
+          if (dot != std::string::npos && dot > 0) initial = name.substr(dot);
+        }
+      }
+      activatePrompt(PromptKind::MarkPattern, initial);
+      return true;
+    }
     case Command::PopMark:  // ^U^SPC
       if (currentMode_ == ApplicationMode::Shell) return false;
       activeView().setHoverIndex(std::nullopt);
@@ -13519,12 +13654,14 @@ bool Application::feedPromptByteInner(int byte) {
   // ESC f/b/d/DEL(M-f/M-b/M-d/M-DEL、2026-09-26追加): グローバルな
   // ESCシーケンスには割り当てが無いので、リーダーへ回す前に横取りする。
   if (applyWordEditEscape(promptEditor_, byte)) return true;
-  if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ ||
+  if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderXRPending_ ||
+      registerPending_ != RegisterAction::None || leaderOPending_ ||
       byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape) {
     return dispatchLeaderByte(byte, std::nullopt);
   }
   if (byte == kCarriageReturn) return submitPrompt();
   if (byte == kControlG && promptKind_ == PromptKind::MacroEdit) return closeMacroList();  // startMacroList()参照
+  if (byte == kControlG && promptKind_ == PromptKind::Bookmark) return closeBookmarkList();  // startBookmarkList()参照
   if (byte == kControlG) {
     cancelPrompt();
     return true;
@@ -14070,6 +14207,10 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
       return false;
     case PromptKind::MacroEdit:  // ^X^Sのマクロ一覧(startMacroList()参照)
       return executeMacroEdit(text);
+    case PromptKind::Bookmark:  // ^X r m/b/lのブックマークの一覧(startBookmarkList()参照)
+      return executeBookmark(text);
+    case PromptKind::MarkPattern:  // (ls)の'%'/'*'
+      return executeMarkPattern(text);
   }
   return false;
 }
@@ -14647,7 +14788,8 @@ bool Application::feedTabCompletionListByte(int byte, std::optional<KeyInput::Sp
   // feedRegexListByte()自身の同じ理由のコメント参照: リーダーの
   // シーケンス(^J/^X/^O/ESC)は「編集を開始する」ではなく、通常通り
   // コマンドとしてディスパッチする。
-  if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ ||
+  if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderXRPending_ ||
+      registerPending_ != RegisterAction::None || leaderOPending_ ||
       gotoLineGPending_ || gotoLineDigitsPending_ ||
       (!special && (byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape))) {
     return dispatchLeaderByte(byte, special);
@@ -14769,6 +14911,10 @@ std::string Application::promptLabelText(PromptKind kind) const {
       return "EPUB";
     case PromptKind::MacroEdit:
       return "MACRO";
+    case PromptKind::Bookmark:
+      return "BOOKMARK";
+    case PromptKind::MarkPattern:
+      return "MARK";
     case PromptKind::TabCompletionList:
       return "LIST";
     case PromptKind::ShellCommand:
@@ -15163,9 +15309,12 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   // は、行自身の反転表示の塗りつぶしを通して打ち抜かれた、通常の
   // (反転表示でない)テキストの「穴」として見える。
   if (kind == PromptKind::CopyDestination || kind == PromptKind::MoveDestination ||
-      kind == PromptKind::RemoveConfirm || kind == PromptKind::MacroEdit) {
+      kind == PromptKind::RemoveConfirm || kind == PromptKind::MacroEdit || kind == PromptKind::Bookmark ||
+      kind == PromptKind::MarkPattern) {
     std::string message = kind == PromptKind::RemoveConfirm ? "Delete? (y/n) "
                           : kind == PromptKind::MacroEdit   ? "Key: "  // ^X^Sのマクロ一覧(2026-10-03)
+                          : kind == PromptKind::Bookmark    ? (bookmarkSetting_ ? "Set: " : "Jump: ")  // 2026-10-09
+                          : kind == PromptKind::MarkPattern ? (markPatternIsExtension_ ? "Extension: " : "Regexp: ")
                                                             : "Destination? ";  // 2026-09-27、RMは"Delete? (y/n) "、CP/MVは"Destination? "(直接のユーザー依頼)
     display_.moveCursor(row, labelWidth);
     for (unsigned char c : message) display_.putChar(c);
@@ -15318,6 +15467,9 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
       break;
     case PromptKind::MacroEdit:  // ^X^Sのマクロ一覧: ^Gで戻る、^X^Sを押した画面(2026-10-03)
       destinationMode = macroListReturnMode_;
+      break;
+    case PromptKind::Bookmark:  // ^X r m/b/lのブックマークの一覧: ^Gで戻る、それを押した画面(2026-10-09)
+      destinationMode = bookmarkListReturnMode_;
       break;
     default: break;
   }
@@ -17555,6 +17707,276 @@ bool Application::startMacroList(bool recorded) {
   listBrowserView_.redraw();
   activatePrompt(PromptKind::MacroEdit, items[selected], ModeLine::format(selected + 1, static_cast<int>(items.size())),
                  /*cursorAtStart=*/true);
+  return true;
+}
+
+// (ls)の'%'(正規表現、EmacsのdiredのM-x dired-mark-files-regexp、% m)・'*'(拡張子、* .)で、合う名前を
+// まとめて選ぶ(2026-10-09)。名前の末尾のls -Fの印('/'等)は外して比べる。".."・"."は選ばない。
+bool Application::executeMarkPattern(const std::string &text) {
+  if (currentMode_ != ApplicationMode::Directory || text.empty()) {
+    activeView().redraw();
+    return false;
+  }
+  std::optional<std::regex> pattern;
+  std::string extension = text;
+  if (!markPatternIsExtension_) {
+    try {
+      pattern.emplace(text, std::regex::extended);
+    } catch (const std::regex_error &) {
+      display_.putChar(7);
+      activatePrompt(PromptKind::MarkPattern, text);
+      return false;
+    }
+  } else if (extension.front() != '.') {
+    extension.insert(extension.begin(), '.');
+  }
+  const auto &entries = directoryMode_.entries();
+  int count = 0;
+  for (std::size_t i = 0; i < entries.size(); i++) {
+    std::string name = entries[i].name;
+    if (!name.empty() && std::string("/*@=|").find(name.back()) != std::string::npos) name.pop_back();
+    if (name == "." || name == "..") continue;
+    bool match = pattern ? std::regex_search(name, *pattern)
+                         : name.size() > extension.size() &&
+                               name.compare(name.size() - extension.size(), extension.size(), extension) == 0;
+    if (!match) continue;
+    count++;
+    if (!directoryMode_.isMarked(static_cast<int>(i))) directoryMode_.toggleMark(static_cast<int>(i));
+  }
+  directoryView_.redraw();
+  showTransientNotice(directoryView_, std::to_string(count) + (count == 1 ? " file marked" : " files marked"));
+  return count > 0;
+}
+
+// ブックマーク・レジスタの場所(Application::Place、2026-10-09)。FILEは今のファイルと元の行番号(縦書きの本は
+// 縦書きの今の行)、(ls)は今のディレクトリ。それ以外の画面では置けない。
+std::optional<Application::Place> Application::currentPlace() {
+  if (currentMode_ == ApplicationMode::File && !fileMode_.currentFile().empty() && !stdinPagerActive()) {
+    std::error_code ec;
+    std::string path = std::filesystem::absolute(fileMode_.currentFile(), ec).lexically_normal().string();
+    if (ec) path = fileMode_.currentFile();
+    return Place{path, epubVerticalActive() ? epubVerticalCurrentRaw() : fileRawLineAtCursor()};
+  }
+  if (currentMode_ == ApplicationMode::Directory) return Place{directoryMode_.currentDirectory(), 0};
+  return std::nullopt;
+}
+
+// 今のFILEの元の行番号rawLineへ(ESC数字の行番号の移動と同じ、縦書きの本は縦書きのまま)。飛ぶ前の行は
+// マークリングへ積む(^X^Xで戻れる)。
+void Application::goToFileRawLine(int rawLine) {
+  if (epubVerticalActive()) {
+    showEpubVerticalRaw(rawLine);
+    activeView().redraw();
+    activeView().syncVisibleCursor();
+    return;
+  }
+  ContentView &view = fileView_;
+  preloadPagerAhead(std::max(rawLine - 1, 0), /*bypassPacing=*/true);
+  if (view.lines().empty()) return;
+  view.markJumpOrigin();
+  view.setCursorIndex(resolveGotoLineRow(view, rawLine));
+  view.centerOnCursor();
+  suppressPagerRepoll(view.topIndex());
+  view.redraw();
+  view.syncVisibleCursor();
+}
+
+bool Application::jumpToPlace(const Place &place) {
+  std::error_code ec;
+  if (place.rawLine == 0) {  // ディレクトリ
+    if (!std::filesystem::is_directory(place.path, ec)) return false;
+    std::string previousDirectory = directoryMode_.currentDirectory();
+    if (!directoryMode_.enterDirectory(place.path)) return false;
+    directoryMode_.resetNavigationToFloor(previousDirectory);
+    currentMode_ = ApplicationMode::Directory;
+    directoryView_.redraw();
+    return true;
+  }
+  if (!std::filesystem::exists(place.path, ec)) return false;
+  bool same = false;
+  if (currentMode_ == ApplicationMode::File && !fileMode_.currentFile().empty())
+    same = std::filesystem::equivalent(fileMode_.currentFile(), place.path, ec) && !ec;
+  if (!same) {
+    if (!openRecentFileEntry(place.path)) return false;
+    if (currentMode_ != ApplicationMode::File) {  // CUT等で開いた
+      activeView().redraw();
+      return true;
+    }
+  }
+  goToFileRawLine(place.rawLine);
+  return true;
+}
+
+// ^X r SPC/^X r jの後の1文字(レジスタの名前)。^Gでやめる。
+bool Application::handleRegisterByte(int byte) {
+  RegisterAction action = registerPending_;
+  registerPending_ = RegisterAction::None;
+  clearTransientNotice();
+  if (byte < 0 || byte == kControlG) return false;
+  if (action == RegisterAction::Set) {
+    auto place = currentPlace();
+    if (!place) {
+      showTransientNotice(activeView(), "Can't set register here");
+      return false;
+    }
+    registers_[byte] = *place;
+    showTransientNotice(activeView(), std::string("Register ") + static_cast<char>(byte) + " set");
+    return true;
+  }
+  auto it = registers_.find(byte);
+  if (it == registers_.end()) {
+    showTransientNotice(activeView(), std::string("Register ") + static_cast<char>(byte) + " is empty");
+    return false;
+  }
+  if (!jumpToPlace(it->second)) {
+    showTransientNotice(activeView(), "Can't open " + it->second.path);
+    return false;
+  }
+  return true;
+}
+
+std::string Application::bookmarksPath() const {
+  return std::filesystem::path(usilicrcPath_).parent_path().string() + "/bookmarks";
+}
+
+// ~/.usilic/bookmarks: 1行に「名前<TAB>行番号<TAB>パス」(行番号0はディレクトリ)。書いた順(新しい順)。
+std::vector<std::pair<std::string, Application::Place>> Application::readBookmarks() const {
+  std::vector<std::pair<std::string, Place>> result;
+  std::ifstream in(bookmarksPath());
+  std::string line;
+  while (std::getline(in, line)) {
+    std::size_t a = line.find('\t');
+    if (a == std::string::npos) continue;
+    std::size_t b = line.find('\t', a + 1);
+    if (b == std::string::npos) continue;
+    Place place;
+    place.rawLine = std::atoi(line.substr(a + 1, b - a - 1).c_str());
+    place.path = line.substr(b + 1);
+    if (line.substr(0, a).empty() || place.path.empty()) continue;
+    result.emplace_back(line.substr(0, a), place);
+  }
+  return result;
+}
+
+void Application::writeBookmarks(const std::vector<std::pair<std::string, Place>> &bookmarks) const {
+  std::error_code ec;
+  std::filesystem::create_directories(std::filesystem::path(bookmarksPath()).parent_path(), ec);
+  std::ofstream out(bookmarksPath(), std::ios::trunc);
+  for (const auto &[name, place] : bookmarks) out << name << '\t' << place.rawLine << '\t' << place.path << '\n';
+}
+
+// ^X r m(setting)・^X r b/^X r l のブックマークの一覧(2026-10-09、直接のユーザー依頼、EmacsのC-x r m/b/l)。
+// ^X^Sのマクロ一覧(startMacroList())と同じく、一覧の上でプロンプトに名前を書き、^N/^Pで一覧の名前を選ぶ。
+// ^X r m: プロンプトの初期値はファイル名(ディレクトリ名)、^Mでその名前で今の場所を置く(同じ名前は置き換え)。
+// ^X r b/l: ^Mでその名前の場所へ。名前の頭に「-」を付けて^Mすると、そのブックマークを消す。
+bool Application::startBookmarkList(bool setting) {
+  if (promptKind_ != PromptKind::None) {
+    display_.putChar(7);
+    return false;
+  }
+  if (setting) {
+    bookmarkPendingPlace_ = currentPlace();
+    if (!bookmarkPendingPlace_) {
+      showTransientNotice(activeView(), "Can't set bookmark here");
+      return false;
+    }
+  }
+  bookmarkListEntries_ = readBookmarks();
+  if (!setting && bookmarkListEntries_.empty()) {
+    showTransientNotice(activeView(), "No bookmarks");
+    return false;
+  }
+  bookmarkSetting_ = setting;
+  bookmarkListReturnMode_ = currentMode_;
+  std::vector<std::string> items, displays;
+  std::size_t width = 4;
+  for (const auto &entry : bookmarkListEntries_) width = std::max(width, entry.first.size());
+  for (const auto &[name, place] : bookmarkListEntries_) {
+    items.push_back(name);
+    std::string shown = name;
+    shown.append(width + 2 - name.size(), ' ');
+    shown += place.path;
+    if (place.rawLine > 0) shown += ":" + std::to_string(place.rawLine);
+    displays.push_back(shown);
+  }
+  std::string initial;
+  if (setting) {
+    std::filesystem::path p(bookmarkPendingPlace_->path);
+    initial = p.filename().string();
+    if (initial.empty()) initial = p.parent_path().filename().string();
+    if (initial.empty()) initial = bookmarkPendingPlace_->path;
+  } else {
+    initial = items.front();
+  }
+  if (items.empty()) {  // まだ1つも無い(^X r m)
+    items.push_back(initial);
+    displays.push_back("-- (new)");
+  }
+  currentMode_ = ApplicationMode::ListBrowser;
+  listBrowserMode_.show(items, {}, displays);
+  listBrowserView_.setCursorIndex(0);
+  listBrowserView_.redraw();
+  activatePrompt(PromptKind::Bookmark, initial, ModeLine::format(1, static_cast<int>(items.size())));
+  return true;
+}
+
+bool Application::closeBookmarkList() {
+  promptKind_ = PromptKind::None;
+  promptCandidateListActive_ = false;
+  bookmarkPendingPlace_.reset();
+  currentMode_ = bookmarkListReturnMode_;
+  activeView().redraw();
+  return true;
+}
+
+bool Application::executeBookmark(const std::string &text) {
+  std::string name = text;
+  while (!name.empty() && (name.back() == ' ' || name.back() == '\t')) name.pop_back();
+  while (!name.empty() && (name.front() == ' ' || name.front() == '\t')) name.erase(0, 1);
+  auto stay = [&]() {
+    display_.putChar(7);
+    activatePrompt(PromptKind::Bookmark, text,
+                   ModeLine::format(listBrowserView_.cursorIndex() + 1, static_cast<int>(listBrowserMode_.items().size())));
+    return false;
+  };
+  if (name.empty()) return stay();
+  auto entries = readBookmarks();
+  auto find = [&](const std::string &key) {
+    return std::find_if(entries.begin(), entries.end(), [&](const auto &e) { return e.first == key; });
+  };
+  if (bookmarkSetting_) {
+    Place place = *bookmarkPendingPlace_;
+    auto it = find(name);
+    if (it != entries.end()) entries.erase(it);
+    entries.insert(entries.begin(), {name, place});
+    writeBookmarks(entries);
+    closeBookmarkList();
+    showTransientNotice(activeView(), "Bookmark \"" + name + "\" set");
+    return true;
+  }
+  if (name.front() == '-' && name.size() > 1) {  // 「-名前」で消す
+    auto it = find(name.substr(1));
+    if (it == entries.end()) return stay();
+    std::string removed = it->first;
+    entries.erase(it);
+    writeBookmarks(entries);
+    closeBookmarkList();
+    showTransientNotice(activeView(), "Bookmark \"" + removed + "\" deleted");
+    return true;
+  }
+  auto it = find(name);
+  if (it == entries.end()) return stay();
+  Place place = it->second;
+  // 使ったものを先頭へ(新しい順)
+  auto entry = *it;
+  entries.erase(it);
+  entries.insert(entries.begin(), entry);
+  writeBookmarks(entries);
+  closeBookmarkList();
+  if (!jumpToPlace(place)) {
+    showTransientNotice(activeView(), "Can't open " + place.path);
+    return false;
+  }
   return true;
 }
 

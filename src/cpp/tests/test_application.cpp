@@ -4559,6 +4559,88 @@ TEST_CASE_FIXTURE(Fixture, "Mark ring: ^SPC/^X^X/^U^SPC and page scrolls in File
   CHECK(view.cursorIndex() == 8);
 }
 
+TEST_CASE_FIXTURE(Fixture, "Emacs: ^U count, ^X z repeat, ^L cycle, registers and bookmarks") {
+  { std::ofstream f(root / "manylines.txt"); for (int i = 0; i < 300; i++) f << "line " << i << "\n"; }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("manylines.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  fm::ContentView &view = app.activeContentView();
+
+  // ^U ^N = 4 lines, ^U ^U ^N = 16, ^U 1 0 ^N = 10
+  REQUIRE(app.feedByte(0x15, std::nullopt));
+  REQUIRE(app.feedByte(0x0e, std::nullopt));
+  CHECK(view.cursorIndex() == 4);
+  REQUIRE(app.feedByte(0x15, std::nullopt));
+  REQUIRE(app.feedByte(0x15, std::nullopt));
+  REQUIRE(app.feedByte(0x0e, std::nullopt));
+  CHECK(view.cursorIndex() == 20);
+  REQUIRE(app.feedByte(0x15, std::nullopt));
+  REQUIRE(app.feedByte('1', std::nullopt));
+  REQUIRE(app.feedByte('0', std::nullopt));
+  REQUIRE(app.feedByte(0x0e, std::nullopt));
+  CHECK(view.cursorIndex() == 30);
+  // ^X z repeats it (10 lines), then z alone again
+  REQUIRE(app.feedByte(0x18, std::nullopt));
+  REQUIRE(app.feedByte('z', std::nullopt));
+  CHECK(view.cursorIndex() == 40);
+  REQUIRE(app.feedByte('z', std::nullopt));
+  CHECK(view.cursorIndex() == 50);
+
+  // ^L: center, then top, then bottom
+  REQUIRE(app.feedByte(0x0c, std::nullopt));
+  CHECK(view.cursorIndex() - view.topIndex() == view.height() / 2);
+  REQUIRE(app.feedByte(0x0c, std::nullopt));
+  CHECK(view.topIndex() == 50);
+  REQUIRE(app.feedByte(0x0c, std::nullopt));
+  CHECK(view.cursorIndex() - view.topIndex() == view.height() - 1);
+
+  // ^X r SPC a here (line 51), move, ^X r j a back
+  REQUIRE(app.feedByte(0x18, std::nullopt));
+  REQUIRE(app.feedByte('r', std::nullopt));
+  REQUIRE(app.feedByte(' ', std::nullopt));
+  REQUIRE(app.feedByte('a', std::nullopt));
+  REQUIRE(app.handleCommand(Command::GoToTop));
+  REQUIRE(app.feedByte(0x18, std::nullopt));
+  REQUIRE(app.feedByte('r', std::nullopt));
+  REQUIRE(app.feedByte('j', std::nullopt));
+  REQUIRE(app.feedByte('a', std::nullopt));
+  CHECK(view.cursorIndex() == 50);
+
+  // ^X r m (name defaults to the file name), go back to (ls), ^X r b ^M
+  REQUIRE(app.feedByte(0x18, std::nullopt));
+  REQUIRE(app.feedByte('r', std::nullopt));
+  REQUIRE(app.feedByte('m', std::nullopt));
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.feedByte(0x18, std::nullopt));
+  REQUIRE(app.feedByte('r', std::nullopt));
+  REQUIRE(app.feedByte('b', std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  CHECK(app.activeContentView().cursorIndex() == 50);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Emacs dired: % marks by regexp, * by extension") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte('%', std::nullopt));
+  for (char c : std::string("^p")) REQUIRE(app.feedByte(c, std::nullopt));
+  app.feedByte(0x0d, std::nullopt);
+  CHECK(app.directoryMode().isMarked(indexOf("plain.txt")));
+  CHECK_FALSE(app.directoryMode().isMarked(indexOf("log.txt")));
+  REQUIRE(app.handleCommand(Command::ClearAllMarks));
+  REQUIRE(app.feedByte('*', std::nullopt));
+  for (char c : std::string("txt")) REQUIRE(app.feedByte(c, std::nullopt));
+  app.feedByte(0x0d, std::nullopt);
+  CHECK(app.directoryMode().isMarked(indexOf("plain.txt")));
+  CHECK(app.directoryMode().isMarked(indexOf("log.txt")));
+  CHECK_FALSE(app.directoryMode().isMarked(indexOf("archive.tar")));
+}
+
 TEST_CASE_FIXTURE(Fixture, "Mark ring: ^SPC is still the selection key in (ls)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");

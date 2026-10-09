@@ -3,6 +3,7 @@
 #include <sys/types.h>  // pid_t(MSYS2では他のヘッダ経由で入らない、2026-10-05)
 
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -364,6 +365,13 @@ enum class Command {
   // ^U^SPC(C-u C-SPC)で最新のマークへ飛んでそれをリングの最後へ回す(ContentView::popJumpMark())。
   SetMark,
   PopMark,
+  // 2026-10-09、直接のユーザー依頼(Emacsから移植できる機能): ^X z(EmacsのC-x z)で直前のコマンドを
+  // もう一度(^Uの回数も引き継ぐ)。続けてzだけで繰り返す(Application::repeatZPending_)。
+  RepeatLastCommand,
+  // 2026-10-09、直接のユーザー依頼(Emacsのdiredの% mと* .): (ls)で、名前が正規表現に合うもの('%')・
+  // 拡張子が同じもの('*'、初期値はカーソルの行の拡張子)をまとめて選ぶ(Application::executeMarkPattern())。
+  MarkByRegex,
+  MarkByExtension,
   // K-70('q'、M_quit): (StartExit/^X^Cとは異なり)y/nの確認無しで
   // 即座に終了する――usilicrcはこれをページャー専用("Exit usilic
   // (pager)")として文書化しているので、handleCommand()はDirectory
@@ -1548,9 +1556,23 @@ class Application {
   bool markTogglesHere();
   void markBeforePageScroll();
   // ^U(EmacsのC-u)を押した直後か。次の^SPCをCommand::PopMarkにする(2026-10-09)。
+  // 2026-10-09: ^Uは回数の前置きも兼ねる(^U=4、^U^U=16、^U 数字=その数)。universalCount_に
+  // 数え、次のコマンドの回数(pendingRepeatCount_)にする。
   bool universalArgPending_ = false;
+  int universalCount_ = 4;
+  bool universalDigits_ = false;
+  int pendingRepeatCount_ = 1;
+  // 回数の前置きで繰り返すコマンドか(移動・ページ送り・マクロの実行等)。
+  static bool isRepeatableByCount(Command command);
+  // ^X z(EmacsのC-x z、2026-10-09): 直前のコマンドをもう一度。続けてzだけで繰り返す。
+  Command lastRepeatableCommand_ = Command::None;
+  int lastRepeatCount_ = 1;
+  bool repeatZPending_ = false;
+  // ^Lを続けて押した時の表示位置(0=中央、1=上端、2=下端、EmacsのC-l、2026-10-09)。
+  int recenterPhase_ = 0;
   // 直前にhandleCommand()で処理したコマンド。続けてのページ送りでは最初の1回だけマークを積む(2026-10-09)。
   Command previousCommand_ = Command::None;
+  int commandDepth_ = 0;  // handleCommand()の入れ子の深さ
   // 2026-09-21追加: アクセス履歴(RingCategory::Usilic)をUSILIC一覧として
   // 表示する。sorted=trueはファイル/ディレクトリ/manの順に、各々ソート
   // 済み重複排除。falseは記録順(直近が一番下、カーソルもそこ)。
@@ -3455,6 +3477,30 @@ private:
   bool macroListLocked_ = false;             // ^Xe^Xs: 「--」の行だけ(^N/^Pは効かない)
   int macroListLastNumber_ = 0;              // 前回書いたマクロのM番号(^Xe直後でない^Xsの最初の位置)
   ApplicationMode macroListReturnMode_ = ApplicationMode::Directory;
+  // ブックマーク・レジスタ(2026-10-09、EmacsのC-x r m/b/l、C-x r SPC/j)。場所はファイル(またはディレクトリ)
+  // のパスと元の行番号(縦書きの本でも同じ行番号、IDEAS.mdのEPUB 4.)。ブックマークは
+  // ~/.usilic/bookmarksに「名前<TAB>行番号<TAB>パス」で残す(レジスタは起動中だけ)。
+  struct Place {
+    std::string path;
+    int rawLine = 0;  // 0はディレクトリ
+  };
+  std::optional<Place> currentPlace();
+  bool jumpToPlace(const Place &place);
+  void goToFileRawLine(int rawLine);
+  std::string bookmarksPath() const;
+  std::vector<std::pair<std::string, Place>> readBookmarks() const;
+  void writeBookmarks(const std::vector<std::pair<std::string, Place>> &bookmarks) const;
+  bool startBookmarkList(bool setting);
+  bool closeBookmarkList();
+  bool executeBookmark(const std::string &name);
+  bool handleRegisterByte(int byte);
+  bool executeMarkPattern(const std::string &text);
+  bool markPatternIsExtension_ = false;
+  std::map<int, Place> registers_;
+  bool bookmarkSetting_ = false;  // ^X r m(置く)の一覧か、^X r b/l(飛ぶ)の一覧か
+  std::optional<Place> bookmarkPendingPlace_;  // ^X r mを押した時の場所
+  std::vector<std::pair<std::string, Place>> bookmarkListEntries_;
+  ApplicationMode bookmarkListReturnMode_ = ApplicationMode::Directory;
   bool startMacroList(bool recorded);
   bool closeMacroList();
   bool executeMacroEdit(const std::string &text);
@@ -3506,6 +3552,11 @@ private:
   // まだ上書きされていない自然な位置テキスト)に記録しておき、
   // 桁を表示するたびにその幅までスペースでパディングする。
   int gotoLineFieldWidth_ = 0;
+  // ^X r(EmacsのC-x r、2026-10-09): ブックマーク(m/b/l)・レジスタ(SPC/j)を完成させるバイトを待っている。
+  bool leaderXRPending_ = false;
+  // ^X r SPC/^X r jの後、レジスタの名前(1文字)を待っている。
+  enum class RegisterAction { None, Set, Jump };
+  RegisterAction registerPending_ = RegisterAction::None;
   bool leaderXPending_ = false;  // ^Xを見た、^Xd/^X^D/^Xf/^X^F/^X^C/^X(/^X)/^Xeを完成させるバイトを待っている(2026-09-08のキー再編で他は全て^O/^Jへ移行したが、DIR/FILE/EXITは同日中に、マクロ制御(^X(/^X)/^Xe)は2026-09-10にそれぞれ^Xへ差し戻された)
   // ^J^O(usilicrcのERROR/LOG、2026-09-08新設のネストしたサブ
   // リーダー): ^Jの後に^O自体を見た、^J^Oe/^J^Olを完成させる
@@ -3578,6 +3629,11 @@ private:
     // 2026-10-02追加、2026-10-03変更(startMacroList()参照): ^X^Sのマクロ一覧のプロンプト("MACRO Key:")。
     // 「キー キーの並び」を編集し、^Mでusilicrcへ書く。
     MacroEdit,
+    // 2026-10-09、直接のユーザー依頼(Emacsから移植できる機能、EmacsのC-x r m/C-x r b): ブックマークの
+    // 一覧のプロンプト。startBookmarkList()参照。
+    Bookmark,
+    // (ls)の'%'/'*'(Command::MarkByRegex/MarkByExtension)の入力。markPatternIsExtension_で区別する。
+    MarkPattern,
     // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装、実機報告
     // (スクリーンショット=gv、legacyの参照画面: "プロンプトエリアは
     // 編集可能な非ハイライト表示が正解")を受けての追加。Du/ArchiveLoad
