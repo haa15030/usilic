@@ -1793,6 +1793,9 @@ class Application {
   // false(CUIや、GUIでもスクロール中でない他の全ての呼び出しは
   // 影響を受けない、既存のCUI向け動作を保つ)。
   void pollPagerExitNotice(bool suppressDraw = false);
+  // 新しいウィンドウ(openInNewTerminalWindow())で開いた外部ページャーのusilicが終わったら(目印のファイルが
+  // 消えたら)「Opened in a new window」を消す。端末の実行ループが毎回呼ぶ。
+  void pollExternalPagerWindows();
   // 2026-09-06追加、直接のユーザー報告("％の行数が97と98を行き来...
   // -g起動ではスクロールバーの（つまみ長を短くする）描き直しでも
   // モードライン描画が起きるみたい")――Command::ScrollLineDown/
@@ -2383,6 +2386,9 @@ class Application {
   // ベースのバージョン自身のkeyInput_メンバーは、それと一緒に無く
   // なっている。
   pid_t locateUpdateDbPid_ = -1;
+  // openInNewTerminalWindow()の目印のファイル(子のusilicの終了でシェルが消す)と、その知らせを出しているか。
+  std::vector<std::string> externalPagerMarkers_;
+  bool externalPagerNoticeShown_ = false;
   // 2026-09-19追加、awaitingDu()/pollDuCompletion()自身の宣言コメント
   // 参照。上のlocateUpdateDbPid_と同じ役割(実行中かどうかのフラグ)
   // だが、`du`は捨てずに読める標準出力を持つので、追加でduOutputFd_

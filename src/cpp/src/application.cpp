@@ -4530,6 +4530,7 @@ void Application::clearTransientNotice() {
     directoryMode_.setSortLabelShown(false);
     if (currentMode_ == ApplicationMode::Directory) directoryView_.redraw();
   }
+  externalPagerNoticeShown_ = false;
   if (!transientNoticeView_) return;
   ContentView *view = transientNoticeView_;
   transientNoticeView_ = nullptr;
@@ -16781,13 +16782,18 @@ bool Application::runExternalUsilicPager(const std::string &command) {
     if (word == "-c" || word == "-g") hasUiFlag = true;
     i = k == std::string::npos ? args.size() : k;
   }
-  std::string run = "usilic" + std::string(hasUiFlag ? "" : (graphical ? " -g" : " -c")) + args;
+  // 2026-10-09、直接のユーザー提案("履歴にはアクセスしないその場限りのディレクトリ仕様ということで^Ou経由でのみ
+  // 起動可能というのは？"): 選んだ中にディレクトリがあると子はファイルマネージャーとして起動し、単一インスタンスの
+  // 決まり(main.cppの~/.usilic/pid)で親を終了させていた。USILIC_TRANSIENT=1を付けて起動した子は、履歴に触れず
+  // 親も終了させない(main.cpp参照)。環境変数なので普通の端末から打った起動には付かない。
+  std::string run = "USILIC_TRANSIENT=1 usilic" + std::string(hasUiFlag ? "" : (graphical ? " -g" : " -c")) + args;
   std::string toRun = "unset USILIC USILIC_HANDOFF; " + cdWrap(programPromptDirectory_, run);
   std::string directory = programPromptDirectory_;
   programPromptDirectory_.clear();  // 結果に関わらず正確に一度消費される、executeProgram()自身の慣習通り
   if (!graphical && openInNewTerminalWindow(directory, "unset USILIC USILIC_HANDOFF; " + run)) {
     history_.pushRecent(RingCategory::ShellCommand, command);
     showTransientNotice(activeView(), "Opened in a new window");
+    externalPagerNoticeShown_ = true;  // showTransientNotice()が呼ぶclearTransientNotice()の後で立てる
     return true;
   }
   if (graphical) {
@@ -16824,7 +16830,14 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
   const char *lcTerminal = std::getenv("LC_TERMINAL");
   bool iterm = (termProgram && std::string(termProgram) == "iTerm.app") ||
                (lcTerminal && std::string(lcTerminal) == "iTerm2");
-  std::string shellLine = cdWrap(dir, command) + "; ";
+  // 子のusilicが終わったら消す目印のファイル(pollExternalPagerWindows()が消えたのを見て知らせを消す)。
+  static int markerSerial = 0;
+  std::error_code markerEc;
+  std::string marker = (std::filesystem::temp_directory_path(markerEc) /
+                        ("usilic-pager-" + std::to_string(::getpid()) + "-" + std::to_string(++markerSerial)))
+                           .string();
+  { std::ofstream(marker) << ""; }
+  std::string shellLine = cdWrap(dir, command) + "; rm -f " + shellQuoteArgIfNeeded(marker) + "; ";
   // 2026-10-09、直接のユーザー依頼("設定を変えずにusilic側で閉じるようにして"): Terminal.appは既定の設定だと
   // シェルが終わっても「[プロセスが完了しました]」でウィンドウを残す(iTerm2は閉じる)。シェルを終える前に、
   // このウィンドウのtty(新しいウィンドウなのでタブは1つ)のウィンドウを閉じるosascriptを背後に回しておく
@@ -16849,12 +16862,37 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
                                        "-e", "end tell"}
             : std::vector<std::string>{"osascript", "-e", "tell application \"Terminal\"", "-e", "do script " + quoted,
                                        "-e", "activate", "-e", "end tell"};
-  return ChildProcess::run(argv).ok;
+  if (!ChildProcess::run(argv).ok) {
+    std::filesystem::remove(marker, markerEc);
+    return false;
+  }
+  externalPagerMarkers_.push_back(marker);
+  return true;
 #else
   (void)directory;
   (void)command;
   return false;
 #endif
+}
+
+// 2026-10-09、直接のユーザー報告("子プロセス起動後、親で何もしないと子が消えた後も「Opened in a new window」が
+// 消えない"): 目印のファイルが消えた(子のusilicが終わった)ら知らせを消す。他の知らせに置き換わっていれば触らない。
+void Application::pollExternalPagerWindows() {
+  if (externalPagerMarkers_.empty()) return;
+  bool anyFinished = false;
+  for (auto it = externalPagerMarkers_.begin(); it != externalPagerMarkers_.end();) {
+    std::error_code ec;
+    if (!std::filesystem::exists(*it, ec)) {
+      it = externalPagerMarkers_.erase(it);
+      anyFinished = true;
+    } else {
+      ++it;
+    }
+  }
+  if (anyFinished && externalPagerNoticeShown_) {
+    clearTransientNotice();
+    display_.flush();
+  }
 }
 
 // docs/HISTORY.md:1840("chown実行後のRM、MVではファイルが選べない...

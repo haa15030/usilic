@@ -1608,6 +1608,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     app.pollShellOfferFollowUp();
     app.pollShellHandoff();
     app.pollPagerExitNotice();
+    app.pollExternalPagerWindows();
     syncMouseTracking();
     // !app.promptActive() (2026-09-18 fix, a real report: LIST's
     // PromptKind::ShellCommand combobox -- see its own declaration
@@ -4770,7 +4771,13 @@ int main(int argc, char **argv) {
   // する。ファイル引数のpager/pipe stdinのpagerだけが、legacy自身の
   // 「pagerモードはKEY-modeの機能しか使わない」という既存の制限どおり
   // historyに触れない。
-  bool consultHistoryOnStart = !isFileLaunch && !stdinPiped;
+  // 2026-10-09、直接のユーザー提案("履歴にはアクセスしないその場限りのディレクトリ仕様ということで^Ou経由でのみ
+  // 起動可能というのは？"): 親のusilicが外部ページャーとして起動した子(USILIC_TRANSIENT=1、
+  // Application::runExternalUsilicPager()参照)は、ディレクトリを含んでいてもページャーと同じく履歴に触れず、
+  // 下の単一インスタンスの決まりで親を終了させない。孫へは引き継がない。
+  bool transientLaunch = std::getenv("USILIC_TRANSIENT") != nullptr;
+  ::unsetenv("USILIC_TRANSIENT");
+  bool consultHistoryOnStart = !isFileLaunch && !stdinPiped && !transientLaunch;
 
   // Ported from str.c's set_usilicrc()/S_hist path-building: both files
   // live under $HOME/.usilic/, created if it doesn't exist yet (same
@@ -5368,6 +5375,14 @@ int main(int argc, char **argv) {
                                                             : std::filesystem::path(cwdFallback))
             .lexically_normal()
             .string();
+    // ファイルとディレクトリが混ざった起動(^Ouの選択等)は、最初のディレクトリを開く。
+    for (const auto &arg : positionalArgs) {
+      std::error_code ec;
+      if (std::filesystem::is_directory(arg, ec)) {
+        startDirectory = std::filesystem::absolute(arg).lexically_normal().string();
+        break;
+      }
+    }
     // History-based cursor restoration (see DirectoryMode::enterDirectory()'s
     // own comment) only applies to an argument-LESS launch -- legacy's
     // own "resume last session" case. An explicit path argument

@@ -29456,3 +29456,19 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      プロセスの確認を求められる)、selected tabのttyが同じウィンドウを閉じる。nohupはシェルの終了時のSIGHUP、disownは
      zshの「running jobs」の警告を避けるため。iTerm2は既定で閉じるので足さない。AppleScriptはosacompileで構文だけ確認、
      ビルドのみ確認(実機確認待ち)。
+712. **2026-10-09: 外部ページャーの子のusilicが、選択にディレクトリを含むと親を終了させていたのを直す、新しいウィンドウの知らせを子の終了で消す**
+   - **経緯**: 直接のユーザー報告("子プロセス起動後、親で何もしないと子が消えた後も「Opened in a new window」が消えない"、
+     ".[]で選んだ中にディレクトリが含まれている場合、子プロセスの方がディレクトリ起動となって親が死んでしまう")→原因は
+     単一インスタンスの決まり(2026-09-15、ファイルマネージャーとしての起動は~/.usilic/pidの旧プロセスをkill)で、
+     引数が全部ファイルでないとファイルマネージャーとしての起動になるため→ユーザー提案("履歴にはアクセスしない
+     その場限りのディレクトリ仕様ということで^Ou経由でのみ起動可能というのは？")。
+   - **実装(親を終了させない)**: runExternalUsilicPager()が子を「USILIC_TRANSIENT=1 usilic ...」で起動(^Ouと^Jpusilicの
+     両方、どちらも同じ関数)。main.cppはUSILIC_TRANSIENTがあればconsultHistoryOnStartを偽に(履歴を読み書きせず、
+     pidのkillもせず、ERROR等はpidごとの一時ディレクトリ)し、孫へ引き継がないようunsetenv。ファイルとディレクトリが
+     混ざった引数では最初のディレクトリを開く(以前は先頭の引数がファイルだと"cannot list")。隔離したHOMEのPTYで、
+     USILIC_TRANSIENTありでは親が生き残り、無しでは親が終了する(元の不具合)ことを確認。
+   - **実装(知らせを消す)**: openInNewTerminalWindow()が一時ディレクトリに目印のファイル(usilic-pager-<pid>-<連番>)を
+     作り、新しいウィンドウのシェルの行に子のusilicの後の「rm -f 目印」を足す。端末の実行ループが毎回呼ぶ
+     pollExternalPagerWindows()が目印が消えたのを見て、知らせ(externalPagerNoticeShown_、他の知らせに置き換わって
+     いれば触らない)を消す。osascriptが失敗したら目印を消す。
+   - src/HELP_.txt・src/HELP_en_.txtの^Ouの説明に、ディレクトリを含む時はその場限りで開く旨を足した。
