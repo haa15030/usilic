@@ -3172,12 +3172,16 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: a recognized command actually runs, with re
   CHECK(content == "hello");
 }
 
-TEST_CASE_FIXTURE(Fixture, "PROGRAM: an unrecognized command (not in the PROGRAM list) is refused") {
+// 2026-10-04(docs/CHANGES.md項目628)から、PROGRAMの一覧に無いコマンドは捨てずにSHELLで実行する。
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: an unrecognized command (not in the PROGRAM list) runs in SHELL") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartProgram));
   feedText("some-unlisted-command arg");
-  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));
-  CHECK(app.currentMode() == ApplicationMode::Directory);
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  CHECK(app.currentMode() == ApplicationMode::Shell);
 }
 
 // -- HELP.txt 2.13. LIST (2026-09-18) --
@@ -5839,9 +5843,10 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE started from a File that was ITSELF reached v
 
   // Nested invocation: LOCATE again, from this SAME File (itself
   // reached via the first LOCATE).
+  // 別の文字列で探す(executeLocate()は前回と同じ文字列なら探し直さず前回の結果を出す)。
   configuration.setCommandForTest(ConfiguredRole::Locate, {{fakeLocate2.string()}, std::nullopt});
   REQUIRE(app.handleCommand(Command::StartLocate));
-  feedText("anything");
+  feedText(" else");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Locate);
   REQUIRE(app.locateMode().results() == std::vector<std::string>{target2.string()});
@@ -7131,7 +7136,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the HELP line splits
   app.activeContentView().setCursorIndex(helpRow);
   REQUIRE(app.handleCommand(Command::Enter));
   CHECK(app.currentMode() == ApplicationMode::Cut);
-  CHECK(app.cutMode().pattern() == "\t");
+  CHECK(app.cutMode().pattern() == "^[^\t].*\t[ \xEF\xBB\xBF]*$");  // kHelpChapterPattern
   // 冒頭の"--"("intro")と、タブの付いた2つの章。
   REQUIRE(app.cutMode().segments().size() == 3);
   CHECK(app.cutMode().segments()[0].label == "--");
@@ -7694,18 +7699,18 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: 'q' (QuitPager) is a no-op in Directory mo
 // (application.hpp自身のCommand::ToggleModeLineVisibility宣言コメント
 // 参照)。ToggleScrollMode自体はまだ存在する(下の別テスト、
 // handleCommand()経由の直接呼び出し)。
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^O h toggles Display::modeLineVisible() and persists it to History") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O s toggles Display::modeLineVisible() and persists it to History") {
   REQUIRE(app.start(path()));
   CHECK(display.modeLineVisible());
   CHECK(history.modeLineVisible());
 
   REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
-  CHECK(app.feedByte('h', std::nullopt));
+  CHECK(app.feedByte('s', std::nullopt));
   CHECK_FALSE(display.modeLineVisible());
   CHECK_FALSE(history.modeLineVisible());
 
   REQUIRE(app.feedByte(0x0f, std::nullopt));
-  CHECK(app.feedByte('h', std::nullopt));
+  CHECK(app.feedByte('s', std::nullopt));
   CHECK(display.modeLineVisible());
   CHECK(history.modeLineVisible());
 }
@@ -7723,7 +7728,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^O h toggles Display::modeLineVisible() an
 // 幅の変化を明示的に模擬し(RecordingDisplay自身は本物のTerminalDisplay
 // と異なりmodeLineVisible()に連動しないため)、^Ohがそれを正しく
 // FileModeへ反映する(=文字を失わず再折り返しする)ことを検証する。
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^O h while in File mode reflows the content to the new width "
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O s while in File mode reflows the content to the new width "
                            "without losing or duplicating any character at the wrap boundary") {
   std::string original;
   for (int i = 0; i < 300; i++) original += static_cast<char>('a' + (i % 26));
@@ -7741,7 +7746,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^O h while in File mode reflows the conten
   // 連動を持たないため、ここで明示的に模擬する。
   display.setSize(display.rows(), display.columns() - 2);
   REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
-  REQUIRE(app.feedByte('h', std::nullopt));
+  REQUIRE(app.feedByte('s', std::nullopt));
   CHECK_FALSE(display.modeLineVisible());
 
   std::string reflowed;
@@ -9498,13 +9503,13 @@ TEST_CASE_FIXTURE(Fixture, "LOG (^J^Os, K-68): snapshots Shell's scrollback to l
   CHECK(found);
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^O s restarts a fresh SHELL child, even from within Shell mode (K-60)") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J s restarts a fresh SHELL child, even from within Shell mode (moved from ^O s, 2026-10-02)") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {
     MESSAGE("bash not available or handshake failed -- skipping");
     return;
   }
-  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
   bool ok = app.feedByte('s', std::nullopt);
   if (!ok) {
     MESSAGE("bash not available or handshake failed on restart -- skipping");
@@ -10843,13 +10848,15 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Du mode: stays in-place (Du), Ente
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): refused outside Directory/File mode") {
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): from Du itself re-tallies and stays in Du (2026-09-27)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));  // enter Du mode itself first
   waitForDu(app);
   REQUIRE(app.currentMode() == ApplicationMode::Du);
 
-  CHECK_FALSE(app.handleCommand(Command::StartDu));  // Du mode itself isn't Directory or File
+  CHECK(app.handleCommand(Command::StartDu));  // DUの中の^Jd: 選んだ行のフォルダーを集計し直す
+  waitForDu(app);
+  CHECK(app.currentMode() == ApplicationMode::Du);
 }
 
 // Direct user spec: navigating to a different folder first, then
@@ -12640,9 +12647,10 @@ TEST_CASE_FIXTURE(Fixture, "^J ^B goes to the parent directory (moved from ^J ^K
   CHECK(app.currentMode() == ApplicationMode::Cut);
 }
 
-TEST_CASE_FIXTURE(Fixture, "HELP: refused if no help text was loaded") {
+TEST_CASE_FIXTURE(Fixture, "HELP: with no help text loaded, shows \"HELP not found\" and stays put") {
   REQUIRE(app.start(path()));
-  CHECK_FALSE(app.handleCommand(Command::StartHelp));
+  CHECK(app.handleCommand(Command::StartHelp));  // showHelpNotFound()
+  CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^H starts HELP (StartHelp)") {
@@ -14064,9 +14072,10 @@ TEST_CASE_FIXTURE(Fixture, "^R real recall (HISTORY chronological view): a candi
   REQUIRE(app.listBrowserMode().selectedItem() != nullptr);
   REQUIRE(*app.listBrowserMode().selectedItem() == pattern);
 
-  const std::string &row = display.rowText(23);
-  CHECK(row.find(static_cast<char>(0x0c)) == std::string::npos);  // no raw control byte reaches the display
-  CHECK(row.find("^L") != std::string::npos);                     // shown as the reversed-letter convention
+  // 候補は一覧の本文(先頭の行)に出る。どの行にも生の制御バイトは出ない。
+  for (int r = 0; r < display.rows(); r++)
+    CHECK(display.rowText(r).find(static_cast<char>(0x0c)) == std::string::npos);
+  CHECK(display.rowText(0).find("^L") != std::string::npos);  // "^"と反転の"L"
 }
 
 TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): reachable from Directory mode, freezes the exact same content "
@@ -15422,7 +15431,7 @@ TEST_CASE_FIXTURE(Fixture, "EGREP list (^J^S then ^R): usilicrc GREP presets are
 // usilicrcのKEY節(KeyBindings、2026-09-25)をApplication::feedByte()の入口で
 // 反映すること――tests/test_key_bindings.cpp自身の単体テストの結合版。
 TEST_CASE_FIXTURE(Fixture, "usilicrc KEY: ^J^C moved to ^Jz -- ^Jz goes to the file selector, ^J^C no longer does") {
-  REQUIRE(configuration.loadRcText("KEY\n\tK-16\tF-1 z\n", true));
+  REQUIRE(configuration.loadRcText("KEY\n\tK-24\tF-1 z\n", true));
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);

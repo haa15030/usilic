@@ -183,7 +183,7 @@ TEST_CASE("CopyMode: toggleMark() is a literal ON/OFF switch (2026-09-08, a dire
   CHECK_FALSE(copy.markActive());
 
   copy.confirmMark();  // gathers both banked islands (no live mark left to add)
-  CHECK(copy.clipboardText() == "sel\n me");
+  CHECK(copy.clipboardText() == "sel  me");  // 矩形でない島どうしは半角スペースでつなぐ(2026-10-05)
 }
 
 TEST_CASE("CopyMode: toggleMark() OFF->ON with the mark already having zero extent (pressed twice "
