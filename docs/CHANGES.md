@@ -29429,3 +29429,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      DUの中の^Jd(2026-09-27から集計し直す)、HELPが無い時(拒否ではなく"HELP not found")、^Rの一覧の制御文字
      (候補はモードラインではなく一覧の本文に出る)、usilicrcのKEYのK番号(K-16→K-24、項目595で既知)、COPYの島の
      連結(2026-10-05から半角スペース)。テストだけを直し、11件とも通過。
+709. **2026-10-09: -cの^Jpusilic・^Ouの外部ページャーを、macOSではTerminal.appの新しいウィンドウで待たずに開く**
+   - **経緯**: 直接のユーザーの問い("-cで起動後、^Jpusilic file^Mでpager仕様のusilicを起動した場合、-g同様終了を
+     待たないとどうなる？")→1つの端末を2つの全画面のプログラムで取り合うことになる(背後なら子がSIGTTOUで止まる、
+     前面ならキー入力・描画・終了時の端末設定の取り合い)ので端末を分ける案(tmux/Terminal.app)→"Terminal.appの
+     新しいウィンドウ方式で入れてみて"。
+   - **実装**: Application::openInNewTerminalWindow()。macOSでSSH_CONNECTION/SSH_TTYが無ければ、osascriptで
+     Terminal.appに「cd 'ディレクトリ' && unset USILIC USILIC_HANDOFF; usilic -c 引数; exit」をdo scriptさせ、
+     Terminalを前面に。ディレクトリは^Jpの事前のディレクトリ、無ければこのusilicの作業ディレクトリ。AppleScriptの
+     文字列として\と"をエスケープ。成功すれば「Opened in a new Terminal window」と出して待たない。osascriptが失敗
+     したら(Terminalの操作の許可を断られた等)今まで通り端末を明け渡して待つ。runExternalUsilicPager()から呼ぶ。
+   - src/HELP_.txt・src/HELP_en_.txtの外部ページャーの説明(^Ou)に、macOSのCUIは新しいウィンドウで開く旨を足した。
+     ビルドのみ確認(実機確認待ち、初回はmacOSのオートメーションの許可のダイアログが出るはず)。

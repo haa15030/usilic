@@ -16783,7 +16783,13 @@ bool Application::runExternalUsilicPager(const std::string &command) {
   }
   std::string run = "usilic" + std::string(hasUiFlag ? "" : (graphical ? " -g" : " -c")) + args;
   std::string toRun = "unset USILIC USILIC_HANDOFF; " + cdWrap(programPromptDirectory_, run);
+  std::string directory = programPromptDirectory_;
   programPromptDirectory_.clear();  // 結果に関わらず正確に一度消費される、executeProgram()自身の慣習通り
+  if (!graphical && openInNewTerminalWindow(directory, "unset USILIC USILIC_HANDOFF; " + run)) {
+    history_.pushRecent(RingCategory::ShellCommand, command);
+    showTransientNotice(activeView(), "Opened in a new Terminal window");
+    return true;
+  }
   if (graphical) {
     // 別のウィンドウ: 待たない(shは子を背後に回してすぐ終わるので、ここではshだけを回収する)。
     ChildProcess::runInteractive({"sh", "-c", "(" + toRun + ") </dev/null >/dev/null 2>&1 &"});
@@ -16793,6 +16799,39 @@ bool Application::runExternalUsilicPager(const std::string &command) {
   }
   activeView().redraw();
   return true;
+}
+
+// 2026-10-09、直接のユーザー依頼("Terminal.appの新しいウィンドウ方式で入れてみて"): -cの外部ページャーの
+// usilicを、-gの別のウィンドウと同じく待たずに使えるよう、macOSではTerminal.appの新しいウィンドウで動かす
+// (1つの端末を2つの全画面のプログラムで取り合うことはできないので、端末そのものを分ける)。新しいウィンドウの
+// シェルはこのusilicの作業ディレクトリを引き継がないので、明示的にcdする。usilicの終了でexitし、ウィンドウは
+// Terminal.appの設定(既定は「シェルが正常終了したら閉じる」)に従って閉じる。SSHの先ではウィンドウが手元に
+// 出ないので使わない。osascriptが失敗したら(Terminal.appの操作の許可を断られた等)falseを返し、呼び出し側は
+// 今まで通り端末を明け渡して待つ。
+bool Application::openInNewTerminalWindow(const std::string &directory, const std::string &command) {
+#ifdef __APPLE__
+  if (std::getenv("SSH_CONNECTION") || std::getenv("SSH_TTY")) return false;
+  std::string dir = directory;
+  if (dir.empty()) {
+    std::error_code ec;
+    dir = std::filesystem::current_path(ec).string();
+    if (ec) dir.clear();
+  }
+  std::string shellLine = cdWrap(dir, command) + "; exit";
+  std::string quoted = "\"";
+  for (char c : shellLine) {
+    if (c == '\\' || c == '"') quoted += '\\';
+    quoted += c;
+  }
+  quoted += "\"";
+  ChildProcess::Result result = ChildProcess::run(
+      {"osascript", "-e", "tell application \"Terminal\"", "-e", "do script " + quoted, "-e", "activate", "-e", "end tell"});
+  return result.ok;
+#else
+  (void)directory;
+  (void)command;
+  return false;
+#endif
 }
 
 // docs/HISTORY.md:1840("chown実行後のRM、MVではファイルが選べない...

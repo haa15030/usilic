@@ -1765,6 +1765,7 @@ class Application {
   bool pollShellHandoff();
   // ^Jpの"usilic ..."・^Ouを外部ページャーとして起動する(.cpp側のコメント参照、2026-10-09)。
   bool runExternalUsilicPager(const std::string &command);
+  bool openInNewTerminalWindow(const std::string &directory, const std::string &command);
   // pollPagerExitNotice()自身の宣言コメント参照(2026-09-20追加)。
   // `suppressDraw`(2026-09-07追加、直接のユーザー報告"わかったのは
   // ブロックカーソル位置を画面上真ん中辺に変更すると、瞬時の表示も
