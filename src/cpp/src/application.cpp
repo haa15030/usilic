@@ -2944,6 +2944,18 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
 }
 
 // この関数自身の宣言側のコメント(application.hpp)参照。
+// ESC数字・COPYの行番号の数字の並びを行番号に(2026-10-09、直接のユーザーの問い"SIGSEGVが起きそうな箇所は無い？"
+// から調べて発見): 以前はstd::stoi()で、桁の多い数(ESC 99999999999999 ^M)はstd::out_of_rangeを投げ、受ける所が
+// 無いのでusilicごと終了していた。intの範囲を超える数は最大値にする(末尾の行へ)。
+int Application::parseLineNumber(const std::string &digits) {
+  long long value = 0;
+  for (char c : digits) {
+    if (c < '0' || c > '9') break;
+    value = std::min<long long>(value * 10 + (c - '0'), std::numeric_limits<int>::max());
+  }
+  return static_cast<int>(value);
+}
+
 int Application::resolveGotoLineRow(ContentView &view, int targetRawLine) {
   for (int attempt = 0; attempt < 8; attempt++) {
     const std::vector<ContentView::Line> &lines = view.lines();
@@ -3029,7 +3041,7 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         // の「生の」行番号であって、幅超過で折り返され得る表示行
         // インデックスではない――resolveGotoLineRow()自身のコメント
         // 参照。
-        int targetRawLine = std::stoi(gotoLineDigits_);
+        int targetRawLine = parseLineNumber(gotoLineDigits_);
         ContentView &view = activeContentView();
         preloadPagerAhead(std::max(targetRawLine - 1, 0), /*bypassPacing=*/true);
         if (!view.lines().empty()) {
@@ -12666,7 +12678,7 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
     if (!special && byte == kCarriageReturn) {
       copyGotoLineDigitsPending_ = false;
       copyMode_.setGotoLinePreview(std::nullopt);
-      if (!copyGotoLineDigits_.empty()) copyMode_.gotoLine(std::stoi(copyGotoLineDigits_));
+      if (!copyGotoLineDigits_.empty()) copyMode_.gotoLine(parseLineNumber(copyGotoLineDigits_));
       copyGotoLineDigits_.clear();
       return true;
     }

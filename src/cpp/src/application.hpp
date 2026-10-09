@@ -2077,6 +2077,7 @@ class Application {
   // モード(Directory等、そもそも折り返しの概念が無い)では、`view`の
   // 行インデックス自体が既に「行番号」なので素通しする。戻り値は
   // `view.setCursorIndex()`にそのまま渡せる0始まりの行インデックス。
+  static int parseLineNumber(const std::string &digits);
   int resolveGotoLineRow(ContentView &view, int targetRawLine);
   // SHELLのscrollback_の行全体のハイライトに対する^P/^N自身の
   // プレーンなテキストカーソルの代替――自身の定義コメント参照。

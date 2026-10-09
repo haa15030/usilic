@@ -29410,3 +29410,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: fm::usilicrc::setInstallLibDirectory()を足し、main.cppのinstallLibDir(実行ファイルの<PREFIX>/lib/usilic/)を
      installedPath()の2番目の候補にした(ensureUser()・updateUserIfOlder()とも)。IDEAS.mdの項目を【実装済み】に。
    - **確認**: HOMEを空の一時ディレクトリにして起動し、~/.usilic/usilicrcが利用者の所有でコピーされることを見た。
+
+707. **2026-10-09: ESC数字(とCOPYの行番号)で桁の多い数を打つとusilicが終了していたのを直す**
+   - **経緯**: 直接のユーザーの問い("SIGSEGVが起きそうな箇所は無い？")から調べて発見。ESC数字の行番号の移動は
+     数字の並びをstd::stoi()で読んでいて、intを超える数(ESC 99999999999999 ^M)ではstd::out_of_rangeを投げ、
+     受ける所が無いので"out of range"と出してusilicごと終了していた(PTYで再現)。COPYの行番号(copyGotoLineDigits_)も同じ。
+   - **変更**: Application::parseLineNumber()で読み、intの最大値で頭打ちにする(末尾の行へ移動する)。std::sto*の呼び出しは
+     この2か所だけだった。PTYで、同じ操作で末尾(500/500 END)へ移動することを確認。
