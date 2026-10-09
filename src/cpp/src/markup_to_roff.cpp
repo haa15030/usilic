@@ -228,10 +228,16 @@ std::string convertMarkupToMsRoffSource(const std::string &source) {
   // 組む時は.THが無視されるだけ。.THは前置きより前(manのマクロが.po等を決めた後に前置きで上書きする)。
   // 2026-10-09から日本語の原稿も行長を決めない(英語と同じく、`man`が渡す画面の幅(MANWIDTH→-rLL)やusilicの
   // HELPが渡す-rLLでgroffが折り返す)。数え違える仮名はwrapMiscountedKana()でJPM/JPGにする。
+  // 2026-10-09、直接のユーザー依頼("英語版も「User Commands」になるよう判定を変えて"): 日本語の原稿かどうかは
+  // 仮名(U+3041-U+30FF)・漢字(U+4E00-U+9FFF)を含むかで決める。以前はU+3000-U+9FFF全体を見ていたので、英語の
+  // 原稿の「」(U+300C/U+300D)や丸数字(U+3251-)でも日本語とみなしていた。
   bool japanese = false;
   for (std::size_t k = 0; k + 2 < markup.size() && !japanese; k++) {
     unsigned char c = static_cast<unsigned char>(markup[k]);
-    japanese = c == 0xE3 || (c >= 0xE4 && c <= 0xE9);  // U+3000-U+9FFF(仮名・漢字)
+    if ((c & 0xF0) != 0xE0) continue;
+    char32_t cp = ((c & 0x0F) << 12) | ((static_cast<unsigned char>(markup[k + 1]) & 0x3F) << 6) |
+                  (static_cast<unsigned char>(markup[k + 2]) & 0x3F);
+    japanese = (cp >= 0x3041 && cp <= 0x30FF) || (cp >= 0x4E00 && cp <= 0x9FFF);
   }
   // 日付の"-"はハイフンの記号(‐)にならないよう\[u002D]で(前置きの.char -は.THの後なので効かない)。
   char date[64] = "";

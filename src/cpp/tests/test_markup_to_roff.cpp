@@ -222,3 +222,9 @@ TEST_CASE("convertMarkupToMsRoffSource: Japanese kana with dakuten use JPM/JPG, 
   CHECK(msBody(out).find("\xE7\xAB\xA0\\*[usilic-tab]") != std::string::npos);
   CHECK(out.find(".ie r usilic-help .ds usilic-tab \\[uE000]\n") != std::string::npos);
 }
+
+// 2026-10-09 (a direct user request): an English source that only has 「」 or circled digits is not Japanese.
+TEST_CASE("convertMarkupToMsRoffSource: only kana/kanji make the source Japanese (「」 alone stays English)") {
+  CHECK(convertMarkupToMsRoffSource("\xE3\x80\x8C\xE3\x80\x8D : messages\n").find("\"User Commands\"") != std::string::npos);
+  CHECK(convertMarkupToMsRoffSource("\xE5\x90\x8D\xE7\xA7\xB0\n").find("User Commands") == std::string::npos);
+}
