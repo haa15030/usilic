@@ -7120,9 +7120,12 @@ bool Application::startUnderlineFileView() {
 }
 
 bool Application::startUsilicHistory(UsilicStyle style) {
-  if (currentMode_ != ApplicationMode::Directory) return false;
+  // 2026-10-10、直接のユーザー報告("^J^Uが利かない"): USILICの一覧の中(^Ju・^[uで開いた後)からも
+  // 他の一覧へ切り替えられるようにする。戻り先((ls)のディレクトリ)は最初に開いた時のまま。
+  bool fromUsilic = currentMode_ == ApplicationMode::Underline;
+  if (currentMode_ != ApplicationMode::Directory && !fromUsilic) return false;
   underlineReturn_.reset();
-  underlineOriginDirectory_ = directoryMode_.currentDirectory();
+  if (!fromUsilic) underlineOriginDirectory_ = directoryMode_.currentDirectory();
   if (style == UsilicStyle::Toc) {
     // 2026-09-21、直接のユーザー仕様(`^[u`): MAN/DIR/FILEの3項目の
     // 目次(常時表示、履歴が空でも出る)。選ぶとその種別の一覧(項目名で
