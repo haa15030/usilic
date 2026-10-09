@@ -1175,6 +1175,10 @@ class ContentView {
   // 全てのビューのモードラインの名前欄をこれにする(Application::startMacroRecording()が立て、
   // stopMacroRecording()が下ろす)。プロンプトのラベル(drawPromptLabel())は対象外。
   static std::string &modeNameOverride();
+  // 2026-10-09、直接のユーザー依頼("子であることをうっかり失念したまま...pagerにしろ(ls)にしろ子であることの目印を
+  // 決めたい。共通に出るラベル「usilic-v1.5b」をハイライト表示にする"): 親のusilicが外部ページャーとして起動した
+  // 子(main.cppのUSILIC_TRANSIENT)で立て、右下の「usilic v1.5b」を太字ではなく反転で描く。
+  static bool &childInstanceMarked();
  private:
   ModeLineFields providedModeLineFields() const;
  public:

@@ -4777,6 +4777,7 @@ int main(int argc, char **argv) {
   // 下の単一インスタンスの決まりで親を終了させない。孫へは引き継がない。
   bool transientLaunch = std::getenv("USILIC_TRANSIENT") != nullptr;
   ::unsetenv("USILIC_TRANSIENT");
+  fm::ContentView::childInstanceMarked() = transientLaunch;
   bool consultHistoryOnStart = !isFileLaunch && !stdinPiped && !transientLaunch;
 
   // Ported from str.c's set_usilicrc()/S_hist path-building: both files
