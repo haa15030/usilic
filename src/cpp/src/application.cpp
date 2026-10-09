@@ -5751,6 +5751,10 @@ bool Application::openSelectedEntryNoWrap() {
   fileMode_.setPagerListingDirectory(truncatedTrailingPath(directory));
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;
+  // 2026-10-10、直接のユーザー報告("src/.serverauth.93114が^O^Mで開けない"): 最初の読み込みで
+  // 読み切ってしまう小さなファイルは、その後のensureLoadedThrough()が新しい行を返さず描き直しの
+  // 契機が無いので、次のキーまで(ls)のままに見えていた。openListEntrySpecial()と同じく描き直す。
+  fileView_.redraw();
   return true;
 }
 
