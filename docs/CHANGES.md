@@ -29497,3 +29497,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: USILIC(Underline)の中からも受け付け、^Gの戻り先((ls)のディレクトリ)は最初に開いた時のままにする。
      FILE等の他の画面からは今まで通り(USILICは(ls)から開く決まり)。隔離したHOMEのPTYで^Ju→^J^U→^[u→^Ju→^Gが
      それぞれの一覧を経て(ls)へ戻ることを確認。
+716. **2026-10-10: usilicrcのARROWの値を12個に(末尾に20を足す)**
+   - **経緯**: 直接のユーザー依頼("ARROWで値の個数を11→12"、src/HELP_.txtの用例も12個に直したもの)。
+   - src/usilicrc・src/usilicrc.enのARROWに20を足した(~/.usilic/usilicrcの同じ行も)。src/HELP_.txt・
+     src/HELP_en_.txtの用例の先頭の「２０００0」(20000、2段目の100000より速くなり段の並びが崩れる)は
+     usilicrcと同じ200000に直した。src/HELP_en_.txtにもユーザーがsrc/HELP_.txtで消した重複のSPEEDの節を
+     消した。
