@@ -29441,3 +29441,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      したら(Terminalの操作の許可を断られた等)今まで通り端末を明け渡して待つ。runExternalUsilicPager()から呼ぶ。
    - src/HELP_.txt・src/HELP_en_.txtの外部ページャーの説明(^Ou)に、macOSのCUIは新しいウィンドウで開く旨を足した。
      ビルドのみ確認(実機確認待ち、初回はmacOSのオートメーションの許可のダイアログが出るはず)。
+710. **2026-10-09: 項目709の新しいウィンドウを、iTerm2から起動した時はiTerm2で開く**
+   - **経緯**: 直接のユーザー依頼("iTerm2から起動した時はiTerm2の新しいウィンドウにして")。
+   - **実装**: openInNewTerminalWindow()で、TERM_PROGRAM=iTerm.app(tmux等の中ではLC_TERMINAL=iTerm2)なら
+     osascriptでiTermに「create window with default profile」→そのセッションへwrite text(既定のシェルに打ち込むので
+     ログインシェルのPATHが効く)→activate。それ以外は今まで通りTerminal.app。知らせの文言は
+     「Opened in a new window」に。src/HELP_.txt・src/HELP_en_.txtの^Ouの説明にiTerm2を足した。
+     ビルドのみ確認(実機確認待ち、初回はiTerm2の操作の許可のダイアログが出るはず)。

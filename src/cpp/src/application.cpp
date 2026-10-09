@@ -16787,7 +16787,7 @@ bool Application::runExternalUsilicPager(const std::string &command) {
   programPromptDirectory_.clear();  // 結果に関わらず正確に一度消費される、executeProgram()自身の慣習通り
   if (!graphical && openInNewTerminalWindow(directory, "unset USILIC USILIC_HANDOFF; " + run)) {
     history_.pushRecent(RingCategory::ShellCommand, command);
-    showTransientNotice(activeView(), "Opened in a new Terminal window");
+    showTransientNotice(activeView(), "Opened in a new window");
     return true;
   }
   if (graphical) {
@@ -16824,9 +16824,21 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
     quoted += c;
   }
   quoted += "\"";
-  ChildProcess::Result result = ChildProcess::run(
-      {"osascript", "-e", "tell application \"Terminal\"", "-e", "do script " + quoted, "-e", "activate", "-e", "end tell"});
-  return result.ok;
+  // 2026-10-09、直接のユーザー依頼("iTerm2から起動した時はiTerm2の新しいウィンドウにして"): iTerm2は
+  // TERM_PROGRAM=iTerm.app(tmux等の中ではLC_TERMINAL=iTerm2が残る)。新しいウィンドウの既定のシェルへ
+  // write textで打ち込む(create windowのcommandで直接起動するとログインシェルのPATHが無い)。
+  const char *termProgram = std::getenv("TERM_PROGRAM");
+  const char *lcTerminal = std::getenv("LC_TERMINAL");
+  bool iterm = (termProgram && std::string(termProgram) == "iTerm.app") ||
+               (lcTerminal && std::string(lcTerminal) == "iTerm2");
+  std::vector<std::string> argv =
+      iterm ? std::vector<std::string>{"osascript", "-e", "tell application \"iTerm\"", "-e",
+                                       "set newWindow to (create window with default profile)", "-e",
+                                       "tell current session of newWindow to write text " + quoted, "-e", "activate",
+                                       "-e", "end tell"}
+            : std::vector<std::string>{"osascript", "-e", "tell application \"Terminal\"", "-e", "do script " + quoted,
+                                       "-e", "activate", "-e", "end tell"};
+  return ChildProcess::run(argv).ok;
 #else
   (void)directory;
   (void)command;
