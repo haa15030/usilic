@@ -77,6 +77,7 @@ const ScrollStep &arrowSpeedStep(int level);
 // ドラッグで始めた横書きの慣性は、ドラッグの距離で決まる段をこれだけ速い方へずらして始める。始めた後の矢印キー
 // での加減速はARROWの全部の段を使う(同日の訂正"最低速まで行けない...100000へ行かずに逆方向の25000になって"、
 // 以前は慣性中ずっとずらしていた)。ARROWの値は10個より多くてもよく、arrowSpeedMaxLevel()が最速の段。
+// 2026-10-10: 端末(-c)だけ。-gはドット単位で滑らかにつながるのでずらさない(直接のユーザー依頼)。
 constexpr int kDragArrowSpeedOffset = 2;
 int arrowSpeedMaxLevel();
 // ドラッグで始めた慣性の段のずらし(ARROWが無ければ0、SPEEDの表は今まで通り)。

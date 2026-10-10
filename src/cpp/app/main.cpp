@@ -3116,9 +3116,9 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
               if (sample.first >= cutoff) releaseDistance += sample.second;
             epubCoastLevel =
                 resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, std::max(gui.cellHeightPixels(), 1)));
-            // 横書きと同じく、マウスで始めた慣性は段を2つ速い方へずらす(fm::kDragArrowSpeedOffset参照、2026-10-09)
-            if (epubCoastLevel > 0)
-              epubCoastLevel = std::min(epubCoastLevel + fm::dragArrowSpeedOffset(), fm::arrowSpeedMaxLevel());
+            // 2026-10-10、直接のユーザー依頼("-gではスクロールが行ではなくドット単位なので2段ズラさなくとも
+            // 滑らかにつながる。なので-gではズラし無しで"): マウスで始めた慣性の段のずらし
+            // (fm::kDragArrowSpeedOffset)は端末(runCoastLoop())だけにし、-gではずらさない。
             if (epubCoastLevel > 0) {  // 慣性で流す(ずれはそのまま、下のフレームごとの処理)
               epubCoastDirection = releaseDistance > 0 ? 1 : -1;
               epubDragging = false;
@@ -3174,9 +3174,8 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
             int releaseDistance = 0;
             for (auto &sample : recentMotion)
               if (sample.first >= cutoff) releaseDistance += sample.second;
-            // マウスで始めた慣性は段を2つ速い方へずらして始める(fm::kDragArrowSpeedOffset参照)。
+            // 段のずらし(fm::kDragArrowSpeedOffset)は-gではしない(上の縦書きの同日のコメント参照)。
             coastLevel = resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, cellHeight));
-            if (coastLevel > 0) coastLevel = std::min(coastLevel + fm::dragArrowSpeedOffset(), fm::arrowSpeedMaxLevel());
             coastDirection = coastLevel > 0 ? (releaseDistance > 0 ? 1 : -1) : 0;
           } else {
             coastLevel = 0;
