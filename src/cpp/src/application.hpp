@@ -2389,6 +2389,10 @@ class Application {
   bool startCutFilePrompt(GrepSyntax syntax);
   bool startPartList();
   bool startOccurPrompt(GrepSyntax syntax);
+  // GREPの結果一覧から飛んだ先の画面に、^S(in-place)と同じ一致の強調を付ける/外す(2026-10-10)。
+  void highlightGrepJumpTarget(ContentView &target, int lineIndex);
+  void clearGrepJumpHighlight();
+  ContentView *grepJumpHighlightView_ = nullptr;
   bool startManPrompt();
   bool startManList();
   bool startProgramPrompt();

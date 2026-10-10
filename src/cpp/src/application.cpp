@@ -9429,6 +9429,7 @@ bool Application::openSelectedGrepMatch() {
   currentMode_ = grepReturnMode_;
   ContentView &target = activeView();
   target.setCursorIndex(match->sourceLineIndex);
+  if (grepReturnMode_ != ApplicationMode::Shell) highlightGrepJumpTarget(target, match->sourceLineIndex);
   if (grepReturnMode_ == ApplicationMode::Directory) {
     directoryMode_.primaryAnnotations().push(DirectoryMode::DirAnnotationKind::Grep,
                                               std::string(grepSyntaxLabel(grepSyntax_)) + ": " + grepMode_.pattern());
@@ -9556,6 +9557,29 @@ std::vector<ContentView::GrepHighlightMatch> toHighlightMatches(const std::vecto
   return out;
 }
 }  // namespace
+
+// 2026-10-10、直接のユーザー依頼("^T^S（FGREP）だが検索結果一覧のどれかを選んだあとのマッチ文字列に文字装飾を
+// いれて欲しい。^Sの時の^P/^Nでハイライトをたどれるやつ。;/:で同じ動作なので見た目も同じで"): 一覧の全ての
+// 一致を^Sと同じく強調し、選んだ行の最初の一致を今の一致として目立たせる。;/:(usilicrcのMACRO、^G^P^M/
+// ^G^N^M)は一覧へ戻って隣を開き直すので、開くたびに付け直される。
+void Application::highlightGrepJumpTarget(ContentView &target, int lineIndex) {
+  clearGrepJumpHighlight();
+  std::pair<int, int> span{-1, -1};
+  for (const auto &occurrence : buildGrepInPlaceOccurrences(grepMode_.matches()))
+    if (occurrence.sourceLineIndex == lineIndex) {
+      span = occurrence.span;
+      break;
+    }
+  target.setGrepMatchHighlight(toHighlightMatches(grepMode_.matches()), lineIndex, span);
+  grepJumpHighlightView_ = &target;
+}
+
+void Application::clearGrepJumpHighlight() {
+  if (!grepJumpHighlightView_) return;
+  if (!grepInPlaceActive_ || grepJumpHighlightView_ != &grepViewForMode(grepInPlaceOriginMode_))
+    grepJumpHighlightView_->clearGrepMatchHighlight();
+  grepJumpHighlightView_ = nullptr;
+}
 
 // buildGrepInPlaceOccurrences()自身の宣言コメント(application.hpp、
 // Application::GrepOccurrence自身の宣言コメント)参照。GrepMatchは
@@ -9791,6 +9815,7 @@ bool Application::jumpToGrepInPlaceMatch(int delta) {
 
 bool Application::returnFromGrep() {
   grepJumpMode_.reset();
+  clearGrepJumpHighlight();
   // 2026-08-11修正: 直接のユーザーの説明――"検索への入口がCUTなら
   // 出るときもCUTから出るはず"(検索自身の入り口が候補リストだった
   // なら、Backもそこを通って出るべき)。grepReturnsToCandidateList_
@@ -13184,6 +13209,7 @@ bool Application::startGrepPrompt(GrepSyntax syntax) {
   if (currentMode_ == ApplicationMode::Grep) return false;
   grepOccurPending_ = false;  // occurはstartOccurPrompt()がこの後で立てる
   grepJumpMode_.reset();
+  clearGrepJumpHighlight();
   grepSyntax_ = syntax;
   grepReturnMode_ = currentMode_;
   // grepReturnListCategory_自身の宣言コメント参照: grepReturnMode_が
