@@ -1461,6 +1461,30 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // なので、削除するのではなくtrailing3(それ自身のコメント参照)へ
   // 移す。
   // 縦書き(rebuildEpubVertical()参照): 名前欄は本のファイル名、戻り値欄は"EPUB 縦書き"。
+  // 平文のHELPの戻り値の欄は、HELPのファイルのディレクトリではなく戻り先の(ls)(returnToDirectory()参照)。
+  fileView_.setModeLineFieldsProvider([this, inner = fileView_.modeLineFieldsProvider()](int cursor) {
+    ContentView::ModeLineFields fields = inner(cursor);
+    if (!plainHelpPath_.empty() && fileMode_.currentFile() == plainHelpPath_ &&
+        fileReturnMode_ == ApplicationMode::Directory && fileMode_.annotations().empty() && !fileMode_.isPagerMode() &&
+        !fileView_.grepInPlaceActive() && !fileView_.grepNoMatchActive())
+      fields.trailing2 = directoryMode_.currentDirectory();
+    return fields;
+  });
+
+  // GREPの結果一覧から飛んだPARTの画面(grepJumpMode_参照)では、戻り値の欄を「FGREP: 文字列」にする。
+  for (auto [view, mode] : {std::pair{&cutView_, ApplicationMode::Cut}, std::pair{&cutContentView_, ApplicationMode::CutContent}}) {
+    view->setModeLineFieldsProvider([this, mode = mode, inner = view->modeLineFieldsProvider()](int cursor) {
+      ContentView::ModeLineFields fields = inner(cursor);
+      if (grepJumpMode_ && *grepJumpMode_ == mode && currentMode_ == mode) {
+        fields.trailing2 = previousModeName(ApplicationMode::Grep);
+        fields.trailing3.clear();
+        fields.trailing2Kind = ContentView::ModeLineFields{}.trailing2Kind;
+        fields.fillTrailingToEdge = true;
+      }
+      return fields;
+    });
+  }
+
   epubVerticalView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     return {std::filesystem::path(fileMode_.currentFile()).filename().string(),
             std::to_string(contentByteCount(fileView_)), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
@@ -4834,6 +4858,10 @@ bool Application::handleCommandImpl(Command command) {
       if (currentMode_ != ApplicationMode::Directory) return openListEntrySpecial(/*raw=*/true);
       return openSelectedEntryRaw();
     case Command::Back:
+      if (grepJumpMode_ && currentMode_ == *grepJumpMode_) {
+        grepJumpMode_.reset();
+        return returnToGrepResults();
+      }
       if (currentMode_ == ApplicationMode::Copy) return returnFromCopy();
       if (currentMode_ == ApplicationMode::ListBrowser) return returnFromListBrowser();
       if (currentMode_ == ApplicationMode::Du) return returnFromDu();
@@ -9318,7 +9346,10 @@ bool Application::returnToDirectory() {
   // だけが設定するフラグをクリアするのを覚えておく必要が、(約10個
   // ある呼び出し箇所の)それぞれに生じるのではなく、他のどんな
   // ファイルがロードされた瞬間にも自己修正される。
-  if (fileMode_.currentFile() != bannerFilePath()) {
+  // 2026-10-10、直接のユーザー報告("HELP上で…^G連打で無限行き来"): 平文のHELP(^Oh)はHELPのファイルのある
+  // ディレクトリ(~/.usilic/等)へ移さず、開いた時の(ls)へ戻る。以前はそこへ移ったため、(ls)の^G
+  // (goToRecentDirectory())が元のディレクトリとの間を行き来し続けた。
+  if (fileMode_.currentFile() != bannerFilePath() && fileMode_.currentFile() != plainHelpPath_) {
     std::filesystem::path filePath(fileMode_.currentFile());
     std::string parent = filePath.parent_path().string();
     if (!parent.empty() && parent.back() != '/') parent += '/';
@@ -9400,7 +9431,9 @@ bool Application::openSelectedGrepMatch() {
     // いる)、"EGREP: pattern"というラベルの繰り返しではない――「それ」
     // は代わりに結果リストの画面に属する(grepView_自身のプロバイダ、
     // それ自身の同一の訂正参照)。
-    fileMode_.annotations().push(FileMode::FileAnnotationKind::Search, match->text);
+    // 2026-10-10、直接のユーザー依頼("旧CUTでの修正と同じだが一覧から選んだ画面での戻り値は一律「FGREP: ^J」"):
+    // 上の8/28の訂正(行の文字列)を改め、PARTの区間の中身(9/27)と同じく検索の種類と文字列を出す。
+    fileMode_.annotations().push(FileMode::FileAnnotationKind::Search, previousModeName(ApplicationMode::Grep));
     fileReturnMode_ = ApplicationMode::Grep;
   } else if (grepReturnMode_ == ApplicationMode::Man) {
     // 2026-09-19四訂正、直接のユーザー提案("フラグはなるべく使いたく
@@ -9441,6 +9474,8 @@ bool Application::openSelectedGrepMatch() {
     // ここに残っているのは、Shell起点のFGREP(^O^S)/EGREP(^J^S)が今も
     // 従来通りの一覧モードのままで、この関数を経由し続けるため。
     shell_.beginHistoryBrowsing();
+  } else {
+    grepJumpMode_ = grepReturnMode_;  // HELP等のPARTの画面(grepJumpMode_参照)
   }
   // 2026-08-28修正、直接のユーザー報告("検索前には画面にあった
   // ブロックカーソルが検索一覧のどれかを[return]後の画面では表示
@@ -9716,6 +9751,7 @@ bool Application::jumpToGrepInPlaceMatch(int delta) {
 }
 
 bool Application::returnFromGrep() {
+  grepJumpMode_.reset();
   // 2026-08-11修正: 直接のユーザーの説明――"検索への入口がCUTなら
   // 出るときもCUTから出るはず"(検索自身の入り口が候補リストだった
   // なら、Backもそこを通って出るべき)。grepReturnsToCandidateList_
@@ -13105,6 +13141,7 @@ bool Application::startOccurPrompt(GrepSyntax syntax) {
 bool Application::startGrepPrompt(GrepSyntax syntax) {
   if (currentMode_ == ApplicationMode::Grep) return false;
   grepOccurPending_ = false;  // occurはstartOccurPrompt()がこの後で立てる
+  grepJumpMode_.reset();
   grepSyntax_ = syntax;
   grepReturnMode_ = currentMode_;
   // grepReturnListCategory_自身の宣言コメント参照: grepReturnMode_が

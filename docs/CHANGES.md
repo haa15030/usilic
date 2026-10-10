@@ -29615,3 +29615,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: grepView_のバッジを、in-placeの検索と同じgrepSyntaxBadge(grepSyntax_)にした。使われなくなった
      grepSyntaxRole()は消した。
    - **確認**: PTYで^T^Sの一覧が(fgrep)、^T^J^Sの一覧が(egrep)。
+
+725. **2026-10-10: GREPの結果一覧から選んだ画面の戻り値を一律「FGREP: 文字列」に、HELP等のPARTの画面からも^Gで一覧へ、平文のHELPの^Gを開いた時の(ls)へ**
+   - **経緯**: 直接のユーザー報告("HELP上で^T^Sしてたら^G連打で無限行き来"、"旧CUTでの修正と同じだが一覧から
+     選んだ画面での戻り値は一律「FGREP: ^J」")。
+   - **戻り値**: FILEへ飛んだ時の注釈を、8/28の訂正(選んだ行の文字列)からpreviousModeName(Grep)
+     (「FGREP: 文字列」)に改めた(PARTの区間の中身の9/27の変更と同じ考え)。MAN・LOCATE・DUは元からこの形。
+   - **PARTの画面(HELP・KEY等)**: 一覧から飛んでも戻り先が無く、^Gが一覧を飛ばしてHELPの目次や(ls)へ
+     行っていた。grepJumpMode_に飛んだ先の画面を覚え、その画面の^Gで一覧へ戻す。cutView_・cutContentView_の
+     モードラインの戻り値の欄(trailing2)もその間は「FGREP: 文字列」にする(ContentViewに今のプロバイダを
+     返すmodeLineFieldsProvider()を足し、Application側で包んだ)。
+   - **無限の行き来**: 平文のHELP(^Oh)の^GでreturnToDirectory()がHELPのファイルのディレクトリ(~/.usilic/)へ
+     移り、その(ls)の^G(goToRecentDirectory())が元のディレクトリとの間を行き来し続けていた。平文のHELPでは
+     ディレクトリを移さず、モードラインの戻り値の欄も(ls)のディレクトリにした。
+   - **確認**: PTYで、HELPの章の中身から^T^S"K"→一覧→^N^M→戻り値「FGREP: K」→^Gで一覧→^Gで章→^Gで目次。
+     FILEから^T^S"A"→^N^Mで「FGREP: A」。平文のHELP→^Gで開いた時の(ls)。

@@ -3124,6 +3124,9 @@ private:
   // occur(2026-10-10、^T^S・^T^J^S): 次のexecuteGrep()をin-placeにせず、一致した行の一覧(ApplicationMode::Grep)
   // にする。leaderTJPending_は^Tの後の^Jを見た。
   bool grepOccurPending_ = false;
+  // GREPの結果一覧から^Mで飛んだ先の画面(FILE・(ls)・MAN・LOCATE・DU・SHELL以外、それらは各自の戻り先で扱う)。
+  // その画面の^Gで一覧へ戻し、戻り値の欄に「FGREP: 文字列」を出す(2026-10-10)。
+  std::optional<ApplicationMode> grepJumpMode_;
   bool leaderTJPending_ = false;
   ContentView listBrowserView_;
   // ^O^C(COPY): CopyMode自身の凍結されたスナップショットの裏付け
