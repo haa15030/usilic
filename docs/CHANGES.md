@@ -29531,3 +29531,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ファイルとディレクトリを選んで^Ouするとページャー→(ls)の順に起動し、^[uのUSILICに「f1.txt (usilic)」
      「sd/ (usilic)」が並び、sd/の^Mで子の(ls)が開くことを確認。
    - src/HELP_.txt・src/HELP_en_.txtの^Ou・INFO・(ls)のモードライン・^Jp・USILICの目次の説明を直した。
+718. **2026-10-10: Linuxの端末でも、外部起動した子のusilic(^Ou・^Jpの"usilic ...")を新しいウィンドウで開く**
+   - **経緯**: 直接のユーザー依頼("子プロセスの別ウィンドウ起動はLinuxはできないの？"→説明→"実装して")。
+     項目711〜717ではopenInNewTerminalWindow()が`#ifdef __APPLE__`で、Linuxでは常に同じ端末で起動していた。
+   - **内容**: SSHでなく、DISPLAYかWAYLAND_DISPLAYがあれば、今いる端末(GNOME_TERMINAL_SCREEN・KONSOLE_VERSION・
+     XTERM_VERSIONで判別)、分からなければPATHで最初に見つかったもの(gnome-terminal・konsole・xfce4-terminal・
+     xterm・x-terminal-emulatorの順)で`sh -c`を開く。xterm等は開いている間終わらないのでnohupで背後に回す。
+     gnome-terminalは既存の端末サーバーの環境で開くことがあるので、PATHはこちらのものを渡す。どれもコマンドの
+     終了でウィンドウを閉じるので、Terminal.appのような閉じる仕掛けは無し。目印のファイル(「Opened in a new
+     window」を消す)はmacOSと共通。見つからなければ従来通り同じ端末。
+   - **確認**: macOSでビルドのみ(Linux側の分岐はLinux実機での確認待ち)。
+   - src/HELP_.txt・src/HELP_en_.txtの^Ouの説明に足した。

@@ -16957,14 +16957,8 @@ void Application::launchExternalUsilic(const std::string &directory, const std::
 }
 
 bool Application::openInNewTerminalWindow(const std::string &directory, const std::string &command) {
-#ifdef __APPLE__
   if (std::getenv("SSH_CONNECTION") || std::getenv("SSH_TTY")) return false;
-  std::string dir = directory;
-  if (dir.empty()) {
-    std::error_code ec;
-    dir = std::filesystem::current_path(ec).string();
-    if (ec) dir.clear();
-  }
+#ifdef __APPLE__
   // 2026-10-09、直接のユーザー依頼("iTerm2から起動した時はiTerm2の新しいウィンドウにして"): iTerm2は
   // TERM_PROGRAM=iTerm.app(tmux等の中ではLC_TERMINAL=iTerm2が残る)。新しいウィンドウの既定のシェルへ
   // write textで打ち込む(create windowのcommandで直接起動するとログインシェルのPATHが無い)。
@@ -16972,6 +16966,34 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
   const char *lcTerminal = std::getenv("LC_TERMINAL");
   bool iterm = (termProgram && std::string(termProgram) == "iTerm.app") ||
                (lcTerminal && std::string(lcTerminal) == "iTerm2");
+#else
+  // 2026-10-10、直接のユーザー依頼(Linuxでも子のusilicを別ウィンドウで): X11/Waylandの画面があれば、今いる端末
+  // (環境変数で分かるもの)、分からなければPATHで最初に見つかった端末の新しいウィンドウで開く。どれも中の
+  // コマンドが終わればウィンドウを閉じるので、macOSのTerminal.appのような閉じる仕掛けはいらない。
+  if (!std::getenv("DISPLAY") && !std::getenv("WAYLAND_DISPLAY")) return false;
+  struct Terminal {
+    const char *program;
+    const char *execFlag;  // この後ろにsh -c ...を続ける
+    const char *envHint;   // その端末の中で立っている環境変数
+  };
+  static const Terminal kTerminals[] = {
+      {"gnome-terminal", "--", "GNOME_TERMINAL_SCREEN"}, {"konsole", "-e", "KONSOLE_VERSION"},
+      {"xfce4-terminal", "-x", nullptr},                 {"xterm", "-e", "XTERM_VERSION"},
+      {"x-terminal-emulator", "-e", nullptr},
+  };
+  const Terminal *terminal = nullptr;
+  for (const auto &t : kTerminals)
+    if (t.envHint && std::getenv(t.envHint) && programOnPath(t.program)) terminal = &t;
+  for (const auto &t : kTerminals)
+    if (!terminal && programOnPath(t.program)) terminal = &t;
+  if (!terminal) return false;
+#endif
+  std::string dir = directory;
+  if (dir.empty()) {
+    std::error_code ec;
+    dir = std::filesystem::current_path(ec).string();
+    if (ec) dir.clear();
+  }
   // 子のusilicが終わったら消す目印のファイル(pollExternalPagerWindows()が消えたのを見て知らせを消す)。
   static int markerSerial = 0;
   std::error_code markerEc;
@@ -16979,6 +17001,7 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
                         ("usilic-pager-" + std::to_string(::getpid()) + "-" + std::to_string(++markerSerial)))
                            .string();
   { std::ofstream(marker) << ""; }
+#ifdef __APPLE__
   std::string shellLine = cdWrap(dir, command) + "; rm -f " + shellQuoteArgIfNeeded(marker) + "; ";
   // 2026-10-09、直接のユーザー依頼("設定を変えずにusilic側で閉じるようにして"): Terminal.appは既定の設定だと
   // シェルが終わっても「[プロセスが完了しました]」でウィンドウを残す(iTerm2は閉じる)。シェルを終える前に、
@@ -17004,17 +17027,23 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
                                        "-e", "end tell"}
             : std::vector<std::string>{"osascript", "-e", "tell application \"Terminal\"", "-e", "do script " + quoted,
                                        "-e", "activate", "-e", "end tell"};
+#else
+  // gnome-terminal等は既に動いている端末のサーバーの環境で開くことがあるので、PATHはこちらのものを渡す
+  // (~/.local/bin等のusilicが見つからないのを避ける)。xterm等は開いている間は終わらないので背後に回す。
+  const char *path = std::getenv("PATH");
+  std::string shellLine = (path ? "PATH=" + shellQuoteArg(path) + "; export PATH; " : std::string()) +
+                          cdWrap(dir, command) + "; rm -f " + shellQuoteArgIfNeeded(marker);
+  std::vector<std::string> argv = {
+      "sh", "-c",
+      "nohup " + shellQuoteArgv({terminal->program, terminal->execFlag, "sh", "-c", shellLine}) +
+          " </dev/null >/dev/null 2>&1 &"};
+#endif
   if (!ChildProcess::run(argv).ok) {
     std::filesystem::remove(marker, markerEc);
     return false;
   }
   externalPagerMarkers_.push_back(marker);
   return true;
-#else
-  (void)directory;
-  (void)command;
-  return false;
-#endif
 }
 
 // 2026-10-09、直接のユーザー報告("子プロセス起動後、親で何もしないと子が消えた後も「Opened in a new window」が
