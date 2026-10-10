@@ -29641,3 +29641,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **HELP**: src/HELP_.txt・HELP_en_.txtの^[uの目次の説明。
    - **確認**: PTYで、目次に9項目、ARC→t.zip→^Mで中身→^Gで一覧→目次→(ls)、PART→`f.txt "A:"`→^Mで区間の中身
      →^G^G^Gで一覧→file→PARTの一覧。
+
+727. **2026-10-10: 端末(-c)でも縦書きのEPUBの本文を左右にドラッグして列を送る**
+   - **経緯**: 直接のユーザー報告("縦書きEPUBで横方向の画面ドラッグが出来ない")。左右のドラッグは-g
+     (runGuiPhase()のepubDragging、2026-09-29)にしか無く、端末のrunTerminalMouseDrag()は行の差しか見ていなかった。
+   - **変更**: runTerminalMouseDrag()で、始めた時にApplication::epubVerticalDragActive()なら、桁の差を貯めて
+     1列の幅(fm::epubVerticalColumnPitch()桁)ごとにscrollEpubVertical()(右へで先へ、-gと同じ向き)。動かさずに
+     離したらクリック、動かしたら離す直前の量でrunCoastLoop()の慣性(縦書きでは列を送る)。
+   - **確認**: PTYで、K3t.epubの本文を20桁目から60桁目へドラッグ→位置が13列目から89列目へ(慣性込み)。

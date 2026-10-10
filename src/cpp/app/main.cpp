@@ -1370,7 +1370,10 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
   gTerminalClickTargetsCursor = false;
   std::deque<std::pair<std::chrono::steady_clock::time_point, int>> recentMotion;
   constexpr auto kReleaseWindow = std::chrono::milliseconds(150);
-  if (!targetsCursor) applyHoverRowAndRedraw(view, startRow);
+  bool columns = app.epubVerticalDragActive();  // 縦書きのEPUBの本文: 左右のドラッグ(下のループ参照)
+  int lastColumn = startColumn;
+  int columnAccum = 0;
+  if (!targetsCursor && !columns) applyHoverRowAndRedraw(view, startRow);
 
   for (;;) {
     int byte = keyInput.readByte();
@@ -1398,6 +1401,39 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
     }
 
     if (mouse->wheel != 0 || mouse->button < 0) continue;  // ドラッグ中のホイールは無視
+    // 2026-10-10、直接のユーザー報告("縦書きEPUBで横方向の画面ドラッグが出来ない"): 縦書きのEPUBの本文では、
+    // -g(runGuiPhase()のepubDragging)と同じく左右のドラッグで1列ずつ送る(右へで先へ)。1列の幅
+    // (fm::epubVerticalColumnPitch()桁)を越えるたびにApplication::scrollEpubVertical()。離した時の
+    // 慣性も同じくrunCoastLoop()(縦書きでは列を送る)。
+    if (columns) {
+      if (mouse->motionOnly) {
+        columnAccum += mouse->column - lastColumn;
+        lastColumn = mouse->column;
+        int pitch = std::max(1, fm::epubVerticalColumnPitch());
+        while (columnAccum >= pitch || columnAccum <= -pitch) {
+          int dir = columnAccum > 0 ? 1 : -1;
+          columnAccum -= dir * pitch;
+          moved = true;
+          auto now = std::chrono::steady_clock::now();
+          recentMotion.push_back({now, dir});
+          while (!recentMotion.empty() && recentMotion.front().first < now - kReleaseWindow) recentMotion.pop_front();
+          if (!app.scrollEpubVertical(dir)) columnAccum = 0;
+        }
+        continue;
+      }
+      if (mouse->pressed) continue;
+      if (!moved) {
+        app.handleMouseClick(mouse->row, mouse->column);
+        return TerminalCoastResult{};
+      }
+      auto cutoff = std::chrono::steady_clock::now() - kReleaseWindow;
+      int releaseDistance = 0;
+      for (auto &sample : recentMotion)
+        if (sample.first >= cutoff) releaseDistance += sample.second;
+      int level = resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, 1));
+      if (level == 0 || !app.epubVerticalDragActive()) return TerminalCoastResult{};
+      return runCoastLoop(app, display, keyInput, level, releaseDistance > 0 ? 1 : -1, /*fromDrag=*/true);
+    }
     if (mouse->motionOnly) {
       int rowDelta = mouse->row - lastRow;
       lastRow = mouse->row;
