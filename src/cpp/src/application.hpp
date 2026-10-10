@@ -2388,6 +2388,7 @@ class Application {
   bool startCutPrompt(GrepSyntax syntax);
   bool startCutFilePrompt(GrepSyntax syntax);
   bool startPartList();
+  bool startOccurPrompt(GrepSyntax syntax);
   bool startManPrompt();
   bool startManList();
   bool startProgramPrompt();
@@ -3118,6 +3119,12 @@ private:
   // startUnderlineFileView()発動時のカレントディレクトリ(ディレクトリを
   // 選んで移動した後も、returnFromUnderline()が元の位置へ戻れるように覚える)。
   std::string underlineOriginDirectory_;
+  // USILICの一覧を開いた画面((ls)以外から開いた時、2026-10-10)。一覧の最後の^Gでそこへ戻る。
+  ApplicationMode underlineOriginMode_ = ApplicationMode::Directory;
+  // occur(2026-10-10、^T^S・^T^J^S): 次のexecuteGrep()をin-placeにせず、一致した行の一覧(ApplicationMode::Grep)
+  // にする。leaderTJPending_は^Tの後の^Jを見た。
+  bool grepOccurPending_ = false;
+  bool leaderTJPending_ = false;
   ContentView listBrowserView_;
   // ^O^C(COPY): CopyMode自身の凍結されたスナップショットの裏付け
   // となるビュー――startCopy()自身のコメント参照。

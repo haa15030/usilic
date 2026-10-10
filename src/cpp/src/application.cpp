@@ -2571,9 +2571,21 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
                        leaderXRPending_ || registerPending_ != RegisterAction::None || leaderOPending_ ||
                        gotoLineGPending_ || gotoLineDigitsPending_;
   // 2026-10-10: ^Tn/^Tp(外部起動した子の(ls)で、渡されたディレクトリを行き来する、setLaunchDirectories()参照)。
+  // 2026-10-10、直接のユーザー依頼(EmacsのoccurをFGREP/EGREPで、"暫定^T^Sと^T^J^S"): 今の画面の中で一致した
+  // 行の一覧を出し、^Mでその行へ飛ぶ(従来のGREPの結果一覧、in-placeにしない)。
+  if (leaderTJPending_) {
+    leaderTJPending_ = false;
+    if (!special && byte == 0x13) return startOccurPrompt(GrepSyntax::Regex);
+    return false;
+  }
   if (leaderTPending_) {
     leaderTPending_ = false;
     if (!special && (byte == 'n' || byte == 'p')) return cycleLaunchDirectory(byte == 'n' ? 1 : -1);
+    if (!special && byte == 0x13) return startOccurPrompt(GrepSyntax::Fixed);
+    if (!special && byte == kLeaderJ) {
+      leaderTJPending_ = true;
+      return true;
+    }
     return false;
   }
   if (!special && byte == 0x14 && !leaderPending && !universalArgPending_) {
@@ -7202,10 +7214,16 @@ bool Application::startUnderlineFileView() {
 bool Application::startUsilicHistory(UsilicStyle style) {
   // 2026-10-10、直接のユーザー報告("^J^Uが利かない"): USILICの一覧の中(^Ju・^[uで開いた後)からも
   // 他の一覧へ切り替えられるようにする。戻り先((ls)のディレクトリ)は最初に開いた時のまま。
+  // 2026-10-10、直接のユーザー報告("^J^Uはssh経由、mpi上いずれも反応無し"): 起動時に前回の画面(HELP等)
+  // から再開すると(ls)ではないので黙って何もしていなかった。SHELL以外のどの画面からでも開き、
+  // 一覧の最後の^Gで開いた画面へ戻る(underlineOriginMode_)。
   bool fromUsilic = currentMode_ == ApplicationMode::Underline;
-  if (currentMode_ != ApplicationMode::Directory && !fromUsilic) return false;
+  if (currentMode_ == ApplicationMode::Shell) return false;
   underlineReturn_.reset();
-  if (!fromUsilic) underlineOriginDirectory_ = directoryMode_.currentDirectory();
+  if (!fromUsilic) {
+    underlineOriginDirectory_ = directoryMode_.currentDirectory();
+    underlineOriginMode_ = currentMode_;
+  }
   if (style == UsilicStyle::Toc) {
     // 2026-09-21、直接のユーザー仕様(`^[u`): MAN/DIR/FILEの3項目の
     // 目次(常時表示、履歴が空でも出る)。選ぶとその種別の一覧(項目名で
@@ -7371,6 +7389,11 @@ bool Application::returnFromUnderline() {
   // (エントリ一覧・カーソル位置)には一切触れていないので、戻り先は
   // 常にそのままのDirectory一覧であり、duReturnStack_/
   // locateReturnStack_のようなスタックは不要。
+  if (underlineOriginMode_ != ApplicationMode::Directory) {
+    currentMode_ = std::exchange(underlineOriginMode_, ApplicationMode::Directory);
+    activeView().redraw();
+    return true;
+  }
   currentMode_ = ApplicationMode::Directory;
   display_.hideVisibleCursor();  // returnToDirectory()自身の同一のコメント参照
   directoryView_.redraw();
@@ -11122,6 +11145,7 @@ bool Application::executeOpenDataDirectory() {
 bool Application::executeOpenWorkList() {
   underlineReturn_.reset();
   underlineOriginDirectory_ = directoryMode_.currentDirectory();
+  underlineOriginMode_ = ApplicationMode::Directory;
   usilicLevel_ = UsilicLevel::Toc;
   if (!openUsilicGroup("WORK")) return false;
   currentMode_ = ApplicationMode::Underline;
@@ -13083,8 +13107,15 @@ bool Application::isGrepInPlaceEligibleMode(ApplicationMode mode) const {
   }
 }
 
+bool Application::startOccurPrompt(GrepSyntax syntax) {
+  if (!startGrepPrompt(syntax)) return false;
+  grepOccurPending_ = true;
+  return true;
+}
+
 bool Application::startGrepPrompt(GrepSyntax syntax) {
   if (currentMode_ == ApplicationMode::Grep) return false;
+  grepOccurPending_ = false;  // occurはstartOccurPrompt()がこの後で立てる
   grepSyntax_ = syntax;
   grepReturnMode_ = currentMode_;
   // grepReturnListCategory_自身の宣言コメント参照: grepReturnMode_が
@@ -15944,7 +15975,8 @@ bool Application::executeGrep(const std::string &pattern) {
   // (^J^S)も含め、grepSyntax_の値に関わらずisGrepInPlaceEligibleMode()
   // だけで判定する(startGrepPrompt()自身のコメントも参照、EGREP用の
   // 候補一覧起動(startRegexPromptList())自体をこの統一で廃止した)。
-  if (isGrepInPlaceEligibleMode(grepReturnMode_)) {
+  bool occur = std::exchange(grepOccurPending_, false);
+  if (!occur && isGrepInPlaceEligibleMode(grepReturnMode_)) {
     grepInPlaceOriginMode_ = grepReturnMode_;
     return activateGrepInPlace();
   }
@@ -18984,6 +19016,7 @@ bool Application::openDroppedPaths(const std::vector<std::string> &paths) {
       opened = false;
     } else {
       underlineOriginDirectory_ = directoryMode_.currentDirectory();
+      underlineOriginMode_ = ApplicationMode::Directory;
       usilicLevel_ = UsilicLevel::None;
       underlineMode_.show(std::move(existing));
       currentMode_ = ApplicationMode::Underline;

@@ -29589,3 +29589,22 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **HELP**: src/HELP_.txt・HELP_en_.txtのPROGRAM/CUTの章とそれを参照する箇所を直した。
    - **確認**: PTYで、FILEからの^Jp→PART一覧→^G→file→^G→(ls)、履歴にfileと`file "A:"`、^J^Pの一覧に
      `file "A:"`だけ→^Mで最上行の区間の中身→^G^G^Gで一覧→file→(ls)、^JtでTOOLのプロンプト。
+
+722. **2026-10-10: ^J^U・^Ju・^[uを(ls)以外の画面からも開く、^G で開いた画面へ戻る**
+   - **経緯**: 直接のユーザー報告("^J^Uはssh経由、mpi上いずれも反応無し")。起動時に前回の画面(この時は
+     HELP)から再開するため(ls)ではなく、startUsilicHistory()がDirectory/Underline以外では黙ってfalseを
+     返していた(項目715の確認は-cで(ls)から始めていたので見逃した)。
+   - **変更**: SHELL以外のどの画面からでも開き、開いた画面をunderlineOriginMode_に覚え、returnFromUnderline()の
+     最後の^Gでそこへ戻る((ls)から開いた時は従来どおり)。^J^Owと子のディレクトリの一覧はDirectoryに戻す。
+   - **確認**: PTYで、HELPから再開した状態で^J^U→USILICの一覧→^GでHELPへ。
+
+723. **2026-10-10: Emacsのoccur: ^T^S(文字どおり)・^T^J^S(拡張正規表現)で一致した行の一覧、^Mでその行へ(暫定のキー)**
+   - **経緯**: 項目705で「CUT(^Cb)が同じ働き」として見送ったEmacsのoccur(HISTORY.md:32949の8.)について、
+     直接のユーザー依頼(FGREP/EGREPを今のファイルだけに絞り、一覧から元の行へ飛ぶ方。"キーアサインが悩ましい。
+     暫定^T^Sと^T^J^Sとか")。
+   - **変更**: startOccurPrompt()がstartGrepPrompt()の後にgrepOccurPending_を立て、executeGrep()がin-placeの
+     代わりに従来のGREPの結果一覧(ApplicationMode::Grep)を出す。^Mで元の画面のその行へ(openSelectedGrepMatch())、
+     ^Gで一覧→元の画面。^Tの接頭キー(^Tn/^Tp)に^Sと^J(続く^S)を足した。^Tn/^TpはKEYの表(K番号)に無いので、
+     暫定のこれらも表には入れていない。
+   - **HELP**: src/HELP_.txt・HELP_en_.txtのFGREP/EGREPの表に2行と説明1行。
+   - **確認**: PTYで、FILEから^T^J^S"A."→2件の一覧→^N^Mで3行目へ→^G^G^Gで一覧→file(その行)→(ls)。
