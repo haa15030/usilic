@@ -7964,8 +7964,9 @@ bool Application::leaveEpubHorizontalIfOutside() {
     int col = 0;
     for (std::size_t c = 0; c < epubVerticalCols_.size(); c++)
       if (!epubVerticalCols_[c].padding && epubVerticalCols_[c].rawLineNumber <= raw) col = static_cast<int>(c);
-    int perScreen = epubVerticalColumnsPerScreen(display_.columns());
-    setEpubVerticalView((col / perScreen) * perScreen, col);  // 前の章の最後のページ
+    // 2026-10-10、直接のユーザー依頼("章の末尾から一行ずつ表示していって"): ページの頭ではなく、前の章の
+    // 最後の列を右端に置き、そこから1列ずつ現れるようにする(stepEpubVerticalFirst()の前へと同じ)。
+    setEpubVerticalView(col, col);
   }
   activeView().redraw();
   activeView().syncVisibleCursor();
@@ -8239,6 +8240,24 @@ void Application::rebuildEpubVertical(int rawLine) {
     for (const auto &image : titleImages) pushImagePage(image.image, image.rawLineNumber);
   }
   padToPage();  // 最後の章も右端から始められるよう(右端に置ける列の上限は列の数-perScreen)
+  // 2026-10-10、直接のユーザー報告("切り換えのタイミングで一つ前の章（少女の反論）の冒頭ページが一瞬出る"、
+  // "章の末尾から一行ずつ表示していって、連続スクロールなら継続、章毎なら次の章の末尾から"): 本文の後に
+  // 横書きの範囲(奥付等)がある時は、最後の章も他の章と同じく、本文の最後の列が右端に来るまで1列ずつ
+  // 送れるよう、もう1画面分の空の列を足す(足さないと、最後の章のページで右端の列が上限に達し、次の1列で
+  // すぐ奥付へ入っていた。1画面に収まる短い章は一瞬しか見えなかった)。
+  {
+    const auto &ranges = fileMode_.epubLayoutHints().horizontal;
+    int lastRaw = 0;
+    for (const auto &col : epubVerticalCols_)
+      if (!col.padding && !col.cells.empty()) lastRaw = std::max(lastRaw, col.rawLineNumber);
+    if (!ranges.empty() && ranges.back().first > lastRaw && !epubVerticalCols_.empty()) {
+      int raw = epubVerticalCols_.back().rawLineNumber;
+      for (int k = 0; k < perScreen; k++) {
+        epubVerticalCols_.push_back({{}, raw});
+        epubVerticalCols_.back().padding = true;
+      }
+    }
+  }
   epubVerticalMark_.reset();
   showEpubVerticalRaw(rawLine);
 }
