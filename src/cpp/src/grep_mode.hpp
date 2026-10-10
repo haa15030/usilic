@@ -97,6 +97,8 @@ class GrepMode {
   // 一切触れない――呼び出し元は一覧へ切り替えず、in-place方式
   // (activateGrepInPlace())でmatches()を直接使うため。
   bool searchInProcess(const std::vector<std::string> &sourceLines, const std::string &pattern);
+  // falseの間、search()は結果をビューへ入れるだけで描かない(呼び出し元が縦書きにして描く、2026-10-10)。
+  void setRedrawOnSearch(bool redraw) { redrawOnSearch_ = redraw; }
 
   const std::string &pattern() const;
   const std::vector<GrepMatch> &matches() const;
@@ -108,6 +110,7 @@ class GrepMode {
 
   std::string pattern_;
   std::vector<GrepMatch> matches_;
+  bool redrawOnSearch_ = true;
 };
 
 }  // namespace fm

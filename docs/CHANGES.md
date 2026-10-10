@@ -29700,3 +29700,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ドット単位なので2段ズラさなくとも滑らかにつながる。なので-gではズラし無しで")。
    - **変更**: runGuiPhase()の上下の慣性(coastLevel)と縦書きの左右の慣性(epubCoastLevel)で、
      fm::dragArrowSpeedOffset()を足すのをやめた。端末のrunCoastLoop()(fromDrag)は従来どおり2段ずらす。
+
+733. **2026-10-10: 縦書きのEPUBの本文からのoccur(^T^S・^T^J^S)の結果一覧を縦書きにする**
+   - **経緯**: 直接のユーザー依頼("縦書きでは検索結果一覧も縦書きなら素晴らしい")。
+   - **変更**: 縦書きの章の一覧(refreshEpubTocVertical()等、epubTocCols_・epubTocVerticalView_)の仕組みを、一覧の元
+     (epubListSource(): 章の一覧はcutView_、検索結果はgrepView_)と右端の列(epubListFirst(): epubTocFirst_/
+     epubGrepFirst_)で切り替えて共用した。epubGrepVerticalActive()(grepReturnMode_がFileで縦書きの本)の間、
+     viewForMode(Grep)は縦書きのビュー。キー(handleEpubTocVerticalCommand())・クリック(2回目でopenSelectedGrepMatch())
+     ・ホイール/ドラッグ/慣性(epubVerticalScrollActive()/DragActive())・スクロールバー・リサイズも章の一覧と同じ。
+     モードラインは横書きの一覧(grepView_)と同じ。executeGrep()は縦書きの時、GrepMode::search()の描画を止め
+     (setRedrawOnSearch())、横書きの一覧を一度描かずに縦書きで描く。returnToGrepResults()も縦書きで描き直す。
+   - **HELP**: src/HELP_.txt・HELP_en_.txtのoccurの説明に一文。
+   - **確認**: PTYで、Kbt.epubの本文から^T^S"少女"→縦書きの一覧(一致を強調)→^N^N^Mで00152へ→^Gで本文(00057)→
+     ^Gで目次。-gは未確認。

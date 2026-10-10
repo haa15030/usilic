@@ -2712,6 +2712,16 @@ class Application {
   bool clickEpubTocVertical(int row, int column);
   std::vector<EpubVerticalColumn> epubTocCols_;
   int epubTocFirst_ = 0;  // 右端に置いている列
+  // 2026-10-10、直接のユーザー依頼("縦書きでは検索結果一覧も縦書きなら素晴らしい"): 縦書きの本文から
+  // 検索した結果の一覧(ApplicationMode::Grep)も、章の一覧と同じ仕組み(epubTocCols_・epubTocVerticalView_)で
+  // 縦書きにする。一覧の元(cutView_かgrepView_)と右端の列(章の一覧とは別に持つ)をこれらで切り替える。
+  int epubGrepFirst_ = 0;
+  bool epubGrepVerticalActive() const;
+  bool epubVerticalListActive() const;  // 今の画面が縦書きの章の一覧か検索結果の一覧
+  ContentView &epubListSource();
+  const ContentView &epubListSource() const;
+  int &epubListFirst();
+  bool openSelectedEpubListEntry();
   bool openEpubTocEntry(const CutSegment &segment);       // 同上
   bool returnToEpubToc();                                 // 同上
   bool startEpubPrompt();                                 // K-98(^Je)

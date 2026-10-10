@@ -231,7 +231,7 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
   }
   view_.setLines(std::move(viewLines));
   view_.setCursorIndex(0);
-  view_.redraw();
+  if (redrawOnSearch_) view_.redraw();
   return true;
 }
 
