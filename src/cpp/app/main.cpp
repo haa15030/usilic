@@ -1302,6 +1302,17 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
     view.setCursorIndex(direction > 0 ? std::min(view.topIndex() + view.height() - 1,
                                                  static_cast<int>(view.lines().size()) - 1)
                                       : view.topIndex());
+    // 2026-10-10、直接のユーザー報告("奥付から上方向のスクロールを始めると、行頭で横方向にならずにそのまま
+    // 「下へ」と消えていき、何も表示されないまま行数が001/382になって止まる"): 縦書きの本の横書きの範囲
+    // (奥付等)の外へ出たら縦書きへ戻し(-gのrunGuiPhase()と同じくApplication::syncEpubHorizontalSection())、
+    // 同じ段階・向きの列の慣性として続ける(上へ=前へは列も前へ)。以前は範囲の外の行へそのまま進んでいた。
+    if (app.syncEpubHorizontalSection()) {
+      if (!app.epubVerticalDragActive()) return result;
+      columns = true;
+      viewPtr = &app.activeContentView();
+      app.activeContentView().redraw();
+      continue;
+    }
     view.redraw();
   }
 }
@@ -1457,6 +1468,14 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
         view.setCursorIndex(rowDelta < 0 ? std::min(view.topIndex() + view.height() - 1,
                                                     static_cast<int>(view.lines().size()) - 1)
                                          : view.topIndex());
+        if (app.syncEpubHorizontalSection()) {  // 横書きの範囲の外へ出た: 縦書きの左右のドラッグとして続ける
+          columns = app.epubVerticalDragActive();
+          lastColumn = mouse->column;
+          columnAccum = 0;
+          recentMotion.clear();
+          app.activeContentView().redraw();
+          continue;
+        }
         auto now = std::chrono::steady_clock::now();
         recentMotion.push_back({now, rowDelta});
         while (!recentMotion.empty() && recentMotion.front().first < now - kReleaseWindow) recentMotion.pop_front();
