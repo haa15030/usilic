@@ -29608,3 +29608,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      暫定のこれらも表には入れていない。
    - **HELP**: src/HELP_.txt・HELP_en_.txtのFGREP/EGREPの表に2行と説明1行。
    - **確認**: PTYで、FILEから^T^J^S"A."→2件の一覧→^N^Mで3行目へ→^G^G^Gで一覧→file(その行)→(ls)。
+
+724. **2026-10-10: GREPの結果一覧(occur)のモードラインを(fgrep)/(egrep)に分ける**
+   - **経緯**: 直接のユーザー依頼("(fgrep)/(egrep)に分けて")。結果一覧のバッジは、起動するプログラム名
+     (usilicrcのFGREP/EGREPの既定はどちらもgrep)から作っていたので、どちらも"(grep)"だった。
+   - **変更**: grepView_のバッジを、in-placeの検索と同じgrepSyntaxBadge(grepSyntax_)にした。使われなくなった
+     grepSyntaxRole()は消した。
+   - **確認**: PTYで^T^Sの一覧が(fgrep)、^T^J^Sの一覧が(egrep)。

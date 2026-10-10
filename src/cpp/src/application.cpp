@@ -200,17 +200,6 @@ bool isGrepInPlaceSafeCommand(Command command) {
       return false;
   }
 }
-ConfiguredRole grepSyntaxRole(GrepSyntax syntax) {
-  switch (syntax) {
-    case GrepSyntax::Fixed:
-      return ConfiguredRole::Fgrep;
-    case GrepSyntax::Regex:
-      return ConfiguredRole::Egrep;
-    case GrepSyntax::Basic:
-      return ConfiguredRole::Grep;
-  }
-  return ConfiguredRole::Grep;
-}
 // GrepSyntax::Basicの検索パターン履歴は、cutSyntax_同様RecentFgrepPattern/
 // RecentEgrepPatternの2択のringだけで表現する(RecentGrepPattern用の
 // 新しいRingCategoryは追加しない)――grep(BRE)とegrep(ERE)はどちらも
@@ -1489,9 +1478,9 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
 
   grepView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     std::string name = grepSyntaxLabel(grepSyntax_);
-    const auto &cmd = configuration_.commandFor(grepSyntaxRole(grepSyntax_));
-    std::string program = cmd.argv.empty() ? "" : cmd.argv.front();
-    std::string badge = program.empty() ? "" : "(" + program + ")";
+    // 2026-10-10、直接のユーザー依頼("(fgrep)/(egrep)に分けて"): 起動するプログラム名(どちらもgrep)ではなく
+    // 検索の種類から付ける(in-placeのバッジ、grepSyntaxBadge()と同じ)。
+    std::string badge = grepSyntaxBadge(grepSyntax_);
     // 2026-08-24修正、直接のユーザー報告("HELPの1.Introductionページ
     // 上で^S→戻り値不良、正しくは「CUT:1.  Introduction」"): これは
     // 以前はDirectory起点の検索についてのみ戻り先のフィールドを
