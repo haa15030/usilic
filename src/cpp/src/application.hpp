@@ -4166,7 +4166,10 @@ private:
   // USILIC一覧の階層: None=マーク一覧/時系列、Toc=MAN/DIR/FILE目次、Group=種別ごとの一覧。
   enum class UsilicLevel { None, Toc, Group };
   UsilicLevel usilicLevel_ = UsilicLevel::None;
-  int usilicGroupKind_ = 0;  // 目次で最後に選んだ種別(usilicTocTitles()の添字: 0=MAN、1=DIR、2=FILE、3=PROGRAM、4=WORK、5=USILIC)
+  int usilicGroupKind_ = 0;  // 目次で最後に選んだ種別(usilicTocTitles()の添字: 0=MAN、1=DIR、2=FILE、3=TOOL、4=WORK、5=USILIC、
+                             // 6=ARC、7=EPUB、8=PART)
+  // ^[uのARCから開いたアーカイブ(そこから^Gで、親のディレクトリではなくUSILICの一覧へ戻る。returnFromArchive())。
+  std::string archiveReturnsToUnderlineFor_;
   // ^Ou(閲覧)を(ls)以外の一覧(LOCATE/DU/^X^F・^X^D/USILIC)から発動した時の
   // 戻り先(2026-09-27、直接のユーザー依頼"（ls）で可能なファイル操作には
   // 「閲覧」（^Ou）もあるのでよろしく")。^Gで発動元の一覧へ戻す。USILICから

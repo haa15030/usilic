@@ -29630,3 +29630,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ディレクトリを移さず、モードラインの戻り値の欄も(ls)のディレクトリにした。
    - **確認**: PTYで、HELPの章の中身から^T^S"K"→一覧→^N^M→戻り値「FGREP: K」→^Gで一覧→^Gで章→^Gで目次。
      FILEから^T^S"A"→^N^Mで「FGREP: A」。平文のHELP→^Gで開いた時の(ls)。
+
+726. **2026-10-10: ^[uの目次にARC(^J^A)・EPUB(^J^E)・PART(^J^P)の一覧を追加**
+   - **経緯**: 直接のユーザー依頼("^[uの一覧に^J^A、^J^E、^J^Pを追加でよろしく")。
+   - **変更**: usilicTocTitles()の末尾(既存の添字を変えない)にARC・EPUB・PARTを足した。中身は^J^A・^J^E・^J^Pと
+     同じく、FILE履歴(名前順・重複なし)をisArchiveHistoryEntry()・isEpubFile()・parseCutFileHistoryEntry()で
+     絞ったもの。^Mは、EPUB・PARTは従来の経路(openEpubReturningTo()・openRecentFileEntry())で、^Gで一覧へ戻る。
+     ARCはopenRecentFileEntry()でアーカイブとして開き、archiveReturnsToUnderlineFor_に覚えて、
+     returnFromArchive()の^Gで親のディレクトリではなく一覧へ戻す。
+   - **HELP**: src/HELP_.txt・HELP_en_.txtの^[uの目次の説明。
+   - **確認**: PTYで、目次に9項目、ARC→t.zip→^Mで中身→^Gで一覧→目次→(ls)、PART→`f.txt "A:"`→^Mで区間の中身
+     →^G^G^Gで一覧→file→PARTの一覧。

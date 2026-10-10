@@ -7102,12 +7102,17 @@ std::vector<std::string> Application::collectTargetFilePaths() const {
 // 2026-10-10: USILIC(外部起動したもの、kUsilicTag参照)を追加(直接のユーザー依頼"USILICには"(usilic)"のみの
 // 一覧をUSILICで追加する")。
 static const std::vector<std::string> &usilicTocTitles() {
-  static const std::vector<std::string> titles = {"MAN", "DIR", "FILE", "TOOL", "WORK", "USILIC"};
+  // 2026-10-10: ARC(^J^A)・EPUB(^J^E)・PART(^J^P)の一覧を追加(直接のユーザー依頼"^[uの一覧に^J^A、^J^E、^J^Pを
+  // 追加")。既存の添字を変えないよう末尾に足す。
+  static const std::vector<std::string> titles = {"MAN", "DIR", "FILE", "TOOL", "WORK", "USILIC", "ARC", "EPUB", "PART"};
   return titles;
 }
 static constexpr int kUsilicGroupProgram = 3;
 static constexpr int kUsilicGroupWork = 4;
 static constexpr int kUsilicGroupExternal = 5;
+static constexpr int kUsilicGroupArchive = 6;
+static constexpr int kUsilicGroupEpub = 7;
+static constexpr int kUsilicGroupPart = 8;
 
 // activeListMarks()/listTargetPaths()(2026-09-27): application.hpp自身の
 // 宣言コメント参照。^X^F/^X^Dの一覧(ListBrowser)はファイル/ディレクトリの
@@ -7284,6 +7289,14 @@ bool Application::openUsilicGroup(const std::string &title) {
   } else if (kind == kUsilicGroupWork) {
     // 作成順(w.1、w.2...)のまま。まだ無ければ空の一覧。
     entries = allocatedWorkFiles_;
+  } else if (kind == kUsilicGroupArchive || kind == kUsilicGroupEpub || kind == kUsilicGroupPart) {
+    // ^J^A・^J^E・^J^Pの一覧と同じく、FILE履歴(名前順・重複なし)をそれぞれの条件で絞る。
+    for (const auto &e : sortedUniqueRecentEntries(RingCategory::RecentFile)) {
+      bool keep = kind == kUsilicGroupArchive ? isArchiveHistoryEntry(e)
+                  : kind == kUsilicGroupEpub  ? isEpubFile(e)
+                                              : parseCutFileHistoryEntry(e).has_value();
+      if (keep) entries.push_back(e);
+    }
   } else if (kind == kUsilicGroupExternal) {
     for (const auto &e : history_.recentEntries(RingCategory::Usilic)) {
       std::string path = e;
@@ -7318,6 +7331,13 @@ bool Application::openSelectedUnderlineEntry() {
   // 2026-10-10、直接のユーザー依頼("FILEから選んだ時は外部ページャー、DIRからは外部(ls)となる"): 外部起動の印
   // (kUsilicTag)の付いた項目は、もう一度外部起動する(ディレクトリなら子の(ls)、ファイルなら子のページャー)。
   if (hasUsilicTag(*path)) return relaunchUsilicEntry(*path);
+  // ARCの項目: ^J^Aの一覧と同じくアーカイブとして開き、^GでこのUSILICの一覧へ戻る。
+  if (usilicLevel_ == UsilicLevel::Group && usilicGroupKind_ == kUsilicGroupArchive) {
+    std::string entry = *path;
+    if (!openRecentFileEntry(entry)) return false;
+    if (currentMode_ == ApplicationMode::Archive) archiveReturnsToUnderlineFor_ = archiveMode_.currentArchive();
+    return true;
+  }
   // 2026-09-21追加: アクセス履歴の"名前 (man)"はmanページとして開き、^Gで
   // このUSILIC一覧へ戻る。
   if (path->size() > 6 && path->compare(path->size() - 6, 6, " (man)") == 0) {
@@ -10036,6 +10056,9 @@ bool Application::returnFromArchiveContent() {
 // ケースについては元々の、依然として変わっていない挙動。
 bool Application::returnFromArchive() {
   archiveMode_.saveCursorPosition();
+  if (archiveParentStack_.empty() && !archiveReturnsToUnderlineFor_.empty() &&
+      std::exchange(archiveReturnsToUnderlineFor_, std::string()) == archiveMode_.currentArchive())
+    return returnToUnderlineResults();  // ^[uのARCから開いた(archiveReturnsToUnderlineFor_参照)
   if (!archiveParentStack_.empty()) {
     std::string parentPath = archiveParentStack_.back();
     archiveParentStack_.pop_back();
