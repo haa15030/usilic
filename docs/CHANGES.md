@@ -29567,3 +29567,25 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      「：」で拾うので出ていた)。今のusilic -nで~/HELP.txt・~/HELP_en.txtから作り直した(印は各89個)。
    - **確認**: 作り直した両方をgroff(80桁)で組み、renderHelpRoff()と同じ処理で、タブで始まるキーの行31行の
      全角コロンが、平文と同じ17桁目にそろうことを確認。
+
+721. **2026-10-10: ^Cf(ファイルをCUT)を廃止、CUTをPART(^Jp)・PROGRAMをTOOL(^Jt/^J^T)に改名、^J^PにPARTの履歴の一覧**
+   - **経緯**: 直接のユーザー依頼("^Cf（ファイルをCUT）に重大な欠陥発見。(ls)から立ち上げるため戻り値は
+     ディレクトリが必須となりCUT元の情報がどこにも無い。…^Cf廃棄としたい")。代替案として 1.「PROGRAM」→
+     「TOOL」、^Jp/^J^P→^Jt/^J^T(usilicrcのPROGRAMの節は温存)、2.「CUT」→「PART」、^Cb→^Jp、"文字列"付き
+     のみ一覧を^J^P、3. fileのバッファを"文字列"でPARTした時の戻り値はfile、履歴にはfileと`file "文字列"`
+     (FILE履歴にも入れる)、後者を選ぶとPART一覧の最上行を^Mした後の内容、^G^G^GでPART一覧→file→(ls)。
+   - **キー**: key_bindings.cppの表でK-43/K-44を`F-1 t`/`F-1 C-t`、K-53を`F-1 p`にし、K-54(^Cf)は廃止
+     (番号は詰めない)、K-106 `F-1 C-p`(PART: 一覧)を追加。application.cppの^Cの接頭キー(leaderCPending_)は
+     ^Cb/^Cfのためだけのものだったので無くした。src/usilicrc・usilicrc.enのKEY節も同じに。
+     Command::StartCutFile(startCutFilePrompt())は既存のテストのために残したが、キーからは呼ばれない。
+   - **履歴**: FILEの画面からのPART(executeCut()のFileの分岐)で、成功したらfile単体と`file "文字列"`を
+     RecentFileへ積む(.epubを"^I"で分けたものは従来どおり積まない)。`file "文字列"`を選び直す
+     openRecentFileEntry()は、cutReturnMode_をFile、fileReturnMode_を呼び出し元(一覧からならDirectory)にし、
+     skipNextRecentPush()をやめてfile単体も積む。
+   - **^J^P**: startPartList()。^J^A(アーカイブだけ)と同じく、FILE履歴をparseCutFileHistoryEntry()で
+     絞り込む(PromptHistoryContext::partOnly、一覧の名前は"PART")。
+   - **表示**: モードライン・プロンプト・注釈の"CUT"を"PART"、"PROGRAM"を"TOOL"に(USILICの目次の項目名も)。
+     ~/.usilic/historyの" CUT"の節の名前は内部の形式なので変えていない。
+   - **HELP**: src/HELP_.txt・HELP_en_.txtのPROGRAM/CUTの章とそれを参照する箇所を直した。
+   - **確認**: PTYで、FILEからの^Jp→PART一覧→^G→file→^G→(ls)、履歴にfileと`file "A:"`、^J^Pの一覧に
+     `file "A:"`だけ→^Mで最上行の区間の中身→^G^G^Gで一覧→file→(ls)、^JtでTOOLのプロンプト。

@@ -389,8 +389,8 @@ KEY
 	K-40	F-2 c       # ^Oc     CP
 	K-41	F-2 m       # ^Om     MV
 	K-42	F-2 r       # ^Or     RM
-	K-43	F-1 p       # ^Jp     PROGRAM: input name
-	K-44	F-1 C-p     # ^J^P    PROGRAM: select from list
+	K-43	F-1 t       # ^Jt     TOOL: input name
+	K-44	F-1 C-t     # ^J^T    TOOL: select from list
 	K-45	F-2 u       # ^Ou     List of selected files (USILIC)
 	K-46	F-2 a       # ^Oa     ARC: extract
 	K-47	F-1 e       # ^Je     EPUB: input
@@ -399,8 +399,8 @@ KEY
 	K-50	C-r         # ^R      History list
 	K-51	C-s         # ^S      Incremental search
 	K-52	F-1 C-s     # ^J^S    EGREP
-	K-53	F-3 b       # ^Cb     CUT: buffer
-	K-54	F-3 f       # ^Cf     CUT: file
+	K-53	F-1 p       # ^Jp     PART: buffer
+	K-106	F-1 C-p     # ^J^P    PART: list (file "string" history)
 	K-55	F-1 d       # ^Jd     DU: run du
 	K-56	F-1 C-d     # ^J^D    DU: back to result
 	K-57	F-1 l       # ^Jl     LOCATE: build database
@@ -463,7 +463,7 @@ MACRO
 	M-7	<	K-28 K-20 K-4 K-28		# ^M^G^P^M
 	M-8	>	K-28 K-20 K-3 K-28		# ^M^G^N^M
 	M-9	{	K-84 K-51 "MACRO" K-28 K-67	# ^J^Ou^S"MACRO"^M^[e
-	M-10	}	K-86 K-53 "usilic-1.5b:" K-28	# ^J^Os^Cb"usilic-1.5b:"^M
+	M-10	}	K-86 K-53 "usilic-1.5b:" K-28	# ^J^Os^Jp"usilic-1.5b:"^M
 	M-11	e	K-67				# ^[e		EDIT
 	M-12	h	K-105				# ^J^Oh		From KEY to plain HELP at that line (plain HELP outside KEY)
 	--

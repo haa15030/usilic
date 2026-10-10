@@ -1894,39 +1894,19 @@ TEST_CASE_FIXTURE(Fixture, "GREP: searching from File mode stays in File mode, i
 
 // -- feedByte: ^Jc / ^J^C leader sequences for CUT --
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^C b (formerly ^J c) starts a CUT prompt (StartCut) once in File mode") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J p (PART, formerly ^C b) starts a PART prompt (StartCut) once in File mode") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
-  app.feedByte(0x03, std::nullopt);  // ^C(2026-09-25のキー再編、旧^J)
-  CHECK(app.feedByte('b', std::nullopt));
+  app.feedByte(0x0a, std::nullopt);  // ^J(2026-10-10、^Cbから)
+  CHECK(app.feedByte('p', std::nullopt));
   CHECK(app.promptActive());
 }
 
-// 2026-09-14再編、直接のユーザー依頼(Command::StartCut自身のコメント
-// 参照): ^J^Cはもう「バッファCUTのregex構文」ではなく
-// Command::StartCutFileを指す――File自体から発動した場合は
-// startCutFilePrompt()自身のフォールバック(Directoryの選択が無い
-// ときはPathInputプロンプトへ)が効くので、見た目(promptActive/
-// currentMode_/promptTextの3点)はキー再編前と偶然同じだが、実際に
-// 開いているプロンプトの種類はCutPatternではなくPathInputへ変わって
-// いる。
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^C f (formerly ^J ^C) dispatches to StartCutFile, which falls back to the "
-                           "typed-path prompt when not in Directory mode") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("log.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-
-  app.feedByte(0x03, std::nullopt);  // ^C(2026-09-25のキー再編、旧^J)
-  CHECK(app.feedByte('f', std::nullopt));
-  CHECK(app.promptActive());
-  CHECK(app.currentMode() == ApplicationMode::File);
-  CHECK(app.promptText().empty());
-}
+// (^C f のテストは、2026-10-10に^Cfを廃止したので消した)
 
 // -- CUT: split, view a segment, resplit it, back out step by step --
 
@@ -3092,10 +3072,10 @@ TEST_CASE_FIXTURE(Fixture, "MAN: submitting an empty name fails cleanly without 
 
 // -- feedByte: ^Jp / ^J^P leader sequences for PROGRAM --
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J p starts a PROGRAM prompt (StartProgram)") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J t starts a TOOL prompt (StartProgram, formerly ^J p)") {
   REQUIRE(app.start(path()));
   app.feedByte(0x0a, std::nullopt);
-  CHECK(app.feedByte('p', std::nullopt));
+  CHECK(app.feedByte('t', std::nullopt));
   CHECK(app.promptActive());
 }
 
@@ -3103,10 +3083,10 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J p starts a PROGRAM prompt (StartProgram
 // are no longer the same command -- ^J ^P (K-42, "Select program
 // name") now opens directly into a candidate list, the same "Input"/
 // "Select" shape as MAN's ^Jm/^J^M just above.
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^P opens a PROGRAM candidate list (StartProgramList), not a prompt") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^T opens a TOOL candidate list (StartProgramList, formerly ^J ^P), not a prompt") {
   REQUIRE(app.start(path()));
   app.feedByte(0x0a, std::nullopt);
-  CHECK(app.feedByte(0x10, std::nullopt));
+  CHECK(app.feedByte(0x14, std::nullopt));
   CHECK_FALSE(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
 }

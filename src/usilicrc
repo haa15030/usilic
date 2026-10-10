@@ -375,8 +375,8 @@ KEY
 	K-40	F-2 c       # ^Oc     CP
 	K-41	F-2 m       # ^Om     MV
 	K-42	F-2 r       # ^Or     RM
-	K-43	F-1 p       # ^Jp     PROGRAM: 入力
-	K-44	F-1 C-p     # ^J^P    PROGRAM: 一覧
+	K-43	F-1 t       # ^Jt     TOOL: 入力
+	K-44	F-1 C-t     # ^J^T    TOOL: 一覧
 	K-45	F-2 u       # ^Ou     選択したfileの一覧(USILIC)
 	K-46	F-2 a       # ^Oa     ARC: 展開
 	K-47	F-1 e       # ^Je     EPUB: 入力
@@ -385,8 +385,8 @@ KEY
 	K-50	C-r         # ^R      履歴一覧
 	K-51	C-s         # ^S      逐次検索
 	K-52	F-1 C-s     # ^J^S    EGREP
-	K-53	F-3 b       # ^Cb     CUT: バッファ
-	K-54	F-3 f       # ^Cf     CUT: file
+	K-53	F-1 p       # ^Jp     PART: バッファ
+	K-106	F-1 C-p     # ^J^P    PART: 一覧(file "文字列"の履歴)
 	K-55	F-1 d       # ^Jd     DU: 集計
 	K-56	F-1 C-d     # ^J^D    DU: 結果へ戻る
 	K-57	F-1 l       # ^Jl     LOCATE: データベース作成
@@ -449,7 +449,7 @@ MACRO
 	M-7	<	K-28 K-20 K-4 K-28		# ^M^G^P^M
 	M-8	>	K-28 K-20 K-3 K-28		# ^M^G^N^M
 	M-9	{	K-84 K-51 "MACRO" K-28 K-67	# ^J^Ou^S"MACRO"^M^[e
-	M-10	}	K-86 K-53 "usilic-1.5b:" K-28	# ^J^Os^Cb"usilic-1.5b:"^M
+	M-10	}	K-86 K-53 "usilic-1.5b:" K-28	# ^J^Os^Jp"usilic-1.5b:"^M
 	M-11	e	K-67				# ^[e		EDIT
 	M-12	h	K-105				# ^J^Oh		KEYから平文のHELPの当該位置へ(KEYの外では平文のHELP)
 	--

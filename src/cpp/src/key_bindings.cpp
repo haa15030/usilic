@@ -73,8 +73,8 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {40, "F-2 c"},     // ^Oc   CP
       {41, "F-2 m"},     // ^Om   MV
       {42, "F-2 r"},     // ^Or   RM
-      {43, "F-1 p"},     // ^Jp   PROGRAM: 入力
-      {44, "F-1 C-p"},   // ^J^P  PROGRAM: 一覧
+      {43, "F-1 t"},     // ^Jt   TOOL: 入力(2026-10-10、PROGRAMから改名、^Jpから)
+      {44, "F-1 C-t"},   // ^J^T  TOOL: 一覧(2026-10-10、^J^Pから)
       {45, "F-2 u"},     // ^Ou   選択したfileを外部ページャーのusilicで閲覧(2026-10-09)
       {46, "F-2 a"},     // ^Oa   ARC: 展開
       {47, "F-1 e"},     // ^Je   EPUB: 入力
@@ -83,8 +83,8 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {50, "C-r"},       // ^R    履歴一覧
       {51, "C-s"},       // ^S    逐次検索
       {52, "F-1 C-s"},   // ^J^S  EGREP
-      {53, "F-3 b"},     // ^Cb   CUT: バッファ
-      {54, "F-3 f"},     // ^Cf   CUT: file
+      {53, "F-1 p"},     // ^Jp   PART: バッファ(2026-10-10、CUTから改名、^Cbから)
+      // (54: ^Cf CUT: file、2026-10-10廃止。番号は詰めない)
       {55, "F-1 d"},     // ^Jd   DU: 集計
       {56, "F-1 C-d"},   // ^J^D  DU: 結果へ戻る
       {57, "F-1 l"},     // ^Jl   LOCATE: データベース作成
@@ -136,6 +136,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {103, "F-1 C-a"},  // ^J^A  ARC: 一覧(2026-10-05、アーカイブだけのFILE履歴)
       {104, "F-1 C-f"},  // ^J^F  -g: フォント一覧(2026-10-06、2026-10-07に^Ofから)
       {105, "F-4 h"},    // ^J^Oh KEYから平文のHELPの当該位置へ(2026-10-08復活、usilicrcのMACROのh)
+      {106, "F-1 C-p"},  // ^J^P  PART: 一覧(2026-10-10、FILE履歴の「file "文字列"」だけ)
   };
   return entries;
 }

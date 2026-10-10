@@ -165,7 +165,8 @@ enum class Command {
   //                              StartCutFileRegexの後継――旧^Jb/^J^B
   //                              自体はキーごと廃止した)
   StartCut,
-  StartCutFile,
+  StartCutFile,  // 2026-10-10、^Cfを廃止してキーからは呼ばれない(テストと内部の経路だけ)
+  StartPartList,
   // ^J a: HELPとHELP.enの切替(helpPath_自身のコメント参照)。2026-09-14にTUTORIAL/TUTORIAL.enの
   // 切替として復活し、2026-10-02にTUTORIALがHELPへ改名されたのに合わせて改名。
   ToggleHelpLanguage,
@@ -2386,6 +2387,7 @@ class Application {
   bool startGrepPrompt(GrepSyntax syntax);
   bool startCutPrompt(GrepSyntax syntax);
   bool startCutFilePrompt(GrepSyntax syntax);
+  bool startPartList();
   bool startManPrompt();
   bool startManList();
   bool startProgramPrompt();
@@ -2727,6 +2729,7 @@ class Application {
   std::optional<std::pair<std::string, std::string>> pendingFontChoice_;
   bool fontListShowing() const;
   bool archiveListPending_ = false;  // ^J^A: 次のstartPromptHistoryRecall()をアーカイブだけにする
+  bool partListPending_ = false;  // ^J^P: 次のstartPromptHistoryRecall()を「"文字列"」付き(PART)だけにする
   bool executeOpenWorkList();       // K-97
   // K-68(^X^Kl): Shell::scrollback()の「現在の」行をlogFilePath_
   // へ(以前のスナップショットを切り詰めて)書き込み、その後その
@@ -3583,7 +3586,6 @@ private:
   // バイトを待っている――旧^X^K(F-2)がERROR/LOGの2つだけを残して
   // 他は全て削除された後を引き継ぐ形。
   bool leaderJOPending_ = false;
-  bool leaderCPending_ = false;  // ^Cを見た(2026-09-25、^Cb/^Cf。dispatchByte()自身のコメント参照)
   bool leaderOPending_ = false;  // ^Oを見た、2バイトのコマンドを完成させるバイトを待っている(2026-09-08のキー再編で^Xの大半の役割を引き継いだ)
   bool wantsExit_ = false;
   // 2026-09-25追加、次のキーで消える一時メッセージ(showTransientNotice()
@@ -4003,6 +4005,7 @@ private:
     bool isDirectEntry = false;
     bool epubOnly = false;  // ^J^E(Application::startEpubList())
     bool archiveOnly = false;  // ^J^A(Application::startArchiveList())
+    bool partOnly = false;  // ^J^P(Application::startPartList())
   };
   std::optional<PromptHistoryContext> promptHistoryContext_;
   // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装(design.md参照)。

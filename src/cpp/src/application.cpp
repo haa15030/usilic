@@ -1260,7 +1260,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     if (cutOrigin_ == CutOrigin::Help || cutOrigin_ == CutOrigin::Key) {
       name = cutOrigin_ == CutOrigin::Key ? "KEY" : "HELP";
     } else if (cutOrigin_ == CutOrigin::Directory) {
-      name = "CUT";
+      name = "PART";
       // 2026-09-15追加、直接のユーザー方針("CUT、F/EGREPは[MAN、
       // LOCATE、DU等に]関与（検索）できる"): Man/Locate/Du起点も
       // Directoryと同じく「名付けるべき単一のファイルが存在しない」
@@ -1314,7 +1314,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 「CUT: 検索文字列（←パディング→）」にしてみて"): 選んだ見出し(=この
     // 画面の先頭行)ではなく、分割に使った検索文字列を右端まで埋めて出す。
     (void)label;
-    return {name, trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", "CUT: " + cutMode_.pattern()};
+    return {name, trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", "PART: " + cutMode_.pattern()};
   });
   // cutView_自体(セグメントの「ラベル」リスト、CutContentの1つ上の
   // レベル――それ自身のクラスコメント参照)向けのモードラインの
@@ -1353,7 +1353,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
                         : (cutOrigin_ == CutOrigin::Locate) ? "LOCATE"
                         : (cutOrigin_ == CutOrigin::Du)     ? "DU"
                         : (cutOrigin_ == CutOrigin::Epub)   ? "EPUB"
-                                                             : "CUT";
+                                                             : "PART";
     if (cutOrigin_ == CutOrigin::Epub && !cutMode_.parentPattern()) {  // openEpub()参照
       ContentView::ModeLineFields fields{name, std::to_string(contentByteCount(fileView_)), /*fillTrailingToEdge=*/true,
                                           /*rightWatermark=*/"", ""};
@@ -1438,7 +1438,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     }
     std::string trailing;
     if (auto parent = cutMode_.parentPattern()) {
-      trailing = "CUT:" + *parent;
+      trailing = "PART:" + *parent;
     } else if (cutOrigin_ == CutOrigin::Log) {
       trailing = logFilePath_;
     }
@@ -1967,7 +1967,7 @@ std::string Application::ringCategoryLabel(RingCategory category) const {
       // どちらの入口から見ても同じ1つの概念として一貫した名前で
       // 見せる方が、入口ごとに違う名前(COMMAND対PROGRAM)で同じ
       // データを指すより分かりやすいと判断した。
-      return "PROGRAM";
+      return "TOOL";
     case RingCategory::RecentFile:
       return "FILE";
     case RingCategory::RecentDirectory:
@@ -2569,7 +2569,7 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // 関わらず最新のマークへ飛ぶ(Command::PopMark参照)。^J/^X/^O/ESCの途中のキーは、ここでは扱わない。
   bool leaderPending = escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ ||
                        leaderXRPending_ || registerPending_ != RegisterAction::None || leaderOPending_ ||
-                       leaderCPending_ || gotoLineGPending_ || gotoLineDigitsPending_;
+                       gotoLineGPending_ || gotoLineDigitsPending_;
   // 2026-10-10: ^Tn/^Tp(外部起動した子の(ls)で、渡されたディレクトリを行き来する、setLaunchDirectories()参照)。
   if (leaderTPending_) {
     leaderTPending_ = false;
@@ -2646,31 +2646,8 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     return feedRegexListByte(byte, special);
   }
 
-  // 2026-09-25追加、直接のユーザー依頼によるキー再編("^Cをプレフィックス
-  // にするのは？ ^Cb：バッファをCUT、^Cf：ファイルをCUT。CUTのCは^CのC"):
-  // ^Cは他の接頭キー(^J/^X/^O/ESC)と違い、ここ(通常の画面)だけで接頭
-  // キーとして働く――SHELL画面ではシェルへの割り込みとしてそのまま
-  // 送る必要があり(feedShellByte()は通らない)、プロンプトでは入力の
-  // 中断(feedPromptByteInner())なので、どちらにも足していない。
-  if (leaderCPending_) {
-    leaderCPending_ = false;
-    if (special) return false;
-    switch (byte) {
-      case 'b':  // ^C b : CUT(バッファ分割、旧^Jc)
-        return handleCommand(Command::StartCut);
-      case 'f':  // ^C f : CUT(ファイル分割、旧^J^C)
-        return handleCommand(Command::StartCutFile);
-      default:
-        return false;  // 認識されない^Cシーケンス
-    }
-  }
-  if (!special && byte == kControlC && !escPending_ && !leaderJPending_ && !leaderJOPending_ && !leaderXPending_ &&
-      !leaderXRPending_ && registerPending_ == RegisterAction::None &&
-      !leaderOPending_ && !gotoLineGPending_ && !gotoLineDigitsPending_) {
-    leaderCPending_ = true;
-    return true;  // シーケンス継続中、no-opではない
-  }
-
+  // 2026-09-25に足した^Cの接頭キー(^Cb/^Cf)は、2026-10-10の直接のユーザー依頼で^Cfを廃止し、^Cbを^Jp
+  // (PART)へ移したので無くした。
   if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderXRPending_ ||
       registerPending_ != RegisterAction::None || leaderOPending_ ||
       gotoLineGPending_ || gotoLineDigitsPending_ ||
@@ -3271,10 +3248,17 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StartMan);
       case kCarriageReturn:  // ^J ^M : MAN(K-44、「Select manual page」;ここでの2番目のバイトは^Mであり、素のEnterとは無関係)
         return handleCommand(Command::StartManList);
-      case 'p':  // ^J p : PROGRAM(K-41、「Input program name」)
+      // 2026-10-10、直接のユーザー依頼("「PROGRAM」→「TOOL」、^Jp/^J^P→^Jt/^J^T。「CUT」→「PART」、^Cb→^Jp。
+      // "文字列"付きのみ一覧を^J^P"): ^Cf(ファイルをCUT)は(ls)から起動するため戻り先がディレクトリになり、
+      // CUT元のファイルの情報がどこにも残らないので廃止した。
+      case 't':  // ^J t : TOOL(旧PROGRAM、K-41、「Input program name」)
         return handleCommand(Command::StartProgram);
-      case 0x10:  // ^J ^P : PROGRAM(K-42、「Select program name」;ここでの2番目のバイトは^Pであり、素の^P/MoveUpとは無関係)
+      case 0x14:  // ^J ^T : TOOL(旧PROGRAM、K-42、「Select program name」)
         return handleCommand(Command::StartProgramList);
+      case 'p':  // ^J p : PART(旧CUT、旧^Cb)
+        return handleCommand(Command::StartCut);
+      case 0x10:  // ^J ^P : PART: 「ファイル "文字列"」だけのFILE履歴の一覧(startPartList())
+        return handleCommand(Command::StartPartList);
       // K-39/K-40(docs/ideas/IDEAS.mdのLOCATEセクション): この2つの
       // キーは、数行下のDU自身の依然として区別されていない'd'/0x04の
       // ペアとは異なり、ここでは意図的に同じコマンドでは「ない」――
@@ -3665,7 +3649,7 @@ void Application::discardStdinPager(bool returnsToShell) {
 // (^X/^J/^O/ESC)で始まる列だけ(LeaderOnly)。それ以外の通常の画面ならAll。
 KeyBindings::Context Application::keyBindingContext() const {
   if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderXRPending_ ||
-      registerPending_ != RegisterAction::None || leaderOPending_ || leaderCPending_ ||
+      registerPending_ != RegisterAction::None || leaderOPending_ ||
       gotoLineGPending_ || gotoLineDigitsPending_)
     return KeyBindings::Context::None;
   if (currentMode_ == ApplicationMode::Copy) return KeyBindings::Context::None;
@@ -5140,6 +5124,8 @@ bool Application::handleCommandImpl(Command command) {
       return startCutPrompt(GrepSyntax::Regex);  // 2026-09-27、BREからERE(grep -E)へ。下の同日のコメント参照
     case Command::StartCutFile:
       return startCutFilePrompt(GrepSyntax::Regex);
+    case Command::StartPartList:
+      return startPartList();
     case Command::ToggleHelpLanguage: {
       // HELP.enが無ければ切り替えない(読めないファイルへ切り替わって^Hが効かなくなるのを避ける)。
       std::string previous = helpPath_;
@@ -6830,8 +6816,11 @@ bool Application::openRecentFileEntry(const std::string &path) {
     // 呼ばれた場合にcutReturnMode_へ一切触れず、直前の^Cb(FILEから)が
     // 残したFileのままになり得た――^GがCUTしたファイル自身のFILE画面へ
     // 着地していた。cutFileReturnModeFor()で常に明示的に揃える。
-    cutReturnMode_ = cutFileReturnModeFor(currentMode_);
-    fileMode_.skipNextRecentPush();  // 合成エントリだけを積む(FileMode::skipNextRecentPush()参照)
+    // 2026-10-10、直接のユーザー依頼("^G^G^GでPART一覧→file→(ls)となる"): 戻り先はfile(PARTの元の
+    // FILEの画面)、そのfileの戻り先が呼び出し元(FILE・一覧からならDirectory)。履歴にはfile単体も積む。
+    fileReturnMode_ = cutFileReturnModeFor(currentMode_ == ApplicationMode::ListBrowser ? ApplicationMode::Directory
+                                                                                         : currentMode_);
+    cutReturnMode_ = ApplicationMode::File;
     if (!fileMode_.loadFile(filePath)) return false;
     std::vector<StyledLine> sourceLines;
     sourceLines.reserve(fileView_.lines().size());
@@ -7084,7 +7073,7 @@ std::vector<std::string> Application::collectTargetFilePaths() const {
 // 2026-10-10: USILIC(外部起動したもの、kUsilicTag参照)を追加(直接のユーザー依頼"USILICには"(usilic)"のみの
 // 一覧をUSILICで追加する")。
 static const std::vector<std::string> &usilicTocTitles() {
-  static const std::vector<std::string> titles = {"MAN", "DIR", "FILE", "PROGRAM", "WORK", "USILIC"};
+  static const std::vector<std::string> titles = {"MAN", "DIR", "FILE", "TOOL", "WORK", "USILIC"};
   return titles;
 }
 static constexpr int kUsilicGroupProgram = 3;
@@ -9262,11 +9251,20 @@ bool Application::startArchiveList() {
   return ok;
 }
 
+// ^J^P(2026-10-10、直接のユーザー依頼): FILE履歴のうち「ファイル "文字列"」(PARTしたもの)だけの一覧。
+bool Application::startPartList() {
+  partListPending_ = true;
+  bool ok = startRegexPromptList(PromptKind::RecentFile);
+  partListPending_ = false;
+  return ok;
+}
+
 // ringCategoryLabel(listBrowserCategory_)に、^J^E(EPUBだけのFILE履歴)の"EPUB"、^J^A(アーカイブだけ)の"ARC"を足したもの。
 std::string Application::listBrowserCategoryLabel() const {
   if (fontListShowing()) return "FONT";
   if (promptHistoryContext_ && promptHistoryContext_->epubOnly) return "EPUB";
   if (promptHistoryContext_ && promptHistoryContext_->archiveOnly) return "ARC";
+  if (promptHistoryContext_ && promptHistoryContext_->partOnly) return "PART";
   return ringCategoryLabel(listBrowserCategory_);
 }
 
@@ -9841,7 +9839,7 @@ bool Application::returnFromCut() {
   // なので、これは古いフレームではなく間違ったデータだった)。本物の
   // Directory起点のCUTだけがそれを設定する。
   if (cutReturnMode_ == ApplicationMode::Directory && cutOrigin_ == CutOrigin::Directory) {
-    directoryMode_.primaryAnnotations().push(DirectoryMode::DirAnnotationKind::Cut, "CUT: " + cutMode_.pattern());
+    directoryMode_.primaryAnnotations().push(DirectoryMode::DirAnnotationKind::Cut, "PART: " + cutMode_.pattern());
   }
   activeView().redraw();
   return true;
@@ -10643,7 +10641,7 @@ std::string Application::previousModeName(ApplicationMode mode) const {
     // "CUT"が属すべき場所に"usilic v1.5b"を表示していた。
     case ApplicationMode::Cut:
     case ApplicationMode::CutContent:
-      return "CUT";
+      return "PART";
     // 2026-09-20追加、Command::StartUnderlineView自身の宣言コメント
     // 参照(`^Ou`)――すぐ上のShell/Cut自身のリテラルな一語のケースと
     // 同じ理屈(UNDER一覧自身の画面には、クエリ/パターンのような
@@ -10755,7 +10753,7 @@ std::string Application::cutContentReturnLabel() const {
     std::size_t start = segment->label.find_first_not_of(' ');
     if (start != std::string::npos) label = segment->label.substr(start);
   }
-  return "CUT:" + label;
+  return "PART:" + label;
 }
 
 // K-17(^X^W、M_w4): menu.c自身の`send_pp(hp->bp->pp, "a")`(追記
@@ -12554,6 +12552,10 @@ bool Application::toggleListBrowserHistory() {
   if (promptHistoryContext_ && promptHistoryContext_->archiveOnly)  // ^J^A: アーカイブだけ(startArchiveList()参照)
     items.erase(std::remove_if(items.begin(), items.end(),
                                 [this](const std::string &item) { return !isArchiveHistoryEntry(item); }),
+                items.end());
+  if (promptHistoryContext_ && promptHistoryContext_->partOnly)  // ^J^P: PARTだけ(startPartList()参照)
+    items.erase(std::remove_if(items.begin(), items.end(),
+                                [](const std::string &item) { return !parseCutFileHistoryEntry(item); }),
                 items.end());
   listBrowserMode_.show(items, fileHistoryBadges(configuration_, listBrowserCategory_, items),
                         egrepList ? egrepListDisplayTexts(items) : recentFileDisplayTexts(listBrowserCategory_, items));
@@ -14594,6 +14596,8 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   epubListPending_ = false;
   promptHistoryContext_->archiveOnly = archiveListPending_;  // ^J^A(startArchiveList()参照)
   archiveListPending_ = false;
+  promptHistoryContext_->partOnly = partListPending_;  // ^J^P(startPartList()参照)
+  partListPending_ = false;
   promptKind_ = PromptKind::None;
   listBrowserCategory_ = category;
   // 2026-08-12修正: ContentView::setCursorAtModeLineTrailingEnd()
@@ -14689,6 +14693,10 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   if (promptHistoryContext_ && promptHistoryContext_->archiveOnly)  // ^J^A: アーカイブだけ(startArchiveList()参照)
     items.erase(std::remove_if(items.begin(), items.end(),
                                 [this](const std::string &item) { return !isArchiveHistoryEntry(item); }),
+                items.end());
+  if (promptHistoryContext_ && promptHistoryContext_->partOnly)  // ^J^P: PARTだけ(startPartList()参照)
+    items.erase(std::remove_if(items.begin(), items.end(),
+                                [](const std::string &item) { return !parseCutFileHistoryEntry(item); }),
                 items.end());
   listBrowserMode_.show(items, fileHistoryBadges(configuration_, category, items),
                         egrepList ? egrepListDisplayTexts(items) : recentFileDisplayTexts(category, items));
@@ -15012,11 +15020,11 @@ std::string Application::promptLabelText(PromptKind kind) const {
     case PromptKind::GrepPattern:
       return grepSyntaxLabel(grepSyntax_);
     case PromptKind::CutPattern:
-      return "CUT";
+      return "PART";
     case PromptKind::ManName:
       return "MAN";
     case PromptKind::ProgramCommand:
-      return "PROGRAM";
+      return "TOOL";
     case PromptKind::LocateQuery:
       return "LOCATE";
     case PromptKind::CopyDestination:
@@ -15702,7 +15710,7 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     std::string tail;
     constexpr int kPromptTrailingTailChars = kTrailingPathTailChars - 1;  // 15、このブロック自身のコメント参照
     if (destinationMode == ApplicationMode::CutContent) {
-      constexpr int kCutPrefixLen = 4;  // "CUT:"、cutContentReturnLabel()自身の実装参照
+      constexpr int kCutPrefixLen = 5;  // "PART:"、cutContentReturnLabel()自身の実装参照
       std::string prefix = destinationDirectory.substr(0, kCutPrefixLen);
       std::string value = destinationDirectory.substr(kCutPrefixLen);
       int valueBudget = kPromptTrailingTailChars + 3 - static_cast<int>(prefix.size());
@@ -15971,6 +15979,7 @@ bool Application::executeCut(const std::string &pattern) {
                                                        : RingCategory::RecentEgrepPattern,
                        pattern);
   bool ok;
+  bool partOfFileBuffer = false;  // FILEの画面のバッファをPARTした(下の履歴の記録を参照)
   std::string fileSourcePath = std::move(cutFileSourcePath_);
   cutFileSourcePath_.clear();  // 下のどちらの分岐が実行されるか、その結果に関わらず正確に一度消費される
   // saveCutFilePosition()自身のキー: ネストした再分割以外は新しい一覧
@@ -16071,6 +16080,7 @@ bool Application::executeCut(const std::string &pattern) {
     sourceLines.reserve(fileView_.lines().size());
     for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
     ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
+    partOfFileBuffer = currentMode_ == ApplicationMode::File;
   } else if (currentMode_ == ApplicationMode::Directory) {
     // 2026-08-11: ディレクトリ一覧に対して直接実行されたCUT
     // (Directoryモードからの^J^C、startCutPrompt()自身のコメント
@@ -16115,11 +16125,23 @@ bool Application::executeCut(const std::string &pattern) {
     // ついては上のFileの分岐自身の2026-08-18のコメント参照。
     cutOrigin_ = CutOrigin::File;
     ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
+    partOfFileBuffer = currentMode_ == ApplicationMode::File;
   }
 
   if (!ok) {
     activeView().redraw();
     return false;
+  }
+  // 2026-10-10、直接のユーザー依頼("fileのバッファを"文字列"でPARTしたときの戻り値は「file」。履歴には
+  // 「file」と「file "文字列"」が載る"): 廃止した^Cf(ファイルをPART)が積んでいた「file "文字列"」を、
+  // FILEの画面からのPARTで積む。後で選ぶとopenRecentFileEntry()がPARTし直す(戻り先はfile)。
+  std::string partFile = fileMode_.currentFile();
+  if (partOfFileBuffer && !partFile.empty() && partFile.front() == '/' &&
+      !(isEpubFile(partFile) && pattern == kHelpPattern)) {
+    std::string entry = buildCutFileHistoryEntry(partFile, pattern, cutSyntax_);
+    history_.pushRecent(RingCategory::RecentFile, partFile);
+    history_.pushRecent(RingCategory::RecentFile, entry);
+    restoreCutFilePosition(entry);
   }
   currentMode_ = ApplicationMode::Cut;
   // pendingSearchFromDirectEntryList_自身のコメント参照――値に関わら
@@ -18917,7 +18939,7 @@ ApplicationMode Application::currentMode() const { return currentMode_; }
 Charset::Encoding Application::encoding() const { return encoding_; }
 
 bool Application::awaitingSequenceOrPromptByte() const {
-  return escPending_ || leaderJPending_ || leaderCPending_ || gotoLineGPending_ || gotoLineDigitsPending_ ||
+  return escPending_ || leaderJPending_ || gotoLineGPending_ || gotoLineDigitsPending_ ||
          promptKind_ != PromptKind::None;
 }
 DirectoryMode &Application::directoryMode() { return directoryMode_; }
