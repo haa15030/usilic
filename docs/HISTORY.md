@@ -34193,3 +34193,615 @@ HISTORY.mdは逐語記録が原則なので、ユーザー発言の部分は原�
 前回と同じ形式(行番号+タブ+本文)で、`src/history_english_short.txt`に書き出しました(未追跡のファイルです)。私が訳すとまた止められるおそれがあるので、前回と同じ方法で訳してもらえれば反映します。
 
 今回の条件は文の形をした行だけに絞ったので、小文字で始まる行や、終わりに句読点が無い行は拾っていません。もっと広く拾いたければ、条件をゆるめて探し直します。
+
+<9389    次にビルドしてテストを流します。
+9395    次にコミットして push します。
+13035    >ユーザーが Claude の質問に答えました:
+13529    >ユーザーが Claude の質問に答えました:
+13613    >ユーザーが Claude の質問に答えました:
+17697    >直しました。まとめ:
+18852    >次にテストを流します。
+19055    次に振り返りを書きます。
+19178    次に Locate のテストです。
+19593    きれいにビルドできました。インストールします。
+21292    `.hpp` ではなく `.cpp` にあります。
+25306    >テストが通るようになりました。コミットします。
+27664    次に `GraphicalDisplay` の -g 側です。
+27666    きれいにビルドできました。インストールします。
+27689    >次に CUI 側です。
+27691    ビルドできました。インストールしてコミットします。
+28638    次に -h を編集します。
+28644    大丈夫です。公開の `insertString` を追加します。
+28650    次に INFO のキーの変更を当てます。
+28670    コピーできます。実装します。
+29007    両方とも通りました。コミットしてインストールします。
+29273    steering のファイルを3つ書きます。
+29277    次に Display のインターフェースです。
+29279    次に Application につなぎます。
+29491    次に実装します。
+33879    HELP_en_.txt にも同じ変更を反映します。
+33881    ビルド、インストール、CHANGES の項目、コミットです。
+
+>27行すべて反映してコミットしました(9812e41)。
+
+- 書き換える前に、元の行が抽出したときと同じであることと、`>`の印の有無が訳文と合っていることを全行で確かめました。食い違いは0件でした。
+- 貼り付けでは行番号の後ろの区切りがタブから空白に変わっていましたが、問題なく読めています。
+- このコミットにも、Stopフックがこれまでに自動で追記した分が入っています。
+
+`src/history_english_short.txt`と`src/history_japanese.txt`は未追跡のまま残してあります。不要なら消してください。
+
+<最新版のHELP_.txtをヘルプへ反映してみた。
+・~/HELP.txt平文表示と比べると~/.local/lib/usilic/HELP.ja.1ではタブコードで始まる行で全角コロンの位置が左寄り。
+'/Users/haa15030/Desktop/=ii.png'、'/Users/haa15030/Desktop/=ij.png'。
+・~/.local/lib/usilic/HELP.en.1でインデント不良発見。'/Users/haa15030/Desktop/=ik.png'。
+・子プロセスのPagerでは^Hも^Kも表示無し。
+
+>3件とも調べます。まずHELP.ja.1/HELP.en.1の生成元から確認します。
+
+生成されたroffソースのキー一覧の部分を見ています。
+
+groffで組んだ結果、キーの行によって全角コロンの桁がずれていることが分かりました。元の行を比べます。
+
+原因の見当がつきました。HELP.ja.1を作ったときに、古いusilicが使われた可能性があります。確認します。
+
+8桁のタブ位置にして、印の幅の計算を直せば、全角コロンが17桁目にそろうことを確認できました。ユーザーがHELPを反映した手順も確認します。
+
+英語版の^Lの行は、groffではなく`usilic -n`の変換の段階で「b / ottom」に切られていました。変換のコードを確認します。
+
+3件目(子のページャーで^H・^Kが出ない)も調べます。
+
+印のある31行は、日本語版も英語版もすべて17桁目にそろいました。インストールします。
+
+3件とも直して、コミットとインストールまで済ませました(d5e1747、項目720)。
+
+**1. タブで始まる行の全角コロンが左寄り**
+原因は2つありました。
+- manの既定のタブ位置は5桁ごとで、平文のHELP.txtの8桁ごとより左になります。変換の前置きに`.ta T 8n`を足して、8桁ごとにしました。
+- 行頭のタブの印をタブに戻す処理(`renderHelpRoff()`)が、印そのものが占める1桁を数えていませんでした。
+
+作り直した日本語版・英語版をgroffで80桁に組んで確かめました。タブで始まるキーの行31行の全角コロンが、すべて平文と同じ17桁目にそろっています。
+
+**2. HELP.en.1の字下げ不良と、3. 子のページャーで^H・^Kが空**
+どちらも原因は同じで、インストールされていたHELP.ja.1/HELP.en.1が古い変換で作られていました。
+- 古い変換は自分で78桁に折り返していたので、英語版の「⇒ b」/「ottom)」の切れ目ができていました。
+- タブの印も1つも入っていませんでした。^Hは行末のタブ、ページャー起動のKEYは行頭のタブで行を拾うので、両方とも空になっていました。親の^Kは全角コロンで拾うので、出ていました。親の^Hも、同じく空だったはずです。
+
+今のusilicの`usilic -n`で、`~/HELP.txt`と`~/HELP_en.txt`から作り直しました。
+
+- `doc/HELP.ja.1`(コミット済み)と`doc/HELP.en.1`(未追跡のまま)を作り直し、両方とも`~/.local/lib/usilic/`に入れました。
+- 前のファイルは、念のため一時ディレクトリに控えてあります。
+
+1点、教えてください。13:18・13:24に作られたHELP.ja.1/HELP.en.1は、今のusilicで作ったものではありませんでした。今のusilicなら、自前の折り返しもせず、タブの印も入れます。どの手順(どのusilicのバイナリ)で作りましたか？　手順の中で古いバイナリが呼ばれているなら、次に作り直したときにも同じ問題が出ます。なお`/usr/local/bin/usilic`(7月のlegacy版)は`-n`に対応していないので、それではありません。
+
+<emacsのコマンドラインを見てみると
+haa15030@mini haa15030 % usilic -n HELP_en.txt > git/usilic/doc/HELP.en.1
+だが、カレントディレクトリは/Volumes/haa15030/、つまりmpiの/Users/haa15030/をマウントしてそこにいる。
+とここまで書いて原因に気づいた。usilicはmpiのじゃなくてminiのやつに違いない。それだな原因は。
+
+>それですね。プロンプトが`haa15030@mini`なので、実行されたのはmini側のusilicです。mini側のバイナリが項目699(10/09)より前のままだったので、古い変換(78桁で自分で折り返し、タブの印なし)になった、という流れで説明がつきます。
+
+今回の2ファイルはこちら(mpi)で作り直して入れてあるので、今すぐやり直す必要はありません。次にminiから作るときは、どちらかにしてください。
+
+- **mini側のusilicを更新する**: miniでもこのブランチをpullして`make install`します。
+- **mpi側のバイナリを直接使う**: `/Volumes/haa15030/.local/bin/usilic -n HELP_en.txt > git/usilic/doc/HELP.en.1`のように、マウント先のusilicを指定します。macOS同士でCPUの種類も同じなら、そのまま動くはずです。
+
+前者にしておけば、ほかのコマンドでも古いバイナリを使ってしまう心配がなくなります。
+
+<pushはいらないの？
+
+>pushしました。`mpi-gui-fix`は、手元とGitHubで同じ内容になっています。
+
+miniでは、次の手順で最新のusilicになります。
+
+```
+git checkout mpi-gui-fix   # まだ別のブランチにいる場合
+git pull
+cd src/cpp && make install
+```
+
+<This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   - Q1: Can the child usilic process open in a separate window on Linux? The user then said "実装して".
+   - Q2: Why can't FILE/DIR lists carry "(usilic)"? The user pointed out: "^Cf"text"でCUTしたファイルはFILE履歴には"text"で入るけど存在しないパスとしては扱われないんじゃない？それと同じ方法にはできない？" I implemented it that way.
+   - Translate the English parts of docs/HISTORY.md into Japanese. The classifier blocked me from translating, so the user had another model translate. I applied the result with this agreed rule: translate the `>` (assistant) lines and the three compaction summaries starting at lines 23567, 32768 and 33183. User `<` turns stay in the original, because they contain command output, error text and screen quotes.
+   - Find the short English lines that were missed. The user supplied the translations and I applied them.
+   - Fix three HELP problems: the colon is too far left in HELP.ja.1 on tab-start lines (screenshots =ii, =ij); the indentation is broken in HELP.en.1 (=ik); the child pager shows nothing for ^H or ^K.
+   - Push. Done.
+
+2. Key Technical Concepts:
+   - The C++ usilic is in src/cpp. Build with `make usilic`, install with `make install` (to ~/.local/bin and ~/.local/lib/usilic).
+   - External child launch: `runExternalUsilicPager()`, `launchExternalUsilic()` and `openInNewTerminalWindow()`. The child gets USILIC_TRANSIENT=<parent PID>. Marker files drive `pollExternalPagerWindows()`.
+   - History rings: RecentFile and RecentDirectory are mirrored into Usilic by `mirrorToUsilicImpl()`. CUT history entries have the form `path "pattern"` and are parsed by `parseCutFileHistoryEntry()`. The " (man)" tag is a precedent.
+   - Roff HELP: `usilic -n markup > doc/HELP.ja.1`. Rendering uses `groff -mandoc -Kutf8 -Tutf8 -rLL=<w>n -rusilic-help=1`. The tab marker is U+E000, emitted via `\*[usilic-tab]`. `renderHelpRoff()` turns markers back into tabs. ^H cuts chapters on line-end tabs; KEY in pager launch cuts on line-start tabs; the parent's KEY cuts on "：".
+   - A Stop hook (.claude/hooks/history_sync.py) appends to docs/HISTORY.md automatically. HISTORY.md commits are titled "docs/HISTORY.md: Stopフックによる自動追記分を反映".
+
+3. Files and Code Sections:
+   - src/cpp/src/application.cpp
+     - `openInNewTerminalWindow()` was restructured. The SSH check is now common to both platforms. The macOS branch is unchanged (osascript for Terminal.app/iTerm2). The new Linux branch:
+       - Requires DISPLAY or WAYLAND_DISPLAY.
+       - Uses a Terminal table: gnome-terminal "--" (GNOME_TERMINAL_SCREEN), konsole "-e" (KONSOLE_VERSION), xfce4-terminal "-x", xterm "-e" (XTERM_VERSION), x-terminal-emulator "-e".
+       - Prefers the terminal matching its env hint, otherwise the first one found via `programOnPath()`.
+       - Builds `shellLine = "PATH=<quoted>; export PATH; " + cdWrap(dir, command) + "; rm -f marker"`.
+       - Runs `{"sh","-c","nohup " + shellQuoteArgv({prog, flag, "sh","-c", shellLine}) + " </dev/null >/dev/null 2>&1 &"}`.
+     - kUsilicTag and stripUsilicTag were moved to history.hpp.
+     - New `bool Application::relaunchUsilicEntry(std::string entry)`: strips the tag and trailing '/', clears programPromptDirectory_, then calls `runExternalUsilicPager("usilic " + shellQuoteArg(entry))`.
+     - `openRecentFileEntry` starts with `if (hasUsilicTag(path)) return relaunchUsilicEntry(path);`.
+     - The USILIC list ^M, DIR list ^M and the RecentFile/RecentDirectory prompt submissions relaunch tagged entries.
+     - `goToRecentFile` (^J^J), `goToRecentDirectory` (^G fallback), the startup fallback directory and ^W in CP/MV/ARC destinations all skip tagged entries.
+     - The ListBrowser path for ^O^M, ^J^K and ^O^K strips the tag.
+     - `runExternalUsilicPager` now pushes tagged entries into RingCategory::RecentFile/RecentDirectory instead of Usilic.
+     - In `renderHelpRoff`: `int columns = static_cast<int>(before.size() + 1 + (body == npos ? after.size() : body));`. The `+1` accounts for the marker's width.
+   - src/cpp/src/application.hpp: declares `bool relaunchUsilicEntry(std::string entry);` after openInNewTerminalWindow.
+   - src/cpp/src/history.hpp: adds `inline constexpr const char *kUsilicTag = " (usilic)";`, `inline bool hasUsilicTag(const std::string&)` and `inline bool stripUsilicTag(std::string&)`, after the PositionCategory enum.
+   - src/cpp/src/history.cpp:
+     - `mirrorToUsilicImpl` does not append '/' to tagged directory entries.
+     - Tagged RecentFile entries do not push their parent directory into RecentDirectory.
+   - src/cpp/src/markup_to_roff.cpp: the preamble now adds `".ta T 8n\n"` after the usilic-tab definition. Man's default 0.5i (5-column) tab stops were the cause of the misalignment.
+   - src/HELP_.txt and src/HELP_en_.txt are untracked and not committed. Edits made:
+     - Added a Linux new-window sentence to the ^Ou explanation.
+     - Line ~297: the USILIC and ^X^F/^X^D history now carry "(usilic)" entries, which are not used by ^J^J, ^G or ^W.
+     - Line ~483: added "（^X^F・^X^D の一覧でも同じ）".
+   - docs/CHANGES.md: new items 718 (Linux new window), 719 (FILE/DIR tagged history) and 720 (roff tab stops, marker width, regenerated HELP .1 files).
+   - doc/HELP.ja.1 (tracked) was regenerated from ~/HELP.txt with the current binary. doc/HELP.en.1 (untracked) was regenerated from ~/HELP_en.txt. Both were installed to ~/.local/lib/usilic/. Backups of the old files are in the scratchpad.
+   - docs/HISTORY.md: translations applied (907 lines, then 27 lines).
+   - src/history_japanese.txt and src/history_english_short.txt are untracked helper files.
+
+4. Errors and fixes:
+   - The safety classifier stopped me twice while I worked on the HISTORY.md translation. I did not retry. Instead I extracted the line ranges to a file, the user translated them elsewhere, and I applied the results with validation (line numbers, `<`/`>` markers, blank lines, original text matching the extract).
+   - The translated file's first line had a stray ">" before the number 1076. I stripped it.
+   - The user's HELP.ja.1/en.1 lacked U+E000 markers and had old 78-column wrapping. The cause: they were generated on mini with mini's outdated usilic binary while working in mpi's home over a mount. The user found this themselves. I fixed it by regenerating the files with the current binary.
+
+5. Problem Solving:
+   - I verified alignment by rendering with groff and simulating renderHelpRoff in Python. All 31 tab-start key lines now put the colon at column 17 in both the ja and en files, matching the plain text.
+   - The Linux branch was not compile-tested, because macOS compiles only the Apple branch. It needs testing on the Ubuntu machine.
+
+6. All user messages:
+   - "生きてる？"
+   - "エラーになったので一旦／exitしたんだが。" (pasted the API Error about Opus 5.5 safeguards, `[reasoning_extraction]`, Request ID req_011CfsaGz1KLHzZSVadpma4J)
+   - "HISTORY.mdの英文箇所の日本語への翻訳でエラーっぽいので今度は質問を先に。・子プロセスの別ウィンドウ起動はLinuxはできないの？ FILE/DIRの一覧で(usilic)を付加できない理由をもう少し詳しく。"
+   - "1. 実装して。2. ^Cf"text"でCUTしたファイルはFILE履歴には"text"で入るけど存在しないパスとしては扱われないんじゃない？　それと同じ方法にはできない？"
+   - "さっきはこれでエラーだが、docs/HISTORY.mdの英文箇所を日本語に翻訳よろしく。"
+   - "英語箇所をそちらで検索するだけでもエラー？"
+   - "HISTORY.md:9129-9387を翻訳して。"
+   - "英文箇所の行番号はわかる？"
+   - "それらの範囲だけを抜粋はエラー？"
+   - "Claude Opus 5.5に頼んだらやってくれた。src/history_japanese.txt 反映よろしく。"
+   - "ユーザー発言の英語ってどんなやつ？"
+   - "それでいい、反映よろしく。"
+   - "短い英文行も探して。"
+   - (pasted 27 translated short lines with their line numbers)
+   - "最新版のHELP_.txtをヘルプへ反映してみた。・~/HELP.txt平文表示と比べると~/.local/lib/usilic/HELP.ja.1ではタブコードで始まる行で全角コロンの位置が左寄り。'/Users/haa15030/Desktop/=ii.png'、'/Users/haa15030/Desktop/=ij.png'。・~/.local/lib/usilic/HELP.en.1でインデント不良発見。'/Users/haa15030/Desktop/=ik.png'。・子プロセスのPagerでは^Hも^Kも表示無し。"
+   - "emacsのコマンドラインを見てみると haa15030@mini haa15030 % usilic -n HELP_en.txt > git/usilic/doc/HELP.en.1 だが、カレントディレクトリは/Volumes/haa15030/、つまりmpiの/Users/haa15030/をマウントしてそこにいる。とここまで書いて原因に気づいた。usilicはmpiのじゃなくてminiのやつに違いない。それだな原因は。"
+   - "pushはいらないの？"
+
+7. Pending Tasks:
+   - None explicitly pending.
+   - The Linux new-window implementation needs real-machine verification on Ubuntu; the user will test.
+   - Suggested to the user: update mini's usilic (pull and `make install`) so it does not produce stale HELP .1 files again.
+
+8. Current Work:
+   - In reply to "pushはいらないの？" I found 29 unpushed commits on branch mpi-gui-fix and pushed them (`f0fa556..d5e1747 mpi-gui-fix -> mpi-gui-fix`). The branch is now in sync with origin.
+   - I had not yet written the final text reply confirming the push.
+   - Latest commits:
+     - d5e1747 (item 720)
+     - 9812e41 and 2aa9837 (HISTORY translations)
+     - b23356c (item 719)
+     - 5c95838 (item 718)
+
+9. Optional Next Step:
+   - Confirm to the user in Japanese that the push succeeded: 29 commits, mpi-gui-fix is in sync with origin, and mini can now pull and `make install`.
+   - No further work unless the user asks.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/haa15030/.claude/projects/-Users-haa15030-git-usilic/5a56e9bb-04ae-4078-82f2-6e17bebe3a81.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
+
+The messages after this summary are the most recent messages from before compaction, kept verbatim. The summary was written without seeing them, so something it says has not happened yet may already have happened in them.
+
+・^J^Uが利かない。
+・EGREP/FGREPの検索結果一覧の話は？
+・^Cf（ファイルをCUT）に重大な欠陥発見。(ls)から立ち上げるため戻り値はディレクトリが必須となりCUT元の情報がどこにも無い。これはちょっと打つ手が無いのでここはいっそ^Cf廃棄としたい。代替え案は以下のとおり。
+
+1. 「PROGRAM」→「TOOL」、^Jp/^J^P→^Jt/^J^T。usilicrcのPROGRAMは温存（暫定）。
+2. 「CUT」→「PART」、^Cb→^Jp。"文字列"付きのみ一覧を^J^P。
+3. fileのバッファを"文字列"でPARTしたときの戻り値は「file」。履歴には「file」と「file "文字列"」が載る。後者選択ではPART一覧の最上行を^M後の内容。^G^G^GでPART一覧→file→(ls)となる。
+
+>API Error: Opus 5.5's safeguards flagged this message (https://www.anthropic.com/legal/aup). This sometimes happens with safe, normal conversations. Claude Code can't respond to this message with Opus 5.5.
+
+Double press esc to edit your last message, or try a different model with /model.
+
+Send feedback with /feedback or learn more: https://support.claude.com/en/articles/8106465
+
+Details: `[reasoning_extraction]`
+
+Request ID: req_011Cft4Np1V1nxeiydUnuTLT
+
+Message ID: msg_011Cft4NpFdPi8oFHoWuiJEE
+
+<さきほどのエラーが出た。
+
+>The previous reply was blocked, so I'm continuing with a smaller investigation. I have only re-tested ^J^U so far; nothing has been changed yet.
+
+## ^J^U
+I opened usilic in a simulated terminal, both with a fresh setup and with a copy of your `~/.usilic`. ^J^U opened the USILIC list from (ls) in both cases, including your full history (255 entries). It also works from inside the USILIC list itself (item 715). It still does nothing from FILE, DIR or any other screen.
+
+Which screen did you press it on? If you want it to work from every screen, I'll change it that way.
+
+## The EGREP/FGREP search results list
+I've lost track of what this one was about. When I searched HISTORY.md, the closest match was the 9/21 request at HISTORY.md:19922: "On the ^J^U screen, run EGREP on ^FILE|^DIR|^MAN and show the results list as a USILIC screen." Is that the one? If it's something else, please give me the HISTORY.md line number.
+
+## Retiring ^Cf and replacing CUT with PART
+Before I start, please confirm I've understood correctly:
+
+1. **PROGRAM → TOOL**: ^Jp/^J^P become ^Jt/^J^T. The PROGRAM section in usilicrc keeps working as it is for now. ^Jt and ^J^T are free at the moment, right?
+2. **CUT → PART**: ^Cb moves to ^Jp. ^J^P shows a list of only the entries that carry a "pattern". ^Cf is removed.
+3. When the file's buffer is split with PART:
+   - The return destination is `file`.
+   - Two entries go into the history: `file` and `file "pattern"`.
+   - Choosing `file "pattern"` re-runs the PART and lands on the first row of the PART list.
+   - Pressing ^G three times goes back from the PART list to file, then to (ls).
+
+   Question: does that `file "pattern"` entry go into the FILE history (^X^F)? And does the FILE history keep only `file`?
+
+If all of this is right, I'll go ahead and build it.
+
+<日本語でよろしく。
+
+>失礼しました、日本語でまとめ直します。まだ何も変更していません。
+
+## ^J^U
+ターミナルを模した自動操作で確かめました。新しい環境でも、`~/.usilic` を写したもの(履歴255件)でも、(ls) から ^J^U で USILIC の一覧が開きました。USILIC の一覧の中からも動きます(項目715)。FILE・DIR など他の画面からは、今の作りでは開けません。
+
+どの画面で押しましたか。どの画面からでも開けるようにするなら、そう直します。
+
+## EGREP/FGREPの検索結果一覧
+どの話か思い出せません。HISTORY.md で近いのは 19922行の「^J^U画面で^FILE|^DIR|^MANでEGREP後の検索結果一覧をUSILICモード画面とし…」でした。これでしょうか。違う場合は HISTORY.md の行番号を教えてください。
+
+## ^Cfの廃止と PART
+次の理解で合っているか確認させてください。
+
+1. **PROGRAM → TOOL**: ^Jp・^J^P を ^Jt・^J^T に移します。^Jt・^J^T は今は空いています。usilicrc の PROGRAM の節はそのまま読みます。
+2. **CUT → PART**: ^Cb を ^Jp に移し、^Cf はなくします。^J^P は「"文字列"」付きの履歴だけの一覧です。
+3. **file を PART したとき**:
+   - 戻り先は file です。
+   - 履歴には `file` と `file "文字列"` の2つを入れます。
+   - `file "文字列"` を選ぶと、PART し直して一覧の最上行で ^M した後の内容を表示します。
+   - ^G を3回押すと、PART の一覧 → file → (ls) の順に戻ります。
+
+**質問**: `file "文字列"` は FILE の履歴(^X^F)にも入れますか。それとも ^J^P の一覧だけにして、FILE の履歴は `file` だけにしますか。
+
+これで合っていれば実装に入ります。
+
+<薄地で「FILE履歴には入れない、」と出ている理由が知りたいな。
+FILE履歴にはもちろん入れる。それで実装よろしく。
+
+>PART の仕組み(CUTの履歴と戻り先)を読んでいるところです。
+
+Now the edits. Starting with the ^J^P PART list (FILE history filtered to entries with a "pattern").
+
+キー割り当ての表(K番号)と usilicrc の KEY 節を合わせているところです。~/.usilic/usilicrc の更新の仕組みを確かめます。
+
+FILE の画面から PART したときに履歴へ積む処理を入れています。
+
+Build passes. Next I'll test in a simulated terminal: PART from the file screen, then ^G three times.
+
+PART→file→(ls) の戻りと、履歴の2件は確認できました。履歴ファイル上で `f.txt"A:"` と空白が抜けて見えるので、読み戻しで壊れないか確かめます。
+
+空白は専用の印に置き換えて保存しているだけで、問題ありませんでした。次に ^J^P の一覧から選び直す経路を試します。
+
+Build passes. Next I'll fix the unit tests that reference the removed StartCutFile so they still compile.
+
+テストを新しいキーに合わせたところです。次に usilicrc と usilicrc.en の KEY 節を更新します。
+
+While the test build finishes, I'll update the HELP sources.
+
+HELP の両方を直しました。テストのビルドを待つ間に CHANGES.md へ記録します。
+
+The KEY-section check passed. The one failure is a test I didn't update when ARROW went to 12 values earlier, so I'm fixing that too.
+
+</btw日本語で。
+
+>了解です、ここからは日本語で書きます。
+
+今はテストを再ビルドしています。ARROW を12個にしたときに直し忘れたテストを修正しました。終わったらコミットして報告します。
+
+<さっきのFGREP検索結果一覧の件はHISTORY.md:32949にある。
+
+>HISTORY.md:32949 の件は、Emacs の occur(一致した行の一覧から、選んだ行へ飛ぶ)の話でした。10/9 は作らずに見送っています。理由は、`^Cb` の CUT がほぼ同じことをしていたからです(HISTORY.md:33023、CHANGES.md 項目705)。今回の改名で、その役は `^Jp` の PART が引き継ぎます。
+
+ただ、occur と PART には違いがあります。
+- **occur**: 一致した行を選ぶと、元のファイルのその行へ飛びます。
+- **PART**: 一致した行で区切った一部分だけを開きます。前後のつながりは見えません。
+
+元のファイルのその行へ飛ぶ一覧を別に作りたい場合は、次のどちらにするか教えてください。
+1. FGREP/EGREP を今のファイルだけに絞り、その一覧から元の行へ飛ぶ
+2. PART の一覧に、元のファイルのその行へ飛ぶキーを足す
+
+PART の実装はビルドとインストールが済んでいます。テストのビルドが終わったら、コミットして報告します。
+
+^Cf を廃止し、PART と TOOL への改名を入れました。コミット(`20bf13b`、docs/CHANGES.md 項目721)と `make install` は済んでいて、push はまだです。
+
+**薄字の「FILE履歴には入れない、」について**: あれは Claude Code の入力欄が次の入力を予測して出す候補で、私の判断や設定ではありません。実装は指示どおり FILE 履歴に入れています。
+
+## 変わったこと
+- **キー**:
+  - `^Jt` と `^J^T` で TOOL(旧PROGRAM)を開きます。
+  - `^Jp` で PART(旧CUT `^Cb`)です。
+  - `^J^P` は FILE 履歴のうち「file "文字列"」だけの一覧です。
+  - `^Cf` はなくなり、`^C` は接頭キーではなくなりました。
+- **FILE の画面から PART したとき**:
+  - 戻り先はその file です。
+  - FILE 履歴には `file` と `file "文字列"` の両方が載ります。
+  - `file "文字列"` を選ぶと、分割し直して最上行の区間の中身を開きます。前に見ていた位置があれば、そこを開きます。
+  - `^G` を押すごとに、一覧 → file → (ls) の順に戻ります。
+- **表示**: モードラインやプロンプトの CUT は PART、PROGRAM は TOOL になりました。USILIC の目次も TOOL です。usilicrc の PROGRAM の節は、そのまま読めます。
+- **usilicrc の KEY 節**: src/usilicrc と usilicrc.en を新しいキーに合わせました。
+  - インストール先のほうが新しくなるので、次の起動で `~/.usilic/usilicrc` が置き換わります。元のファイルは .bak に残ります。
+  - src/usilicrc の WAIT と M-10 にある未コミットの編集は、コミットに含めていません。
+- **HELP**: src/HELP_.txt と src/HELP_en_.txt の PROGRAM・CUT の章と、それを参照している箇所を直しました。
+
+## 確かめたこと
+- ターミナルを模した自動操作で、上の流れを一通り試しました。
+  - FILE で `^Jp` → `^G` → `^G` と戻れました。
+  - 履歴に2件が載りました。
+  - `^J^P` の一覧から選んで `^G` を3回押し、一覧 → file → (ls) と戻れました。
+  - `^Jt` で TOOL のプロンプトが開きました。
+- 関係するテストだけを選んで流し、通りました。ARROW を12個にしたときに直し忘れていたテストも直しています。
+
+## 残っていること
+- **^J^U**: どの画面で押して効かなかったのか、教えてください。
+- **occur(EGREP/FGREPの検索結果一覧)**: 前の返事で尋ねた1と2のどちらにするか、教えてください。
+
+<^J^Uはssh経由、mpi上いずれも反応無し。
+occurは1.だけどキーアサインが悩ましい。暫定^T^Sと^T^J^Sとか。
+
+>ビルドが終わるのを待っています。HELP から再開した状態で ^J^U を試す予定です。
+
+HELP から再開した状態で、^J^U で USILIC の一覧が開き、^G で HELP へ戻りました。次に occur 用の仕組みとして、GREP モードの今の作りを調べます。
+
+Nothing in the HELP needs changing there. Next: CHANGES.md, build, install and commit.
+
+両方とも直して、コミット(`ea63fc1`、docs/CHANGES.md 項目722・723)と `make install` まで済みました。push はまだです。
+
+## ^J^U が効かなかった件
+**原因**: usilic は起動すると前回終了した画面から再開します。今回は HELP から始まっていました。ところが `^J^U`・`^Ju`・`^[u` は、(ls) と USILIC の一覧の中からしか受け付けず、それ以外の画面では黙って何もしていませんでした。前回、私は `-c` で (ls) から試したので気づきませんでした。
+
+**直したこと**: SHELL 以外のどの画面からでも開くようにしました。一覧で最後に `^G` を押すと、開いた画面へ戻ります。HELP から再開した状態で `^J^U` → `^G` と押し、HELP へ戻ることを確かめました。
+
+## occur(暫定キー)
+- `^T^S` は文字どおり、`^T^J^S` は拡張正規表現で、今の画面の中で一致した行を一覧にします。
+- 一覧で `^M` を押すと、元の画面のその行へ飛びます。
+- `^G` を押すごとに、一覧 → 元の画面 → (ls) と戻ります。
+- 一覧には、in-place 検索ができるようになる前からある GREP の結果一覧の画面を使っています。
+- 確かめたこと: FILE で `^T^J^S` に `A.` を入れると、2件の一覧が出ました。`^N^M` で3行目へ飛び、`^G` を3回押して一覧 → ファイル(その行のまま)→ (ls) と戻りました。
+- `^Tn`/`^Tp` と同じく暫定なので、KEY の表(K番号)には入れていません。キーが決まったら表に載せます。
+- HELP は src/HELP_.txt と src/HELP_en_.txt の FGREP/EGREP の表に2行を足し、説明を1行加えました。
+
+**気づいた点**: 一覧のモードラインには、`^T^S` でも `^T^J^S` でも「(grep)」と出ます。以前ご指定の「(fgrep)/(egrep)」に分けるなら直します。
+
+<(fgrep)/(egrep)に分けて。
+
+>The unused function is left over and now triggers a warning, so I'm removing it, then installing and committing.
+
+occur の一覧のモードラインを、`^T^S` では「(fgrep)」、`^T^J^S` では「(egrep)」と出るように分けました。ターミナルを模した自動操作で、両方の表示を確かめています。
+
+これまで「(grep)」になっていたのは、実際に起動するプログラムの名前を出していたからです。usilicrc の既定では FGREP も EGREP も中身は grep なので、どちらも「(grep)」でした。今は in-place の検索と同じく、検索の種類で付けています。
+
+コミット(`ea05fca`、docs/CHANGES.md 項目724)と `make install` は済んでいます。push はまだです。
+
+<・HELP上で^T^Sしてたら^G連打で無限行き来。
+・旧CUTでの修正と同じだが一覧から選んだ画面での戻り値は一律「FGREP: ^J」（`^J`を検索した場合）。
+
+>戻り値の欄の件に移ります。一覧から選んだ先の画面を開く処理(openSelectedGrepMatch)を読みます。
+
+FILE の戻り値は、8/28 のご依頼で「選んだ行の文字列」にしていたものでした。今回のご依頼(一律に「FGREP: 文字列」)で置き換えます。
+
+Next, the plain HELP fix: ^G returns to the (ls) it was opened from, and the mode line's return field shows that directory.
+
+FILE でも「FGREP: A」と出ました。8/28 の仕様を確かめているテストが無いか探します。
+
+None found. Next: CHANGES.md, install and commit.
+
+2件とも直しました。コミット(`28d978f`、docs/CHANGES.md 項目725)と `make install` は済んでいて、push はまだです。
+
+## ^G 連打で無限に行き来する件
+**原因**: occur ではなく、平文の HELP(`^Oh`)で起きていました。
+- 平文の HELP で `^G` を押すと、(ls) が HELP のファイルのある `~/.usilic/` へ移っていました。
+- その (ls) で `^G` を押すと、元のディレクトリへ移ります。そこでまた `^G` を押すと `~/.usilic/` へ戻り、これが繰り返されていました。
+
+**直したこと**: 平文の HELP から `^G` で戻ると、開いたときの (ls) へ戻るようにしました。モードラインの戻り値の欄も、そのディレクトリを出します。
+
+**残っていること**: (ls) の `^G` は「直前のディレクトリへ」なので、2つのディレクトリの間で `^G` を押し続けると、今でも行き来します。これは今回の修正の前からの動きです。止めたい場合は言ってください。
+
+## 一覧から選んだ画面の戻り値
+- **FILE**: 「FGREP: 文字列」(`^T^J^S` なら「EGREP: 文字列」)と出すようにしました。8/28 のご依頼で「選んだ行の文字列」にしていたものを、今回の「一律」に合わせて変えています。
+- **MAN・LOCATE・DU**: 元からこの形でした。
+- **HELP・KEY など PART の画面**: 一覧から飛んだ先で `^G` を押すと、一覧を飛ばして目次や (ls) へ行っていました。一覧へ戻るように直し、戻り値の欄も「FGREP: 文字列」にしました。
+
+## 確かめたこと(ターミナルを模した自動操作)
+- HELP の章の中で `^T^S` に「K」を入れ、一覧から選びました。戻り値は「FGREP: K」で、`^G` を押すごとに一覧 → 章 → 目次と戻りました。
+- FILE で `^T^S` に「A」を入れて選ぶと、戻り値は「FGREP: A」でした。
+- 平文の HELP で `^G` を押すと、開いたときの (ls) へ戻りました。
+
+<^[uの一覧に^J^A、^J^E、^J^Pを追加でよろしく。
+
+>^[u の目次に ARC・EPUB・PART の3項目を足す変更を書いています。ARC の項目は、開いたアーカイブで ^G を押すと USILIC の一覧へ戻るようにします。
+
+ビルドが通りました。ターミナルを模した自動操作で、目次と ARC・PART の項目を試します。
+
+ARC と PART は、^G を押すたびに USILIC の一覧、目次、(ls) の順に戻りました。HELP と CHANGES.md を更新してコミットします。
+
+`^[u` の目次の末尾に ARC・EPUB・PART の3つを足しました。目次は MAN、DIR、FILE、TOOL、WORK、USILIC、ARC、EPUB、PART の9項目になります。コミット(`7fdfb30`、docs/CHANGES.md 項目726)と `make install` は済んでいて、push はまだです。
+
+- **一覧の中身**: それぞれ `^J^A`・`^J^E`・`^J^P` と同じで、FILE の履歴を名前順に並べ、重なりを除いて絞り込んだものです。
+- **開いたあとの ^G**: どれも開いた項目からこの一覧へ戻ります。ARC は、これまでの開き方のままだとアーカイブのあるディレクトリの (ls) へ戻ってしまうので、一覧へ戻るように手を入れました。
+- **確かめたこと**(ターミナルを模した自動操作): EPUB は試していません。
+  - **ARC**: zip を `^M` で開き、中のファイルを `^M` で表示しました。`^G` を押すごとに ARC の一覧 → 目次 → (ls) と戻りました。
+  - **PART**: `f.txt "A:"` を `^M` で開くと、区間の中身が出ました。`^G` を押すごとに PART の分割一覧 → f.txt → PART の一覧と戻りました。
+- **HELP**: src/HELP_.txt と src/HELP_en_.txt の `^[u` の目次の説明を、9項目に書き直しました。
+
+<縦書きEPUBで横方向の画面ドラッグが出来ない。
+
+>GUI(-g)側のドラッグ処理は一見問題ありません。端末側のマウスのドラッグ処理も見ます。
+
+端末側の処理を足し、ビルドも通りました。src/ にあるテスト用の EPUB で、マウスの左右ドラッグを模して試します。
+
+端末でも、右へドラッグすると列が先へ進みました(13列目 → 89列目、離したあとの慣性を含む)。記録してインストールし、コミットします。
+
+端末(-c)での縦書き EPUB の左右ドラッグを直しました。コミット(`e60eb71`、docs/CHANGES.md 項目727)と `make install` は済んでいて、push はまだです。
+
+**原因**: 左右のドラッグは -g にしか作っていませんでした。端末のマウスのドラッグは上下の動きしか見ておらず、横の動きは無視されていました。
+
+**直したこと**: 端末でも縦書き EPUB の本文では、-g と同じように動くようにしました。
+- 右へドラッグすると先へ進みます。
+- 1列分の幅を動かすごとに1列送ります。
+- ドラッグせずに離すとクリックになります。
+- 素早く離すと慣性で流れ続けます(慣性の速さの決め方は、上下のドラッグと同じです)。
+
+**確かめたこと**: ターミナルを模した自動操作で、src/K3t.epub の本文を20桁目から60桁目まで右へドラッグしました。位置が13列目から89列目へ進みました(離したあとの慣性を含みます)。Terminal.app で、手で触ったときの感触はまだ確かめていません。
+
+もし -g で効かなかったのでしたら、そちらは別の原因なので教えてください。
+
+<奥付から上方向のスクロールを始めると、行頭で横方向にならずにそのまま「下へ」と消えていき、何も表示されないまま行数が001/382になって止まる。
+
+>横書きの範囲(奥付)から上へ流れる慣性が、範囲の先頭を越えても縦書きへ戻る判定を呼んでいませんでした。-g 側でどう呼んでいるか見ます。
+
+-g は慣性の各ステップで判定を呼んでいますが、端末(-c)の慣性(runCoastLoop)は呼んでいませんでした。端末のホイールの処理も確かめます。
+
+ビルドが通りました。K3t.epub の末尾(奥付)へ行き、← で上向きの慣性を始めて、縦書きへ戻るか試します。
+
+PTY で奥付まで行く操作がうまく組めなかったので、実際に戻るところまでは確かめられていません。コンパイルとインストールまでで区切ります。
+
+端末(-c)で奥付から上へスクロールすると止まる件を直しました。ただ、奥付から実際に縦書きへ戻るところは試せていません。確かめたのはコンパイルが通るところまでです。コミット(`fa6c7ca`、docs/CHANGES.md 項目728)と `make install` は済んでいて、push はまだです。
+
+**原因**: 奥付のような横書きの部分では、端末の慣性スクロールもマウスの上下ドラッグも、行を送るだけでした。横書きの部分の外へ出たかどうかを見ていなかったので、そのまま縦書きの本文の行へ進んでいました。横書きの画面ではそれらの行は何も表示されないので、空の画面のまま先頭(001/382)まで行って止まっていました。-g は1行ごとにこの判定をしているので、起きていなかったはずです。
+
+**直したこと**: 端末でも、1行送るごとに横書きの部分を出たかどうかを見るようにしました。出たら縦書きへ戻し、同じ速さ・同じ向きのまま、列を送るスクロールとして続けます。ドラッグの途中なら、左右のドラッグとして続けます。
+
+**試せなかった理由**: ターミナルを模した自動操作では、縦書きの目次から最後の章へ移る操作がうまくいかず、奥付まで行けませんでした。実機で試してもらえますか。
+
+<縦→横、縦←横の切り換えはOKだが、いずれの方向でも切り換えのタイミングで一つ前の章（少女の反論）の冒頭ページが一瞬出る。
+
+>「少女の反論」の章は src/Kat.epub にありました。これを使って、端末を模した自動操作で奥付まで行き、ちらつきを再現してみます。
+
+端末を模した自動操作で再現を試しています(50行×180桁、Kat.epub の奥付から上へ、そのあと下へ)。結果が出たら続けます。
+
+</btwKat.epubでは出ないかも。省略版のKbt.epubでないと。
+
+>Kbt.epub に替えて試します。章の数が違うかもしれないので、先に確かめます。
+
+Kbt.epub で再現しました。上向き・下向きのどちらでも、切り換えの瞬間に「少」の字を含む画面が出ています。どの描画で出ているか調べます。
+
+原因が分かったので、デバッグ用に入れた記録のコードを外してから説明します。
+
+原因が分かりました。まだ何も直していません。
+
+**原因**: Kbt.epub(80桁×24行ではなく、180桁×50行で再現)では、「少女の反論」が1画面に収まる短い章です。縦書きは「章の間の空の列は飛ばす」(9/30 のご依頼)ので、この章の画面は1列ずらすだけで隣の章へ移ってしまいます。慣性スクロールではその1ステップ分しか表示されず、「一瞬出る」ように見えます。
+- **奥付から上へ**: 奥付を抜けると、まず「少女の反論」の画面(00781〜00814列)になります。次の1列で、前の章の最後のページ(00736)へ移ります。
+- **下へ奥付に入るとき**: 前の章から「少女の反論」の画面へ移り、その次の1列で奥付へ入ります。
+
+つまり描き間違いではなく、短い章の通過が速すぎる、という動きです。1画面に収まらない章でも、章の境目では毎回同じように通過します。
+
+どう直すか、次のどれがいいか教えてください。
+1. **慣性のときだけ、章の前後の空の列も1列ずつ送る**: 短い章も、他の本文と同じように1列ずつ流れて出入りします。キーで1ページずつ送るときは、今まで通り空の列を飛ばします。
+2. **章の境目で一度止まる**: 慣性が章の頭(または終わり)に来たら止めます。
+3. **奥付との出入りのときだけ、直前の章を飛ばさず止める**: 他の章の境目は今のままにします。
+
+<これはすでに直したはずの症状だけどね。一瞬で消えちゃうから章の末尾から一行ずつ表示していって、連続スクロールなら継続、章毎なら次の章の末尾から。この繰り返し。
+
+>ビルドが通りました。同じ自動操作で、切り換えのあたりの列の位置を並べて確かめます。
+
+ご指定どおり、奥付との出入りでも最後の章を1列ずつ送るようにしました。コミット(`2253441`、docs/CHANGES.md 項目729)と `make install` は済んでいて、push はまだです。
+
+**原因**: 章の境目を1列ずつ送る修正(9/29〜9/30)は入っていましたが、奥付との出入りだけが別の処理で、その修正が届いていませんでした。
+- **奥付から上へ**: 前の章のうち、最後の列を含む1画面をまとめて出していました。1画面に収まる「少女の反論」は丸ごと表示され、次の1列で前の章へ移っていました。
+- **下へ奥付に入るとき**: 最後の章のページで右端の列が上限に達し、次の1列ですぐ奥付へ入っていました。
+
+**直したこと**
+- **上へ**: 前の章の最後の列を右端に置き、そこから1列ずつ現れるようにしました。ほかの章の境目と同じ動きです。
+- **下へ**: 本の末尾に1画面分の空の列を足しました。最後の章も、本文の最後の列が右端に来るまで1列ずつ送ってから奥付へ入ります。足すのは、本文の後に奥付のような横書きの部分がある本だけです。
+- -g も同じ処理を通るので、同じく直っているはずです。
+
+**確かめたこと**(ターミナルを模した自動操作、180桁×50行、Kbt.epub)
+- 奥付から上へ: 本文の最後の列(00814)を右端にして始まり、00813、と1列ずつ戻りました。慣性が遅く、「少女の反論」の冒頭までは送っていません。
+- 下へ: 00814 まで送ってから奥付へ入りました。
+- どちらの向きでも、「少女の反論」の冒頭の画面は出ませんでした。
+
+**表示が変わる点**: 足した空の列の分だけ列の総数が増えるので、モードラインの位置表示が変わります。Kbt.epub では総数が 814 から 874 になります。
+
+<`^T^S`（FGREP）だが検索結果一覧のどれかを選んだあとのマッチ文字列に文字装飾をいれて欲しい。`^S`の時の`^P`/`^N`でハイライトをたどれるやつ。`;`/`:`で同じ動作なので見た目も同じでよろしく。
+
+>飛んだ先の画面に、`^S` の in-place 検索と同じ強調を付ける処理を書いています。
+
+ビルドが通りました。FILE で `^T^S` から選んだ先の画面と、`^S` の画面とで、強調の描き方(端末へ送る装飾のコード)が同じか比べます。
+
+`^S` と同じく、今の一致は紫、ほかの一致は水色で描かれました。HELP と CHANGES.md を更新してコミットします。
+
+`^T^S`/`^T^J^S` の一覧から選んだ先の画面で、一致した文字列を `^S` と同じ見た目で強調するようにしました。コミット(`918dbd6`、docs/CHANGES.md 項目730)と `make install` は済んでいて、push はまだです。
+
+- **見た目**: 一覧に出た一致をすべて強調し、選んだ行の最初の一致を「今の一致」として目立たせます。色は `^S` と同じで、今の一致が紫、ほかの一致が水色です。
+- **`;`/`:`**: 一覧へ戻って隣の項目を開き直す動きなので、開くたびに強調が付き直り、今の一致の位置も移ります。
+- **強調が消えるとき**: 一覧から元の画面へ戻ったときと、次の検索を始めたときです。
+- **確かめたこと**: ターミナルを模した自動操作で、FILE で `^T^S` に「A」を入れ、一覧の2件目を開きました。3行目の「A」が紫、1行目の「A」が水色になり、`^S` で「A」を検索したときと同じ色でした。
+- **HELP**: src/HELP_.txt と src/HELP_en_.txt の occur の説明に、このことを1文足しました。
+
+**今回は入れていないもの**
+- **`^P`/`^N`**: 飛んだ先で `^P`/`^N` を押しても、`^S` のように一致をたどるのではなく、今まで通りの行の移動です。こちらもたどれるようにしたい場合は言ってください。
+- **縦書きの EPUB**: 飛んだ先が縦書きの EPUB の場合は、この強調の対象にしていません。
+
+<縦書きで強調するとどうなる？
+
+>縦書きのときに何が起きるか、コードで確かめます。
+
+縦書きの本文から実際に試して、今どうなるか確かめます。
+
+水色は、どれも同じページにあるほかの「少女」の字でした(何度か描き直された分を数えているので多く見えます)。記録してコミットします。
+
+試したところ、縦書きでは正しく動いていなかったので直しました。コミット(`a34e3cf`、docs/CHANGES.md 項目731)と `make install` は済んでいて、push はまだです。
+
+**直す前**(Kbt.epub の本文から `^T^S` で「少女」を検索し、一覧の3件目を選んだとき)
+- 縦書きの画面は元の位置(00057)のまま動かず、選んだ行へ飛んでいませんでした。これは今日強調を付ける前からの不具合です。
+- 強調は、横書きの本文の行番号を縦書きの画面の行にそのまま当てていたので、関係のない字が31か所水色になっていました。
+
+**直したあと**
+- 選んだ一致のある列(00152)へ飛びます。
+- 選んだ「少女」の2字が紫、同じページにあるほかの「少女」が水色と、`^S` と同じ見た目で縦書きの字に付きます。
+- 一覧へ戻ると強調は外れます。
+
+確かめたのは、ターミナルを模した自動操作(80桁×24行)だけです。-g では試していません。
+
+<・ARROWの設定が-gでも利いていて反応が敏感すぎる。-gではスクロールが行ではなくドット単位なので2段ズラさなくとも滑らかにつながる。なので-gではズラし無しでよろしく。
+・縦書きでは検索結果一覧も縦書きなら素晴らしい。
+
+>-g の側で、マウスで始めた慣性の段を2つずらしている所が2か所(横書きの上下と縦書きの左右)ありました。-g ではずらさないようにします。
+
+-g の修正は済みました。次は縦書きの検索結果一覧です。縦書きの章の一覧(目次)の作りを流用できるか見ます。
+
+-g の分を先にビルドしてコミットします。
+
+ヘッダーを変えたのでビルドに時間がかかっています。その間に、縦書きの目次がどこで使われているかを洗い出します。
+
+ビルドの終了を待ちます。
+
+Now the main edits (replacing the TOC-only parts with "TOC or search results").
+
+ビルドが通りました。Kbt.epub の縦書きの本文で `^T^S` を試し、一覧が縦書きになるか、選んで飛べるかを見ます。
+
+2件とも入れて、`make install` まで済みました。push はまだです。
+
+## -g で段をずらさない(`8d80832`、項目732)
+マウスで始めた慣性スクロールの速さを ARROW の段2つ分速めるのは、端末(-c)だけにしました。-g では、ドラッグの速さで決まる段のまま流れます。横書きの上下も、縦書きの左右も同じです。
+
+## 縦書きの検索結果一覧(`5c2c808`、項目733)
+縦書きの EPUB の本文で `^T^S`/`^T^J^S` を押すと、結果の一覧も縦書きで出ます。
+- **作り**: 縦書きの章の一覧の仕組みを、検索結果でも使えるように広げました。
+- **操作**: キー、クリック(2回目で開く)、ホイール、ドラッグ、慣性、スクロールバー、画面の大きさの変更への追随は、章の一覧と同じです。
+- **モードライン**: 横書きの結果一覧と同じ表示(FGREP、件数、(fgrep)など)です。
+- **確かめたこと**(ターミナルを模した自動操作、Kbt.epub):
+  - 本文で `^T^S` に「少女」を入れると、縦書きの一覧が出て「少女」が強調されました。
+  - `^N^N^M` で3件目の位置(00152)へ飛びました。
+  - `^G` を押すごとに、元の本文(00057)→ 章の目次と戻りました。
+- **HELP**: src/HELP_.txt と src/HELP_en_.txt の occur の説明に、縦書きの EPUB では一覧も縦書きになることを1文足しました。
+
+-g ではどちらも試していないので、実機で見てもらえますか。
