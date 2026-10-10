@@ -9427,7 +9427,10 @@ bool Application::openSelectedGrepMatch() {
   const GrepMatch *match = grepMode_.selectedMatch();
   if (!match) return false;
   currentMode_ = grepReturnMode_;
-  ContentView &target = activeView();
+  // 2026-10-10: 縦書きのEPUBでは画面(epubVerticalView_)ではなく検索した本文(fileView_、grepViewForMode())の
+  // 行へカーソルと強調を置き、下でredrawEpubVerticalForGrep()が縦書きを組み直す(in-placeの^Sと同じ)。以前は
+  // 縦書きの画面の行へ本文の行番号を当てていたので、飛ばずに関係の無い所を強調していた。
+  ContentView &target = grepViewForMode(grepReturnMode_);
   target.setCursorIndex(match->sourceLineIndex);
   if (grepReturnMode_ != ApplicationMode::Shell) highlightGrepJumpTarget(target, match->sourceLineIndex);
   if (grepReturnMode_ == ApplicationMode::Directory) {
@@ -9534,7 +9537,7 @@ bool Application::openSelectedGrepMatch() {
   if (grepReturnMode_ == ApplicationMode::Directory) {
     display_.hideVisibleCursor();
     target.redraw();
-  } else {
+  } else if (!redrawEpubVerticalForGrep(target)) {
     target.redraw();
     target.syncVisibleCursor();
   }
@@ -9576,8 +9579,11 @@ void Application::highlightGrepJumpTarget(ContentView &target, int lineIndex) {
 
 void Application::clearGrepJumpHighlight() {
   if (!grepJumpHighlightView_) return;
-  if (!grepInPlaceActive_ || grepJumpHighlightView_ != &grepViewForMode(grepInPlaceOriginMode_))
+  if (!grepInPlaceActive_ || grepJumpHighlightView_ != &grepViewForMode(grepInPlaceOriginMode_)) {
     grepJumpHighlightView_->clearGrepMatchHighlight();
+    if (grepJumpHighlightView_ == &fileView_ && epubVerticalActive())
+      rebuildEpubVertical(fileRawLineAtCursor());  // 縦書きの字の強調も消す(deactivateGrepInPlace()と同じ)
+  }
   grepJumpHighlightView_ = nullptr;
 }
 
