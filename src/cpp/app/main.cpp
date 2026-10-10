@@ -4568,11 +4568,13 @@ int main(int argc, char **argv) {
   // during this port's development.
   bool forceCui = false;
   bool forceGui = false;
+  bool openHelpChild = false;  // -H(下の初回起動と同じく、起動後に子のusilicでHELPを開く)
   std::vector<RcOption> rcOptions;  // -s/-S、-d/-D、-f/-F、-w/-W、-b/-B、-l/-L(RcOption参照)
   std::vector<char *> positionalArgs;
   for (int i = 1; i < argc; i++) {
     if (std::strcmp(argv[i], "-c") == 0) forceCui = true;
     else if (std::strcmp(argv[i], "-g") == 0) forceGui = true;
+    else if (std::strcmp(argv[i], "-H") == 0) openHelpChild = true;
     else if (std::strcmp(argv[i], "-h") == 0) {
       // 2026-09-15追加、直接のユーザー依頼("新たな仕様として...
       // ③-hオプションで「usilic [<file] [file] [directory]」を表示")
@@ -4591,6 +4593,7 @@ int main(int argc, char **argv) {
       std::cout << "usage: usilic [options] [<file] [file] [directory]\n"
                    "  -c            CUI (terminal) mode\n"
                    "  -g            GUI (window) mode\n"
+                   "  -H            also open HELP in a child usilic\n"
                    "  -s usec ...   scroll SPEED per level (1-10)\n"
                    "  -d dot ...    flick DRAG thresholds per level (1-10)\n"
                    "  -f file       FONT file for -g\n"
@@ -5505,6 +5508,16 @@ int main(int argc, char **argv) {
       return 1;
     }
     offerGroffInstallOnce(app, usilicDir);
+    // 2026-10-11、直接のユーザー依頼("一番最初の起動(~/.usilic/historyが空)もしくは-Hの起動オプションで
+    // usilicを立ち上げた場合、^Jtusilic ~/.local/lib/usilic/HELP_ja.1^Mを実行した状態で起動"): 親は今まで
+    // どおり(ls)か前回の続きから立ち上がり、HELPは子のusilic(外部ページャー、^Jtの"usilic ..."と同じ
+    // runExternalUsilicPager())で開く。子へはreloadHelpText()が読んだもの(roff版のHELP.ja.1/HELP.1、
+    // groffが無ければ平文のHELP)を渡す。子の側はroffをgroffで平文に組む(startPagerFileList()参照)。
+    if ((openHelpChild || (consultHistoryOnStart && historyText.empty())) && !app.helpLoadedPath_.empty()) {
+      std::string quoted = "'";
+      for (char c : app.helpLoadedPath_) quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
+      app.runExternalUsilicPager("usilic " + quoted + "'");
+    }
   }
 
   if (guiOwnsWholeSession) {

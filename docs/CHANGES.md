@@ -29713,3 +29713,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **HELP**: src/HELP_.txt・HELP_en_.txtのoccurの説明に一文。
    - **確認**: PTYで、Kbt.epubの本文から^T^S"少女"→縦書きの一覧(一致を強調)→^N^N^Mで00152へ→^Gで本文(00057)→
      ^Gで目次。-gは未確認。
+734. **2026-10-11: 最初の起動(~/.usilic/historyが空)・-Hで、子のusilicでHELPを開いた状態で起動する、子のページャーでroffを平文に組む**
+   - **経緯**: 直接のユーザー依頼("一番最初の起動(~/.usilic/historyが空)もしくは-Hの起動オプションでusilicを立ち上げた
+     場合、`^Jtusilic ~/.local/lib/usilic/HELP_ja.1^M`を実行した状態で起動後、親はカレントディレクトリの(ls)もしくは
+     前回終了時から立ち上がる。子のHELPはPARTではなく平文で"、"子のHELPは...groffを使用しているのでモードラインには
+     「(groff)」が必要")。
+   - **起動(main.cpp)**: -Hを新設(-hの使い方にも)。app.start()/startResumingSession()の後、-Hか、historyを読む起動で
+     historyが空なら、reloadHelpText()が読んだファイル(helpLoadedPath_、roff版のHELP.ja.1/HELP.1、groffが無ければ
+     平文のHELP)を`usilic '…'`としてrunExternalUsilicPager()(^Jtの"usilic ..."と同じ)へ渡す。ファイル名は実際に
+     インストールされているHELP.ja.1(依頼文のHELP_ja.1ではなく)。
+   - **子(Application::startPagerFileList())**: 引数のファイルが1つでroff(looksLikeRoffDocument())なら、loadStream()
+     (ソースのまま表示していた)ではなくloadFile()でgroffに組ませる(HELP.txtの分岐と同じ)。モードラインは通常の
+     FILEと同じく「HELP.ja.1 0001/1102 TOP 95094 (groff) ディレクトリ」。`usilic foo.1`全般も同じになる。
+   - **確認**: 隔離したHOMEのPTYで、子`usilic -c HELP.ja.1`が平文+(groff)、SSH_TTYを立てた空のhistoryの親の起動で
+     子のHELPが同じ端末に出ることを確認(新しいウィンドウの経路は未確認)。
+   - src/HELP_.txt・src/HELP_en_.txtの起動オプションに-Hを足した。

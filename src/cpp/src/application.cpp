@@ -2229,7 +2229,18 @@ bool Application::startPagerFileList(const std::vector<std::string> &paths) {
   // ――pagerFileList_を空のままにしておくことで、この起動はもはや
   // 「ページャーモード」を名乗らない(hasActiveStream()がfalseになる
   // ので、^Gは通常のFileモードと同じくディレクトリへ戻る)。
-  if (paths.size() == 1 && isHelpMarkupPagerFile(paths.front())) {
+  // 2026-10-11、直接のユーザー依頼(初回起動・-Hで開く子のHELP.ja.1は"PARTではなく平文で"、モードラインに
+  // "(groff)"): roffの文書(manページ等)も、下のloadStream()ではソースのままになるので、同じくloadFile()で
+  // groffに組ませる(FileMode::loadAndTransformContent()、モードラインの"(groff)"もそちらが出す)。
+  bool roffDocument = false;
+  if (paths.size() == 1) {
+    std::ifstream probe(paths.front(), std::ios::binary);
+    std::string head(0x1000, '\0');
+    probe.read(head.data(), static_cast<std::streamsize>(head.size()));
+    head.resize(static_cast<std::size_t>(probe.gcount()));
+    roffDocument = probe.gcount() > 0 && looksLikeRoffDocument(head);
+  }
+  if (paths.size() == 1 && (roffDocument || isHelpMarkupPagerFile(paths.front()))) {
     if (!fileMode_.loadFile(paths.front())) return false;
     currentMode_ = ApplicationMode::File;
     fileReturnMode_ = ApplicationMode::Directory;
