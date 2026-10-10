@@ -252,6 +252,10 @@ std::string convertMarkupToMsRoffSource(const std::string &source) {
          // なって消えるので、usilicのHELPが組む時(-rusilic-help=1)だけ印U+E000を出す(usilicが組んだ後で
          // タブに戻す、Application::renderHelpRoff()参照)。manで読む時は何も出ない。
          ".ie r usilic-help .ds usilic-tab \\[uE000]\n.el .ds usilic-tab\n"
+         // 2026-10-10、直接のユーザー報告("~/HELP.txt平文表示と比べるとHELP.ja.1ではタブコードで始まる行で
+         // 全角コロンの位置が左寄り"): manの既定のタブ位置は0.5i(5桁)ごとで、平文(8桁ごと)より左へずれる。
+         // 平文と同じ8桁ごとにする。
+         ".ta T 8n\n"
          ".char - \\[u002D]\n.char ' \\[u0027]\n.char ^ \\[u005E]\n.char ~ \\[u007E]\n.char ` \\[u0060]\n"
          // 日本語の文字の間でも改行できるようにする(-mは任意の位置で
          // 折り返す)。groff 1.24のja.tmacの定義をそのまま取り込み、

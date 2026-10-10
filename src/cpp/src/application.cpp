@@ -17641,7 +17641,9 @@ bool Application::renderHelpRoff(int width) {
     std::string before = line.substr(0, at), after = line.substr(at + marker.size());
     if (before.find_first_not_of(' ') == std::string::npos) {
       std::size_t body = after.find_first_not_of(' ');
-      int columns = static_cast<int>(before.size() + (body == std::string::npos ? after.size() : body));
+      // 印(U+E000)はgroffの上で1桁を占め、その後ろに元のタブ(8桁ごと、convertMarkupToMsRoffSource()の前置き
+      // 参照)が続く(2026-10-10、以前は印の1桁を数えておらず、タブ位置も5桁ごとだったので左へずれていた)。
+      int columns = static_cast<int>(before.size() + 1 + (body == std::string::npos ? after.size() : body));
       text += "\t" + std::string(static_cast<std::size_t>(std::max(0, columns - 8)), ' ') +
               (body == std::string::npos ? std::string() : after.substr(body)) + "\n";
     } else {
