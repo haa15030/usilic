@@ -214,7 +214,8 @@ void History::mirrorToUsilicImpl(RingCategory source, const std::string &name) {
       break;
     case RingCategory::RecentDirectory:
       entry = name;
-      if (entry.empty() || entry.back() != '/') entry += '/';
+      // 外部起動の印付き("パス/ (usilic)")は、"/"を印の前に付けて記録済み。
+      if (!hasUsilicTag(entry) && (entry.empty() || entry.back() != '/')) entry += '/';
       break;
     case RingCategory::RecentManPage:
       entry = name + " (man)";
@@ -269,7 +270,9 @@ void History::pushRecentImpl(RingCategory category, const std::string &name) {
   // (単なるrings_[...]へのpushではなく)ことで、派生したディレクトリ
   // のpushに対しても、上の同一の重複排除/保持上限ロジックが再利用
   // される。
-  if (category == RingCategory::RecentFile) {
+  // 2026-10-10: 外部起動の印付き(kUsilicTag)は子のusilicで開いたもので、このusilicはその親ディレクトリに
+  // いたわけではないので、DIRへは足さない。
+  if (category == RingCategory::RecentFile && !hasUsilicTag(name)) {
     // 2026-09-14修正、実際の再現(TUTORIALの真っ新起動時の事前登録
     // エントリを検証中に発覚): application.cpp自身のbuildCutFileHistoryEntry()
     // が積む「パス "パターン"」/「パス /パターン/」という合成形の

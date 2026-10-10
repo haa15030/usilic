@@ -299,18 +299,7 @@ std::vector<std::string> splitShellWords(const std::string &line) {
   return words;
 }
 
-// 2026-10-10、直接のユーザー依頼("^Ouで外部起動したページャーおよび(ls)には履歴に"(usilic)"を付加"): USILICの
-// 履歴(RingCategory::Usilic)で、外部起動したものの印。manページの" (man)"と同じく項目の文字列の末尾に付け、
-// 種別はこれを除いた残りで判定する(ディレクトリなら"/"の直後に付く)。
-constexpr const char *kUsilicTag = " (usilic)";
-
-// `entry`の末尾がkUsilicTagなら除いてtrue。
-bool stripUsilicTag(std::string &entry) {
-  static const std::string tag = kUsilicTag;
-  if (entry.size() <= tag.size() || entry.compare(entry.size() - tag.size(), tag.size(), tag) != 0) return false;
-  entry.erase(entry.size() - tag.size());
-  return true;
-}
+// 外部起動の印(kUsilicTag)とhasUsilicTag()/stripUsilicTag()はhistory.hppへ移した(2026-10-10)。
 
 // `ls -alF`(Configuration::commandFor(ConfiguredRole::Ls)自身の
 // デフォルト、configuration.cpp参照)がDirectoryEntry::nameの末尾に
@@ -2201,9 +2190,11 @@ bool Application::startResumingSession(const std::string &lastOpenName, const st
   std::string fallback = fallbackDirectory;
   if (lastOpenName.empty()) {
     const auto &recentDirs = history_.recentEntries(RingCategory::RecentDirectory);
-    if (!recentDirs.empty()) {
+    for (auto it = recentDirs.rbegin(); it != recentDirs.rend(); ++it) {
+      if (hasUsilicTag(*it)) continue;  // 外部起動したもの(kUsilicTag)
       std::error_code existsEc;
-      if (std::filesystem::exists(recentDirs.back(), existsEc) && !existsEc) fallback = recentDirs.back();
+      if (std::filesystem::exists(*it, existsEc) && !existsEc) fallback = *it;
+      break;
     }
   }
   return start(nearestExistingAncestorDirectory(lastOpenName, fallback), consultHistory);
@@ -5866,6 +5857,7 @@ bool Application::openListEntrySpecial(bool raw) {
       if (const std::string *item = listBrowserMode_.selectedItem()) {
         path = *item;
         if (auto parsed = parseCutFileHistoryEntry(path)) path = std::get<0>(*parsed);
+        stripUsilicTag(path);
       }
       break;
     case ApplicationMode::Underline:
@@ -6375,6 +6367,7 @@ bool Application::goToFileSelector() {
     const std::string *selected = listBrowserMode_.selectedItem();
     if (!selected) return false;
     sourceFile = *selected;
+    stripUsilicTag(sourceFile);
   } else if (currentMode_ == ApplicationMode::Locate) {
     const std::string *selected = locateMode_.selectedResult();
     if (!selected) return false;
@@ -6488,6 +6481,7 @@ bool Application::goToParentFromFileOrArchive() {
     const std::string *selected = listBrowserMode_.selectedItem();
     if (!selected) return false;
     sourcePath = *selected;
+    stripUsilicTag(sourcePath);
     sourceIsDirectory = (listBrowserCategory_ == RingCategory::RecentDirectory);
   } else if (currentMode_ == ApplicationMode::Locate) {
     const std::string *selected = locateMode_.selectedResult();
@@ -6746,6 +6740,7 @@ bool Application::openSelectedListEntryImpl() {
     return true;
   }
   if (listBrowserCategory_ == RingCategory::RecentDirectory) {
+    if (hasUsilicTag(*item)) return relaunchUsilicEntry(*item);  // 外部起動の印(kUsilicTag)
     // 2026-08-13: resetNavigationToFloor()――それ自身の宣言コメント
     // (directory_mode.hpp)参照――enterDirectory()がcurrentDirectory_
     // を上書きする「前に」取得するので、これは本当に「これを選ぶ前に
@@ -6772,7 +6767,18 @@ bool Application::openSelectedListEntryImpl() {
 // archiveMode_.loadArchive()を試すことは一度も無かった。
 // openSelectedEntry()自身の「アーカイブを先に、ファイルをフォール
 // バックとして」という順序を正確に反映している。
+// 2026-10-10、直接のユーザー依頼("^Cf\"text\"でCUTしたファイルと同じ方法にはできない？"): 外部起動の印
+// (kUsilicTag)の付いたFILE/DIR/USILICの履歴の項目は、もう一度外部起動する(ディレクトリなら子の(ls)、
+// ファイルなら子のページャー)。
+bool Application::relaunchUsilicEntry(std::string entry) {
+  stripUsilicTag(entry);
+  while (entry.size() > 1 && entry.back() == '/') entry.pop_back();
+  programPromptDirectory_.clear();
+  return runExternalUsilicPager("usilic " + shellQuoteArg(entry));
+}
+
 bool Application::openRecentFileEntry(const std::string &path) {
+  if (hasUsilicTag(path)) return relaunchUsilicEntry(path);
   // 2026-09-24追加、直接のユーザー報告("^J^Jでカーソル位置が保存
   // されない。^Vでスクロールしたのち^J^Jしてもスクロール前の位置に
   // なる"): openSelectedArchiveEntry()自身の2026-08-27修正・
@@ -6904,6 +6910,7 @@ bool Application::goToRecentFile() {
   // る(goToRecentDirectory()自身の同一の2026-08-27の修正参照)。
   for (auto it = recent.rbegin(); it != recent.rend(); ++it) {
     if (!current.empty() && *it == current) continue;
+    if (hasUsilicTag(*it)) continue;  // 外部起動したもの(kUsilicTag)はこのusilicで開いたものではない
     if (openRecentFileEntry(*it)) return true;
   }
   return false;
@@ -6939,6 +6946,7 @@ bool Application::goToRecentDirectory() {
   // 失敗した試みも越えてたどり続ける。
   for (auto it = recent.rbegin(); it != recent.rend(); ++it) {
     if (*it == directoryMode_.currentDirectory()) continue;
+    if (hasUsilicTag(*it)) continue;  // 外部起動したもの(kUsilicTag)はこのusilicで入ったものではない
     if (directoryMode_.enterDirectory(*it)) return true;
   }
   return false;
@@ -7285,14 +7293,7 @@ bool Application::openSelectedUnderlineEntry() {
   }
   // 2026-10-10、直接のユーザー依頼("FILEから選んだ時は外部ページャー、DIRからは外部(ls)となる"): 外部起動の印
   // (kUsilicTag)の付いた項目は、もう一度外部起動する(ディレクトリなら子の(ls)、ファイルなら子のページャー)。
-  {
-    std::string target = *path;
-    if (stripUsilicTag(target)) {
-      while (target.size() > 1 && target.back() == '/') target.pop_back();
-      programPromptDirectory_.clear();
-      return runExternalUsilicPager("usilic " + shellQuoteArg(target));
-    }
-  }
+  if (hasUsilicTag(*path)) return relaunchUsilicEntry(*path);
   // 2026-09-21追加: アクセス履歴の"名前 (man)"はmanページとして開き、^Gで
   // このUSILIC一覧へ戻る。
   if (path->size() > 6 && path->compare(path->size() - 6, 6, " (man)") == 0) {
@@ -13818,8 +13819,16 @@ bool Application::feedPromptByteInner(int byte) {
   if (byte == kControlW && (promptKind_ == PromptKind::CopyDestination ||
                              promptKind_ == PromptKind::MoveDestination ||
                              promptKind_ == PromptKind::ArchiveDestination)) {
+    // 外部起動したもの(kUsilicTag)は飛ばして、このusilicで入った1つ前のディレクトリ。
     const auto &recentDirs = history_.recentEntries(RingCategory::RecentDirectory);
-    if (recentDirs.size() >= 2) promptEditor_.setText(recentDirs[recentDirs.size() - 2]);
+    int seen = 0;
+    for (auto it = recentDirs.rbegin(); it != recentDirs.rend(); ++it) {
+      if (hasUsilicTag(*it)) continue;
+      if (++seen == 2) {
+        promptEditor_.setText(*it);
+        break;
+      }
+    }
     return true;
   }
   // K-65(^I): PathInput自身のバッファは完全にパスそのものなので、
@@ -14268,6 +14277,7 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
     // リスト経由で到達するだけである。この機能の残りについては
     // startListBrowser()自身のコメント参照。
     case PromptKind::RecentFile:
+      if (hasUsilicTag(text)) return relaunchUsilicEntry(text);  // 外部起動の印(kUsilicTag)
       // recentFileDisplayText()参照: 入力欄がハイライト行の(/を見せない)文字列のままなら、
       // ハイライト行そのもの(「パス/」ならARC)で開く。
       if (const std::string *selected = listBrowserMode_.selectedItem();
@@ -14287,6 +14297,7 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
       // ハイライトされているエントリを選ぶことで到達しようと、新しい
       // パスをタイプすることで到達しようと、この共有された投入経路
       // への移行を依然として生き延びる必要がある。
+      if (hasUsilicTag(text)) return relaunchUsilicEntry(text);  // 外部起動の印(kUsilicTag)
       std::string previousDirectory = directoryMode_.currentDirectory();
       if (!executePathInput(text)) return false;
       if (currentMode_ == ApplicationMode::Directory) directoryMode_.resetNavigationToFloor(previousDirectory);
@@ -16886,7 +16897,7 @@ bool Application::runExternalUsilicPager(const std::string &command) {
   // 2026-10-10、直接のユーザー依頼("FILEから選んだ時は外部ページャー、DIRからは外部(ls)"、"Pagerと(ls)が別
   // ウィンドウ"): 引数を語に分け、実在するファイルとディレクトリが両方あれば、ファイル(とそれ以外の語)の
   // ページャーとディレクトリの(ls)を別々に起動する(以前は子がディレクトリの方だけを開き、ファイルは捨てていた)。
-  // 実在するものは、USILICの履歴に" (usilic)"を付けて記録する(kUsilicTag参照)。
+  // 実在するものは、FILE/DIRの履歴に" (usilic)"を付けて記録する(kUsilicTag参照、USILICへはそのまま複写される)。
   std::string base = directory;
   if (base.empty()) {
     std::error_code ec;
@@ -16908,10 +16919,10 @@ bool Application::runExternalUsilicPager(const std::string &command) {
     std::error_code ec;
     if (std::filesystem::is_directory(normal, ec)) {
       directories.push_back(word);
-      history_.pushRecent(RingCategory::Usilic, (normal == "/" ? normal : normal + "/") + kUsilicTag);
+      history_.pushRecent(RingCategory::RecentDirectory, (normal == "/" ? normal : normal + "/") + kUsilicTag);
     } else {
       files.push_back(word);
-      if (std::filesystem::exists(normal, ec)) history_.pushRecent(RingCategory::Usilic, normal + kUsilicTag);
+      if (std::filesystem::exists(normal, ec)) history_.pushRecent(RingCategory::RecentFile, normal + kUsilicTag);
     }
   }
   auto join = [&](const std::vector<std::string> &paths) {

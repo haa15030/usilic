@@ -1773,6 +1773,8 @@ class Application {
   void launchExternalUsilic(const std::string &directory, const std::string &args, const std::string &command,
                             bool *recorded);
   bool openInNewTerminalWindow(const std::string &directory, const std::string &command);
+  // 外部起動の印(kUsilicTag)の付いた履歴の項目を、もう一度外部起動する(.cpp側のコメント参照、2026-10-10)。
+  bool relaunchUsilicEntry(std::string entry);
   // pollPagerExitNotice()自身の宣言コメント参照(2026-09-20追加)。
   // `suppressDraw`(2026-09-07追加、直接のユーザー報告"わかったのは
   // ブロックカーソル位置を画面上真ん中辺に変更すると、瞬時の表示も

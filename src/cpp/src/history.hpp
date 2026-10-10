@@ -18,6 +18,25 @@ namespace fm {
 // 文字通りの表示「mode」だけを指すものではない。
 enum class PositionCategory { File, Directory, ManPage, Screen };
 
+// 2026-10-10、直接のユーザー依頼("^Ouで外部起動したページャーおよび(ls)には履歴に"(usilic)"を付加"、
+// "^Cf\"text\"でCUTしたファイルと同じ方法にはできない？"): 外部起動したもの(子のusilicで開いたもの)の印。
+// manページの" (man)"と同じく項目の文字列の末尾に付け(ディレクトリなら"/"の直後)、FILE/DIRの履歴にもこの
+// 印のまま入る(USILICへはそのまま複写される)。パスとして使う箇所では外すか、飛ばす(Application参照)。
+inline constexpr const char *kUsilicTag = " (usilic)";
+
+// `entry`の末尾がkUsilicTagか。
+inline bool hasUsilicTag(const std::string &entry) {
+  static const std::string tag = kUsilicTag;
+  return entry.size() > tag.size() && entry.compare(entry.size() - tag.size(), tag.size(), tag) == 0;
+}
+
+// `entry`の末尾がkUsilicTagなら除いてtrue。
+inline bool stripUsilicTag(std::string &entry) {
+  if (!hasUsilicTag(entry)) return false;
+  entry.erase(entry.size() - std::string(kUsilicTag).size());
+  return true;
+}
+
 // 単純な、最初の出現が勝つ名前集合――LLのgrep/cmdフィールドが
 // read_list()/write_list()で具体的に(履歴ファイルのCUT章とCOMMAND章)
 // 使われている形からの移植。Configuration自身のGREP/PROGRAMシード

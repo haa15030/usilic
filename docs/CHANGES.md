@@ -29542,3 +29542,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      window」を消す)はmacOSと共通。見つからなければ従来通り同じ端末。
    - **確認**: macOSでビルドのみ(Linux側の分岐はLinux実機での確認待ち)。
    - src/HELP_.txt・src/HELP_en_.txtの^Ouの説明に足した。
+719. **2026-10-10: 外部起動したファイル・ディレクトリを、FILE/DIRの履歴(^X^F・^X^D)にも「(usilic)」付きで入れる**
+   - **経緯**: 項目717ではUSILICの履歴だけに入れていた(パスとして読む箇所が多く壊れるため、と説明)。ユーザーから
+     "^Cf\"text\"でCUTしたファイルはFILE履歴には\"text\"で入るけど存在しないパスとしては扱われないんじゃない？
+     それと同じ方法にはできない？"→できる(CUTの「パス "パターン"」と同じく、パスとして読む箇所で印を外すか飛ばす)。
+   - **内容**: kUsilicTag・stripUsilicTag()をhistory.hppへ移し、hasUsilicTag()を足した。runExternalUsilicPager()は
+     RecentFile/RecentDirectoryへ印付きで記録し、USILICへはmirrorToUsilicImpl()の複写で入る(DIRの印付きには"/"を
+     足さない)。FILEの印付きからは親ディレクトリをDIRへ足さない(このusilicはそこにいたわけではない)。
+     ^Mは新設のrelaunchUsilicEntry()で外部起動し直す(openRecentFileEntry()の先頭、^X^F・^X^Dの入力欄の確定、
+     DIRの一覧の^M、USILICの一覧の^M)。^J^J・^Gの空スタックのフォールバック・起動時の戻り先・CP/MV/ARCの
+     行き先の^Wは印付きを飛ばす。一覧からの^J^K・^O^K・^O^M等の経路とlistTargetPaths()は印を外して使う。
+   - **確認**: macOSでビルドのみ。
+   - src/HELP_.txt・src/HELP_en_.txtの^OuとUSILICの説明に足した。
