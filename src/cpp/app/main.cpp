@@ -5171,7 +5171,20 @@ int main(int argc, char **argv) {
     std::string text = readFileIfExists(overridePath);
     if (!text.empty()) app.loadHelpText(text);
   } else {
-    app.reloadHelpText();
+    // 2026-10-11、直接のユーザー依頼("LANGがja_JP.UTF-8の時はHELP.ja.1それ以外ではHELP.1を参照し、起動後も
+    // 最初から英語モード"): 以前は常に日本語(HELP)で始まり、英語は^Jaで切り替えていた。LANGがja_JPのUTF-8
+    // なら日本語、それ以外(未設定・C・en_US.UTF-8・ja_JP.eucJP等)は英語で始める。-Hと最初の起動で子に渡す
+    // HELPもこれに従う(helpLoadedPath_)。英語版が読めなければ日本語へ戻す。
+    std::string lang = std::getenv("LANG") ? std::getenv("LANG") : "";
+    std::string langLower;
+    for (char c : lang) langLower += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    bool japanese = langLower.rfind("ja_jp.", 0) == 0 &&
+                    (langLower.find(".utf-8") != std::string::npos || langLower.find(".utf8") != std::string::npos);
+    app.setHelpEnglish(!japanese);
+    if (!app.reloadHelpText() && !japanese) {
+      app.setHelpEnglish(false);
+      app.reloadHelpText();
+    }
   }
 
   // "実はすでにGUI" (docs/ideas/IDEAS.md, see CLAUDE.md's 2026-07-30

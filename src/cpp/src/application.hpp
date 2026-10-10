@@ -2992,6 +2992,9 @@ public:
   void setInstallLibDirectory(const std::string &dir) { installLibDirectory_ = dir; }
   // ページャーとして起動したか(ファイル引数・標準入力、main()のconsultHistoryOnStartの逆)。startKey()参照。
   void setPagerLaunch(bool pager) { pagerLaunch_ = pager; }
+  // HELPの言語(2026-10-11、main.cppがLANGで決める): trueならHELP.en(roff版はHELP.1)、falseならHELP(HELP.ja.1)。
+  // 起動後は^Jaで今まで通り切り替える。reloadHelpText()の前に呼ぶ。
+  void setHelpEnglish(bool english) { helpPath_ = english ? helpBasePath_ + ".en" : helpBasePath_; }
   // HELP(helpPath_のファイル)を読み直す(起動時・^Ja)。読めなければfalse(helpText_はそのまま)。
   bool reloadHelpText();
   // reloadHelpText()が読んだHELPのファイルとその更新時刻(startHelp()が、書き換えられていれば読み直す)。

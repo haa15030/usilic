@@ -29728,3 +29728,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **確認**: 隔離したHOMEのPTYで、子`usilic -c HELP.ja.1`が平文+(groff)、SSH_TTYを立てた空のhistoryの親の起動で
      子のHELPが同じ端末に出ることを確認(新しいウィンドウの経路は未確認)。
    - src/HELP_.txt・src/HELP_en_.txtの起動オプションに-Hを足した。
+735. **2026-10-11: LANGがja_JP.UTF-8以外なら、HELPを最初から英語(HELP.en、roff版はHELP.1)で始める**
+   - **経緯**: 直接のユーザー依頼("LANGがja_JP.UTF-8の時はHELP.ja.1それ以外ではHELP.1を参照し、起動後も最初から
+     英語モード、にしてみて")。以前は常に日本語(HELP/HELP.ja.1)で始まり、英語は^Jaで切り替えていた。
+   - **内容**: main.cppがreloadHelpText()の前にLANGを見て(大文字小文字は問わず、ja_JP.UTF-8/ja_JP.utf8)、それ以外
+     (未設定・C・en_US.UTF-8・ja_JP.eucJP等)ならApplication::setHelpEnglish(true)(helpPath_をHELP.enに)。^H・^K・
+     平文のHELPも英語、項目734の-H・最初の起動で子に渡すのもHELP.1になる。英語版が読めなければ日本語へ戻す。
+     起動後の^Jaの切り替えは今まで通り。
+   - **確認**: 隔離したHOMEのPTYで、LANG=en_US.UTF-8・Cでは子がHELP.1、ja_JP.UTF-8ではHELP.ja.1。
+   - **注意**: ~/.local/lib/usilic/HELP.1は10/6の古い日本語版のまま(doc/HELP.1はリポジトリから外れている、make
+     installは無ければ入れない)。今の英語のroff版はHELP.en.1(項目720)。
+   - src/HELP_.txt・src/HELP_en_.txtの-Hの説明に一文。
