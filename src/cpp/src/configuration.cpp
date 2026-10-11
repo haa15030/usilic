@@ -767,9 +767,9 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
           if (tokens.empty()) continue;
           std::string name = tokens[0];
           for (char &c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-          static const std::vector<std::string> kNames = {"open", "pdf", "dump", "term", "copy", "look"};
+          static const std::vector<std::string> kNames = {"open", "pdf", "dump", "term", "copy", "look", "epub"};
           if (std::find(kNames.begin(), kNames.end(), name) == kNames.end()) {
-            errors_.push_back("URL: not Open/Pdf/Dump/Term/Copy/Look: " + tokens[0]);
+            errors_.push_back("URL: not Open/Pdf/Dump/Term/Copy/Look/Epub: " + tokens[0]);
             continue;
           }
           name[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(name[0])));
@@ -819,6 +819,9 @@ const std::vector<Configuration::UrlHandler> &Configuration::urlHandlers() const
     const char *home = std::getenv("HOME");
     std::string url2pdf = std::string(home ? home : "") + "/.local/lib/usilic/url2pdf";
     if (home && ::access(url2pdf.c_str(), X_OK) == 0) list.insert(list.begin() + 1, {"Pdf", {url2pdf}});
+    // Epub(2026-10-11): make installが入れるnarou2epubがあれば最後に。
+    std::string narou2epub = std::string(home ? home : "") + "/.local/lib/usilic/narou2epub";
+    if (home && ::access(narou2epub.c_str(), X_OK) == 0) list.push_back({"Epub", {narou2epub}});
     return list;
   }();
   return kDefaults;

@@ -29991,3 +29991,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      画面は固まらない)。Application::pollShellHandoff()は、渡されたファイルが.epub(EXECに割り当てが無いもの)なら
      loadFile()ではなくopenEpub()((ls)の^Mと同じEPUBの画面)。
    - **確認**: PTYで、親のSHELLで`usilic 作ったEPUB`を打つと「EPUB 01/10 … 縦書き」になること(なろうへのアクセスは無し)。
+757. **2026-10-11: EPUBのWebのリンクの対処(URL節、^Ow)にEpubを追加: なろうの作品のリンクをnarou2epubでEPUBにして開く**
+   - **経緯**: 直接のユーザー依頼(項目755の後の提案"EPUBの中のなろうのリンクからEPUB化する"を"順によろしく")。
+   - **内容**: Configuration(URL節)の名前にEpubを足し、組み込みの一覧の最後に、~/.local/lib/usilic/narou2epubが
+     あれば{"Epub", narou2epub}。openEpubWebLink()のEpubは、URLがなろうの作品(ncode.syosetu.com/nNNNNxx)なら、SHELLで
+     `(cd 読んでいる本のディレクトリ && narou2epub URL)`を動かす(項目756でSHELLの中のnarou2epubは作り終えたEPUBを
+     usilicで渡すので、EPUBの画面で開く)。なろう以外のリンクは「Not a Narou work: URL」を出すだけ。
+   - **確認**: ビルドのみ(リンクを踏む操作は未確認)。

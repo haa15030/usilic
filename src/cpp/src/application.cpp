@@ -7600,6 +7600,28 @@ bool Application::openEpubWebLink(const std::string &url) {
     showTransientNotice(activeView(), "Saved: " + pdf);
     return true;
   }
+  // 2026-10-11、直接のユーザー依頼(EPUBの中のなろうのリンクからEPUB化して開く): 作品のリンク
+  // (ncode.syosetu.com/nNNNNxx)なら、SHELLでnarou2epubを読んでいる本のディレクトリで動かす。narou2epubは
+  // SHELLの中では作り終えたEPUBを`usilic`で渡すので、pollShellHandoff()がEPUBの画面で開く。
+  if (handler.name == "Epub") {
+    static const std::regex kNarouWork(R"(^https?://ncode\.syosetu\.com/n[0-9]{4,}[a-z]+)", std::regex::icase);
+    if (!std::regex_search(url, kNarouWork)) {
+      showTransientNotice(activeView(), "Not a Narou work: " + url);
+      return false;
+    }
+    if (refuseIfShellBusy() || !ensureShellActive()) {
+      activeView().redraw();
+      return false;
+    }
+    std::string book = fileMode_.currentFile();
+    std::string dir = book.empty() ? directoryMode_.currentDirectory()
+                                   : std::filesystem::path(book).parent_path().string();
+    std::string command = shellQuoteArgv(argv);
+    shell_.commandLine().setText("(" + cdWrap(dir, command) + ")");
+    shell_.submitLine();
+    history_.pushRecent(RingCategory::ShellCommand, command);
+    return true;
+  }
   if (handler.name == "Dump") {
     if (currentMode_ != ApplicationMode::File || !isEpubFile(fileMode_.currentFile())) return false;
     drawPromptLabel(PromptKind::EpubLoad, /*positionText=*/"", "Reading...");
