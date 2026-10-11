@@ -29864,3 +29864,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      終わる。単一インスタンスで古い方を終わらせる待ち時間を2秒から4秒に。
    - **確認**: PTYで、親と-Kの子を動かし、親にSIGTERMで子が0.02秒、親が0.08秒で終わり、ディレクトリも消えることを確認。
      Terminal.appで-Hを起動し直す場合は未確認。
+745. **2026-10-11: Terminal.appで外部起動の子のウィンドウを、親のウィンドウと同じプロファイルで開く**
+   - **経緯**: 直接のユーザー依頼("Terminal.appではデフォルト端末Novelで-H起動するとNovelで子が起動する。そのまま今度は
+     Basicでusilic -HするとNovelで起動分が死ぬのはいいとして、新たに開くHELPとKEYがBasicではなくデフォルトのNovelで
+     開いてしまう。それらをBasicで開けないか")。do scriptの新しいウィンドウは常に既定のプロファイルで開く。
+   - **内容**: openInNewTerminalWindow()のTerminal.appの分岐で、このusilicのtty(ttyname(STDIN_FILENO))のタブの
+     `name of current settings`をosascriptで調べ、do scriptが返す新しいタブに`set current settings of newTab to
+     settings set "名前"`(try付き)。iTerm2は従来どおり既定のプロファイル。
+   - **確認**: 両方のAppleScriptをosacompileで確認したのみ。実機(Basicのウィンドウから-H)は未確認。

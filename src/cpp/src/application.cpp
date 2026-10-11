@@ -17283,8 +17283,32 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
                                        "set newWindow to (create window with default profile)", "-e",
                                        "tell current session of newWindow to write text " + quoted, "-e", "activate",
                                        "-e", "end tell"}
-            : std::vector<std::string>{"osascript", "-e", "tell application \"Terminal\"", "-e", "do script " + quoted,
-                                       "-e", "activate", "-e", "end tell"};
+            : std::vector<std::string>{"osascript", "-e", "tell application \"Terminal\"", "-e",
+                                       "set newTab to do script " + quoted, "-e", "activate", "-e", "end tell"};
+  // 2026-10-11、直接のユーザー依頼(Terminal.appで、既定のプロファイル(例: Novel)とは別のプロファイル(例: Basic)の
+  // ウィンドウからusilic -Hすると、子のHELPとKEYが既定のNovelで開く。"それらをBasicで開けないか"): do scriptの
+  // 新しいウィンドウは既定のプロファイルで開くので、このusilicのいるウィンドウ(tty)のプロファイルを調べ、開いた
+  // タブをそれに切り替える。
+  if (!iterm) {
+    const char *tty = ::ttyname(STDIN_FILENO);
+    if (tty) {
+      ChildProcess::Result profile = ChildProcess::run(
+          {"osascript", "-e", "tell application \"Terminal\"", "-e", "repeat with w in windows", "-e",
+           "repeat with t in tabs of w", "-e", std::string("if tty of t is \"") + tty + "\" then return name of current settings of t",
+           "-e", "end repeat", "-e", "end repeat", "-e", "end tell"});
+      std::string name = profile.ok ? profile.output : "";
+      while (!name.empty() && (name.back() == '\n' || name.back() == '\r')) name.pop_back();
+      if (!name.empty()) {
+        std::string escaped;
+        for (char c : name) {
+          if (c == '\\' || c == '"') escaped += '\\';
+          escaped += c;
+        }
+        argv.insert(argv.end() - 4, {"-e", "try", "-e", "set current settings of newTab to settings set \"" + escaped + "\"",
+                                     "-e", "end try"});
+      }
+    }
+  }
 #else
   // gnome-terminal等は既に動いている端末のサーバーの環境で開くことがあるので、PATHはこちらのものを渡す
   // (~/.local/bin等のusilicが見つからないのを避ける)。xterm等は開いている間は終わらないので背後に回す。
