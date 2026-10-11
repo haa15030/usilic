@@ -149,6 +149,9 @@ class GraphicalDisplay : public Display {
   // 今の位置から`dx, dy`だけずらす(2026-10-11、-H・最初の起動の子のHELP・KEYのウィンドウを、親や互いと
   // ぴったり重ねずに置くため)。ウィンドウが作成されていなければ何もしない。
   void moveWindowBy(int dx, int dy);
+  // 今のウィンドウの外枠(タイトルバー込み、setWindowPosition()と同じ慣習)の位置と大きさ(2026-10-11、-H・最初の
+  // 起動の子のウィンドウを親の右隣に並べるため)。ウィンドウが無ければ全部0。
+  void outerFrame(int &x, int &y, int &width, int &height) const;
 
   // `width, height`は、setWindowPosition()が取るのと「同じ」
   // 「外枠、タイトルバー込み」の慣習である――SDL自身のネイティブな

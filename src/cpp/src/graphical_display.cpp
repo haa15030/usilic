@@ -3280,6 +3280,18 @@ void GraphicalDisplay::setWindowPosition(int x, int y) {
   SDL_SetWindowPosition(impl_->window, x, y);
 }
 
+void GraphicalDisplay::outerFrame(int &x, int &y, int &width, int &height) const {
+  x = y = width = height = 0;
+  if (!impl_->window) return;
+  SDL_GetWindowPosition(impl_->window, &x, &y);
+  SDL_GetWindowSize(impl_->window, &width, &height);
+  WindowBorders borders = realOrEstimatedWindowBorders(impl_->window);
+  x -= borders.left;
+  y -= borders.top;
+  width += borders.left + borders.right;
+  height += borders.top + borders.bottom;
+}
+
 void GraphicalDisplay::moveWindowBy(int dx, int dy) {
   if (!impl_->window) return;
   int x = 0, y = 0;

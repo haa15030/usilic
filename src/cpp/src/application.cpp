@@ -17192,6 +17192,7 @@ void Application::launchExternalUsilic(const std::string &directory, const std::
   std::string run = "USILIC_TRANSIENT=" + std::to_string(::getpid()) +
                     (externalWindowSlot_ > 0 ? " USILIC_WINDOW_SLOT=" + std::to_string(externalWindowSlot_) : "") +
                     (externalExtraEnv_.empty() ? "" : " " + externalExtraEnv_) +
+                    (graphical && guiFrameProvider_ ? " USILIC_GUI_FRAME=" + guiFrameProvider_() : "") +
                     " usilic" +
                     std::string(hasUiFlag ? "" : (graphical ? " -g" : " -c")) + args;
   std::string toRun = "unset USILIC USILIC_HANDOFF; " + cdWrap(directory, run);
@@ -17288,21 +17289,24 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
     // 2026-10-11、直接のユーザー依頼(Terminal.appで、既定のプロファイル(例: Novel)とは別のプロファイル(例: Basic)の
     // ウィンドウからusilic -Hすると、子のHELPとKEYが既定のNovelで開く。"それらをBasicで開けないか"): do scriptの
     // 新しいウィンドウは既定のプロファイルで開くので、このusilicのいるウィンドウ(tty)のプロファイルに切り替える。
-    // 同日"HELPとKEYの端末がぴったり重なる"(切り替えでTerminal.appのずらし置きが効かなくなる): -gの子(main.cppの
-    // gWindowSlot)と同じく、番号(externalWindowSlot_)×48だけ親のウィンドウから右下へずらして置く(大きさは新しい
-    // ウィンドウのまま)。番号の無い子(^Ou等)はTerminal.appの置き方のまま。
+    // 同日"HELPとKEYの端末がぴったり重なる"(切り替えでTerminal.appのずらし置きが効かなくなる)→"希望はこんな感じ。
+    // 最後にアクティブになるのが親"(スクリーンショット): 番号(externalWindowSlot_)のある子は、親のウィンドウの右隣に、
+    // HELP(1)は上端を揃えて、KEY(2)はその下(新しいウィンドウの高さ分下)に置く(大きさは新しいウィンドウのまま)。
+    // 最後に親のウィンドウを前に出す。番号の無い子(^Ou等)はTerminal.appの置き方のまま。
     const char *tty = ::ttyname(STDIN_FILENO);
     std::string ttyText = tty ? tty : "";
-    int offset = externalWindowSlot_ * 48;
+    int slot = externalWindowSlot_;
     std::vector<std::string> lines = {
         "tell application \"Terminal\"",
         "set pName to missing value",
         "set pb to missing value",
+        "set pw to missing value",
         "repeat with w in windows",
         "repeat with t in tabs of w",
         "if tty of t is \"" + ttyText + "\" then",
         "set pName to name of current settings of t",
         "set pb to bounds of w",
+        "set pw to id of w",
         "end if",
         "end repeat",
         "end repeat",
@@ -17311,13 +17315,13 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
         "if pName is not missing value then set current settings of newTab to settings set pName",
         "end try",
         "try",
-        "if pb is not missing value and " + std::to_string(offset) + " > 0 then",
+        "if pb is not missing value and " + std::to_string(slot) + " > 0 then",
         "set newTty to tty of newTab",
         "repeat with w in windows",
         "if tty of selected tab of w is newTty then",
         "set nb to bounds of w",
-        "set x to (item 1 of pb) + " + std::to_string(offset),
-        "set y to (item 2 of pb) + " + std::to_string(offset),
+        "set x to item 3 of pb",
+        "set y to (item 2 of pb) + " + std::to_string(slot - 1) + " * ((item 4 of nb) - (item 2 of nb))",
         "set bounds of w to {x, y, x + (item 3 of nb) - (item 1 of nb), y + (item 4 of nb) - (item 2 of nb)}",
         "exit repeat",
         "end if",
@@ -17325,6 +17329,9 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
         "end if",
         "end try",
         "activate",
+        "try",
+        "if pw is not missing value then set index of window id pw to 1",
+        "end try",
         "end tell",
     };
     for (const auto &line : lines) {
@@ -19557,6 +19564,9 @@ void Application::pollChildChannel() {
       for (unsigned char c : decodeHex(bytesHex)) bytes.push_back(c);
       if (!bytes.empty()) executeRemoteKeys(bytes, line[2] == 'c');
       handled = true;
+    } else if (line == "R") {  // 子が開いた(requestParentRaise())
+      raiseRequested_ = true;
+      handled = true;
     } else if (line.size() > 2 && line.compare(0, 2, "H ") == 0) {
       if (channelPath_.size() >= 5 && channelPath_.compare(channelPath_.size() - 5, 5, "/help") == 0)
         jumpHelpToKeyLine(line.substr(2));
@@ -19566,6 +19576,10 @@ void Application::pollChildChannel() {
     }
   }
   if (handled) display_.flush();
+}
+
+void Application::requestParentRaise() {
+  if (parentPid_ > 0) sendToChannel(parentPid_, "keys", "R\n");
 }
 
 void Application::executeRemoteKeys(const std::vector<int> &bytes, bool commandLineKey) {

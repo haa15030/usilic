@@ -1589,6 +1589,26 @@ pid_t gTransientParentPid = 0;
 // setExternalWindowSlot()参照)。-gの子は、親や互いとぴったり重ならないよう、この番号の分だけウィンドウを
 // 右下へずらす(tryEnterGuiPhase()、2026-10-11)。0なら何もしない。
 int gWindowSlot = 0;
+// 2026-10-11、直接のユーザー依頼(-gの子のHELP・KEYを親と同じ大きさで、親の右隣に並べる): 親が渡すUSILIC_GUI_FRAME
+// (Application::setGuiFrameProvider()参照)を読んだもの。valid=falseなら無し。
+struct GuiFrame {
+  bool valid = false;
+  int x = 0, y = 0, width = 0, height = 0, rows = 0, columns = 0, pointSize = 0;
+  int fg[3] = {0, 0, 0}, bg[3] = {0, 0, 0};
+};
+GuiFrame gGuiFrame;
+
+// 親側: 今のGUIのウィンドウのUSILIC_GUI_FRAMEの値(GuiFrameと同じ並び、カンマ区切り)。
+std::string guiFrameText(fm::GraphicalDisplay &gui) {
+  int x, y, w, h;
+  gui.outerFrame(x, y, w, h);
+  fm::GraphicalDisplay::Color fg = gui.foregroundColor(), bg = gui.backgroundColor();
+  std::ostringstream out;
+  out << x << ',' << y << ',' << w << ',' << h << ',' << gui.rows() << ',' << gui.columns() << ','
+      << gui.fontPointSize() << ',' << int(fg.r) << ',' << int(fg.g) << ',' << int(fg.b) << ',' << int(bg.r) << ','
+      << int(bg.g) << ',' << int(bg.b);
+  return out.str();
+}
 bool transientParentGone() {
   return gTransientParentPid > 0 && ::kill(gTransientParentPid, 0) != 0 && errno == ESRCH;
 }
@@ -2436,6 +2456,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // ユーザー依頼"子はどれも自身では終われないようにして")。
     if (!gui.pumpEvents() && gTransientParentPid <= 0) return;
     if (app.takeFontListRequest()) app.showFontList(buildFontList(gui));  // ^J^F(buildFontList()参照)
+    if (app.takeRaiseRequest()) gui.raise();  // 子が開いたら親が前へ(Application::requestParentRaise())
     if (auto choice = app.takeFontChoice()) applyFontChoice(app, gui, choice->first, choice->second);
     // See Application::awaitingLocateUpdateDb()'s own comment: this is
     // exactly the call whose ABSENCE (before this fix) let a real ^G
@@ -4044,18 +4065,36 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
       columns = savedGui.columns;
     }
     if (savedGui.fontPointSize > 0) fontPointSize = savedGui.fontPointSize;
+    if (gGuiFrame.valid) {  // 親と同じ大きさ(gGuiFrame参照)
+      rows = gGuiFrame.rows;
+      columns = gGuiFrame.columns;
+      fontPointSize = gGuiFrame.pointSize;
+    }
   }
   std::unique_ptr<fm::GraphicalDisplay> gui =
       fontPath.empty() ? nullptr : fm::GraphicalDisplay::create(rows, columns, fontPath, fontPointSize);
   if (!gui) return false;  // no usable font, or window/renderer creation failed -- stay in terminal mode
 
-  if (appearance && appearance->hasColors) gui->setColors(appearance->foreground, appearance->background);
+  if (!appearance && gGuiFrame.valid)
+    gui->setColors(fm::GraphicalDisplay::Color{static_cast<unsigned char>(gGuiFrame.fg[0]),
+                                               static_cast<unsigned char>(gGuiFrame.fg[1]),
+                                               static_cast<unsigned char>(gGuiFrame.fg[2])},
+                   fm::GraphicalDisplay::Color{static_cast<unsigned char>(gGuiFrame.bg[0]),
+                                               static_cast<unsigned char>(gGuiFrame.bg[1]),
+                                               static_cast<unsigned char>(gGuiFrame.bg[2])});
+  else if (appearance && appearance->hasColors) gui->setColors(appearance->foreground, appearance->background);
   else if (!appearance && savedGui.hasColors)
     gui->setColors(fm::GraphicalDisplay::Color{savedGui.fgR, savedGui.fgG, savedGui.fgB},
                     fm::GraphicalDisplay::Color{savedGui.bgR, savedGui.bgG, savedGui.bgB});
 
   gui->open();
-  if (gWindowSlot > 0) gui->moveWindowBy(gWindowSlot * 48, gWindowSlot * 48);
+  // 子のHELP(1)・KEY(2): 親のウィンドウの右隣に、HELPは上端を揃え、KEYはその下(親と同じ大きさなので親の高さ分下)。
+  // 親の外枠が無ければ(古い親等)、以前の48ずつのずらし。開いたら親に前へ出てもらう(Application::requestParentRaise())。
+  if (gWindowSlot > 0 && gGuiFrame.valid)
+    gui->setWindowPosition(gGuiFrame.x + gGuiFrame.width, gGuiFrame.y + (gWindowSlot - 1) * gGuiFrame.height);
+  else if (gWindowSlot > 0)
+    gui->moveWindowBy(gWindowSlot * 48, gWindowSlot * 48);
+  if (gWindowSlot > 0) app.requestParentRaise();
   // 2026-09-12追加、項目⑫: 新しく作られたGraphicalDisplayは
   // modeLineVisible_=trueで始まる(GraphicalDisplayのImpl自身の
   // フィールド既定値参照)ため、直前までterminalDisplayが保持して
@@ -4141,7 +4180,10 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   gGuiSessionSigintReceived = 0;
   void (*previousSigint)(int) = std::signal(SIGINT, handleSigintForGuiSession);
 
+  fm::GraphicalDisplay *guiForFrame = gui.get();
+  app.setGuiFrameProvider([guiForFrame] { return guiFrameText(*guiForFrame); });
   runGuiPhase(app, *gui);
+  app.setGuiFrameProvider(nullptr);
 
   std::signal(SIGINT, previousSigint);
   if (termiosSaved) tcsetattr(signalTtyFd, TCSANOW, &savedTermios);
@@ -4836,7 +4878,8 @@ int main(int argc, char **argv) {
   // 全く同じisatty()+keyInput.fd()の組み合わせをここでも使う必要が
   // あるため、その判定自体はここに残す(usageの表示自体は-h専用の
   // 分岐(上のflagループ参照)へ移した)。
-  bool stdinPiped = !::isatty(STDIN_FILENO) && keyInput.fd() >= 0;
+  // -K(-gの子は標準入力が/dev/null)は標準入力のページャーにしない(2026-10-11、-gのKEYが空だった)。
+  bool stdinPiped = !openKeyAtStart && !::isatty(STDIN_FILENO) && keyInput.fd() >= 0;
 
   // Ported from HELP.jp's own EXIT section (2.18)。2026-09-15、直接の
   // ユーザー依頼("新たな仕様として①引数がディレクトリならそこから
@@ -4862,6 +4905,14 @@ int main(int argc, char **argv) {
   if (const char *jump = std::getenv("USILIC_HELP_JUMP")) {
     helpJumpOnStart = jump;
     ::unsetenv("USILIC_HELP_JUMP");
+  }
+  if (const char *frame = std::getenv("USILIC_GUI_FRAME")) {
+    GuiFrame f;
+    int n = std::sscanf(frame, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", &f.x, &f.y, &f.width, &f.height, &f.rows,
+                        &f.columns, &f.pointSize, &f.fg[0], &f.fg[1], &f.fg[2], &f.bg[0], &f.bg[1], &f.bg[2]);
+    f.valid = n == 13 && f.rows > 0 && f.columns > 0 && f.pointSize > 0;
+    gGuiFrame = f;
+    ::unsetenv("USILIC_GUI_FRAME");
   }
   if (const char *slot = std::getenv("USILIC_WINDOW_SLOT")) {
     gWindowSlot = std::max(0, std::atoi(slot));
@@ -5475,7 +5526,7 @@ int main(int argc, char **argv) {
   // 制御端末自体は健在)とダブルクリック起動(制御端末が存在しない)
   // を区別する――後者はこの下のelse節、通常のディレクトリ起動に
   // 落ちる。
-  bool isPipedStdin = positionalArgs.empty() && !::isatty(STDIN_FILENO) && keyInput.fd() >= 0;
+  bool isPipedStdin = !openKeyAtStart && positionalArgs.empty() && !::isatty(STDIN_FILENO) && keyInput.fd() >= 0;
   // Neither pager launch shape gets a background Directory listing at
   // all (2026-08-25, a real PTY capture of the legacy binary: pressing
   // ^G in ITS OWN pager mode produces no visible change whatsoever --
@@ -5604,7 +5655,10 @@ int main(int argc, char **argv) {
         [&launchGui](const std::string &command) { return runProgramInLaunchingTerminal(command, *launchGui); });
     app.editMode().setForegroundLauncher(
         [&launchGui](const std::vector<std::string> &argv) { return runEditorInLaunchingTerminal(argv, *launchGui); });
+    fm::GraphicalDisplay *guiForFrame = launchGui.get();
+    app.setGuiFrameProvider([guiForFrame] { return guiFrameText(*guiForFrame); });
     runGuiPhase(app, *launchGui);
+    app.setGuiFrameProvider(nullptr);
     app.programMode().setForegroundLauncher(nullptr);
     app.editMode().setForegroundLauncher(nullptr);
   } else {

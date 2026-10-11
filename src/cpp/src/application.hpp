@@ -1798,6 +1798,16 @@ class Application {
   std::string channelPath_;     // 同FIFOのパス
   std::string channelBuffer_;   // 読んだが改行までまだ届いていない分
   std::string externalExtraEnv_;  // 次のlaunchExternalUsilic()の子へ渡す環境変数("NAME=値"、空なら無し)
+  // 2026-10-11、直接のユーザー依頼(-gの子のHELP・KEYを親と同じ大きさで、親の右隣に並べ、最後に親を前に):
+  // -gの間、main.cppが親のウィンドウの外枠・行数・桁数・文字の大きさ・色を"x,y,w,h,rows,cols,pt,r,g,b,r,g,b"で
+  // 返す関数を設定する。launchExternalUsilic()は-gの子へUSILIC_GUI_FRAMEで渡す。
+  void setGuiFrameProvider(std::function<std::string()> provider) { guiFrameProvider_ = std::move(provider); }
+  std::function<std::string()> guiFrameProvider_;
+  // 子が自分のウィンドウを開いた後に親の"keys"へ「R」を送り(requestParentRaise())、親は実行ループで
+  // takeRaiseRequest()を見て自分のウィンドウを前に出す(子に前を取られたままにしない)。
+  void requestParentRaise();
+  bool takeRaiseRequest() { return std::exchange(raiseRequested_, false); }
+  bool raiseRequested_ = false;
   void executeRemoteKeys(const std::vector<int> &bytes, bool commandLineKey);
   void forwardHelpRequest(const std::string &request);
   bool openInNewTerminalWindow(const std::string &directory, const std::string &command);

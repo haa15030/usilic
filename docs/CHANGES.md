@@ -29880,3 +29880,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      あれば新しいタブのttyのウィンドウを親の左上から番号×48だけ右下へ(大きさは新しいウィンドウのまま)。番号の無い子
      (^Ou等)はTerminal.appの置き方のまま。
    - **確認**: osacompileで確認したのみ。実機は未確認。
+747. **2026-10-11: -H・最初の起動の子のHELP・KEYを親の右隣(HELPは上、KEYはその下)に並べ最後に親を前に、-gの子は親と同じ大きさ、-gのKEYが空だったのを直す**
+   - **経緯**: 直接のユーザー依頼("希望はこんな感じ。最後にアクティブになるのが親にして欲しい。-gではせっかく親が元の
+     端末と同じ大きさなのにHELPとKEYが大きめでKEYには何も無い"、スクリーンショット: 親の右隣にHELP、その下にKEY)。
+   - **Terminal.app**: 項目746の番号×48のずらしをやめ、番号のある子は親のウィンドウの右隣に、HELP(1)は上端を揃え、
+     KEY(2)は新しいウィンドウの高さ分下に。osascriptの最後に親のウィンドウ(ttyで見つけたもののid)を`set index ... to 1`。
+   - **-g**: 親はGUIの間Application::setGuiFrameProvider()で、外枠(GraphicalDisplay::outerFrame()、新設)・行数・桁数・
+     文字の大きさ・色を返し、launchExternalUsilic()が-gの子へUSILIC_GUI_FRAMEで渡す。子のtryEnterGuiPhase()はそれで
+     行数・桁数・文字の大きさ・色を親と同じにし、外枠を親の右隣(HELPは上端、KEYは親の高さ分下)へ。開いたら親の"keys"へ
+     「R」(Application::requestParentRaise())を送り、親はGUIの実行ループでtakeRaiseRequest()を見てraise()。
+   - **-gのKEYが空**: -gの子は標準入力が/dev/nullで起動されるので、引数の無い-Kが標準入力のページャー
+     (「00000/00000 END 0」)になっていた。-KはstdinPiped・isPipedStdinにしない。
+   - **確認**: PTYで、標準入力が/dev/nullの-KがKEY 001/174。AppleScriptはosacompileのみ、-gと実機の配置は未確認。
