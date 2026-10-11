@@ -29946,3 +29946,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **内容**: 親はGUIの間Application::setGuiFontProvider()で今の基本のフォントのファイル(GraphicalDisplay::
      currentFontPath(Base))を返し、launchExternalUsilic()が-gの子へUSILICFONT(resolveGuiFontPath()が最優先で見る)で渡す。
    - **確認**: ビルドのみ。実機は未確認。
+753. **2026-10-11: -gで端末に重ねた時のウィンドウの高さを行の合計にぴったり合わせる、SHELLを表示していない時のリサイズでSHELLを描かない**
+   - **経緯**: 直接のユーザー報告("Basicで起動してみたら、モードラインが今度は上がり気味。HELPウィンドウがなぜかSHELL。
+     クリックで直った"、スクリーンショット=it)。
+   - **モードライン**: 項目750はcellHeightが切り上げの時だけウィンドウを伸ばしていたので、切り下げの時(Basicのプロファイル)
+     はモードラインの下に余白+最大rows/2ピクセルの隙間ができていた。GraphicalDisplay::matchWindowSize()でウィンドウの
+     高さを常に行の合計(上下の余白+rows×cellHeight)にする(端末とは最大rows/2ピクセル違う)。
+   - **SHELL**: Application::handleResize()が、表示していない時もShell::onResize()でSHELLの画面を描き、その後で今の画面を
+     描き直していた(PTYでもリサイズの度に「HELP→SHELL→HELP」と描いていた)。-gではSHELLが残ることがあった。
+     onResize()に`redraw`を足し、SHELLを表示している時だけ描く。
+   - **確認**: PTYで、HELPの子のリサイズが「HELP→HELP」になること。-gは未確認。

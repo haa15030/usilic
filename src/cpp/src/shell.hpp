@@ -385,7 +385,7 @@ class Shell {
   // 新しい端末サイズをpty(TIOCSWINSZ)と、所有するContentViewの
   // ビューポート/LineEditorのフィールド幅へ伝播する。
   // input_shell()のinitケースにあるvt_mode('W')の処理からの移植。
-  void onResize(int rows, int columns);
+  void onResize(int rows, int columns, bool redraw = true);
 
   // K-27(^Oa): displayWidth()(入力エコー/プロンプト再描画の幅
   // 計算、CLAUDE.md内のadd_buff()自身の履歴参照)とcommandLine_

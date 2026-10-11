@@ -3580,8 +3580,9 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   // 2026-10-11、直接のユーザー報告("モードラインのハイライトが欠けている"、スクリーンショットで最下行(モードライン)の
   // 下が切れていた): cellHeightを最も近い整数に丸めて切り上げになると、行の合計(rows*cellHeight+上下の余白)が
   // 本物の端末の高さ(height)より最大でrows/2ピクセル高くなるのに、ウィンドウは端末の高さのままだったので、最下行が
-  // 下で切れていた。その場合はウィンドウを行の合計まで伸ばす(端末より数ピクセル高くなるのは上のコメントの想定どおり)。
-  height = std::max(height, Impl::kMarginY * 2 + impl_->rows * cellHeight);
+  // 下で切れていた。同日、"モードラインが今度は上がり気味"(切り下げになると、モードラインの下に余白+最大rows/2
+  // ピクセルの隙間): どちらの場合もウィンドウの高さを行の合計にぴったり合わせる(端末とは最大rows/2ピクセル違う)。
+  height = Impl::kMarginY * 2 + impl_->rows * cellHeight;
   SDL_SetWindowSize(impl_->window, width, height);
 }
 

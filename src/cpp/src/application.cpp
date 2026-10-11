@@ -19118,7 +19118,7 @@ void Application::handleResize() {
       if (wasContent) openSelectedSegment();  // (願わくば同じ)セグメントでcutContentView_を再び満たす
     }
   }
-  shell_.onResize(display_.rows(), display_.columns());
+  shell_.onResize(display_.rows(), display_.columns(), /*redraw=*/currentMode_ == ApplicationMode::Shell);
   activeView().redraw();
   if (promptActive()) promptEditor_.redraw();
 }

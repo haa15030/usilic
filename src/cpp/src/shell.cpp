@@ -1641,7 +1641,7 @@ bool Shell::foregroundJobRunning() const {
 }
 bool Shell::busy() const { return busy_ || foregroundJobRunning(); }
 
-void Shell::onResize(int rows, int columns) {
+void Shell::onResize(int rows, int columns, bool redraw) {
   viewportRows_ = rows;
   columns_ = columns;
   scrollback_.setViewport(0, std::max(1, rows - 2));  // コンストラクタ自身のコメント参照
@@ -1656,6 +1656,10 @@ void Shell::onResize(int rows, int columns) {
     ws.ws_col = static_cast<unsigned short>(columns);
     ioctl(masterFd_, TIOCSWINSZ, &ws);
   }
+  // 2026-10-11、直接のユーザー報告(-gのHELPの子の画面が起動時になぜかSHELLになり、クリックで直った): SHELLを
+  // 表示していない時は描かない(`redraw`、Application::handleResize())。以前は表示中の画面の上に一度SHELLを描き、
+  // その後で今の画面を描き直していたが、-gではSHELLが残ることがあった。
+  if (!redraw) return;
   scrollback_.redraw();
   redrawPromptRow();
 }
