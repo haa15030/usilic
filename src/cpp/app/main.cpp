@@ -969,6 +969,7 @@ void stepCoastByKey(int &level, int &direction, int pressed,
 // ホイールの刻みを、j/kと同じCommand::ScrollLineDown/Upで`lines`行スクロールする。端ではベルを
 // 鳴らさずに何もしない(ホイールは続けて回されるので)。directionは+1で先へ。
 void scrollByWheel(fm::Application &app, fm::Display &display, int direction, int lines) {
+  if (app.wheelReversed()) direction = -direction;  // ^Od(Command::ToggleWheelDirection)
   if (app.epubVerticalScrollActive()) {  // 縦書きのEPUB: 1列(章の一覧は1章)ずつ(-gのホイールと同じ)
     for (int i = 0; i < lines; i++)
       if (!app.scrollEpubVertical(direction)) break;
@@ -2924,6 +2925,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // 方向が逆")により、deltaXが正で先へ。
       if (app.epubVerticalScrollActive()) {
         int delta = wheel->deltaY != 0 ? (wheel->deltaY > 0 ? -1 : 1) : (wheel->deltaX > 0 ? 1 : -1);
+        if (app.wheelReversed() && wheel->deltaY != 0) delta = -delta;  // ^Od(Command::ToggleWheelDirection)
         if (epubCoastLevel > 0) {
           epubCoastLevel = 0;
           epubCoastDirection = 0;
@@ -4861,7 +4863,8 @@ int main(int argc, char **argv) {
   ::unsetenv("USILIC_TRANSIENT");
   if (transientParent > 1) {
     gTransientParentPid = static_cast<pid_t>(transientParent);
-    fm::ContentView::programWatermark() = std::to_string(transientParent) + ":USILIC";
+    // 2026-10-11、直接のユーザー依頼("PID:は不要かなと。何かに使える値じゃないので表示する意味がない"): 「USILIC」だけ。
+    fm::ContentView::programWatermark() = "USILIC";
   }
   bool consultHistoryOnStart = !isFileLaunch && !stdinPiped && !transientLaunch;
 
@@ -5005,7 +5008,8 @@ int main(int argc, char **argv) {
     bootOptions += token;
   }
   // 2026-10-10、直接のユーザー依頼("INFOの「Boot Options」に「PID：引数」"): 外部起動した子は親のPIDを前に置く。
-  if (gTransientParentPid > 0) bootOptions = std::to_string(gTransientParentPid) + ": " + bootOptions;
+  // 2026-10-11、直接のユーザー依頼("INFOでは末尾でいい"、例「-c /Users/…/HELP.ja.1 (46063)」): 末尾に括弧で。
+  if (gTransientParentPid > 0) bootOptions += " (" + std::to_string(gTransientParentPid) + ")";
 
   fm::History history;
   fm::Configuration configuration;

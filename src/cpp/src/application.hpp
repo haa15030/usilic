@@ -170,6 +170,7 @@ enum class Command {
   // ^J a: HELPとHELP.enの切替(helpPath_自身のコメント参照)。2026-09-14にTUTORIAL/TUTORIAL.enの
   // 切替として復活し、2026-10-02にTUTORIALがHELPへ改名されたのに合わせて改名。
   ToggleHelpLanguage,
+  ToggleWheelDirection,  // ^Od(K-107、2026-10-11): ホイールの回転とスクロールの向きの対応を逆にする(wheelReversed())
   StartMan,
   StartManList,
   StartProgram,
@@ -3004,6 +3005,9 @@ public:
   void setPagerLaunch(bool pager) { pagerLaunch_ = pager; }
   // -K(main.cpp、-H・最初の起動のKEYのウィンドウ): KEYを「：」を含む行だけの一覧にする(keyListOnly()参照)。
   void setKeyColonListLaunch(bool on) { keyColonListLaunch_ = on; }
+  // ^Od(Command::ToggleWheelDirection)でホイールの向きを逆にしているか(main.cppのscrollByWheel()等が見る)。
+  bool wheelReversed() const { return wheelReversed_; }
+  bool wheelReversed_ = false;
   // HELPの言語(2026-10-11、main.cppがLANGで決める): trueならHELP.en(roff版はHELP.1)、falseならHELP(HELP.ja.1)。
   // 起動後は^Jaで今まで通り切り替える。reloadHelpText()の前に呼ぶ。
   void setHelpEnglish(bool english) { helpPath_ = english ? helpBasePath_ + ".en" : helpBasePath_; }

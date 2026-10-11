@@ -1,3 +1,4 @@
+#include <utility>
 #include "cut_mode.hpp"
 
 #include <algorithm>
@@ -80,6 +81,7 @@ ConfiguredRole cutSyntaxRole(GrepSyntax syntax) {
 
 bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::string &pattern,
                      GrepSyntax syntax) {
+  labelHighlightEndMarker_ = std::exchange(nextLabelHighlightEndMarker_, std::string());
   if (pattern.empty()) return false;
   const std::string searchPattern = convertTabsForSearch(pattern);
 
@@ -167,11 +169,20 @@ bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::strin
 
   std::vector<ContentView::Line> viewLines;
   viewLines.reserve(segments_.size());
-  for (const auto &seg : segments_) viewLines.push_back({seg.label, std::nullopt, std::nullopt, seg.labelAttributes});
+  for (const auto &seg : segments_) viewLines.push_back(labelViewLine(seg));
   view_.setLines(std::move(viewLines));
   view_.setCursorIndex(0);
   view_.redraw();
   return true;
+}
+
+ContentView::Line CutMode::labelViewLine(const CutSegment &seg) const {
+  ContentView::Line line{seg.label, std::nullopt, std::nullopt, seg.labelAttributes};
+  if (!labelHighlightEndMarker_.empty()) {
+    std::size_t at = seg.label.find(labelHighlightEndMarker_);
+    if (at != std::string::npos) line.highlightEndColumn = static_cast<int>(at);
+  }
+  return line;
 }
 
 const std::string &CutMode::pattern() const { return pattern_; }
@@ -197,7 +208,7 @@ void CutMode::dropLeadingFiller() {
   segments_.erase(segments_.begin());
   std::vector<ContentView::Line> viewLines;
   viewLines.reserve(segments_.size());
-  for (const auto &seg : segments_) viewLines.push_back({seg.label, std::nullopt, std::nullopt, seg.labelAttributes});
+  for (const auto &seg : segments_) viewLines.push_back(labelViewLine(seg));
   view_.setLines(std::move(viewLines));
   view_.setCursorIndex(0);
 }
@@ -252,7 +263,7 @@ bool CutMode::goBack() {
 
   std::vector<ContentView::Line> viewLines;
   viewLines.reserve(segments_.size());
-  for (const auto &seg : segments_) viewLines.push_back({seg.label, std::nullopt, std::nullopt, seg.labelAttributes});
+  for (const auto &seg : segments_) viewLines.push_back(labelViewLine(seg));
   view_.setLines(std::move(viewLines));
   view_.setCursorIndex(saved->cursorIndex);
   view_.redraw();

@@ -423,6 +423,7 @@ std::optional<Display::AttributeRun> ContentView::scrollHighlightForLine(int lin
   if (!marked && !underlineMarked) return std::nullopt;
   int highlightStart = std::max(0, line.highlightStartColumn.value_or(0));
   int end = static_cast<int>(line.text.size());
+  if (line.highlightEndColumn) end = std::min(end, *line.highlightEndColumn);
   if (highlightStart >= end) return std::nullopt;
   return Display::AttributeRun{highlightStart, end,
                                 marked ? Display::Attribute::Standout : Display::Attribute::Underline};
@@ -1238,6 +1239,12 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
         setStandout(markedNow);
         setUnderline(underlineMarkedNow);
       }
+      if (line.highlightEndColumn.has_value() && static_cast<int>(idx) == *line.highlightEndColumn) {
+        markedNow = false;  // Line::highlightEndColumn参照
+        underlineMarkedNow = false;
+        setStandout(false);
+        setUnderline(false);
+      }
       unsigned char c = static_cast<unsigned char>(text[idx]);
       int len = Utf8::sequence_length(c);
       len = std::min(len, static_cast<int>(text.size() - idx));
@@ -1361,7 +1368,7 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
       }
     }
     // highlightToRowEnd_(setHighlightToRowEnd()参照): 反転表示の行を、文字の後ろも画面の右端まで反転する。
-    if (marked && highlightToRowEnd_) {
+    if (marked && highlightToRowEnd_ && !line.highlightEndColumn) {
       setBold(false);
       setUnderline(false);
       setItalic(false);

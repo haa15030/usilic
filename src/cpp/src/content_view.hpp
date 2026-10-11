@@ -231,6 +231,9 @@ class ContentView {
     std::string imageKey;
     int imageRow = 0;
     int imageRows = 0;
+    // 反転表示をこのバイトオフセットの手前で止める(2026-10-11、-KのKEYの「：」の手前まで、CutMode::
+    // setLabelHighlightEndMarker()参照)。無ければ行末まで(highlightStartColumnと対)。
+    std::optional<int> highlightEndColumn;
   };
 
   explicit ContentView(Display &display);

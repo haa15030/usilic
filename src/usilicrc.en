@@ -439,6 +439,7 @@ KEY
 	K-90	C-h         # ^H      HELP
 	K-91	F-1 C-h     # ^J^H    HELP
 	K-92	F-2 j       # ^Oj     Switch HELP language
+	K-107	F-2 d       # ^Od     Reverse the wheel direction
 	K-93	C-k         # ^K      KEY
 	K-94	F-1 C-k     # ^J^K    KEY (from a prompt)
 	K-95	F-0 (       # ^X(     Begin macro

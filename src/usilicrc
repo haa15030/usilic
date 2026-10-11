@@ -425,6 +425,7 @@ KEY
 	K-90	C-h         # ^H      HELP
 	K-91	F-1 C-h     # ^J^H    プロンプトからHELP
 	K-92	F-2 j       # ^Oj     HELP の言語切替
+	K-107	F-2 d       # ^Od     ホイールの向きの切り替え
 	K-93	C-k         # ^K      KEY
 	K-94	F-1 C-k     # ^J^K    プロンプトからKEY
 	K-95	F-0 (       # ^X(     マクロの記録開始

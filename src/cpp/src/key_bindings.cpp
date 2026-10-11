@@ -137,6 +137,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {104, "F-1 C-f"},  // ^J^F  -g: フォント一覧(2026-10-06、2026-10-07に^Ofから)
       {105, "F-4 h"},    // ^J^Oh KEYから平文のHELPの当該位置へ(2026-10-08復活、usilicrcのMACROのh)
       {106, "F-1 C-p"},  // ^J^P  PART: 一覧(2026-10-10、FILE履歴の「file "文字列"」だけ)
+      {107, "F-2 d"},    // ^Od   ホイールの向きの切り替え(2026-10-11)
   };
   return entries;
 }

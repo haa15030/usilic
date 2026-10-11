@@ -107,6 +107,9 @@ class CutMode {
   const std::vector<CutSegment> &segments() const;
   // 2026-10-02追加(Application::startKey()): 最初の一致より前の行をまとめた「--」の区間があれば除く。
   void dropLeadingFiller();
+  // 次のsplit()/pushSplit()の一覧だけ、行の反転表示をラベルの中の`marker`の手前までにする(2026-10-11、-KのKEYの
+  // 「：」、ContentView::Line::highlightEndColumn参照)。その次の分割では呼び直さない限り行末までに戻る。
+  void setLabelHighlightEndMarker(const std::string &marker) { nextLabelHighlightEndMarker_ = marker; }
   // 2026-10-01追加: 区間の並びが変わる(split()・goBack())たびに増える番号。Applicationが区間ごとの
   // 中身のカーソル位置(cutSegmentViews_)を、同じ並びの間だけ使うためのもの。
   int generation() const { return generation_; }
@@ -171,6 +174,9 @@ class CutMode {
   const Configuration &configuration_;
 
   std::string pattern_;
+  std::string labelHighlightEndMarker_;      // setLabelHighlightEndMarker()参照(今の一覧のもの)
+  std::string nextLabelHighlightEndMarker_;  // 同(次の分割のもの)
+  ContentView::Line labelViewLine(const CutSegment &seg) const;
   std::vector<StyledLine> sourceLines_;
   std::vector<CutSegment> segments_;
   int generation_ = 0;  // generation()参照

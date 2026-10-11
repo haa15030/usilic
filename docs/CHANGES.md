@@ -29772,3 +29772,21 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **確認**: PTYで、ページャー起動の^KがKEY 01/31、^N^N^Mで03/31のまま、hでも動かず、^Gでページャーへ。
      -KがKEY 001/174で^G・^Mでも動かない。
    - src/HELP_.txt・src/HELP_en_.txtの-Hの説明を直した。
+738. **2026-10-11: -KのKEYの^Gで(ls)へ、キーの発動を戻し反転表示は「：」の手前まで、子の右下を「USILIC」・INFOのPIDを末尾に、^Odでホイールの向きの切り替え**
+   - **経緯**: 直接のユーザー依頼("-Kの画面では戻り値が「/Users/haa15030/」となっているため^Gでそこへ戻らないとバグと
+     見なされる"、"子の戻り値だが、PID:は不要...INFOでは末尾でいい。「-c /Users/haa15030/.local/lib/usilic/HELP.ja.1
+     (46063)」では？"、"-KのKEYでもハイライト表示がある。そこでhは無効でいいがキーの実行は生かしたい。そこで
+     ハイライト表示は「：」の手前まで"、"ホイールの回転とスクロール方向を切り換えるトグルキー"→^Owは既にK-102
+     (EPUBのURL)で、HELPに「^Ow：」の行が無くKEYの検索に掛からなかった記述漏れ→"^Od（irection）"で決定)。
+   - **-K**: 項目737の^Gの無効化を戻した(モードラインの戻り値どおり(ls)へ)。executeSelectedKeyLine()はページャー
+     起動のKEYだけ発動しない(-Kは発動する)。hは両方とも無し。反転表示はContentView::Line::highlightEndColumn
+     (新設、このバイトオフセットの手前で反転を止める、highlightStartColumnの対)で「：」の手前まで。CutModeの
+     setLabelHighlightEndMarker()(次のsplit()の一覧だけ、ラベルの中の印の手前まで)をstartKey()とリサイズの
+     再分割で-Kの時だけ指定する(split()自身が描くので、後から行を書き換えると一瞬全体が反転していた)。
+   - **子**: 右下の透かしを「親のPID:USILIC」から「USILIC」に。INFOのBoot optionsは「PID: 引数」から「引数 (PID)」に。
+   - **^Od**: Command::ToggleWheelDirection(K-107 `F-2 d`、usilicrc/usilicrc.enにも)。Application::wheelReversed_を
+     切り替え「Wheel: reversed/normal」を出す。main.cppのscrollByWheel()(端末・-gの縦のホイール、縦書きのEPUBの
+     端末の経路も)と-gの縦書きのEPUBの縦のホイールで向きを逆にする。保存はしない。
+   - **確認**: PTYで、-Kの^Gが(ls)、^N^N^N^Mで^I(INFO)、^Nの行の反転が「    INFO         」まで、子の右下が「USILIC」、
+     INFOが「-c h3/.local/lib/usilic/HELP.ja.1 (47578)」、^Odで「Wheel: reversed」。ホイール自体は未確認。
+   - src/HELP_.txt・src/HELP_en_.txtのページャーのキーに^Od(行頭タブ)を足し、-Hの説明を直した。

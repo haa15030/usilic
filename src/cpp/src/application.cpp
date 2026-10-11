@@ -3575,6 +3575,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 2026-10-07、直接のユーザー依頼("トグルキーのプレフィックスは皆^Oなので^Jaを^Ojで"): ^Jaから移した。
       case 'j':  // ^O j : HELP/HELP.en切替(K-92、Command::ToggleHelpLanguage自身のコメント参照)
         return handleCommand(Command::ToggleHelpLanguage);
+      case 'd':  // ^O d : ホイールの向きの切り替え(K-107、2026-10-11、Command::ToggleWheelDirection)
+        return handleCommand(Command::ToggleWheelDirection);
       case 'a':  // ^O a : ARC展開(旧^X a、K-58)――^O aはここへ移る
                  // 前にHELP/KEYの表示言語切り替えが占めていたが、
                  // それは^J aへ先に移した(kKeyTable自身の"^Ja"コメント
@@ -4896,8 +4898,6 @@ bool Application::handleCommandImpl(Command command) {
       if (currentMode_ == ApplicationMode::CutContent) return returnFromCutContent();
       if (currentMode_ == ApplicationMode::Cut) {
         if (cutMode_.canGoBack()) return cutMode_.goBack();
-        // -KのKEY(keyListOnly()参照)は戻る先を持たない(ページャーの^Gと同じく何もしない)。
-        if (keyColonListLaunch_ && cutOrigin_ == CutOrigin::Key) return false;
         return returnFromCut();
       }
       if (currentMode_ == ApplicationMode::Grep) return returnFromGrep();
@@ -5179,6 +5179,12 @@ bool Application::handleCommandImpl(Command command) {
       return startCutFilePrompt(GrepSyntax::Regex);
     case Command::StartPartList:
       return startPartList();
+    case Command::ToggleWheelDirection:
+      // 2026-10-11、直接のユーザー依頼("ホイールの回転とスクロール方向を切り換えるトグルキーを^Odに"):
+      // 端末・-gのホイールの縦(縦書きのEPUBの列送りも)の向きを逆にする。保存はしない。
+      wheelReversed_ = !wheelReversed_;
+      showTransientNotice(activeView(), wheelReversed_ ? "Wheel: reversed" : "Wheel: normal");
+      return true;
     case Command::ToggleHelpLanguage: {
       // HELP.enが無ければ切り替えない(読めないファイルへ切り替わって^Hが効かなくなるのを避ける)。
       std::string previous = helpPath_;
@@ -17929,6 +17935,8 @@ bool Application::startKey() {
   bool fromCut = currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent;
   if (!fromCut) cutReturnMode_ = currentMode_;
   cutOrigin_ = CutOrigin::Key;
+  // -KのKEYは反転表示を「：」の手前まで(2026-10-11、CutMode::setLabelHighlightEndMarker()参照)。
+  cutMode_.setLabelHighlightEndMarker(keyColonListLaunch_ ? "\xEF\xBC\x9A" : "");
   // 2026-10-08、直接のユーザー依頼("ページャー起動の時だけはKEYで検索する文字列を「：」ではなく「行頭^I」...
   // Pagerでは「行頭^I」、FileManagerでは「：」で検索後の文字列でKEYを構成"): ページャーとして起動した時は、
   // 行頭がタブの行で切る(HELPの原稿にはまだ行頭のタブが無いので、今は一覧が空になる)。
@@ -17970,7 +17978,8 @@ std::vector<StyledLine> Application::keySourceLines(int width) {
 }
 
 bool Application::executeSelectedKeyLine() {
-  if (keyListOnly()) return false;  // keyListOnly()参照: キーは発動しない
+  // keyListOnly()参照: ページャー起動のKEYではキーは発動しない(2026-10-11、-KのKEYは発動する)。
+  if (keyListOnly() && !keyColonListLaunch_) return false;
   saveKeyCursor();
   const CutSegment *segment = cutMode_.selectedSegment();
   if (!segment) return false;
@@ -18872,6 +18881,7 @@ void Application::handleResize() {
     }
     int savedIndex = cutView_.cursorIndex();
     bool wasContent = (currentMode_ == ApplicationMode::CutContent);
+    if (cutOrigin_ == CutOrigin::Key && keyColonListLaunch_) cutMode_.setLabelHighlightEndMarker("\xEF\xBC\x9A");
     if (cutMode_.split(freshSource, cutMode_.pattern(), cutSyntax_)) {
       if (cutOrigin_ == CutOrigin::Key) cutMode_.dropLeadingFiller();
       int last = static_cast<int>(cutMode_.segments().size()) - 1;
