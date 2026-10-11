@@ -30027,3 +30027,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      GraphicalDisplayのrenderCell()・renderCursor()・renderTextRun()で、明朝体にするのは2マス幅の字だけにし、半角の字は
      基本の等幅フォント(FONT)で描く。縦書きは字ごとに2マス幅なので変わらない。
    - **確認**: ビルドのみ。実機は未確認。
+762. **2026-10-11: ^Odの知らせを入れ替え、既定(macOSの向き)をreversed、切り替えた方(Windowsの向き)をnormalに**
+   - **経緯**: 直接のユーザー依頼("^Odのメッセージだが、reversed/normalは逆の方がいい。ユーザー数が多いのはWindows
+     なのであちらに合わせればいい。ただし既定はmacOS仕様でいい")。項目738では切り替えた方をreversedと出していた。
+   - **確認**: PTYで、起動後の^Odで「Wheel: normal」。

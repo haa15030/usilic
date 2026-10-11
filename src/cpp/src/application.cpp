@@ -5197,7 +5197,10 @@ bool Application::handleCommandImpl(Command command) {
       // 2026-10-11、直接のユーザー依頼("ホイールの回転とスクロール方向を切り換えるトグルキーを^Odに"):
       // 端末・-gのホイールの縦(縦書きのEPUBの列送りも)の向きを逆にする。保存はしない。
       wheelReversed_ = !wheelReversed_;
-      showTransientNotice(activeView(), wheelReversed_ ? "Wheel: reversed" : "Wheel: normal");
+      // 2026-10-11、直接のユーザー依頼("reversed/normalは逆の方がいい。ユーザー数が多いのはWindowsなのであちらに
+      // 合わせればいい。ただし既定はmacOS仕様でいい"): 既定(macOSのナチュラルスクロールの向き)をreversed、
+      // 切り替えた方(Windowsの向き)をnormalと呼ぶ。
+      showTransientNotice(activeView(), wheelReversed_ ? "Wheel: normal" : "Wheel: reversed");
       return true;
     case Command::ToggleHelpLanguage: {
       // HELP.enが無ければ切り替えない(読めないファイルへ切り替わって^Hが効かなくなるのを避ける)。
