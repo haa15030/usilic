@@ -4090,8 +4090,10 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   gui->open();
   // 子のHELP(1)・KEY(2): 親のウィンドウの右隣に、HELPは上端を揃え、KEYはその下(親と同じ大きさなので親の高さ分下)。
   // 親の外枠が無ければ(古い親等)、以前の48ずつのずらし。開いたら親に前へ出てもらう(Application::requestParentRaise())。
-  if (gWindowSlot > 0 && gGuiFrame.valid)
+  if (gWindowSlot > 0 && gGuiFrame.valid) {
+    gui->matchWindowSize(gGuiFrame.width, gGuiFrame.height);  // 外枠も親とぴったり同じ大きさに
     gui->setWindowPosition(gGuiFrame.x + gGuiFrame.width, gGuiFrame.y + (gWindowSlot - 1) * gGuiFrame.height);
+  }
   else if (gWindowSlot > 0)
     gui->moveWindowBy(gWindowSlot * 48, gWindowSlot * 48);
   if (gWindowSlot > 0) app.requestParentRaise();
@@ -4855,7 +4857,10 @@ int main(int argc, char **argv) {
   fm::DelegatingDisplay display(*terminalDisplay);  // see file comment's own GUI-mode section
 
   fm::KeyInput keyInput(*terminalDisplay);
-  keyInput.open("/dev/tty");
+  // 2026-10-11、直接のユーザー報告("-gで終わると端末設定が戻らずキー入力がエコーバックしない"): -gの外部起動の子は
+  // 端末を使わないので/dev/ttyを開かない。開くと、親が端末を生のモードにしている時の設定を「元の設定」として
+  // 覚え、親が終わって端末を元に戻した後に、親に終わらされた子がそれ(エコー無し)に戻してしまっていた。
+  if (!(forceGui && std::getenv("USILIC_TRANSIENT"))) keyInput.open("/dev/tty");
   keyInput.installSignalHandlers();
   // SIGTERM/SIGHUP: see gTerminationSignalReceived's own declaration
   // comment. KeyInput::installSignalHandlers() above only covers
@@ -5621,17 +5626,10 @@ int main(int argc, char **argv) {
     // どおり(ls)か前回の続きから立ち上がり、HELPは子のusilic(外部ページャー、^Jtの"usilic ..."と同じ
     // runExternalUsilicPager())で開く。子へはreloadHelpText()が読んだもの(roff版のHELP.ja.1/HELP.1、
     // groffが無ければ平文のHELP)を渡す。子の側はroffをgroffで平文に組む(startPagerFileList()参照)。
-    if ((openHelpChild || (consultHistoryOnStart && historyText.empty())) && !app.helpLoadedPath_.empty()) {
-      std::string quoted = "'";
-      for (char c : app.helpLoadedPath_) quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
-      app.setExternalWindowSlot(1);
-      app.runExternalUsilicPager("usilic " + quoted + "'");
-      // 同日、直接のユーザー依頼("^Kのウィンドウも追加"、中身はFileManagerのKEY): HELPの子に続けて、-Kで
-      // KEYを開いた子も起動する。-gでは子がぴったり重ならないよう番号(1・2)を渡してずらす(gWindowSlot参照)。
-      app.setExternalWindowSlot(2);
-      app.runExternalUsilicPager("usilic -K");
-      app.setExternalWindowSlot(0);
-    }
+    // 同日、"^Kのウィンドウも追加"(-KのKEYの子も)、"-gでは端末の大きさ・配色を受け継ぐのは親だけ"(ここではまだ
+    // GUIができておらず親のウィンドウを子へ渡せなかった): 起動は実行ループの最初で(Application::launchHelpChildren())。
+    if ((openHelpChild || (consultHistoryOnStart && historyText.empty())) && !app.helpLoadedPath_.empty())
+      app.scheduleHelpChildren();
     // -K(上の子のKEYのウィンドウ): HELPの「：」を含む行だけのKEY(キーの発動・h・^G無し、keyListOnly()参照)を開く。
     if (openKeyAtStart) {
       app.setPagerLaunch(false);

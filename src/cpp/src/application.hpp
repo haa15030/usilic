@@ -1806,6 +1806,11 @@ class Application {
   // 子が自分のウィンドウを開いた後に親の"keys"へ「R」を送り(requestParentRaise())、親は実行ループで
   // takeRaiseRequest()を見て自分のウィンドウを前に出す(子に前を取られたままにしない)。
   void requestParentRaise();
+  // -H・最初の起動の子(HELPとKEY)を、次のpollChildChannel()(実行ループの最初)で起動する(main.cppから、GUIの
+  // 準備ができてから起動して親のウィンドウを渡すため)。
+  void scheduleHelpChildren() { helpChildrenPending_ = true; }
+  void launchHelpChildren();
+  bool helpChildrenPending_ = false;
   bool takeRaiseRequest() { return std::exchange(raiseRequested_, false); }
   bool raiseRequested_ = false;
   void executeRemoteKeys(const std::vector<int> &bytes, bool commandLineKey);

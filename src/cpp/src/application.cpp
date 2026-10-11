@@ -19552,7 +19552,24 @@ void Application::closeChildChannel() {
   channelBuffer_.clear();
 }
 
+void Application::launchHelpChildren() {
+  if (helpLoadedPath_.empty()) return;
+  std::string quoted = "'";
+  for (char c : helpLoadedPath_) quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
+  setExternalWindowSlot(1);
+  runExternalUsilicPager("usilic " + quoted + "'");
+  // "^Kのウィンドウも追加"(中身はFileManagerのKEY): HELPの子に続けて、-KでKEYを開いた子も起動する。
+  setExternalWindowSlot(2);
+  runExternalUsilicPager("usilic -K");
+  setExternalWindowSlot(0);
+}
+
 void Application::pollChildChannel() {
+  if (helpChildrenPending_) {
+    helpChildrenPending_ = false;
+    launchHelpChildren();
+    display_.flush();
+  }
   if (channelFd_ < 0) return;
   char buf[4096];
   for (;;) {

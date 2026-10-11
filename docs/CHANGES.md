@@ -29902,3 +29902,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **内容**: openInNewTerminalWindow()のシェルの行の頭で、ttyがまだ確かにこのウィンドウのものである間にosascriptで
      ウィンドウのIDを控え(WID、IDを先に全部取ってから調べる)、子が終わったらそのID(`close window id`)で閉じる。
    - **確認**: 両方のAppleScriptをosacompileで確認したのみ。実機は未確認。
+749. **2026-10-11: -gの子のHELP・KEYが親の大きさ・配色を受け継がなかったのを直す、-gの終了後に端末がエコーしなくなるのを直す**
+   - **経緯**: 直接のユーザー報告("-gでは端末の大きさ・配色を受け継ぐのは親だけ"、スクリーンショット=ip: 親は端末の
+     大きさ・緑の配色、HELPとKEYは既定の大きさ・黒、KEYはHELPと重なる。"-gで終わると端末設定が戻らずキー入力が
+     エコーバックしない")。
+   - **原因1**: -H・最初の起動の子は、main.cppでapp.start()の直後に起動していたので、まだGUIのウィンドウが無く
+     (Application::setGuiFrameProvider()はrunGuiPhase()の直前)、親の外枠・行数・色を子へ渡せていなかった。
+   - **内容1**: 起動はApplication::scheduleHelpChildren()で予約し、実行ループのpollChildChannel()の最初で
+     launchHelpChildren()(HELPの子と-Kの子)。-gの子は親の外枠と同じ大きさにも合わせる(matchWindowSize())。
+   - **原因2**: -gの子(標準入力は/dev/null)も/dev/ttyを開いてKeyInput::open()が端末の設定を「元の設定」として
+     覚えていた。その時の端末は親が生のモード(エコー無し)にしていたので、親が終了時に端末を戻した後、親に
+     終わらされた子(項目744)がエコー無しへ戻していた。
+   - **内容2**: -gの外部起動の子(forceGuiかつUSILIC_TRANSIENT)は/dev/ttyを開かない。
+   - **確認**: PTYで、-H(SSH扱い)でHELPの子が起動することのみ。-gは未確認。
