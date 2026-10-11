@@ -29984,3 +29984,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **確認**: 2話の連載作品(N3871MW)で、目次1ページ+2話を取得して43KBのEPUB(表紙・タイトル・あらすじ・本文2話)が
      でき、usilicで縦書きのEPUBとして開けること。改変前のページ送りの不具合で、一度?p=64まで取りに行ってから止めた。
      100話を超える(目次が複数ページの)作品と短編は未確認。
+756. **2026-10-11: narou2epubをusilicのSHELL(^Jt)で動かすと、作ったEPUBをそのまま開く、SHELLのusilicで渡した.epubはEPUBの画面で**
+   - **経緯**: 直接のユーザー依頼(項目755の後の提案"作ったEPUBをそのまま開く"等を"それらを順によろしく")。
+   - **内容**: tools/narou2epubは、USILICが立っている(usilicのSHELLの中、^Jtの"narou2epub ..."もSHELLで実行される)なら、
+     作り終えたら最後のEPUBのパスを`usilic`で親のusilicへ渡す(途中の経過は標準エラーなのでSHELLに見える、長い作品でも
+     画面は固まらない)。Application::pollShellHandoff()は、渡されたファイルが.epub(EXECに割り当てが無いもの)なら
+     loadFile()ではなくopenEpub()((ls)の^Mと同じEPUBの画面)。
+   - **確認**: PTYで、親のSHELLで`usilic 作ったEPUB`を打つと「EPUB 01/10 … 縦書き」になること(なろうへのアクセスは無し)。

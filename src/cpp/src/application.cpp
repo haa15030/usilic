@@ -17113,6 +17113,9 @@ bool Application::pollShellHandoff() {
   // 2026-08-16のコメント参照)が、それ自身で既に正しい格納先ディレク
   // トリへ再入場する――ここでは追加のdirectoryMode_のセットアップは
   // 一切必要無い。
+  // 2026-10-11、直接のユーザー依頼(narou2epubで作ったEPUBをそのまま開く): .epub(EXECに割り当てが無いもの)は、
+  // (ls)の^Mと同じくEPUBの画面で開く(以前は通常のファイルとして本文を横書きで読み込んでいた)。
+  if (isEpubFile(resolved) && !configuration_.isExec(resolved)) return openEpub(resolved);
   if (!fileMode_.loadFile(resolved)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;

@@ -11,4 +11,13 @@ for candidate in "$USILIC_VENV/bin/python" "$here/venv/bin/python" "$HOME/.local
   if [ -x "$candidate" ]; then python=$candidate; break; fi
 done
 case "$1" in -*) ;; *) set -- -n "$@" ;; esac
+# usilicのSHELL(USILICが立っている、^Jtで打った時も)の中なら、作り終えたら最後のEPUBを`usilic`で親のusilicへ
+# 渡して開く(2026-10-11)。途中の経過は標準エラーなのでそのままSHELLに見える。
+if [ -n "$USILIC" ] && [ "$1" != "-h" ] && [ "$1" != "--help" ]; then
+  out=$("$python" "$here/narou2epub.py" "$@") || exit $?
+  printf '%s\n' "$out"
+  last=$(printf '%s\n' "$out" | tail -n 1)
+  if [ -n "$last" ] && [ -f "$last" ]; then exec usilic "$last"; fi
+  exit 0
+fi
 exec "$python" "$here/narou2epub.py" "$@"
