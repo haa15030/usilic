@@ -17700,6 +17700,20 @@ std::vector<std::string> Application::pathProgramCandidates(const std::string &p
 // 行番号ではなく、「ディレクトリ一覧」内でのカーソルの行である――
 // ここには持ち越されない、Fileモードでの編集は実際のカーソル行を
 // 使う)についてはクラスコメント参照。
+// executeEdit()の判定: (ls)の`path`が、開くとusilicrcのFILE・ARCHIVEのプログラム(EXECを除く)かgroffを通して
+// 表示されるファイルか。
+bool Application::viewedThroughProgram(const std::string &path) const {
+  ArchiveKind kind = ArchiveKind::None;
+  auto command = configuration_.programForSuffix(path, &kind);
+  if (command && !command->argv.empty() && !configuration_.isExec(path)) return true;
+  std::ifstream in(path, std::ios::binary);
+  if (!in) return false;
+  std::string head(0x1000, '\0');
+  in.read(head.data(), static_cast<std::streamsize>(head.size()));
+  head.resize(static_cast<std::size_t>(in.gcount()));
+  return !head.empty() && looksLikeRoffDocument(head);
+}
+
 bool Application::executeEdit() {
   std::string path;
   int lineNumber = 1;
@@ -17719,8 +17733,21 @@ bool Application::executeEdit() {
     path = directoryMode_.currentDirectory();
     if (!path.empty() && path.back() != '/') path += '/';
     path += entry->name;
+    // 2026-10-11、直接のユーザー依頼("^[eは(アプリ)付きのレギュラーファイルでは「平文のみ」系のエラーを出力...
+    // メッセージだけで何もしない"): 開くとアプリを通して表示するファイル(.epub、usilicrcのFILE・ARCHIVEの拡張子、
+    // roff)は、エディタで開かずにエラーだけ出す(ディレクトリの"Invalid mode"と同じ出し方)。
+    if (isEpubFile(path) || viewedThroughProgram(path)) {
+      directoryMode_.reportError("Plain text only");
+      directoryView_.redraw();
+      return true;
+    }
   } else if (currentMode_ == ApplicationMode::File) {
     path = fileMode_.currentFile();
+    // 同上: モードラインに"(groff)"・"(gzip)"等が出ている(アプリを通して表示している)ファイルとEPUBの本。
+    if (!fileMode_.displayProgram().empty() || isEpubFile(path)) {
+      showTransientNotice(activeView(), "Plain text only");
+      return true;
+    }
     // 2026-09-08修正、直接のユーザー報告("usilic画面では98行だった
     // 行が97として表示されている"――CLAUDE.mdの長い1行が幅超過で
     // 2つの表示行に折り返され、cursorIndex()がその分だけ実際の

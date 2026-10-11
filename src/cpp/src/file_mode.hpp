@@ -216,6 +216,11 @@ class FileMode {
   // 一時ファイルに書いたものを読むのでloadAndTransformContent()では分からない)。
   // reflow()の読み直しでcontentProgram_が作り直されても残るよう別に持ち、次のloadFile()で消す。
   void setContentProgram(const std::string &program) { contentProgramOverride_ = program; }
+  // 今の表示に通したプログラム(モードラインの"(groff)"等、無ければ空、2026-10-11、EDITの判定)。
+  std::string displayProgram() const {
+    if (pagerMode_) return pagerProgram_;
+    return contentProgramOverride_.empty() ? contentProgram_ : contentProgramOverride_;
+  }
 
   const std::string &currentFile() const;
 

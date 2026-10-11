@@ -29835,3 +29835,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **確認**: PTYで、HELPの子が「HELP 0001/1102 TOP 76773 (groff) USILIC」、q・^X^Cで「Ends with the parent」、親の^Kの
      反転が「    INFO         」まで、親の^J^Ohが「HELP 0001/1102 TOP 76612 (groff) (lsのディレクトリ)」。
    - src/HELP_.txt・src/HELP_en_.txtの-Hの説明に、子は自身では終われないことを足した。
+742. **2026-10-11: アプリを通して表示するファイルの^[e(EDIT)は「Plain text only」を出すだけにする**
+   - **経緯**: 直接のユーザー依頼("^[eは(アプリ)付きのレギュラーファイルでは「平文のみ」系のエラーを出力"、"メッセージ
+     だけで何もしない")。以前はHELPの子(HELP.ja.1)の^[eでroffのソースがエディタで開いていた(項目737の調査)。
+   - **内容**: executeEdit()で、FILEの画面ではFileMode::displayProgram()(新設、モードラインの"(groff)"・"(gzip)"等、
+     ページャーはpagerProgram_)が空でないか.epubなら、(ls)では選んだファイルが.epubか、Application::
+     viewedThroughProgram()(usilicrcのFILE・ARCHIVEの拡張子(EXECを除く)か、先頭4KBがroff)なら、エディタを起動せず
+     「Plain text only」(FILEは一時的な知らせ、(ls)はディレクトリの"Invalid mode"と同じDirectoryMode::reportError())。
+   - **確認**: PTYで、HELPの子(HELP.ja.1)の^[eと、(ls)のHELP.1の行の^[eで「Plain text only」、エディタは起動しない。

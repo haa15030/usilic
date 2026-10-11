@@ -3003,6 +3003,7 @@ class Application {
   bool executeEdit();
   bool startHelp();
   bool startKey();  // Command::StartKey参照
+  bool viewedThroughProgram(const std::string &path) const;  // executeEdit()参照
   // 2026-10-11、直接のユーザー依頼: ページャー起動のKEYは、HELP画面用に組んだ本文から行頭がタブの行だけ、-Kの
   // KEYは「：」を含む行だけを読み込んだ一覧にする(KEYを開く前の画面へのキーの発動・hは無し、-Kでは^Gも無し)。
   bool keyListOnly() const { return pagerLaunch_ || keyColonListLaunch_; }
