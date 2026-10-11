@@ -2983,6 +2983,12 @@ class Application {
   bool executeEdit();
   bool startHelp();
   bool startKey();  // Command::StartKey参照
+  // 2026-10-11、直接のユーザー依頼: ページャー起動のKEYは、HELP画面用に組んだ本文から行頭がタブの行だけ、-Kの
+  // KEYは「：」を含む行だけを読み込んだ一覧にする(KEYを開く前の画面へのキーの発動・hは無し、-Kでは^Gも無し)。
+  bool keyListOnly() const { return pagerLaunch_ || keyColonListLaunch_; }
+  bool keyColonListLaunch_ = false;
+  // KEYの一覧の元の行(keyListOnly()なら上の行だけ、折り返しの続きの行も含める)。
+  std::vector<StyledLine> keySourceLines(int width);
   bool saveMacroToUsilicrc();  // Command::SaveMacro参照
   // ~/.usilic/usilicrcのKEY・MACROを読み直してその場で効かせる(^X^Sの保存後、EDITでusilicrcを
   // 直した後)。HELPのキー表記も読み直す。
@@ -2996,6 +3002,8 @@ public:
   void setInstallLibDirectory(const std::string &dir) { installLibDirectory_ = dir; }
   // ページャーとして起動したか(ファイル引数・標準入力、main()のconsultHistoryOnStartの逆)。startKey()参照。
   void setPagerLaunch(bool pager) { pagerLaunch_ = pager; }
+  // -K(main.cpp、-H・最初の起動のKEYのウィンドウ): KEYを「：」を含む行だけの一覧にする(keyListOnly()参照)。
+  void setKeyColonListLaunch(bool on) { keyColonListLaunch_ = on; }
   // HELPの言語(2026-10-11、main.cppがLANGで決める): trueならHELP.en(roff版はHELP.1)、falseならHELP(HELP.ja.1)。
   // 起動後は^Jaで今まで通り切り替える。reloadHelpText()の前に呼ぶ。
   void setHelpEnglish(bool english) { helpPath_ = english ? helpBasePath_ + ".en" : helpBasePath_; }

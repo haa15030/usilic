@@ -5548,9 +5548,10 @@ int main(int argc, char **argv) {
       app.runExternalUsilicPager("usilic -K");
       app.setExternalWindowSlot(0);
     }
-    // -K(上の子のKEYのウィンドウ): (ls)から起動したのと同じFileManagerのKEY(「：」で切る)を開く。
+    // -K(上の子のKEYのウィンドウ): HELPの「：」を含む行だけのKEY(キーの発動・h・^G無し、keyListOnly()参照)を開く。
     if (openKeyAtStart) {
       app.setPagerLaunch(false);
+      app.setKeyColonListLaunch(true);
       app.handleCommand(fm::Command::StartKey);
     }
   }

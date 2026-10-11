@@ -4896,6 +4896,8 @@ bool Application::handleCommandImpl(Command command) {
       if (currentMode_ == ApplicationMode::CutContent) return returnFromCutContent();
       if (currentMode_ == ApplicationMode::Cut) {
         if (cutMode_.canGoBack()) return cutMode_.goBack();
+        // -KのKEY(keyListOnly()参照)は戻る先を持たない(ページャーの^Gと同じく何もしない)。
+        if (keyColonListLaunch_ && cutOrigin_ == CutOrigin::Key) return false;
         return returnFromCut();
       }
       if (currentMode_ == ApplicationMode::Grep) return returnFromGrep();
@@ -17923,7 +17925,7 @@ bool Application::startKey() {
     return true;
   }
   if (helpText_.empty()) return showHelpNotFound();
-  std::vector<StyledLine> lines = wrapHelpText(display_.columns());
+  std::vector<StyledLine> lines = keySourceLines(display_.columns());
   bool fromCut = currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent;
   if (!fromCut) cutReturnMode_ = currentMode_;
   cutOrigin_ = CutOrigin::Key;
@@ -17950,7 +17952,25 @@ void Application::saveKeyCursor() {
     keyCursorIndex_ = cutView_.cursorIndex();
 }
 
+std::vector<StyledLine> Application::keySourceLines(int width) {
+  std::vector<StyledLine> lines = wrapHelpText(width);
+  if (!keyListOnly()) return lines;
+  std::vector<StyledLine> kept;
+  bool keeping = false;
+  bool lineStart = true;
+  for (auto &line : lines) {
+    if (lineStart)
+      // 折り返した行(PipeBuffer)ではタブはU+2060+空白になっている(CutMode::split()のconvertTabsForSearch()参照)。
+      keeping = pagerLaunch_ ? line.text.rfind("\xE2\x81\xA0", 0) == 0
+                             : line.text.find("\xEF\xBC\x9A") != std::string::npos;  // 「：」
+    lineStart = line.endsWithNewline;
+    if (keeping) kept.push_back(std::move(line));
+  }
+  return kept;
+}
+
 bool Application::executeSelectedKeyLine() {
+  if (keyListOnly()) return false;  // keyListOnly()参照: キーは発動しない
   saveKeyCursor();
   const CutSegment *segment = cutMode_.selectedSegment();
   if (!segment) return false;
@@ -18018,6 +18038,7 @@ bool Application::isHelpCommandLineKey(int rawLine) const {
 
 bool Application::jumpFromKeyToHelp() {
   if (currentMode_ != ApplicationMode::Cut || cutOrigin_ != CutOrigin::Key) return false;
+  if (keyListOnly()) return false;  // keyListOnly()参照: hは無し
   saveKeyCursor();
   const CutSegment *segment = cutMode_.selectedSegment();
   if (!segment) return false;
@@ -18830,7 +18851,9 @@ void Application::handleResize() {
   if ((currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
       !cutMode_.canGoBack()) {
     std::vector<StyledLine> freshSource;
-    if (cutOrigin_ == CutOrigin::Help || cutOrigin_ == CutOrigin::Key) {
+    if (cutOrigin_ == CutOrigin::Key) {
+      freshSource = keySourceLines(display_.columns());
+    } else if (cutOrigin_ == CutOrigin::Help) {
       freshSource = wrapHelpText(display_.columns());
     } else if (cutOrigin_ == CutOrigin::Directory) {
       // 2026-08-11: ディレクトリ一覧の行は、File/Manのテキストがそう

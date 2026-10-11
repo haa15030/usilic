@@ -29757,3 +29757,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **確認**: PTYで、子`usilic -c HELP.ja.1`がページャー(「…/HELP.ja.1 00001/00024 TOP 1425 (groff)」、^Gで
      動かない)、`usilic -c -K`が「：」のKEY。-gのずらしと、新しいウィンドウ2つの起動は未確認。
    - src/HELP_.txt・src/HELP_en_.txtの-Hの説明を直した。
+737. **2026-10-11: ページャー起動のKEYを行頭タブの行だけ、-KのKEYを「：」の行だけの一覧に(キーの発動・hは無し)**
+   - **経緯**: 直接のユーザー指摘("-Kはいい案...ただhを押すと/tmp/...となって結局は(ls)、-Hの方も^Khでそうなる")
+     →-o・(stdin)の案の検討→ページャーで(ls)へ行かないキーの調査(KEY節の全104キーをPTYで押して^G)→ユーザーの
+     決定("HELPで^Kを押したときだけは...行頭タブの行をバッファに読み込んでKEYモードとする。キーの発動もhも無し。
+     -Kではgrep -E '：'で。-Hは従来通り")。タブはgroffの素の出力ではなく、HELP画面用に組んだ本文(helpText_)から。
+   - **調査結果(ページャーで(ls)へ行くキー)**: すぐ: ^J^C ^] ^J^B ^JN ^Jd ^J^D ^I ^J^I ^J^Ou ^J^Oe ^J^Od ^J^Ow
+     ^H ^J^H ^Oh ^K ^J^K ^J^Oh。確定すると: ^R・^X^F・^X^Dの一覧の^M、^Jm(MAN)・^Xd(DIR)・^J^L(LOCATE)。
+     他(TOOL・PART・GREP・SHELL・USILIC・COPY等)は^Gでページャーへ戻る(^Ju/^J^Uは^M後にUSILICの一覧に残る)。
+   - **内容**: Application::keySourceLines()(startKey()とリサイズの再分割の両方): keyListOnly()(ページャー起動、
+     または-KのsetKeyColonListLaunch())なら、wrapHelpText()の行のうち、ページャー起動は行頭がタブ(折り返し後は
+     U+2060)、-Kは「：」を含む行(折り返しの続きの行も)だけを残す。その間、executeSelectedKeyLine()(^M)と
+     jumpFromKeyToHelp()(h)は何もしない。-KのKEYの^Gも何もしない(ページャーの^Gと同じ)。
+   - **確認**: PTYで、ページャー起動の^KがKEY 01/31、^N^N^Mで03/31のまま、hでも動かず、^Gでページャーへ。
+     -KがKEY 001/174で^G・^Mでも動かない。
+   - src/HELP_.txt・src/HELP_en_.txtの-Hの説明を直した。
