@@ -2230,17 +2230,25 @@ bool Application::startPagerFileList(const std::vector<std::string> &paths) {
   // 「ページャーモード」を名乗らない(hasActiveStream()がfalseになる
   // ので、^Gは通常のFileモードと同じくディレクトリへ戻る)。
   // 2026-10-11、直接のユーザー依頼(初回起動・-Hで開く子のHELP.ja.1は"PARTではなく平文で"、モードラインに
-  // "(groff)"): roffの文書(manページ等)も、下のloadStream()ではソースのままになるので、同じくloadFile()で
-  // groffに組ませる(FileMode::loadAndTransformContent()、モードラインの"(groff)"もそちらが出す)。
-  bool roffDocument = false;
+  // "(groff)"、同日"子のHELPを本物のPagerに"): roffの文書(manページ等)は、下のloadStream()ではソースのまま
+  // になるので、groffで組んだ平文をページャーとして開く(FileMode::loadTransformedPagerFile()、^Gで(ls)へ
+  // 行かない・KEYはページャーのもの)。
   if (paths.size() == 1) {
     std::ifstream probe(paths.front(), std::ios::binary);
     std::string head(0x1000, '\0');
     probe.read(head.data(), static_cast<std::streamsize>(head.size()));
     head.resize(static_cast<std::size_t>(probe.gcount()));
-    roffDocument = probe.gcount() > 0 && looksLikeRoffDocument(head);
+    if (!head.empty() && looksLikeRoffDocument(head)) {
+      currentMode_ = ApplicationMode::File;
+      fileReturnMode_ = ApplicationMode::Directory;
+      if (!fileMode_.loadTransformedPagerFile(paths.front(), display_.rows())) return false;
+      pagerFileList_ = paths;
+      pagerFileIndex_ = 0;
+      activeView().redraw();
+      return true;
+    }
   }
-  if (paths.size() == 1 && (roffDocument || isHelpMarkupPagerFile(paths.front()))) {
+  if (paths.size() == 1 && isHelpMarkupPagerFile(paths.front())) {
     if (!fileMode_.loadFile(paths.front())) return false;
     currentMode_ = ApplicationMode::File;
     fileReturnMode_ = ApplicationMode::Directory;
@@ -17150,7 +17158,9 @@ void Application::launchExternalUsilic(const std::string &directory, const std::
   bool hasUiFlag = false;
   for (const auto &word : splitShellWords(args))
     if (word == "-c" || word == "-g") hasUiFlag = true;
-  std::string run = "USILIC_TRANSIENT=" + std::to_string(::getpid()) + " usilic" +
+  std::string run = "USILIC_TRANSIENT=" + std::to_string(::getpid()) +
+                    (externalWindowSlot_ > 0 ? " USILIC_WINDOW_SLOT=" + std::to_string(externalWindowSlot_) : "") +
+                    " usilic" +
                     std::string(hasUiFlag ? "" : (graphical ? " -g" : " -c")) + args;
   std::string toRun = "unset USILIC USILIC_HANDOFF; " + cdWrap(directory, run);
   if (!graphical && openInNewTerminalWindow(directory, "unset USILIC USILIC_HANDOFF; " + run)) {

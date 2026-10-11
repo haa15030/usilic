@@ -221,7 +221,7 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
       fields.name = hasOrigin ? *originFrame->nameOverride : currentFile_;
       fields.trailing = std::to_string(bytes);
       fields.rightWatermark = hasReturnTarget ? "" : ContentView::programWatermark();
-      fields.trailing2 = hasOrigin ? originFrame->text : "";
+      fields.trailing2 = hasOrigin ? originFrame->text : (pagerProgram_.empty() ? "" : "(" + pagerProgram_ + ")");
       // 2026-09-17追加、直接のユーザー指摘("戻り値がPROGRAMなら
       // PROGRAMへ戻らないと。なんだけど、PROGRAMは^J^P(program一覧)
       // でも発動するので話がややこしくなる。そこで戻り値は
@@ -938,10 +938,12 @@ bool FileMode::loadFileAsPipe(const std::string &path) {
 // loadFileAsPipe()自身のmkstemp()以降と元々全く同じ内容だったものを
 // 2026-09-21に抽出した(そちら自身は上でloadAndTransformContent()の
 // 結果を渡すだけの薄いラッパーになった)。
-bool FileMode::loadContentAsPipe(const std::string &content) {
+namespace {
+// `content`を書いた無名の一時ファイル(unlink済み、ディスク上に残らない)の、先頭へ巻き戻したfd。失敗なら-1。
+int unlinkedTempFdWith(const std::string &content) {
   char tempPath[] = "/tmp/usilic-pipe-XXXXXX";
   int fd = ::mkstemp(tempPath);
-  if (fd < 0) return false;
+  if (fd < 0) return -1;
   ::unlink(tempPath);  // POSIXでは開いたままのfdは生き続ける――ディスク上に何も残さない
   std::size_t written = 0;
   while (written < content.size()) {
@@ -949,14 +951,31 @@ bool FileMode::loadContentAsPipe(const std::string &content) {
     if (n < 0) {
       if (errno == EINTR) continue;
       ::close(fd);
-      return false;
+      return -1;
     }
     written += static_cast<std::size_t>(n);
   }
   if (::lseek(fd, 0, SEEK_SET) < 0) {
     ::close(fd);
-    return false;
+    return -1;
   }
+  return fd;
+}
+}  // namespace
+
+bool FileMode::loadTransformedPagerFile(const std::string &path, int initialLineBudget) {
+  std::string content = loadAndTransformContent(path);
+  std::string program = contentProgram_;
+  int fd = unlinkedTempFdWith(content);
+  if (fd < 0) return false;
+  loadStream(fd, /*ownsFd=*/true, path, initialLineBudget);
+  pagerProgram_ = program;
+  return true;
+}
+
+bool FileMode::loadContentAsPipe(const std::string &content) {
+  int fd = unlinkedTempFdWith(content);
+  if (fd < 0) return false;
 
   // 2026-09-21、直接のユーザー判断(旧版との比較、実機スクリーンショット): 旧版の^O^M(M_fp、
   // fp->cr=2)は、m_pipe()経由でファイルをパイプ越しに読ませるだけで、行の折り返しは止めない
@@ -1073,7 +1092,9 @@ bool FileMode::reflow(int newWidth) {
       // 読み直せる――loadStream()自身のコメント、
       // Application::startPagerFileList()自身の::open()呼び出し参照。
       ::close(streamFd_);
-      streamFd_ = ::open(currentFile_.c_str(), O_RDONLY);
+      // loadTransformedPagerFile()で開いたもの(groffで組んだ平文)は、元のroffではなく組み直したものを読む。
+      streamFd_ = pagerProgram_.empty() ? ::open(currentFile_.c_str(), O_RDONLY)
+                                        : unlinkedTempFdWith(loadAndTransformContent(currentFile_));
       streamAtEof_ = false;
       streamBytesRead_ = 0;
     }
@@ -1334,6 +1355,7 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   pagerReturnsToShell_ = false;  // 自身の宣言コメント参照。pollShellHandoff()はこの呼び出しの後にこれを切り替える
   pagerReturnsToDirectory_ = false;  // 同上。loadFileAsPipe()がこの呼び出しの後にこれを切り替える
   pagerReturnsToProgram_ = false;    // 同上。tryPollProgramHandoff()はこの呼び出しの後にこれを切り替える
+  pagerProgram_.clear();             // 同上。loadTransformedPagerFile()がこの呼び出しの後に設定する
   pagerListingDirectory_.clear();  // 同上。Application::openSelectedEntryNoWrap()のARCHIVE分岐/tryPollProgramHandoff()がこの呼び出しの後にこれを設定する(2026-09-17追加分)
   // 2026-08-25(直接のユーザー依頼: "SHELL同様、行数を5桁とバイト
   // 数表示をよろしく")――他の全てのFileモードのエントリが使う

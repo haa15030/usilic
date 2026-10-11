@@ -29739,3 +29739,21 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **注意**: ~/.local/lib/usilic/HELP.1は10/6の古い日本語版のまま(doc/HELP.1はリポジトリから外れている、make
      installは無ければ入れない)。今の英語のroff版はHELP.en.1(項目720)。
    - src/HELP_.txt・src/HELP_en_.txtの-Hの説明に一文。
+736. **2026-10-11: -H・最初の起動の子のHELPを本物のPagerに、KEYの子のウィンドウを追加、-gでは子のウィンドウをずらす**
+   - **経緯**: 直接のユーザー依頼("-HでHELP.ja.1の別ウィンドウが立ち上がるのはいいとして(ls)だと^Kの内容が実情に
+     合わないのでPagerで起動して欲しいのと、^Kのウィンドウも追加してみて。ただし-gでは子のウィンドウがぴったり
+     重なっているため...ここでは単独のウィンドウで表示してほしい")。確認への回答: Pagerは「子のHELPを本物の
+     Pagerに」(項目734のloadFile()経由は^Gで(ls)へ行くのに^KはPagerのKEYだった)、KEYの中身は「FileManagerのKEY」。
+   - **子のHELP**: Application::startPagerFileList()のroffの分岐を、loadFile()から新設のFileMode::
+     loadTransformedPagerFile()(loadAndTransformContent()でgroffに組んだ平文を無名の一時ファイル経由でloadStream()、
+     名前はファイルのパス)へ。pagerFileList_も立てるので本物のページャー(^Gで(ls)へ行かない、KEYはPagerのもの)。
+     モードラインはバイト数の後ろに"(groff)"(pagerProgram_)。reflow()は元のroffを開き直さず組み直したものを読む。
+     loadContentAsPipe()の一時ファイルの部分はunlinkedTempFdWith()に括り出した。
+   - **KEYの子**: 裏オプション-Kを新設(-hには出さない): 起動後にsetPagerLaunch(false)でStartKey、(ls)の^Kと同じ
+     「：」で切ったKEY。-H・最初の起動では、HELPの子に続けて`usilic -K`も外部起動する。
+   - **-g**: 子にUSILIC_WINDOW_SLOT(HELPは1、KEYは2、Application::setExternalWindowSlot())を渡し、子の
+     tryEnterGuiPhase()はGraphicalDisplay::moveWindowBy()で番号×48pxだけ右下へずらす(以前は全部
+     SDL_WINDOWPOS_CENTEREDで同じ大きさなのでぴったり重なっていた)。端末の子は端末の新しいウィンドウのまま。
+   - **確認**: PTYで、子`usilic -c HELP.ja.1`がページャー(「…/HELP.ja.1 00001/00024 TOP 1425 (groff)」、^Gで
+     動かない)、`usilic -c -K`が「：」のKEY。-gのずらしと、新しいウィンドウ2つの起動は未確認。
+   - src/HELP_.txt・src/HELP_en_.txtの-Hの説明を直した。

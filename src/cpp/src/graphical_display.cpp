@@ -3280,6 +3280,13 @@ void GraphicalDisplay::setWindowPosition(int x, int y) {
   SDL_SetWindowPosition(impl_->window, x, y);
 }
 
+void GraphicalDisplay::moveWindowBy(int dx, int dy) {
+  if (!impl_->window) return;
+  int x = 0, y = 0;
+  SDL_GetWindowPosition(impl_->window, &x, &y);
+  SDL_SetWindowPosition(impl_->window, x + dx, y + dy);
+}
+
 // `width, height`は、setWindowPosition()が取るのと同じ「外枠、タイトル
 // バーを含む」慣習であることが期待されている(それ自身のコメント参照)
 // ――SDL_SetWindowSize()自身のネイティブな慣習では「ない」、こちら

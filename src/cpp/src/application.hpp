@@ -1773,6 +1773,10 @@ class Application {
   bool runExternalUsilicPager(const std::string &command);
   void launchExternalUsilic(const std::string &directory, const std::string &args, const std::string &command,
                             bool *recorded);
+  // 次のlaunchExternalUsilic()の子へUSILIC_WINDOW_SLOTで渡す番号(0なら渡さない)。-gの子はこの番号の分だけ
+  // ウィンドウをずらす(main.cpp、-H・最初の起動のHELPとKEYのウィンドウ、2026-10-11)。
+  void setExternalWindowSlot(int slot) { externalWindowSlot_ = slot; }
+  int externalWindowSlot_ = 0;
   bool openInNewTerminalWindow(const std::string &directory, const std::string &command);
   // 外部起動の印(kUsilicTag)の付いた履歴の項目を、もう一度外部起動する(.cpp側のコメント参照、2026-10-10)。
   bool relaunchUsilicEntry(std::string entry);

@@ -1584,6 +1584,10 @@ void handleTerminationSignal(int) { gTerminationSignalReceived = 1; }
 // GUIの背後のプロセスとして起動され親の直接の子ではないので、実行ループの度に親のPIDの生存を確かめる(親の
 // クラッシュや、単一インスタンスの決まりで別の起動に終了させられた場合にも効く)。0なら確かめない。
 pid_t gTransientParentPid = 0;
+// 親のusilicが-H・最初の起動で開いた子のHELP(1)・KEY(2)の番号(USILIC_WINDOW_SLOT、Application::
+// setExternalWindowSlot()参照)。-gの子は、親や互いとぴったり重ならないよう、この番号の分だけウィンドウを
+// 右下へずらす(tryEnterGuiPhase()、2026-10-11)。0なら何もしない。
+int gWindowSlot = 0;
 bool transientParentGone() {
   return gTransientParentPid > 0 && ::kill(gTransientParentPid, 0) != 0 && errno == ESRCH;
 }
@@ -4045,6 +4049,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
                     fm::GraphicalDisplay::Color{savedGui.bgR, savedGui.bgG, savedGui.bgB});
 
   gui->open();
+  if (gWindowSlot > 0) gui->moveWindowBy(gWindowSlot * 48, gWindowSlot * 48);
   // 2026-09-12追加、項目⑫: 新しく作られたGraphicalDisplayは
   // modeLineVisible_=trueで始まる(GraphicalDisplayのImpl自身の
   // フィールド既定値参照)ため、直前までterminalDisplayが保持して
@@ -4569,12 +4574,14 @@ int main(int argc, char **argv) {
   bool forceCui = false;
   bool forceGui = false;
   bool openHelpChild = false;  // -H(下の初回起動と同じく、起動後に子のusilicでHELPを開く)
+  bool openKeyAtStart = false;  // -K(裏オプション、-Hの子のKEYのウィンドウ用): 起動後にFileManagerのKEYを開く
   std::vector<RcOption> rcOptions;  // -s/-S、-d/-D、-f/-F、-w/-W、-b/-B、-l/-L(RcOption参照)
   std::vector<char *> positionalArgs;
   for (int i = 1; i < argc; i++) {
     if (std::strcmp(argv[i], "-c") == 0) forceCui = true;
     else if (std::strcmp(argv[i], "-g") == 0) forceGui = true;
     else if (std::strcmp(argv[i], "-H") == 0) openHelpChild = true;
+    else if (std::strcmp(argv[i], "-K") == 0) openKeyAtStart = true;
     else if (std::strcmp(argv[i], "-h") == 0) {
       // 2026-09-15追加、直接のユーザー依頼("新たな仕様として...
       // ③-hオプションで「usilic [<file] [file] [directory]」を表示")
@@ -4844,6 +4851,10 @@ int main(int argc, char **argv) {
   // 下の単一インスタンスの決まりで親を終了させない。孫へは引き継がない。
   // 2026-10-10: USILIC_TRANSIENTの値は親のPID。右下の透かしを「親のPID:USILIC」にし(ContentView::
   // programWatermark()参照)、親がいなくなったら終わる(transientParentGone()参照)。
+  if (const char *slot = std::getenv("USILIC_WINDOW_SLOT")) {
+    gWindowSlot = std::max(0, std::atoi(slot));
+    ::unsetenv("USILIC_WINDOW_SLOT");
+  }
   const char *transientEnv = std::getenv("USILIC_TRANSIENT");
   bool transientLaunch = transientEnv != nullptr;
   long transientParent = transientEnv ? std::atol(transientEnv) : 0;
@@ -5529,7 +5540,18 @@ int main(int argc, char **argv) {
     if ((openHelpChild || (consultHistoryOnStart && historyText.empty())) && !app.helpLoadedPath_.empty()) {
       std::string quoted = "'";
       for (char c : app.helpLoadedPath_) quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
+      app.setExternalWindowSlot(1);
       app.runExternalUsilicPager("usilic " + quoted + "'");
+      // 同日、直接のユーザー依頼("^Kのウィンドウも追加"、中身はFileManagerのKEY): HELPの子に続けて、-Kで
+      // KEYを開いた子も起動する。-gでは子がぴったり重ならないよう番号(1・2)を渡してずらす(gWindowSlot参照)。
+      app.setExternalWindowSlot(2);
+      app.runExternalUsilicPager("usilic -K");
+      app.setExternalWindowSlot(0);
+    }
+    // -K(上の子のKEYのウィンドウ): (ls)から起動したのと同じFileManagerのKEY(「：」で切る)を開く。
+    if (openKeyAtStart) {
+      app.setPagerLaunch(false);
+      app.handleCommand(fm::Command::StartKey);
     }
   }
 

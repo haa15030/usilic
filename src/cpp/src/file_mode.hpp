@@ -208,6 +208,10 @@ class FileMode {
   // 公開し、ARCHIVE分岐がChildProcess::run()の出力を、loadAndTransformContent()
   // による再読み込み/groff変換無しに、直接そこへ渡せるようにする。
   bool loadContentAsPipe(const std::string &content);
+  // 2026-10-11、直接のユーザー依頼(-H・最初の起動で開く子のHELP.ja.1を"本物のPager"で、平文・"(groff)"付きで):
+  // roffの文書等をloadAndTransformContent()でgroffに組んだ平文を、CLIのページャー(loadStream()、名前は`path`)
+  // として開く。モードラインのバイト数の後ろに通したプログラム("(groff)")を出し、幅が変われば組み直す。
+  bool loadTransformedPagerFile(const std::string &path, int initialLineBudget);
 
   const std::string &currentFile() const;
 
@@ -650,6 +654,9 @@ class FileMode {
   bool pagerReturnsToShell_ = false;
   bool pagerReturnsToDirectory_ = false;  // setPagerReturnsToDirectory()自身の宣言コメント参照
   bool pagerReturnsToProgram_ = false;    // setPagerReturnsToProgram()自身の宣言コメント参照
+  // loadTransformedPagerFile()で開いたページャーで、通したプログラム(モードラインの"(groff)")。空なら素のファイル。
+  // reflow()はcurrentFile_を開き直さず、組み直したものを読む。loadStream()が毎回消す。
+  std::string pagerProgram_;
   std::string pagerListingDirectory_;     // setPagerListingDirectory()自身の宣言コメント参照
   int streamFd_ = -1;
   bool streamOwnsFd_ = false;

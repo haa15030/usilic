@@ -146,6 +146,9 @@ class GraphicalDisplay : public Display {
   // として"テキスト表示ウィンドウに重ねる形でGUIウィンドウ版を
   // 表示したい")。ウィンドウが作成されていなければ何もしない。
   void setWindowPosition(int x, int y);
+  // 今の位置から`dx, dy`だけずらす(2026-10-11、-H・最初の起動の子のHELP・KEYのウィンドウを、親や互いと
+  // ぴったり重ねずに置くため)。ウィンドウが作成されていなければ何もしない。
+  void moveWindowBy(int dx, int dy);
 
   // `width, height`は、setWindowPosition()が取るのと「同じ」
   // 「外枠、タイトルバー込み」の慣習である――SDL自身のネイティブな
