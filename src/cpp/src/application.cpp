@@ -17176,6 +17176,7 @@ void Application::launchExternalUsilic(const std::string &directory, const std::
     if (word == "-c" || word == "-g") hasUiFlag = true;
   std::string run = "USILIC_TRANSIENT=" + std::to_string(::getpid()) +
                     (externalWindowSlot_ > 0 ? " USILIC_WINDOW_SLOT=" + std::to_string(externalWindowSlot_) : "") +
+                    (externalExtraEnv_.empty() ? "" : " " + externalExtraEnv_) +
                     " usilic" +
                     std::string(hasUiFlag ? "" : (graphical ? " -g" : " -c")) + args;
   std::string toRun = "unset USILIC USILIC_HANDOFF; " + cdWrap(directory, run);
@@ -17985,6 +17986,61 @@ std::vector<StyledLine> Application::keySourceLines(int width) {
   return kept;
 }
 
+namespace {
+// 親子の受け渡し(Application::openChildChannel()参照)のディレクトリ: 一時ディレクトリの下の
+// "usilic-ch-<親のPID>"(自分だけが読み書きできる0700)。
+std::string channelDirectory(long ownerPid) {
+  std::error_code ec;
+  return (std::filesystem::temp_directory_path(ec) / ("usilic-ch-" + std::to_string(ownerPid))).string();
+}
+
+// `ownerPid`の受け渡しのFIFO `name`へ`message`(1行、PIPE_BUF以下なら一度に書かれる)を書く。読む側が
+// いなければ(FIFOが無い・開いているプロセスが無い)false。
+bool sendToChannel(long ownerPid, const std::string &name, const std::string &message) {
+  std::string path = channelDirectory(ownerPid) + "/" + name;
+  int fd = ::open(path.c_str(), O_WRONLY | O_NONBLOCK);
+  if (fd < 0) return false;
+  ssize_t n = ::write(fd, message.data(), message.size());
+  ::close(fd);
+  return n == static_cast<ssize_t>(message.size());
+}
+
+// HELPの行を、組み方(groffの字下げ・印のタブ、U+2060・U+E000・U+FEFF)によらず比べられる形に: 空白類と
+// それらの不可視の文字を全部除く。
+std::string normalizeHelpLineForMatch(const std::string &line) {
+  std::string out;
+  for (std::size_t i = 0; i < line.size();) {
+    unsigned char c = static_cast<unsigned char>(line[i]);
+    if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+      i++;
+      continue;
+    }
+    if (line.compare(i, 3, "\xE2\x81\xA0") == 0 || line.compare(i, 3, "\xEE\x80\x80") == 0 ||
+        line.compare(i, 3, "\xEF\xBB\xBF") == 0) {
+      i += 3;
+      continue;
+    }
+    out += line[i++];
+  }
+  return out;
+}
+
+// 正規化した2行が同じHELPの行か: 片方がもう片方の頭(groffが幅で折り返すと行の後ろが次の行へ回るため)で、
+// 短い方も「：」を含むこと(短すぎる行の偶然の一致を避ける)。
+bool helpLinesMatch(const std::string &a, const std::string &b) {
+  if (a.empty() || b.empty()) return false;
+  const std::string &shorter = a.size() < b.size() ? a : b;
+  const std::string &longer = a.size() < b.size() ? b : a;
+  return shorter.find("\xEF\xBC\x9A") != std::string::npos && longer.compare(0, shorter.size(), shorter) == 0;
+}
+
+std::string decodeHex(const std::string &hex) {
+  std::string out;
+  for (std::size_t i = 0; i + 1 < hex.size(); i += 2) out += static_cast<char>(std::stoi(hex.substr(i, 2), nullptr, 16));
+  return out;
+}
+}  // namespace
+
 bool Application::executeSelectedKeyLine() {
   // keyListOnly()参照: ページャー起動のKEYではキーは発動しない(2026-10-11、-KのKEYは発動する)。
   if (keyListOnly() && !keyColonListLaunch_) return false;
@@ -17993,6 +18049,20 @@ bool Application::executeSelectedKeyLine() {
   if (!segment) return false;
   std::vector<int> bytes = keyBytesFromHelpLabel(segment->label);
   if (bytes.empty()) return false;
+  // 2026-10-11、直接のユーザー依頼("-K画面から親へキーを渡す"、"全てのキーを渡し、親側で判定"): 親のいる-KのKEYは、
+  // 自分では実行せず親のFIFOへ送る(親のpollChildChannel()がexecuteRemoteKeys()で実行する)。
+  if (keyColonListLaunch_ && parentPid_ > 0) {
+    std::vector<StyledLine> content = cutMode_.segmentContent(*segment);
+    bool commandLine = !content.empty() && isHelpCommandLineKey(content.front().rawLineNumber);
+    std::string message = std::string("K ") + (commandLine ? "c " : "- ");
+    static const char kHex[] = "0123456789abcdef";
+    for (int b : bytes) {
+      message += kHex[(b >> 4) & 0xf];
+      message += kHex[b & 0xf];
+    }
+    if (!sendToChannel(parentPid_, "keys", message + "\n")) showTransientNotice(activeView(), "Parent not reachable");
+    return true;
+  }
   // 2026-10-02追加、直接のユーザー依頼("KEYを抜けるのはマズい。KEY画面は微動だにせずメッセージだけが
   // モードラインに出る、でいい"): KEYを開く前の画面では使えないキー(COPY専用、SHELL・プロンプト専用、
   // 項目578/579)は、その画面へ戻らずにKEYのままメッセージだけを出す。
@@ -18055,12 +18125,46 @@ bool Application::isHelpCommandLineKey(int rawLine) const {
 
 bool Application::jumpFromKeyToHelp() {
   if (currentMode_ != ApplicationMode::Cut || cutOrigin_ != CutOrigin::Key) return false;
-  if (keyListOnly()) return false;  // keyListOnly()参照: hは無し
+  if (keyListOnly() && !(keyColonListLaunch_ && parentPid_ > 0)) return false;  // keyListOnly()参照: hは無し
   saveKeyCursor();
   const CutSegment *segment = cutMode_.selectedSegment();
   if (!segment) return false;
   std::vector<StyledLine> content = cutMode_.segmentContent(*segment);
   if (content.empty()) return false;
+  // 2026-10-11、直接のユーザー依頼("-Kでhを復活し、-H画面で反映"、HELPの子がいなければ開き直す): 親のいる-Kは、
+  // 選んだ行(折り返す前の1行)を、HELPの中で同じ行が何番目かと一緒に親へ送る(親がHELPの子へ回すか開き直す)。
+  // 行番号ではなく文字列なのは、HELPの子とは組み方(groffの印)も幅も違い、行番号が合わないため。
+  if (keyColonListLaunch_ && parentPid_ > 0) {
+    std::optional<int> raw = content.front().rawLineNumber;
+    std::vector<std::string> rawLines;  // wrapHelpText()の行を、折り返す前の行ごとにまとめたもの
+    std::vector<std::optional<int>> rawNumbers;
+    for (const auto &line : wrapHelpText(display_.columns())) {
+      if (!rawNumbers.empty() && line.rawLineNumber && rawNumbers.back() == line.rawLineNumber) {
+        rawLines.back() += line.text;
+        continue;
+      }
+      rawLines.push_back(line.text);
+      rawNumbers.push_back(line.rawLineNumber);
+    }
+    std::string key;
+    int nth = 0;
+    for (std::size_t i = 0; i < rawLines.size(); i++)
+      if (rawNumbers[i] == raw) {
+        key = normalizeHelpLineForMatch(rawLines[i]);
+        for (std::size_t j = 0; j < i; j++)
+          if (helpLinesMatch(normalizeHelpLineForMatch(rawLines[j]), key)) nth++;
+        break;
+      }
+    if (key.empty()) return false;
+    static const char kHex[] = "0123456789abcdef";
+    std::string message = "H " + std::to_string(nth) + ":";
+    for (unsigned char c : key) {
+      message += kHex[c >> 4];
+      message += kHex[c & 0xf];
+    }
+    if (!sendToChannel(parentPid_, "keys", message + "\n")) showTransientNotice(activeView(), "Parent not reachable");
+    return true;
+  }
   return openPlainHelp(content.front().rawLineNumber);
 }
 
@@ -19256,6 +19360,145 @@ void Application::pollShellOfferFollowUp() {
   shellOffer_->offered = next;
   shell_.commandLine().setText(next);
   if (currentMode_ == ApplicationMode::Shell) shell_.redrawPromptRow();
+}
+
+// 2026-10-11、直接のユーザー依頼(-KのKEYの^M・hの受け渡し、Application::openChildChannel()の宣言参照)。
+// 親(外部起動の子を持ちうるusilic)は"keys"、-H・最初の起動のHELPの子は"help"のFIFOを読む。-Kの子は親の"keys"へ
+// 「K c|- 16進のバイト列」(キー、cはHELPの「コマンド行：」の節のキー)か「H 番目:16進の文字列」(HELPの行)を
+// 1行で書く。親はキーを今の画面で実行し(executeRemoteKeys())、HELPの行はHELPの子の"help"へ回す(いなければ
+// HELPの子を開き直して、起動時にその行へ飛ばす、forwardHelpRequest())。
+void Application::openChildChannel(long ownerPid, const std::string &name) {
+  closeChildChannel();
+  std::string dir = channelDirectory(ownerPid);
+  ::mkdir(dir.c_str(), 0700);
+  struct stat st {};
+  if (::stat(dir.c_str(), &st) != 0 || !S_ISDIR(st.st_mode) || st.st_uid != ::getuid()) return;
+  std::string path = dir + "/" + name;
+  ::unlink(path.c_str());
+  if (::mkfifo(path.c_str(), 0600) != 0) return;
+  channelFd_ = ::open(path.c_str(), O_RDONLY | O_NONBLOCK);
+  if (channelFd_ < 0) return;
+  channelKeepFd_ = ::open(path.c_str(), O_WRONLY | O_NONBLOCK);
+  channelPath_ = path;
+}
+
+void Application::closeChildChannel() {
+  if (channelFd_ >= 0) ::close(channelFd_);
+  if (channelKeepFd_ >= 0) ::close(channelKeepFd_);
+  channelFd_ = channelKeepFd_ = -1;
+  if (!channelPath_.empty()) {
+    ::unlink(channelPath_.c_str());
+    ::rmdir(std::filesystem::path(channelPath_).parent_path().c_str());  // 空なら(他方のFIFOが残っていれば残る)
+  }
+  channelPath_.clear();
+  channelBuffer_.clear();
+}
+
+void Application::pollChildChannel() {
+  if (channelFd_ < 0) return;
+  char buf[4096];
+  for (;;) {
+    ssize_t n = ::read(channelFd_, buf, sizeof buf);
+    if (n <= 0) break;
+    channelBuffer_.append(buf, static_cast<std::size_t>(n));
+  }
+  bool handled = false;
+  for (std::size_t nl; (nl = channelBuffer_.find('\n')) != std::string::npos;) {
+    std::string line = channelBuffer_.substr(0, nl);
+    channelBuffer_.erase(0, nl + 1);
+    if (line.size() > 4 && line.compare(0, 2, "K ") == 0) {
+      std::string bytesHex = line.substr(4);
+      std::vector<int> bytes;
+      for (unsigned char c : decodeHex(bytesHex)) bytes.push_back(c);
+      if (!bytes.empty()) executeRemoteKeys(bytes, line[2] == 'c');
+      handled = true;
+    } else if (line.size() > 2 && line.compare(0, 2, "H ") == 0) {
+      if (channelPath_.size() >= 5 && channelPath_.compare(channelPath_.size() - 5, 5, "/help") == 0)
+        jumpHelpToKeyLine(line.substr(2));
+      else
+        forwardHelpRequest(line.substr(2));
+      handled = true;
+    }
+  }
+  if (handled) display_.flush();
+}
+
+void Application::executeRemoteKeys(const std::vector<int> &bytes, bool commandLineKey) {
+  // executeSelectedKeyLine()と同じ判定を、この(親の)今の画面で行う。
+  bool copyOnly = (bytes == std::vector<int>{0x1b, 'w'} || bytes == std::vector<int>{0x1b, 'p'} ||
+                   bytes == std::vector<int>{kLeaderX, ' '});
+  bool shellOnly = commandLineKey ||
+                   (bytes.size() == 1 && (bytes[0] == 0x17 || bytes[0] == 0x15 || bytes[0] == 0x19 || bytes[0] == 0x04 ||
+                                          bytes[0] == 0x05 || bytes[0] == 0x01 || bytes[0] == 0x11));
+  if (copyOnly && currentMode_ != ApplicationMode::Copy) {
+    showTransientNotice(activeView(), "COPY mode only");
+    return;
+  }
+  if (shellOnly && currentMode_ != ApplicationMode::Shell && !promptActive()) {
+    showTransientNotice(activeView(), "SHELL/prompt only");
+    return;
+  }
+  for (int b : bytes) feedByte(b, std::nullopt);  // 利用者のキーとして(KEY節の置き換えを通す)
+}
+
+void Application::forwardHelpRequest(const std::string &request) {
+  if (sendToChannel(::getpid(), "help", "H " + request + "\n")) return;
+  // HELPの子がいない(閉じられた): -H・最初の起動と同じHELPの子を開き直し、起動したらその行へ飛ばす。
+  if (helpLoadedPath_.empty()) return;
+  std::string quoted = "'";
+  for (char c : helpLoadedPath_) quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
+  setExternalWindowSlot(1);
+  externalExtraEnv_ = "USILIC_HELP_JUMP=" + request;  // 数字・':'・16進だけなのでクォートは要らない
+  runExternalUsilicPager("usilic " + quoted + "'");
+  externalExtraEnv_.clear();
+  setExternalWindowSlot(0);
+}
+
+bool Application::jumpHelpToKeyLine(const std::string &request) {
+  std::size_t colon = request.find(':');
+  if (colon == std::string::npos) return false;
+  int nth = std::atoi(request.substr(0, colon).c_str());
+  std::string key = decodeHex(request.substr(colon + 1));
+  if (key.empty()) return false;
+  // HELP(ページャー)の本文へ戻して最後まで読み込む(ページャーは少しずつ読むため)。
+  if (currentMode_ != ApplicationMode::File) currentMode_ = ApplicationMode::File;
+  for (int guard = 0; guard < 100000 && fileMode_.ensureLoadedThrough(std::numeric_limits<int>::max() / 2,
+                                                                       /*bypassPacing=*/true);
+       guard++) {
+  }
+  const auto &lines = fileView_.lines();
+  int found = -1, count = 0;
+  for (std::size_t i = 0; i < lines.size();) {
+    std::size_t j = i + 1;
+    std::string joined = lines[i].text;
+    while (j < lines.size() && lines[i].rawLineNumber && lines[j].rawLineNumber == lines[i].rawLineNumber)
+      joined += lines[j++].text;
+    if (helpLinesMatch(normalizeHelpLineForMatch(joined), key) && count++ == nth) {
+      found = static_cast<int>(i);
+      break;
+    }
+    i = j;
+  }
+  if (found < 0) {
+    activeView().redraw();
+    showTransientNotice(activeView(), "Not found in HELP");
+    return false;
+  }
+  const std::string &text = lines[static_cast<std::size_t>(found)].text;
+  std::size_t start = 0;
+  while (start < text.size() && (text[start] == ' ' || text[start] == '\t')) start++;
+  if (text.compare(start, 3, "\xE2\x81\xA0") == 0) {
+    start += 3;
+    while (start < text.size() && text[start] == ' ') start++;
+  }
+  std::pair<int, int> span{static_cast<int>(start), static_cast<int>(text.size())};
+  clearGrepJumpHighlight();
+  fileView_.setCursorIndex(found);
+  fileView_.centerOnCursor();
+  fileView_.setGrepMatchHighlight({ContentView::GrepHighlightMatch{found, {span}}}, found, span);
+  grepJumpHighlightView_ = &fileView_;
+  fileView_.redraw();
+  return true;
 }
 
 }  // namespace fm

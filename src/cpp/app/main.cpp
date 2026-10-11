@@ -1677,6 +1677,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     app.pollPendingArchiveExtractShellRun();
     app.pollShellOfferFollowUp();
     app.pollShellHandoff();
+    app.pollChildChannel();  // -KのKEYの^M・hの受け渡し(Application::openChildChannel()参照)
     app.pollPagerExitNotice();
     app.pollExternalPagerWindows();
     syncMouseTracking();
@@ -2446,6 +2447,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     app.pollPendingArchiveExtractShellRun();
     app.pollShellOfferFollowUp();
     app.pollShellHandoff();
+    app.pollChildChannel();  // -KのKEYの^M・hの受け渡し(Application::openChildChannel()参照)
     // `suppressDraw`(2026-09-07追加、直接のユーザー報告"わかったのは
     // ブロックカーソル位置を画面上真ん中辺に変更すると、瞬時の表示も
     // 同じ位置（真ん中辺）になされる点"): Application::pollPagerExitNotice()
@@ -4853,6 +4855,12 @@ int main(int argc, char **argv) {
   // 下の単一インスタンスの決まりで親を終了させない。孫へは引き継がない。
   // 2026-10-10: USILIC_TRANSIENTの値は親のPID。右下の透かしを「親のPID:USILIC」にし(ContentView::
   // programWatermark()参照)、親がいなくなったら終わる(transientParentGone()参照)。
+  // 親が開き直したHELPの子に、起動したら飛ぶ行(Application::forwardHelpRequest()参照)。
+  std::string helpJumpOnStart;
+  if (const char *jump = std::getenv("USILIC_HELP_JUMP")) {
+    helpJumpOnStart = jump;
+    ::unsetenv("USILIC_HELP_JUMP");
+  }
   if (const char *slot = std::getenv("USILIC_WINDOW_SLOT")) {
     gWindowSlot = std::max(0, std::atoi(slot));
     ::unsetenv("USILIC_WINDOW_SLOT");
@@ -5161,6 +5169,19 @@ int main(int argc, char **argv) {
   fm::Application app(display, keyInput, history, configuration, encoding, display.columns(), shellOptions,
                        homeEnv ? std::string(homeEnv) : std::string(), tempRootDirectory, workRootDirectory,
                        bootOptions);
+  // 2026-10-11、直接のユーザー依頼(-KのKEYの^Mのキーを親へ、hを-HのHELPの子へ): 親子の受け渡しの名前付き
+  // パイプ(Application::openChildChannel()参照)。外部起動された子でなければ、自分の子から受け取る"keys"を開く。
+  // 子は親のPIDを覚え、-H・最初の起動のHELPの子(gWindowSlot 1)は親の下に"help"を開く。終了時に消す。
+  struct ChildChannelGuard {
+    fm::Application &app;
+    ~ChildChannelGuard() { app.closeChildChannel(); }
+  } childChannelGuard{app};
+  if (gTransientParentPid > 0) {
+    app.setParentPid(gTransientParentPid);
+    if (gWindowSlot == 1) app.openChildChannel(gTransientParentPid, "help");
+  } else {
+    app.openChildChannel(::getpid(), "keys");
+  }
 
   // 2026-09-20、直接のユーザー依頼("今のKEYをHELPに置き換え...正味の
   // ：カットによるHELPとしてほしい")によりHELP自身が全面的に作り直
@@ -5467,6 +5488,7 @@ int main(int argc, char **argv) {
       std::cerr << "usilic: cannot open " << filePaths.front() << "\n";
       return 1;
     }
+    if (!helpJumpOnStart.empty()) app.jumpHelpToKeyLine(helpJumpOnStart);  // 親が開き直したHELPの子
   } else if (isPipedStdin) {
     if (!app.startPagerStdin()) {
       display.close();

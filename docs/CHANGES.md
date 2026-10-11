@@ -29796,3 +29796,24 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **内容**: cutView_のモードラインで、-KのKEY(keyColonListLaunch_)の最上位は、戻り値欄の代わりにページャー起動と
      同じ右下の透かし(ContentView::programWatermark()、子は「USILIC」、非ハイライト)。Command::Backも何もしない。
    - **確認**: PTYで、-Kのモードラインが「KEY 001/174 TOP 8733 … USILIC」(USILICは非反転)、^GでもKEYのまま。
+740. **2026-10-11: -KのKEYの^Mのキーを親の画面で実行、hで-HのHELPの子を該当行へ(いなければ開き直す)、名前付きパイプで受け渡し**
+   - **経緯**: 直接のユーザー依頼("-Kはオールメンバーだったことを忘れてた。-K画面から親へキーを渡すのは？名前付き
+     パイプって無かったっけ？"、"-Kでhを復活し、-H画面で反映は？"→案の説明→"(b)で。^Mも同時に、全てのキーを渡し、
+     親側で判定")。
+   - **受け渡し**: Application::openChildChannel()が、一時ディレクトリの下の`usilic-ch-<親のPID>`(0700)にFIFOを作る。
+     外部起動の子でないusilicは"keys"、-H・最初の起動のHELPの子(USILIC_WINDOW_SLOT=1)は親の下に"help"。読み側は
+     O_NONBLOCKで、EOFにならないよう書き側も開いたまま。端末・GUIの実行ループがpollChildChannel()で読む。終了時に
+     main.cppのガードがcloseChildChannel()で消す(空ならディレクトリも)。
+   - **^M**: 親のいる-K(setParentPid())のexecuteSelectedKeyLine()は、自分では実行せず「K c|- 16進のバイト列」
+     (cはHELPの「コマンド行：」の節のキー)を親の"keys"へ。親のexecuteRemoteKeys()は、COPY専用・SHELL/プロンプト
+     専用の判定を親の今の画面(SHELL・プロンプト入力中)で行い、feedByte()でキーとして実行する。全てのキーを渡す。
+   - **h**: 親のいる-KのjumpFromKeyToHelp()は、選んだ行(折り返す前の1行)を正規化(空白類・U+2060・U+E000・U+FEFFを
+     除く)した文字列と、HELPの中で同じ行が何番目かを「H 番目:16進」で親へ。親はHELPの子の"help"へ回し、書けなければ
+     (閉じられていれば)HELPの子を開き直して環境変数USILIC_HELP_JUMPで渡す(forwardHelpRequest())。HELPの子の
+     jumpHelpToKeyLine()は最後まで読み込み、折り返す前の行ごとに比べて(片方がもう片方の頭で短い方も「：」を含む、
+     groffの幅による折り返しの違いのため)その番目の行へ飛び、^Sと同じ強調を付ける。行番号を使わないのは、-Kと
+     HELPの子で組み方(groffの印)も幅も違うため。
+   - **確認**: 隔離したHOMEのPTYで親・-K・HELPの子を同時に動かし、-Kの^N^N^N^M(^I)で親がINFO、-Kの41行目
+     (^Xrm)のhでHELPの子が134行目(groffの出力の^Xrmの行)へ、HELPの子がいない時は親が開き直して134行目へ。
+     新しいウィンドウ・-gでは未確認。
+   - src/HELP_.txt・src/HELP_en_.txtの-Hの説明を直した。

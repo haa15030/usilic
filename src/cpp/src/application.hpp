@@ -1778,6 +1778,25 @@ class Application {
   // ウィンドウをずらす(main.cpp、-H・最初の起動のHELPとKEYのウィンドウ、2026-10-11)。
   void setExternalWindowSlot(int slot) { externalWindowSlot_ = slot; }
   int externalWindowSlot_ = 0;
+  // 2026-10-11、直接のユーザー依頼(-KのKEYの^Mのキーを親へ渡し親の側で判定、hは-HのHELPの子の該当行へ、HELPの
+  // 子がいなければ開き直す): 親子の受け渡し(名前付きパイプ、.cpp側のコメント参照)。
+  // openChildChannel(): `ownerPid`(親のPID、自分が親なら自分)の受け渡しのディレクトリに、自分が読むFIFO
+  // `name`("keys"=親、"help"=HELPの子)を作って開く。closeChildChannel()で消す。pollChildChannel()は実行ループ
+  // から毎回呼ぶ(届いた依頼を処理する)。
+  void openChildChannel(long ownerPid, const std::string &name);
+  void closeChildChannel();
+  void pollChildChannel();
+  void setParentPid(long pid) { parentPid_ = pid; }
+  // HELPの子: `request`("番目:16進の文字列"、-Kのhが送るもの)の行へ飛び、^Sと同じ強調を付ける。
+  bool jumpHelpToKeyLine(const std::string &request);
+  long parentPid_ = 0;          // 外部起動された子の親のPID(USILIC_TRANSIENT)。0なら親無し
+  int channelFd_ = -1;          // openChildChannel()のFIFO(読み)
+  int channelKeepFd_ = -1;      // 同じFIFOの書き側(読み側がEOFにならないよう開いたままにする)
+  std::string channelPath_;     // 同FIFOのパス
+  std::string channelBuffer_;   // 読んだが改行までまだ届いていない分
+  std::string externalExtraEnv_;  // 次のlaunchExternalUsilic()の子へ渡す環境変数("NAME=値"、空なら無し)
+  void executeRemoteKeys(const std::vector<int> &bytes, bool commandLineKey);
+  void forwardHelpRequest(const std::string &request);
   bool openInNewTerminalWindow(const std::string &directory, const std::string &command);
   // 外部起動の印(kUsilicTag)の付いた履歴の項目を、もう一度外部起動する(.cpp側のコメント参照、2026-10-10)。
   bool relaunchUsilicEntry(std::string entry);
