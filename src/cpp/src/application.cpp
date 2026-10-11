@@ -17255,23 +17255,29 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
                            .string();
   { std::ofstream(marker) << ""; }
 #ifdef __APPLE__
-  std::string shellLine = cdWrap(dir, command) + "; rm -f " + shellQuoteArgIfNeeded(marker) + "; ";
+  std::string shellLine;
   // 2026-10-09、直接のユーザー依頼("設定を変えずにusilic側で閉じるようにして"): Terminal.appは既定の設定だと
   // シェルが終わっても「[プロセスが完了しました]」でウィンドウを残す(iTerm2は閉じる)。シェルを終える前に、
-  // このウィンドウのtty(新しいウィンドウなのでタブは1つ)のウィンドウを閉じるosascriptを背後に回しておく
-  // ――実行中のプロセスがあるウィンドウを閉じると確認を求められるので、シェルが終わるのをdelayで待ってから
-  // 閉じる。nohupとdisownで、シェルの終了時のSIGHUPとzshの「running jobs」の警告を避ける。
+  // このウィンドウを閉じるosascriptを背後に回しておく――実行中のプロセスがあるウィンドウを閉じると確認を
+  // 求められるので、シェルが終わるのをdelayで待ってから閉じる。nohupとdisownで、シェルの終了時のSIGHUPと
+  // zshの「running jobs」の警告を避ける。
+  // 2026-10-11、直接のユーザー報告(-Hで起動中に別の端末で-Hを起動し直すと、子のウィンドウを終了していいか
+  // 聞かれ、子のウィンドウは「プロセスが完了しました」のまま、スクリーンショット=io): 以前は閉じる時に
+  // このシェルのttyでウィンドウを探していたが、古い子のシェルが終わってttyが空くと、新しい-Hの子のウィンドウに
+  // 同じttyが割り当てられることがあり、0.5秒後にそちら(bashの動いている新しいウィンドウ)を閉じようとしていた。
+  // 起動した時(ttyがまだ確かにこのウィンドウのもの)にウィンドウのIDを控え(WID)、終わる時はそのIDで閉じる。
+  // 探す時もIDを先に全部取ってから調べる(途中でウィンドウが増えて番号がずれても取り違えない)。
   if (!iterm)
-    // 2026-10-11、直接のユーザー報告(-Hで起動中に別の端末で-Hを起動し直すと、子のウィンドウを終了していいか
-    // 聞かれ、子のウィンドウは「プロセスが完了しました」のまま): 以前は`repeat with w in windows`で何番目かで
-    // たどっていたので、その間に新しい-Hが新しいウィンドウを作ると番号がずれ、usilicの動いている新しい子の
-    // ウィンドウを閉じようとしていた。先にウィンドウのIDを全部取ってから、IDで調べて閉じる。
-    shellLine += "nohup osascript -e 'on run argv' -e 'delay 0.5' -e 'tell application \"Terminal\"' "
+    shellLine += "WID=$(osascript -e 'on run argv' -e 'tell application \"Terminal\"' "
                  "-e 'set ids to id of every window' -e 'repeat with k from 1 to count of ids' "
                  "-e 'set wid to item k of ids' -e 'try' "
-                 "-e 'if tty of selected tab of window id wid is (item 1 of argv) then' "
-                 "-e 'close window id wid' -e 'exit repeat' -e 'end if' -e 'end try' -e 'end repeat' "
-                 "-e 'end tell' -e 'end run' \"$(tty)\" >/dev/null 2>&1 & disown; ";
+                 "-e 'if tty of selected tab of window id wid is (item 1 of argv) then return wid' "
+                 "-e 'end try' -e 'end repeat' -e 'end tell' -e 'end run' \"$(tty)\" 2>/dev/null); ";
+  shellLine += cdWrap(dir, command) + "; rm -f " + shellQuoteArgIfNeeded(marker) + "; ";
+  if (!iterm)
+    shellLine += "[ -n \"$WID\" ] && nohup osascript -e 'on run argv' -e 'delay 0.5' "
+                 "-e 'tell application \"Terminal\"' -e 'try' -e 'close window id ((item 1 of argv) as integer)' "
+                 "-e 'end try' -e 'end tell' -e 'end run' \"$WID\" >/dev/null 2>&1 & disown; ";
   shellLine += "exit";
   std::string quoted = "\"";
   for (char c : shellLine) {
