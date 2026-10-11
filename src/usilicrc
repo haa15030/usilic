@@ -290,9 +290,13 @@ URL
 #   Term  program に URL を渡して端末で起動(EXEC と同じ、終われば本へ戻る)
 #   Copy  program の標準入力へ URL を渡す(クリップボードへコピー)
 #   Look  クイックルック(macOS だけ、program は不要)
+#   Epub  「小説家になろう」の作品のリンクなら、program(narou2epub)で読んでいる
+#         本と同じディレクトリに EPUB を作って開く(SHELL で動く)。lxml・
+#         ebooklib・requests・Pillow が要ります(~/.local/lib/usilic/narou2epub
+#         のコメント参照)
 # この節が無ければ下の内容(Linux は Open が xdg-open、Copy が
-# xclip -selection clipboard、Look は無し。Pdf は url2pdf がある時だけ)を
-# 使います。
+# xclip -selection clipboard、Look は無し。Pdf は url2pdf、Epub は narou2epub
+# がある時だけ)を使います。
 
 #	Open	open
 #	Pdf	~/.local/lib/usilic/url2pdf
@@ -300,6 +304,7 @@ URL
 #	Term	w3m
 #	Copy	pbcopy
 #	Look
+#	Epub	~/.local/lib/usilic/narou2epub
 
 KEY
 # キーの割り当て。

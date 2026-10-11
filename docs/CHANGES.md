@@ -30006,3 +30006,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      La1にも当たっていたので、@id='L1'・starts-with(@id, 'L')に直した(連載の各話にも効く)。
    - **確認**: 短編(N3351MW)で、表紙・タイトル・前書き・本文(102段落、Lp/Laは0)・後書きのEPUBができること
      (取得は3回)。
+759. **2026-10-11: usilicrc(.en)のURL節にEpubの説明と例、HELPの原稿にEpubとnarou2epubの使い方**
+   - **経緯**: 直接のユーザー依頼(項目755の後の提案"HELPに使い方を書く"を"順によろしく")。
+   - **内容**: usilicrc・usilicrc.enのURL節にEpubの説明と`#	Epub	~/.local/lib/usilic/narou2epub`。src/HELP_.txt・
+     HELP_en_.txt(リポジトリ外)のEPUBのWebリンクの一覧にEpub、URL節の説明にEpub、「Webページの PDF 化」の後に
+     「「小説家になろう」の EPUB 化」(narou2epubの使い方・準備・ライセンス・個人利用の注意)。
