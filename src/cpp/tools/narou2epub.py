@@ -15,6 +15,8 @@
 #   - CSSはスクリプトの隣のnarou2epub-assets/から読む。
 #   - HTTPのエラーの時の例外の組み立て(文字列と数の連結)を直した。
 #   - 目次のページ送り: リンク付きの「次へ」がある時だけ次のページへ(1ページの作品で止まらなかった)。
+#   - 短編(目次もあらすじも無く、作品のページに本文がある)に対応した。
+#   - 本文の段落の取り出しが前書き(Lp1)・後書き(La1)にも当たっていたのを直した。
 #
 # TODO: 章の階層構造化。ebooklibでの実現方法が分からない。
 #--------------------------------------------------
@@ -75,6 +77,7 @@ class ChapterItem():
     self.__chapter_title = ""
     self.__subtitle_text = ""
     self.__subtitle_href = ""
+    self.__index_override = ""
     self.scrapingChapterItem = None
 
   def __str__(self):
@@ -102,6 +105,8 @@ class ChapterItem():
   @property
   def subtitle_index(self):
     index = ""
+    if self.__index_override:  # usilic: 短編(作品のページそのものが本文)
+      return self.__index_override
     if self.isSubtitle():
       # /n4750dy/6/
       match = re.search(r"[/]n[0-9]{4,}[a-z]{1,}[/](\d+)[/]", self.__subtitle_href)
@@ -118,6 +123,10 @@ class ChapterItem():
     self.__item_type = ChapterItem.D_ITEM_TYPE_SUBTITLE
     self.__subtitle_text = subtitle_text
     self.__subtitle_href = subtitle_href
+    return self
+
+  def setIndex(self, index):  # usilic: 短編用
+    self.__index_override = str(index)
     return self
 
   def isChapter(self):
@@ -168,7 +177,9 @@ class ScrapingNcode():
       self.novel_writername = str(self.__root.xpath(r"//*[@class='p-novel__author']")[0].text_content()).replace("作者：","")
     print(self.novel_writername)
 
-    self.novel_ex = self.__root.xpath(r"//div[@id='novel_ex']")[0].text_content()
+    # usilic: 短編にはあらすじ(novel_ex)が無い
+    find_novel_ex = self.__root.xpath(r"//div[@id='novel_ex']")
+    self.novel_ex = find_novel_ex[0].text_content() if len(find_novel_ex) >= 1 else ""
     print("-----")
     print(self.novel_ex)
     print("-----")
@@ -216,6 +227,11 @@ class ScrapingNcode():
       else:
         self.__next = False
 
+    # usilic: 短編(目次が無く、このページに本文がある)は、作品のページを1話として扱う。
+    if len(self.chapters.items) == 0 and len(self.__root.xpath(r"//div[@class='p-novel__body']")) >= 1:
+      item = ChapterItem().setSubtitle(self.novel_title, "/" + self.__ncode + "/").setIndex(1)
+      self.chapters.append(item)
+
     counter = 0
     for item in self.chapters.items:
       counter += 1
@@ -254,7 +270,8 @@ class ScrapingChapterItem():
     # if len(find_novel_h) >= 1:
     #   self.novel_h = find_novel_h[0].text_content()
 
-    self.novel_honbun = self.__root.xpath(r"//div[@class='p-novel__body']/div/child::p[contains(@id, 'L1')]/parent::div/child::p[contains(@id, 'L')]")
+    # usilic: 元はcontains(@id, 'L1')で、前書き(Lp1)・後書き(La1)の段落にも当たり、本文に紛れ込んでいた。
+    self.novel_honbun = self.__root.xpath(r"//div[@class='p-novel__body']/div/child::p[@id='L1']/parent::div/child::p[starts-with(@id, 'L')]")
 
 class TextFileManager():
   def __init__(self, fileName, defaultEncoding="utf-8", defaultErrors="strict"):
@@ -472,8 +489,9 @@ class NarouToEpub3():
 
     # タイトルページ
     self.createTitlePage(self.ncode, title, contributor, self.__createDate)
-    # あらすじ
-    self.createArasujiPage(self.__scrapingNcode.novel_ex)
+    # あらすじ(usilic: 短編には無い)
+    if self.__scrapingNcode.novel_ex.strip():
+      self.createArasujiPage(self.__scrapingNcode.novel_ex)
 
     self.__manager.appendNavPage()
 
