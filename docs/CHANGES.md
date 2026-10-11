@@ -29790,3 +29790,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **確認**: PTYで、-Kの^Gが(ls)、^N^N^N^Mで^I(INFO)、^Nの行の反転が「    INFO         」まで、子の右下が「USILIC」、
      INFOが「-c h3/.local/lib/usilic/HELP.ja.1 (47578)」、^Odで「Wheel: reversed」。ホイール自体は未確認。
    - src/HELP_.txt・src/HELP_en_.txtのページャーのキーに^Od(行頭タブ)を足し、-Hの説明を直した。
+739. **2026-10-11: -KのKEYのモードラインを戻り値ではなく非ハイライトの「USILIC」に、^Gは無し(項目738の^Gを戻す)**
+   - **経緯**: 直接のユーザー訂正("これは伝え方が悪かったんだが、-Kの画面からも(ls)はマズい。非ハイライトの
+     「USILIC」が真意")。項目738では戻り値の(ls)のディレクトリに合わせて^Gで(ls)へ戻していた。
+   - **内容**: cutView_のモードラインで、-KのKEY(keyColonListLaunch_)の最上位は、戻り値欄の代わりにページャー起動と
+     同じ右下の透かし(ContentView::programWatermark()、子は「USILIC」、非ハイライト)。Command::Backも何もしない。
+   - **確認**: PTYで、-Kのモードラインが「KEY 001/174 TOP 8733 … USILIC」(USILICは非反転)、^GでもKEYのまま。

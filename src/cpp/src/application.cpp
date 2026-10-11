@@ -1375,6 +1375,12 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // バイト数」という慣習)がまさにそれを与え、ユーザー自身の参照
     // 値(413、TOC一覧自身のサイズであり、HELP.jpのはるかに大きい
     // 合計ではない)に一致する。
+    // 2026-10-11、直接のユーザー依頼("-Kの画面からも(ls)はマズい。非ハイライトの「USILIC」が真意"): -KのKEYは
+    // 戻り先を持たないので、戻り値の代わりにページャー起動と同じ右下の透かし(子は「USILIC」)を出す(^Gも無し)。
+    if (cutOrigin_ == CutOrigin::Key && keyColonListLaunch_ && !cutMode_.parentPattern()) {
+      return {name, std::to_string(contentByteCount(cutView_)), /*fillTrailingToEdge=*/false,
+              /*rightWatermark=*/ContentView::programWatermark(), ""};
+    }
     if ((cutOrigin_ == CutOrigin::Help || cutOrigin_ == CutOrigin::Key) && !cutMode_.parentPattern()) {
       return {name, std::to_string(contentByteCount(cutView_)), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
               directoryMode_.currentDirectory()};
@@ -4898,6 +4904,8 @@ bool Application::handleCommandImpl(Command command) {
       if (currentMode_ == ApplicationMode::CutContent) return returnFromCutContent();
       if (currentMode_ == ApplicationMode::Cut) {
         if (cutMode_.canGoBack()) return cutMode_.goBack();
+        // -KのKEY(keyColonListLaunch_)は戻り先を持たない(モードラインも戻り値ではなく「USILIC」、2026-10-11)。
+        if (keyColonListLaunch_ && cutOrigin_ == CutOrigin::Key) return false;
         return returnFromCut();
       }
       if (currentMode_ == ApplicationMode::Grep) return returnFromGrep();
