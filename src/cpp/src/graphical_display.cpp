@@ -1654,7 +1654,10 @@ void GraphicalDisplay::renderCell(int row, int col) {
   bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
   if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
     renderFont = impl_->fallbackFont;
-  if (TTF_Font *serif = cell.serif ? serifFontFor(*impl_, codepoint) : nullptr) renderFont = serif;  // 明朝体
+  // 明朝体。2026-10-11、直接のユーザー報告("ヒラギノ明朝 ProN W3って縦書きはいいんだが横書きだとフォントの大きさが
+  // おかしい"、スクリーンショット=iu: M・O・U・D・W・m等だけ小さい): 明朝体の欧文は字ごとに幅が違うので、幅の広い字が
+  // 半角1マスに収まらず縮めて描かれていた。半角(1マス幅)の字は明朝体にせず基本の等幅フォントで描く(縦書きは2マス幅)。
+  if (TTF_Font *serif = cell.serif && isWide ? serifFontFor(*impl_, codepoint) : nullptr) renderFont = serif;
   // 2026-08-11: TTF_HINTING_LIGHT(項目263)もフォント依存だと判明した
   // ――実際の報告により、デフォルトプロファイルの「MS Gothic」の組み
   // 合わせでは完全に直る(fontTools経由で確認済み: msgothic.ttcのgasp
@@ -1923,7 +1926,10 @@ void GraphicalDisplay::renderCursor() {
   bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
   if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
     renderFont = impl_->fallbackFont;
-  if (TTF_Font *serif = cell.serif ? serifFontFor(*impl_, codepoint) : nullptr) renderFont = serif;  // 明朝体
+  // 明朝体。2026-10-11、直接のユーザー報告("ヒラギノ明朝 ProN W3って縦書きはいいんだが横書きだとフォントの大きさが
+  // おかしい"、スクリーンショット=iu: M・O・U・D・W・m等だけ小さい): 明朝体の欧文は字ごとに幅が違うので、幅の広い字が
+  // 半角1マスに収まらず縮めて描かれていた。半角(1マス幅)の字は明朝体にせず基本の等幅フォントで描く(縦書きは2マス幅)。
+  if (TTF_Font *serif = cell.serif && isWide ? serifFontFor(*impl_, codepoint) : nullptr) renderFont = serif;
   // renderCell()と同じ半角用ヒンティングの調整――それ自身のコメント
   // 参照。(TTF_SetFontStyle()/TTF_SetFontHinting()自体は、下で呼ばれる
   // cachedGlyphTexture()の中へ移動した――それ自身のコメント参照。)
@@ -3885,7 +3891,8 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
       if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
         renderFont = impl_->fallbackFont;
-      if (TTF_Font *serif = wantSerif ? serifFontFor(*impl_, codepoint) : nullptr) renderFont = serif;  // 明朝体
+      if (TTF_Font *serif = wantSerif && isWide ? serifFontFor(*impl_, codepoint) : nullptr)
+        renderFont = serif;  // 明朝体(半角はrenderCell()と同じく等幅フォント、2026-10-11)
       // renderCell()自身のもの(`if (cell.bold) style |= TTF_STYLE_BOLD;`
       // 等)と同じスタイルの計算――この関数は以前は`attributes`に
       // 関わらず常にTTF_STYLE_NORMALをレンダリングしていた(この関数

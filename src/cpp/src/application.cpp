@@ -6717,6 +6717,8 @@ bool Application::openSelectedListEntryImpl() {
     int idx = listBrowserView_.cursorIndex();
     if (idx >= 0 && idx < static_cast<int>(fontListEntries_.size()))
       pendingFontChoice_ = std::make_pair(fontListEntries_[idx].section, fontListEntries_[idx].path);
+    fontListLastCursor_ = idx;  // fontListLastCursor_参照
+    fontListLastSize_ = fontListEntries_.size();
     fontListActive_ = false;
     currentMode_ = fontListReturnMode_;
     activeView().redraw();
@@ -7696,7 +7698,12 @@ void Application::showFontList(const std::vector<FontListEntry> &entries) {
       listBrowserMode_.marks().toggle(i, size);  // 今のフォントは下線(ListBrowserModeはマークを下線で描く)
       if (first < 0) first = i;
     }
-  if (first >= 0) listBrowserView_.setCursorIndex(first);
+  if (fontListLastCursor_ >= 0 && fontListLastCursor_ < size && fontListLastSize_ == entries.size()) {
+    listBrowserView_.setCursorIndex(fontListLastCursor_);  // 前に離れた所(fontListLastCursor_参照)
+    listBrowserView_.centerOnCursor();
+  } else if (first >= 0) {
+    listBrowserView_.setCursorIndex(first);
+  }
   listBrowserView_.redraw();
 }
 
@@ -10365,6 +10372,8 @@ void Application::handleShellChildExited() {
 
 bool Application::returnFromListBrowser() {
   if (fontListShowing()) {  // ^J^F(takeFontListRequest()参照)
+    fontListLastCursor_ = listBrowserView_.cursorIndex();  // fontListLastCursor_参照
+    fontListLastSize_ = fontListEntries_.size();
     fontListActive_ = false;
     currentMode_ = fontListReturnMode_;
     activeView().redraw();

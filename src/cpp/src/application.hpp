@@ -2784,6 +2784,10 @@ class Application {
   // 中身である間だけ真(別の一覧へ移った後にフラグが残っても、その一覧のEnterを横取りしない)。
   bool fontListRequested_ = false;
   bool fontListActive_ = false;
+  // ^J^Fの一覧を最後に離れた時のカーソル(2026-10-11、直接のユーザー報告"^J^Fの一覧でカーソル位置が保存されてない")。
+  // 次に開いた時はここから(一覧の行数が同じ時だけ、違えば今のフォントの行)。-1なら未設定。
+  int fontListLastCursor_ = -1;
+  std::size_t fontListLastSize_ = 0;
   std::vector<FontListEntry> fontListEntries_;
   std::vector<std::string> fontListLabels_;
   ApplicationMode fontListReturnMode_ = ApplicationMode::Directory;
