@@ -29843,3 +29843,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      viewedThroughProgram()(usilicrcのFILE・ARCHIVEの拡張子(EXECを除く)か、先頭4KBがroff)なら、エディタを起動せず
      「Plain text only」(FILEは一時的な知らせ、(ls)はディレクトリの"Invalid mode"と同じDirectoryMode::reportError())。
    - **確認**: PTYで、HELPの子(HELP.ja.1)の^[eと、(ls)のHELP.1の行の^[eで「Plain text only」、エディタは起動しない。
+743. **2026-10-11: ^[^M(そのまま読む)で開いたファイルのモードラインに、前に開いた時の(groff)等が残るのを直す**
+   - **経緯**: 直接のユーザー報告("HELP.ja.1を^[^Mで開いた時はas isのはずなのに(groff)があるので編集不能"、項目742の
+     ^[eの判定に掛かった)。
+   - **原因**: ^[^M(FileMode::loadFileRaw()、readAndWrapChunked())はloadAndTransformContent()を通らないので、
+     contentProgram_を消しておらず、前に^Mで開いた時の"groff"が残っていた(項目680から、表示だけの問題だった)。
+   - **内容**: FileMode::loadFileImpl()の頭でcontentProgram_も消す。
+   - **確認**: PTYで、(ls)のHELP.ja.1を^M(groff)→^G→^[^Mで「HELP.ja.1 0001/2117 TOP 95094 ディレクトリ」((groff)無し)。

@@ -1013,6 +1013,9 @@ bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()>
   probe.close();
   if (beforeLoad_) beforeLoad_();  // setBeforeLoad()参照
   contentProgramOverride_.clear();  // setContentProgram()参照
+  // 2026-10-11、直接のユーザー報告("HELP.ja.1を^[^Mで開いた時はas isのはずなのに(groff)があるので編集不能"):
+  // ^[^M(readAndWrapChunked())はloadAndTransformContent()を通らないので、前に^Mで開いた時の"groff"が残っていた。
+  contentProgram_.clear();
 
   // 「毎回の」読み込みでプレーンなページャーのデフォルトへリセット
   // する(2026-08-18): コンストラクタ自身のsetCursorHighlightEnabled
