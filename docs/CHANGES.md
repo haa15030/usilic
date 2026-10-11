@@ -29929,3 +29929,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      Andaleが一覧にあるので出ない。
    - **内容**: matchWindowSize()で、ウィンドウの高さを行の合計(上下の余白+rows×cellHeight)より低くしない。
    - **確認**: ビルドのみ。実機は未確認。
+751. **2026-10-11: ^J^Fのフォント一覧のFONTの先頭に「端末のフォント」を出し、選ぶとusilicrcのFONTを空にして端末のフォントへ戻す**
+   - **経緯**: 直接のユーザー質問("Arial...を選びたくなったら？")→案(一覧の先頭にいつも端末のフォント、選ぶとFONTを
+     空に)→"その案で実装して"。以前の一覧の先頭の行は、今のフォントが等幅の一覧(fc-list)に無い時だけ足すもので、
+     ^J^Fで別のフォントを選ぶと端末のフォントへ戻す手段が無かった(usilicrcのFONTを手で消すしかない)。
+   - **内容**: main.cppで起動時に端末のプロファイルのフォント(queryRealTerminalAppearance()のfontName)のファイルを
+     gTerminalFontPathに控える。buildFontList()はそれがあればFONTの先頭に「FONT 端末のフォント: 名前 (ファイル)」
+     (section "FONT:terminal"、今のフォントがそれなら下線)を足し、今のフォントが一覧に無い時の行は、それが端末の
+     フォントなら重ねて出さない。applyFontChoice()は"FONT:terminal"なら、そのフォントへ切り替えてusilicrcのFONTの
+     値の行を消す(setSection(…, "FONT", {}))。端末から起動していない(Finder等)時は出ない。
+   - **確認**: ビルドのみ。実機は未確認。

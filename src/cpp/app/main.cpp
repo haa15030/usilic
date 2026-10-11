@@ -328,6 +328,10 @@ struct TerminalWindowBounds {
 // box somehow has CoreText-alike tooling or a Mac has fontconfig
 // installed via Homebrew, without needing a compile-time platform
 // branch here at all.
+// 2026-10-11、直接のユーザー依頼(^J^Fで別のフォントを選んだ後、端末のフォント(Arial...)に戻したい): 起動した
+// 端末(Terminal.app/iTerm2)のプロファイルのフォントのファイル(分からなければ空)。^J^Fの一覧の先頭に出す。
+std::string gTerminalFontPath;
+
 std::string resolveGuiFontPath(std::optional<TerminalAppearance> appearance = std::nullopt,
                                 const std::string &explicitFontPath = {}) {
   if (const char *env = std::getenv("USILICFONT")) return env;
@@ -2267,11 +2271,21 @@ std::vector<fm::FontListEntry> buildFontList(const fm::GraphicalDisplay &gui) {
       return head + name + "  (" + std::filesystem::path(path).filename().string() + ")";
     };
     bool found = std::any_of(faces.begin(), faces.end(), [&](const Face &face) { return face.path == current; });
-    if (!current.empty() && !found)
+    if (!current.empty() && !found && !(kind == fm::GraphicalDisplay::FontKind::Base && current == gTerminalFontPath))
       entries.push_back({section, current, label(std::filesystem::path(current).stem().string(), current), true});
     for (const auto &face : faces)
       entries.push_back({section, face.path, label(face.name, face.path), face.path == current});
   };
+  // 端末のフォント(gTerminalFontPath): FONTの先頭にいつも出し、選ぶとusilicrcのFONTを空にして端末のフォントへ戻す
+  // (applyFontChoice()の"FONT:terminal")。今のフォントがこれなら下線。
+  if (!gTerminalFontPath.empty()) {
+    std::string head = "FONT";
+    head.resize(12, ' ');
+    entries.push_back({"FONT:terminal", gTerminalFontPath,
+                       head + "端末のフォント: " + std::filesystem::path(gTerminalFontPath).stem().string() + "  (" +
+                           std::filesystem::path(gTerminalFontPath).filename().string() + ")",
+                       gui.currentFontPath(fm::GraphicalDisplay::FontKind::Base) == gTerminalFontPath});
+  }
   add("FONT", fm::GraphicalDisplay::FontKind::Base, mono);
   add("SANS-SERIF", fm::GraphicalDisplay::FontKind::SansSerif, sans);
   add("SERIF", fm::GraphicalDisplay::FontKind::Serif, serif);
@@ -2281,6 +2295,15 @@ std::vector<fm::FontListEntry> buildFontList(const fm::GraphicalDisplay &gui) {
 // ^Ofの一覧で選ばれたフォントを、その場で反映してusilicrcの節へ書く(-Fと同じ、applyRcOptions()参照)。
 void applyFontChoice(fm::Application &app, fm::GraphicalDisplay &gui, const std::string &section,
                      const std::string &path) {
+  if (section == "FONT:terminal") {  // 端末のフォント(buildFontList()参照): 切り替えて、usilicrcのFONTを空に
+    if (!gui.setFont(fm::GraphicalDisplay::FontKind::Base, path)) {
+      app.showNotice("Cannot use this font");
+      return;
+    }
+    const char *home = std::getenv("HOME");
+    if (!fm::usilicrc::setSection(home ? home : "", "FONT", {})) app.showNotice("Cannot write FONT to usilicrc");
+    return;
+  }
   auto kind = section == "FONT"         ? fm::GraphicalDisplay::FontKind::Base
               : section == "SANS-SERIF" ? fm::GraphicalDisplay::FontKind::SansSerif
                                         : fm::GraphicalDisplay::FontKind::Serif;
@@ -5335,6 +5358,10 @@ int main(int argc, char **argv) {
   // geometry query, and X11 support would need per-distro detection
   // work not yet done).
   auto appearance = forceCui ? std::nullopt : queryRealTerminalAppearance();
+  if (appearance && !appearance->fontName.empty()) {  // gTerminalFontPath参照
+    gTerminalFontPath = fm::resolveMacFontPath(appearance->fontName, appearance->fontPointSize);
+    if (gTerminalFontPath.empty()) gTerminalFontPath = fm::resolveLinuxFontPath(appearance->fontName);
+  }
   auto bounds = (forceCui || !appearance) ? std::nullopt : queryRealTerminalWindowBounds();
   if (appearance && bounds) {
     // savedGui.fontPathをここでも尊重する理由はtryEnterGuiPhase()自身の
