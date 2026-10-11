@@ -2432,7 +2432,9 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       app.requestImmediateExit();
       return;
     }
-    if (!gui.pumpEvents()) return;  // the window's own close button was clicked
+    // the window's own close button was clicked -- 外部起動の子は閉じない(親と一緒に終わる、2026-10-11、直接の
+    // ユーザー依頼"子はどれも自身では終われないようにして")。
+    if (!gui.pumpEvents() && gTransientParentPid <= 0) return;
     if (app.takeFontListRequest()) app.showFontList(buildFontList(gui));  // ^J^F(buildFontList()参照)
     if (auto choice = app.takeFontChoice()) applyFontChoice(app, gui, choice->first, choice->second);
     // See Application::awaitingLocateUpdateDb()'s own comment: this is

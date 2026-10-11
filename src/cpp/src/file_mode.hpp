@@ -211,7 +211,11 @@ class FileMode {
   // 2026-10-11、直接のユーザー依頼(-H・最初の起動で開く子のHELP.ja.1を"本物のPager"で、平文・"(groff)"付きで):
   // roffの文書等をloadAndTransformContent()でgroffに組んだ平文を、CLIのページャー(loadStream()、名前は`path`)
   // として開く。モードラインのバイト数の後ろに通したプログラム("(groff)")を出し、幅が変われば組み直す。
-  bool loadTransformedPagerFile(const std::string &path, int initialLineBudget);
+  bool loadTransformedPagerFile(const std::string &path, int initialLineBudget, const std::string &label = "");
+  // モードラインに出す、表示に通したプログラム(contentProgram_)を後から決める(2026-10-11、平文のHELPの"(groff)"、
+  // 一時ファイルに書いたものを読むのでloadAndTransformContent()では分からない)。
+  // reflow()の読み直しでcontentProgram_が作り直されても残るよう別に持ち、次のloadFile()で消す。
+  void setContentProgram(const std::string &program) { contentProgramOverride_ = program; }
 
   const std::string &currentFile() const;
 
@@ -657,6 +661,8 @@ class FileMode {
   // loadTransformedPagerFile()で開いたページャーで、通したプログラム(モードラインの"(groff)")。空なら素のファイル。
   // reflow()はcurrentFile_を開き直さず、組み直したものを読む。loadStream()が毎回消す。
   std::string pagerProgram_;
+  std::string pagerLabel_;
+  std::string contentProgramOverride_;  // setContentProgram()参照  // loadTransformedPagerFile()の`label`(モードラインの名前、空ならパス)。loadStream()が消す
   std::string pagerListingDirectory_;     // setPagerListingDirectory()自身の宣言コメント参照
   int streamFd_ = -1;
   bool streamOwnsFd_ = false;

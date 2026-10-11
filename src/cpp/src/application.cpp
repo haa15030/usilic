@@ -1472,8 +1472,11 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     ContentView::ModeLineFields fields = inner(cursor);
     if (!plainHelpPath_.empty() && fileMode_.currentFile() == plainHelpPath_ &&
         fileReturnMode_ == ApplicationMode::Directory && fileMode_.annotations().empty() && !fileMode_.isPagerMode() &&
-        !fileView_.grepInPlaceActive() && !fileView_.grepNoMatchActive())
-      fields.trailing2 = directoryMode_.currentDirectory();
+        !fileView_.grepInPlaceActive() && !fileView_.grepNoMatchActive()) {
+      // "(groff)"(FileMode::setContentProgram()、2026-10-11)があればその後ろ(trailing3)が戻り値の欄。
+      if (!fields.trailing3.empty()) fields.trailing3 = directoryMode_.currentDirectory();
+      else fields.trailing2 = directoryMode_.currentDirectory();
+    }
     return fields;
   });
 
@@ -2247,7 +2250,10 @@ bool Application::startPagerFileList(const std::vector<std::string> &paths) {
     if (!head.empty() && looksLikeRoffDocument(head)) {
       currentMode_ = ApplicationMode::File;
       fileReturnMode_ = ApplicationMode::Directory;
-      if (!fileMode_.loadTransformedPagerFile(paths.front(), display_.rows())) return false;
+      // HELP(reloadHelpText()が読んだroff版)そのものなら、モードラインの名前は「HELP」(2026-10-11)。
+      std::error_code ec;
+      bool isHelp = !helpLoadedPath_.empty() && std::filesystem::equivalent(paths.front(), helpLoadedPath_, ec);
+      if (!fileMode_.loadTransformedPagerFile(paths.front(), display_.rows(), isHelp ? "HELP" : "")) return false;
       pagerFileList_ = paths;
       pagerFileIndex_ = 0;
       activeView().redraw();
@@ -5345,6 +5351,11 @@ bool Application::handleCommandImpl(Command command) {
       promptEditor_.paste(copyMode_.clipboardText());
       return true;
     case Command::StartExit:
+      // 2026-10-11、直接のユーザー依頼("子はどれも自身では終われないようにして"): 外部起動の子は親と一緒に終わる。
+      if (parentPid_ > 0) {
+        showTransientNotice(activeView(), "Ends with the parent");
+        return false;
+      }
       return startExitPrompt();
     case Command::StartDu:
       return runDuOnCurrentFolder();
@@ -5533,6 +5544,10 @@ bool Application::handleCommandImpl(Command command) {
       // 以前は(ls)以外ならどの画面でも終わっていた。ページャーとして起動したファイル
       // (FileMode::isPagerMode()、引数のファイル・標準入力)を見ている時だけにする。
       if (currentMode_ != ApplicationMode::File || !fileMode_.isPagerMode()) return false;
+      if (parentPid_ > 0) {  // 外部起動の子は自身では終わらない(StartExitと同じ、2026-10-11)
+        showTransientNotice(activeView(), "Ends with the parent");
+        return false;
+      }
       // 2026-08-25(上のCommand::Back自身のFileモードの分岐と同じ
       // ユーザーの追跡報告): SHELLの引き渡しで起動されたページャは、
       // 'q'でプロセス全体を殺しては「ならない」――それはユーザー自身
@@ -17944,8 +17959,9 @@ bool Application::startKey() {
   bool fromCut = currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent;
   if (!fromCut) cutReturnMode_ = currentMode_;
   cutOrigin_ = CutOrigin::Key;
-  // -KのKEYは反転表示を「：」の手前まで(2026-10-11、CutMode::setLabelHighlightEndMarker()参照)。
-  cutMode_.setLabelHighlightEndMarker(keyColonListLaunch_ ? "\xEF\xBC\x9A" : "");
+  // KEYは反転表示を「：」の手前まで(2026-10-11、-Kから、同日"親の^Kも-Kと同じくキーアサインのみのハイライト
+  // 表示"で全てのKEYへ、CutMode::setLabelHighlightEndMarker()参照)。
+  cutMode_.setLabelHighlightEndMarker("\xEF\xBC\x9A");
   // 2026-10-08、直接のユーザー依頼("ページャー起動の時だけはKEYで検索する文字列を「：」ではなく「行頭^I」...
   // Pagerでは「行頭^I」、FileManagerでは「：」で検索後の文字列でKEYを構成"): ページャーとして起動した時は、
   // 行頭がタブの行で切る(HELPの原稿にはまだ行頭のタブが無いので、今は一覧が空になる)。
@@ -18240,6 +18256,8 @@ bool Application::openPlainHelp(std::optional<int> rawLine) {
     }
   }
   if (!fileMode_.loadFile(path)) return false;
+  // 2026-10-11、直接のユーザー依頼("(groff)表示は親の平文HELPでも"): roff版をgroffで組んだものならモードラインに(groff)。
+  if (!helpRoff_.empty()) fileMode_.setContentProgram("groff");
   plainHelpPath_ = fileMode_.currentFile();  // toggleHelpView()参照
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = fromKey ? ApplicationMode::Cut : ApplicationMode::Directory;
@@ -18951,6 +18969,7 @@ void Application::handleResize() {
     out << helpText_;
     out.close();
     if (fileMode_.loadFile(plainHelpPath_)) {
+      fileMode_.setContentProgram("groff");  // openPlainHelp()と同じ
       int count = static_cast<int>(fileView_.lines().size());
       fileView_.setCursorIndex(std::clamp(static_cast<int>(static_cast<long long>(oldCursor) * count / oldCount), 0,
                                           std::max(0, count - 1)));
@@ -18993,7 +19012,7 @@ void Application::handleResize() {
     }
     int savedIndex = cutView_.cursorIndex();
     bool wasContent = (currentMode_ == ApplicationMode::CutContent);
-    if (cutOrigin_ == CutOrigin::Key && keyColonListLaunch_) cutMode_.setLabelHighlightEndMarker("\xEF\xBC\x9A");
+    if (cutOrigin_ == CutOrigin::Key) cutMode_.setLabelHighlightEndMarker("\xEF\xBC\x9A");
     if (cutMode_.split(freshSource, cutMode_.pattern(), cutSyntax_)) {
       if (cutOrigin_ == CutOrigin::Key) cutMode_.dropLeadingFiller();
       int last = static_cast<int>(cutMode_.segments().size()) - 1;

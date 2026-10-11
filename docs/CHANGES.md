@@ -29817,3 +29817,21 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (^Xrm)のhでHELPの子が134行目(groffの出力の^Xrmの行)へ、HELPの子がいない時は親が開き直して134行目へ。
      新しいウィンドウ・-gでは未確認。
    - src/HELP_.txt・src/HELP_en_.txtの-Hの説明を直した。
+741. **2026-10-11: 全てのKEYの反転を「：」の手前まで、子は自身では終われない、HELPの子のモードラインを「HELP 0001/1102 TOP 76773 (groff) USILIC」に、親の平文HELPにも(groff)**
+   - **経緯**: 直接のユーザー依頼("親の^Kも-Kと同じくキーアサインのみのハイライト表示"、"子はどれも自身では終われない
+     ようにして"、"KEYでない方のモードラインを「HELP」「0001/1102 TOP」「76773」「(groff)」「USILIC」で(今の行数表示が
+     ^O^M形式なのはなぜ？)"、"(groff)表示は親の平文HELPでも")。
+   - **KEY**: startKey()とリサイズの再分割で、KEYなら常にCutMode::setLabelHighlightEndMarker("：")(項目738は-Kだけ)。
+   - **子**: 外部起動の子(parentPid_)は、StartExit(^X^C・^[^[)とQuitPager(q)で「Ends with the parent」を出して何もしない。
+     -gの子はウィンドウを閉じる操作でも終わらない(main.cppのpumpEvents()の戻り値を無視)。端末のウィンドウを閉じた
+     場合(SIGHUP)は今まで通り終わる。
+   - **HELPの子のモードライン**: ^O^M形式だったのは、loadStream()(^O^M・標準入力と同じ、少しずつ読むページャー)の
+     5桁固定の位置とそれまでに読んだバイト数だったため。FileMode::loadTransformedPagerFile()は、組んだ内容が既に全部
+     メモリにあるので最後まで読み込み、位置を通常のFILEの形(setUseFixedWidthPosition(false))に。名前は`label`
+     (startPagerFileList()が、HELP(helpLoadedPath_)そのものなら「HELP」を渡す、pagerLabel_)。
+   - **平文のHELP**: FileMode::setContentProgram()(contentProgramOverride_、reflow()の読み直しでも残り次のloadFile()で
+     消える)で、openPlainHelp()とリサイズでの組み直しの後に"groff"。平文のHELPの戻り値の欄の差し替え(項目725)は、
+     (groff)があればその後ろ(trailing3)を(ls)のディレクトリにする。
+   - **確認**: PTYで、HELPの子が「HELP 0001/1102 TOP 76773 (groff) USILIC」、q・^X^Cで「Ends with the parent」、親の^Kの
+     反転が「    INFO         」まで、親の^J^Ohが「HELP 0001/1102 TOP 76612 (groff) (lsのディレクトリ)」。
+   - src/HELP_.txt・src/HELP_en_.txtの-Hの説明に、子は自身では終われないことを足した。

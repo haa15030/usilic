@@ -218,7 +218,7 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
       // ――旧実装もここではsearchAnnotation_を参照していなかった。
       const auto *originFrame = annotations_.top();
       bool hasOrigin = originFrame && originFrame->nameOverride;
-      fields.name = hasOrigin ? *originFrame->nameOverride : currentFile_;
+      fields.name = hasOrigin ? *originFrame->nameOverride : (pagerLabel_.empty() ? currentFile_ : pagerLabel_);
       fields.trailing = std::to_string(bytes);
       fields.rightWatermark = hasReturnTarget ? "" : ContentView::programWatermark();
       fields.trailing2 = hasOrigin ? originFrame->text : (pagerProgram_.empty() ? "" : "(" + pagerProgram_ + ")");
@@ -362,8 +362,9 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
     // 2026-10-08、直接のユーザー依頼(HELPの「usilic.1 01/66 43% 2000 (groff) /Users/usilic/.usilic/」の(5)
     // プログラム名): 表示に通したプログラム(最後のもの、.1.gzならgroff、.txt.gzならgzip)をサイズの次に出し、
     // ディレクトリはその後ろへ(DirectoryModeの"(ls)"と同じ並び)。
-    if (!contentProgram_.empty() && !originFrame && !ec) {
-      fields.trailing2 = "(" + contentProgram_ + ")";
+    const std::string &program = contentProgramOverride_.empty() ? contentProgram_ : contentProgramOverride_;
+    if (!program.empty() && !originFrame && !ec) {
+      fields.trailing2 = "(" + program + ")";
       fields.trailing3 = directory;
     }
     // DirectoryMode::setGrepInPlaceOverlay()/reportGrepNoMatchMessage()
@@ -963,13 +964,20 @@ int unlinkedTempFdWith(const std::string &content) {
 }
 }  // namespace
 
-bool FileMode::loadTransformedPagerFile(const std::string &path, int initialLineBudget) {
+bool FileMode::loadTransformedPagerFile(const std::string &path, int initialLineBudget, const std::string &label) {
   std::string content = loadAndTransformContent(path);
   std::string program = contentProgram_;
   int fd = unlinkedTempFdWith(content);
   if (fd < 0) return false;
   loadStream(fd, /*ownsFd=*/true, path, initialLineBudget);
   pagerProgram_ = program;
+  pagerLabel_ = label;
+  // 2026-10-11、直接のユーザー依頼(HELPの子のモードラインを「HELP」「0001/1102 TOP」「76773」「(groff)」「USILIC」に):
+  // 組んだ内容は既に全部メモリにあるので、少しずつ読まずに最後まで読み込み(バイト数・行数は全体)、位置は通常の
+  // FILEと同じ形にする(loadStream()の5桁固定の形は^O^M・標準入力の少しずつ読むページャーのもの)。
+  for (int guard = 0; guard < 100000 && ensureLoadedThrough(std::numeric_limits<int>::max() / 2, true); guard++) {
+  }
+  view_.setUseFixedWidthPosition(false);
   return true;
 }
 
@@ -1004,6 +1012,7 @@ bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()>
   if (!probe) return false;
   probe.close();
   if (beforeLoad_) beforeLoad_();  // setBeforeLoad()参照
+  contentProgramOverride_.clear();  // setContentProgram()参照
 
   // 「毎回の」読み込みでプレーンなページャーのデフォルトへリセット
   // する(2026-08-18): コンストラクタ自身のsetCursorHighlightEnabled
@@ -1356,6 +1365,7 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   pagerReturnsToDirectory_ = false;  // 同上。loadFileAsPipe()がこの呼び出しの後にこれを切り替える
   pagerReturnsToProgram_ = false;    // 同上。tryPollProgramHandoff()はこの呼び出しの後にこれを切り替える
   pagerProgram_.clear();             // 同上。loadTransformedPagerFile()がこの呼び出しの後に設定する
+  pagerLabel_.clear();               // 同上
   pagerListingDirectory_.clear();  // 同上。Application::openSelectedEntryNoWrap()のARCHIVE分岐/tryPollProgramHandoff()がこの呼び出しの後にこれを設定する(2026-09-17追加分)
   // 2026-08-25(直接のユーザー依頼: "SHELL同様、行数を5桁とバイト
   // 数表示をよろしく")――他の全てのFileモードのエントリが使う
