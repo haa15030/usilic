@@ -4207,8 +4207,10 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
 
   fm::GraphicalDisplay *guiForFrame = gui.get();
   app.setGuiFrameProvider([guiForFrame] { return guiFrameText(*guiForFrame); });
+  app.setGuiFontProvider([guiForFrame] { return guiForFrame->currentFontPath(fm::GraphicalDisplay::FontKind::Base); });
   runGuiPhase(app, *gui);
   app.setGuiFrameProvider(nullptr);
+  app.setGuiFontProvider(nullptr);
 
   std::signal(SIGINT, previousSigint);
   if (termiosSaved) tcsetattr(signalTtyFd, TCSANOW, &savedTermios);
@@ -5682,8 +5684,11 @@ int main(int argc, char **argv) {
         [&launchGui](const std::vector<std::string> &argv) { return runEditorInLaunchingTerminal(argv, *launchGui); });
     fm::GraphicalDisplay *guiForFrame = launchGui.get();
     app.setGuiFrameProvider([guiForFrame] { return guiFrameText(*guiForFrame); });
+    app.setGuiFontProvider(
+        [guiForFrame] { return guiForFrame->currentFontPath(fm::GraphicalDisplay::FontKind::Base); });
     runGuiPhase(app, *launchGui);
     app.setGuiFrameProvider(nullptr);
+    app.setGuiFontProvider(nullptr);
     app.programMode().setForegroundLauncher(nullptr);
     app.editMode().setForegroundLauncher(nullptr);
   } else {

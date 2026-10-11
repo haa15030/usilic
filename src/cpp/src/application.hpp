@@ -1803,6 +1803,10 @@ class Application {
   // 返す関数を設定する。launchExternalUsilic()は-gの子へUSILIC_GUI_FRAMEで渡す。
   void setGuiFrameProvider(std::function<std::string()> provider) { guiFrameProvider_ = std::move(provider); }
   std::function<std::string()> guiFrameProvider_;
+  // 同日"子のフォントは違う"(usilicrcのFONTが空で親は端末のフォントの時、子は既定の候補になっていた): 親が今使っている
+  // 基本のフォントのファイルを返す関数。launchExternalUsilic()は-gの子へUSILICFONT(resolveGuiFontPath()が最優先)で渡す。
+  void setGuiFontProvider(std::function<std::string()> provider) { guiFontProvider_ = std::move(provider); }
+  std::function<std::string()> guiFontProvider_;
   // 子が自分のウィンドウを開いた後に親の"keys"へ「R」を送り(requestParentRaise())、親は実行ループで
   // takeRaiseRequest()を見て自分のウィンドウを前に出す(子に前を取られたままにしない)。
   void requestParentRaise();

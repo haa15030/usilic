@@ -29939,3 +29939,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      フォントなら重ねて出さない。applyFontChoice()は"FONT:terminal"なら、そのフォントへ切り替えてusilicrcのFONTの
      値の行を消す(setSection(…, "FONT", {}))。端末から起動していない(Finder等)時は出ない。
    - **確認**: ビルドのみ。実機は未確認。
+752. **2026-10-11: -gの子のHELP・KEYを親と同じフォントで開く**
+   - **経緯**: 直接のユーザー報告(項目751で端末のフォントに戻した後、"子のフォントは違うみたい"、スクリーンショット=is:
+     親はCourier(端末のフォント)、子はMenlo)。usilicrcのFONTが空だと、子は端末を持たないので既定の候補(Menlo)に
+     なっていた。
+   - **内容**: 親はGUIの間Application::setGuiFontProvider()で今の基本のフォントのファイル(GraphicalDisplay::
+     currentFontPath(Base))を返し、launchExternalUsilic()が-gの子へUSILICFONT(resolveGuiFontPath()が最優先で見る)で渡す。
+   - **確認**: ビルドのみ。実機は未確認。

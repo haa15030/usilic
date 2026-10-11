@@ -17193,6 +17193,9 @@ void Application::launchExternalUsilic(const std::string &directory, const std::
                     (externalWindowSlot_ > 0 ? " USILIC_WINDOW_SLOT=" + std::to_string(externalWindowSlot_) : "") +
                     (externalExtraEnv_.empty() ? "" : " " + externalExtraEnv_) +
                     (graphical && guiFrameProvider_ ? " USILIC_GUI_FRAME=" + guiFrameProvider_() : "") +
+                    (graphical && guiFontProvider_ && !guiFontProvider_().empty()
+                         ? " USILICFONT=" + shellQuoteArg(guiFontProvider_())
+                         : "") +
                     " usilic" +
                     std::string(hasUiFlag ? "" : (graphical ? " -g" : " -c")) + args;
   std::string toRun = "unset USILIC USILIC_HANDOFF; " + cdWrap(directory, run);
