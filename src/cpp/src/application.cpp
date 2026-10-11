@@ -17261,10 +17261,16 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
   // ――実行中のプロセスがあるウィンドウを閉じると確認を求められるので、シェルが終わるのをdelayで待ってから
   // 閉じる。nohupとdisownで、シェルの終了時のSIGHUPとzshの「running jobs」の警告を避ける。
   if (!iterm)
+    // 2026-10-11、直接のユーザー報告(-Hで起動中に別の端末で-Hを起動し直すと、子のウィンドウを終了していいか
+    // 聞かれ、子のウィンドウは「プロセスが完了しました」のまま): 以前は`repeat with w in windows`で何番目かで
+    // たどっていたので、その間に新しい-Hが新しいウィンドウを作ると番号がずれ、usilicの動いている新しい子の
+    // ウィンドウを閉じようとしていた。先にウィンドウのIDを全部取ってから、IDで調べて閉じる。
     shellLine += "nohup osascript -e 'on run argv' -e 'delay 0.5' -e 'tell application \"Terminal\"' "
-                 "-e 'repeat with w in windows' -e 'if tty of selected tab of w is (item 1 of argv) then' "
-                 "-e 'close w' -e 'exit repeat' -e 'end if' -e 'end repeat' -e 'end tell' -e 'end run' "
-                 "\"$(tty)\" >/dev/null 2>&1 & disown; ";
+                 "-e 'set ids to id of every window' -e 'repeat with k from 1 to count of ids' "
+                 "-e 'set wid to item k of ids' -e 'try' "
+                 "-e 'if tty of selected tab of window id wid is (item 1 of argv) then' "
+                 "-e 'close window id wid' -e 'exit repeat' -e 'end if' -e 'end try' -e 'end repeat' "
+                 "-e 'end tell' -e 'end run' \"$(tty)\" >/dev/null 2>&1 & disown; ";
   shellLine += "exit";
   std::string quoted = "\"";
   for (char c : shellLine) {
@@ -19428,7 +19434,53 @@ void Application::openChildChannel(long ownerPid, const std::string &name) {
   channelPath_ = path;
 }
 
+// 外部起動の子: 親の受け渡しのディレクトリに"pid.<自分のPID>"を置く(親のterminateChildren()が使う)。
+// closeChildChannel()で消す。
+void Application::registerAsChild() {
+  if (parentPid_ <= 0) return;
+  std::string dir = channelDirectory(parentPid_);
+  ::mkdir(dir.c_str(), 0700);
+  childPidFile_ = dir + "/pid." + std::to_string(::getpid());
+  std::ofstream(childPidFile_) << "";
+}
+
+// 2026-10-11、直接のユーザー提案("親があらかじめHELPとKEYの端末プロセスIDを保管しておき、終了時にはそれらを
+// KILLしたのち死を確認してから自らも終了"): 子が親の死を見つけて終わるのを待つのではなく、親が終わる前に、
+// 登録された子(registerAsChild())にSIGTERMを送り、終わったのを確かめる(最大1.5秒)。PIDが別のプロセスに
+// 使い回されていないか、psでusilicであることを確かめてから送る。
+void Application::terminateChildren() {
+  if (channelPath_.empty() || parentPid_ > 0) return;
+  std::string dir = std::filesystem::path(channelPath_).parent_path().string();
+  std::vector<pid_t> pids;
+  std::error_code ec;
+  for (const auto &entry : std::filesystem::directory_iterator(dir, ec)) {
+    std::string name = entry.path().filename().string();
+    if (name.rfind("pid.", 0) != 0) continue;
+    pid_t pid = static_cast<pid_t>(std::atol(name.c_str() + 4));
+    if (pid <= 1 || ::kill(pid, 0) != 0) {
+      std::filesystem::remove(entry.path(), ec);  // 強制終了等で残ったもの
+      continue;
+    }
+    std::string comm = ChildProcess::run({"ps", "-p", std::to_string(pid), "-o", "comm="}).output;
+    if (comm.find("usilic") == std::string::npos) continue;
+    ::kill(pid, SIGTERM);
+    pids.push_back(pid);
+  }
+  for (int waited = 0; waited < 30; waited++) {
+    bool alive = false;
+    for (pid_t pid : pids)
+      if (::kill(pid, 0) == 0) alive = true;
+    if (!alive) break;
+    ::usleep(50000);
+  }
+}
+
 void Application::closeChildChannel() {
+  if (!childPidFile_.empty()) {
+    ::unlink(childPidFile_.c_str());
+    ::rmdir(std::filesystem::path(childPidFile_).parent_path().c_str());  // 親が先に終わっていて空なら
+    childPidFile_.clear();
+  }
   if (channelFd_ >= 0) ::close(channelFd_);
   if (channelKeepFd_ >= 0) ::close(channelKeepFd_);
   channelFd_ = channelKeepFd_ = -1;

@@ -1787,6 +1787,9 @@ class Application {
   void closeChildChannel();
   void pollChildChannel();
   void setParentPid(long pid) { parentPid_ = pid; }
+  void registerAsChild();    // .cpp側のコメント参照
+  void terminateChildren();  // 同上
+  std::string childPidFile_;  // registerAsChild()のファイル
   // HELPの子: `request`("番目:16進の文字列"、-Kのhが送るもの)の行へ飛び、^Sと同じ強調を付ける。
   bool jumpHelpToKeyLine(const std::string &request);
   long parentPid_ = 0;          // 外部起動された子の親のPID(USILIC_TRANSIENT)。0なら親無し

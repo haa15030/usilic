@@ -4982,8 +4982,9 @@ int main(int argc, char **argv) {
       while (!comm.empty() && (comm.back() == '\n' || comm.back() == '\r' || comm.back() == ' ')) comm.pop_back();
       if (std::filesystem::path(comm).filename().string() == ownProgramName) {
         ::kill(static_cast<pid_t>(oldPid), SIGTERM);
-        for (int waited = 0; waited < 40 && ::kill(static_cast<pid_t>(oldPid), 0) == 0; waited++) ::usleep(50000);
-        if (::kill(static_cast<pid_t>(oldPid), 0) == 0) ::kill(static_cast<pid_t>(oldPid), SIGKILL);  // 2秒待っても応答無し -- 強制終了
+        // 2026-10-11: 4秒(古い方は外部起動の子を終わらせるのに最大1.5秒待つ、Application::terminateChildren())。
+        for (int waited = 0; waited < 80 && ::kill(static_cast<pid_t>(oldPid), 0) == 0; waited++) ::usleep(50000);
+        if (::kill(static_cast<pid_t>(oldPid), 0) == 0) ::kill(static_cast<pid_t>(oldPid), SIGKILL);  // 4秒待っても応答無し -- 強制終了
       }
     }
     std::ofstream pidOut(pidPath, std::ios::trunc);
@@ -5176,10 +5177,14 @@ int main(int argc, char **argv) {
   // 子は親のPIDを覚え、-H・最初の起動のHELPの子(gWindowSlot 1)は親の下に"help"を開く。終了時に消す。
   struct ChildChannelGuard {
     fm::Application &app;
-    ~ChildChannelGuard() { app.closeChildChannel(); }
+    ~ChildChannelGuard() {
+      app.terminateChildren();  // 親: 子を終わらせて、終わったのを確かめてから(Application::terminateChildren())
+      app.closeChildChannel();
+    }
   } childChannelGuard{app};
   if (gTransientParentPid > 0) {
     app.setParentPid(gTransientParentPid);
+    app.registerAsChild();
     if (gWindowSlot == 1) app.openChildChannel(gTransientParentPid, "help");
   } else {
     app.openChildChannel(::getpid(), "keys");
