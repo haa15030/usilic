@@ -29956,3 +29956,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      描き直していた(PTYでもリサイズの度に「HELP→SHELL→HELP」と描いていた)。-gではSHELLが残ることがあった。
      onResize()に`redraw`を足し、SHELLを表示している時だけ描く。
    - **確認**: PTYで、HELPの子のリサイズが「HELP→HELP」になること。-gは未確認。
+754. **2026-10-11: 子のHELP・KEYのウィンドウを、画面の右端では親の左側、下端ではKEYをHELPの上に置く**
+   - **経緯**: 直接のユーザー依頼("画面の右端に近い位置ではHELP・KEYを左側、下端では上の空いている側、でウィンドウを
+     開くとかはできない？")。
+   - **置き方**: 親のいる画面(左上を含む画面、無ければ最初の画面)の使える範囲(メニューバー・Dockを除く)で、横は親の右隣、
+     入らなければ左隣。縦はHELPが親と上端を揃え(はみ出すなら画面の下端に)、KEYはHELPの下、入らなければHELPの上
+     (それも入らなければ画面の下端に)。
+   - **Terminal.app**: openInNewTerminalWindow()のosascriptで上の計算をする。画面の範囲はterminalScreenRects()(JXAで
+     NSScreen.visibleFrameを左上原点に直したAppleScriptのリスト、一度だけ調べる)。
+   - **-g**: 子のtryEnterGuiPhase()で同じ計算。画面の範囲はGraphicalDisplay::usableBoundsContaining()(新設、
+     SDL_GetDisplayUsableBounds())。
+   - **確認**: 置き方のAppleScriptを単独で動かし、親が(100,100)ならKEYは(700,500)、右下の隅(2800,1000)ならHELPは
+     (2200,1000)・KEYは(2200,600)になることを確認。実機のウィンドウでは未確認。

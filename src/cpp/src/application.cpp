@@ -17212,6 +17212,28 @@ void Application::launchExternalUsilic(const std::string &directory, const std::
   }
 }
 
+#ifdef __APPLE__
+namespace {
+// 2026-10-11、直接のユーザー依頼("画面の右端に近い位置ではHELP・KEYを左側、下端では上の空いている側"): 画面ごとの
+// 使える範囲(メニューバー・Dockを除く)を、Terminal.appのboundsと同じ左上原点の座標で、AppleScriptのリスト
+// "{{左, 上, 右, 下}, ...}"にしたもの(JXAのNSScreen.visibleFrameから、一度だけ調べる)。分からなければ十分広い範囲。
+std::string terminalScreenRects() {
+  static std::string cached;
+  if (!cached.empty()) return cached;
+  ChildProcess::Result result = ChildProcess::run(
+      {"osascript", "-l", "JavaScript", "-e",
+       "ObjC.import('AppKit'); var s = $.NSScreen.screens; var H = s.objectAtIndex(0).frame.size.height; var out = [];"
+       " for (var i = 0; i < s.count; i++) { var f = s.objectAtIndex(i).visibleFrame;"
+       " out.push('{' + [f.origin.x, H - (f.origin.y + f.size.height), f.origin.x + f.size.width, H - f.origin.y]"
+       ".map(Math.round).join(', ') + '}'); } '{' + out.join(', ') + '}'"});
+  std::string text = result.ok ? result.output : "";
+  while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
+  cached = text.size() > 2 && text.front() == '{' ? text : "{{-100000, -100000, 100000, 100000}}";
+  return cached;
+}
+}  // namespace
+#endif
+
 bool Application::openInNewTerminalWindow(const std::string &directory, const std::string &command) {
   if (std::getenv("SSH_CONNECTION") || std::getenv("SSH_TTY")) return false;
 #ifdef __APPLE__
@@ -17329,9 +17351,32 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
         "repeat with w in windows",
         "if tty of selected tab of w is newTty then",
         "set nb to bounds of w",
+        "set cw to (item 3 of nb) - (item 1 of nb)",
+        "set ch to (item 4 of nb) - (item 2 of nb)",
+        // 親のいる画面(左上がその中にあるもの、無ければ最初の画面)の使える範囲(terminalScreenRects())。
+        "set scr to " + terminalScreenRects(),
+        "set sr to item 1 of scr",
+        "repeat with r in scr",
+        "if (item 1 of pb) >= (item 1 of r) and (item 1 of pb) < (item 3 of r) and (item 2 of pb) >= (item 2 of r) "
+        "and (item 2 of pb) < (item 4 of r) then set sr to contents of r",
+        "end repeat",
+        // 横: 親の右隣、入らなければ左隣。縦: HELPは親と上端を揃え(はみ出すなら画面の下端に)、KEYはHELPの下、
+        // 入らなければHELPの上(それも入らなければ画面の下端に)。
         "set x to item 3 of pb",
-        "set y to (item 2 of pb) + " + std::to_string(slot - 1) + " * ((item 4 of nb) - (item 2 of nb))",
-        "set bounds of w to {x, y, x + (item 3 of nb) - (item 1 of nb), y + (item 4 of nb) - (item 2 of nb)}",
+        "if x + cw > (item 3 of sr) then set x to (item 1 of pb) - cw",
+        "if x < (item 1 of sr) then set x to item 1 of sr",
+        "set hy to item 2 of pb",
+        "if hy + ch > (item 4 of sr) then set hy to (item 4 of sr) - ch",
+        "if hy < (item 2 of sr) then set hy to item 2 of sr",
+        "set y to hy",
+        "if " + std::to_string(slot) + " > 1 then",
+        "set y to hy + ch",
+        "if y + ch > (item 4 of sr) then",
+        "set y to hy - ch",
+        "if y < (item 2 of sr) then set y to (item 4 of sr) - ch",
+        "end if",
+        "end if",
+        "set bounds of w to {x, y, x + cw, y + ch}",
         "exit repeat",
         "end if",
         "end repeat",

@@ -87,6 +87,7 @@ GraphicalDisplay::Color GraphicalDisplay::backgroundColor() const { return {}; }
 int GraphicalDisplay::fontPointSize() const { return {}; }
 void GraphicalDisplay::setWindowPosition(int x, int y) {}
 void GraphicalDisplay::outerFrame(int &x, int &y, int &width, int &height) const {}
+bool GraphicalDisplay::usableBoundsContaining(int x, int y, int &left, int &top, int &right, int &bottom) { return {}; }
 void GraphicalDisplay::moveWindowBy(int dx, int dy) {}
 void GraphicalDisplay::setWindowSize(int width, int height) {}
 void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {}

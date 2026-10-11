@@ -4115,7 +4115,27 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   // 親の外枠が無ければ(古い親等)、以前の48ずつのずらし。開いたら親に前へ出てもらう(Application::requestParentRaise())。
   if (gWindowSlot > 0 && gGuiFrame.valid) {
     gui->matchWindowSize(gGuiFrame.width, gGuiFrame.height);  // 外枠も親とぴったり同じ大きさに
-    gui->setWindowPosition(gGuiFrame.x + gGuiFrame.width, gGuiFrame.y + (gWindowSlot - 1) * gGuiFrame.height);
+    // 2026-10-11、直接のユーザー依頼("画面の右端に近い位置ではHELP・KEYを左側、下端では上の空いている側"): 親のいる
+    // 画面の使える範囲で、横は親の右隣、入らなければ左隣。縦はHELPが親と上端を揃え(はみ出すなら画面の下端に)、KEYは
+    // HELPの下、入らなければHELPの上(Terminal.appのopenInNewTerminalWindow()と同じ置き方)。
+    int w = gGuiFrame.width, h = gGuiFrame.height;
+    int left = -100000, top = -100000, right = 100000, bottom = 100000;
+    fm::GraphicalDisplay::usableBoundsContaining(gGuiFrame.x, gGuiFrame.y, left, top, right, bottom);
+    int x = gGuiFrame.x + w;
+    if (x + w > right) x = gGuiFrame.x - w;
+    if (x < left) x = left;
+    int helpY = gGuiFrame.y;
+    if (helpY + h > bottom) helpY = bottom - h;
+    if (helpY < top) helpY = top;
+    int y = helpY;
+    if (gWindowSlot > 1) {
+      y = helpY + h;
+      if (y + h > bottom) {
+        y = helpY - h;
+        if (y < top) y = bottom - h;
+      }
+    }
+    gui->setWindowPosition(x, y);
   }
   else if (gWindowSlot > 0)
     gui->moveWindowBy(gWindowSlot * 48, gWindowSlot * 48);

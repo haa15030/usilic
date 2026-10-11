@@ -152,6 +152,9 @@ class GraphicalDisplay : public Display {
   // 今のウィンドウの外枠(タイトルバー込み、setWindowPosition()と同じ慣習)の位置と大きさ(2026-10-11、-H・最初の
   // 起動の子のウィンドウを親の右隣に並べるため)。ウィンドウが無ければ全部0。
   void outerFrame(int &x, int &y, int &width, int &height) const;
+  // 点(x, y)を含む画面(無ければ最初の画面)の使える範囲(メニューバー・Dockを除く、SDL_GetDisplayUsableBounds())。
+  // 2026-10-11、子のHELP・KEYを画面の端で反対側へ置くため。分からなければfalse。
+  static bool usableBoundsContaining(int x, int y, int &left, int &top, int &right, int &bottom);
 
   // `width, height`は、setWindowPosition()が取るのと「同じ」
   // 「外枠、タイトルバー込み」の慣習である――SDL自身のネイティブな

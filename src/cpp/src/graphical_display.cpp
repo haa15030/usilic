@@ -3292,6 +3292,31 @@ void GraphicalDisplay::outerFrame(int &x, int &y, int &width, int &height) const
   height += borders.top + borders.bottom;
 }
 
+bool GraphicalDisplay::usableBoundsContaining(int x, int y, int &left, int &top, int &right, int &bottom) {
+  int count = SDL_GetNumVideoDisplays();
+  if (count <= 0) return false;
+  SDL_Rect chosen{};
+  bool have = false;
+  for (int i = 0; i < count; i++) {
+    SDL_Rect r;
+    if (SDL_GetDisplayUsableBounds(i, &r) != 0) continue;
+    if (!have) {
+      chosen = r;
+      have = true;
+    }
+    if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) {
+      chosen = r;
+      break;
+    }
+  }
+  if (!have) return false;
+  left = chosen.x;
+  top = chosen.y;
+  right = chosen.x + chosen.w;
+  bottom = chosen.y + chosen.h;
+  return true;
+}
+
 void GraphicalDisplay::moveWindowBy(int dx, int dy) {
   if (!impl_->window) return;
   int x = 0, y = 0;
