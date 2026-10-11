@@ -17283,30 +17283,53 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
                                        "set newWindow to (create window with default profile)", "-e",
                                        "tell current session of newWindow to write text " + quoted, "-e", "activate",
                                        "-e", "end tell"}
-            : std::vector<std::string>{"osascript", "-e", "tell application \"Terminal\"", "-e",
-                                       "set newTab to do script " + quoted, "-e", "activate", "-e", "end tell"};
-  // 2026-10-11、直接のユーザー依頼(Terminal.appで、既定のプロファイル(例: Novel)とは別のプロファイル(例: Basic)の
-  // ウィンドウからusilic -Hすると、子のHELPとKEYが既定のNovelで開く。"それらをBasicで開けないか"): do scriptの
-  // 新しいウィンドウは既定のプロファイルで開くので、このusilicのいるウィンドウ(tty)のプロファイルを調べ、開いた
-  // タブをそれに切り替える。
+            : std::vector<std::string>{"osascript"};
   if (!iterm) {
+    // 2026-10-11、直接のユーザー依頼(Terminal.appで、既定のプロファイル(例: Novel)とは別のプロファイル(例: Basic)の
+    // ウィンドウからusilic -Hすると、子のHELPとKEYが既定のNovelで開く。"それらをBasicで開けないか"): do scriptの
+    // 新しいウィンドウは既定のプロファイルで開くので、このusilicのいるウィンドウ(tty)のプロファイルに切り替える。
+    // 同日"HELPとKEYの端末がぴったり重なる"(切り替えでTerminal.appのずらし置きが効かなくなる): -gの子(main.cppの
+    // gWindowSlot)と同じく、番号(externalWindowSlot_)×48だけ親のウィンドウから右下へずらして置く(大きさは新しい
+    // ウィンドウのまま)。番号の無い子(^Ou等)はTerminal.appの置き方のまま。
     const char *tty = ::ttyname(STDIN_FILENO);
-    if (tty) {
-      ChildProcess::Result profile = ChildProcess::run(
-          {"osascript", "-e", "tell application \"Terminal\"", "-e", "repeat with w in windows", "-e",
-           "repeat with t in tabs of w", "-e", std::string("if tty of t is \"") + tty + "\" then return name of current settings of t",
-           "-e", "end repeat", "-e", "end repeat", "-e", "end tell"});
-      std::string name = profile.ok ? profile.output : "";
-      while (!name.empty() && (name.back() == '\n' || name.back() == '\r')) name.pop_back();
-      if (!name.empty()) {
-        std::string escaped;
-        for (char c : name) {
-          if (c == '\\' || c == '"') escaped += '\\';
-          escaped += c;
-        }
-        argv.insert(argv.end() - 4, {"-e", "try", "-e", "set current settings of newTab to settings set \"" + escaped + "\"",
-                                     "-e", "end try"});
-      }
+    std::string ttyText = tty ? tty : "";
+    int offset = externalWindowSlot_ * 48;
+    std::vector<std::string> lines = {
+        "tell application \"Terminal\"",
+        "set pName to missing value",
+        "set pb to missing value",
+        "repeat with w in windows",
+        "repeat with t in tabs of w",
+        "if tty of t is \"" + ttyText + "\" then",
+        "set pName to name of current settings of t",
+        "set pb to bounds of w",
+        "end if",
+        "end repeat",
+        "end repeat",
+        "set newTab to do script " + quoted,
+        "try",
+        "if pName is not missing value then set current settings of newTab to settings set pName",
+        "end try",
+        "try",
+        "if pb is not missing value and " + std::to_string(offset) + " > 0 then",
+        "set newTty to tty of newTab",
+        "repeat with w in windows",
+        "if tty of selected tab of w is newTty then",
+        "set nb to bounds of w",
+        "set x to (item 1 of pb) + " + std::to_string(offset),
+        "set y to (item 2 of pb) + " + std::to_string(offset),
+        "set bounds of w to {x, y, x + (item 3 of nb) - (item 1 of nb), y + (item 4 of nb) - (item 2 of nb)}",
+        "exit repeat",
+        "end if",
+        "end repeat",
+        "end if",
+        "end try",
+        "activate",
+        "end tell",
+    };
+    for (const auto &line : lines) {
+      argv.push_back("-e");
+      argv.push_back(line);
     }
   }
 #else

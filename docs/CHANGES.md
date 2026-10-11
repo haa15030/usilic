@@ -29872,3 +29872,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      `name of current settings`をosascriptで調べ、do scriptが返す新しいタブに`set current settings of newTab to
      settings set "名前"`(try付き)。iTerm2は従来どおり既定のプロファイル。
    - **確認**: 両方のAppleScriptをosacompileで確認したのみ。実機(Basicのウィンドウから-H)は未確認。
+746. **2026-10-11: Terminal.appの子のHELPとKEYのウィンドウを、番号の分だけ親のウィンドウからずらして置く**
+   - **経緯**: 直接のユーザー報告(項目745の後、"起動するようにはなったもののHELPとKEYの端末がぴったり重なる")。
+     プロファイルの切り替えでTerminal.appのずらし置きが効かなくなったと推定。
+   - **内容**: openInNewTerminalWindow()のTerminal.appのosascriptを1本にまとめ、親のtty のタブのプロファイル名と
+     親のウィンドウのboundsを取り、do scriptの後、プロファイルを切り替え、番号(externalWindowSlot_、HELPは1、KEYは2)が
+     あれば新しいタブのttyのウィンドウを親の左上から番号×48だけ右下へ(大きさは新しいウィンドウのまま)。番号の無い子
+     (^Ou等)はTerminal.appの置き方のまま。
+   - **確認**: osacompileで確認したのみ。実機は未確認。
