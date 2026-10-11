@@ -7601,8 +7601,8 @@ bool Application::openEpubWebLink(const std::string &url) {
     return true;
   }
   // 2026-10-11、直接のユーザー依頼(EPUBの中のなろうのリンクからEPUB化して開く): 作品のリンク
-  // (ncode.syosetu.com/nNNNNxx)なら、SHELLでnarou2epubを読んでいる本のディレクトリで動かす。narou2epubは
-  // SHELLの中では作り終えたEPUBを`usilic`で渡すので、pollShellHandoff()がEPUBの画面で開く。
+  // (ncode.syosetu.com/nNNNNxx)なら、SHELLでnarou2epubを動かす(保存先はnarou2epubの既定の~/.usilic/data)。
+  // narou2epubはSHELLの中では作り終えたEPUBを`usilic`で渡すので、pollShellHandoff()がEPUBの画面で開く。
   if (handler.name == "Epub") {
     static const std::regex kNarouWork(R"(^https?://ncode\.syosetu\.com/n[0-9]{4,}[a-z]+)", std::regex::icase);
     if (!std::regex_search(url, kNarouWork)) {
@@ -7613,11 +7613,8 @@ bool Application::openEpubWebLink(const std::string &url) {
       activeView().redraw();
       return false;
     }
-    std::string book = fileMode_.currentFile();
-    std::string dir = book.empty() ? directoryMode_.currentDirectory()
-                                   : std::filesystem::path(book).parent_path().string();
     std::string command = shellQuoteArgv(argv);
-    shell_.commandLine().setText("(" + cdWrap(dir, command) + ")");
+    shell_.commandLine().setText(command);
     shell_.submitLine();
     history_.pushRecent(RingCategory::ShellCommand, command);
     return true;

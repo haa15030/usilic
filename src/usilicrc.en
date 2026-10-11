@@ -303,7 +303,7 @@ URL
 #   Copy  pass the URL to program's standard input (copy to the clipboard)
 #   Look  Quick Look (macOS only, no program needed)
 #   Epub  for a link to a "Shosetsuka ni Naro" work, make an EPUB with program
-#         (narou2epub) in the directory of the book being read and open it
+#         (narou2epub) in ~/.usilic/data and open it
 #         (runs in SHELL). lxml, ebooklib, requests and Pillow are needed (see
 #         ~/.local/lib/usilic/narou2epub's comment)
 # Without this section the lines below are used (on Linux Open is xdg-open,

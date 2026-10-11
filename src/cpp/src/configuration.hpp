@@ -362,8 +362,8 @@ class Configuration {
   //   Term  programにURLを渡して端末で起動(EXECと同じ、w3m等)
   //   Copy  programの標準入力へURLを渡す(pbcopy等、クリップボードへ)
   //   Look  クイックルック(macOSだけ、programは使わない)
-  //   Epub  「小説家になろう」の作品のリンクなら、programにURLを渡してSHELLで動かし、読んでいる本と同じ
-  //         ディレクトリにEPUBを作って開く(2026-10-11、src/cpp/tools/narou2epub)
+  //   Epub  「小説家になろう」の作品のリンクなら、programにURLを渡してSHELLで動かし、~/.usilic/dataに
+  //         EPUBを作って開く(2026-10-11、src/cpp/tools/narou2epub)
   // 最初の行が既定、^Ow(K-102)で次の行へ巡回する。節が無い・空なら組み込みの一覧(Open/Dump/Term/Copy、
   // macOSはLookも、~/.local/lib/usilic/url2pdfがあればPdfも)。
   struct UrlHandler {

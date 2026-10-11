@@ -30011,3 +30011,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **内容**: usilicrc・usilicrc.enのURL節にEpubの説明と`#	Epub	~/.local/lib/usilic/narou2epub`。src/HELP_.txt・
      HELP_en_.txt(リポジトリ外)のEPUBのWebリンクの一覧にEpub、URL節の説明にEpub、「Webページの PDF 化」の後に
      「「小説家になろう」の EPUB 化」(narou2epubの使い方・準備・ライセンス・個人利用の注意)。
+760. **2026-10-11: narou2epubの既定の保存先を~/.usilic/dataに**
+   - **経緯**: 直接のユーザー指定("epub本のデフォルト保存先は~/.usilic/data")。項目755では今のディレクトリだった。
+   - **内容**: narou2epub.pyの-oの既定を~/.usilic/data(無ければ作る、^J^Odで開ける)に。EPUBのWebリンクのEpub(項目757)は
+     読んでいる本のディレクトリへcdせずに動かす(保存先はnarou2epubの既定)。usilicrc(.en)のURL節・HELPの原稿の説明も直した。
+   - **確認**: ビルドとmake install、`narou2epub -h`の既定の表示。

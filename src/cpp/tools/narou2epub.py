@@ -8,7 +8,7 @@
 # 2026-10-11 usilic: 元のNarouToEpub3.py(https://github.com/tojc/NarouToEpub3、Apache-2.0)を改変して
 #   usilicのtools/narou2epub.pyとした。変更点(Apache-2.0 4(b)):
 #   - 表紙のフォントをWindowsのMS明朝に決め打ちせず、macOS・Linuxの明朝体等から探す(無ければ既定のフォント)。
-#   - 出力先を -o で指定できるようにした(既定は今のディレクトリ)。最後に作ったEPUBのパスを
+#   - 出力先を -o で指定できるようにした(既定は~/.usilic/data)。最後に作ったEPUBのパスを
 #     1行で標準出力へ書く(途中の経過は標準エラーへ)。
 #   - 挿絵・表紙の作業用のファイルは一時ディレクトリに置き、終わったら消す。
 #   - Nコードの代わりに作品のURL(https://ncode.syosetu.com/n…/)も受け付ける。
@@ -836,11 +836,13 @@ if __name__ == '__main__':
     # usilic: 出力先(-o)、URLも受け付ける、作業用の一時ディレクトリ、最後にEPUBのパスを標準出力へ。
     parser = ArgumentParser(description=r"EPUB3になろう(usilic narou2epub)")
     parser.add_argument("-n", "--ncode", type=str, help="N-code or https://ncode.syosetu.com/n.../", nargs='+', required=True)
-    parser.add_argument("-o", "--output", type=str, help="output directory (default: the current directory)")
+    parser.add_argument("-o", "--output", type=str, help="output directory (default: ~/.usilic/data)")
     args = parser.parse_args()
 
-    # 既定は今のディレクトリ(usilicのTOOLから使うと(ls)のディレクトリ、^Jeでそのまま開ける)。
-    outputDirectory = os.path.abspath(os.path.expanduser(args.output or "."))
+    # 既定は~/.usilic/data(usilicの^J^Odで開ける作業用のデータの置き場、2026-10-11、直接のユーザー依頼)。無ければ作る。
+    outputDirectory = os.path.abspath(os.path.expanduser(args.output or "~/.usilic/data"))
+    if not args.output:
+      os.makedirs(outputDirectory, exist_ok=True)
     if not os.path.isdir(outputDirectory):
       raise Exception("No such directory: " + outputDirectory)
 

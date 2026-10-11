@@ -1,5 +1,5 @@
 #!/bin/sh
-# narou2epub Nコード|作品のURL ... [-o 出力ディレクトリ(既定は今のディレクトリ)] -- 「小説家になろう」の作品をEPUB3にし、作ったEPUBの
+# narou2epub Nコード|作品のURL ... [-o 出力ディレクトリ(既定は~/.usilic/data)] -- 「小説家になろう」の作品をEPUB3にし、作ったEPUBの
 # パスを1行ずつ標準出力へ書く(途中の経過は標準エラー)。2026-10-11、NarouToEpub3(Apache-2.0、
 # narou2epub-assets/LICENSE)を改変したnarou2epub.pyを、このファイルの隣のvenv(url2pdfと同じ)で動かす。準備:
 #   python3 -m venv ~/.local/lib/usilic/venv
