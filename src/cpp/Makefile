@@ -179,6 +179,11 @@ install: $(BUILD_DIR)/usilic
 	# 2026-10-04: EPUBのWebのリンクのPdf(usilicrcのURL節)。Playwrightの準備はtools/url2pdf自身のコメント参照。
 	install -m 755 tools/url2pdf $(LIB_DIR)/url2pdf
 	install -m 644 tools/url2pdf.py $(LIB_DIR)/url2pdf.py
+	# 2026-10-11: 「小説家になろう」の作品をEPUB3にする(NarouToEpub3、Apache-2.0を改変、tools/narou2epub自身のコメント参照)。
+	install -m 755 tools/narou2epub $(LIB_DIR)/narou2epub
+	install -m 644 tools/narou2epub.py $(LIB_DIR)/narou2epub.py
+	install -d $(LIB_DIR)/narou2epub-assets
+	install -m 644 tools/narou2epub-assets/stylesheet.css tools/narou2epub-assets/cover.css tools/narou2epub-assets/LICENSE $(LIB_DIR)/narou2epub-assets/
 	# 2026-10-04: ページの中のリンク先をまとめてPDFにする(tools/urls2pdf.py参照、加えてpypdfが要る)。
 	install -m 755 tools/urls2pdf $(LIB_DIR)/urls2pdf
 	install -m 644 tools/urls2pdf.py $(LIB_DIR)/urls2pdf.py

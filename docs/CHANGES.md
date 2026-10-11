@@ -29968,3 +29968,19 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      SDL_GetDisplayUsableBounds())。
    - **確認**: 置き方のAppleScriptを単独で動かし、親が(100,100)ならKEYは(700,500)、右下の隅(2800,1000)ならHELPは
      (2200,1000)・KEYは(2200,600)になることを確認。実機のウィンドウでは未確認。
+755. **2026-10-11: 「小説家になろう」の作品をEPUB3にするnarou2epub(NarouToEpub3を改変、Apache-2.0)を同梱**
+   - **経緯**: 直接のユーザー依頼("src/NarouToEpub3-master/内のファイルを読んでみて...usilicから利用できる箇所は無いかな？
+     ライセンスに照らしてみて"→調査の報告→"1の形で試してみて"=外部ツールとして同梱、url2pdfと同じ形)。
+   - **ライセンス**: NarouToEpub3はApache-2.0(LICENSEの写しをtools/narou2epub-assets/LICENSEとして同梱、改変した
+     ファイルに変更点を明記、元の表示を残す)。依存のebooklibはAGPL-3.0だが、別のプロセスとして起動するだけなので
+     usilic本体には及ばない(移植・同梱はしない)。作ったEPUBは個人で楽しむためだけ(作品の著作権は作者)。
+   - **内容**: tools/narou2epub(起動スクリプト、url2pdfと同じvenv)・tools/narou2epub.py(改変版)・tools/narou2epub-assets/
+     (CSS 2本とLICENSE)。make installで<LIB>/へ。改変点: 表紙のフォント(WindowsのMS明朝の決め打ち→macOS・Linuxの明朝体
+     等)、出力先-o(既定は今のディレクトリ、usilicのTOOLから使えば(ls)のディレクトリで^Jeで開ける)、最後にEPUBのパスを
+     標準出力へ(経過は標準エラー)、作業用ファイルは一時ディレクトリ、URLも受け付ける、CSSの置き場、HTTPエラーの例外の
+     組み立ての不具合、目次のページ送り(元は1ページの作品で存在しないページを延々と取りに行っていた。リンク付きの
+     「次へ」がある時だけ、新しい話があった時だけ進む)。
+   - **準備**: `~/.local/lib/usilic/venv/bin/pip install lxml ebooklib requests Pillow`(この環境では入れた)。
+   - **確認**: 2話の連載作品(N3871MW)で、目次1ページ+2話を取得して43KBのEPUB(表紙・タイトル・あらすじ・本文2話)が
+     でき、usilicで縦書きのEPUBとして開けること。改変前のページ送りの不具合で、一度?p=64まで取りに行ってから止めた。
+     100話を超える(目次が複数ページの)作品と短編は未確認。
