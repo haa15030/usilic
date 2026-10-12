@@ -30198,3 +30198,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      受け付ける。タイトルページの文言・識別子もカクヨム用に。Application::runNarouToEpub()はkakuyomu.jp/works/の
      URLも受け付け、^Jeは作品ID・作品のURLをnarou2epubへ。usilicrc・HELP_.txt・HELP_en_.txtに追記。
    - **確認**: 慎重勇者(1177354054881165840)の最初の2話だけ取るようにして、本文入りのEPUB(目次・あらすじ・2話)ができた。
+781. **2026-10-13: 端末(-c)でもファイルのドロップで開く**
+   - **経緯**: 直接のユーザー報告("-c起動後HELPを参照しているusilic端末にsrc/nepub-main/README.mdをドラッグしても
+     表示されない。実装してなかったっけ？")。-gのドロップ(GraphicalDisplay::consumeDroppedFiles())だけで、端末には
+     無かった(端末へのドロップはパスの文字列の貼り付けとして届き、キーとして解釈されていた)。
+   - **内容**: マウスの追跡と一緒に括弧付き貼り付け(?2004)を有効にし(setTerminalMouseTracking())、
+     runTerminalPhase()のESCでpeekBracketedPaste()が貼り付けを受け取る。中身が実在するパス(\の逃がし・'"'の囲みも、
+     複数可、droppedPathsFromPaste())で、SHELL・プロンプトの外ならopenDroppedPaths()(-gと同じ)、それ以外は
+     これまで通りキーとして渡す。

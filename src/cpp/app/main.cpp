@@ -1045,13 +1045,85 @@ std::optional<fm::MouseSgrEvent> peekMouseSgr(fm::KeyInput &keyInput) {
   return event;
 }
 
+// 2026-10-13、直接のユーザー報告("-c起動後HELPを参照しているusilic端末にREADME.mdをドラッグしても表示されない"):
+// 端末(Terminal.app・iTerm2等)へのファイルのドロップは、パスの文字列の貼り付けとして届く。括弧付き貼り付け
+// (ESC [200~ ... ESC [201~)を有効にしておき(setTerminalMouseTracking())、ESCの後がそれなら中身を返す
+// (違えば読んだ分を戻してnullopt)。
+std::optional<std::string> peekBracketedPaste(fm::KeyInput &keyInput) {
+  static const std::string kStart = "[200~", kEnd = "\x1b[201~";
+  std::string consumed;
+  for (char expected : kStart) {
+    int b = keyInput.readByte();
+    if (b != 0) consumed.push_back(static_cast<char>(b));
+    if (b != static_cast<unsigned char>(expected)) {
+      if (!consumed.empty()) keyInput.playRawMacro(consumed);
+      return std::nullopt;
+    }
+  }
+  std::string text;
+  int idle = 0;
+  while (idle < 30) {  // 1回0.1秒(VTIME)、3秒届かなければ打ち切る
+    int b = keyInput.readByte();
+    if (b == 0) {
+      idle++;
+      continue;
+    }
+    idle = 0;
+    text.push_back(static_cast<char>(b == 0x80 ? 0 : b));
+    if (text.size() >= kEnd.size() && text.compare(text.size() - kEnd.size(), kEnd.size(), kEnd) == 0) {
+      text.resize(text.size() - kEnd.size());
+      break;
+    }
+  }
+  return text;
+}
+
+// ドロップされたパスの並び(`/a/b\ c.md /d/e.txt`、'...'・"..."で囲まれたものも)を分ける。どれかが実在しなければ空。
+std::vector<std::string> droppedPathsFromPaste(const std::string &text) {
+  std::vector<std::string> words;
+  std::string word;
+  bool inWord = false;
+  char quote = 0;
+  for (std::size_t i = 0; i < text.size(); i++) {
+    char c = text[i];
+    if (quote) {
+      if (c == quote) quote = 0;
+      else word.push_back(c);
+      continue;
+    }
+    if (c == '\\' && i + 1 < text.size()) {
+      word.push_back(text[++i]);
+      inWord = true;
+    } else if (c == '\'' || c == '"') {
+      quote = c;
+      inWord = true;
+    } else if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+      if (inWord) words.push_back(word);
+      word.clear();
+      inWord = false;
+    } else {
+      word.push_back(c);
+      inWord = true;
+    }
+  }
+  if (inWord) words.push_back(word);
+  for (auto &w : words) {
+    if (w.rfind("~/", 0) == 0)
+      if (const char *home = std::getenv("HOME")) w = std::string(home) + w.substr(1);
+    std::error_code ec;
+    if (w.empty() || w[0] != '/' || !std::filesystem::exists(w, ec)) return {};
+  }
+  return words;
+}
+
 void setTerminalMouseTracking(fm::Display &display, bool enabled) {
   // \x1b[?1003h/l: report ALL motion (not just while a button is
   // held), so the coast loop can highlight whatever row the pointer
   // is over even without a button down. \x1b[?1006h/l: SGR extended
   // coordinates -- no 223-row/column ceiling, and unambiguous to parse
   // (see mouse_sgr.hpp).
-  display.write(enabled ? "\x1b[?1003h\x1b[?1006h" : "\x1b[?1003l\x1b[?1006l");
+  // 2026-10-13: 括弧付き貼り付け(?2004、ファイルのドロップ用、peekBracketedPaste()参照)も一緒に切り替える。
+  display.write(enabled ? "\x1b[?1003h\x1b[?1006h\x1b[?2004h" : "\x1b[?1003l\x1b[?1006l\x1b[?2004l");
   // write() alone doesn't flush (TerminalDisplay::write() is a plain
   // fputs(), see its own comment) -- without an explicit flush here,
   // this sequence would just sit buffered until some unrelated
@@ -1789,6 +1861,20 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       // (Terminal.app doesn't send these otherwise), but safe to
       // attempt unconditionally: peekMouseSgr() requeues via
       // playRawMacro() on any mismatch, same as peekArrow().
+      if (auto pasted = peekBracketedPaste(keyInput)) {
+        consecutiveEscapes = 0;
+        // ドロップされたファイル(-gのGraphicalDisplay::consumeDroppedFiles()と同じくopenDroppedPaths())。
+        // パスでなければ、またはプロンプトの中なら、これまで通りキーとして渡す。
+        std::vector<std::string> paths = droppedPathsFromPaste(*pasted);
+        if (!paths.empty() && app.currentMode() != fm::ApplicationMode::Shell && !app.promptActive()) {
+          app.noteUserActivity();
+          app.openDroppedPaths(paths);
+          display.flush();
+        } else {
+          for (unsigned char c : *pasted) app.feedByte(c ? c : 0x80, std::nullopt);
+        }
+        continue;
+      }
       auto mouse = peekMouseSgr(keyInput);
       // 左ボタンの押下/離す以外(移動・ホイール・他のボタン・キー)はgTerminalClickTargetsCursorを下ろす。
       if (!mouse || mouse->wheel != 0 || mouse->motionOnly || mouse->button != 0) gTerminalClickTargetsCursor = false;
