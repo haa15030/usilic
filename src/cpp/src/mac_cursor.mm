@@ -64,4 +64,9 @@ CursorImage extractOpenHandCursorImage() {
 
 void systemBeep() { NSBeep(); }
 
+void activateThisApplication() {
+  [[NSRunningApplication currentApplication] activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+  [NSApp activateIgnoringOtherApps:YES];
+}
+
 }  // namespace fm

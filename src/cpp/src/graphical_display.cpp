@@ -3661,6 +3661,7 @@ void GraphicalDisplay::raise() {
   if (!impl_->window) return;
   SDL_ShowWindow(impl_->window);
   SDL_RaiseWindow(impl_->window);
+  activateThisApplication();  // mac_cursor.hpp参照
 }
 
 // NSCursor.openHand(mac_cursor.hppのextractOpenHandCursorImage())から

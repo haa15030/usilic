@@ -4211,6 +4211,9 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
     gui->matchWindowSize(bounds->width, bounds->height);
   }
   gui->open();
+  // 2026-10-13、直接のユーザー報告("表紙のページで^Ogすると表紙画像のGUI画面が下になる"、=je/=jf): ^Ogでは端末が
+  // 前面のアプリのままなので、開いたGUIのウィンドウが端末の後ろに隠れることがあった。前面に出す(下の描き直しの後にも)。
+  if (bounds) gui->raise();
   // 子のHELP(1)・KEY(2): 親のウィンドウの右隣に、HELPは上端を揃え、KEYはその下(親と同じ大きさなので親の高さ分下)。
   // 親の外枠が無ければ(古い親等)、以前の48ずつのずらし。開いたら親に前へ出てもらう(Application::requestParentRaise())。
   if (gWindowSlot > 0 && gGuiFrame.valid) {
@@ -4296,6 +4299,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   // within this session.
   terminalDisplay.leaveForExternalProgram();
   app.handleResize();  // re-layout/redraw against the (same-sized, but now GUI-rendered) geometry
+  if (bounds) gui->raise();
 
   // Wired for the duration of GUI mode only -- see
   // ProgramMode::setForegroundLauncher()'s own comment on why this is

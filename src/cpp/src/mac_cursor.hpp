@@ -60,4 +60,8 @@ CursorImage extractOpenHandCursorImage();
 // NSBeep()で鳴らす。macOS以外(mac_cursor_stub.cpp)では何もしない。
 void systemBeep();
 
+// このプロセス(usilic)を前面のアプリにする(2026-10-13、^OgのGUIのウィンドウが端末の後ろに開いた件、
+// GraphicalDisplay::raise()参照)。SDL_RaiseWindow()だけでは、端末が前面のアプリのままだと前に出ないことがある。
+void activateThisApplication();
+
 }  // namespace fm

@@ -30243,3 +30243,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 786. **2026-10-13: -gの縦書きで、モードラインの行(一時的な知らせ)は縦書きの処理をしない**
    - **経緯**: 直接のユーザー報告("-gのスクロールモード切り換えで「Scroll：chapter」の「：」が横倒し")。
    - **内容**: GraphicalDisplay::renderCell()・renderCursor()で、モードラインの行は縦書きの回転・横倒し・縦中横をしない。
+787. **2026-10-13: ^OgのGUIのウィンドウを端末より前に出す**
+   - **経緯**: 直接のユーザー報告("表紙のページで^Ogすると表紙画像のGUI画面が下になる"、=je→=jf)。
+   - **内容**: ^Og(tryEnterGuiPhase()に端末の外枠がある時)は、開いた直後と最初の描き直しの後にgui->raise()。
+     GraphicalDisplay::raise()はSDL_RaiseWindow()に加えて、usilicを前面のアプリにする(activateThisApplication()、
+     mac_cursor.mm、NSRunningApplicationのactivateWithOptions)。端末が前面のアプリのままだと前に出ないことがあった。

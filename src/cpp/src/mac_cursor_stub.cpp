@@ -13,4 +13,6 @@ CursorImage extractOpenHandCursorImage() { return CursorImage{}; }
 
 void systemBeep() {}
 
+void activateThisApplication() {}
+
 }  // namespace fm
