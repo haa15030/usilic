@@ -458,6 +458,7 @@ class FileMode {
   // リセットされず、「次の」loadFile()/loadStream()呼び出しでのみ
   // リセットされる。
   bool isPagerMode() const { return pagerMode_; }
+  bool isRawControlCodesMode() const { return rawControlCodesMode_; }  // ^[M(loadFileRaw())で開いたか
 
   // 2026-08-25(ユーザーからの直接の依頼、実際のlegacyバイナリへの
   // 再確認の後、同日中に修正――素のFILEの受け渡しがなぜもはやこれを

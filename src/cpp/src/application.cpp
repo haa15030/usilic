@@ -11161,6 +11161,23 @@ std::string Application::cutContentReturnLabel() const {
 // 参照)。
 bool Application::saveBufferToFile() {
   if (currentWorkFilePath_.empty()) currentWorkFilePath_ = allocateWorkFilePath();
+  // 2026-10-12、直接のユーザー依頼("^X^Wで元の漢字コードのまま保存できるようにして"): ^[M(ベタ表示)で開いた
+  // ファイルは、画面の文字列(UTF-8へ変換し、画面の幅で折り返したもの)ではなく、元のファイルの行をバイト列の
+  // まま書く(sjisの差分ファイル等を、元の漢字コードで~/.usilic/data/へ残す、旧版の^[M+^X^Wと同じ使い方)。
+  // バッファに読み込めた分(最後の行の生の行番号)まで。
+  if (currentMode_ == ApplicationMode::File && fileMode_.isRawControlCodesMode() && !fileMode_.isPagerMode()) {
+    std::ifstream in(fileMode_.currentFile(), std::ios::binary);
+    int lastRawLine = 0;
+    for (const auto &line : activeView().lines())
+      if (line.rawLineNumber) lastRawLine = std::max(lastRawLine, *line.rawLineNumber);
+    if (in && lastRawLine > 0) {
+      std::ofstream out(currentWorkFilePath_, std::ios::app | std::ios::binary);
+      if (!out) return false;
+      std::string raw;
+      for (int n = 0; n < lastRawLine && std::getline(in, raw); n++) out << raw << "\n";
+      return true;
+    }
+  }
   std::ofstream out(currentWorkFilePath_, std::ios::app);
   if (!out) return false;
   for (const auto &line : activeView().lines()) out << line.text << "\n";
