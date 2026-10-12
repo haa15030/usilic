@@ -30093,3 +30093,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **内容**: roffの文書と同じくFileMode::loadTransformedPagerFile()(loadAndTransformContent()が
      expandHelpMarkup()する)で開き、pagerFileList_を設定する。
    - **確認**: PTYで、`usilic -c HELP.txt`のモードラインが「HELP.txt 001/570 TOP … usilic v1.5b」、^Gで動かず、qで終わること。
+770. **2026-10-12: usilicrc(ユーザーの編集)とusilicrc.enのWAITを100に、MACROを; : [ ] e hの6つに**
+   - **経緯**: ユーザーがsrc/usilicrcのWAIT(1→100)とMACRO(+ * < > { }を削除、M-番号を詰める)を直していた。直接の
+     ユーザー依頼("usilicrc.enも同じに直して")で、usilicrc.enも同じにした。
+   - **確認**: 差分の照合のみ。

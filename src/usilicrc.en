@@ -199,7 +199,7 @@ WAIT
 # Macros are executed at intervals of `wait' (in units of 10 msec).  Try a
 # value with usilic -w; usilic -W writes it here.
 
-	1
+	100
 
 CP
 # Format: `cp' (option)
@@ -462,14 +462,8 @@ KEY
 MACRO
 	M-1	;	K-20 K-4 K-28			# ^G^P^M	Open previous entry
 	M-2	:	K-20 K-3 K-28			# ^G^N^M	Open next entry
-	M-3	+	K-20 K-20 K-4 K-28 K-28		# ^G^G^P^M^M
-	M-4	*	K-20 K-20 K-3 K-28 K-28		# ^G^G^N^M^M
-	M-5	[	K-35 K-4			# .^P		Select and move up
-	M-6	]	K-35 K-3			# .^N		Select and move down
-	M-7	<	K-28 K-20 K-4 K-28		# ^M^G^P^M
-	M-8	>	K-28 K-20 K-3 K-28		# ^M^G^N^M
-	M-9	{	K-84 K-51 "MACRO" K-28 K-67	# ^J^Ou^S"MACRO"^M^[e
-	M-10	}	K-86 K-53 "usilic-1.5b:" K-28	# ^J^Os^Jp"usilic-1.5b:"^M
-	M-11	e	K-67				# ^[e		EDIT
-	M-12	h	K-105				# ^J^Oh		From KEY to plain HELP at that line (plain HELP outside KEY)
+	M-3	[	K-35 K-4			# .^P		Select and move up
+	M-4	]	K-35 K-3			# .^N		Select and move down
+	M-5	e	K-67				# ^[e		EDIT
+	M-6	h	K-105				# ^J^Oh		From KEY to plain HELP at that line (plain HELP outside KEY)
 	--

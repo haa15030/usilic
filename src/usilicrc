@@ -193,7 +193,7 @@ WAIT
 # マクロを wait(単位は 10 msec)の間隔で実行します。usilic -w で試し、
 # usilic -W でここへ書き込めます。
 
-	1
+	100
 
 CP
 # 書式: cp  (option)
@@ -448,14 +448,8 @@ KEY
 MACRO
 	M-1	;	K-20 K-4 K-28			# ^G^P^M	前の項目を開く
 	M-2	:	K-20 K-3 K-28			# ^G^N^M	次の項目を開く
-	M-3	+	K-20 K-20 K-4 K-28 K-28		# ^G^G^P^M^M
-	M-4	*	K-20 K-20 K-3 K-28 K-28		# ^G^G^N^M^M
-	M-5	[	K-35 K-4			# .^P		選択して上へ
-	M-6	]	K-35 K-3			# .^N		選択して下へ
-	M-7	<	K-28 K-20 K-4 K-28		# ^M^G^P^M
-	M-8	>	K-28 K-20 K-3 K-28		# ^M^G^N^M
-	M-9	{	K-84 K-51 "MACRO" K-28 K-67	# ^J^Ou^S"MACRO"^M^[e
-	M-10	}	K-86 K-53 "usilic-1.5b:" K-28	# ^J^Os^Jp"usilic-1.5b:"^M
-	M-11	e	K-67				# ^[e		EDIT
-	M-12	h	K-105				# ^J^Oh		KEYから平文のHELPの当該位置へ(KEYの外では平文のHELP)
+	M-3	[	K-35 K-4			# .^P		選択して上へ
+	M-4	]	K-35 K-3			# .^N		選択して下へ
+	M-5	e	K-67				# ^[e		EDIT
+	M-6	h	K-105				# ^J^Oh		KEYから平文のHELPの当該位置へ(KEYの外では平文のHELP)
 	--
