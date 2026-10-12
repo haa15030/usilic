@@ -4,6 +4,7 @@
 #include <array>
 #include <cerrno>
 #include <csignal>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 
@@ -81,6 +82,32 @@ bool queryWindowSize(int fd, int *rows, int *columns) {
   return true;
 }
 
+// 2026-10-13、直接のユーザー報告("-gの終わり方によってはエコーバックされなくなる...プログラム終了時に"reset^M"の
+// 自動実行は？"): 端末を開いた時の設定(open()、エコーの無い壊れた設定なら人の使う設定に直したもの)を覚えておき、
+// close()を通らずに終わった時(std::exit()・クラッシュ等)にも、atexit()と致命的なシグナルのハンドラから戻す。
+// resetの代わりに、設定そのものと、画面の状態(スクロール領域・代替画面・マウス・カーソル)だけを戻す。
+int g_restoreFd = -1;
+struct termios g_restoreTermios {};
+
+void restoreTerminalNow() {
+  if (g_restoreFd < 0) return;
+  tcsetattr(g_restoreFd, TCSANOW, &g_restoreTermios);
+  static const char kReset[] = "\x1b[r\x1b[?1000l\x1b[?1002l\x1b[?1006l\x1b[?2004l\x1b[?1049l\x1b[?25h\x1b[0m";
+  if (isatty(STDOUT_FILENO)) {
+    ssize_t ignored = ::write(STDOUT_FILENO, kReset, sizeof kReset - 1);
+    (void)ignored;
+  }
+  g_restoreFd = -1;
+}
+
+void restoreTerminalAtExit() { restoreTerminalNow(); }
+
+void handleFatalSignal(int sig) {
+  restoreTerminalNow();
+  std::signal(sig, SIG_DFL);
+  ::raise(sig);
+}
+
 }  // namespace
 
 KeyInput::KeyInput(Display &display) : display_(display), raw_(new RawState) {
@@ -127,7 +154,26 @@ void KeyInput::open(const std::string &ttyPath) {
     return;
   }
   tcgetattr(fd_, &raw_->original);
+  // エコーも行単位の入力も無い設定(先に落ちたusilic等が生のモードのまま残したもの)は、元の設定として覚えると
+  // 終了時にそれへ戻してしまうので、人が使う設定に直してから覚える(restoreTerminalNow()参照)。
+  if (!(raw_->original.c_lflag & ECHO) && !(raw_->original.c_lflag & ICANON)) {
+    raw_->original.c_lflag |= ECHO | ECHOE | ECHOK | ICANON | ISIG | IEXTEN;
+    raw_->original.c_iflag |= ICRNL | BRKINT;
+    raw_->original.c_oflag |= OPOST | ONLCR;
+    raw_->original.c_cc[VMIN] = 1;
+    raw_->original.c_cc[VTIME] = 0;
+  }
   raw_->haveOriginal = true;
+  g_restoreTermios = raw_->original;
+  if (g_restoreFd < 0) {
+    static bool registered = false;
+    if (!registered) {
+      registered = true;
+      std::atexit(restoreTerminalAtExit);
+      for (int sig : {SIGSEGV, SIGBUS, SIGABRT, SIGFPE, SIGILL}) std::signal(sig, handleFatalSignal);
+    }
+  }
+  g_restoreFd = fd_;
   raw_->raw = raw_->original;
   raw_->raw.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
   raw_->raw.c_oflag &= ~OPOST;
@@ -152,6 +198,7 @@ void KeyInput::reenterRawMode() {
 
 void KeyInput::close() {
   leaveRawMode();
+  if (g_restoreFd == fd_) g_restoreFd = -1;  // ふつうに終わった(atexit()で画面をもう一度戻さない)
   if (fd_ >= 0 && fd_ != 2) ::close(fd_);
   fd_ = -1;
 }
