@@ -18,6 +18,8 @@
 #   - 短編(目次もあらすじも無く、作品のページに本文がある)に対応した。
 #   - ノクターン・ムーンライト(novel18.syosetu.com)の作品にも対応した(年齢確認のクッキーを付けて取りに行く)。
 #   - 本文の段落の取り出しが前書き(Lp1)・後書き(La1)にも当たっていたのを直した。
+#   - カクヨム(kakuyomu.jp/works/<作品ID>)の作品にも対応した(目次の読み取りはnepub、https://github.com/ttk1/nepub
+#     (MIT License、Copyright (c) 2022 tama)のKakuyomuIndexParserと同じく、ページの__NEXT_DATA__のJSONから)。
 #
 # TODO: 章の階層構造化。ebooklibでの実現方法が分からない。
 #--------------------------------------------------
@@ -64,6 +66,7 @@ HAN2ZEN = str.maketrans(HAN, ZEN)
 # 切り替える(ScrapingNcode)。年齢確認は「over18=yes」のクッキーで通る(なろう側には何も影響しない)。
 NOVEL_SITE = r"https://ncode.syosetu.com/"
 NOVEL18_SITE = r"https://novel18.syosetu.com/"
+KAKUYOMU_SITE = r"https://kakuyomu.jp/"
 
 def fetch(url, **kwargs):
   return requests.get(url, headers={"User-Agent": USER_AGENT()}, cookies={"over18": "yes"}, **kwargs)
@@ -292,6 +295,68 @@ class ScrapingChapterItem():
     # usilic: 元はcontains(@id, 'L1')で、前書き(Lp1)・後書き(La1)の段落にも当たり、本文に紛れ込んでいた。
     self.novel_honbun = self.__root.xpath(r"//div[@class='p-novel__body']/div/child::p[@id='L1']/parent::div/child::p[starts-with(@id, 'L')]")
 
+# usilic: カクヨムの作品(2026-10-13、直接のユーザー依頼"「カクヨム」を組み込めるかどうか見てみて")。ScrapingNcodeと
+# 同じ形(series_title・novel_title・novel_writername・novel_ex・chapters)にして、NarouToEpub3がそのまま使う。
+# 作品のページの__NEXT_DATA__(Next.jsのJSON)のApolloの状態に、題名・作者・紹介文・目次(章と話)がある
+# (nepubのKakuyomuIndexParserと同じ読み方)。
+class ScrapingKakuyomu():
+  def __init__(self, workId):
+    import json
+    self.url = r"{0}works/{1}".format(KAKUYOMU_SITE, workId)
+    print(self.url)
+    response = fetch(self.url)
+    root = lxml.html.fromstring(response.content)
+    found = root.xpath(r"//script[@id='__NEXT_DATA__']")
+    if len(found) == 0:
+      raise Exception(r"No such novel: " + workId)
+    data = json.loads(found[0].text_content())
+    state = data["props"]["pageProps"]["__APOLLO_STATE__"]
+    work = state.get("Work:" + workId)
+    if not work:
+      raise Exception(r"No such novel: " + workId)
+
+    self.series_title = ""
+    self.novel_title = str(work["title"]).strip()
+    print(self.novel_title)
+    author = state.get(work["author"]["__ref"], {})
+    self.novel_writername = str(author.get("activityName") or "").strip()
+    print(self.novel_writername)
+    parts = [str(work.get(key) or "").strip() for key in ("catchphrase", "introduction")]
+    self.novel_ex = "\n\n".join(part for part in parts if part)
+    print("-----")
+    print(self.novel_ex)
+    print("-----")
+
+    self.chapters = NovelChapters()
+    index = 0
+    for toc in work.get("tableOfContentsV2") or []:
+      tocChapter = state[toc["__ref"]]
+      chapterRef = tocChapter.get("chapter")
+      if chapterRef:
+        self.chapters.append(ChapterItem().setChapter(str(state[chapterRef["__ref"]]["title"]).strip()))
+      for episodeRef in tocChapter.get("episodeUnions") or []:
+        episode = state[episodeRef["__ref"]]
+        index += 1
+        href = r"{0}works/{1}/episodes/{2}".format(KAKUYOMU_SITE, workId, episode["id"])
+        self.chapters.append(ChapterItem().setSubtitle(str(episode["title"]).strip(), href).setIndex(index))
+
+    for item in self.chapters.items:
+      print(item)
+      if item.isSubtitle():
+        item.scrapingChapterItem = ScrapingKakuyomuEpisode(item)
+        # 連続アクセスの自制
+        time.sleep(random.randint(2, 7))
+
+# カクヨムの1話。本文はwidget-episodeBodyの<p id="p1">...(空行は<p class="blank"><br/></p>)、前書き・後書きは無い。
+class ScrapingKakuyomuEpisode():
+  def __init__(self, chapterItem):
+    self.url = chapterItem.subtitle_url
+    response = fetch(self.url)
+    root = lxml.html.fromstring(response.content)
+    self.novel_p = None
+    self.novel_a = None
+    self.novel_honbun = root.xpath(r"//div[contains(concat(' ', @class, ' '), ' widget-episodeBody ')]/p")
+
 class TextFileManager():
   def __init__(self, fileName, defaultEncoding="utf-8", defaultErrors="strict"):
     self.__fileName = fileName
@@ -469,17 +534,19 @@ class BookManager():
 
 class NarouToEpub3():
   def __init__(self, ncode, outputDirectory, workDirectory):
-    if not re.match(r"n[0-9]{4,}[a-z]{1,}", ncode):
+    # usilic: 数字だけ(10桁以上)はカクヨムの作品ID
+    self.kakuyomu = re.fullmatch(r"[0-9]{10,}", ncode) is not None
+    if not self.kakuyomu and not re.match(r"n[0-9]{4,}[a-z]{1,}", ncode):
       raise Exception(r"The ncode entered is invalid: " + ncode)
 
     self.ncode = ncode
     self.__createDate = datetime.datetime.now()
 
-    # なろうスクレイピング
-    self.__scrapingNcode = ScrapingNcode(self.ncode)
+    # なろうスクレイピング(usilic: カクヨムはScrapingKakuyomu)
+    self.__scrapingNcode = ScrapingKakuyomu(self.ncode) if self.kakuyomu else ScrapingNcode(self.ncode)
 
     # 基本情報取得
-    identifier = "com.tojc.epub3." + self.ncode
+    identifier = ("com.tojc.epub3.kakuyomu." if self.kakuyomu else "com.tojc.epub3.") + self.ncode
     title = self.__scrapingNcode.novel_title
     contributor = self.__scrapingNcode.novel_writername
     series_title = self.__scrapingNcode.series_title
@@ -613,7 +680,7 @@ class NarouToEpub3():
   def createTitlePage(self, ncode, title, contributor, createDate):
     page = PageObject(uid="title_page", file_name='title_page.xhtml', title="タイトルページ", lang='ja')
     page.appendBody(E.h1(title))
-    page.appendBody(E.h4(r"Ncode:" + ncode.upper()))
+    page.appendBody(E.h4((r"カクヨム 作品ID:" if self.kakuyomu else r"Ncode:") + ncode.upper()))
     page.appendBody(E.h3(r"作者：" + contributor))
     page.appendBody(E.h3(r"電子書籍 作成：EPUB3になろう(NarouToEpub3)"))
 
@@ -628,11 +695,11 @@ class NarouToEpub3():
     page.appendBody(E.hr(CLASS("pagebreak")))
     page.appendBody(
       E.p(
-        r"この電子書籍ファイルは「小説家になろう」で掲載中の小説を「EPUB3になろう(NarouToEpub3)」によって、機械的に電子書籍化されたものです。", E.br(),
+        r"この電子書籍ファイルは" + (r"「カクヨム」" if self.kakuyomu else r"「小説家になろう」") + r"で掲載中の小説を「EPUB3になろう(NarouToEpub3)」によって、機械的に電子書籍化されたものです。", E.br(),
         r"「EPUB3になろう(NarouToEpub3)」で作成したこの電子書籍ファイルは、個人で楽しむために使用し、他人に配布しない事に同意したものとみなします。", E.br(),
         r"「EPUB3になろう(NarouToEpub3)」は、「なろうを電子書籍化（narou.nyanpass.jp）」のEPUB出力結果を参考にしているため、比較的互換性があります。ただし、完全互換を目的としたものではありません。", E.br(),
         r"著作権に関しましては、作者にあります。", E.br(),
-        r"「小説家になろう」は株式会社ヒナプロジェクトの登録商標です。", E.br(),
+        r"「カクヨム」は株式会社KADOKAWAの登録商標です。" if self.kakuyomu else r"「小説家になろう」は株式会社ヒナプロジェクトの登録商標です。", E.br(),
         r"「EPUB3になろう(NarouToEpub3)」は株式会社ヒナプロジェクト、KADOKAWA / 株式会社はてなが提供するものではありません。", E.br(),
         r"", E.br(),
       )
@@ -854,7 +921,8 @@ class DrawText():
 if __name__ == '__main__':
     # usilic: 出力先(-o)、URLも受け付ける、作業用の一時ディレクトリ、最後にEPUBのパスを標準出力へ。
     parser = ArgumentParser(description=r"EPUB3になろう(usilic narou2epub)")
-    parser.add_argument("-n", "--ncode", type=str, help="N-code or https://ncode.syosetu.com/n.../ (novel18.syosetu.com too)", nargs='+', required=True)
+    parser.add_argument("-n", "--ncode", type=str, help="N-code or https://ncode.syosetu.com/n.../ (novel18.syosetu.com too), "
+                        "or a Kakuyomu work ID or https://kakuyomu.jp/works/<ID>", nargs='+', required=True)
     parser.add_argument("-o", "--output", type=str, help="output directory (default: ~/.usilic/data)")
     args = parser.parse_args()
 
@@ -866,7 +934,10 @@ if __name__ == '__main__':
       raise Exception("No such directory: " + outputDirectory)
 
     for ncode in args.ncode:
-      match = re.search(r"(n[0-9]{4,}[a-z]{1,})", ncode.lower())
+      # usilic: カクヨム(kakuyomu.jp/works/<ID>、またはIDの数字だけ)
+      match = re.search(r"kakuyomu\.jp/works/([0-9]+)", ncode) or re.fullmatch(r"\s*([0-9]{10,})\s*", ncode)
+      if not match:
+        match = re.search(r"(n[0-9]{4,}[a-z]{1,})", ncode.lower())
       if not match:
         raise Exception(r"The ncode entered is invalid: " + ncode)
       NOVEL_SITE = NOVEL18_SITE if "novel18." in ncode.lower() else r"https://ncode.syosetu.com/"  # 作品ごとに

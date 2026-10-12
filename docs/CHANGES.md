@@ -30189,3 +30189,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      設定がすでにエコーも行単位の入力も無い(先に落ちたusilic等が残した)なら、人が使う設定に直してから覚える。
      ふつうに終わった時(close())は何もしない。項目(2026-10-11)の「-gの子は/dev/ttyを開かない」とは別の経路の保険で、
      再現手順が分かれば原因そのものも直す。
+780. **2026-10-13: narou2epub・^Je・EPUBのリンクでカクヨムの作品もEPUBに**
+   - **経緯**: 直接のユーザー依頼("「小説家になろう」および「カクヨム」の小説を縦書きのEPUBに変換するためのツール
+     らしい。src/nepub-main。なろうは対応済みなので「カクヨム」を組み込めるかどうか見てみて")。
+   - **内容**: narou2epub.pyにScrapingKakuyomu(作品のページの__NEXT_DATA__のJSONから題名・作者・キャッチコピー・紹介文・
+     章と話、nepub(MIT)のKakuyomuIndexParserと同じ読み方)とScrapingKakuyomuEpisode(widget-episodeBodyの<p>)を
+     足し、ScrapingNcodeと同じ形でNarouToEpub3に渡す。-nはkakuyomu.jp/works/<ID>と10桁以上の数字(作品ID)も
+     受け付ける。タイトルページの文言・識別子もカクヨム用に。Application::runNarouToEpub()はkakuyomu.jp/works/の
+     URLも受け付け、^Jeは作品ID・作品のURLをnarou2epubへ。usilicrc・HELP_.txt・HELP_en_.txtに追記。
+   - **確認**: 慎重勇者(1177354054881165840)の最初の2話だけ取るようにして、本文入りのEPUB(目次・あらすじ・2話)ができた。

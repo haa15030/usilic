@@ -7929,7 +7929,9 @@ bool Application::openWebLinkInQuickLook(const std::string &url) {
 // SHELLで動かす。
 bool Application::runNarouToEpub(const Configuration::UrlHandler &handler, const std::string &url) {
   // ノクターン・ムーンライト(novel18.syosetu.com)の作品も(2026-10-12、narou2epubが年齢確認を通って取りに行く)。
-  static const std::regex kNarouWork(R"(^https?://(ncode|novel18)\.syosetu\.com/n[0-9]{4,}[a-z]+)", std::regex::icase);
+  // カクヨム(kakuyomu.jp/works/<作品ID>)の作品も(2026-10-13、直接のユーザー依頼、narou2epub.pyのScrapingKakuyomu)。
+  static const std::regex kNarouWork(
+      R"(^https?://((ncode|novel18)\.syosetu\.com/n[0-9]{4,}[a-z]+|kakuyomu\.jp/works/[0-9]+))", std::regex::icase);
   if (!std::regex_search(url, kNarouWork)) {
     showTransientNotice(activeView(), "Not a Narou work: " + url);
     return false;
@@ -7958,7 +7960,16 @@ bool Application::runNarouToEpub(const Configuration::UrlHandler &handler, const
 bool Application::openEpubPromptSpecial(const std::string &text) {
   static const std::regex kNarouNumber(R"(^\s*(n[0-9]{4,}[a-z]+)\s*$)", std::regex::icase);
   static const std::regex kUrl(R"(^\s*https?://\S+\s*$)", std::regex::icase);
+  // カクヨムの作品ID(数字だけ、10桁以上)・作品のURL(2026-10-13)も、なろうの作品の番号と同じくnarou2epubで。
+  static const std::regex kKakuyomuId(R"(^\s*([0-9]{10,})\s*$)");
+  static const std::regex kKakuyomuUrl(R"(^\s*https?://kakuyomu\.jp/works/([0-9]+)/?\s*$)", std::regex::icase);
   std::smatch match;
+  if (std::regex_match(text, match, kKakuyomuId) || std::regex_match(text, match, kKakuyomuUrl)) {
+    for (const auto &handler : configuration_.urlHandlers())
+      if (handler.name == "Epub") return runNarouToEpub(handler, "https://kakuyomu.jp/works/" + match[1].str());
+    showTransientNotice(activeView(), "No Epub in URL (usilicrc)");
+    return true;
+  }
   if (std::regex_match(text, match, kNarouNumber)) {
     std::string number = match[1].str();
     for (char &c : number) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
