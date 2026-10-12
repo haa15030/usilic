@@ -1306,7 +1306,8 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
       // 2026-10-02追加、直接のユーザー依頼: ←→(縦書きでは↓↑)で速度/向きを変える(stepCoastByKey()参照)。
       // 2026-10-06: 慣性中は進む向きの矢印(一覧の↓↑、縦書きの←→)でも(runGuiPhase()の同じ日の追加参照)。
       if (int arrow = peekArrow(keyInput, "ABCD")) {
-        bool forward = columns ? (arrow == 'B' || arrow == 'D') : (arrow == 'C' || arrow == 'B');
+        // 2026-10-13: EPUBの横書き(奥付等)でも←が先へ(Application::leftArrowAdvances()参照)。
+        bool forward = (columns || app.leftArrowAdvances()) ? (arrow == 'B' || arrow == 'D') : (arrow == 'C' || arrow == 'B');
         stepCoastByKey(level, direction, forward ? 1 : -1, fm::arrowSpeedMaxLevel());
         continue;
       }
@@ -1851,7 +1852,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
         if (int arrow = *trigger ? peekArrow(keyInput, trigger) : 0) {
           consecutiveEscapes = 0;
           app.noteUserActivity();  // 慣性の開始でも一時的な表示を消す(Application::noteUserActivity()参照)
-          int delta = arrow == 'B' || arrow == 'C' ? 1 : -1;
+          int delta = arrow == 'B' || arrow == (app.leftArrowAdvances() ? 'D' : 'C') ? 1 : -1;
           TerminalCoastResult coast = runCoastLoop(app, display, keyInput, resolveCoastLevel(1), delta, /*fromDrag=*/false);
           if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
           continue;
@@ -2960,7 +2961,8 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         }
         if (!app.epubVerticalScrollActive() && (leftKey || rightKey)) {
           if (coastLevel == 0) app.activeContentView().setHoverIndex(std::nullopt);  // ホイールで始めていた時と同じ(2026-09-03)
-          stepCoastByKey(coastLevel, coastDirection, rightKey ? -1 : 1, fm::arrowSpeedMaxLevel());  // coastDirection自身のコメント参照: -1で先へ
+          bool forwardKey = app.leftArrowAdvances() ? leftKey : rightKey;  // Application::leftArrowAdvances()参照
+          stepCoastByKey(coastLevel, coastDirection, forwardKey ? -1 : 1, fm::arrowSpeedMaxLevel());  // coastDirection自身のコメント参照: -1で先へ
           consecutiveEscapes = 0;
           continue;
         }

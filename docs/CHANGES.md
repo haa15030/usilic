@@ -30248,3 +30248,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **内容**: ^Og(tryEnterGuiPhase()に端末の外枠がある時)は、開いた直後と最初の描き直しの後にgui->raise()。
      GraphicalDisplay::raise()はSDL_RaiseWindow()に加えて、usilicを前面のアプリにする(activateThisApplication()、
      mac_cursor.mm、NSRunningApplicationのactivateWithOptions)。端末が前面のアプリのままだと前に出ないことがあった。
+788. **2026-10-13: EPUBの横書きでは慣性の速さの←を先へ、→を手前へ(縦書きと同じ)**
+   - **経緯**: 直接のユーザー依頼("横書きでの速度調整(本来上下の矢印だが左右にも割り振られている機能)の左右を逆にして
+     ほしい(縦書きは←で左へ加速だがそのまま奥付へ移動すると←が減速となるのがNG)")。
+   - **内容**: Application::leftArrowAdvances()(EPUBの本文で縦書きでない時)なら、-gのrunGuiPhase()、端末の
+     runTerminalPhase()(慣性を始める←→)とrunCoastLoop()(慣性中の←→)で←を先へ。(ls)等のEPUB以外は従来通り→が先へ。

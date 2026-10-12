@@ -9432,6 +9432,8 @@ bool Application::clickEpubVertical(int row, int column) {
 }
 
 // 横書きのEPUBの本文を見せているか(縦書きの本の横書きの範囲を含む)。
+bool Application::leftArrowAdvances() const { return epubHorizontalLinksActive(); }
+
 bool Application::epubHorizontalLinksActive() const {
   return currentMode_ == ApplicationMode::File && isEpubFile(fileMode_.currentFile()) && !epubVerticalActive() &&
          !promptActive();
