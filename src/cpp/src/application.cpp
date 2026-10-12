@@ -7948,7 +7948,8 @@ bool Application::openWebLinkInQuickLook(const std::string &url) {
 // openEpubWebLink()のEpub(usilicrcのURL節)、^Jeのなろうの作品の番号(2026-10-12)。`handler`のargvの後ろにURLを足して
 // SHELLで動かす。
 bool Application::runNarouToEpub(const Configuration::UrlHandler &handler, const std::string &url) {
-  static const std::regex kNarouWork(R"(^https?://ncode\.syosetu\.com/n[0-9]{4,}[a-z]+)", std::regex::icase);
+  // ノクターン・ムーンライト(novel18.syosetu.com)の作品も(2026-10-12、narou2epubが年齢確認を通って取りに行く)。
+  static const std::regex kNarouWork(R"(^https?://(ncode|novel18)\.syosetu\.com/n[0-9]{4,}[a-z]+)", std::regex::icase);
   if (!std::regex_search(url, kNarouWork)) {
     showTransientNotice(activeView(), "Not a Narou work: " + url);
     return false;

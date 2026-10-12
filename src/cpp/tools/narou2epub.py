@@ -16,6 +16,7 @@
 #   - HTTPのエラーの時の例外の組み立て(文字列と数の連結)を直した。
 #   - 目次のページ送り: リンク付きの「次へ」がある時だけ次のページへ(1ページの作品で止まらなかった)。
 #   - 短編(目次もあらすじも無く、作品のページに本文がある)に対応した。
+#   - ノクターン・ムーンライト(novel18.syosetu.com)の作品にも対応した(年齢確認のクッキーを付けて取りに行く)。
 #   - 本文の段落の取り出しが前書き(Lp1)・後書き(La1)にも当たっていたのを直した。
 #
 # TODO: 章の階層構造化。ebooklibでの実現方法が分からない。
@@ -59,6 +60,14 @@ HAN = re.sub(r"[a-zA-Z0-9]", r'', "".join(chr(0x21 + i) for i in range(94)))
 ZEN2HAN = str.maketrans(ZEN, HAN)
 HAN2ZEN = str.maketrans(HAN, ZEN)
 
+# usilic: 作品のサイト。ncode.syosetu.comで開いて年齢確認のページに回されたら(18禁の作品)、novel18.syosetu.comへ
+# 切り替える(ScrapingNcode)。年齢確認は「over18=yes」のクッキーで通る(なろう側には何も影響しない)。
+NOVEL_SITE = r"https://ncode.syosetu.com/"
+NOVEL18_SITE = r"https://novel18.syosetu.com/"
+
+def fetch(url, **kwargs):
+  return requests.get(url, headers={"User-Agent": USER_AGENT()}, cookies={"over18": "yes"}, **kwargs)
+
 def USER_AGENT():
   return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " \
         "AppleWebKit/537.36 (KHTML, like Gecko) " \
@@ -99,7 +108,7 @@ class ChapterItem():
   def subtitle_url(self):
     url = ""
     if self.isSubtitle():
-      url = urllib.parse.urljoin(r"https://ncode.syosetu.com/", self.__subtitle_href)
+      url = urllib.parse.urljoin(NOVEL_SITE, self.__subtitle_href)
     return url
 
   @property
@@ -154,11 +163,21 @@ class ScrapingNcode():
     self.__page = 1
     self.__next = True
 
-    self.url = r"https://ncode.syosetu.com/{0}/?p={1}".format(self.__ncode, self.__page)
+    global NOVEL_SITE
+    self.url = r"{0}{1}/?p={2}".format(NOVEL_SITE, self.__ncode, self.__page)
     print(self.url)
 
-    response = requests.get(self.url, headers={"User-Agent": USER_AGENT()})
+    response = fetch(self.url)
     self.__root = lxml.html.fromstring(response.content)
+    # usilic: 18禁の作品は年齢確認のページへ回される: novel18.syosetu.comで取り直す
+    if len(self.__root.xpath(r"//h1[@class='p-novel__title']")) == 0 and NOVEL_SITE != NOVEL18_SITE:
+      NOVEL_SITE = NOVEL18_SITE
+      self.url = r"{0}{1}/?p={2}".format(NOVEL_SITE, self.__ncode, self.__page)
+      print(self.url)
+      response = fetch(self.url)
+      self.__root = lxml.html.fromstring(response.content)
+    if len(self.__root.xpath(r"//h1[@class='p-novel__title']")) == 0:
+      raise Exception(r"No such novel: " + self.__ncode)
 
     self.series_title = ""
     find_series_title_a = self.__root.xpath(r"//*[@class='p-novel__series']/a")
@@ -216,10 +235,10 @@ class ScrapingNcode():
       if len(next_page) >= 1 and added > 0:
         self.__page += 1
 
-        self.url = r"https://ncode.syosetu.com/{0}/?p={1}".format(self.__ncode, self.__page)
+        self.url = r"{0}{1}/?p={2}".format(NOVEL_SITE, self.__ncode, self.__page)
         print(self.url)
 
-        response = requests.get(self.url, headers={"User-Agent": USER_AGENT()})
+        response = fetch(self.url)
         self.__root = lxml.html.fromstring(response.content)
         # 連続アクセスの自制
         self.sleep()
@@ -249,7 +268,7 @@ class ScrapingChapterItem():
     self.__item = chapterItem
     self.url = self.__item.subtitle_url
 
-    response = requests.get(self.url, headers={"User-Agent": USER_AGENT()})
+    response = fetch(self.url)
     self.__root = lxml.html.fromstring(response.content)
 
     # 前書き
@@ -707,7 +726,7 @@ class DownloadManager():
       raise Exception("Invalid URL: " + self.__param_url)
 
     print("Download   : " + self.__completed_url)
-    response = requests.get(self.__completed_url, headers={"User-Agent": USER_AGENT()}, allow_redirects=True)
+    response = fetch(self.__completed_url, allow_redirects=True)
     if response.status_code != 200:
         raise Exception("HTTP status: " + str(response.status_code))
     content_type = response.headers["content-type"]
@@ -835,7 +854,7 @@ class DrawText():
 if __name__ == '__main__':
     # usilic: 出力先(-o)、URLも受け付ける、作業用の一時ディレクトリ、最後にEPUBのパスを標準出力へ。
     parser = ArgumentParser(description=r"EPUB3になろう(usilic narou2epub)")
-    parser.add_argument("-n", "--ncode", type=str, help="N-code or https://ncode.syosetu.com/n.../", nargs='+', required=True)
+    parser.add_argument("-n", "--ncode", type=str, help="N-code or https://ncode.syosetu.com/n.../ (novel18.syosetu.com too)", nargs='+', required=True)
     parser.add_argument("-o", "--output", type=str, help="output directory (default: ~/.usilic/data)")
     args = parser.parse_args()
 
@@ -850,6 +869,7 @@ if __name__ == '__main__':
       match = re.search(r"(n[0-9]{4,}[a-z]{1,})", ncode.lower())
       if not match:
         raise Exception(r"The ncode entered is invalid: " + ncode)
+      NOVEL_SITE = NOVEL18_SITE if "novel18." in ncode.lower() else r"https://ncode.syosetu.com/"  # 作品ごとに
       workDirectory = tempfile.mkdtemp(prefix="narou2epub-")
       try:
         book = NarouToEpub3(match.group(1), outputDirectory, workDirectory)

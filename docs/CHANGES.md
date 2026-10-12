@@ -30132,3 +30132,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      出ていたので、その場に留まる。HELP_.txt・HELP_en_.txtのページャーのキーの節に、①の説明を足した。
    - **確認**: PTYで、ページャーの^J^C・^Kが"Not available in pager"で何も起きず、j・^N・^X^X・^[>・^[<・^J^Tは
      動く。EPUBで^K→^G→^G→^Gが KEY→本文→章の一覧→(留まる)。
+774. **2026-10-12: narou2epub・^Jeでノクターンノベルズ等(novel18.syosetu.com)の作品もEPUBにする**
+   - **経緯**: 直接のユーザー報告("ノクターンノベルズ（なろうの18禁姉妹サイト）の小説No.入れたらエラー"、
+     スクリーンショット=iy: narou2epub.pyの「p-novel__title」が見つからずIndexError)。
+   - **内容**: ncode.syosetu.comの18禁の作品は年齢確認のページ(nl.syosetu.com/redirect/ageauth)へ回される。
+     narou2epub.pyは全ての取得に「over18=yes」のクッキーを付け(fetch())、作品のページに題名が無ければ
+     novel18.syosetu.comで取り直す(NOVEL_SITE、作品ごとに戻す)。それでも無ければ"No such novel"。
+     Application::runNarouToEpub()はnovel18.syosetu.comのURLも受け付ける。HELP_.txt・HELP_en_.txtに追記。
+   - **確認**: n2743mw(短編)で、ncode.syosetu.comのURLからEPUB(本文入り)ができた(クッキーでnovel18へ転送された)。
