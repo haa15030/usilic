@@ -1548,6 +1548,9 @@ void GraphicalDisplay::renderCellBackground(int row, int col) {
 }
 
 void GraphicalDisplay::renderCell(int row, int col) {
+  // 2026-10-13、直接のユーザー報告("-gのスクロールモード切り換えで「Scroll：chapter」の「：」が横倒し"): モードラインの
+  // 行(一時的な知らせもここに出る)は縦書きの本文ではないので、縦書きの処理(回転・横倒し・縦中横)をしない。
+  bool verticalText = impl_->verticalText && !(impl_->modeLineVisible && row == impl_->rows - 1);
   if (!impl_->outputEnabled) return;
   const Cell &cell = impl_->cellAt(row, col);
   SDL_Rect box{Impl::kMarginX + col * impl_->cellWidth + impl_->offsetXForRow(row),
@@ -1596,14 +1599,14 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // (傍線)として描く――行間のセル自身が、左隣の字の下線を見て描く(同日訂正、直接の
   // ユーザー指定"Kindle、Kinoppy、ブックは皆、日本語は右側...メジャーな側に合わせて":
   // 字の右側。行間の桁の位置はepub_vertical.hppのrenderEpubVerticalWindow()参照)。
-  bool underline = cell.underline && !impl_->verticalText;
+  bool underline = cell.underline && !verticalText;
   auto underlinedGlyphAt = [&](int c) {
     if (c < 0) return false;
     const Cell &left = impl_->cellAt(row, c);
     if (left.continuation) return c >= 1 && impl_->cellAt(row, c - 1).underline;
     return left.underline;
   };
-  if (impl_->verticalText && blank && !cell.continuation && !cell.underline && underlinedGlyphAt(col - 1)) {
+  if (verticalText && blank && !cell.continuation && !cell.underline && underlinedGlyphAt(col - 1)) {
     int lineW = std::max(1, impl_->cellWidth / 8);
     SDL_Rect side{box.x + (impl_->cellWidth - lineW) / 2, box.y, lineW, impl_->cellHeight};
     SDL_SetRenderDrawColor(impl_->renderer, fg.r, fg.g, fg.b, fg.a);
@@ -1648,7 +1651,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
   std::string substituteGlyph;
   double rotation = 0.0;
   unsigned int cornerMark = 0;
-  if (impl_->verticalText) {
+  if (verticalText) {
     if (codepoint == 0x301D || codepoint == 0x301F) cornerMark = codepoint;
     if (codepoint == 0xFF5C) {
       substituteGlyph = "\xE3\x83\xBC";  // ー
@@ -1713,7 +1716,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // マスの中とマスの間で字の間隔が違っていた)。並びの一番上のマスがまとめて描き、
   // 他のマスは何もしない(背景は全マス描いた後に字を描くので上書きされない)。
   // 1マスだけなら縦中横(立てたまま、下の通常の描画)。
-  if (impl_->verticalText) {
+  if (verticalText) {
     // 2026-09-29訂正、直接のユーザー報告("閉じブラケットが行方不明。CUT一覧ではバッチリ"
     // =ho/=hp): マスの位置(列の左の桁)を中身(左隣が空いているか)から推し量っていたため、
     // 左隣が空の列(章の頭を揃える空の列等)だと1桁ずれた所を2字のマスと取り違え、":"
@@ -1780,14 +1783,14 @@ void GraphicalDisplay::renderCell(int row, int col) {
       // 大きい字はマス目から外す(placeLargeGlyph())
       LargeGlyphPlacement place = impl_->largeGlyphPlacementAt(row, col);
       dst = scaleGlyphRect(dst, cell.size, box.x, box.y, maxW, impl_->cellHeight, place.pitch);
-      if (impl_->verticalText)
+      if (verticalText)
         dst.y += static_cast<int>((place.start - row + (place.pitch - 1) / 2) * impl_->cellHeight);
       else
         dst.x += static_cast<int>((place.start - col + (place.pitch - 1) * (isWide ? 2 : 1) / 2.0) * impl_->cellWidth);
     } else {
       dst = scaleGlyphRect(dst, cell.size, box.x, box.y, maxW, impl_->cellHeight);
     }
-    if (impl_->verticalText) {
+    if (verticalText) {
       // Display::setVerticalTextHint()参照。
       auto blankAt = [&](int c) {
         if (c < 0 || c >= impl_->columns) return true;
@@ -1931,7 +1934,7 @@ void GraphicalDisplay::renderCursor() {
   // スクリーンショット=iz/=ja「〜」、=jb/=jc「10.4」): 縦書きでは、カーソルの字も背景と同じrenderCell()
   // (〜等の回転、半角の並びの横倒し、縦中横)で、カーソルの枠の中だけに字の色を背景色にして描き直す。
   // 横倒しの並びは一番上のマスがまとめて描くので、同じ列の近くの桁のマスを全部、枠で切り抜いて描く。
-  if (impl_->verticalText) {
+  if (impl_->verticalText && !(impl_->modeLineVisible && row == impl_->rows - 1)) {
     SDL_Rect previousClip{};
     bool hadClip = SDL_RenderIsClipEnabled(impl_->renderer);
     if (hadClip) SDL_RenderGetClipRect(impl_->renderer, &previousClip);
