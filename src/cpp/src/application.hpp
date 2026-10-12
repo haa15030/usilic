@@ -1820,6 +1820,12 @@ class Application {
   // 基本のフォントのファイルを返す関数。launchExternalUsilic()は-gの子へUSILICFONT(resolveGuiFontPath()が最優先)で渡す。
   void setGuiFontProvider(std::function<std::string()> provider) { guiFontProvider_ = std::move(provider); }
   std::function<std::string()> guiFontProvider_;
+  // 2026-10-12: -cの間の同じもの(起動した端末のウィンドウ・プロファイルから、分からなければ空)。-cから-gの子(^T)へ渡す。
+  void setTerminalFrameProvider(std::function<std::string()> provider) { terminalFrameProvider_ = std::move(provider); }
+  std::function<std::string()> terminalFrameProvider_;
+  void setTerminalFontProvider(std::function<std::string()> provider) { terminalFontProvider_ = std::move(provider); }
+  std::function<std::string()> terminalFontProvider_;
+  int externalCascade_ = 0;  // 次のlaunchExternalUsilic()の子が、別々に開く何番目か(0から、親からずらす量)
   // 子が自分のウィンドウを開いた後に親の"keys"へ「R」を送り(requestParentRaise())、親は実行ループで
   // takeRaiseRequest()を見て自分のウィンドウを前に出す(子に前を取られたままにしない)。
   void requestParentRaise();

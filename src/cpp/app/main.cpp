@@ -4144,7 +4144,19 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   }
   else if (gWindowSlot > 0)
     gui->moveWindowBy(gWindowSlot * 48, gWindowSlot * 48);
-  else if (gCascade > 0)
+  else if (gGuiFrame.valid) {
+    // 2026-10-12、直接のユーザー依頼("複数外部ウィンドウがピッタリ重なっているので=il.pngくらいズラしてほしい"):
+    // ^Ou・^T等の子は、親(-gのウィンドウ、-cなら端末のウィンドウ)と同じ大きさで、親から1つ目は32、2つ目は64...
+    // 右下へずらして置く(USILIC_CASCADE、画面からはみ出さない範囲で)。
+    int w = gGuiFrame.width, h = gGuiFrame.height;
+    gui->matchWindowSize(w, h);
+    int left = -100000, top = -100000, right = 100000, bottom = 100000;
+    fm::GraphicalDisplay::usableBoundsContaining(gGuiFrame.x, gGuiFrame.y, left, top, right, bottom);
+    int offset = (gCascade % 10 + 1) * 32;
+    int x = std::max(left, std::min(gGuiFrame.x + offset, right - w));
+    int y = std::max(top, std::min(gGuiFrame.y + offset, bottom - h));
+    gui->setWindowPosition(x, y);
+  } else if (gCascade > 0)
     gui->moveWindowBy((gCascade % 10) * 32, (gCascade % 10) * 32);
   if (gWindowSlot > 0) app.requestParentRaise();
   // 2026-09-12追加、項目⑫: 新しく作られたGraphicalDisplayは
@@ -5289,6 +5301,28 @@ int main(int argc, char **argv) {
   fm::Application app(display, keyInput, history, configuration, encoding, display.columns(), shellOptions,
                        homeEnv ? std::string(homeEnv) : std::string(), tempRootDirectory, workRootDirectory,
                        bootOptions);
+  // 2026-10-12、直接のユーザー報告(-cから^Tで開いた-gの子の見た目が端末のプロファイルと違う): -cの間に開く-gの子へ、
+  // 起動した端末のウィンドウの外枠・行数・桁数・文字の大きさ・色("x,y,w,h,rows,cols,pt,r,g,b,r,g,b"、guiFrameText()と
+  // 同じ並び)とフォントのファイルを渡す(Application::launchExternalUsilic())。分からなければ空(子は今まで通り)。
+  app.setTerminalFrameProvider([&display]() -> std::string {
+    auto appearance = queryRealTerminalAppearance();
+    auto bounds = appearance ? queryRealTerminalWindowBounds() : std::nullopt;
+    if (!appearance || !bounds || !appearance->hasColors) return "";
+    std::ostringstream out;
+    out << bounds->x << ',' << bounds->y << ',' << bounds->width << ',' << bounds->height << ',' << display.rows()
+        << ',' << display.columns() << ',' << appearance->fontPointSize << ',' << int(appearance->foreground.r) << ','
+        << int(appearance->foreground.g) << ',' << int(appearance->foreground.b) << ','
+        << int(appearance->background.r) << ',' << int(appearance->background.g) << ','
+        << int(appearance->background.b);
+    return out.str();
+  });
+  app.setTerminalFontProvider([]() -> std::string {
+    if (!gTerminalFontPath.empty()) return gTerminalFontPath;
+    auto appearance = queryRealTerminalAppearance();
+    if (!appearance || appearance->fontName.empty()) return "";
+    std::string path = fm::resolveMacFontPath(appearance->fontName, appearance->fontPointSize);
+    return path.empty() ? fm::resolveLinuxFontPath(appearance->fontName) : path;
+  });
   // 2026-10-11、直接のユーザー依頼(-KのKEYの^Mのキーを親へ、hを-HのHELPの子へ): 親子の受け渡しの名前付き
   // パイプ(Application::openChildChannel()参照)。外部起動された子でなければ、自分の子から受け取る"keys"を開く。
   // 子は親のPIDを覚え、-H・最初の起動のHELPの子(gWindowSlot 1)は親の下に"help"を開く。終了時に消す。

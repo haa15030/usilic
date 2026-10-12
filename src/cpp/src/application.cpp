@@ -8025,11 +8025,16 @@ bool Application::openEpubQuietly(const std::string &path) {
     activeView().redraw();
     return true;
   }
+  // 2026-10-12、直接のユーザー依頼("EPUBファイルはPART一覧で開いてない？ 他と同じくPART一覧の最初の内容を
+  // 表示した状態で始めて"): 初めて開く本も、章の一覧ではなく最初の章の本文から(^Gで章の一覧へ)。
   if (firstTime) {
-    currentMode_ = ApplicationMode::Cut;
-    if (epubTocVerticalActive()) refreshEpubTocVertical();
-    activeView().redraw();
-    activeView().syncVisibleCursor();
+    cutView_.setCursorIndex(0);
+    if (!openEpubTocEntry(cutMode_.segments().front())) {
+      currentMode_ = ApplicationMode::File;
+      fileReturnMode_ = ApplicationMode::Cut;
+      activeView().redraw();
+      activeView().syncVisibleCursor();
+    }
   } else {
     currentMode_ = ApplicationMode::File;
     fileReturnMode_ = ApplicationMode::Cut;
@@ -17404,9 +17409,11 @@ bool Application::runExternalUsilicPager(const std::string &command) {
     for (std::size_t i = 0; i < targets.size(); i++) {
       externalExtraEnv_ = savedEnv;
       if (i > 0) externalExtraEnv_ += (externalExtraEnv_.empty() ? "" : " ") + std::string("USILIC_CASCADE=") + std::to_string(i);
+      externalCascade_ = static_cast<int>(i);
       launchExternalUsilic(directory, join({targets[i]}), command, &recorded);
     }
     externalExtraEnv_ = savedEnv;
+    externalCascade_ = 0;
   }
   if (!recorded) history_.pushRecent(RingCategory::ShellCommand, command);
   activeView().redraw();
@@ -17425,13 +17432,22 @@ void Application::launchExternalUsilic(const std::string &directory, const std::
   }
   // 子の子(子の^Ou・^T等)も、いちばん上の親に登録する(親と一緒に終わり、^Tn/^Tpで巡回できる、2026-10-12)。
   long owner = parentPid_ > 0 ? parentPid_ : static_cast<long>(::getpid());
+  // 2026-10-12、直接のユーザー報告("^T^Mでepubファイルを選ぶと...GUIページャーは開くんだが、端末のプロフィールが
+  // 同じじゃない"): -cから-gの子へも、端末のウィンドウの外枠・行数・桁数・文字の大きさ・色とフォント
+  // (terminalFrameProvider_・terminalFontProvider_)を渡す(-gからは今のGUIのもの)。
+  std::string frameText, fontPath;
+  if (graphical) {
+    if (guiFrameProvider_) frameText = guiFrameProvider_();
+    if (guiFontProvider_) fontPath = guiFontProvider_();
+  } else if (wantsGui) {
+    if (terminalFrameProvider_) frameText = terminalFrameProvider_();
+    if (terminalFontProvider_) fontPath = terminalFontProvider_();
+  }
   std::string run = "USILIC_TRANSIENT=" + std::to_string(owner) +
                     (externalWindowSlot_ > 0 ? " USILIC_WINDOW_SLOT=" + std::to_string(externalWindowSlot_) : "") +
                     (externalExtraEnv_.empty() ? "" : " " + externalExtraEnv_) +
-                    (graphical && guiFrameProvider_ ? " USILIC_GUI_FRAME=" + guiFrameProvider_() : "") +
-                    (graphical && guiFontProvider_ && !guiFontProvider_().empty()
-                         ? " USILICFONT=" + shellQuoteArg(guiFontProvider_())
-                         : "") +
+                    (frameText.empty() ? "" : " USILIC_GUI_FRAME=" + frameText) +
+                    (fontPath.empty() ? "" : " USILICFONT=" + shellQuoteArg(fontPath)) +
                     " usilic" +
                     std::string(hasUiFlag ? "" : (graphical ? " -g" : " -c")) + args;
   std::string toRun = "unset USILIC USILIC_HANDOFF; " + cdWrap(directory, run);
@@ -17564,10 +17580,14 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
     // 同日"HELPとKEYの端末がぴったり重なる"(切り替えでTerminal.appのずらし置きが効かなくなる)→"希望はこんな感じ。
     // 最後にアクティブになるのが親"(スクリーンショット): 番号(externalWindowSlot_)のある子は、親のウィンドウの右隣に、
     // HELP(1)は上端を揃えて、KEY(2)はその下(新しいウィンドウの高さ分下)に置く(大きさは新しいウィンドウのまま)。
-    // 最後に親のウィンドウを前に出す。番号の無い子(^Ou等)はTerminal.appの置き方のまま。
+    // 最後に親のウィンドウを前に出す。番号の無い子(^Ou等)は親から右下へずらす(下のcascadeOffset)。
     const char *tty = ::ttyname(STDIN_FILENO);
     std::string ttyText = tty ? tty : "";
     int slot = externalWindowSlot_;
+    // 2026-10-12、直接のユーザー依頼("複数外部ウィンドウがピッタリ重なっているので=il.pngくらいズラしてほしい"):
+    // プロファイルを切り替えるとTerminal.appのずらし置きが効かないので、番号の無い子(^Ou・^T等)は、親の
+    // ウィンドウから1つ目は32、2つ目は64...右下へずらして置く(externalCascade_、画面からはみ出さない範囲で)。
+    int cascadeOffset = (externalCascade_ % 10 + 1) * 32;
     std::vector<std::string> lines = {
         "tell application \"Terminal\"",
         "set pName to missing value",
@@ -17587,7 +17607,7 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
         "if pName is not missing value then set current settings of newTab to settings set pName",
         "end try",
         "try",
-        "if pb is not missing value and " + std::to_string(slot) + " > 0 then",
+        "if pb is not missing value then",
         "set newTty to tty of newTab",
         "repeat with w in windows",
         "if tty of selected tab of w is newTty then",
@@ -17616,6 +17636,14 @@ bool Application::openInNewTerminalWindow(const std::string &directory, const st
         "set y to hy - ch",
         "if y < (item 2 of sr) then set y to (item 4 of sr) - ch",
         "end if",
+        "end if",
+        "if " + std::to_string(slot) + " = 0 then",
+        "set x to (item 1 of pb) + " + std::to_string(cascadeOffset),
+        "set y to (item 2 of pb) + " + std::to_string(cascadeOffset),
+        "if x + cw > (item 3 of sr) then set x to (item 3 of sr) - cw",
+        "if y + ch > (item 4 of sr) then set y to (item 4 of sr) - ch",
+        "if x < (item 1 of sr) then set x to item 1 of sr",
+        "if y < (item 2 of sr) then set y to item 2 of sr",
         "end if",
         "set bounds of w to {x, y, x + cw, y + ch}",
         "exit repeat",
