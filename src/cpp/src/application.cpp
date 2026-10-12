@@ -2620,19 +2620,15 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // 2026-10-10: ^Tn/^Tp(外部起動した子の(ls)で、渡されたディレクトリを行き来する、setLaunchDirectories()参照)。
   // 2026-10-10、直接のユーザー依頼(EmacsのoccurをFGREP/EGREPで、"暫定^T^Sと^T^J^S"): 今の画面の中で一致した
   // 行の一覧を出し、^Mでその行へ飛ぶ(従来のGREPの結果一覧、in-placeにしない)。
-  if (leaderTJPending_) {
-    leaderTJPending_ = false;
+  // 2026-10-12、直接のユーザー依頼("^T^S→^O^S、^T^J^S→^O^J^S"): ^O^Sは下の^Oのswitch、^O^J^Sはここ。
+  if (leaderOJPending_) {
+    leaderOJPending_ = false;
     if (!special && byte == 0x13) return startOccurPrompt(GrepSyntax::Regex);
     return false;
   }
   if (leaderTPending_) {
     leaderTPending_ = false;
     if (!special && (byte == 'n' || byte == 'p')) return cycleLaunchDirectory(byte == 'n' ? 1 : -1);
-    if (!special && byte == 0x13) return startOccurPrompt(GrepSyntax::Fixed);
-    if (!special && byte == kLeaderJ) {
-      leaderTJPending_ = true;
-      return true;
-    }
     return false;
   }
   if (!special && byte == 0x14 && !leaderPending && !universalArgPending_) {
@@ -3254,7 +3250,7 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // モードラインの定位置にCOPYモードの時だけ、みたいなメッセージを出す"): ^[w・^[p(COPYの
       // 範囲のコピー/PROGRAMへ)はCOPYの外では何もしないので、そう知らせる(どれかのキーで消える)。
       case 'w':
-      case 'p':
+      case 't':  // 2026-10-12、^[pから
         showTransientNotice(activeView(), "COPY mode only");
         return false;
       default:
@@ -3626,6 +3622,11 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       case 0x0c:  // ^O ^L : 再描画(SHELL内から)/ソート順を逆順(-r)にトグル(Directory、2026-10-05に^Olと交換)
         if (currentMode_ == ApplicationMode::Shell) return handleCommand(Command::Redraw);
         return handleCommand(Command::ToggleLsReverse);
+      case 0x13:  // ^O ^S : 一致した行の一覧(文字どおり、EmacsのoccurをFGREPで、2026-10-12に^T^Sから)
+        return startOccurPrompt(GrepSyntax::Fixed);
+      case kLeaderJ:  // ^O ^J ^S : 一致した行の一覧(拡張正規表現、2026-10-12に^T^J^Sから)
+        leaderOJPending_ = true;
+        return true;
       case '/':  // ^O / : 検索(SHELL内から、2026-09-19以後はインクリメンタル)
         return handleCommand(Command::StartIncrementalGrep);
       // 2026-09-08、当初はMeta(ESC)機構経由の"@F"/"@B"(将来のAlt表記
@@ -13109,7 +13110,8 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
     if (!special && byte == 'w') {
       copyMode_.confirmMark();
       if (wasRectangle) returnFromCopy();
-    } else if (!special && byte == 'p') {
+    } else if (!special && byte == 't') {
+      // 2026-10-12、直接のユーザー依頼("^[p→^[t"): TOOL(旧PROGRAM)へ渡すキーを^[pから^[tへ。
       // 2026-09-07再訂正、直接のユーザー要望⑦("^@で範囲指定を開始した
       // のち、停止位置で^[pが投入されたらその場で範囲指定終了
       // （^[w相当）とみなしてPROGRAMへ移行し、プロンプトにペーストして

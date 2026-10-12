@@ -30031,3 +30031,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼("^Odのメッセージだが、reversed/normalは逆の方がいい。ユーザー数が多いのはWindows
      なのであちらに合わせればいい。ただし既定はmacOS仕様でいい")。項目738では切り替えた方をreversedと出していた。
    - **確認**: PTYで、起動後の^Odで「Wheel: normal」。
+763. **2026-10-12: occurを^T^S・^T^J^Sから^O^S・^O^J^Sへ、COPYのTOOLへ渡すキーを^[pから^[tへ**
+   - **経緯**: 直接のユーザー依頼("^T^S→^O^S、^T^J^S→^O^J^S"、"^[p→^[t")。^Tは-gの子のウィンドウで開く接頭キーに
+     する(項目後続)ため、^T^Sの暫定のoccurを^Oへ移した(^O^Sは2026-09-18にFGREPを廃止して空いていた)。
+   - **内容**: ^Oのswitchに^S(GrepSyntax::Fixed)と^J(leaderOJPending_、続く^SでRegex)。COPYの^[p(範囲を確定して
+     TOOLのプロンプトへ貼る)を^[tに、COPYの外での「COPY mode only」の知らせも^[tに。
+   - **確認**: PTYで、HELP.txtのページャーで^O^S「usilic」→FGREPの一致した行の一覧。
