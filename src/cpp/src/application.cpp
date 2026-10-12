@@ -2260,11 +2260,15 @@ bool Application::startPagerFileList(const std::vector<std::string> &paths) {
       return true;
     }
   }
+  // 2026-10-12、直接のユーザー報告("`usilic HELP.txt`だとなぜかページャーじゃなく`~/`の(ls)起動になる"、
+  // スクリーンショット=iv・iw): 以前はloadFile()で開いてページャーを名乗らなかったので、モードラインの戻り先が
+  // ディレクトリになり、^Gで(ls)へ、qで終われなかった。roffの文書と同じく、展開した内容を本物のページャーで開く
+  // (loadAndTransformContent()がexpandHelpMarkup()する)。
   if (paths.size() == 1 && isHelpMarkupPagerFile(paths.front())) {
-    if (!fileMode_.loadFile(paths.front())) return false;
     currentMode_ = ApplicationMode::File;
     fileReturnMode_ = ApplicationMode::Directory;
-    pagerFileList_.clear();
+    if (!fileMode_.loadTransformedPagerFile(paths.front(), display_.rows(), "")) return false;
+    pagerFileList_ = paths;
     pagerFileIndex_ = 0;
     activeView().redraw();
     return true;

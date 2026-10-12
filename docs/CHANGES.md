@@ -30084,3 +30084,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      `narou2epub 'https://ncode.syosetu.com/n9995mu/'`が動き出すこと(途中で止めた。その際、誤って本物の
      ~/.usilic/historyに試験のディレクトリが2行記録されたので、history.old(直前の終了時のもの、差分はその2行だけ)
      から戻した)。
+769. **2026-10-12: `usilic HELP.txt`(HELPの書式のファイル)を本物のページャーで開く**
+   - **経緯**: 直接のユーザー報告("`usilic HELP.txt`だとなぜかページャーじゃなく`~/`の(ls)起動になる"、
+     スクリーンショット=iv・iw: モードラインの戻り先が「/Users/haa15030/」)。
+   - **原因**: startPagerFileList()は、HELP.txt/QUICK.txt(isHelpMarkupPagerFile())だけloadFile()で開き、
+     ページャーを名乗らなかった(2026-09-04の割り切り)。そのため戻り先がディレクトリになり、^Gで(ls)へ移り、qで
+     終われなかった。
+   - **内容**: roffの文書と同じくFileMode::loadTransformedPagerFile()(loadAndTransformContent()が
+     expandHelpMarkup()する)で開き、pagerFileList_を設定する。
+   - **確認**: PTYで、`usilic -c HELP.txt`のモードラインが「HELP.txt 001/570 TOP … usilic v1.5b」、^Gで動かず、qで終わること。
