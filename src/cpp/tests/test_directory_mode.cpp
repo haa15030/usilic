@@ -140,7 +140,7 @@ TEST_CASE_FIXTURE(Fixture, "enterDirectory: a symlink's name excludes both the l
 // judgment call).
 TEST_CASE_FIXTURE(Fixture, "enterDirectory: mode line shows the listing's own total byte count "
                            "(trailing) and \"(ls)\" (trailing2, when no search annotation is active), "
-                           "AND the \"usilic v1.5b\" rightWatermark still shows alongside both") {
+                           "AND the \"usilic-1.5b\" rightWatermark still shows alongside both") {
   REQUIRE(mode.enterDirectory(path()));
   std::string modeLine = view.modeLineText();
   CHECK(modeLine.find(std::to_string(view.totalByteCount())) != std::string::npos);
@@ -156,7 +156,7 @@ TEST_CASE_FIXTURE(Fixture, "enterDirectory: mode line shows the listing's own to
   view.redraw();
   bool sawWatermark = false;
   for (int row = 0; row < 24; row++)
-    if (display.rowText(row).find("usilic v1.5b") != std::string::npos) sawWatermark = true;
+    if (display.rowText(row).find("usilic-1.5b") != std::string::npos) sawWatermark = true;
   CHECK(sawWatermark);
 }
 

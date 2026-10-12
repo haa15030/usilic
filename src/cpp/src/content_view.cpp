@@ -1650,7 +1650,7 @@ std::string &ContentView::modeNameOverride() {
 }
 
 std::string &ContentView::programWatermark() {
-  static std::string watermark = "usilic v1.5b";
+  static std::string watermark = "usilic-1.5b";
   return watermark;
 }
 

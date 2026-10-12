@@ -773,7 +773,7 @@ TEST_CASE("setModeLineFieldsProvider: an overflowing name is middle-ellipsis tru
   v.setLines(makeLines(3));
 
   // Mirrors DirectoryMode's own REAL field shape exactly (trailing=byte
-  // count, trailing2="(ls)", rightWatermark="usilic v1.5b" -- see its
+  // count, trailing2="(ls)", rightWatermark="usilic-1.5b" -- see its
   // own 2026-08-15 provider comment), not just an approximation: an
   // earlier version of this test used trailing="(ls)"/no trailing2,
   // which didn't actually exercise the interacting-fields regression
@@ -785,7 +785,7 @@ TEST_CASE("setModeLineFieldsProvider: an overflowing name is middle-ellipsis tru
   std::string longPath =
       "/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Resources/Resource/TypeSupport/Unicode/Mappings/Adobe/";
   v.setModeLineFieldsProvider([&](int) -> ContentView::ModeLineFields {
-    return {longPath, "460", false, "usilic v1.5b", "(ls)"};
+    return {longPath, "460", false, "usilic-1.5b", "(ls)"};
   });
   std::string text = v.modeLineText();
   CHECK(text.find("1/3 TOP") != std::string::npos);   // position still shows
@@ -798,7 +798,7 @@ TEST_CASE("setModeLineFieldsProvider: an overflowing name is middle-ellipsis tru
   // never includes it -- renderModeLine() draws it separately, right-
   // justified) -- check the actual rendered row instead.
   v.redraw();
-  CHECK(d.rowText(5).find("usilic v1.5b") != std::string::npos);
+  CHECK(d.rowText(5).find("usilic-1.5b") != std::string::npos);
 }
 
 // 2026-08-18 addition: a direct follow-up to DirectoryMode's "Invalid
@@ -831,12 +831,12 @@ TEST_CASE("setModeLineFieldsProvider: a name LONGER than the field it replaces p
   std::string shortName = "DIR";                // 3 chars
   std::string longMessage = "Invalid mode";      // 12 chars -- 9 chars longer than shortName
   v.setModeLineFieldsProvider(
-      [&](int) -> ContentView::ModeLineFields { return {shortName, "460", false, "usilic v1.5b", "(ls)"}; });
+      [&](int) -> ContentView::ModeLineFields { return {shortName, "460", false, "usilic-1.5b", "(ls)"}; });
   v.redraw();
   std::string before = d.rowText(5);
 
   v.setModeLineFieldsProvider(
-      [&](int) -> ContentView::ModeLineFields { return {longMessage, "460", false, "usilic v1.5b", "(ls)"}; });
+      [&](int) -> ContentView::ModeLineFields { return {longMessage, "460", false, "usilic-1.5b", "(ls)"}; });
   v.redraw();
   std::string after = d.rowText(5);
 
@@ -850,12 +850,12 @@ TEST_CASE("setModeLineFieldsProvider: a name LONGER than the field it replaces p
   CHECK(after.find("1/3 TOP") == before.find("1/3 TOP") + overflow);
   CHECK(after.find("460") == before.find("460") + overflow);
   CHECK(after.find("(ls)") == before.find("(ls)") + overflow);
-  // rightWatermark ("usilic v1.5b") is the one exception: renderModeLine()
+  // rightWatermark ("usilic-1.5b") is the one exception: renderModeLine()
   // right-justifies it against the row's own edge rather than chaining it
   // after trailing2, so it does NOT shift -- it stays pinned to the same
   // column regardless of how long the name grows (the gap before it just
   // shrinks instead).
-  CHECK(after.find("usilic v1.5b") == before.find("usilic v1.5b"));
+  CHECK(after.find("usilic-1.5b") == before.find("usilic-1.5b"));
 }
 
 TEST_CASE("renderModeLine: name/position/trailing are separate reverse-video runs with plain gaps between") {
@@ -912,15 +912,15 @@ TEST_CASE("renderModeLine: rightWatermark is right-aligned, not reverse-video, a
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
   v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
-    return {"/tmp/dir/", "(ls)", false, "usilic v1.5b", ""};
+    return {"/tmp/dir/", "(ls)", false, "usilic-1.5b", ""};
   });
   v.redraw();
 
   // "/tmp/dir/ 1/3 TOP (ls)" occupies columns 0-21 (see the plain-gaps
-  // test above); " usilic v1.5b " (14 chars) is right-aligned at the
+  // test above); " usilic-1.5b " (14 chars) is right-aligned at the
   // last 14 columns (26-39 of a 40-column display).
   std::string row = d.rowText(5);
-  CHECK(row.substr(26, 14) == " usilic v1.5b ");
+  CHECK(row.substr(26, 14) == " usilic-1.5b ");
   CHECK(d.standoutAt(5, 27) == false);  // bold, not reverse-video, unlike name/position/trailing
   CHECK(row.substr(22, 4) == "    ");   // the gap between trailing and the watermark stays plain/blank
 
@@ -930,7 +930,7 @@ TEST_CASE("renderModeLine: rightWatermark is right-aligned, not reverse-video, a
   v2.setViewport(0, 5);
   v2.setLines(makeLines(3));
   v2.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
-    return {"/tmp/dir/", "(ls)", false, "usilic v1.5b", ""};
+    return {"/tmp/dir/", "(ls)", false, "usilic-1.5b", ""};
   });
   v2.redraw();
   CHECK(narrow.rowText(5).find("usilic") == std::string::npos);
@@ -1578,13 +1578,13 @@ TEST_CASE("scrollModeLineSegments: trailing2 draws as its own separate standout 
 
 TEST_CASE("scrollModeLineSegments: rightWatermark is emitted as its own plain-gap + bold (not standout) "
           "segment, matching renderModeLine()'s own look -- 2026-09-03, a direct user report that the "
-          "bottom-right \"usilic v1.5b\" watermark stayed missing during GUI drag/coast scrolling") {
+          "bottom-right \"usilic-1.5b\" watermark stayed missing during GUI drag/coast scrolling") {
   RecordingDisplay d(10, 40);
   ContentView v(d);
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
   v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
-    return {"/tmp/dir/", "(ls)", false, "usilic v1.5b", ""};
+    return {"/tmp/dir/", "(ls)", false, "usilic-1.5b", ""};
   });
 
   auto segments = v.scrollModeLineSegments();
@@ -1597,7 +1597,7 @@ TEST_CASE("scrollModeLineSegments: rightWatermark is emitted as its own plain-ga
   CHECK_FALSE(segments[5].standout);
   CHECK_FALSE(segments[5].bold);
   // The watermark itself: bold, NOT standout -- unlike every other field segment above.
-  CHECK(segments[6].text == " usilic v1.5b ");
+  CHECK(segments[6].text == " usilic-1.5b ");
   CHECK_FALSE(segments[6].standout);
   CHECK(segments[6].bold);
 }
@@ -1609,7 +1609,7 @@ TEST_CASE("scrollModeLineSegments: rightWatermark is dropped entirely (not trunc
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
   v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
-    return {"/tmp/dir/", "(ls)", false, "usilic v1.5b", ""};
+    return {"/tmp/dir/", "(ls)", false, "usilic-1.5b", ""};
   });
 
   auto segments = v.scrollModeLineSegments();

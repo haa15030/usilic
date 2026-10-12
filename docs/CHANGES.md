@@ -30223,3 +30223,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      "X <自分のPID>"を送ってから終わる。親は2秒たってもまだ生きていればkill -9する(reapExitingChildren())。
      端末のウィンドウを開けなければ終わらずに"Cannot open a terminal window"。
    - **確認**: ビルドのみ(GUIの画面は見えないため未確認)。
+784. **2026-10-13: (ls)等の右下のラベルを「usilic-1.5b」(SHELLのプロンプトと同じ)に**
+   - **経緯**: 直接のユーザー依頼("(ls)時の右下ラベルを「usilic-1.5b（SHELLプロンプトと同じ）」に変更してほしい")。
+   - **内容**: ContentView::programWatermark()の既定を"usilic v1.5b"から"usilic-1.5b"に(同じ長さ)。テストの期待値と
+     HELP_en_.txtの表記も合わせた(HELP_.txtはすでに「usilic-1.5b」)。

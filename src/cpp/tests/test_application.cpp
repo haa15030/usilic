@@ -352,9 +352,9 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap) (^O^M) on a regular fi
   // ("usilic.1を^O^Mで開いたときの戻り値は、^Mで開いたときと同じで
   // いい"): 一度は専用の"(ls)"trailing3バッジを追加したが、通常の
   // loadFile()(K-22)と同じく戻り値バッジ自体を一切表示しない(が、
-  // 独立起動フォールバックの"usilic v1.5b"だけは引き続き出さない)
+  // 独立起動フォールバックの"usilic-1.5b"だけは引き続き出さない)
   // という、より単純な仕様に決着した。
-  CHECK(app.activeContentView().modeLineText().find("usilic v1.5b") == std::string::npos);
+  CHECK(app.activeContentView().modeLineText().find("usilic-1.5b") == std::string::npos);
 
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
@@ -6885,7 +6885,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): shows a status screen with th
 
   std::string joined;
   for (const auto &line : app.activeContentView().lines()) joined += line.text + "\n";
-  CHECK(joined.find("usilic v1.5b") == std::string::npos);  // removed field
+  CHECK(joined.find("usilic-1.5b") == std::string::npos);  // removed field
   CHECK(joined.find((root / ".usilic" / "history").string()) == std::string::npos);  // removed field
   CHECK(joined.find("Boot options") != std::string::npos);
   CHECK(joined.find("Startup file") != std::string::npos);
@@ -9397,14 +9397,14 @@ TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: shows the total byte count of all s
 }
 
 // 2026-08-24 fix, a real report: entering SHELL from Cut mode (^J^W)
-// showed "usilic v1.5b" instead of "CUT" as the return-target badge --
+// showed "usilic-1.5b" instead of "CUT" as the return-target badge --
 // previousModeName() (shellReturnName_'s own source) had no `case
 // Cut:`/`case CutContent:` at all, silently falling through to its
 // `default: return "";` -- an EMPTY shellReturnName_ is what triggers
-// the "usilic v1.5b" watermark fallback the provider already had for
+// the "usilic-1.5b" watermark fallback the provider already had for
 // legacy's own "no previous mode" case.
 TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: entering from Cut mode shows \"CUT\" as the return-target "
-                           "trailing field, not the \"usilic v1.5b\" no-previous-mode fallback") {
+                           "trailing field, not the \"usilic-1.5b\" no-previous-mode fallback") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartCut));
   feedText("cpmv");
@@ -9418,7 +9418,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: entering from Cut mode shows \"CUT\
   REQUIRE(app.currentMode() == ApplicationMode::Shell);
   std::string text = app.shell().scrollback().modeLineText();
   CHECK(text.find("CUT") != std::string::npos);
-  CHECK(text.find("usilic v1.5b") == std::string::npos);
+  CHECK(text.find("usilic-1.5b") == std::string::npos);
 }
 
 // 2026-08-24 fix, a real 100%-reproducible report:
@@ -12392,7 +12392,7 @@ TEST_CASE_FIXTURE(Fixture, "EDIT: shows an underlined \"Invalid mode\" error in 
   // 2026-08-18 addition: a direct follow-up report ("同じ幅（27文字）分
   // スペースでパディングすれば行数その他の位置がズレないので") found
   // that the shorter replacement string, left unpadded, shifted every
-  // field after it (byte count, "(ls)", "usilic v1.5b") left by the
+  // field after it (byte count, "(ls)", "usilic-1.5b") left by the
   // difference between "Invalid mode"'s own length and the directory
   // name's. Padded to the directory name's width instead (see
   // reportEditError()'s own comment), so everything from the field
@@ -12956,7 +12956,7 @@ TEST_CASE_FIXTURE(Fixture, "HELP: backing all the way out to Directory does NOT 
   CHECK(app.currentMode() == ApplicationMode::Directory);
 
   CHECK(app.activeContentView().modeLineText().find("CUT:") == std::string::npos);
-  CHECK(display.rowText(23).find("usilic v1.5b") != std::string::npos);  // the normal watermark is back, not squeezed out
+  CHECK(display.rowText(23).find("usilic-1.5b") != std::string::npos);  // the normal watermark is back, not squeezed out
 }
 
 TEST_CASE_FIXTURE(Fixture, "HELP: invoked mid-CUT preserves the real session; Back restores it") {
