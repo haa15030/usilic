@@ -4066,7 +4066,8 @@ bool runEditorInLaunchingTerminal(const std::vector<std::string> &argv, fm::Grap
 // once before ever entering runTerminalPhase() -- see its own call
 // site comment for why THAT one insists on a match first).
 bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::TerminalDisplay &terminalDisplay,
-                      fm::History &history, std::optional<TerminalAppearance> appearance = std::nullopt) {
+                      fm::History &history, std::optional<TerminalAppearance> appearance = std::nullopt,
+                      std::optional<TerminalWindowBounds> bounds = std::nullopt) {
   // Saved window size/font (2026-08-24, item 427) -- ONLY applied when
   // `appearance` is unset: with `appearance` set, this call is the
   // "実はすでにGUI" launch-time overlay (tryEnterGuiPhase()'s own
@@ -4087,6 +4088,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   std::string fontPath = resolveGuiFontPath(appearance, savedGui.fontPath);
   int rows = display.rows(), columns = display.columns();
   int fontPointSize = 16;  // GraphicalDisplay::create()'s own default
+  if (appearance) fontPointSize = appearance->fontPointSize;  // 端末の文字の大きさ(^Og、2026-10-12)
   if (!appearance) {
     if (savedGui.rows > 0 && savedGui.columns > 0) {
       rows = savedGui.rows;
@@ -4115,6 +4117,12 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
     gui->setColors(fm::GraphicalDisplay::Color{savedGui.fgR, savedGui.fgG, savedGui.fgB},
                     fm::GraphicalDisplay::Color{savedGui.bgR, savedGui.bgG, savedGui.bgB});
 
+  // 2026-10-12、直接のユーザー報告("[^Ogで]GUIは出たけどプロファイルが継承されてない"): ^Ogでは、起動時の
+  // 「実はすでにGUI」の経路と同じく、端末のウィンドウにぴったり重ねる(色・フォントは上の`appearance`)。
+  if (bounds) {
+    gui->setWindowPosition(bounds->x, bounds->y);
+    gui->matchWindowSize(bounds->width, bounds->height);
+  }
   gui->open();
   // 子のHELP(1)・KEY(2): 親のウィンドウの右隣に、HELPは上端を揃え、KEYはその下(親と同じ大きさなので親の高さ分下)。
   // 親の外枠が無ければ(古い親等)、以前の48ずつのずらし。開いたら親に前へ出てもらう(Application::requestParentRaise())。
@@ -5800,7 +5808,11 @@ int main(int argc, char **argv) {
         if (app.wantsExit()) break;
         app.setGuiToggleReturnsToTerminal(true);
         // ^Og(Command::ToggleGuiMode): 同じ画面をGUIのウィンドウで。開けなければ(SSH・画面が無い等)端末のまま知らせる。
-        if (!tryEnterGuiPhase(app, display, *terminalDisplay, history)) app.showNotice("No GUI available");
+        // 端末(Terminal.app・iTerm2・GNOME Terminal等)のプロファイルの色・フォント・大きさと、ウィンドウの位置を受け継ぐ。
+        auto appearance = queryRealTerminalAppearance();
+        auto bounds = appearance ? queryRealTerminalWindowBounds() : std::nullopt;
+        if (!tryEnterGuiPhase(app, display, *terminalDisplay, history, appearance, bounds))
+          app.showNotice("No GUI available");
       }
     }
   }

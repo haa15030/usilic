@@ -1565,6 +1565,7 @@ class Application {
   // 2026-10-09: ^Uは回数の前置きも兼ねる(^U=4、^U^U=16、^U 数字=その数)。universalCount_に
   // 数え、次のコマンドの回数(pendingRepeatCount_)にする。
   bool universalArgPending_ = false;
+  bool leaderTPending_ = false;  // ^Tを押した直後(dispatchByte()の^Tn/^Tp)
   // 親と外部起動の子のウィンドウ(registerAsChild()で登録されたもの)を、`fromPid`の次(step=1)・前(-1)へ巡回して
   // 前に出す。子の^Tn/^Tpは親へ頼む(pollChildChannel()の"T")。
   bool cycleExternalWindows(int step, long fromPid);

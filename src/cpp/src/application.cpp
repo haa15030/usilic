@@ -2629,6 +2629,20 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     if (!special && byte == 0x13) return startOccurPrompt(GrepSyntax::Regex);
     return false;
   }
+  // 2026-10-12、直接のユーザー依頼("^Tの廃止はGUIへの移行のみ...ウィンドウを順にアクティブ、は正式が決まるまで
+  // ^Tを復活して"): ^Tn/^Tpで、元のusilicと外部起動した子のウィンドウを順に前に出す(cycleExternalWindows())。
+  // ^Tの後のn・p以外は取り消し。
+  if (leaderTPending_) {
+    leaderTPending_ = false;
+    clearTransientNotice();
+    if (!special && (byte == 'n' || byte == 'p')) return cycleExternalWindows(byte == 'n' ? 1 : -1, ::getpid());
+    return byte == 0x07 && !special;
+  }
+  if (!special && byte == 0x14 && !leaderPending && !universalArgPending_) {
+    leaderTPending_ = true;
+    showTransientNotice(activeView(), "C-t-");
+    return true;
+  }
   if (repeatZPending_ && !leaderPending) {
     repeatZPending_ = false;
     if (!special && byte == 'z') return handleCommand(Command::RepeatLastCommand);
@@ -3710,6 +3724,7 @@ KeyBindings::Context Application::keyBindingContext() const {
       registerPending_ != RegisterAction::None || leaderOPending_ ||
       gotoLineGPending_ || gotoLineDigitsPending_)
     return KeyBindings::Context::None;
+  if (leaderTPending_) return KeyBindings::Context::None;  // ^Tの後のn・p(dispatchByte())は置き換えない
   if (currentMode_ == ApplicationMode::Copy) return KeyBindings::Context::None;
   if (tabCompletionContext_ || promptKind_ != PromptKind::None || currentMode_ == ApplicationMode::Shell)
     return KeyBindings::Context::LeaderOnly;
@@ -6785,7 +6800,7 @@ namespace {
 bool sendToChannel(long ownerPid, const std::string &name, const std::string &message);  // 下の定義参照
 }  // namespace
 
-// 2026-10-12の^Tn/^Tp(^Tは同日廃止、子からの"T"で今も使う)。親は、自分と登録された子(registerAsChild()の"pid.<PID>"、中身はその子の受け渡しの
+// dispatchByte()の^Tn/^Tp。親は、自分と登録された子(registerAsChild()の"pid.<PID>"、中身はその子の受け渡しの
 // FIFOの名前)をPIDの順(起動の順)に並べ、`fromPid`の次・前のウィンドウを前に出す(子へは"A"を送る、
 // pollChildChannel()参照)。子は親へ"T <自分のPID> <step>"を頼む。
 bool Application::cycleExternalWindows(int step, long fromPid) {
