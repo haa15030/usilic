@@ -1595,8 +1595,6 @@ pid_t gTransientParentPid = 0;
 int gWindowSlot = 0;
 // 2026-10-12: ^Ouで複数のものを別々に開いた-gの子の何番目か(USILIC_CASCADE)。その分だけ右下へずらす。
 int gCascade = 0;
-// ^Tの子が起動後に打つキー(USILIC_START_KEYS、Application::setStartKeys())。
-std::vector<int> gStartKeys;
 // 2026-10-11、直接のユーザー依頼(-gの子のHELP・KEYを親と同じ大きさで、親の右隣に並べる): 親が渡すUSILIC_GUI_FRAME
 // (Application::setGuiFrameProvider()参照)を読んだもの。valid=falseなら無し。
 struct GuiFrame {
@@ -1692,6 +1690,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       app.requestImmediateExit();
       return leavePhase(true);
     }
+    if (app.consumeGuiModeToggleRequest()) return leavePhase(true);  // ^Og(Command::ToggleGuiMode参照)
     if (app.takeFontListRequest()) app.showNotice("Font list: -g only");  // ^J^F(buildFontList()参照)
     // See Application::awaitingLocateUpdateDb()'s own comment: this
     // loop's own poll() below already ticks every ~100ms regardless of
@@ -2943,6 +2942,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         pixelOffset = 0;  // see the key->special branch's comment above
         app.feedByte(key->byte, std::nullopt);
       }
+      if (app.consumeGuiModeToggleRequest()) return;  // ^Ogで端末へ(Command::ToggleGuiMode参照)
     }
 
     // Mouse wheel: a per-tick alternative to the coast-speed keys just
@@ -4987,11 +4987,6 @@ int main(int argc, char **argv) {
     gCascade = std::max(0, std::atoi(cascade));
     ::unsetenv("USILIC_CASCADE");
   }
-  if (const char *keys = std::getenv("USILIC_START_KEYS")) {  // ^Tの子(Application::runKeysInGraphicalChild())
-    std::string hex = keys;
-    for (std::size_t i = 0; i + 1 < hex.size(); i += 2) gStartKeys.push_back(std::stoi(hex.substr(i, 2), nullptr, 16));
-    ::unsetenv("USILIC_START_KEYS");
-  }
   if (const char *slot = std::getenv("USILIC_WINDOW_SLOT")) {
     gWindowSlot = std::max(0, std::atoi(slot));
     ::unsetenv("USILIC_WINDOW_SLOT");
@@ -5738,7 +5733,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  if (!gStartKeys.empty()) app.setStartKeys(gStartKeys);  // 実行ループの最初に打つ(Application::pollChildChannel())
 
   if (guiOwnsWholeSession) {
     // Same launcher tryEnterGuiPhase() wires for the ^Og / -g-via-that-
@@ -5772,6 +5766,7 @@ int main(int argc, char **argv) {
       // or the window's close button), so falling through to the
       // ordinary terminal-first loop below afterward is correct either
       // way -- same as if the user had pressed ^Og once by hand.
+      app.setGuiToggleReturnsToTerminal(keyInput.fd() >= 0);  // ^Ogで下の端末の実行ループへ戻れる
       if (!tryEnterGuiPhase(app, display, *terminalDisplay, history)) {
         std::cerr << "usilic: -g requested but no usable GUI (no font found, or no display) "
                      "-- falling back to terminal mode.\n";
@@ -5803,7 +5798,9 @@ int main(int argc, char **argv) {
       while (!app.wantsExit()) {
         if (!runTerminalPhase(app, keyInput, display, forceCui)) break;
         if (app.wantsExit()) break;
-        tryEnterGuiPhase(app, display, *terminalDisplay, history);  // ^Og fallback -- unmatched terminal or no display server
+        app.setGuiToggleReturnsToTerminal(true);
+        // ^Og(Command::ToggleGuiMode): 同じ画面をGUIのウィンドウで。開けなければ(SSH・画面が無い等)端末のまま知らせる。
+        if (!tryEnterGuiPhase(app, display, *terminalDisplay, history)) app.showNotice("No GUI available");
       }
     }
   }

@@ -30140,3 +30140,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      novel18.syosetu.comで取り直す(NOVEL_SITE、作品ごとに戻す)。それでも無ければ"No such novel"。
      Application::runNarouToEpub()はnovel18.syosetu.comのURLも受け付ける。HELP_.txt・HELP_en_.txtに追記。
    - **確認**: n2743mw(短編)で、ncode.syosetu.comのURLからEPUB(本文入り)ができた(クッキーでnovel18へ転送された)。
+775. **2026-10-12: ^Tの接頭キーを廃止して^Og(端末⇔GUIの切り替え)を復活、ページャーでも^K・^Ogは使える**
+   - **経緯**: 直接のユーザー報告・依頼("^J^Eから同じ本のハイライト行で^T^MするとGUIの(ls)となる"、"Pager起動で^Kが
+     Not availableとなる。HELP.txtで行頭タブコードのキーがPagerの^K"、"プレフィックス^Tはやめて^Ogを復活してほしい。
+     どの画面であっても^Ogで同じGUI画面となる")。
+   - **内容**: ①^T(feedLeaderTByte()・runKeysInGraphicalChild()・子へのキーのUSILIC_START_KEYS)を削除。^Tn/^Tpも
+     無くなる(子からの"T"の受け取り・cycleExternalWindows()は残した)。②Command::ToggleGuiMode(^O g)と
+     consumeGuiModeToggleRequest()を項目574の削除前の形で戻した: 端末の実行ループ(runTerminalPhase())が見て、
+     main()のループがtryEnterGuiPhase()で今の画面のままGUIへ。GUIでは、^Ogで入った時(または端末のある-gの
+     tryEnterGuiPhase()の経路、setGuiToggleReturnsToTerminal())だけ端末へ戻り、それ以外は"Already in GUI"。
+     GUIを開けなければ"No GUI available"。③ページャーの制限(pagerAllowedKeys())に^K・^Ogを足した。
+     HELP_.txt・HELP_en_.txtの^T・^Tn・^Tpの記述を削り、GUIの章の起動の節に^Ogを書いた。
+   - **確認**: PTYで、ページャーの^KがKEY(タブの行の一覧、01/67)、^Tは何もしない、^OgでGUIの段階へ移った
+     (GUIの画面そのものは見えないため未確認)。

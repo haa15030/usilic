@@ -2629,14 +2629,6 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     if (!special && byte == 0x13) return startOccurPrompt(GrepSyntax::Regex);
     return false;
   }
-  // 2026-10-12: ^Tの後のキー列は-gの子のusilicで実行する(^Tn/^Tpはウィンドウの巡回、feedLeaderTByte()参照)。
-  if (leaderTPending_) return feedLeaderTByte(byte, special.has_value());
-  if (!special && byte == 0x14 && !leaderPending && !universalArgPending_) {
-    leaderTPending_ = true;
-    leaderTBytes_.clear();
-    showTransientNotice(activeView(), "C-t-");
-    return true;
-  }
   if (repeatZPending_ && !leaderPending) {
     repeatZPending_ = false;
     if (!special && byte == 'z') return handleCommand(Command::RepeatLastCommand);
@@ -3574,6 +3566,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 2026-09-21、直接のユーザー提案("^Ouを復活では？"): マーク済みの
       // 複数項目を渡して閲覧する機能はCP/MV/RMと同じ^O系。従来のマーク
       // 済みファイル/ディレクトリの一覧(旧^J^Y)をここへ戻した。
+      case 'g':  // ^O g : 端末とGUIの切り替え(Command::ToggleGuiMode参照、2026-10-12に復活)
+        return handleCommand(Command::ToggleGuiMode);
       case 'u':  // ^O u : USILIC、マークしたファイル/ディレクトリの一覧
         return handleCommand(Command::StartUnderlineView);
       case 'e':  // ^O e : (ls)の.epubをARCで開く(K-100、2026-09-29)
@@ -3716,8 +3710,6 @@ KeyBindings::Context Application::keyBindingContext() const {
       registerPending_ != RegisterAction::None || leaderOPending_ ||
       gotoLineGPending_ || gotoLineDigitsPending_)
     return KeyBindings::Context::None;
-  // ^Tの後の接頭キーの続き(^T^Jeのe等)は、^Jの後と同じく置き換えない(feedLeaderTByte()、2026-10-12)。
-  if (leaderTPending_ && !leaderTBytes_.empty()) return KeyBindings::Context::None;
   if (currentMode_ == ApplicationMode::Copy) return KeyBindings::Context::None;
   if (tabCompletionContext_ || promptKind_ != PromptKind::None || currentMode_ == ApplicationMode::Shell)
     return KeyBindings::Context::LeaderOnly;
@@ -3740,7 +3732,7 @@ std::vector<int> keyBytesFromHelpLabel(std::string label);  // 下の定義参�
 // 2026-10-12、直接のユーザー依頼("ページャー起動時はHELP.txt記載のタブコードで始まるキー以外は無効にしてほしい
 // （^J^Cでカレントディレクトリへ行ったりしないよう）"): ページャーとして起動した時(pagerLaunch_)に使えるキー列。
 // HELP(helpText_、usilicrcのKEY節で変えたキーの表記に置き換え済み)の行頭がタブの行の、「：」の前のキー表記
-// (keyBytesFromHelpLabel())。^M(一覧で開く)は表記に無くても使える。HELPが無ければ空(制限しない)。
+// (keyBytesFromHelpLabel())。^M(一覧で開く)・^K・^Ogは表記に無くても使える。HELPが無ければ空(制限しない)。
 const std::vector<std::vector<int>> &Application::pagerAllowedKeys() {
   if (pagerAllowedSource_ == helpText_.size() && !pagerAllowedKeys_.empty()) return pagerAllowedKeys_;
   pagerAllowedKeys_.clear();
@@ -3755,7 +3747,13 @@ const std::vector<std::vector<int>> &Application::pagerAllowedKeys() {
     if (!bytes.empty()) pagerAllowedKeys_.push_back(bytes);
   }
   pagerAllowedSource_ = helpText_.size();
-  if (!pagerAllowedKeys_.empty()) pagerAllowedKeys_.push_back({kCarriageReturn});
+  // 同日、直接のユーザー報告("Pager起動で^KがNot availableとなる。HELP.txtで行頭タブコードのキーがPagerの^K"):
+  // ^K(ページャーではこの表のキーの一覧、startKey())と、どの画面でも使える^Og(Command::ToggleGuiMode)も。
+  if (!pagerAllowedKeys_.empty()) {
+    pagerAllowedKeys_.push_back({kCarriageReturn});
+    pagerAllowedKeys_.push_back({0x0b});
+    pagerAllowedKeys_.push_back({kLeaderO, 'g'});
+  }
   return pagerAllowedKeys_;
 }
 
@@ -3770,7 +3768,7 @@ std::optional<bool> Application::gatePagerKey(int byte, std::optional<KeyInput::
   }
   if (pagerKeyBuffer_.empty() &&
       (keyBindingContext() != KeyBindings::Context::All || universalArgPending_ || repeatZPending_ ||
-       macroRepeatArmed_ || leaderTPending_))
+       macroRepeatArmed_))
     return std::nullopt;
   const auto &allowed = pagerAllowedKeys();
   if (allowed.empty()) return std::nullopt;
@@ -5307,6 +5305,13 @@ bool Application::handleCommandImpl(Command command) {
       return openPlainHelp();
     case Command::OpenPlainHelp:
       return toggleHelpView();
+    case Command::ToggleGuiMode:
+      if (display_.isGraphical() && !guiToggleReturnsToTerminal_) {
+        showTransientNotice(activeView(), "Already in GUI");
+        return false;
+      }
+      guiModeToggleRequested_ = true;
+      return true;
     case Command::OpenUserUsilicrc: {
       std::string home = std::filesystem::path(usilicrcPath_).parent_path().parent_path().string();
       usilicrc::ensureUser(home);
@@ -6776,91 +6781,11 @@ bool Application::jumpToPathPrefix() {
 // するか(Shellのコマンドラインを事前に埋めるのか?Shellが既に開始
 // されている必要があるのか?)を決めることは、当てずっぽうにする
 // のではなく意図的に未着手のままにしてあるため。
-// 2026-10-12、直接のユーザー依頼("暫定^Tのプレフィックス付きは(grepを除き)-gで子プロセス画面起動。普段はCUIでも
-// いいが、.epubはGUIで読みたい（^T^Jeとかで）"、"親からは子を順にアクティブにできない？できるなら^Tn/^Tpを
-// それに当てたい"): ^Tの後に1つのコマンドのキー列(^J・^X・^O・ESC・^J^O・^Xrの接頭キーは続きを待つ)を集める。
-// n/pはウィンドウの巡回、それ以外は-gの子のusilicに今のディレクトリを開かせ、その子にキー列を打たせる((ls)の^Mは
-// カーソル行のファイル・ディレクトリそのものを子に開かせる)。^Gは取り消し。
 namespace {
 bool sendToChannel(long ownerPid, const std::string &name, const std::string &message);  // 下の定義参照
 }  // namespace
 
-bool Application::feedLeaderTByte(int byte, bool special) {
-  if (special) {
-    leaderTPending_ = false;
-    clearTransientNotice();
-    return false;
-  }
-  if (byte == 0x07 && leaderTBytes_.empty()) {
-    leaderTPending_ = false;
-    clearTransientNotice();
-    return true;
-  }
-  leaderTBytes_.push_back(byte);
-  const std::vector<int> &keys = leaderTBytes_;
-  auto isLeader = [](int b) { return b == kLeaderJ || b == kLeaderX || b == kLeaderO || b == kEscape; };
-  bool more = false;
-  if (keys.size() == 1) more = isLeader(keys[0]);
-  else if (keys.size() == 2) more = (keys[0] == kLeaderJ && keys[1] == kLeaderO) || (keys[0] == kLeaderX && keys[1] == 'r');
-  if (more) {
-    std::string shown = "C-t";
-    for (int b : keys) shown += b == kEscape ? " ESC" : b < 0x20 ? std::string(" C-") + static_cast<char>(b + 0x60) : " " + std::string(1, static_cast<char>(b));
-    showTransientNotice(activeView(), shown + "-");
-    return true;
-  }
-  leaderTPending_ = false;
-  clearTransientNotice();
-  std::vector<int> sequence = std::move(leaderTBytes_);
-  leaderTBytes_.clear();
-  if (sequence.size() == 1 && (sequence[0] == 'n' || sequence[0] == 'p'))
-    return cycleExternalWindows(sequence[0] == 'n' ? 1 : -1, ::getpid());
-  return runKeysInGraphicalChild(sequence);
-}
-
-bool Application::runKeysInGraphicalChild(const std::vector<int> &keys) {
-  bool guiAvailable = true;
-#ifdef USILIC_NO_GUI
-  guiAvailable = false;
-#endif
-  if (std::getenv("SSH_CONNECTION") || std::getenv("SSH_TTY")) guiAvailable = false;
-#ifndef __APPLE__
-  if (!std::getenv("DISPLAY") && !std::getenv("WAYLAND_DISPLAY")) guiAvailable = false;
-#endif
-  if (!guiAvailable) {  // -gの子を開けない所では、ふつうにこの画面で実行する
-    for (int b : keys) feedByte(b, std::nullopt);
-    return true;
-  }
-  // (ls)の^M: カーソル行のファイル・ディレクトリを子がそのまま開く(.epubはEPUBの画面、startPagerFileList()参照)。
-  std::string target;
-  bool passKeys = true;
-  if (keys == std::vector<int>{kCarriageReturn} && currentMode_ == ApplicationMode::Directory) {
-    if (const DirectoryEntry *entry = directoryMode_.selectedEntry()) {
-      std::string dir = directoryMode_.currentDirectory();
-      target = (std::filesystem::path(dir) / entry->name).lexically_normal().string();
-      while (target.size() > 1 && target.back() == '/') target.pop_back();
-      passKeys = false;
-    }
-  }
-  if (target.empty()) target = directoryMode_.currentDirectory();
-  if (target.empty()) {
-    std::error_code ec;
-    target = std::filesystem::current_path(ec).string();
-  }
-  if (passKeys) {
-    static const char kHex[] = "0123456789abcdef";
-    std::string hex;
-    for (int b : keys) {
-      hex += kHex[(b >> 4) & 0xf];
-      hex += kHex[b & 0xf];
-    }
-    externalExtraEnv_ = "USILIC_START_KEYS=" + hex;
-  }
-  runExternalUsilicPager("usilic -g " + shellQuoteArg(target));
-  externalExtraEnv_.clear();
-  return true;
-}
-
-// feedLeaderTByte()の^Tn/^Tp。親は、自分と登録された子(registerAsChild()の"pid.<PID>"、中身はその子の受け渡しの
+// 2026-10-12の^Tn/^Tp(^Tは同日廃止、子からの"T"で今も使う)。親は、自分と登録された子(registerAsChild()の"pid.<PID>"、中身はその子の受け渡しの
 // FIFOの名前)をPIDの順(起動の順)に並べ、`fromPid`の次・前のウィンドウを前に出す(子へは"A"を送る、
 // pollChildChannel()参照)。子は親へ"T <自分のPID> <step>"を頼む。
 bool Application::cycleExternalWindows(int step, long fromPid) {
@@ -19987,12 +19912,6 @@ void Application::pollChildChannel() {
   if (helpChildrenPending_) {
     helpChildrenPending_ = false;
     launchHelpChildren();
-    display_.flush();
-  }
-  if (!startKeys_.empty()) {  // ^Tの子: 親で打たれたキー列(runKeysInGraphicalChild()参照)
-    std::vector<int> keys = std::move(startKeys_);
-    startKeys_.clear();
-    for (int b : keys) feedByte(b, std::nullopt);
     display_.flush();
   }
   if (channelFd_ < 0) return;

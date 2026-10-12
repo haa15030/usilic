@@ -334,7 +334,11 @@ enum class Command {
   StopMacroRecord,
   PlayMacro,
   // ToggleGuiMode(^Og)は2026-10-02に廃止(「実はすでにGUI」方針の打ち切り、-gが正式オプションに。
-  // .steering/20261002-help-key-usilicrc-reorg/)。
+  // .steering/20261002-help-key-usilicrc-reorg/)。2026-10-12、直接のユーザー依頼("プレフィックス^Tはやめて^Ogを
+  // 復活してほしい。どの画面であっても^Ogで同じGUI画面となる")で復活: 端末の画面をそのままGUIのウィンドウへ
+  // (main.cppの実行ループがconsumeGuiModeToggleRequest()を見てtryEnterGuiPhase()へ)。GUIでは、^Ogで入った時
+  // だけ端末へ戻る(setGuiToggleReturnsToTerminal())。
+  ToggleGuiMode,
   // K-3(^L、M_clear): アクティブなビューの完全な再描画を強制する。
   Redraw,
   // ^Z(M_susp)――legacy自身のkey.c(M_susp、`f_M != M_shell`の場合の
@@ -1561,20 +1565,11 @@ class Application {
   // 2026-10-09: ^Uは回数の前置きも兼ねる(^U=4、^U^U=16、^U 数字=その数)。universalCount_に
   // 数え、次のコマンドの回数(pendingRepeatCount_)にする。
   bool universalArgPending_ = false;
-  // 2026-10-12、直接のユーザー依頼("暫定^Tのプレフィックス付きは(grepを除き)-gで子プロセス画面起動"、
-  // "^Tn/^Tpを子を順にアクティブにするのに"): ^Tの後のキー列(leaderTBytes_)を集め、揃ったらfeedLeaderTByte()が
-  // -gの子のusilicで実行する(^Tn/^Tpはウィンドウの巡回、cycleExternalWindows())。
-  bool leaderTPending_ = false;
-  std::vector<int> leaderTBytes_;
-  bool feedLeaderTByte(int byte, bool special);
-  bool runKeysInGraphicalChild(const std::vector<int> &keys);
   // 親と外部起動の子のウィンドウ(registerAsChild()で登録されたもの)を、`fromPid`の次(step=1)・前(-1)へ巡回して
   // 前に出す。子の^Tn/^Tpは親へ頼む(pollChildChannel()の"T")。
   bool cycleExternalWindows(int step, long fromPid);
   // このusilicのウィンドウを前に出す(-gはgui.raise()、-cはmacOSのTerminal.app・iTerm2のウィンドウをttyで探す)。
   void activateOwnWindow();
-  // -gの子(^Tの後のキー列を渡されたもの、USILIC_START_KEYS)が、実行ループの最初に自分で打つキー。
-  std::vector<int> startKeys_;
   int universalCount_ = 4;
   bool universalDigits_ = false;
   int pendingRepeatCount_ = 1;
@@ -1830,6 +1825,12 @@ class Application {
   // 子が自分のウィンドウを開いた後に親の"keys"へ「R」を送り(requestParentRaise())、親は実行ループで
   // takeRaiseRequest()を見て自分のウィンドウを前に出す(子に前を取られたままにしない)。
   void requestParentRaise();
+  // Command::ToggleGuiMode参照。main.cppの実行ループが、^Ogが押されたか(一度だけtrue)を見る。
+  bool consumeGuiModeToggleRequest() { return std::exchange(guiModeToggleRequested_, false); }
+  // 今のGUIから^Ogで端末へ戻れるか(main.cppのtryEnterGuiPhase()の間だけtrue)。
+  void setGuiToggleReturnsToTerminal(bool on) { guiToggleReturnsToTerminal_ = on; }
+  bool guiModeToggleRequested_ = false;
+  bool guiToggleReturnsToTerminal_ = false;
   // -H・最初の起動の子(HELPとKEY)を、次のpollChildChannel()(実行ループの最初)で起動する(main.cppから、GUIの
   // 準備ができてから起動して親のウィンドウを渡すため)。
   void scheduleHelpChildren() { helpChildrenPending_ = true; }
@@ -1872,7 +1873,6 @@ class Application {
   // 新しいウィンドウ(openInNewTerminalWindow())で開いた外部ページャーのusilicが終わったら(目印のファイルが
   // 消えたら)「Opened in a new window」を消す。端末の実行ループが毎回呼ぶ。
   void pollExternalPagerWindows();
-  void setStartKeys(std::vector<int> keys) { startKeys_ = std::move(keys); }
   // 2026-09-06追加、直接のユーザー報告("％の行数が97と98を行き来...
   // -g起動ではスクロールバーの（つまみ長を短くする）描き直しでも
   // モードライン描画が起きるみたい")――Command::ScrollLineDown/
