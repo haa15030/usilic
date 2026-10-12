@@ -1643,6 +1643,7 @@ class Application {
   // recordedMacro_へも追加する(またはpendingLeaderXByte_に保持
   // する)。
   bool feedByte(int byte, std::optional<KeyInput::SpecialKey> special);
+  bool feedByteUngated(int byte, std::optional<KeyInput::SpecialKey> special);  // feedByte()の本体(ページャーの制限無し)
   // usilicrcのKEY節の置き換えを通さずに、既定のキーとして本体へ渡す
   // (2026-09-25)。GUIの右クリック(=^G、「戻る」)のように、利用者が押した
   // キーではなくプログラムが意味を決めて合成するキー用。
@@ -3588,11 +3589,20 @@ private:
   // ^X(・^X)・^Xeとして解決したキー(feedByteImpl()がマクロに記録しない、2026-10-08)。
   bool macroControlKey_ = false;
   bool pagerLaunch_ = false;  // setPagerLaunch()参照
+  // ページャーとして起動した時に使えるキー(pagerAllowedKeys()・gatePagerKey()参照)。
+  const std::vector<std::vector<int>> &pagerAllowedKeys();
+  std::optional<bool> gatePagerKey(int byte, std::optional<KeyInput::SpecialKey> special);
+  std::vector<std::vector<int>> pagerAllowedKeys_;
+  std::size_t pagerAllowedSource_ = 0;  // pagerAllowedKeys_を作った時のhelpText_の大きさ
+  std::vector<int> pagerKeyBuffer_;     // 押したが、まだ表のどれとも同じになっていないキー
+  int pagerKeyGateDepth_ = 0;           // feedByte()の入れ子(マクロ等の中のキーは制限しない)
   bool executingKeyLine_ = false;
   // 2026-10-02追加、直接のユーザー報告("KEYではカーソル位置が保存されない"、"hを押してHELPへ移動したあとの
   // 対象位置がわかりにくい。一行に渡るハイライトでよろしく（任意のキーで消える）"): KEYの一覧で最後に
   // いた行(startKey()が戻す)、hで飛んだ先の行をハイライトしている間(clearTransientNotice()が消す)。
   int keyCursorIndex_ = 0;
+  // EPUBの本文からKEYを開いた時の、元の章の一覧の^Gの戻り先(startKey()参照)。
+  std::optional<ApplicationMode> keyOverEpubReturnMode_;
   bool helpJumpHighlight_ = false;
   // 平文のHELPとして最後に開いたファイル(toggleHelpView()が「平文のHELPを見ている」と判断する)。
   std::string plainHelpPath_;

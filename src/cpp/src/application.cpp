@@ -3733,7 +3733,87 @@ KeyBindings::Context Application::keyBindingContext() const {
 // 置き換えてから、下のfeedUntranslatedByte()(本体の入口)へ渡す。既定のまま
 // (isIdentity())なら素通しで、挙動は一切変わらない。特殊キー(矢印等)はKEY節の
 // 対象外なので、溜めているキーがあれば先にそのまま渡してから処理する。
+namespace {
+std::vector<int> keyBytesFromHelpLabel(std::string label);  // 下の定義参照
+}  // namespace
+
+// 2026-10-12、直接のユーザー依頼("ページャー起動時はHELP.txt記載のタブコードで始まるキー以外は無効にしてほしい
+// （^J^Cでカレントディレクトリへ行ったりしないよう）"): ページャーとして起動した時(pagerLaunch_)に使えるキー列。
+// HELP(helpText_、usilicrcのKEY節で変えたキーの表記に置き換え済み)の行頭がタブの行の、「：」の前のキー表記
+// (keyBytesFromHelpLabel())。^M(一覧で開く)は表記に無くても使える。HELPが無ければ空(制限しない)。
+const std::vector<std::vector<int>> &Application::pagerAllowedKeys() {
+  if (pagerAllowedSource_ == helpText_.size() && !pagerAllowedKeys_.empty()) return pagerAllowedKeys_;
+  pagerAllowedKeys_.clear();
+  // KEY(keySourceLines())と同じく、組んだ後の行で見る(行頭のタブはU+2060+空白になっている)。
+  bool lineStart = true;
+  for (const auto &line : wrapHelpText(display_.columns())) {
+    bool head = lineStart;
+    lineStart = line.endsWithNewline;
+    if (!head || line.text.rfind("\xE2\x81\xA0", 0) != 0) continue;
+    if (line.text.find("\xEF\xBC\x9A") == std::string::npos) continue;
+    std::vector<int> bytes = keyBytesFromHelpLabel(line.text.substr(3));
+    if (!bytes.empty()) pagerAllowedKeys_.push_back(bytes);
+  }
+  pagerAllowedSource_ = helpText_.size();
+  if (!pagerAllowedKeys_.empty()) pagerAllowedKeys_.push_back({kCarriageReturn});
+  return pagerAllowedKeys_;
+}
+
+// pagerAllowedKeys()参照。押したキー(usilicrcのKEY節の置き換えの前)を溜め、表のどれかと同じになったら本体へ渡し、
+// どれの頭にもならなければ捨てる。表記の「N」は数字、「^Xr␣c」等の「c」は任意の字。プロンプト・SHELL・COPYの中、
+// ^U・^[N等の続きの入力(数字等)を待っている時は制限しない(feedByte()から呼ぶ、マクロ等の中からは呼ばない)。
+std::optional<bool> Application::gatePagerKey(int byte, std::optional<KeyInput::SpecialKey> special) {
+  if (!pagerLaunch_ || keyColonListLaunch_) return std::nullopt;
+  if (special) {
+    pagerKeyBuffer_.clear();
+    return std::nullopt;
+  }
+  if (pagerKeyBuffer_.empty() &&
+      (keyBindingContext() != KeyBindings::Context::All || universalArgPending_ || repeatZPending_ ||
+       macroRepeatArmed_ || leaderTPending_))
+    return std::nullopt;
+  const auto &allowed = pagerAllowedKeys();
+  if (allowed.empty()) return std::nullopt;
+  pagerKeyBuffer_.push_back(byte);
+  auto element = [](const std::vector<int> &pattern, std::size_t i, int b) {
+    if (pattern[i] == b) return true;
+    if (pattern[i] == 'N' && b >= '0' && b <= '9') return true;
+    return pattern[i] == 'c' && i >= 2 && pattern[0] == kLeaderX && pattern[1] == 'r';
+  };
+  bool exact = false, prefix = false;
+  for (const auto &pattern : allowed) {
+    if (pattern.size() < pagerKeyBuffer_.size()) continue;
+    bool match = true;
+    for (std::size_t i = 0; i < pagerKeyBuffer_.size() && match; i++) match = element(pattern, i, pagerKeyBuffer_[i]);
+    if (!match) continue;
+    if (pattern.size() == pagerKeyBuffer_.size()) exact = true;
+    else prefix = true;
+  }
+  if (!exact && !prefix) {
+    pagerKeyBuffer_.clear();
+    showTransientNotice(activeView(), "Not available in pager");
+    return true;
+  }
+  if (!exact) return true;  // 続きを待つ
+  std::vector<int> bytes;
+  bytes.swap(pagerKeyBuffer_);
+  bool result = false;
+  for (int b : bytes) result = feedByteUngated(b, std::nullopt);
+  return result;
+}
+
 bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  if (pagerKeyGateDepth_ == 0) {
+    ++pagerKeyGateDepth_;
+    std::optional<bool> gated = gatePagerKey(byte, special);
+    bool result = gated ? *gated : feedByteUngated(byte, special);
+    --pagerKeyGateDepth_;
+    return result;
+  }
+  return feedByteUngated(byte, special);
+}
+
+bool Application::feedByteUngated(int byte, std::optional<KeyInput::SpecialKey> special) {
   // ^Xeの直後の'e'は、記録したマクロの再実行(macroRepeatArmed_参照)。usilicrcのMACROの'e'(EDIT)より先に見る。
   if (macroRepeatArmed_) {
     macroRepeatArmed_ = false;
@@ -10186,8 +10266,21 @@ bool Application::returnFromCutContent() {
 // returnFromGrep()が防がなければならなかったような古い注釈の危険は
 // 無い。
 bool Application::returnFromCut() {
+  // 2026-10-12: ページャーとして起動した時(pagerLaunch_)は(ls)を読み込んでいないので、EPUBの章の一覧の^Gで
+  // 空の(ls)へ出ていた。ページャーではディレクトリへ行かない(gatePagerKey()と同じ依頼)ので、その場に留まる。
+  if (pagerLaunch_ && cutOrigin_ == CutOrigin::Epub && cutReturnMode_ == ApplicationMode::Directory) return false;
   saveKeyCursor();
   saveCutFilePosition();
+  if (cutOrigin_ == CutOrigin::Key && keyOverEpubReturnMode_ && cutReturnMode_ == ApplicationMode::File) {
+    // startKey()参照: EPUBの本文へ戻り、本文の^Gは章の一覧へ(returnToEpubToc()が一覧を作り直す)。
+    cutOrigin_ = CutOrigin::Epub;
+    cutReturnMode_ = *keyOverEpubReturnMode_;
+    keyOverEpubReturnMode_.reset();
+    currentMode_ = ApplicationMode::File;
+    activeView().redraw();
+    activeView().syncVisibleCursor();
+    return true;
+  }
   if (cutOrigin_ == CutOrigin::Epub) {
     fileMode_.annotations().clear();  // openEpub()の"EPUB"注釈
     epubVertical_ = false;
@@ -18367,6 +18460,13 @@ bool Application::startKey() {
   if (helpText_.empty()) return showHelpNotFound();
   std::vector<StyledLine> lines = keySourceLines(display_.columns());
   bool fromCut = currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent;
+  // 2026-10-12、直接のユーザー報告("^K後は^G連打で無限行き来"): EPUBの本文(^Gで章の一覧へ戻る)からKEYを開くと、
+  // CUTの由来と戻り先がKEYのものに置き換わり、本文の^GがKEYへ、KEYの^Gが本文へ、と行き来していた。本文から
+  // 開いた時は元の章の一覧の戻り先を控え、KEYの^Gで本文へ戻る時に戻す(returnFromCut())。
+  keyOverEpubReturnMode_.reset();
+  if (!fromCut && currentMode_ == ApplicationMode::File && fileReturnMode_ == ApplicationMode::Cut &&
+      cutOrigin_ == CutOrigin::Epub)
+    keyOverEpubReturnMode_ = cutReturnMode_;
   if (!fromCut) cutReturnMode_ = currentMode_;
   cutOrigin_ = CutOrigin::Key;
   // KEYは反転表示を「：」の手前まで(2026-10-11、-Kから、同日"親の^Kも-Kと同じくキーアサインのみのハイライト
