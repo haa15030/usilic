@@ -30073,3 +30073,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      置き換えない(keyBindingContext()、^T^Jeのeが^[e(EDIT)にならないように)。^Gで取り消し。
    - **確認**: PTYで、SSH扱いでは^T^JeでEPUBのプロンプト、そうでなければ子のusilic -gが
      USILIC_START_KEYS=0a65で起動されること。子のウィンドウでのプロンプトは未確認。
+768. **2026-10-12: ^Jeになろうの作品の番号を入れるとnarou2epubでEPUBにして開く、URLは^Owの今の対処で開く**
+   - **経緯**: 直接のユーザー依頼("^Jeでなろう作品No.を入力すると、縦書きEPUB画面が出る"、"EPUBのプロンプトに任意の
+     URLを入れてもURLの設定に従う仕様")。
+   - **内容**: Application::openEpubPromptSpecial(): N1234AB(大文字小文字は問わない)なら、URL節のEpubの対処(^Owの
+     今の対処に関わらず)でhttps://ncode.syosetu.com/n1234ab/をSHELLのnarou2epubに渡す(作り終えたEPUBは項目756の
+     受け渡しでEPUBの画面に開く)。http(s)のURLなら、EPUBの本の中のリンクと同じくopenEpubWebLink()(^Owの今の
+     対処)。Epubの部分はrunNarouToEpub()に括り出した。それ以外は従来どおり今のディレクトリの.epub。
+   - **確認**: PTYで、Epubの無い環境では「No Epub in URL (usilicrc)」、ある環境ではSHELLで
+     `narou2epub 'https://ncode.syosetu.com/n9995mu/'`が動き出すこと(途中で止めた。その際、誤って本物の
+     ~/.usilic/historyに試験のディレクトリが2行記録されたので、history.old(直前の終了時のもの、差分はその2行だけ)
+     から戻した)。

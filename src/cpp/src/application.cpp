@@ -7735,22 +7735,7 @@ bool Application::openEpubWebLink(const std::string &url) {
   // 2026-10-11、直接のユーザー依頼(EPUBの中のなろうのリンクからEPUB化して開く): 作品のリンク
   // (ncode.syosetu.com/nNNNNxx)なら、SHELLでnarou2epubを動かす(保存先はnarou2epubの既定の~/.usilic/data)。
   // narou2epubはSHELLの中では作り終えたEPUBを`usilic`で渡すので、pollShellHandoff()がEPUBの画面で開く。
-  if (handler.name == "Epub") {
-    static const std::regex kNarouWork(R"(^https?://ncode\.syosetu\.com/n[0-9]{4,}[a-z]+)", std::regex::icase);
-    if (!std::regex_search(url, kNarouWork)) {
-      showTransientNotice(activeView(), "Not a Narou work: " + url);
-      return false;
-    }
-    if (refuseIfShellBusy() || !ensureShellActive()) {
-      activeView().redraw();
-      return false;
-    }
-    std::string command = shellQuoteArgv(argv);
-    shell_.commandLine().setText(command);
-    shell_.submitLine();
-    history_.pushRecent(RingCategory::ShellCommand, command);
-    return true;
-  }
+  if (handler.name == "Epub") return runNarouToEpub(handler, url);
   if (handler.name == "Dump") {
     if (currentMode_ != ApplicationMode::File || !isEpubFile(fileMode_.currentFile())) return false;
     drawPromptLabel(PromptKind::EpubLoad, /*positionText=*/"", "Reading...");
@@ -7874,6 +7859,58 @@ bool Application::openWebLinkInQuickLook(const std::string &url) {
       << escaped << "</string></dict></plist>\n";
   out.close();
   return runQuickLook({path});
+}
+
+// openEpubWebLink()のEpub(usilicrcのURL節)、^Jeのなろうの作品の番号(2026-10-12)。`handler`のargvの後ろにURLを足して
+// SHELLで動かす。
+bool Application::runNarouToEpub(const Configuration::UrlHandler &handler, const std::string &url) {
+  static const std::regex kNarouWork(R"(^https?://ncode\.syosetu\.com/n[0-9]{4,}[a-z]+)", std::regex::icase);
+  if (!std::regex_search(url, kNarouWork)) {
+    showTransientNotice(activeView(), "Not a Narou work: " + url);
+    return false;
+  }
+  if (handler.argv.empty() || !programOnPath(handler.argv[0])) {
+    showTransientNotice(activeView(), (handler.argv.empty() ? std::string("Epub") : handler.argv[0]) + ": command not found");
+    return false;
+  }
+  if (refuseIfShellBusy() || !ensureShellActive()) {
+    activeView().redraw();
+    return false;
+  }
+  std::vector<std::string> argv = handler.argv;
+  argv.push_back(url);
+  std::string command = shellQuoteArgv(argv);
+  shell_.commandLine().setText(command);
+  shell_.submitLine();
+  history_.pushRecent(RingCategory::ShellCommand, command);
+  return true;
+}
+
+// 2026-10-12、直接のユーザー依頼("^Jeでなろう作品No.を入力すると、縦書きEPUB画面が出る"、"EPUBのプロンプトに任意の
+// URLを入れてもURLの設定に従う仕様"): ^Jeに入れた文字列が、なろうの作品の番号(N1234AB)ならnarou2epub(URL節のEpub、
+// ^Owの今の対処に関わらず)でEPUBにして開き、http(s)のURLならEPUBの本の中のリンクと同じく^Owの今の対処で開く。
+// どちらでもなければfalse(ファイルとして扱う)。
+bool Application::openEpubPromptSpecial(const std::string &text) {
+  static const std::regex kNarouNumber(R"(^\s*(n[0-9]{4,}[a-z]+)\s*$)", std::regex::icase);
+  static const std::regex kUrl(R"(^\s*https?://\S+\s*$)", std::regex::icase);
+  std::smatch match;
+  if (std::regex_match(text, match, kNarouNumber)) {
+    std::string number = match[1].str();
+    for (char &c : number) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (const auto &handler : configuration_.urlHandlers())
+      if (handler.name == "Epub") return runNarouToEpub(handler, "https://ncode.syosetu.com/" + number + "/");
+    showTransientNotice(activeView(), "No Epub in URL (usilicrc)");
+    return true;
+  }
+  if (std::regex_match(text, kUrl)) {
+    std::string url = text;
+    url.erase(0, url.find_first_not_of(" \t"));
+    url.erase(url.find_last_not_of(" \t") + 1);
+    activeView().redraw();
+    openEpubWebLink(url);
+    return true;
+  }
+  return false;
 }
 
 // 横書きの本文のカーソルの行のWebのリンク(openEpubWebLink())。
@@ -14621,6 +14658,7 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
       }
       if (epubPathPending_) {  // ^Je(startEpubPrompt()参照)
         epubPathPending_ = false;
+        if (openEpubPromptSpecial(text)) return true;  // なろうの作品の番号・URL(2026-10-12)
         ResolvedPath resolved = pathResolver_.resolve(text, directoryMode_.currentDirectory());
         // 2026-10-03: カレントディレクトリにある.epubだけを受け付ける(上の^Iの補完の同日のコメント参照)。
         std::error_code ec;

@@ -2781,7 +2781,9 @@ class Application {
   bool openSelectedEpubListEntry();
   bool openEpubTocEntry(const CutSegment &segment);       // 同上
   bool returnToEpubToc();                                 // 同上
-  bool startEpubPrompt();                                 // K-98(^Je)
+  bool startEpubPrompt();
+  bool openEpubPromptSpecial(const std::string &text);  // ^Jeのなろうの作品の番号・URL(2026-10-12)
+  bool runNarouToEpub(const Configuration::UrlHandler &handler, const std::string &url);                                 // K-98(^Je)
   bool startEpubList();                                   // K-99(^J^E)
   bool startArchiveList();                                // K-103(^J^A)
   std::string installLibDirectory_;
