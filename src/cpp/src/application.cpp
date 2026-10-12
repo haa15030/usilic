@@ -5529,7 +5529,17 @@ bool Application::handleCommandImpl(Command command) {
     case Command::StartEdit:
       return executeEdit();
     case Command::StartHelp:
-      return startHelp();
+      // 2026-10-13、直接のユーザー依頼("既定のHELP閲覧を平文に変更。^Ohは温存"): ^H・^J^Hは平文のHELP
+      // (openPlainHelp())。目次(startHelp()のCUT)へは^Oh(toggleHelpView())で。
+      if (currentMode_ == ApplicationMode::File && !plainHelpPath_.empty() &&
+          fileMode_.currentFile() == plainHelpPath_) {
+        showTransientNotice(activeView(), "Already in HELP");
+        return true;
+      }
+      if ((currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
+          cutOrigin_ == CutOrigin::Help)
+        return startHelp();  // "Already in HELP"
+      return openPlainHelp();
     case Command::StartMacroRecord:
       return startMacroRecording();
     case Command::StopMacroRecord:
@@ -12093,7 +12103,7 @@ bool Application::openSelectedBannerEntry() {
   // なloadFile())とは異なり、CUT-by-fileそのものを再生する必要がある
   // ――openTutorial()自身のコメント参照(2026-09-20、^T単独キーとの
   // 共有のため括り出した)。
-  if (endsWith(helpPath_)) return reloadHelpText() && startHelp();
+  if (endsWith(helpPath_)) return reloadHelpText() && openPlainHelp();  // 既定は平文(Command::StartHelp参照)
   for (const std::string &fixedPath : {startupFilePath(), errorLogPath_, logFilePath_}) {
     if (!endsWith(fixedPath)) continue;
     // 2026-08-27修正、実際の報告("^T→「/tmp/.usilic.NNNNN/shell」

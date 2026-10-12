@@ -30176,3 +30176,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      -cの子で開き直して自分は終わる。GUIの実行ループ(runGuiPhase())はキーの後だけでなく、子の受け渡しの後にも
      consumeGuiModeToggleRequest()を見る。
    - **確認**: ビルドのみ(GUIの画面は見えないため未確認)。
+778. **2026-10-13: ^H・^J^Hの既定のHELPを平文に(^Ohの目次⇔平文の切り替えはそのまま)**
+   - **経緯**: 直接のユーザー依頼("HELP書き換えはまだだが既定のHELP閲覧を平文に変更。^Ohは温存")。
+   - **内容**: Command::StartHelpをopenPlainHelp()に。平文のHELPの中では"Already in HELP"、目次(HELPのCUT)の中は
+     従来通りstartHelp()の"Already in HELP"。^TのバナーのHELPの行も平文に。
