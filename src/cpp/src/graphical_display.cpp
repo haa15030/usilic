@@ -1343,7 +1343,19 @@ GraphicalDisplay::~GraphicalDisplay() {
   clearGlyphCache(*impl_);  // impl_->rendererがまだ有効なうちに実行する必要がある――それ自身のコメント参照
   impl_->clearImageCache();  // 同じく(本文の画像のテクスチャ)
   if (impl_->renderer) SDL_DestroyRenderer(impl_->renderer);
-  if (impl_->window) SDL_DestroyWindow(impl_->window);
+  // 2026-10-13、直接のユーザー報告("^OgのGUI→CUIでGUIのままのウィンドウが残っていると(残らない時もある)それが
+  // 暴走"): ^Ogで端末へ戻ったusilicは、その後SDLのイベントを処理しない。macOSでは、破棄したウィンドウを閉じる処理が
+  // イベントの処理を待ったまま残り、応答しないウィンドウとして画面に残ることがあった。先に隠し、破棄した後にも
+  // イベントを何度か処理して、ウィンドウが確かに消えてから終える。
+  if (impl_->window) {
+    SDL_HideWindow(impl_->window);
+    SDL_PumpEvents();
+    SDL_DestroyWindow(impl_->window);
+    for (int i = 0; i < 10; i++) {
+      SDL_PumpEvents();
+      SDL_Delay(5);
+    }
+  }
   if (impl_->serifFont) TTF_CloseFont(impl_->serifFont);
   if (impl_->fallbackFont) TTF_CloseFont(impl_->fallbackFont);
   if (impl_->font) TTF_CloseFont(impl_->font);

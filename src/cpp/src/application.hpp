@@ -2,6 +2,7 @@
 
 #include <sys/types.h>  // pid_t(MSYS2では他のヘッダ経由で入らない、2026-10-05)
 
+#include <chrono>
 #include <filesystem>
 #include <map>
 #include <optional>
@@ -1572,6 +1573,9 @@ class Application {
   std::vector<std::pair<long, std::string>> registeredChildren() const;
   void toggleChildrenGuiMode();
   void toggleGuiModeFromParent();
+  void reapExitingChildren();
+  // ^Ogで終わると言ってきた子のPIDと、それまでに終わらなければkill -9する時刻(reapExitingChildren())。
+  std::vector<std::pair<long, std::chrono::steady_clock::time_point>> exitingChildren_;
   // このusilicのウィンドウを前に出す(-gはgui.raise()、-cはmacOSのTerminal.app・iTerm2のウィンドウをttyで探す)。
   void activateOwnWindow();
   int universalCount_ = 4;

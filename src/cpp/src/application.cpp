@@ -6855,7 +6855,30 @@ void Application::toggleGuiModeFromParent() {
   if (target.empty()) return;
   long owner = parentPid_ > 0 ? parentPid_ : static_cast<long>(::getpid());
   std::string run = "USILIC_TRANSIENT=" + std::to_string(owner) + " usilic -c " + shellQuoteArg(target);
-  if (openInNewTerminalWindow(directory, "unset USILIC USILIC_HANDOFF; " + run)) requestImmediateExit();
+  if (!openInNewTerminalWindow(directory, "unset USILIC USILIC_HANDOFF; " + run)) {
+    showTransientNotice(activeView(), "Cannot open a terminal window");
+    return;
+  }
+  // 2026-10-13、直接のユーザー報告("GUIのままのウィンドウが残っているとそれが暴走。子のPIDを覚えておいて生きていたら
+  // kill -9では？"): 終わる前に親へ"X <自分のPID>"を送り、親は少し待ってもまだ生きていればkill -9する
+  // (pollChildChannel()、reapExitingChildren())。
+  if (parentPid_ > 0) sendToChannel(parentPid_, "keys", "X " + std::to_string(::getpid()) + "\n");
+  requestImmediateExit();
+}
+
+// toggleGuiModeFromParent()で終わると言った子が、2秒たってもまだ生きていればkill -9する。
+void Application::reapExitingChildren() {
+  auto now = std::chrono::steady_clock::now();
+  for (auto it = exitingChildren_.begin(); it != exitingChildren_.end();) {
+    if (::kill(static_cast<pid_t>(it->first), 0) != 0) {
+      it = exitingChildren_.erase(it);
+    } else if (now >= it->second) {
+      ::kill(static_cast<pid_t>(it->first), SIGKILL);
+      it = exitingChildren_.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 bool Application::cycleExternalWindows(int step, long fromPid) {
@@ -19975,6 +19998,7 @@ void Application::launchHelpChildren() {
 }
 
 void Application::pollChildChannel() {
+  if (!exitingChildren_.empty()) reapExitingChildren();
   if (helpChildrenPending_) {
     helpChildrenPending_ = false;
     launchHelpChildren();
@@ -19996,6 +20020,10 @@ void Application::pollChildChannel() {
       std::vector<int> bytes;
       for (unsigned char c : decodeHex(bytesHex)) bytes.push_back(c);
       if (!bytes.empty()) executeRemoteKeys(bytes, line[2] == 'c');
+      handled = true;
+    } else if (line.size() > 2 && line.compare(0, 2, "X ") == 0) {  // ^Ogで終わる子(toggleGuiModeFromParent())
+      long pid = std::atol(line.c_str() + 2);
+      if (pid > 1) exitingChildren_.emplace_back(pid, std::chrono::steady_clock::now() + std::chrono::seconds(2));
       handled = true;
     } else if (line == "R") {  // 子が開いた(requestParentRaise())
       raiseRequested_ = true;
