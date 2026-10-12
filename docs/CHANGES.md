@@ -30162,3 +30162,17 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (queryRealTerminalWindowBounds())を渡し、外枠にぴったり重ねて開く。見た目がある時の文字の大きさが既定の16の
      ままだったのも端末の大きさに。
    - **確認**: PTYで^Tnが"No other windows"、^Txは取り消し。^OgのGUIの見た目は未確認(画面が見えない)。
+777. **2026-10-13: ^OgのGUI→端末の戻りを直す、^Ogで子のウィンドウもすべて切り替える**
+   - **経緯**: 直接のユーザー依頼("^OgをCUI・GUI切り換えトグルとしたい。現状CUI→GUIはOKだが逆が暴走。^Ogの際、
+     開いていた子プロセスはすべて切り換えで")。
+   - **原因**: GUIへ移る時(tryEnterGuiPhase())に端末のスクロール領域をleaveForExternalProgram()で画面全体へ戻し、
+     GUIから戻った時に狭め直していなかった(対のreenterFromExternalProgram()が無い)。端末へ戻った後のスクロールが
+     モードラインまで巻き込み、キーもGUIのウィンドウが閉じた後のusilic(どのウィンドウも無いアプリ)に取られていた。
+   - **内容**: ①GUIから端末へ戻る時、reenterFromExternalProgram()でスクロール領域を戻し、端末のウィンドウを前に出す
+     (raiseLaunchingTerminalWindow()、Terminal.app)。②いちばん上の親の^Og(Command::ToggleGuiMode)で、登録された
+     子(registeredChildren()、cycleExternalWindows()から括り出した)へ"G"を送る(toggleChildrenGuiMode())。子は
+     pollChildChannel()の"G"でtoggleGuiModeFromParent(): 端末のある子(-cの子、-cから^OgでGUIになった子)はその場で
+     切り替え、端末の無い-gの子(/dev/ttyを開かない)は今見ているもの(currentResumableName())を端末の新しいウィンドウの
+     -cの子で開き直して自分は終わる。GUIの実行ループ(runGuiPhase())はキーの後だけでなく、子の受け渡しの後にも
+     consumeGuiModeToggleRequest()を見る。
+   - **確認**: ビルドのみ(GUIの画面は見えないため未確認)。

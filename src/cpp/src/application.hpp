@@ -1569,6 +1569,9 @@ class Application {
   // 親と外部起動の子のウィンドウ(registerAsChild()で登録されたもの)を、`fromPid`の次(step=1)・前(-1)へ巡回して
   // 前に出す。子の^Tn/^Tpは親へ頼む(pollChildChannel()の"T")。
   bool cycleExternalWindows(int step, long fromPid);
+  std::vector<std::pair<long, std::string>> registeredChildren() const;
+  void toggleChildrenGuiMode();
+  void toggleGuiModeFromParent();
   // このusilicのウィンドウを前に出す(-gはgui.raise()、-cはmacOSのTerminal.app・iTerm2のウィンドウをttyで探す)。
   void activateOwnWindow();
   int universalCount_ = 4;

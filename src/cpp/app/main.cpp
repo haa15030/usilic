@@ -2498,6 +2498,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     app.pollShellOfferFollowUp();
     app.pollShellHandoff();
     app.pollChildChannel();  // -KのKEYの^M・hの受け渡し(Application::openChildChannel()参照)
+    if (app.consumeGuiModeToggleRequest()) return;  // 親の^Ogの"G"(Application::toggleGuiModeFromParent())
     // `suppressDraw`(2026-09-07追加、直接のユーザー報告"わかったのは
     // ブロックカーソル位置を画面上真ん中辺に変更すると、瞬時の表示も
     // 同じ位置（真ん中辺）になされる点"): Application::pollPagerExitNotice()
@@ -4306,7 +4307,14 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   terminalDisplay.setModeLineVisible(history.modeLineVisible());
   display.setBackend(terminalDisplay);
   gui.reset();  // closes the real window
-  if (!app.wantsExit()) app.handleResize();  // redraw the terminal, which SDL's window never touched
+  if (!app.wantsExit()) {
+    // 2026-10-13、直接のユーザー報告("^OgでCUI→GUIはOKだが逆が暴走"): GUIへ移る時のleaveForExternalProgram()
+    // (上のコメント参照)でスクロール領域を画面全体に戻したままだったので、端末へ戻った後のスクロールが
+    // モードラインまで巻き込んでいた。usilic自身の範囲へ狭め直し、キーが端末へ届くよう端末のウィンドウを前に出す。
+    terminalDisplay.reenterFromExternalProgram();
+    raiseLaunchingTerminalWindow();
+    app.handleResize();  // redraw the terminal, which SDL's window never touched
+  }
   return true;
 }
 

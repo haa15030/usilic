@@ -5326,6 +5326,7 @@ bool Application::handleCommandImpl(Command command) {
         return false;
       }
       guiModeToggleRequested_ = true;
+      toggleChildrenGuiMode();
       return true;
     case Command::OpenUserUsilicrc: {
       std::string home = std::filesystem::path(usilicrcPath_).parent_path().parent_path().string();
@@ -6803,6 +6804,50 @@ bool sendToChannel(long ownerPid, const std::string &name, const std::string &me
 // dispatchByte()の^Tn/^Tp。親は、自分と登録された子(registerAsChild()の"pid.<PID>"、中身はその子の受け渡しの
 // FIFOの名前)をPIDの順(起動の順)に並べ、`fromPid`の次・前のウィンドウを前に出す(子へは"A"を送る、
 // pollChildChannel()参照)。子は親へ"T <自分のPID> <step>"を頼む。
+// 登録された子(registerAsChild()の"pid.<PID>"、中身はその子の受け渡しのFIFOの名前)の、生きているものをPIDの順
+// (起動の順)に(PID, FIFOの名前)で。
+std::vector<std::pair<long, std::string>> Application::registeredChildren() const {
+  std::vector<std::pair<long, std::string>> children;
+  if (channelPath_.empty()) return children;
+  std::string dir = std::filesystem::path(channelPath_).parent_path().string();
+  std::error_code ec;
+  for (const auto &entry : std::filesystem::directory_iterator(dir, ec)) {
+    std::string name = entry.path().filename().string();
+    if (name.rfind("pid.", 0) != 0) continue;
+    long pid = std::atol(name.c_str() + 4);
+    if (pid <= 1 || ::kill(static_cast<pid_t>(pid), 0) != 0) continue;
+    std::string channel;
+    std::ifstream(entry.path()) >> channel;
+    if (!channel.empty()) children.emplace_back(pid, channel);
+  }
+  std::sort(children.begin(), children.end());
+  return children;
+}
+
+// 2026-10-13、直接のユーザー依頼("^OgをCUI・GUI切り換えトグルとしたい...^Ogの際、開いていた子プロセスはすべて
+// 切り換えで"): いちばん上の親の^Ogで、子にも"G"を送って同じように切り替えさせる(pollChildChannel()の"G")。
+void Application::toggleChildrenGuiMode() {
+  if (parentPid_ > 0) return;
+  for (const auto &child : registeredChildren()) sendToChannel(static_cast<long>(::getpid()), child.second, "G\n");
+}
+
+// 子が親の^Ogで"G"を受け取った時。端末のある子(-cの子、または-cから^OgでGUIになった子)はその場で切り替える。
+// 端末の無い-gの子(USILIC_TRANSIENTの-gは/dev/ttyを開かない、main.cpp参照)は、今見ているものを端末の新しい
+// ウィンドウの-cの子で開き直し、自分は終わる。
+void Application::toggleGuiModeFromParent() {
+  if (!display_.isGraphical() || guiToggleReturnsToTerminal_) {
+    guiModeToggleRequested_ = true;
+    return;
+  }
+  std::string target = currentResumableName();
+  std::string directory = directoryMode_.currentDirectory();
+  if (target.empty()) target = directory;
+  if (target.empty()) return;
+  long owner = parentPid_ > 0 ? parentPid_ : static_cast<long>(::getpid());
+  std::string run = "USILIC_TRANSIENT=" + std::to_string(owner) + " usilic -c " + shellQuoteArg(target);
+  if (openInNewTerminalWindow(directory, "unset USILIC USILIC_HANDOFF; " + run)) requestImmediateExit();
+}
+
 bool Application::cycleExternalWindows(int step, long fromPid) {
   if (parentPid_ > 0) {
     if (!sendToChannel(parentPid_, "keys", "T " + std::to_string(::getpid()) + " " + std::to_string(step) + "\n"))
@@ -6814,22 +6859,7 @@ bool Application::cycleExternalWindows(int step, long fromPid) {
     std::string channel;  // 空なら自分
   };
   std::vector<Window> windows = {{static_cast<long>(::getpid()), ""}};
-  if (!channelPath_.empty()) {
-    std::string dir = std::filesystem::path(channelPath_).parent_path().string();
-    std::error_code ec;
-    std::vector<Window> children;
-    for (const auto &entry : std::filesystem::directory_iterator(dir, ec)) {
-      std::string name = entry.path().filename().string();
-      if (name.rfind("pid.", 0) != 0) continue;
-      long pid = std::atol(name.c_str() + 4);
-      if (pid <= 1 || ::kill(static_cast<pid_t>(pid), 0) != 0) continue;
-      std::string channel;
-      std::ifstream(entry.path()) >> channel;
-      if (!channel.empty()) children.push_back({pid, channel});
-    }
-    std::sort(children.begin(), children.end(), [](const Window &a, const Window &b) { return a.pid < b.pid; });
-    windows.insert(windows.end(), children.begin(), children.end());
-  }
+  for (const auto &child : registeredChildren()) windows.push_back({child.first, child.second});
   if (windows.size() < 2) {
     showTransientNotice(activeView(), "No other windows");
     return false;
@@ -19948,6 +19978,9 @@ void Application::pollChildChannel() {
       handled = true;
     } else if (line == "R") {  // 子が開いた(requestParentRaise())
       raiseRequested_ = true;
+      handled = true;
+    } else if (line == "G") {  // 親の^Og(toggleChildrenGuiMode())
+      toggleGuiModeFromParent();
       handled = true;
     } else if (line == "A") {  // 親の^Tn/^Tpでこのウィンドウの番(cycleExternalWindows())
       activateOwnWindow();
