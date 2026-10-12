@@ -785,6 +785,8 @@ struct GraphicalDisplay::Impl {
   bool outputEnabled = true;
   bool smoothScroll = false;
   bool verticalText = false;  // setVerticalTextHint()参照
+  // renderCursor()が縦書きのカーソルの字をrenderCell()で描き直す間だけ、字の色をこれにする。
+  std::optional<SDL_Color> cursorGlyphColor;
   // 2026-09-12追加、項目⑫: display.hpp自身のmodeLineVisible()宣言
   // コメント参照。GraphicalDisplayには独立したモードライン専用の
   // 描画要素が無い(ContentViewが渡す行データをそのままセルグリッド
@@ -1557,6 +1559,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
   } else if (cell.highlight) {
     bg = kHighlightBgColor;
   }
+  if (impl_->cursorGlyphColor) fg = *impl_->cursorGlyphColor;  // renderCursor()の縦書き
 
   // 空白セル(空/スペースのグリフ)は、下線が付いている場合は、それ
   // でも下の本物のTTF_RenderUTF8_Blended()呼び出しへフォールスルー
@@ -1912,6 +1915,22 @@ void GraphicalDisplay::renderCursor() {
   SDL_RenderFillRect(impl_->renderer, &box);
 
   const Cell &cell = impl_->cellAt(row, homeCol);
+  // 2026-10-13、直接のユーザー報告("-gの横スクロールではハイライト箇所と背景とで文字の横倒し処理が違う"、
+  // スクリーンショット=iz/=ja「〜」、=jb/=jc「10.4」): 縦書きでは、カーソルの字も背景と同じrenderCell()
+  // (〜等の回転、半角の並びの横倒し、縦中横)で、カーソルの枠の中だけに字の色を背景色にして描き直す。
+  // 横倒しの並びは一番上のマスがまとめて描くので、同じ列の近くの桁のマスを全部、枠で切り抜いて描く。
+  if (impl_->verticalText) {
+    SDL_Rect previousClip{};
+    bool hadClip = SDL_RenderIsClipEnabled(impl_->renderer);
+    if (hadClip) SDL_RenderGetClipRect(impl_->renderer, &previousClip);
+    SDL_RenderSetClipRect(impl_->renderer, &box);
+    impl_->cursorGlyphColor = impl_->bg;
+    for (int r = 0; r < impl_->rows; r++)
+      for (int c = std::max(0, homeCol - 1); c <= std::min(impl_->columns - 1, homeCol + 2); c++) renderCell(r, c);
+    impl_->cursorGlyphColor.reset();
+    SDL_RenderSetClipRect(impl_->renderer, hadClip ? &previousClip : nullptr);
+    return;
+  }
   if (cell.glyph.empty() || cell.glyph == " ") return;
 
   int style = TTF_STYLE_NORMAL;
