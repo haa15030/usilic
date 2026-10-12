@@ -2643,7 +2643,8 @@ class Application {
   // (leaveEpubHorizontalIfOutside()、キー/コマンドの処理の後)縦書きへ戻る。
   bool epubBookVertical() const;
   std::optional<std::pair<int, int>> epubHorizontalRangeAt(int rawLine) const;
-  void enterEpubHorizontal(const std::pair<int, int> &range, int rawLine);
+  // fromBelow: 縦書きから先へ送って入る時(スクロール・j)、範囲の最初の行を画面の一番下に置く(2026-10-13)。
+  void enterEpubHorizontal(const std::pair<int, int> &range, int rawLine, bool fromBelow = false);
   bool maybeEnterEpubHorizontal(int fromRaw, bool forward);
   // 縦書きの1列の送り/戻り(rebuildEpubVertical()の空の列・扉のページ参照)。返り値は
   // {右端の列(-1なら今のまま), 列カーソル}。
@@ -2703,7 +2704,11 @@ class Application {
   // 縦書きの列の端(deltaの向き)の先(前)に横書きの範囲があればそこへ入る(描き直す)。
   bool enterEpubHorizontalAtEdge(int delta);
   bool enterEpubHorizontalAtBookEnd();  // ^[<で本の末尾の横書きの範囲(奥付等)の最下行へ
-  bool leaveEpubHorizontalIfOutside();  // 縦書きへ戻ったらtrue
+  // 縦書きへ戻ったらtrue。scrolling: 慣性・ドラッグ・ホイール(syncEpubHorizontalSection())。
+  bool leaveEpubHorizontalIfOutside(bool scrolling = false);
+  // enterEpubHorizontal()のfromBelowで入り、範囲の最初の行がまだ画面の一番上まで上がっていない間。キーで送っても
+  // 画面の先頭が範囲の手前(空の行)なので、この間はカーソルの行だけで戻るかを決める(leaveEpubHorizontalIfOutside())。
+  bool epubHorizontalFromBelow_ = false;
 
  public:
   // 2026-09-29追加、直接のユーザー報告("奥付...ホイールを回すと縦方向の慣性スクロールに
@@ -2711,7 +2716,7 @@ class Application {
   // 縦書きへ切り替わる"): GUIの毎フレームでも横書きの範囲から出たかを確かめる(慣性・
   // ホイール・ドラッグはキー/コマンドを通らない)。縦書きへ戻ったらtrue(呼び出し元は上下の
   // 慣性を止める)。
-  bool syncEpubHorizontalSection() { return leaveEpubHorizontalIfOutside(); }
+  bool syncEpubHorizontalSection() { return leaveEpubHorizontalIfOutside(/*scrolling=*/true); }
   // 縦書きの本の中の横書きの範囲(奥付等)を見ている間true(app/main.cppが慣性を縦横の間で
   // 引き継ぐのに使う)。
   bool epubHorizontalSectionActive() const { return epubHorizontalSection_.has_value(); }

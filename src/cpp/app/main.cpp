@@ -3678,9 +3678,9 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         epubCoastLevel = coastLevel;
         epubCoastDirection = coastDirection < 0 ? 1 : -1;
         epubDragOffset = 0;
-        // 前へ出た時は前の章の最後の列を左端に(直接のユーザー報告"前の章の最後ではなく章の冒頭
-        // からの横スクロールになる")
-        if (epubCoastDirection < 0) app.alignEpubVerticalCursorToLeftEdge();
+        // 前へ出た時は、端末(runCoastLoop())と同じく、前の章の最後の列を右端に置いた所(leaveEpubHorizontalIfOutside())
+        // から1列ずつ。2026-10-13、直接のユーザー報告("奥付からのスローな上向きスクロールでは縦書き最終章の冒頭から
+        // 始まる"、=jd): 以前はここで最後の列を左端にそろえ直していたので、右端が最終章の扉に来て、章の冒頭が出ていた。
       }
       coastLevel = 0;
       coastDirection = 0;

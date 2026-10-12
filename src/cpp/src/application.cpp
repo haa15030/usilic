@@ -8239,7 +8239,7 @@ std::optional<std::pair<int, int>> Application::epubHorizontalRangeAt(int rawLin
 
 // 横書きの範囲へ入る: fileView_のカーソルをrawLineの行(範囲の外なら端)に置く。
 // 描き直しは呼び出し元(activeView()はもうfileView_)。
-void Application::enterEpubHorizontal(const std::pair<int, int> &range, int rawLine) {
+void Application::enterEpubHorizontal(const std::pair<int, int> &range, int rawLine, bool fromBelow) {
   epubHorizontalSection_ = range;
   syncEpubHorizontalPresentation();
   rawLine = std::clamp(rawLine, range.first, range.second);
@@ -8252,6 +8252,10 @@ void Application::enterEpubHorizontal(const std::pair<int, int> &range, int rawL
     int startIndex = static_cast<int>(i);
     while (startIndex > 0 && lines[startIndex - 1].rawLineNumber.value_or(0) >= range.first) startIndex--;
     fileView_.setTopIndex(std::max(startIndex, static_cast<int>(i) - std::max(1, fileView_.height()) + 1));
+    // 2026-10-13、直接のユーザー依頼("最終章→奥付のときも章の冒頭が画面下から現れる表示で"): 縦書きの本文の最後の
+    // 列が右端まで送られた後、範囲の最初の行が画面の一番下から現れ、送るにつれて上がっていく(上の行は空)。
+    epubHorizontalFromBelow_ = fromBelow && rawLine == range.first;
+    if (epubHorizontalFromBelow_) fileView_.setTopIndex(std::max(0, startIndex - std::max(1, fileView_.height()) + 1));
     return;
   }
 }
@@ -8271,7 +8275,7 @@ bool Application::maybeEnterEpubHorizontal(int fromRaw, bool forward) {
   if (forward) {
     for (const auto &range : ranges)
       if (range.first > fromRaw && (now >= range.first || noTextBeyond(1))) {
-        enterEpubHorizontal(range, range.first);
+        enterEpubHorizontal(range, range.first, /*fromBelow=*/true);
         return true;
       }
   } else {
@@ -8286,7 +8290,7 @@ bool Application::maybeEnterEpubHorizontal(int fromRaw, bool forward) {
 
 // 横書きの範囲で、カーソルが範囲の外へ出ていたら縦書きへ戻る(前へ出たらその行の最後の
 // 列、先へ出たらその行の最初の列)。EPUBの本文の外へ出ていたら(章の一覧等)範囲を忘れる。
-bool Application::leaveEpubHorizontalIfOutside() {
+bool Application::leaveEpubHorizontalIfOutside(bool scrolling) {
   if (!epubHorizontalSection_) return false;
   if (currentMode_ != ApplicationMode::File || !epubBookVertical()) {
     epubHorizontalSection_.reset();
@@ -8303,7 +8307,20 @@ bool Application::leaveEpubHorizontalIfOutside() {
   const auto &lines = fileView_.lines();
   int top = fileView_.topIndex();
   int topRaw = (top >= 0 && top < static_cast<int>(lines.size())) ? lines[top].rawLineNumber.value_or(raw) : raw;
-  bool before = raw < epubHorizontalSection_->first || topRaw < epubHorizontalSection_->first;
+  // 2026-10-13、直接のユーザー報告("奥付からのスローな上向きスクロールでは縦書き最終章の冒頭から始まる"、"最終章→奥付の
+  // ときも章の冒頭が画面下から現れる表示で"): 慣性・ドラッグ・ホイールで前へは、範囲の最初の行が画面の下から外れるまで
+  // (範囲が画面に全く見えなくなるまで)横書きのまま送る(上の行は空)。キーでは従来通り、カーソルか画面の先頭が範囲の
+  // 手前へ出たら戻す(下から入ってまだ上まで上がっていない間はカーソルだけ、epubHorizontalFromBelow_参照)。
+  int firstIndex = static_cast<int>(lines.size());
+  for (int i = 0; i < static_cast<int>(lines.size()); i++)
+    if (lines[i].rawLineNumber.value_or(0) >= epubHorizontalSection_->first) {
+      firstIndex = i;
+      break;
+    }
+  if (top >= firstIndex) epubHorizontalFromBelow_ = false;
+  bool before = scrolling ? firstIndex >= top + std::max(1, fileView_.height())
+                          : raw < epubHorizontalSection_->first ||
+                                (!epubHorizontalFromBelow_ && topRaw < epubHorizontalSection_->first);
   bool after = raw > epubHorizontalSection_->second;
   if (!before && !after) return false;
   if (before) raw = epubHorizontalSection_->first - 1;
@@ -9055,7 +9072,7 @@ bool Application::enterEpubHorizontalAtEdge(int delta) {
       }
   }
   if (!target) return false;
-  enterEpubHorizontal(*target, delta > 0 ? target->first : target->second);
+  enterEpubHorizontal(*target, delta > 0 ? target->first : target->second, /*fromBelow=*/delta > 0);
   activeView().redraw();
   activeView().syncVisibleCursor();
   return true;
