@@ -14559,7 +14559,7 @@ TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): a REGULAR (non-rectangle) mark's ^[w st
   CHECK(app.currentMode() == ApplicationMode::Copy);  // unchanged: still in Copy
 }
 
-TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): ^[p confirms the mark, exits Copy, and moves specifically "
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): ^[t (formerly ^[p) confirms the mark, exits Copy, and moves specifically "
                            "into the PROGRAM prompt with the confirmed selection set as its text "
                            "(2026-09-07, a direct user request: \"^@で範囲指定を開始したのち、停止"
                            "位置で`^[p`が投入されたらその場で範囲指定終了（^[w相当）とみなして"
@@ -14578,7 +14578,7 @@ TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): ^[p confirms the mark, exits Copy, and 
   for (int i = 0; i < 2; i++) app.feedByte(0x06, std::nullopt);  // extend over 2 columns
 
   REQUIRE(app.feedByte(0x1b, std::nullopt));  // ESC
-  REQUIRE(app.feedByte('p', std::nullopt));   // p -- confirm, exit, go straight to PROGRAM
+  REQUIRE(app.feedByte('t', std::nullopt));   // t (2026-10-12、旧p) -- confirm, exit, go straight to PROGRAM
   CHECK(app.currentMode() == ApplicationMode::Directory);
   REQUIRE(app.promptActive());
   CHECK(app.promptText() == row0.substr(0, 2));  // the confirmed selection, as the PROGRAM prompt's text

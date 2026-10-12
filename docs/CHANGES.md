@@ -30037,3 +30037,39 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **内容**: ^Oのswitchに^S(GrepSyntax::Fixed)と^J(leaderOJPending_、続く^SでRegex)。COPYの^[p(範囲を確定して
      TOOLのプロンプトへ貼る)を^[tに、COPYの外での「COPY mode only」の知らせも^[tに。
    - **確認**: PTYで、HELP.txtのページャーで^O^S「usilic」→FGREPの一致した行の一覧。
+764. **2026-10-12: (ls)でディレクトリを複数選べるように**
+   - **経緯**: 直接のユーザー報告("(ls)で複数のディレクトリを選べない")。2026-09-25の依頼(HISTORY.md:22268)で、
+     2つ目のディレクトリの選択を「Cannot select multiple directories」とビープで拒んでいた。
+   - **内容**: その拒否を無くした(^Ouは選んだものを1つずつ別のウィンドウで開く、項目766)。
+   - **確認**: PTYで、d1・d2・d3を'.'で全部選べること。
+765. **2026-10-12: 自分で終われない外部起動の子は-H/-K(最初の起動)のHELP・KEYだけに**
+   - **経緯**: 直接のユーザー依頼("子プロセスusilicが自死できないのは-H/-Kのみで")。2026-10-11には外部起動の子は
+     どれも^X^C・q・-gのウィンドウの閉じるボタンで終われなかった。
+   - **内容**: Application::endsWithParentOnly_(main.cppがUSILIC_WINDOW_SLOTのある子だけ立てる)で判定する。
+     ^Ou・^Jtの"usilic ..."・^Tの子は自分で終われる。
+   - **確認**: ビルドのみ。
+766. **2026-10-12: ^Ou等の外部起動で、複数のファイル・ディレクトリを1つずつ別々のウィンドウに、^Tn/^Tpはウィンドウの巡回へ**
+   - **経緯**: 直接のユーザー依頼("外部usilicページャーのp/nで複数ファイル切り換えは分かりづらい...全部個別の
+     ウィンドウで開くことにして^Tn/^Tpは廃止で"、"親からは子を順にアクティブにできない？できるなら^Tn/^Tpを
+     それに当てたい"、スクリーンショット=il: 重ねて開いたウィンドウ)。
+   - **内容**: runExternalUsilicPager()は、ファイル・ディレクトリを1つずつlaunchExternalUsilic()する(以前はファイルを
+     まとめて1つのページャー(n/p)、ディレクトリをまとめて1つの(ls)(^Tn/^Tp、setLaunchDirectories())で開いて
+     いた。後者は廃止)。-gの子は2つ目からUSILIC_CASCADEの分だけ32pxずつ右下へずらす(Terminal.appの新しい
+     ウィンドウはTerminal.appのずらし置き)。子の子(子の^Ou等)もいちばん上の親に登録する(USILIC_TRANSIENT)。
+     ^Tn/^Tp(Application::cycleExternalWindows()): HELPの子以外の子も受け渡しのFIFO"w.<PID>"を持ち、登録の
+     "pid.<PID>"にその名前を書く。親は自分と子をPIDの順に並べ、次・前のウィンドウへ"A"を送る(自分の番なら自分)。
+     子の^Tn/^Tpは親へ"T <PID> <step>"で頼む。"A"を受けたら前に出る(activateOwnWindow(): -gはgui.raise()、
+     -cはmacOSのTerminal.app・iTerm2のウィンドウをttyで探して前へ)。
+   - **確認**: PTYで、子(-g)が"w.<PID>"を登録し、親の^Tnが通知無しで"A"を送ること。前に出るところは未確認
+     (この環境ではGUIのウィンドウが見えない)。
+767. **2026-10-12: ^Tの後のキー(1つのコマンド)を-gの子のusilicで実行する**
+   - **経緯**: 直接のユーザー依頼("暫定^Tのプレフィックス付きは(grepを除き)-gで子プロセス画面起動。普段はCUIでも
+     いいが、.epubはGUIで読みたい（^T^Jeとかで）等")。
+   - **内容**: feedLeaderTByte()が^Tの後のキー列(^J・^X・^O・ESC・^J^O・^Xrは続きを待つ、モードラインに
+     「C-t C-j-」等)を集め、runKeysInGraphicalChild()が`usilic -g 今のディレクトリ`を起動し、子は実行ループの
+     最初にそのキー列を打つ(USILIC_START_KEYS、Application::setStartKeys())。(ls)の^T^Mはカーソル行のファイル・
+     ディレクトリそのものを子が開く(.epubはEPUBの画面)。-cからでも子は端末ではなく背後で-gとして起動する。
+     SSH・GUI無しのビルド・Linuxで画面が無い時は、その場で普通に実行する。^Tの後の接頭キーの続きはMACROで
+     置き換えない(keyBindingContext()、^T^Jeのeが^[e(EDIT)にならないように)。^Gで取り消し。
+   - **確認**: PTYで、SSH扱いでは^T^JeでEPUBのプロンプト、そうでなければ子のusilic -gが
+     USILIC_START_KEYS=0a65で起動されること。子のウィンドウでのプロンプトは未確認。

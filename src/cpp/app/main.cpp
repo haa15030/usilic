@@ -1593,6 +1593,10 @@ pid_t gTransientParentPid = 0;
 // setExternalWindowSlot()参照)。-gの子は、親や互いとぴったり重ならないよう、この番号の分だけウィンドウを
 // 右下へずらす(tryEnterGuiPhase()、2026-10-11)。0なら何もしない。
 int gWindowSlot = 0;
+// 2026-10-12: ^Ouで複数のものを別々に開いた-gの子の何番目か(USILIC_CASCADE)。その分だけ右下へずらす。
+int gCascade = 0;
+// ^Tの子が起動後に打つキー(USILIC_START_KEYS、Application::setStartKeys())。
+std::vector<int> gStartKeys;
 // 2026-10-11、直接のユーザー依頼(-gの子のHELP・KEYを親と同じ大きさで、親の右隣に並べる): 親が渡すUSILIC_GUI_FRAME
 // (Application::setGuiFrameProvider()参照)を読んだもの。valid=falseなら無し。
 struct GuiFrame {
@@ -2477,7 +2481,8 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     }
     // the window's own close button was clicked -- 外部起動の子は閉じない(親と一緒に終わる、2026-10-11、直接の
     // ユーザー依頼"子はどれも自身では終われないようにして")。
-    if (!gui.pumpEvents() && gTransientParentPid <= 0) return;
+    // 2026-10-12: -H/-KのHELP・KEYの子だけ(Application::endsWithParentOnly_参照)。
+    if (!gui.pumpEvents() && !(gTransientParentPid > 0 && gWindowSlot > 0)) return;
     if (app.takeFontListRequest()) app.showFontList(buildFontList(gui));  // ^J^F(buildFontList()参照)
     if (app.takeRaiseRequest()) gui.raise();  // 子が開いたら親が前へ(Application::requestParentRaise())
     if (auto choice = app.takeFontChoice()) applyFontChoice(app, gui, choice->first, choice->second);
@@ -4139,6 +4144,8 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   }
   else if (gWindowSlot > 0)
     gui->moveWindowBy(gWindowSlot * 48, gWindowSlot * 48);
+  else if (gCascade > 0)
+    gui->moveWindowBy((gCascade % 10) * 32, (gCascade % 10) * 32);
   if (gWindowSlot > 0) app.requestParentRaise();
   // 2026-09-12追加、項目⑫: 新しく作られたGraphicalDisplayは
   // modeLineVisible_=trueで始まる(GraphicalDisplayのImpl自身の
@@ -4964,6 +4971,15 @@ int main(int argc, char **argv) {
     gGuiFrame = f;
     ::unsetenv("USILIC_GUI_FRAME");
   }
+  if (const char *cascade = std::getenv("USILIC_CASCADE")) {
+    gCascade = std::max(0, std::atoi(cascade));
+    ::unsetenv("USILIC_CASCADE");
+  }
+  if (const char *keys = std::getenv("USILIC_START_KEYS")) {  // ^Tの子(Application::runKeysInGraphicalChild())
+    std::string hex = keys;
+    for (std::size_t i = 0; i + 1 < hex.size(); i += 2) gStartKeys.push_back(std::stoi(hex.substr(i, 2), nullptr, 16));
+    ::unsetenv("USILIC_START_KEYS");
+  }
   if (const char *slot = std::getenv("USILIC_WINDOW_SLOT")) {
     gWindowSlot = std::max(0, std::atoi(slot));
     ::unsetenv("USILIC_WINDOW_SLOT");
@@ -5285,8 +5301,11 @@ int main(int argc, char **argv) {
   } childChannelGuard{app};
   if (gTransientParentPid > 0) {
     app.setParentPid(gTransientParentPid);
+    app.setEndsWithParentOnly(gWindowSlot > 0);  // -H・最初の起動のHELP(1)・KEY(2)の子だけ
+    // 2026-10-12: HELPの子以外も自分の受け渡しのFIFO("w.<PID>")を持つ(親の^Tn/^Tpの"A"を受ける)。
+    // openChildChannel()は登録のファイルを消すので、登録はその後(中身にFIFOの名前を書く)。
+    app.openChildChannel(gTransientParentPid, gWindowSlot == 1 ? std::string("help") : "w." + std::to_string(::getpid()));
     app.registerAsChild();
-    if (gWindowSlot == 1) app.openChildChannel(gTransientParentPid, "help");
   } else {
     app.openChildChannel(::getpid(), "keys");
   }
@@ -5614,17 +5633,15 @@ int main(int argc, char **argv) {
                                                             : std::filesystem::path(cwdFallback))
             .lexically_normal()
             .string();
-    // ファイルとディレクトリが混ざった起動は、最初のディレクトリを開く。2026-10-10: 外部起動した子へは親が
-    // ディレクトリだけを渡す(Application::runExternalUsilicPager()参照)。複数あれば^Tn/^Tpで行き来する
-    // (Application::setLaunchDirectories()参照)。
-    std::vector<std::string> launchDirectories;
+    // ファイルとディレクトリが混ざった起動は、最初のディレクトリを開く(2026-10-12に^Tn/^Tpの複数のディレクトリは
+    // 廃止、外部起動の子へは親が1つずつ渡す、Application::runExternalUsilicPager()参照)。
     for (const auto &arg : positionalArgs) {
       std::error_code ec;
-      if (std::filesystem::is_directory(arg, ec))
-        launchDirectories.push_back(std::filesystem::absolute(arg).lexically_normal().string());
+      if (std::filesystem::is_directory(arg, ec)) {
+        startDirectory = std::filesystem::absolute(arg).lexically_normal().string();
+        break;
+      }
     }
-    if (!launchDirectories.empty()) startDirectory = launchDirectories.front();
-    if (launchDirectories.size() > 1) app.setLaunchDirectories(launchDirectories);
     // History-based cursor restoration (see DirectoryMode::enterDirectory()'s
     // own comment) only applies to an argument-LESS launch -- legacy's
     // own "resume last session" case. An explicit path argument
@@ -5686,6 +5703,8 @@ int main(int argc, char **argv) {
       app.handleCommand(fm::Command::StartKey);
     }
   }
+
+  if (!gStartKeys.empty()) app.setStartKeys(gStartKeys);  // 実行ループの最初に打つ(Application::pollChildChannel())
 
   if (guiOwnsWholeSession) {
     // Same launcher tryEnterGuiPhase() wires for the ^Og / -g-via-that-

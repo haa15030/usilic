@@ -1561,11 +1561,20 @@ class Application {
   // 2026-10-09: ^Uは回数の前置きも兼ねる(^U=4、^U^U=16、^U 数字=その数)。universalCount_に
   // 数え、次のコマンドの回数(pendingRepeatCount_)にする。
   bool universalArgPending_ = false;
-  // ^T(^Tn/^Tp、setLaunchDirectories()参照)の2番目のキー待ち。
+  // 2026-10-12、直接のユーザー依頼("暫定^Tのプレフィックス付きは(grepを除き)-gで子プロセス画面起動"、
+  // "^Tn/^Tpを子を順にアクティブにするのに"): ^Tの後のキー列(leaderTBytes_)を集め、揃ったらfeedLeaderTByte()が
+  // -gの子のusilicで実行する(^Tn/^Tpはウィンドウの巡回、cycleExternalWindows())。
   bool leaderTPending_ = false;
-  std::vector<std::string> launchDirectories_;
-  std::size_t launchDirectoryIndex_ = 0;
-  bool cycleLaunchDirectory(int step);
+  std::vector<int> leaderTBytes_;
+  bool feedLeaderTByte(int byte, bool special);
+  bool runKeysInGraphicalChild(const std::vector<int> &keys);
+  // 親と外部起動の子のウィンドウ(registerAsChild()で登録されたもの)を、`fromPid`の次(step=1)・前(-1)へ巡回して
+  // 前に出す。子の^Tn/^Tpは親へ頼む(pollChildChannel()の"T")。
+  bool cycleExternalWindows(int step, long fromPid);
+  // このusilicのウィンドウを前に出す(-gはgui.raise()、-cはmacOSのTerminal.app・iTerm2のウィンドウをttyで探す)。
+  void activateOwnWindow();
+  // -gの子(^Tの後のキー列を渡されたもの、USILIC_START_KEYS)が、実行ループの最初に自分で打つキー。
+  std::vector<int> startKeys_;
   int universalCount_ = 4;
   bool universalDigits_ = false;
   int pendingRepeatCount_ = 1;
@@ -1793,6 +1802,10 @@ class Application {
   // HELPの子: `request`("番目:16進の文字列"、-Kのhが送るもの)の行へ飛び、^Sと同じ強調を付ける。
   bool jumpHelpToKeyLine(const std::string &request);
   long parentPid_ = 0;          // 外部起動された子の親のPID(USILIC_TRANSIENT)。0なら親無し
+  // 2026-10-12、直接のユーザー依頼("子プロセスusilicが自死できないのは-H/-Kのみで"): -H・最初の起動で開いた
+  // HELP・KEYの子(USILIC_WINDOW_SLOT)だけ、^X^C・qで終われず親と一緒に終わる。^Ou・^Jt等の子は自分で終われる。
+  bool endsWithParentOnly_ = false;
+  void setEndsWithParentOnly(bool value) { endsWithParentOnly_ = value; }
   int channelFd_ = -1;          // openChildChannel()のFIFO(読み)
   int channelKeepFd_ = -1;      // 同じFIFOの書き側(読み側がEOFにならないよう開いたままにする)
   std::string channelPath_;     // 同FIFOのパス
@@ -1852,9 +1865,7 @@ class Application {
   // 新しいウィンドウ(openInNewTerminalWindow())で開いた外部ページャーのusilicが終わったら(目印のファイルが
   // 消えたら)「Opened in a new window」を消す。端末の実行ループが毎回呼ぶ。
   void pollExternalPagerWindows();
-  // 2026-10-10、直接のユーザー依頼("外部起動群の切り換えに^Tp/^Tnを追加"): 外部起動した子が複数のディレクトリを
-  // 渡された時、それらを^Tn/^Tpで行き来する(main.cppが起動時に設定、1つ以下なら設定しない)。
-  void setLaunchDirectories(std::vector<std::string> directories) { launchDirectories_ = std::move(directories); }
+  void setStartKeys(std::vector<int> keys) { startKeys_ = std::move(keys); }
   // 2026-09-06追加、直接のユーザー報告("％の行数が97と98を行き来...
   // -g起動ではスクロールバーの（つまみ長を短くする）描き直しでも
   // モードライン描画が起きるみたい")――Command::ScrollLineDown/

@@ -2617,7 +2617,6 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   bool leaderPending = escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ ||
                        leaderXRPending_ || registerPending_ != RegisterAction::None || leaderOPending_ ||
                        gotoLineGPending_ || gotoLineDigitsPending_;
-  // 2026-10-10: ^Tn/^Tp(外部起動した子の(ls)で、渡されたディレクトリを行き来する、setLaunchDirectories()参照)。
   // 2026-10-10、直接のユーザー依頼(EmacsのoccurをFGREP/EGREPで、"暫定^T^Sと^T^J^S"): 今の画面の中で一致した
   // 行の一覧を出し、^Mでその行へ飛ぶ(従来のGREPの結果一覧、in-placeにしない)。
   // 2026-10-12、直接のユーザー依頼("^T^S→^O^S、^T^J^S→^O^J^S"): ^O^Sは下の^Oのswitch、^O^J^Sはここ。
@@ -2626,13 +2625,12 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     if (!special && byte == 0x13) return startOccurPrompt(GrepSyntax::Regex);
     return false;
   }
-  if (leaderTPending_) {
-    leaderTPending_ = false;
-    if (!special && (byte == 'n' || byte == 'p')) return cycleLaunchDirectory(byte == 'n' ? 1 : -1);
-    return false;
-  }
+  // 2026-10-12: ^Tの後のキー列は-gの子のusilicで実行する(^Tn/^Tpはウィンドウの巡回、feedLeaderTByte()参照)。
+  if (leaderTPending_) return feedLeaderTByte(byte, special.has_value());
   if (!special && byte == 0x14 && !leaderPending && !universalArgPending_) {
     leaderTPending_ = true;
+    leaderTBytes_.clear();
+    showTransientNotice(activeView(), "C-t-");
     return true;
   }
   if (repeatZPending_ && !leaderPending) {
@@ -3714,6 +3712,8 @@ KeyBindings::Context Application::keyBindingContext() const {
       registerPending_ != RegisterAction::None || leaderOPending_ ||
       gotoLineGPending_ || gotoLineDigitsPending_)
     return KeyBindings::Context::None;
+  // ^Tの後の接頭キーの続き(^T^Jeのe等)は、^Jの後と同じく置き換えない(feedLeaderTByte()、2026-10-12)。
+  if (leaderTPending_ && !leaderTBytes_.empty()) return KeyBindings::Context::None;
   if (currentMode_ == ApplicationMode::Copy) return KeyBindings::Context::None;
   if (tabCompletionContext_ || promptKind_ != PromptKind::None || currentMode_ == ApplicationMode::Shell)
     return KeyBindings::Context::LeaderOnly;
@@ -5356,7 +5356,8 @@ bool Application::handleCommandImpl(Command command) {
       return true;
     case Command::StartExit:
       // 2026-10-11、直接のユーザー依頼("子はどれも自身では終われないようにして"): 外部起動の子は親と一緒に終わる。
-      if (parentPid_ > 0) {
+      // 2026-10-12、-H/-KのHELP・KEYの子だけに(endsWithParentOnly_参照)。
+      if (endsWithParentOnly_) {
         showTransientNotice(activeView(), "Ends with the parent");
         return false;
       }
@@ -5548,7 +5549,7 @@ bool Application::handleCommandImpl(Command command) {
       // 以前は(ls)以外ならどの画面でも終わっていた。ページャーとして起動したファイル
       // (FileMode::isPagerMode()、引数のファイル・標準入力)を見ている時だけにする。
       if (currentMode_ != ApplicationMode::File || !fileMode_.isPagerMode()) return false;
-      if (parentPid_ > 0) {  // 外部起動の子は自身では終わらない(StartExitと同じ、2026-10-11)
+      if (endsWithParentOnly_) {  // -H/-KのHELP・KEYの子は自身では終わらない(StartExitと同じ、2026-10-12)
         showTransientNotice(activeView(), "Ends with the parent");
         return false;
       }
@@ -6691,25 +6692,166 @@ bool Application::jumpToPathPrefix() {
 // するか(Shellのコマンドラインを事前に埋めるのか?Shellが既に開始
 // されている必要があるのか?)を決めることは、当てずっぽうにする
 // のではなく意図的に未着手のままにしてあるため。
-// 2026-10-10、直接のユーザー依頼("外部起動群の切り換えに^Tp/^Tnを追加"): 外部起動した子に渡された複数の
-// ディレクトリ(setLaunchDirectories())を、^Tnで次、^Tpで前へ(端で反対の端へ回る)。移り方はjumpToPathPrefix()
-// (^J0〜^J9)と同じで、どの画面からでも(ls)へ移る。渡されたディレクトリが1つ以下なら知らせるだけ。
-bool Application::cycleLaunchDirectory(int step) {
-  if (launchDirectories_.size() < 2) {
-    showTransientNotice(activeView(), "No other launched directories");
+// 2026-10-12、直接のユーザー依頼("暫定^Tのプレフィックス付きは(grepを除き)-gで子プロセス画面起動。普段はCUIでも
+// いいが、.epubはGUIで読みたい（^T^Jeとかで）"、"親からは子を順にアクティブにできない？できるなら^Tn/^Tpを
+// それに当てたい"): ^Tの後に1つのコマンドのキー列(^J・^X・^O・ESC・^J^O・^Xrの接頭キーは続きを待つ)を集める。
+// n/pはウィンドウの巡回、それ以外は-gの子のusilicに今のディレクトリを開かせ、その子にキー列を打たせる((ls)の^Mは
+// カーソル行のファイル・ディレクトリそのものを子に開かせる)。^Gは取り消し。
+namespace {
+bool sendToChannel(long ownerPid, const std::string &name, const std::string &message);  // 下の定義参照
+}  // namespace
+
+bool Application::feedLeaderTByte(int byte, bool special) {
+  if (special) {
+    leaderTPending_ = false;
+    clearTransientNotice();
     return false;
   }
-  std::size_t count = launchDirectories_.size();
-  launchDirectoryIndex_ = (launchDirectoryIndex_ + count + (step > 0 ? 1 : count - 1)) % count;
-  clearListReturnAnnotations();
-  std::string previousDirectory = directoryMode_.currentDirectory();
-  if (!directoryMode_.enterDirectory(launchDirectories_[launchDirectoryIndex_])) return false;
-  if (!previousDirectory.empty()) directoryMode_.resetNavigationToFloor(previousDirectory);
-  currentMode_ = ApplicationMode::Directory;
-  display_.hideVisibleCursor();
-  directoryView_.redraw();
-  showTransientNotice(directoryView_, std::to_string(launchDirectoryIndex_ + 1) + "/" + std::to_string(count));
+  if (byte == 0x07 && leaderTBytes_.empty()) {
+    leaderTPending_ = false;
+    clearTransientNotice();
+    return true;
+  }
+  leaderTBytes_.push_back(byte);
+  const std::vector<int> &keys = leaderTBytes_;
+  auto isLeader = [](int b) { return b == kLeaderJ || b == kLeaderX || b == kLeaderO || b == kEscape; };
+  bool more = false;
+  if (keys.size() == 1) more = isLeader(keys[0]);
+  else if (keys.size() == 2) more = (keys[0] == kLeaderJ && keys[1] == kLeaderO) || (keys[0] == kLeaderX && keys[1] == 'r');
+  if (more) {
+    std::string shown = "C-t";
+    for (int b : keys) shown += b == kEscape ? " ESC" : b < 0x20 ? std::string(" C-") + static_cast<char>(b + 0x60) : " " + std::string(1, static_cast<char>(b));
+    showTransientNotice(activeView(), shown + "-");
+    return true;
+  }
+  leaderTPending_ = false;
+  clearTransientNotice();
+  std::vector<int> sequence = std::move(leaderTBytes_);
+  leaderTBytes_.clear();
+  if (sequence.size() == 1 && (sequence[0] == 'n' || sequence[0] == 'p'))
+    return cycleExternalWindows(sequence[0] == 'n' ? 1 : -1, ::getpid());
+  return runKeysInGraphicalChild(sequence);
+}
+
+bool Application::runKeysInGraphicalChild(const std::vector<int> &keys) {
+  bool guiAvailable = true;
+#ifdef USILIC_NO_GUI
+  guiAvailable = false;
+#endif
+  if (std::getenv("SSH_CONNECTION") || std::getenv("SSH_TTY")) guiAvailable = false;
+#ifndef __APPLE__
+  if (!std::getenv("DISPLAY") && !std::getenv("WAYLAND_DISPLAY")) guiAvailable = false;
+#endif
+  if (!guiAvailable) {  // -gの子を開けない所では、ふつうにこの画面で実行する
+    for (int b : keys) feedByte(b, std::nullopt);
+    return true;
+  }
+  // (ls)の^M: カーソル行のファイル・ディレクトリを子がそのまま開く(.epubはEPUBの画面、startPagerFileList()参照)。
+  std::string target;
+  bool passKeys = true;
+  if (keys == std::vector<int>{kCarriageReturn} && currentMode_ == ApplicationMode::Directory) {
+    if (const DirectoryEntry *entry = directoryMode_.selectedEntry()) {
+      std::string dir = directoryMode_.currentDirectory();
+      target = (std::filesystem::path(dir) / entry->name).lexically_normal().string();
+      while (target.size() > 1 && target.back() == '/') target.pop_back();
+      passKeys = false;
+    }
+  }
+  if (target.empty()) target = directoryMode_.currentDirectory();
+  if (target.empty()) {
+    std::error_code ec;
+    target = std::filesystem::current_path(ec).string();
+  }
+  if (passKeys) {
+    static const char kHex[] = "0123456789abcdef";
+    std::string hex;
+    for (int b : keys) {
+      hex += kHex[(b >> 4) & 0xf];
+      hex += kHex[b & 0xf];
+    }
+    externalExtraEnv_ = "USILIC_START_KEYS=" + hex;
+  }
+  runExternalUsilicPager("usilic -g " + shellQuoteArg(target));
+  externalExtraEnv_.clear();
   return true;
+}
+
+// feedLeaderTByte()の^Tn/^Tp。親は、自分と登録された子(registerAsChild()の"pid.<PID>"、中身はその子の受け渡しの
+// FIFOの名前)をPIDの順(起動の順)に並べ、`fromPid`の次・前のウィンドウを前に出す(子へは"A"を送る、
+// pollChildChannel()参照)。子は親へ"T <自分のPID> <step>"を頼む。
+bool Application::cycleExternalWindows(int step, long fromPid) {
+  if (parentPid_ > 0) {
+    if (!sendToChannel(parentPid_, "keys", "T " + std::to_string(::getpid()) + " " + std::to_string(step) + "\n"))
+      showTransientNotice(activeView(), "Parent not reachable");
+    return true;
+  }
+  struct Window {
+    long pid;
+    std::string channel;  // 空なら自分
+  };
+  std::vector<Window> windows = {{static_cast<long>(::getpid()), ""}};
+  if (!channelPath_.empty()) {
+    std::string dir = std::filesystem::path(channelPath_).parent_path().string();
+    std::error_code ec;
+    std::vector<Window> children;
+    for (const auto &entry : std::filesystem::directory_iterator(dir, ec)) {
+      std::string name = entry.path().filename().string();
+      if (name.rfind("pid.", 0) != 0) continue;
+      long pid = std::atol(name.c_str() + 4);
+      if (pid <= 1 || ::kill(static_cast<pid_t>(pid), 0) != 0) continue;
+      std::string channel;
+      std::ifstream(entry.path()) >> channel;
+      if (!channel.empty()) children.push_back({pid, channel});
+    }
+    std::sort(children.begin(), children.end(), [](const Window &a, const Window &b) { return a.pid < b.pid; });
+    windows.insert(windows.end(), children.begin(), children.end());
+  }
+  if (windows.size() < 2) {
+    showTransientNotice(activeView(), "No other windows");
+    return false;
+  }
+  std::size_t count = windows.size(), index = 0;
+  for (std::size_t i = 0; i < count; i++)
+    if (windows[i].pid == fromPid) index = i;
+  const Window &target = windows[(index + count + (step > 0 ? 1 : count - 1)) % count];
+  if (target.channel.empty()) activateOwnWindow();
+  else if (!sendToChannel(static_cast<long>(::getpid()), target.channel, "A\n"))
+    showTransientNotice(activeView(), "Window not reachable");
+  return true;
+}
+
+void Application::activateOwnWindow() {
+  if (display_.isGraphical()) {
+    raiseRequested_ = true;  // 実行ループがgui.raise()(main.cpp)
+    return;
+  }
+#ifdef __APPLE__
+  const char *tty = ::ttyname(STDIN_FILENO);
+  if (!tty) return;
+  const char *termProgram = std::getenv("TERM_PROGRAM");
+  const char *lcTerminal = std::getenv("LC_TERMINAL");
+  bool iterm = (termProgram && std::string(termProgram) == "iTerm.app") ||
+               (lcTerminal && std::string(lcTerminal) == "iTerm2");
+  std::vector<std::string> argv = {"osascript", "-e", "on run argv"};
+  std::vector<std::string> body =
+      iterm ? std::vector<std::string>{"tell application \"iTerm2\"", "repeat with w in windows",
+                                       "repeat with t in tabs of w", "repeat with s in sessions of t",
+                                       "if tty of s is (item 1 of argv) then", "select w", "select t", "select s",
+                                       "activate", "return", "end if", "end repeat", "end repeat", "end repeat",
+                                       "end tell"}
+            : std::vector<std::string>{"tell application \"Terminal\"", "repeat with w in windows",
+                                       "repeat with t in tabs of w", "try", "if tty of t is (item 1 of argv) then",
+                                       "set selected of t to true", "set index of w to 1", "activate", "return",
+                                       "end if", "end try", "end repeat", "end repeat", "end tell"};
+  for (const auto &line : body) {
+    argv.push_back("-e");
+    argv.push_back(line);
+  }
+  argv.push_back("-e");
+  argv.push_back("end run");
+  argv.push_back(tty);
+  ChildProcess::run(argv);
+#endif
 }
 
 bool Application::openSelectedListEntry() { return openSelectedListEntryImpl(); }
@@ -7084,25 +7226,9 @@ bool Application::toggleMark() {
   if (currentMode_ != ApplicationMode::Directory) return false;
   const DirectoryEntry *selected = directoryMode_.selectedEntry();
   if (!selected) return false;
-  // 2026-09-25追加、直接のユーザー要望("(ls)で`.[]`による項目選択時、
-  // ディレクトリを複数しようとするとビープ音とエラーメッセージ
-  // (「複数は選択不可」の簡潔英文)を出力。表示場所はGREPの
-  // 「No String」...と同じ位置にでも"): 既に別のディレクトリが選択済み
-  // の状態で、未選択のディレクトリを新たに選択しようとした場合は拒否
-  // する(選択の解除はいつでもできる)。メッセージはGREPの"No String"と
-  // 同じ位置欄(setPositionTextOverride()、非ハイライト)に出し、次の
-  // コマンドでhandleCommand()の冒頭が消す。
+  // 2026-09-25に足した「ディレクトリは1つしか選べない」(HISTORY.md:22268)は、2026-10-12の直接のユーザー報告
+  // ("(ls)で複数のディレクトリを選べない")で無くした。^Ouは選んだものをそれぞれ別のウィンドウで開く。
   int cursor = directoryView_.cursorIndex();
-  if (selected->isDirectory && !directoryMode_.isMarked(cursor)) {
-    const auto &entries = directoryMode_.entries();
-    for (int i = 0; i < static_cast<int>(entries.size()); i++) {
-      if (i == cursor || !entries[i].isDirectory || !directoryMode_.isMarked(i)) continue;
-      showTransientNotice(directoryView_, "Cannot select multiple directories");
-      display_.putChar(0x07);
-      display_.flush();
-      return false;
-    }
-  }
   directoryMode_.toggleMark(cursor);
   directoryView_.redraw();
   return true;
@@ -17206,11 +17332,22 @@ bool Application::runExternalUsilicPager(const std::string &command) {
     return line;
   };
   bool recorded = false;  // ProgramMode::run()はPROGRAMの履歴へ自分で記録する
-  if (!files.empty() && !directories.empty()) {
-    launchExternalUsilic(directory, join(files), command, &recorded);
-    launchExternalUsilic(directory, join(directories), command, &recorded);
-  } else {
+  // 2026-10-12、直接のユーザー依頼("外部usilicページャーのp/nで複数ファイル切り換えは分かりづらい...全部個別の
+  // ウィンドウで開くことにして^Tn/^Tpは廃止で"): ファイル・ディレクトリを1つずつ別々の子で開く(以前はファイルを
+  // まとめて1つのページャー(n/p)、ディレクトリをまとめて1つの(ls)(^Tn/^Tp)で開いていた)。-gの子は重ならない
+  // よう、2つ目から少しずつ右下へずらす(USILIC_CASCADE、main.cpp参照)。
+  std::vector<std::string> targets = files;
+  targets.insert(targets.end(), directories.begin(), directories.end());
+  if (targets.size() < 2) {
     launchExternalUsilic(directory, args, command, &recorded);
+  } else {
+    std::string savedEnv = externalExtraEnv_;
+    for (std::size_t i = 0; i < targets.size(); i++) {
+      externalExtraEnv_ = savedEnv;
+      if (i > 0) externalExtraEnv_ += (externalExtraEnv_.empty() ? "" : " ") + std::string("USILIC_CASCADE=") + std::to_string(i);
+      launchExternalUsilic(directory, join({targets[i]}), command, &recorded);
+    }
+    externalExtraEnv_ = savedEnv;
   }
   if (!recorded) history_.pushRecent(RingCategory::ShellCommand, command);
   activeView().redraw();
@@ -17222,10 +17359,14 @@ bool Application::runExternalUsilicPager(const std::string &command) {
 void Application::launchExternalUsilic(const std::string &directory, const std::string &args,
                                        const std::string &command, bool *recorded) {
   bool graphical = display_.isGraphical();
-  bool hasUiFlag = false;
-  for (const auto &word : splitShellWords(args))
+  bool hasUiFlag = false, wantsGui = false;
+  for (const auto &word : splitShellWords(args)) {
     if (word == "-c" || word == "-g") hasUiFlag = true;
-  std::string run = "USILIC_TRANSIENT=" + std::to_string(::getpid()) +
+    if (word == "-g") wantsGui = true;
+  }
+  // 子の子(子の^Ou・^T等)も、いちばん上の親に登録する(親と一緒に終わり、^Tn/^Tpで巡回できる、2026-10-12)。
+  long owner = parentPid_ > 0 ? parentPid_ : static_cast<long>(::getpid());
+  std::string run = "USILIC_TRANSIENT=" + std::to_string(owner) +
                     (externalWindowSlot_ > 0 ? " USILIC_WINDOW_SLOT=" + std::to_string(externalWindowSlot_) : "") +
                     (externalExtraEnv_.empty() ? "" : " " + externalExtraEnv_) +
                     (graphical && guiFrameProvider_ ? " USILIC_GUI_FRAME=" + guiFrameProvider_() : "") +
@@ -17235,6 +17376,11 @@ void Application::launchExternalUsilic(const std::string &directory, const std::
                     " usilic" +
                     std::string(hasUiFlag ? "" : (graphical ? " -g" : " -c")) + args;
   std::string toRun = "unset USILIC USILIC_HANDOFF; " + cdWrap(directory, run);
+  // -cから-gの子(^Tの子、2026-10-12)は、端末の新しいウィンドウではなく背後で起動する(自分のウィンドウを開く)。
+  if (!graphical && wantsGui) {
+    ChildProcess::runInteractive({"sh", "-c", "(" + toRun + ") </dev/null >/dev/null 2>&1 &"});
+    return;
+  }
   if (!graphical && openInNewTerminalWindow(directory, "unset USILIC USILIC_HANDOFF; " + run)) {
     showTransientNotice(activeView(), "Opened in a new window");
     externalPagerNoticeShown_ = true;  // showTransientNotice()が呼ぶclearTransientNotice()の後で立てる
@@ -18259,7 +18405,7 @@ bool Application::executeSelectedKeyLine() {
   // 2026-10-02追加、直接のユーザー依頼("KEYを抜けるのはマズい。KEY画面は微動だにせずメッセージだけが
   // モードラインに出る、でいい"): KEYを開く前の画面では使えないキー(COPY専用、SHELL・プロンプト専用、
   // 項目578/579)は、その画面へ戻らずにKEYのままメッセージだけを出す。
-  bool copyOnly = (bytes == std::vector<int>{0x1b, 'w'} || bytes == std::vector<int>{0x1b, 'p'} ||
+  bool copyOnly = (bytes == std::vector<int>{0x1b, 'w'} || bytes == std::vector<int>{0x1b, 't'} ||
                    bytes == std::vector<int>{kLeaderX, ' '});
   bool shellOnly = bytes.size() == 1 && (bytes[0] == 0x17 || bytes[0] == 0x15 || bytes[0] == 0x19 ||
                                          bytes[0] == 0x04 || bytes[0] == 0x05 || bytes[0] == 0x01 || bytes[0] == 0x11);
@@ -19585,7 +19731,8 @@ void Application::registerAsChild() {
   std::string dir = channelDirectory(parentPid_);
   ::mkdir(dir.c_str(), 0700);
   childPidFile_ = dir + "/pid." + std::to_string(::getpid());
-  std::ofstream(childPidFile_) << "";
+  // 中身は自分の受け渡しのFIFOの名前(親の^Tn/^Tpが"A"を送る、cycleExternalWindows()参照、2026-10-12)。
+  std::ofstream(childPidFile_) << (channelPath_.empty() ? "" : std::filesystem::path(channelPath_).filename().string());
 }
 
 // 2026-10-11、直接のユーザー提案("親があらかじめHELPとKEYの端末プロセスIDを保管しておき、終了時にはそれらを
@@ -19654,6 +19801,12 @@ void Application::pollChildChannel() {
     launchHelpChildren();
     display_.flush();
   }
+  if (!startKeys_.empty()) {  // ^Tの子: 親で打たれたキー列(runKeysInGraphicalChild()参照)
+    std::vector<int> keys = std::move(startKeys_);
+    startKeys_.clear();
+    for (int b : keys) feedByte(b, std::nullopt);
+    display_.flush();
+  }
   if (channelFd_ < 0) return;
   char buf[4096];
   for (;;) {
@@ -19674,6 +19827,15 @@ void Application::pollChildChannel() {
     } else if (line == "R") {  // 子が開いた(requestParentRaise())
       raiseRequested_ = true;
       handled = true;
+    } else if (line == "A") {  // 親の^Tn/^Tpでこのウィンドウの番(cycleExternalWindows())
+      activateOwnWindow();
+      handled = true;
+    } else if (line.size() > 2 && line.compare(0, 2, "T ") == 0) {  // 子の^Tn/^Tp
+      long fromPid = 0;
+      int step = 1;
+      std::istringstream(line.substr(2)) >> fromPid >> step;
+      cycleExternalWindows(step, fromPid);
+      handled = true;
     } else if (line.size() > 2 && line.compare(0, 2, "H ") == 0) {
       if (channelPath_.size() >= 5 && channelPath_.compare(channelPath_.size() - 5, 5, "/help") == 0)
         jumpHelpToKeyLine(line.substr(2));
@@ -19691,7 +19853,7 @@ void Application::requestParentRaise() {
 
 void Application::executeRemoteKeys(const std::vector<int> &bytes, bool commandLineKey) {
   // executeSelectedKeyLine()と同じ判定を、この(親の)今の画面で行う。
-  bool copyOnly = (bytes == std::vector<int>{0x1b, 'w'} || bytes == std::vector<int>{0x1b, 'p'} ||
+  bool copyOnly = (bytes == std::vector<int>{0x1b, 'w'} || bytes == std::vector<int>{0x1b, 't'} ||
                    bytes == std::vector<int>{kLeaderX, ' '});
   bool shellOnly = commandLineKey ||
                    (bytes.size() == 1 && (bytes[0] == 0x17 || bytes[0] == 0x15 || bytes[0] == 0x19 || bytes[0] == 0x04 ||
