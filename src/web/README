@@ -1,0 +1,83 @@
+iPadで原稿(テキスト)を縦書きで読み、校閲箇所を記録するWebページ
+================================================================
+
+室内ウォーキング中にiPadのSafariで自著を校閲するためのもの。
+左右フリックで慣性スクロールし、指で範囲指定した文字列を「記録」ボタンで
+サーバーへ記録する。記録はEmacsで原稿の該当箇所へ飛べる形式。
+
+ファイル
+--------
+  config.php  原稿置き場・記録ファイルの場所(設置先に合わせて書き換える)
+  common.php  共通の関数
+  index.php   原稿一覧
+  read.php    原稿を縦書きで表示
+  mark.php    記録の受け口
+  reader.css  画面
+  reader.js   慣性スクロール・記録
+  .htaccess   Basic認証、config.php等を直接見せない
+
+Debian 13への設置
+-----------------
+1. apache2にPHPを入れる(Debian 13ではPHP 8.4)。
+
+     sudo apt install php libapache2-mod-php apache2-utils
+     sudo systemctl restart apache2
+
+   libapache2-mod-phpはmpm_preforkが要るので、aptがmpm_eventから切り替える。
+
+2. 公開ディレクトリへこのディレクトリの中身を置く(例: /var/www/html/usilic-web)。
+   Macから:
+
+     rsync -av src/web/ debian:/var/www/html/usilic-web/
+
+3. .htaccessを効かせる。/etc/apache2/apache2.conf等の該当するDirectoryに
+   AllowOverrideを足し、apache2を再起動する。
+
+     <Directory /var/www/html/usilic-web>
+         AllowOverride AuthConfig
+     </Directory>
+
+4. Basic認証のパスワードファイルを作る(場所は.htaccessのAuthUserFile)。
+
+     sudo htpasswd -c /etc/apache2/usilic-web.htpasswd ユーザー名
+
+5. 原稿置き場と記録ファイルの置き場を作る(場所はconfig.php)。
+   記録の置き場はapache(www-data)が書き込めるようにする。
+
+     sudo install -d -o $USER /srv/usilic-web/texts
+     sudo install -d -o www-data -g www-data /srv/usilic-web/marks
+
+6. iPadのSafariで http://debianのホスト名/usilic-web/ を開く。
+
+原稿を置く
+----------
+UTF-8の*.txtを原稿置き場へ置く。Macから:
+
+  scp 原稿.txt debian:/srv/usilic-web/texts/
+
+使い方
+------
+- 左右にフリックすると慣性で流れる。タップで止まる。
+- 「減速 大/中/小/定速」ボタンで、流れ続ける長さを切り替える。
+  「定速」は減速せず、フリックした速さのまま流れ続ける。
+- A−/A＋で文字の大きさ。文字の大きさ・減速の設定・読んでいた位置は
+  ブラウザが覚える。
+- 長押しで範囲指定して「記録」を押すと、範囲の始まりの行・桁と文字列を記録する。
+  範囲指定が無ければ、画面中央の位置を「(位置のみ)」として記録する。
+
+記録をEmacsで使う
+-----------------
+記録ファイル(config.phpの$MARK_FILE)は1行1件、grep -nと同じ形:
+
+  原稿.txt:123:45: 選んだ文字列
+
+桁は文字単位で1始まり(Emacsのcompilation-modeと同じ数え方)。
+Macへ持ってきて、原稿と同じディレクトリに置いて開く:
+
+  scp debian:/srv/usilic-web/marks/marks.txt ~/原稿のディレクトリ/
+  M-x compilation-mode   (各行でRET、またはM-g nで次の箇所へ)
+
+記録した後で原稿を直すと、それより後ろの行番号がずれる。後ろの行から順に
+直すか、記録の文字列で探す。済んだら記録ファイルは空にしておく:
+
+  ssh debian 'sudo truncate -s 0 /srv/usilic-web/marks/marks.txt'

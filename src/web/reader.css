@@ -1,0 +1,134 @@
+:root {
+    --fg: #222;
+    --bg: #fbfaf6;
+    --bar: #ece9e0;
+    --line: #c9c4b6;
+    --fs: 22px;
+    --bar-h: 48px;
+}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --fg: #ddd;
+        --bg: #1c1c1c;
+        --bar: #2b2b2b;
+        --line: #444;
+    }
+}
+
+html, body {
+    margin: 0;
+    color: var(--fg);
+    background: var(--bg);
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+}
+
+/* 一覧 */
+body.list {
+    padding: 16px;
+    font-family: system-ui, sans-serif;
+}
+body.list li {
+    margin: 0.8em 0;
+    font-size: 20px;
+}
+body.list .date {
+    margin-left: 1em;
+    font-size: 14px;
+    opacity: 0.6;
+}
+
+/* 本文: 縦書きの1枚を横へスクロールする */
+body.reader {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    -webkit-text-size-adjust: 100%;
+}
+#text {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--bar-h) + env(safe-area-inset-bottom));
+    box-sizing: border-box;
+    padding: 24px 32px;
+    writing-mode: vertical-rl;
+    overflow-x: auto;
+    overflow-y: hidden;
+    /* 横の動きはreader.jsが受け持つ。長押しの範囲指定はSafariのまま。 */
+    touch-action: none;
+    scroll-padding: 0 32px;
+    font-size: var(--fs);
+    line-height: 1.8;
+}
+#text p {
+    margin: 0;
+    white-space: pre-wrap;
+    line-break: strict;
+}
+/* 空行も1行分の幅を取る(疑似要素なので選択・桁の計算には入らない) */
+#text p:empty::before {
+    content: "\3000";
+}
+
+/* 操作ボタン */
+#bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--bar-h);
+    padding: 0 8px env(safe-area-inset-bottom);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bar);
+    border-top: 1px solid var(--line);
+    font-family: system-ui, sans-serif;
+    font-size: 16px;
+    -webkit-user-select: none;
+    user-select: none;
+}
+#bar a, #bar button {
+    min-width: 56px;
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--fg);
+    font: inherit;
+    text-align: center;
+    line-height: 34px;
+    text-decoration: none;
+    box-sizing: border-box;
+}
+#bar #mark {
+    min-width: 96px;
+    font-weight: bold;
+}
+#where {
+    margin-left: auto;
+    font-size: 14px;
+    opacity: 0.7;
+}
+
+#toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(var(--bar-h) + 16px);
+    transform: translateX(-50%);
+    max-width: 80%;
+    padding: 8px 16px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    font-family: system-ui, sans-serif;
+    font-size: 16px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+}
+#toast.show {
+    opacity: 1;
+}

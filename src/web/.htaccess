@@ -1,0 +1,10 @@
+# Basic認証。パスワードファイルはhtpasswdで作る(READMEを参照)。
+AuthType Basic
+AuthName "usilic web"
+AuthUserFile /etc/apache2/usilic-web.htpasswd
+Require valid-user
+
+# 設定・共通部分・説明書は直接見せない。
+<FilesMatch "^(config\.php|common\.php|README)$">
+    Require all denied
+</FilesMatch>
