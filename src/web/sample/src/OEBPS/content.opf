@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id" xml:lang="ja">
+<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:identifier id="id">urn:usilic:sample:ame-ni-mo-makezu</dc:identifier>
+<dc:title>雨ニモマケズ(usilicの見本)</dc:title>
+<dc:creator>宮澤賢治</dc:creator>
+<dc:language>ja</dc:language>
+<dc:source>https://www.aozora.gr.jp/cards/000081/card45630.html</dc:source>
+<dc:contributor>青空文庫（入力：田中敬三、校正：土屋隆）</dc:contributor>
+<meta property="dcterms:modified">2026-10-14T01:00:00Z</meta>
+</metadata>
+<manifest>
+<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+<item id="css" href="style.css" media-type="text/css"/>
+<item id="p1" href="text.xhtml" media-type="application/xhtml+xml"/>
+</manifest>
+<spine page-progression-direction="rtl">
+<itemref idref="p1"/>
+</spine>
+</package>

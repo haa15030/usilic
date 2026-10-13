@@ -1,0 +1,7 @@
+html { writing-mode: vertical-rl; -webkit-writing-mode: vertical-rl; }
+body { font-family: serif; line-height: 1.8; }
+h1 { font-size: 140%; }
+p.author { text-align: right; }
+p { margin: 0; }
+p.blank { height: 1em; }
+div.colophon { font-size: 80%; }
