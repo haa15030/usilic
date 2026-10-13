@@ -2648,7 +2648,10 @@ class Application {
   bool epubBookVertical() const;
   std::optional<std::pair<int, int>> epubHorizontalRangeAt(int rawLine) const;
   // fromBelow: 縦書きから先へ送って入る時(スクロール・j)、範囲の最初の行を画面の一番下に置く(2026-10-13)。
-  void enterEpubHorizontal(const std::pair<int, int> &range, int rawLine, bool fromBelow = false);
+  // fromAbove: 縦書きから前へ送って入る時(慣性等)、範囲の最後の行を画面の一番上に置く(2026-10-13、本の途中の付録等)。
+  void enterEpubHorizontal(const std::pair<int, int> &range, int rawLine, bool fromBelow = false, bool fromAbove = false);
+  // 縦書きの慣性等で列を送った時(scrollEpubVertical())、送る前と後の右端の列の間に横書きの範囲があればそこへ入る。
+  bool enterEpubHorizontalBetween(int fromColumn, int toColumn, int delta);
   bool maybeEnterEpubHorizontal(int fromRaw, bool forward);
   // 縦書きの1列の送り/戻り(rebuildEpubVertical()の空の列・扉のページ参照)。返り値は
   // {右端の列(-1なら今のまま), 列カーソル}。

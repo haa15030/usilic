@@ -8239,7 +8239,7 @@ std::optional<std::pair<int, int>> Application::epubHorizontalRangeAt(int rawLin
 
 // 横書きの範囲へ入る: fileView_のカーソルをrawLineの行(範囲の外なら端)に置く。
 // 描き直しは呼び出し元(activeView()はもうfileView_)。
-void Application::enterEpubHorizontal(const std::pair<int, int> &range, int rawLine, bool fromBelow) {
+void Application::enterEpubHorizontal(const std::pair<int, int> &range, int rawLine, bool fromBelow, bool fromAbove) {
   epubHorizontalSection_ = range;
   syncEpubHorizontalPresentation();
   rawLine = std::clamp(rawLine, range.first, range.second);
@@ -8255,7 +8255,9 @@ void Application::enterEpubHorizontal(const std::pair<int, int> &range, int rawL
     // 2026-10-13、直接のユーザー依頼("最終章→奥付のときも章の冒頭が画面下から現れる表示で"): 縦書きの本文の最後の
     // 列が右端まで送られた後、範囲の最初の行が画面の一番下から現れ、送るにつれて上がっていく(上の行は空)。
     epubHorizontalFromBelow_ = fromBelow && rawLine == range.first;
-    if (epubHorizontalFromBelow_) fileView_.setTopIndex(std::max(0, startIndex - std::max(1, fileView_.height()) + 1));
+      if (epubHorizontalFromBelow_) fileView_.setTopIndex(std::max(0, startIndex - std::max(1, fileView_.height()) + 1));
+    // 前へ送って本の途中の範囲(付録等)へ入る時は、範囲の最後の行が画面の一番上から現れ、送るにつれて下がっていく。
+    if (fromAbove && rawLine == range.second) fileView_.setTopIndex(static_cast<int>(i));
     return;
   }
 }
@@ -8303,6 +8305,8 @@ bool Application::leaveEpubHorizontalIfOutside(bool scrolling) {
   }
   // カーソルの行に加えて画面の先頭の行も見る(ホイールの慣性等はカーソルを動かさずに
   // 画面だけを送ることがある)。前へ出たら範囲の直前の行、先へ出たらカーソルの行へ。
+  // j/k・ホイール(-cのscrollByWheel()はCommand::ScrollLineDown/Up)も、画面を送る操作として慣性等と同じに扱う。
+  if (previousCommand_ == Command::ScrollLineDown || previousCommand_ == Command::ScrollLineUp) scrolling = true;
   int raw = fileRawLineAtCursor();
   const auto &lines = fileView_.lines();
   int top = fileView_.topIndex();
@@ -8318,12 +8322,20 @@ bool Application::leaveEpubHorizontalIfOutside(bool scrolling) {
       break;
     }
   if (top >= firstIndex) epubHorizontalFromBelow_ = false;
+  // 先へも同じく(本の途中の付録等、2026-10-13): 慣性等では範囲の最後の行が画面の上から外れるまで横書きのまま。
+  int lastIndex = -1;
+  for (int i = static_cast<int>(lines.size()) - 1; i >= 0; i--)
+    if (lines[i].rawLineNumber.value_or(0) <= epubHorizontalSection_->second) {
+      lastIndex = i;
+      break;
+    }
   bool before = scrolling ? firstIndex >= top + std::max(1, fileView_.height())
                           : raw < epubHorizontalSection_->first ||
                                 (!epubHorizontalFromBelow_ && topRaw < epubHorizontalSection_->first);
-  bool after = raw > epubHorizontalSection_->second;
+  bool after = scrolling ? lastIndex < top : raw > epubHorizontalSection_->second;
   if (!before && !after) return false;
   if (before) raw = epubHorizontalSection_->first - 1;
+  else if (scrolling) raw = std::max(raw, epubHorizontalSection_->second + 1);
   epubHorizontalSection_.reset();
   syncEpubHorizontalPresentation();
   rebuildEpubVertical(raw);  // リサイズで組み直しが要る場合もあるので、組み直してから置く
@@ -8333,7 +8345,10 @@ bool Application::leaveEpubHorizontalIfOutside(bool scrolling) {
       if (!epubVerticalCols_[c].padding && epubVerticalCols_[c].rawLineNumber <= raw) col = static_cast<int>(c);
     // 2026-10-10、直接のユーザー依頼("章の末尾から一行ずつ表示していって"): ページの頭ではなく、前の章の
     // 最後の列を右端に置き、そこから1列ずつ現れるようにする(stepEpubVerticalFirst()の前へと同じ)。
-    setEpubVerticalView(col, col);
+    // 連続スクロール(epubChapterBreaks_がfalse、画面の全部の章を描く)では、右端に置くと範囲の後ろの列が左に
+    // 見えてしまうので、左端に置く(2026-10-13、本の途中の付録、enterEpubHorizontalBetween()参照)。
+    if (epubChapterBreaks_) setEpubVerticalView(col, col);
+    else setEpubVerticalView(col - epubVerticalColumnsPerScreen(display_.columns()) + 1, col);
   }
   activeView().redraw();
   activeView().syncVisibleCursor();
@@ -9046,6 +9061,28 @@ bool Application::enterEpubHorizontalAtBookEnd() {
   return true;
 }
 
+// 2026-10-13、直接のユーザー依頼("Kgkt.epubには「目次」の次に横書きページの「付録」がある。目次から付録を選べば確かに
+// 横書きだが慣性スクロールではスキップされる。この章も「奥付」と同じように処理して欲しい"): 横書きの範囲は縦書きの列に
+// 無いので、列を送ると飛び越えていた。送る前と後の右端の列の行の間に範囲があれば、先へは範囲の最初の行を画面の下から、
+// 前へは最後の行を画面の上から現して入る(leaveEpubHorizontalIfOutside()の慣性等は、範囲が画面から外れたら戻る)。
+bool Application::enterEpubHorizontalBetween(int fromColumn, int toColumn, int delta) {
+  int total = static_cast<int>(epubVerticalCols_.size());
+  fromColumn = std::min(fromColumn, total - 1);
+  toColumn = std::min(toColumn, total - 1);
+  if (fromColumn < 0 || toColumn < 0) return false;
+  int fromRaw = epubVerticalCols_[fromColumn].rawLineNumber, toRaw = epubVerticalCols_[toColumn].rawLineNumber;
+  for (const auto &range : fileMode_.epubLayoutHints().horizontal) {
+    bool crossed = delta > 0 ? (range.first > fromRaw && range.second < toRaw)
+                             : (range.second < fromRaw && range.first > toRaw);
+    if (!crossed) continue;
+    enterEpubHorizontal(range, delta > 0 ? range.first : range.second, /*fromBelow=*/delta > 0, /*fromAbove=*/delta < 0);
+    activeView().redraw();
+    activeView().syncVisibleCursor();
+    return true;
+  }
+  return false;
+}
+
 bool Application::enterEpubHorizontalAtEdge(int delta) {
   // 2026-09-29(同じ報告"慣性スクロールは奥付の前の章で止まる"): 縦書きの列の端で、その先に
   // 横書きの範囲(奥付等)があればそこへ入る(k/jのmaybeEnterEpubHorizontal()と同じ)。
@@ -9251,7 +9288,12 @@ bool Application::scrollEpubVertical(int delta) {
     epubTocVerticalView_.syncVisibleCursor();
     return true;
   }
+  // 範囲を越えたかは、章ごと(画面には右端の列の章だけを描く)なら右端の列、連続スクロール(全部の章を描く)なら左端の
+  // 列で見る(範囲の後ろの列が画面に現れる所で入る、enterEpubHorizontalBetween()参照)。
+  int edgeOffset = epubChapterBreaks_ ? 0 : epubVerticalColumnsPerScreen(display_.columns()) - 1;
+  int fromColumn = epubVerticalFirst_ + edgeOffset;
   if (!stepEpubVerticalFirst(delta)) return enterEpubHorizontalAtEdge(delta);
+  if (enterEpubHorizontalBetween(fromColumn, epubVerticalFirst_ + edgeOffset, delta)) return true;
   epubVerticalView_.redraw();
   epubVerticalView_.syncVisibleCursor();  // -cの端末のカーソルを列カーソルの頭へ(setEpubVerticalView()参照)
   return true;
