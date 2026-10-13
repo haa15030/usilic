@@ -246,6 +246,7 @@ var Reader = function (opt) {
     // ドラッグ中の状態は文書(iframe)ごとではなく1つだけ持つ。マウスは章のiframeの境目を
     // またいで動かすことがあり、離した(mouseup)のが押したのと別の文書に届いても慣性を付けるため。
     var drag = null;
+    var DEBUG = /[?&]debug\b/.test(location.search);
 
     function attach(target, win) {
 
@@ -308,14 +309,17 @@ var Reader = function (opt) {
                 return;
             }
             var s = d.samples;
-            if (s.length < 2 || performance.now() - s[s.length - 1].t > limit) {
-                return;
-            }
+            var gap = s.length ? performance.now() - s[s.length - 1].t : -1;
             var a = s[0], b = s[s.length - 1];
-            if (b.t <= a.t) {
+            var v = s.length >= 2 && b.t > a.t ? -(b.x - a.x) / (b.t - a.t) : 0;
+            // 調べる用: URLに&debugを付けると、離した時に測った値を出す
+            if (DEBUG) {
+                toast('見本' + s.length + ' 止めて' + Math.round(gap) + 'ms 速さ' + v.toFixed(3) + 'px/ms');
+            }
+            if (s.length < 2 || gap > limit || v === 0) {
                 return;
             }
-            vel = -(b.x - a.x) / (b.t - a.t);
+            vel = v;
             startInertia();
         }
 
@@ -347,8 +351,10 @@ var Reader = function (opt) {
             }
         });
         target.addEventListener('mousemove', function (e) {
+            // ボタンが離れているのに来たmousemoveは、離したのと同じに扱う(mouseupより先に
+            // ボタン無しのmousemoveが来ても、慣性を付けずに終わらせないように)
             if (!(e.buttons & 1)) {
-                drag = null;
+                up(300);
                 return;
             }
             if (move(e.screenX, e.screenY)) {
