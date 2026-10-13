@@ -30448,3 +30448,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      「MARK」・「(mark)」。記録の削除は無い(ファイルを直接編集)。
    - **HELP**: src/HELP_.txtの[EPUB]の表(^Os・^O^C・^O^E)と説明、^Of(モードライン)を直した。
    - **確認**: make usilicのビルドとmake installのみ(テストは未実行)。
+
+805. **2026-10-14: ^Jeにusilic-webのURLを入れたら、FILE履歴に積んで^J^Eの一覧にも出す**
+   - **経緯**: 直接のユーザー依頼("EPUBで`usilic/web`関連のURLを入力したときは^J^Eの履歴にも登録。")。
+   - **変更**: isUsilicWebUrl()(http(s)://…usilic-web…、usilic/web・usilic_webも)を足した。^Jeに入れたURLが
+     これならopenEpubPromptSpecial()がFILE履歴へ積み、^J^Eの一覧の絞り込み(EPUBだけ)でも残す。一覧で選ぶ・
+     ^X^Fの入力欄に入れると、openRecentFileEntry()が^Jeに入れた時と同じく^Owの今の対処で開く。^J^Jの戻り先からは除く。
+   - **確認**: make usilicのビルドとmake install/appのみ。

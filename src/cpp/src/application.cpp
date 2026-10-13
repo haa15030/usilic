@@ -550,6 +550,14 @@ const char *const kHelpChapterPattern = "^[^\t].*\t[ \xEF\xBB\xBF]*$";
 std::string resolveTempRoot(const std::string &homeDirectory, const std::string &tempRootDirectory) {
   return tempRootDirectory.empty() ? (homeDirectory + "/.usilic") : tempRootDirectory;
 }
+
+// 2026-10-14、直接のユーザー依頼("EPUBでusilic/web関連のURLを入力したときは^J^Eの履歴にも登録"): usilic-web
+// (src/web/、http://ホスト/usilic-web/…)のURL。^Jeに入れるとFILE履歴に積み、^J^Eの一覧にも出す。選ぶと^Jeに
+// 入れた時と同じく^Owの今の対処で開く(openRecentFileEntry())。
+bool isUsilicWebUrl(const std::string &text) {
+  static const std::regex kUsilicWeb(R"(^https?://\S*usilic[-_/]web\S*$)", std::regex::icase);
+  return std::regex_match(text, kUsilicWeb);
+}
 }  // namespace
 
 // 2026-09-20追加、openRecentFileEntry()自身のコメント参照: executeCut()
@@ -7098,6 +7106,7 @@ bool Application::relaunchUsilicEntry(std::string entry) {
 
 bool Application::openRecentFileEntry(const std::string &path) {
   if (hasUsilicTag(path)) return relaunchUsilicEntry(path);
+  if (isUsilicWebUrl(path)) return openEpubPromptSpecial(path);  // usilic-webのURL(isUsilicWebUrl()参照)
   // 2026-09-24追加、直接のユーザー報告("^J^Jでカーソル位置が保存
   // されない。^Vでスクロールしたのち^J^Jしてもスクロール前の位置に
   // なる"): openSelectedArchiveEntry()自身の2026-08-27修正・
@@ -7233,6 +7242,7 @@ bool Application::goToRecentFile() {
   for (auto it = recent.rbegin(); it != recent.rend(); ++it) {
     if (!current.empty() && *it == current) continue;
     if (hasUsilicTag(*it)) continue;  // 外部起動したもの(kUsilicTag)はこのusilicで開いたものではない
+    if (isUsilicWebUrl(*it)) continue;  // usilic-webのURL(isUsilicWebUrl()参照)はブラウザ等で開くもの
     if (openRecentFileEntry(*it)) return true;
   }
   return false;
@@ -8021,6 +8031,7 @@ bool Application::openEpubPromptSpecial(const std::string &text) {
     std::string url = text;
     url.erase(0, url.find_first_not_of(" \t"));
     url.erase(url.find_last_not_of(" \t") + 1);
+    if (isUsilicWebUrl(url)) history_.pushRecent(RingCategory::RecentFile, url);  // ^J^Eの一覧へ(isUsilicWebUrl()参照)
     activeView().redraw();
     openEpubWebLink(url);
     return true;
@@ -13192,7 +13203,7 @@ bool Application::toggleListBrowserHistory() {
                 items.end());
   }
   if (promptHistoryContext_ && promptHistoryContext_->epubOnly)  // ^J^E: EPUBだけ(startEpubList()参照)
-    items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item); }),
+    items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item) && !isUsilicWebUrl(item); }),
                 items.end());
   if (promptHistoryContext_ && promptHistoryContext_->archiveOnly)  // ^J^A: アーカイブだけ(startArchiveList()参照)
     items.erase(std::remove_if(items.begin(), items.end(),
@@ -15226,6 +15237,7 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
     // startListBrowser()自身のコメント参照。
     case PromptKind::RecentFile:
       if (hasUsilicTag(text)) return relaunchUsilicEntry(text);  // 外部起動の印(kUsilicTag)
+      if (isUsilicWebUrl(text)) return openRecentFileEntry(text);  // usilic-webのURL(isUsilicWebUrl()参照)
       // recentFileDisplayText()参照: 入力欄がハイライト行の(/を見せない)文字列のままなら、
       // ハイライト行そのもの(「パス/」ならARC)で開く。
       if (const std::string *selected = listBrowserMode_.selectedItem();
@@ -15634,7 +15646,7 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
                 items.end());
   }
   if (promptHistoryContext_ && promptHistoryContext_->epubOnly)  // ^J^E: EPUBだけ(startEpubList()参照)
-    items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item); }),
+    items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item) && !isUsilicWebUrl(item); }),
                 items.end());
   if (promptHistoryContext_ && promptHistoryContext_->archiveOnly)  // ^J^A: アーカイブだけ(startArchiveList()参照)
     items.erase(std::remove_if(items.begin(), items.end(),
