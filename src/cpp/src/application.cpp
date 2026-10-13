@@ -8339,6 +8339,7 @@ bool Application::leaveEpubHorizontalIfOutside(bool scrolling) {
   bool after = byVisibility ? lastIndex < top : raw > epubHorizontalSection_->second;
   if (!before && !after) return false;
   int sectionEnd = epubHorizontalSection_->second + 1;
+  int sectionLast = epubHorizontalSection_->second;
   if (before) raw = epubHorizontalSection_->first - 1;
   // 送って先へ出た時は範囲の直後の行へ(カーソルの行は範囲の先の空の行まで送られていることがある)。カーソルが1画面より
   // 先なら、リンク等で飛んだ先なのでその行へ。
@@ -8355,7 +8356,12 @@ bool Application::leaveEpubHorizontalIfOutside(bool scrolling) {
     // 最後の列を右端に置き、そこから1列ずつ現れるようにする(stepEpubVerticalFirst()の前へと同じ)。
     // 連続スクロール(epubChapterBreaks_がfalse、画面の全部の章を描く)では、右端に置くと範囲の後ろの列が左に
     // 見えてしまうので、左端に置く(2026-10-13、本の途中の付録、enterEpubHorizontalBetween()参照)。
-    if (epubChapterBreaks_) setEpubVerticalView(col, col);
+    // ただし範囲の後ろに縦書きの列が無い時(本の末尾の奥付等)は右端に置く(2026-10-13、直接のユーザー報告"さっきは
+    // 直っていたのに再発"、HISTORY.md:36431の=jd: 既定の連続スクロールで、奥付から戻ると最終章の冒頭が出ていた)。
+    bool columnsAfter = std::any_of(epubVerticalCols_.begin(), epubVerticalCols_.end(), [&](const auto &column) {
+      return !column.padding && column.rawLineNumber > sectionLast;
+    });
+    if (epubChapterBreaks_ || !columnsAfter) setEpubVerticalView(col, col);
     else setEpubVerticalView(col - epubVerticalColumnsPerScreen(display_.columns()) + 1, col);
   } else if (after && raw == sectionEnd && !epubChapterBreaks_ && !epubHorizontalSection_) {
     // 連続スクロールで慣性等で先へ出た時は、範囲の直後の列を右端に置く(前へ送って範囲へ入る所と同じ)。
