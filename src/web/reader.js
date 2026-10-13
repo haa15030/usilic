@@ -83,12 +83,11 @@ var Reader = function (opt) {
 
     // ---- 慣性スクロール ----
 
-    // 1フレーム(約16.7ms)ごとに速さに掛ける値。1は減速しない(定速で流れ続ける)。
+    // 1フレーム(約16.7ms)ごとに速さに掛ける値。一定の速さで流すのはV−/V＋(矢印キーと同じ段)で。
     var FRICTIONS = [
         { label: '減速 大', k: 0.99 },
         { label: '減速 中', k: 0.997 },
-        { label: '減速 小', k: 0.999 },
-        { label: '定速', k: 1 }
+        { label: '減速 小', k: 0.999 }
     ];
     var frictionIdx = Math.min(+load('friction', 1) || 0, FRICTIONS.length - 1);
     var frictionBtn = document.getElementById('friction');
@@ -244,6 +243,12 @@ var Reader = function (opt) {
         save('friction', frictionIdx);
         showFriction();
     });
+    // V−/V＋: 矢印キー(↑/↓)と同じく1段ずつ。止まっていればV＋で先へ、V−で戻るを最低速で流し始める。
+    onTap(document.getElementById('slower'), function () { inertia.coast(-1); });
+    onTap(document.getElementById('faster'), function () { inertia.coast(1); });
+    // ＜/＞: 画面1枚分、見た目の向きのまま(縦書きは＜で先へ)
+    onTap(document.getElementById('page-left'), function () { inertia.page(-1); });
+    onTap(document.getElementById('page-right'), function () { inertia.page(1); });
     onTap(document.getElementById('smaller'), function () { setFont(fontSize - font.step); });
     onTap(document.getElementById('larger'), function () { setFont(fontSize + font.step); });
 

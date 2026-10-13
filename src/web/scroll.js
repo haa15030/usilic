@@ -9,6 +9,8 @@
 //   });
 //   s.attach(doc, win)  その文書(iframeの中など)のtouch・マウス・ホイール・キーも受ける
 //   s.stop()            止める
+//   s.coast(dir)        矢印キーの慣性を1段変える(dirは先へ=1、戻る=-1。止まっていれば最低速で流し始める)
+//   s.page(dir)         画面1枚分(dirはスクロール位置が増える向き=1、減る向き=-1)
 //   s.moving()          流れているか
 //
 // 操作: フリック(マウスでは素早いドラッグ)で流れ、タップ(クリック)で止まる。押したまま0.4秒
@@ -373,6 +375,9 @@ var Inertia = function (scroller, opt) {
     return {
         attach: attach,
         stop: stop,
+        coast: stepCoast,
+        // 画面1枚分。dirはスクロール位置が増える向き(1)か減る向き(-1)。横なら右(1)か左(-1)
+        page: function (dir) { glideBy(pageSize() * 0.9 * dir); },
         moving: function () { return raf !== 0; }
     };
 };

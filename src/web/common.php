@@ -49,8 +49,12 @@ function reader_bar()
 <button id="mark">記録</button>
 <button id="list">記録一覧</button>
 <button id="friction"></button>
-<button id="smaller">A−</button>
-<button id="larger">A＋</button>
+<button id="slower" class="small">V−</button>
+<button id="faster" class="small">V＋</button>
+<button id="page-left" class="small">＜</button>
+<button id="page-right" class="small">＞</button>
+<button id="smaller" class="small">A−</button>
+<button id="larger" class="small">A＋</button>
 <span id="where"></span>
 </div>
 <div id="panel" hidden>

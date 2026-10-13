@@ -107,8 +107,16 @@ body.reader {
     min-width: 96px;
     font-weight: bold;
 }
+#bar .small {
+    min-width: 44px;
+    padding: 0 6px;
+}
 #where {
     margin-left: auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     font-size: 14px;
     opacity: 0.7;
 }
