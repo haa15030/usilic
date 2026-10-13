@@ -111,6 +111,23 @@
         (doc.head || doc.documentElement).appendChild(style);
         reader.attach(doc, ch.frame.contentWindow);
         measure(ch);
+        if (ch.vertical) {
+            sidelineRight(doc);
+        }
+    }
+
+    // 縦書きの下線(リンクの既定の下線等)は左側に引かれるが、日本語の傍線は右側が主流
+    // (Kindle・Kinoppy・ブック。usilicも右側)。日本語を含む要素の下線は、縦書きで右側に
+    // 引かれる上線に替える。英字だけの要素(横倒しの英文)は下線のまま左側に残す。
+    function sidelineRight(doc) {
+        var win = doc.defaultView;
+        Array.prototype.forEach.call((doc.body || doc.documentElement).querySelectorAll('*'), function (el) {
+            var line = win.getComputedStyle(el).textDecorationLine || '';
+            if (line.indexOf('underline') < 0 || !/[\u3000-\u30ff\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(el.textContent)) {
+                return;
+            }
+            el.style.textDecorationLine = line.replace('underline', line.indexOf('overline') < 0 ? 'overline' : '').trim();
+        });
     }
 
     // ---- 位置 ----
