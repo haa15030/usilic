@@ -1,4 +1,4 @@
-// 読む画面の共通部分: 左右フリックの慣性スクロール、操作ボタン、記録と記録一覧。
+// 読む画面の共通部分: 左右の慣性スクロール(scroll.js)、操作ボタン、記録と記録一覧。
 // .txt(txt.js)とEPUB(epub.js)が、位置の求め方・飛び方を渡して使う。
 //
 //   var r = Reader({
@@ -11,7 +11,7 @@
 //       forward:    function () → 先へ進む時のscrollLeftの増える向き(縦書き・右綴じは-1)
 //                   (省略時は-1)
 //   });
-//   r.attach(doc)   その文書(iframeの中など)のtouchも慣性スクロールへ回す
+//   r.attach(doc, win)  その文書(iframeの中など)のtouch等も慣性スクロールへ回す
 //   r.restore()     覚えていた位置へ戻る(本文を並べ終えた後に呼ぶ)
 var Reader = function (opt) {
     'use strict';
@@ -96,335 +96,12 @@ var Reader = function (opt) {
         frictionBtn.textContent = FRICTIONS[frictionIdx].label;
     }
 
-    var MIN_SPEED = 0.003;  // px/ms。これより遅くなったら止める
-    var vel = 0;            // px/ms。scrollLeftが増える向きを正とする
-    var pos = 0;            // scrollLeftを小数のまま持つ(ゆっくりの時に端数が消えないように)
-    var raf = 0;
-    var lastT = 0;
-
-    var glideTo = null;     // スペース等で向かっている先のscrollLeft(向かっていなければnull)
-
-    // 矢印キーの慣性の段ごとの速さ(px/ms)。usilicrcのARROWの既定(1ドット進むごとに待つusec:
-    // 200000 100000 25000 10000 5000 2000 1000 500 200 100 50 20)と同じ。減速せず一定の速さで流れる。
-    var ARROW = [200000, 100000, 25000, 10000, 5000, 2000, 1000, 500, 200, 100, 50, 20].map(function (us) {
-        return 1000 / us;
+    var inertia = Inertia(scroller, {
+        axis: 'x',
+        forward: function () { return opt.forward ? opt.forward() : -1; },
+        friction: function () { return FRICTIONS[frictionIdx].k; },
+        toast: toast
     });
-    var coastLevel = -1;    // 矢印キーの慣性の段(0始まり)。矢印キーの慣性でなければ-1
-
-    function stopInertia() {
-        if (raf) {
-            cancelAnimationFrame(raf);
-        }
-        raf = 0;
-        vel = 0;
-        glideTo = null;
-        coastLevel = -1;
-    }
-
-    function forwardSign() {
-        return opt.forward ? opt.forward() : -1;
-    }
-
-    // 矢印キーの慣性(usilicと同じ): 止まっていれば押した向きに最低速で始める。流れている向きの
-    // キーなら1段速く、逆なら1段遅く、最低速からさらに逆なら逆向きの最低速。dirは先へ=1、戻る=-1。
-    // フリック等の慣性中に押した時は、その速さに一番近い段から変える。
-    function stepCoast(dir) {
-        var cur = 0;
-        if (raf && glideTo === null && vel !== 0) {
-            cur = vel * forwardSign() > 0 ? 1 : -1;
-            if (coastLevel < 0) {
-                var speed = Math.abs(vel), best = 0;
-                ARROW.forEach(function (v, i) {
-                    if (Math.abs(Math.log(v / speed)) < Math.abs(Math.log(ARROW[best] / speed))) {
-                        best = i;
-                    }
-                });
-                coastLevel = best;
-            }
-        }
-        var level = coastLevel;
-        if (cur === 0) {
-            stopInertia();
-            cur = dir;
-            level = 0;
-        } else if (cur === dir) {
-            level = Math.min(level + 1, ARROW.length - 1);
-        } else if (level > 0) {
-            level--;
-        } else {
-            cur = dir;
-        }
-        var running = raf !== 0 && glideTo === null;
-        coastLevel = level;
-        vel = cur * forwardSign() * ARROW[level];
-        toast('速さ ' + (level + 1) + '/' + ARROW.length + (cur > 0 ? ' 先へ' : ' 戻る'));
-        if (!running) {
-            pos = scroller.scrollLeft;
-            lastT = performance.now();
-            raf = requestAnimationFrame(step);
-        }
-    }
-
-    // 矢印キー: 先のscrollLeftへ、残りの距離の一定の割合ずつ近づく
-    function glide() {
-        var diff = glideTo - pos;
-        if (Math.abs(diff) < 0.5) {
-            pos = glideTo;
-        } else {
-            pos += diff * 0.2;
-        }
-        scroller.scrollLeft = pos;
-        // 着いたか、本の端で止まった
-        if (pos === glideTo || Math.abs(scroller.scrollLeft - pos) > 1) {
-            pos = scroller.scrollLeft;
-            raf = 0;
-            glideTo = null;
-            return;
-        }
-        raf = requestAnimationFrame(glide);
-    }
-
-    // 押すたびに先を延ばすので、押し続けると続けて流れる
-    function glideBy(d) {
-        if (glideTo === null) {
-            stopInertia();
-            pos = scroller.scrollLeft;
-            glideTo = pos;
-        }
-        glideTo += d;
-        if (!raf) {
-            raf = requestAnimationFrame(glide);
-        }
-    }
-
-    function step(t) {
-        var dt = Math.max(0, Math.min(t - lastT, 50));
-        lastT = t;
-        if (coastLevel < 0) {
-            vel *= Math.pow(FRICTIONS[frictionIdx].k, dt / 16.67);
-        }
-        pos += vel * dt;
-        scroller.scrollLeft = pos;
-        // 本の端に着いた(思った位置まで動けなかった)か、十分遅くなったら止める
-        if (Math.abs(scroller.scrollLeft - pos) > 1 || (coastLevel < 0 && Math.abs(vel) < MIN_SPEED)) {
-            pos = scroller.scrollLeft;
-            stopInertia();
-            return;
-        }
-        raf = requestAnimationFrame(step);
-    }
-
-    function startInertia() {
-        if (Math.abs(vel) < MIN_SPEED) {
-            vel = 0;
-            return;
-        }
-        pos = scroller.scrollLeft;
-        lastT = performance.now();
-        raf = requestAnimationFrame(step);
-    }
-
-    // 範囲指定の取っ手の近くを触った時は、取っ手の操作とみなしてスクロールしない
-    function nearSelection(win, x, y) {
-        var sel = win.getSelection();
-        if (!sel || !sel.rangeCount || sel.isCollapsed) {
-            return false;
-        }
-        var rects = sel.getRangeAt(0).getClientRects();
-        if (!rects.length) {
-            return false;
-        }
-        var m = 40;
-        return [rects[0], rects[rects.length - 1]].some(function (r) {
-            return x > r.left - m && x < r.right + m && y > r.top - m && y < r.bottom + m;
-        });
-    }
-
-    // targetの文書のtouchとマウスのドラッグ・ホイール・矢印キーを慣性スクロールへ回す。
-    // 動いた量は画面(screenX)の座標で測る。iframeの中の座標(clientX)は、スクロールすると
-    // iframeごと動いてしまい、動いた量に跳ね返って本文が左右にぶれるため。
-    // ドラッグ中の状態は文書(iframe)ごとではなく1つだけ持つ。マウスは章のiframeの境目を
-    // またいで動かすことがあり、離した(mouseup)のが押したのと別の文書に届いても慣性を付けるため。
-    var drag = null;
-    var DEBUG = /[?&]debug\b/.test(location.search);
-
-    function attach(target, win) {
-
-        // 押した: 流れていれば止める。止めただけならtrue(範囲指定の解除などをさせない)
-        // x, yは画面の座標、cx, cyはその文書の中の座標(範囲指定の取っ手との距離用)
-        function down(x, y, cx, cy) {
-            var moving = raf !== 0;
-            stopInertia();
-            drag = {
-                x0: x,
-                y0: y,
-                x: x,
-                t0: performance.now(),
-                mode: nearSelection(win, cx, cy) ? 'native' : null,
-                samples: []
-            };
-            pos = scroller.scrollLeft;
-            return moving;
-        }
-
-        // 動いた: スクロールとして扱ったらtrue
-        function move(x, y) {
-            if (!drag) {
-                return false;
-            }
-            var now = performance.now();
-            if (drag.mode === null) {
-                var dx = x - drag.x0, dy = y - drag.y0;
-                if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
-                    return false;
-                }
-                // 長押ししてから動かしたのは範囲指定とみなし、ブラウザに任せる
-                drag.mode = now - drag.t0 < 400 && Math.abs(dx) >= Math.abs(dy) ? 'scroll' : 'native';
-            }
-            if (drag.mode !== 'scroll') {
-                return false;
-            }
-            // 指(マウス)の動きに本文が付いてくる向き(右へ動かすと先へ進む)
-            pos -= x - drag.x;
-            drag.x = x;
-            scroller.scrollLeft = pos;
-            pos = scroller.scrollLeft;
-            if (!drag.samples.length || drag.samples[drag.samples.length - 1].x !== x) {
-                drag.samples.push({ x: x, t: now });
-            }
-            while (drag.samples.length > 2 && now - drag.samples[0].t > 100) {
-                drag.samples.shift();
-            }
-            return true;
-        }
-
-        // 離した: 離す直前の速さで慣性を付ける
-        // 離した: 離す直前の速さで慣性を付ける。止めてから離した(limit ms以上動かさなかった)時は付けない。
-        // マウスは動かしながら離すのが難しいので、limitを長めにし、速さは止める前の動きから測る
-        // (samplesは動いた時にしか積まないので、止めていた間は速さに入らない)。
-        function up(limit) {
-            var d = drag;
-            drag = null;
-            if (!d || d.mode !== 'scroll') {
-                return;
-            }
-            var s = d.samples;
-            var gap = s.length ? performance.now() - s[s.length - 1].t : -1;
-            var a = s[0], b = s[s.length - 1];
-            var v = s.length >= 2 && b.t > a.t ? -(b.x - a.x) / (b.t - a.t) : 0;
-            // 調べる用: URLに&debugを付けると、離した時に測った値を出す
-            if (DEBUG) {
-                toast('見本' + s.length + ' 止めて' + Math.round(gap) + 'ms 速さ' + v.toFixed(3) + 'px/ms');
-            }
-            if (s.length < 2 || gap > limit || v === 0) {
-                return;
-            }
-            vel = v;
-            startInertia();
-        }
-
-        target.addEventListener('touchstart', function (e) {
-            if (e.touches.length !== 1) {
-                drag = null;
-                return;
-            }
-            var t = e.touches[0];
-            if (down(t.screenX, t.screenY, t.clientX, t.clientY)) {
-                e.preventDefault();
-            }
-        }, { passive: false });
-        target.addEventListener('touchmove', function (e) {
-            if (e.touches.length === 1 && move(e.touches[0].screenX, e.touches[0].screenY)) {
-                e.preventDefault();
-            }
-        }, { passive: false });
-        target.addEventListener('touchend', function () { up(100); });
-        target.addEventListener('touchcancel', function () { drag = null; });
-
-        // マウス: 素早く左右へドラッグするとスクロール。押したまま0.4秒待ってから動かすと範囲指定。
-        target.addEventListener('mousedown', function (e) {
-            if (e.button !== 0) {
-                return;
-            }
-            if (down(e.screenX, e.screenY, e.clientX, e.clientY)) {
-                e.preventDefault();
-            }
-        });
-        target.addEventListener('mousemove', function (e) {
-            // ボタンが離れているのに来たmousemoveは、離したのと同じに扱う(mouseupより先に
-            // ボタン無しのmousemoveが来ても、慣性を付けずに終わらせないように)
-            if (!(e.buttons & 1)) {
-                up(300);
-                return;
-            }
-            if (move(e.screenX, e.screenY)) {
-                e.preventDefault();
-                // 動かし始めの8pxで始まった範囲指定を消す
-                win.getSelection().removeAllRanges();
-            }
-        });
-        target.addEventListener('mouseup', function () { up(300); });
-        // 画像や範囲指定した文字をつかんだ時の、ブラウザのドラッグ&ドロップを始めさせない
-        // (始まるとmousemove/mouseupが来なくなり、スクロールも慣性も止まる)
-        target.addEventListener('dragstart', function (e) {
-            if (drag && drag.mode !== 'native') {
-                e.preventDefault();
-            }
-        });
-
-        // ホイール: 縦の回転も横のスクロールにする(下へ回すと先へ)
-        target.addEventListener('wheel', function (e) {
-            if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) {
-                return;
-            }
-            e.preventDefault();
-            stopInertia();
-            var unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? scroller.clientWidth : 1;
-            scroller.scrollLeft += e.deltaY * unit * (opt.forward ? opt.forward() : -1);
-        }, { passive: false });
-
-        // キー: 矢印は慣性(usilicと同じく、止まっている時は↓で先へ/↑で戻るを最低速で始め、
-        // 流れている間は↓と先へ向かう横の矢印で速く、↑と逆の横の矢印で遅く)。
-        // Shift+←→とスペースで画面1枚分、Escで止める。
-        win.addEventListener('keydown', function (e) {
-            if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) {
-                return;
-            }
-            // 調べる用: URLに&debugを付けると、押したキーと慣性の状態を出す
-            if (DEBUG && /^Arrow/.test(e.key)) {
-                toast(e.key + (e.shiftKey ? '+Shift' : '') + ' 流れ' + (raf ? '中' : '無') +
-                    ' 段' + coastLevel + ' 移動' + (glideTo === null ? '無' : '中') + ' 速さ' + vel.toFixed(3));
-            }
-            var w = scroller.clientWidth;
-            var d;
-            // 横の矢印のどちらが先へか(縦書き・右綴じは←)
-            var fwdKey = forwardSign() < 0 ? 'ArrowLeft' : 'ArrowRight';
-            if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-                d = w * 0.9 * (e.key === 'ArrowLeft' ? -1 : 1);
-            } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                e.preventDefault();
-                stepCoast(e.key === 'ArrowDown' ? 1 : -1);
-                return;
-            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-                // 横の矢印は流れている間だけ(止まっている時は何もしない)
-                e.preventDefault();
-                if (raf && glideTo === null) {
-                    stepCoast(e.key === fwdKey ? 1 : -1);
-                }
-                return;
-            } else if (e.key === ' ') {
-                d = w * 0.9 * (opt.forward ? opt.forward() : -1) * (e.shiftKey ? -1 : 1);
-            } else if (e.key === 'Escape') {
-                stopInertia();
-                return;
-            } else {
-                return;
-            }
-            e.preventDefault();
-            glideBy(d);
-        });
-    }
-    attach(scroller, window);
 
     // ---- 記録 ----
 
@@ -517,7 +194,7 @@ var Reader = function (opt) {
             go.appendChild(document.createTextNode(m.text));
             go.addEventListener('click', function () {
                 panel.hidden = true;
-                stopInertia();
+                inertia.stop();
                 opt.jump(m, true);
             });
             var del = document.createElement('button');
@@ -574,7 +251,7 @@ var Reader = function (opt) {
     font.apply(fontSize);
 
     return {
-        attach: attach,
+        attach: inertia.attach,
         restore: restore,
         toast: toast,
         fontSize: function () { return fontSize; }

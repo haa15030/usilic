@@ -32,6 +32,7 @@ if (count($lines) > 1 && end($lines) === '') {
 <?php endforeach; ?>
 </div>
 <?php reader_bar(); ?>
+<script src="<?= asset('scroll.js') ?>"></script>
 <script src="<?= asset('reader.js') ?>"></script>
 <script src="<?= asset('txt.js') ?>"></script>
 </body>

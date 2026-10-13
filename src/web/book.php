@@ -19,6 +19,7 @@ if (doc_path($name, 'epub') === false || !is_dir($BOOK_DIR . '/' . $name)) {
 <div id="book" class="scroller" data-file="<?= h($name) ?>"
      data-base="file.php/<?= h(rawurlencode($name)) ?>/"></div>
 <?php reader_bar(); ?>
+<script src="<?= asset('scroll.js') ?>"></script>
 <script src="<?= asset('reader.js') ?>"></script>
 <script src="<?= asset('epub.js') ?>"></script>
 </body>

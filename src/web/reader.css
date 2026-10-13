@@ -128,6 +128,7 @@ body.reader {
     opacity: 0;
     transition: opacity 0.3s;
     pointer-events: none;
+    z-index: 20;
 }
 #toast.show {
     opacity: 1;
@@ -240,4 +241,80 @@ body.reader {
 }
 #status:empty {
     display: none;
+}
+
+/* 本棚: 落としたディレクトリの一覧 */
+#dir {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    z-index: 10;
+}
+#dir[hidden] {
+    display: none;
+}
+#dir-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bar);
+}
+#dir-head button {
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--fg);
+    font: inherit;
+}
+#dir-head button:disabled {
+    opacity: 0.4;
+}
+#dir-send {
+    margin-left: auto;
+    font-weight: bold;
+}
+#dir-path {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    direction: rtl;
+    text-align: left;
+}
+#dir-list {
+    flex: 1;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-y: auto;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+#dir-list li {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    font-size: 18px;
+    cursor: pointer;
+}
+#dir-list li.sub {
+    font-weight: bold;
+}
+#dir-list li.file::before {
+    content: "☐ ";
+}
+#dir-list li.file.on::before {
+    content: "☑ ";
+}
+#dir-list li.file.on {
+    background: rgba(74, 123, 208, 0.12);
+}
+#dir-list li.empty {
+    cursor: default;
+    opacity: 0.7;
 }
