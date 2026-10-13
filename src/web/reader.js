@@ -390,6 +390,11 @@ var Reader = function (opt) {
             if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) {
                 return;
             }
+            // 調べる用: URLに&debugを付けると、押したキーと慣性の状態を出す
+            if (DEBUG && /^Arrow/.test(e.key)) {
+                toast(e.key + (e.shiftKey ? '+Shift' : '') + ' 流れ' + (raf ? '中' : '無') +
+                    ' 段' + coastLevel + ' 移動' + (target === null ? '無' : '中') + ' 速さ' + vel.toFixed(3));
+            }
             var w = scroller.clientWidth;
             var d;
             // 横の矢印のどちらが先へか(縦書き・右綴じは←)

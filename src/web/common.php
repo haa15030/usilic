@@ -29,6 +29,12 @@ function text_path($name)
     return doc_path($name, 'txt');
 }
 
+// 静的なファイルのURLに更新時刻を付ける(置き換えた後もブラウザが古いのを使い続けないように)
+function asset($file)
+{
+    return $file . '?v=' . @filemtime(__DIR__ . '/' . $file);
+}
+
 function h($s)
 {
     return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');

@@ -13,13 +13,13 @@ if (doc_path($name, 'epub') === false || !is_dir($BOOK_DIR . '/' . $name)) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title><?= h($name) ?></title>
-<link rel="stylesheet" href="reader.css">
+<link rel="stylesheet" href="<?= asset('reader.css') ?>">
 </head>
 <body class="reader">
 <div id="book" class="scroller" data-file="<?= h($name) ?>"
      data-base="file.php/<?= h(rawurlencode($name)) ?>/"></div>
 <?php reader_bar(); ?>
-<script src="reader.js"></script>
-<script src="epub.js"></script>
+<script src="<?= asset('reader.js') ?>"></script>
+<script src="<?= asset('epub.js') ?>"></script>
 </body>
 </html>

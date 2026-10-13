@@ -10,7 +10,7 @@ usort($files, function ($a, $b) { return filemtime($b) - filemtime($a); });
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>本棚</title>
-<link rel="stylesheet" href="reader.css">
+<link rel="stylesheet" href="<?= asset('reader.css') ?>">
 </head>
 <body class="list">
 <h1>本棚</h1>

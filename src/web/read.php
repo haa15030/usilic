@@ -23,7 +23,7 @@ if (count($lines) > 1 && end($lines) === '') {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title><?= h($name) ?></title>
-<link rel="stylesheet" href="reader.css">
+<link rel="stylesheet" href="<?= asset('reader.css') ?>">
 </head>
 <body class="reader">
 <div id="text" class="scroller" data-file="<?= h($name) ?>">
@@ -32,7 +32,7 @@ if (count($lines) > 1 && end($lines) === '') {
 <?php endforeach; ?>
 </div>
 <?php reader_bar(); ?>
-<script src="reader.js"></script>
-<script src="txt.js"></script>
+<script src="<?= asset('reader.js') ?>"></script>
+<script src="<?= asset('txt.js') ?>"></script>
 </body>
 </html>
