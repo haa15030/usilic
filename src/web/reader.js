@@ -189,8 +189,11 @@ var Reader = function (opt) {
     // targetの文書のtouchとマウスのドラッグ・ホイール・矢印キーを慣性スクロールへ回す。
     // 動いた量は画面(screenX)の座標で測る。iframeの中の座標(clientX)は、スクロールすると
     // iframeごと動いてしまい、動いた量に跳ね返って本文が左右にぶれるため。
+    // ドラッグ中の状態は文書(iframe)ごとではなく1つだけ持つ。マウスは章のiframeの境目を
+    // またいで動かすことがあり、離した(mouseup)のが押したのと別の文書に届いても慣性を付けるため。
+    var drag = null;
+
     function attach(target, win) {
-        var drag = null;
 
         // 押した: 流れていれば止める。止めただけならtrue(範囲指定の解除などをさせない)
         // x, yは画面の座標、cx, cyはその文書の中の座標(範囲指定の取っ手との距離用)
@@ -239,7 +242,8 @@ var Reader = function (opt) {
         }
 
         // 離した: 離す直前の速さで慣性を付ける
-        function up() {
+        // マウスは指よりも、動かしながら離すのが難しいので、止めたとみなすまでを長めにする
+        function up(limit) {
             var d = drag;
             drag = null;
             if (!d || d.mode !== 'scroll') {
@@ -247,7 +251,7 @@ var Reader = function (opt) {
             }
             var s = d.samples;
             // 止めてから離した時は慣性を付けない
-            if (s.length < 2 || performance.now() - s[s.length - 1].t > 100) {
+            if (s.length < 2 || performance.now() - s[s.length - 1].t > limit) {
                 return;
             }
             var a = s[0], b = s[s.length - 1];
@@ -273,7 +277,7 @@ var Reader = function (opt) {
                 e.preventDefault();
             }
         }, { passive: false });
-        target.addEventListener('touchend', up);
+        target.addEventListener('touchend', function () { up(100); });
         target.addEventListener('touchcancel', function () { drag = null; });
 
         // マウス: 素早く左右へドラッグするとスクロール。押したまま0.4秒待ってから動かすと範囲指定。
@@ -296,7 +300,14 @@ var Reader = function (opt) {
                 win.getSelection().removeAllRanges();
             }
         });
-        target.addEventListener('mouseup', up);
+        target.addEventListener('mouseup', function () { up(200); });
+        // 画像や範囲指定した文字をつかんだ時の、ブラウザのドラッグ&ドロップを始めさせない
+        // (始まるとmousemove/mouseupが来なくなり、スクロールも慣性も止まる)
+        target.addEventListener('dragstart', function (e) {
+            if (drag && drag.mode !== 'native') {
+                e.preventDefault();
+            }
+        });
 
         // ホイール: 縦の回転も横のスクロールにする(下へ回すと先へ)
         target.addEventListener('wheel', function (e) {
