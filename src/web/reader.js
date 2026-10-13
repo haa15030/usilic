@@ -102,12 +102,47 @@ var Reader = function (opt) {
     var raf = 0;
     var lastT = 0;
 
+    var target = null;      // 矢印キーで向かっている先のscrollLeft(向かっていなければnull)
+
     function stopInertia() {
         if (raf) {
             cancelAnimationFrame(raf);
         }
         raf = 0;
         vel = 0;
+        target = null;
+    }
+
+    // 矢印キー: 先のscrollLeftへ、残りの距離の一定の割合ずつ近づく
+    function glide() {
+        var diff = target - pos;
+        if (Math.abs(diff) < 0.5) {
+            pos = target;
+        } else {
+            pos += diff * 0.2;
+        }
+        scroller.scrollLeft = pos;
+        // 着いたか、本の端で止まった
+        if (pos === target || Math.abs(scroller.scrollLeft - pos) > 1) {
+            pos = scroller.scrollLeft;
+            raf = 0;
+            target = null;
+            return;
+        }
+        raf = requestAnimationFrame(glide);
+    }
+
+    // 押すたびに先を延ばすので、押し続けると続けて流れる
+    function glideBy(d) {
+        if (target === null) {
+            stopInertia();
+            pos = scroller.scrollLeft;
+            target = pos;
+        }
+        target += d;
+        if (!raf) {
+            raf = requestAnimationFrame(glide);
+        }
     }
 
     function step(t) {
@@ -151,13 +186,15 @@ var Reader = function (opt) {
         });
     }
 
-    // targetの文書のtouchとマウスのドラッグ・ホイールを慣性スクロールへ回す。座標はその文書の
-    // 中の座標だが、使うのは動いた量だけなのでiframeの中でもそのまま使える。
+    // targetの文書のtouchとマウスのドラッグ・ホイール・矢印キーを慣性スクロールへ回す。
+    // 動いた量は画面(screenX)の座標で測る。iframeの中の座標(clientX)は、スクロールすると
+    // iframeごと動いてしまい、動いた量に跳ね返って本文が左右にぶれるため。
     function attach(target, win) {
         var drag = null;
 
         // 押した: 流れていれば止める。止めただけならtrue(範囲指定の解除などをさせない)
-        function down(x, y) {
+        // x, yは画面の座標、cx, cyはその文書の中の座標(範囲指定の取っ手との距離用)
+        function down(x, y, cx, cy) {
             var moving = raf !== 0;
             stopInertia();
             drag = {
@@ -165,7 +202,7 @@ var Reader = function (opt) {
                 y0: y,
                 x: x,
                 t0: performance.now(),
-                mode: nearSelection(win, x, y) ? 'native' : null,
+                mode: nearSelection(win, cx, cy) ? 'native' : null,
                 samples: []
             };
             pos = scroller.scrollLeft;
@@ -210,7 +247,7 @@ var Reader = function (opt) {
             }
             var s = d.samples;
             // 止めてから離した時は慣性を付けない
-            if (s.length < 2 || performance.now() - s[s.length - 1].t > 80) {
+            if (s.length < 2 || performance.now() - s[s.length - 1].t > 100) {
                 return;
             }
             var a = s[0], b = s[s.length - 1];
@@ -226,12 +263,13 @@ var Reader = function (opt) {
                 drag = null;
                 return;
             }
-            if (down(e.touches[0].clientX, e.touches[0].clientY)) {
+            var t = e.touches[0];
+            if (down(t.screenX, t.screenY, t.clientX, t.clientY)) {
                 e.preventDefault();
             }
         }, { passive: false });
         target.addEventListener('touchmove', function (e) {
-            if (e.touches.length === 1 && move(e.touches[0].clientX, e.touches[0].clientY)) {
+            if (e.touches.length === 1 && move(e.touches[0].screenX, e.touches[0].screenY)) {
                 e.preventDefault();
             }
         }, { passive: false });
@@ -243,7 +281,7 @@ var Reader = function (opt) {
             if (e.button !== 0) {
                 return;
             }
-            if (down(e.clientX, e.clientY)) {
+            if (down(e.screenX, e.screenY, e.clientX, e.clientY)) {
                 e.preventDefault();
             }
         });
@@ -252,7 +290,7 @@ var Reader = function (opt) {
                 drag = null;
                 return;
             }
-            if (move(e.clientX, e.clientY)) {
+            if (move(e.screenX, e.screenY)) {
                 e.preventDefault();
                 // 動かし始めの8pxで始まった範囲指定を消す
                 win.getSelection().removeAllRanges();
@@ -270,6 +308,27 @@ var Reader = function (opt) {
             var unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? scroller.clientWidth : 1;
             scroller.scrollLeft += e.deltaY * unit * (opt.forward ? opt.forward() : -1);
         }, { passive: false });
+
+        // 矢印キー: ←→で少しずつ(押し続けると続けて)、Shift+←→とスペースで画面1枚分
+        win.addEventListener('keydown', function (e) {
+            if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) {
+                return;
+            }
+            var w = scroller.clientWidth;
+            var d;
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                d = (e.shiftKey ? w * 0.9 : w * 0.25) * (e.key === 'ArrowLeft' ? -1 : 1);
+            } else if (e.key === ' ') {
+                d = w * 0.9 * (opt.forward ? opt.forward() : -1) * (e.shiftKey ? -1 : 1);
+            } else if (e.key === 'Escape') {
+                stopInertia();
+                return;
+            } else {
+                return;
+            }
+            e.preventDefault();
+            glideBy(d);
+        });
     }
     attach(scroller, window);
 
