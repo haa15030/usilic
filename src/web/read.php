@@ -26,20 +26,13 @@ if (count($lines) > 1 && end($lines) === '') {
 <link rel="stylesheet" href="reader.css">
 </head>
 <body class="reader">
-<div id="text" data-file="<?= h($name) ?>">
+<div id="text" class="scroller" data-file="<?= h($name) ?>">
 <?php foreach ($lines as $i => $line): ?>
 <p data-line="<?= $i + 1 ?>"><?= h($line) ?></p>
 <?php endforeach; ?>
 </div>
-<div id="bar">
-<a href="index.php">一覧</a>
-<button id="mark">記録</button>
-<button id="friction"></button>
-<button id="smaller">A−</button>
-<button id="larger">A＋</button>
-<span id="where"></span>
-</div>
-<div id="toast"></div>
+<?php reader_bar(); ?>
 <script src="reader.js"></script>
+<script src="txt.js"></script>
 </body>
 </html>

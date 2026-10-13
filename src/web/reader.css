@@ -132,3 +132,112 @@ body.reader {
 #toast.show {
     opacity: 1;
 }
+
+/* EPUB: 章ごとのiframeを横に並べる(右綴じはdirection: rtlで右から) */
+#book {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--bar-h) + env(safe-area-inset-bottom));
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    touch-action: none;
+    background: #fff;
+}
+#book iframe.chapter {
+    flex: none;
+    display: block;
+    border: 0;
+    background: #fff;
+}
+
+/* 記録一覧 */
+#panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: calc(var(--bar-h) + env(safe-area-inset-bottom));
+    width: min(480px, 100%);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    border-left: 1px solid var(--line);
+    box-shadow: -4px 0 12px rgba(0, 0, 0, 0.15);
+    font-family: system-ui, sans-serif;
+    z-index: 10;
+}
+#panel[hidden] {
+    display: none;
+}
+#panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+    font-weight: bold;
+}
+#panel-list {
+    flex: 1;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+    -webkit-overflow-scrolling: touch;
+}
+#panel-list li {
+    display: flex;
+    border-bottom: 1px solid var(--line);
+}
+#panel-list li.empty {
+    padding: 16px 12px;
+    opacity: 0.7;
+}
+#panel button {
+    border: 0;
+    background: none;
+    color: var(--fg);
+    font: inherit;
+}
+#panel-list .go {
+    flex: 1;
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 16px;
+}
+#panel-list .pos {
+    display: block;
+    font-size: 13px;
+    opacity: 0.6;
+}
+#panel-list .del {
+    padding: 0 14px;
+    font-size: 14px;
+    color: #c33;
+}
+#panel-head button {
+    padding: 6px 10px;
+    border: 1px solid var(--line) !important;
+    border-radius: 6px;
+}
+
+/* 一覧ページのドロップ枠 */
+#drop {
+    display: block;
+    margin: 0 0 16px;
+    padding: 24px 16px;
+    border: 2px dashed var(--line);
+    border-radius: 10px;
+    text-align: center;
+    cursor: pointer;
+}
+#drop.over {
+    border-color: #4a7bd0;
+    background: rgba(74, 123, 208, 0.08);
+}
+#status:empty {
+    display: none;
+}

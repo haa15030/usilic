@@ -3,24 +3,30 @@ iPadで原稿(テキスト)を縦書きで読み、校閲箇所を記録するWe
 
 室内ウォーキング中にiPadのSafariで自著を校閲するためのもの。
 左右フリックで慣性スクロールし、指で範囲指定した文字列を「記録」ボタンで
-サーバーへ記録する。記録はEmacsで原稿の該当箇所へ飛べる形式。
+サーバーへ記録する。.txtの記録はEmacsで原稿の該当箇所へ飛べる形式。
+.epubは本のCSSのまま(ルビ・字下げ等)表示し、記録の一覧から各位置へ飛べる。
 
 ファイル
 --------
   config.php  原稿置き場・記録ファイルの場所(設置先に合わせて書き換える)
   common.php  共通の関数
-  index.php   原稿一覧
-  read.php    原稿を縦書きで表示
-  mark.php    記録の受け口
+  index.php   本棚(原稿の一覧、ドラッグでの登録)
+  upload.php  登録の受け口(.epubはここで展開する)
+  read.php    .txtを縦書きで表示(txt.js)
+  book.php    .epubを表示(epub.js)
+  file.php    展開した.epubの中のファイルを返す
+  marks.php   記録の追加・一覧・削除
   reader.css  画面
-  reader.js   慣性スクロール・記録
+  reader.js   慣性スクロール・記録・記録一覧(.txtと.epubで共通)
+  txt.js      .txtの位置(行・桁)
+  epub.js     .epubの章を並べる、位置(章・文字数)
   .htaccess   Basic認証、config.php等を直接見せない
 
 Debian 13への設置
 -----------------
 1. apache2にPHPを入れる(Debian 13ではPHP 8.4)。
 
-     sudo apt install php libapache2-mod-php apache2-utils
+     sudo apt install php libapache2-mod-php php-zip apache2-utils
      sudo systemctl restart apache2
 
    libapache2-mod-phpはmpm_preforkが要るので、aptがmpm_eventから切り替える。
@@ -41,17 +47,31 @@ Debian 13への設置
 
      sudo htpasswd -c /etc/apache2/usilic-web.htpasswd ユーザー名
 
-5. 原稿置き場と記録ファイルの置き場を作る(場所はconfig.php)。
-   記録の置き場はapache(www-data)が書き込めるようにする。
+5. 原稿置き場・EPUBの展開先・記録の置き場を作る(場所はconfig.php)。
+   どれもapache(www-data)が書き込めるようにする。原稿置き場はscpでも
+   置けるよう、グループを自分(usilic)にして共有する。
 
-     sudo install -d -o $USER /srv/usilic-web/texts
+     sudo install -d -o www-data -g usilic -m 2775 /srv/usilic-web/texts
+     sudo install -d -o www-data -g www-data /srv/usilic-web/books
      sudo install -d -o www-data -g www-data /srv/usilic-web/marks
 
-6. iPadのSafariで http://debianのホスト名/usilic-web/ を開く。
+   既に原稿置き場がある時は:
+
+     sudo chown www-data:usilic /srv/usilic-web/texts
+     sudo chmod 2775 /srv/usilic-web/texts
+
+6. 送れるファイルの大きさの上限を広げる(標準は2MB)。
+
+     printf 'upload_max_filesize = 64M\npost_max_size = 64M\n' |
+       sudo tee /etc/php/8.4/apache2/conf.d/99-usilic-web.ini
+     sudo systemctl restart apache2
+
+7. iPadのSafariで http://debianのホスト名/usilic-web/ を開く。
 
 原稿を置く
 ----------
-UTF-8の*.txtを原稿置き場へ置く。Macから:
+UTF-8の*.txtか*.epubを、本棚のページの枠へドラッグする(iPadでは枠をタップして
+選ぶ)。同じ名前は上書きする。scpで置いてもよい(.epubは展開が要るので本棚から):
 
   scp 原稿.txt debian:/srv/usilic-web/texts/
 
@@ -62,8 +82,17 @@ UTF-8の*.txtを原稿置き場へ置く。Macから:
   「定速」は減速せず、フリックした速さのまま流れ続ける。
 - A−/A＋で文字の大きさ。文字の大きさ・減速の設定・読んでいた位置は
   ブラウザが覚える。
-- 長押しで範囲指定して「記録」を押すと、範囲の始まりの行・桁と文字列を記録する。
+- 長押しで範囲指定して「記録」を押すと、範囲の始まりの位置と文字列を記録する。
   範囲指定が無ければ、画面中央の位置を「(位置のみ)」として記録する。
+  位置は.txtなら行・桁、.epubなら章と章の中の文字数(ルビの読みも数える)。
+- 「記録一覧」でその本の記録を出す。選ぶとその位置へ飛び、記録した範囲を
+  選択状態にする。「消す」で記録から消す。
+- .epubの固定レイアウト(マンガ・画像だけの本)には対応しない。
+  右綴じの本の中の横書きの章は、段組みで右から左へ流す。
+
+.epubの記録は別のファイル(config.phpの$EPUB_MARK_FILE)に
+「本.epub:章のパス:文字数: 文字列」の形で溜まる。本を上書きすると、
+記録の位置がずれることがある。
 
 記録をEmacsで使う
 -----------------

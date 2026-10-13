@@ -30301,3 +30301,21 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      「原稿.txt:行:桁: 文字列」としてサーバーの記録ファイルへ追記し、EmacsのM-x compilation-modeで飛べる。
      Basic認証(.htaccess)。設置手順はsrc/web/README。
    - **確認**: reader.jsの構文のみ(JavaScriptCore)。PHPは手元に無く未確認。iPad・Debianでは未確認。
+
+793. **2026-10-13: usilic-web(src/web/)に、本棚へのドラッグでの登録と、EPUBの表示・記録・記録一覧を足す**
+   - **経緯**: 直接のユーザー要望("ルビや字下げの確認用に.epubをmpiからusilic-webへドラッグするとフル表示みたいな機能も
+     ほしいな。.txtだったら今の表示で。")。確認への回答: "1. これはusilicにも欲しかった機能なんだが、EPUB上の特定の
+     文字列をiPadと同じように記録できるようにしてあとで一覧を出す。どれかを選べばそこへ飛ぶ。.txt編集はEPUB画面を
+     見ながらでいい。2. 上書きで。3. 対象外。"(3は固定レイアウト)。計画は.steering/20261013-tablet-reader-epub/。
+   - **内容**:
+     - 本棚(index.php)へ.txt/.epubをドラッグ(iPadはタップして選ぶ)するとupload.phpが原稿置き場へ上書き保存し、
+       .epubはphp-zipで$BOOK_DIRへ展開し直す(..や絶対パスの項目は捨て、別の場所へ展開してから入れ替える)。
+     - EPUB(book.php+epub.js): container.xml→OPF→spineをブラウザで読み、章ごとのiframeを横に並べる(右綴じは右から)。
+       中身はfile.php/本.epub/パス(PATH_INFO)で返し、章の中の相対パスのCSS・画像がそのまま効く。iframeは画面の高さで、
+       幅は中身に合わせる。横書きの章は段組みで横へ流す(右綴じの本では段も右から)。iframeの中のtouchも慣性スクロールへ回す。
+     - 記録: EPUBは「本.epub:章のパス:文字数: 文字列」を別ファイル($EPUB_MARK_FILE)へ(文字数は章の本文の先頭から、
+       1始まり、ルビの読みも数える)。.txtはこれまでどおりEmacs用のファイルへ。
+     - 「記録一覧」パネル(.txt/.epub共通): その本の記録を出し、選ぶとその位置へ飛んで記録した範囲を選択状態にする。
+       「消す」で記録ファイルから消す(marks.php、旧mark.phpを置き換え)。
+     - reader.jsを共通部分(慣性スクロール・ボタン・記録・一覧)にし、.txt固有はtxt.js、EPUBはepub.jsへ分けた。
+   - **確認**: JavaScriptの構文のみ(JavaScriptCore)。PHP・iPad・Debianでは未確認。
