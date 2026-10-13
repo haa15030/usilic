@@ -8307,6 +8307,10 @@ bool Application::leaveEpubHorizontalIfOutside(bool scrolling) {
   // 画面だけを送ることがある)。前へ出たら範囲の直前の行、先へ出たらカーソルの行へ。
   // j/k・ホイール(-cのscrollByWheel()はCommand::ScrollLineDown/Up)も、画面を送る操作として慣性等と同じに扱う。
   if (previousCommand_ == Command::ScrollLineDown || previousCommand_ == Command::ScrollLineUp) scrolling = true;
+  // 範囲が画面に見えているかで決める(下のbefore/after)のは、カーソルを動かすキー(↑↓・ページ送り)以外の全部。
+  // ^L等、画面を動かさないキーで、送っている途中の範囲から戻ってしまわないように(2026-10-13)。
+  bool byVisibility = scrolling || !(previousCommand_ == Command::MoveUp || previousCommand_ == Command::MoveDown ||
+                                     previousCommand_ == Command::PageUp || previousCommand_ == Command::PageDown);
   int raw = fileRawLineAtCursor();
   const auto &lines = fileView_.lines();
   int top = fileView_.topIndex();
@@ -8329,13 +8333,17 @@ bool Application::leaveEpubHorizontalIfOutside(bool scrolling) {
       lastIndex = i;
       break;
     }
-  bool before = scrolling ? firstIndex >= top + std::max(1, fileView_.height())
+  bool before = byVisibility ? firstIndex >= top + std::max(1, fileView_.height())
                           : raw < epubHorizontalSection_->first ||
                                 (!epubHorizontalFromBelow_ && topRaw < epubHorizontalSection_->first);
-  bool after = scrolling ? lastIndex < top : raw > epubHorizontalSection_->second;
+  bool after = byVisibility ? lastIndex < top : raw > epubHorizontalSection_->second;
   if (!before && !after) return false;
+  int sectionEnd = epubHorizontalSection_->second + 1;
   if (before) raw = epubHorizontalSection_->first - 1;
-  else if (scrolling) raw = std::max(raw, epubHorizontalSection_->second + 1);
+  // 送って先へ出た時は範囲の直後の行へ(カーソルの行は範囲の先の空の行まで送られていることがある)。カーソルが1画面より
+  // 先なら、リンク等で飛んだ先なのでその行へ。
+  else if (scrolling || (byVisibility && raw <= epubHorizontalSection_->second + std::max(1, fileView_.height())))
+    raw = epubHorizontalSection_->second + 1;
   epubHorizontalSection_.reset();
   syncEpubHorizontalPresentation();
   rebuildEpubVertical(raw);  // リサイズで組み直しが要る場合もあるので、組み直してから置く
@@ -8349,6 +8357,15 @@ bool Application::leaveEpubHorizontalIfOutside(bool scrolling) {
     // 見えてしまうので、左端に置く(2026-10-13、本の途中の付録、enterEpubHorizontalBetween()参照)。
     if (epubChapterBreaks_) setEpubVerticalView(col, col);
     else setEpubVerticalView(col - epubVerticalColumnsPerScreen(display_.columns()) + 1, col);
+  } else if (after && raw == sectionEnd && !epubChapterBreaks_ && !epubHorizontalSection_) {
+    // 連続スクロールで慣性等で先へ出た時は、範囲の直後の列を右端に置く(前へ送って範囲へ入る所と同じ)。
+    int col = -1;
+    for (std::size_t c = 0; c < epubVerticalCols_.size(); c++)
+      if (!epubVerticalCols_[c].padding && epubVerticalCols_[c].rawLineNumber >= raw) {
+        col = static_cast<int>(c);
+        break;
+      }
+    if (col >= 0) setEpubVerticalView(col, col);
   }
   activeView().redraw();
   activeView().syncVisibleCursor();
@@ -9198,11 +9215,13 @@ std::optional<bool> Application::handleEpubVerticalCommand(Command command) {
       if (crossing(false)) return true;
       break;
     }
-    case Command::ScrollLineDown:  // j(2026-09-29、本の端では奥付等の横書きの範囲へ)
-      if (!stepEpubVerticalFirst(1) && enterEpubHorizontalAtEdge(1)) return true;
+    // j/k(2026-09-29、本の端では奥付等の横書きの範囲へ)。2026-10-13、直接のユーザー報告("-c起動のj/kで再現"、
+    // 付録が飛ばされる): 慣性・ホイールと同じscrollEpubVertical()で、本の途中の横書きの範囲(付録等)へも入る。
+    case Command::ScrollLineDown:
+      if (scrollEpubVertical(1)) return true;
       break;
-    case Command::ScrollLineUp:  // k
-      if (!stepEpubVerticalFirst(-1) && enterEpubHorizontalAtEdge(-1)) return true;
+    case Command::ScrollLineUp:
+      if (scrollEpubVertical(-1)) return true;
       break;
     // 2026-10-09(Command::SetMark参照): 縦書きの記録は1つ(epubVerticalMark_)のまま。^SPCで今の列を
     // 記録し、^U^SPCはその列へ飛ぶ(^X^Xと違い、今の列は記録しない)。続けてのページ送りは最初の1回だけ記録。
@@ -9288,9 +9307,10 @@ bool Application::scrollEpubVertical(int delta) {
     epubTocVerticalView_.syncVisibleCursor();
     return true;
   }
-  // 範囲を越えたかは、章ごと(画面には右端の列の章だけを描く)なら右端の列、連続スクロール(全部の章を描く)なら左端の
-  // 列で見る(範囲の後ろの列が画面に現れる所で入る、enterEpubHorizontalBetween()参照)。
-  int edgeOffset = epubChapterBreaks_ ? 0 : epubVerticalColumnsPerScreen(display_.columns()) - 1;
+  // 範囲を越えたかは、章ごと(画面には右端の列の章だけを描く)なら右端の列で見る。連続スクロール(全部の章を描く)では、
+  // 新しい列が現れる側――先へは左端、前へは右端――で見る(範囲の向こうの列が画面に現れる所で入る、
+  // enterEpubHorizontalBetween()参照。2026-10-13、直接のユーザー報告"逆にたどると付録が無い"、-cのj/k)。
+  int edgeOffset = !epubChapterBreaks_ && delta > 0 ? epubVerticalColumnsPerScreen(display_.columns()) - 1 : 0;
   int fromColumn = epubVerticalFirst_ + edgeOffset;
   if (!stepEpubVerticalFirst(delta)) return enterEpubHorizontalAtEdge(delta);
   if (enterEpubHorizontalBetween(fromColumn, epubVerticalFirst_ + edgeOffset, delta)) return true;
