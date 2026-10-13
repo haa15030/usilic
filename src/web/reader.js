@@ -102,7 +102,7 @@ var Reader = function (opt) {
     var raf = 0;
     var lastT = 0;
 
-    var target = null;      // スペース等で向かっている先のscrollLeft(向かっていなければnull)
+    var glideTo = null;     // スペース等で向かっている先のscrollLeft(向かっていなければnull)
 
     // 矢印キーの慣性の段ごとの速さ(px/ms)。usilicrcのARROWの既定(1ドット進むごとに待つusec:
     // 200000 100000 25000 10000 5000 2000 1000 500 200 100 50 20)と同じ。減速せず一定の速さで流れる。
@@ -117,7 +117,7 @@ var Reader = function (opt) {
         }
         raf = 0;
         vel = 0;
-        target = null;
+        glideTo = null;
         coastLevel = -1;
     }
 
@@ -130,7 +130,7 @@ var Reader = function (opt) {
     // フリック等の慣性中に押した時は、その速さに一番近い段から変える。
     function stepCoast(dir) {
         var cur = 0;
-        if (raf && target === null && vel !== 0) {
+        if (raf && glideTo === null && vel !== 0) {
             cur = vel * forwardSign() > 0 ? 1 : -1;
             if (coastLevel < 0) {
                 var speed = Math.abs(vel), best = 0;
@@ -154,7 +154,7 @@ var Reader = function (opt) {
         } else {
             cur = dir;
         }
-        var running = raf !== 0 && target === null;
+        var running = raf !== 0 && glideTo === null;
         coastLevel = level;
         vel = cur * forwardSign() * ARROW[level];
         toast('速さ ' + (level + 1) + '/' + ARROW.length + (cur > 0 ? ' 先へ' : ' 戻る'));
@@ -167,18 +167,18 @@ var Reader = function (opt) {
 
     // 矢印キー: 先のscrollLeftへ、残りの距離の一定の割合ずつ近づく
     function glide() {
-        var diff = target - pos;
+        var diff = glideTo - pos;
         if (Math.abs(diff) < 0.5) {
-            pos = target;
+            pos = glideTo;
         } else {
             pos += diff * 0.2;
         }
         scroller.scrollLeft = pos;
         // 着いたか、本の端で止まった
-        if (pos === target || Math.abs(scroller.scrollLeft - pos) > 1) {
+        if (pos === glideTo || Math.abs(scroller.scrollLeft - pos) > 1) {
             pos = scroller.scrollLeft;
             raf = 0;
-            target = null;
+            glideTo = null;
             return;
         }
         raf = requestAnimationFrame(glide);
@@ -186,12 +186,12 @@ var Reader = function (opt) {
 
     // 押すたびに先を延ばすので、押し続けると続けて流れる
     function glideBy(d) {
-        if (target === null) {
+        if (glideTo === null) {
             stopInertia();
             pos = scroller.scrollLeft;
-            target = pos;
+            glideTo = pos;
         }
-        target += d;
+        glideTo += d;
         if (!raf) {
             raf = requestAnimationFrame(glide);
         }
@@ -393,7 +393,7 @@ var Reader = function (opt) {
             // 調べる用: URLに&debugを付けると、押したキーと慣性の状態を出す
             if (DEBUG && /^Arrow/.test(e.key)) {
                 toast(e.key + (e.shiftKey ? '+Shift' : '') + ' 流れ' + (raf ? '中' : '無') +
-                    ' 段' + coastLevel + ' 移動' + (target === null ? '無' : '中') + ' 速さ' + vel.toFixed(3));
+                    ' 段' + coastLevel + ' 移動' + (glideTo === null ? '無' : '中') + ' 速さ' + vel.toFixed(3));
             }
             var w = scroller.clientWidth;
             var d;
@@ -408,7 +408,7 @@ var Reader = function (opt) {
             } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
                 // 横の矢印は流れている間だけ(止まっている時は何もしない)
                 e.preventDefault();
-                if (raf && target === null) {
+                if (raf && glideTo === null) {
                     stepCoast(e.key === fwdKey ? 1 : -1);
                 }
                 return;
