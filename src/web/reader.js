@@ -102,7 +102,14 @@ var Reader = function (opt) {
     var raf = 0;
     var lastT = 0;
 
-    var target = null;      // 矢印キーで向かっている先のscrollLeft(向かっていなければnull)
+    var target = null;      // スペース等で向かっている先のscrollLeft(向かっていなければnull)
+
+    // 矢印キーの慣性の段ごとの速さ(px/ms)。usilicrcのARROWの既定(1ドット進むごとに待つusec:
+    // 200000 100000 25000 10000 5000 2000 1000 500 200 100 50 20)と同じ。減速せず一定の速さで流れる。
+    var ARROW = [200000, 100000, 25000, 10000, 5000, 2000, 1000, 500, 200, 100, 50, 20].map(function (us) {
+        return 1000 / us;
+    });
+    var coastLevel = -1;    // 矢印キーの慣性の段(0始まり)。矢印キーの慣性でなければ-1
 
     function stopInertia() {
         if (raf) {
@@ -111,6 +118,51 @@ var Reader = function (opt) {
         raf = 0;
         vel = 0;
         target = null;
+        coastLevel = -1;
+    }
+
+    function forwardSign() {
+        return opt.forward ? opt.forward() : -1;
+    }
+
+    // 矢印キーの慣性(usilicと同じ): 止まっていれば押した向きに最低速で始める。流れている向きの
+    // キーなら1段速く、逆なら1段遅く、最低速からさらに逆なら逆向きの最低速。dirは先へ=1、戻る=-1。
+    // フリック等の慣性中に押した時は、その速さに一番近い段から変える。
+    function stepCoast(dir) {
+        var cur = 0;
+        if (raf && target === null && vel !== 0) {
+            cur = vel * forwardSign() > 0 ? 1 : -1;
+            if (coastLevel < 0) {
+                var speed = Math.abs(vel), best = 0;
+                ARROW.forEach(function (v, i) {
+                    if (Math.abs(Math.log(v / speed)) < Math.abs(Math.log(ARROW[best] / speed))) {
+                        best = i;
+                    }
+                });
+                coastLevel = best;
+            }
+        }
+        var level = coastLevel;
+        if (cur === 0) {
+            stopInertia();
+            cur = dir;
+            level = 0;
+        } else if (cur === dir) {
+            level = Math.min(level + 1, ARROW.length - 1);
+        } else if (level > 0) {
+            level--;
+        } else {
+            cur = dir;
+        }
+        var running = raf !== 0 && target === null;
+        coastLevel = level;
+        vel = cur * forwardSign() * ARROW[level];
+        toast('速さ ' + (level + 1) + '/' + ARROW.length + (cur > 0 ? ' 先へ' : ' 戻る'));
+        if (!running) {
+            pos = scroller.scrollLeft;
+            lastT = performance.now();
+            raf = requestAnimationFrame(step);
+        }
     }
 
     // 矢印キー: 先のscrollLeftへ、残りの距離の一定の割合ずつ近づく
@@ -148,11 +200,13 @@ var Reader = function (opt) {
     function step(t) {
         var dt = Math.max(0, Math.min(t - lastT, 50));
         lastT = t;
-        vel *= Math.pow(FRICTIONS[frictionIdx].k, dt / 16.67);
+        if (coastLevel < 0) {
+            vel *= Math.pow(FRICTIONS[frictionIdx].k, dt / 16.67);
+        }
         pos += vel * dt;
         scroller.scrollLeft = pos;
         // 本の端に着いた(思った位置まで動けなかった)か、十分遅くなったら止める
-        if (Math.abs(scroller.scrollLeft - pos) > 1 || Math.abs(vel) < MIN_SPEED) {
+        if (Math.abs(scroller.scrollLeft - pos) > 1 || (coastLevel < 0 && Math.abs(vel) < MIN_SPEED)) {
             pos = scroller.scrollLeft;
             stopInertia();
             return;
@@ -234,7 +288,9 @@ var Reader = function (opt) {
             drag.x = x;
             scroller.scrollLeft = pos;
             pos = scroller.scrollLeft;
-            drag.samples.push({ x: x, t: now });
+            if (!drag.samples.length || drag.samples[drag.samples.length - 1].x !== x) {
+                drag.samples.push({ x: x, t: now });
+            }
             while (drag.samples.length > 2 && now - drag.samples[0].t > 100) {
                 drag.samples.shift();
             }
@@ -242,7 +298,9 @@ var Reader = function (opt) {
         }
 
         // 離した: 離す直前の速さで慣性を付ける
-        // マウスは指よりも、動かしながら離すのが難しいので、止めたとみなすまでを長めにする
+        // 離した: 離す直前の速さで慣性を付ける。止めてから離した(limit ms以上動かさなかった)時は付けない。
+        // マウスは動かしながら離すのが難しいので、limitを長めにし、速さは止める前の動きから測る
+        // (samplesは動いた時にしか積まないので、止めていた間は速さに入らない)。
         function up(limit) {
             var d = drag;
             drag = null;
@@ -250,7 +308,6 @@ var Reader = function (opt) {
                 return;
             }
             var s = d.samples;
-            // 止めてから離した時は慣性を付けない
             if (s.length < 2 || performance.now() - s[s.length - 1].t > limit) {
                 return;
             }
@@ -300,7 +357,7 @@ var Reader = function (opt) {
                 win.getSelection().removeAllRanges();
             }
         });
-        target.addEventListener('mouseup', function () { up(200); });
+        target.addEventListener('mouseup', function () { up(300); });
         // 画像や範囲指定した文字をつかんだ時の、ブラウザのドラッグ&ドロップを始めさせない
         // (始まるとmousemove/mouseupが来なくなり、スクロールも慣性も止まる)
         target.addEventListener('dragstart', function (e) {
@@ -320,15 +377,30 @@ var Reader = function (opt) {
             scroller.scrollLeft += e.deltaY * unit * (opt.forward ? opt.forward() : -1);
         }, { passive: false });
 
-        // 矢印キー: ←→で少しずつ(押し続けると続けて)、Shift+←→とスペースで画面1枚分
+        // キー: 矢印は慣性(usilicと同じく、止まっている時は↓で先へ/↑で戻るを最低速で始め、
+        // 流れている間は↓と先へ向かう横の矢印で速く、↑と逆の横の矢印で遅く)。
+        // Shift+←→とスペースで画面1枚分、Escで止める。
         win.addEventListener('keydown', function (e) {
             if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) {
                 return;
             }
             var w = scroller.clientWidth;
             var d;
-            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-                d = (e.shiftKey ? w * 0.9 : w * 0.25) * (e.key === 'ArrowLeft' ? -1 : 1);
+            // 横の矢印のどちらが先へか(縦書き・右綴じは←)
+            var fwdKey = forwardSign() < 0 ? 'ArrowLeft' : 'ArrowRight';
+            if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+                d = w * 0.9 * (e.key === 'ArrowLeft' ? -1 : 1);
+            } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                stepCoast(e.key === 'ArrowDown' ? 1 : -1);
+                return;
+            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                // 横の矢印は流れている間だけ(止まっている時は何もしない)
+                e.preventDefault();
+                if (raf && target === null) {
+                    stepCoast(e.key === fwdKey ? 1 : -1);
+                }
+                return;
             } else if (e.key === ' ') {
                 d = w * 0.9 * (opt.forward ? opt.forward() : -1) * (e.shiftKey ? -1 : 1);
             } else if (e.key === 'Escape') {
