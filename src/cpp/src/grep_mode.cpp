@@ -184,6 +184,17 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
   }
 
   pattern_ = pattern;
+  showMatches();
+  return true;
+}
+
+void GrepMode::setMatches(std::vector<GrepMatch> matches, const std::string &label) {
+  matches_ = std::move(matches);
+  pattern_ = label;
+  showMatches();
+}
+
+void GrepMode::showMatches() {
   // 結果0件時のプレースホルダ(2026-08-12、2回のユーザー訂正を経た
   // もの――経緯全体はContentView::setEmptyPlaceholder()自身のコメント
   // 参照): "<pattern>: No String"、下線が付くのは"No String"部分
@@ -232,7 +243,6 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
   view_.setLines(std::move(viewLines));
   view_.setCursorIndex(0);
   if (redrawOnSearch_) view_.redraw();
-  return true;
 }
 
 // searchInProcess()自身の宣言コメント参照(2026-09-10追加、同日さらに

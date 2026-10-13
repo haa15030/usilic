@@ -100,11 +100,17 @@ class GrepMode {
   // falseの間、search()は結果をビューへ入れるだけで描かない(呼び出し元が縦書きにして描く、2026-10-10)。
   void setRedrawOnSearch(bool redraw) { redrawOnSearch_ = redraw; }
 
+  // 検索せずに一覧を出す(2026-10-13、EPUBの記録の一覧、Application::startEpubMarkList())。labelはpattern()になる
+  // (一致が無ければ「label: No String」)。
+  void setMatches(std::vector<GrepMatch> matches, const std::string &label);
+
   const std::string &pattern() const;
   const std::vector<GrepMatch> &matches() const;
   const GrepMatch *selectedMatch() const;
 
  private:
+  void showMatches();  // matches_を一覧(view_)に出す(search()・setMatches()の後半)
+
   ContentView &view_;
   const Configuration &configuration_;
 

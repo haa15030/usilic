@@ -1411,6 +1411,7 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
 
   BodyConverter converter(out, readMember);
   converter.setBookVertical(epubIsRightToLeft(readMember));
+  std::vector<std::string> convertedPaths;  // EpubLayoutHints::chapterFiles
   for (const auto &idref : spine) {
     auto it = manifest.find(idref);
     if (it == manifest.end()) continue;
@@ -1420,6 +1421,7 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
     if (!xhtml) continue;
     auto tocIt = toc.find(item.path);
     converter.convert(*xhtml, item.path, tocIt == toc.end() ? nullptr : &tocIt->second);
+    convertedPaths.push_back(item.path);
     if (!out.empty() && out.compare(out.size() - 2, 2, "\n\n") != 0) out += '\n';
   }
   // expandHelpMarkup()は先頭の改行1個を読み飛ばすので、先頭の改行は落として
@@ -1478,6 +1480,16 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
       if (line - leading >= 1) layoutHints->indent[line - leading] = indent;
     for (const auto &[line, label] : converter.chapterLabels())
       if (line - leading >= 1) layoutHints->chapterLabel[line - leading] = label;
+    // ファイルの頭(アンカー"パス#")の行。字の無いファイルは次のファイルと同じ行になるので、同じ行なら後の
+    // ファイル(実際にその行の字を持つ方)だけを残す。
+    for (const auto &path : convertedPaths) {
+      auto it = converter.anchors().find(path + "#");
+      if (it == converter.anchors().end()) continue;
+      int line = std::max(1, it->second - leading);
+      auto &files = layoutHints->chapterFiles;
+      if (!files.empty() && files.back().first >= line) files.back() = {line, path};
+      else files.emplace_back(line, path);
+    }
   }
   if (links) {
     links->clear();

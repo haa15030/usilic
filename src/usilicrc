@@ -361,7 +361,7 @@ KEY
 	K-20	C-g         # ^G      前のモードへ戻る
 	K-21	C-l         # ^L      再表示
 	K-22	C-z         # ^Z      サスペンド
-	K-23	F-2 s       # ^Os     mode-line の表示/非表示
+	K-23	F-2 f       # ^Of     mode-line の表示/非表示
 	K-24	F-1 C-c     # ^J^C    カレントディレクトリへ
 	K-25	C-]         # ^]      カレントディレクトリへ(^J^Cと同じ)
 	K-26	F-1 C-b     # ^J^B    親ディレクトリへ
@@ -439,8 +439,9 @@ KEY
 	K-98	F-0 s       # ^Xs     usilicrcの読み直し・マクロの保存と一覧
 	K-99	F-0 C-c     # ^X^C    EXIT
 	K-100	ESC ESC     # ^[^[    EXIT
-	K-101	F-2 C-e     # ^O^E    EPUB: 章区切り/連続スクロール
+	K-101	F-2 s       # ^Os     EPUB: 章区切り/連続スクロール
 	K-102	F-2 w       # ^Ow     EPUB: Webのリンクの対処を巡回(URL)
+	K-108	F-2 C-e     # ^O^E    EPUB: 記録の一覧(縦書きのCOPYで範囲指定して記録)
 	K-103	F-1 C-a     # ^J^A    ARC: 一覧(アーカイブだけのFILE履歴)
 	K-104	F-1 C-f     # ^J^F    -g: フォント一覧(FONT・SANS-SERIF・SERIF)
 	K-105	F-4 h       # ^J^Oh   KEYから平文のHELPの当該位置へ(KEYの外では平文のHELP)

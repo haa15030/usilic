@@ -591,8 +591,11 @@ enum class Command {
   // K-100(^Oe): (ls)で選んでいる.epubをARCで開く(2026-09-29、縦書き/横書きの切り替え
   // から変更)。Application::openEpubAsArchive()参照。
   OpenEpubAsArchive,
-  // K-101(^O^E、2026-10-03): EPUBのスクロールの「章区切り/連続」の切り替え。Application::epubChapterBreaks_参照。
+  // K-101(^Os、2026-10-03、2026-10-13に^O^Eから): EPUBのスクロールの「章区切り/連続」の切り替え。
+  // Application::epubChapterBreaks_参照。
   ToggleEpubChapterBreaks,
+  // K-108(^O^E、2026-10-13): EPUBの記録(縦書きのCOPYで範囲指定した字)の一覧。Application::startEpubMarkList()参照。
+  ShowEpubMarks,
   // K-102(^Ow、2026-10-04): EPUBのWebのリンクを踏んだ時の対処(Configuration::urlHandlers())を次へ巡回。
   CycleUrlHandler,
   // K-104(^J^F、2026-10-06、10-07に^Ofから): -gのフォント一覧(Application::takeFontListRequest()参照)。
@@ -1922,6 +1925,13 @@ class Application {
   void copyMouseDrag(int row, int column);
   // copyMouseUp(): 確定する(空範囲なら何もしない)。
   void copyMouseUp();
+  // マウスのドラッグをcopyMouseDown()/copyMouseDrag()/copyMouseUp()へ回すか(main.cpp): COPYか、縦書きのEPUBの
+  // COPY(epubSelectActive()、2026-10-13)。
+  bool copyMouseActive() const { return currentMode_ == ApplicationMode::Copy || epubSelectActive(); }
+  // 縦書きのEPUBの本文で^O^C(2026-10-13、直接のユーザー依頼"usilicのEPUBにも文字列記録が欲しいね...COPYの時の
+  // マウスによる範囲指定...ドラッグをやめた時点でRecord?(y/n)"): 画面は縦書きの本文のまま、ドラッグで字の範囲を
+  // 指定し(反転表示)、離すとRecord?(y/n)。yでepubMarksPath()へ記録する。^GでCOPYをやめる。
+  bool epubSelectActive() const;
 
   // 終了が確認された(StartExitのプロンプトが先頭'y'で送信された)
   // 時点でtrue――将来の本物の実行ループへの、feedByte()の呼び出しを
@@ -2783,6 +2793,39 @@ class Application {
   int epubVerticalFirst_ = 0;                         // 右端に置いている列
   int epubVerticalCursor_ = 0;                        // 列カーソル(setEpubVerticalView()参照)
   std::optional<int> epubVerticalMark_;               // ^X^Xの行き来先の列
+  // 縦書きのCOPY(epubSelectActive()参照、2026-10-13)。範囲は(列の番号, 列の上からのマス)の押した所(anchor)と
+  // 今の所(point)。
+  bool epubSelecting_ = false;
+  std::optional<std::pair<long, int>> epubSelectAnchor_;
+  std::pair<long, int> epubSelectPoint_{0, 0};
+  bool epubRecordAsk_ = false;          // Record?(y/n)の答え待ち
+  bool startEpubSelect();
+  void endEpubSelect();
+  std::pair<long, int> epubSelectCellAt(int row, int column) const;
+  std::optional<EpubVerticalSelection> epubSelection() const;
+  bool feedEpubSelectByte(int byte, std::optional<KeyInput::SpecialKey> special);
+  // 範囲の字(論理行ごとに切り出してつないだもの)と、始まりの位置(元の行番号, 論理行の中のバイト)。
+  std::string epubSelectionText(std::pair<int, int> *start) const;
+  bool recordEpubSelection();
+  // fileView_の行を元の行番号ごとにつなぎ直した論理行(rebuildEpubVertical()と記録が共用)。piecesはつないだ
+  // fileView_の行(行の番号、頭から除いた空白のバイト数、論理行の中での始まり)。
+  struct EpubLogicalPiece {
+    int viewIndex = 0;
+    int pad = 0;
+    int from = 0;
+  };
+  struct EpubLogicalLine {
+    int raw = -1;
+    std::string text;
+    std::vector<AttributeRun> attributes;
+    std::vector<EpubLogicalPiece> pieces;
+  };
+  std::vector<EpubLogicalLine> epubLogicalLines(bool skipHorizontal) const;
+  // 記録(2026-10-13): ~/.usilic/epub-marks.txtへ、usilic-webのepub-marks.txtと同じ「本.epub:章のパス:位置: 文字列」
+  // (位置は章の頭からの字数、ここではepubLogicalLines()の字で数える)。
+  std::string epubMarksPath() const;
+  bool startEpubMarkList();
+  bool grepMarksList_ = false;  // 今のGREPの一覧が記録の一覧(startEpubMarkList())か
   // 2026-09-29追加、直接のユーザー依頼("EPUBで縦書きになったらCUT一覧も縦書きに
   // して欲しい"): 縦書きの間の章の一覧。章の見出し1つを論理行1つ(rawLineNumber =
   // 章の番号+1)として本文と同じ組版で列に並べ、選んでいる章(cutView_のカーソル)の

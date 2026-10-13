@@ -55,6 +55,25 @@ struct EpubVerticalCell {
   // リンク(下線の並び)の、行(論理行)の中での番号(0から、下線でなければ-1)。2026-09-30、
   // EpubLayoutHints::lineLinksのn番目の行き先に対応する。
   int link = -1;
+  // 論理行(EpubVerticalSourceLine::text)の中で、このマスの字が占めるバイトの範囲[byte, byteEnd)(2026-10-13、
+  // 範囲指定した字の記録、Application::epubSelectionText()参照)。字下げ・下端寄せの空きのマスは-1。
+  int byte = -1;
+  int byteEnd = -1;
+};
+
+// 範囲指定(2026-10-13、縦書きのCOPY)。列の番号とその列の上からのマスの番号で、読む順に
+// (from)から(to)まで(両端を含む)。
+struct EpubVerticalSelection {
+  long fromColumn = 0;
+  int fromRow = 0;
+  long toColumn = 0;
+  int toRow = 0;
+  bool contains(long column, int row) const {
+    if (column < fromColumn || column > toColumn) return false;
+    if (column == fromColumn && row < fromRow) return false;
+    if (column == toColumn && row > toRow) return false;
+    return true;
+  }
 };
 
 struct EpubVerticalColumn {
@@ -101,11 +120,12 @@ constexpr int kEpubVerticalEdgeColumns = 2;
 // 列の番号がこの範囲[shownFrom, shownUntil)の外の列は空にする(右端の列の章だけを描く、
 // Application::setEpubVerticalView()参照)。highlightLink(2026-09-30): 0以上なら、列highlightColumn
 // ではなく、その列の行の番号highlightLinkのリンク(EpubVerticalCell::link)の字だけを反転表示する
-// (リンクが列をまたいでも)。
+// (リンクが列をまたいでも)。selection(2026-10-13): その範囲のマスも反転表示にする。
 std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVerticalColumn> &columns, int first,
                                                         int rows, int screenColumns, bool sideLineMarker = false,
                                                         int highlightColumn = -1, int shownFrom = 0,
-                                                        int shownUntil = 1 << 30, int highlightLink = -1);
+                                                        int shownUntil = 1 << 30, int highlightLink = -1,
+                                                        const EpubVerticalSelection *selection = nullptr);
 
 // 右からk番目の列の左の桁(画面に入らなければ負)。
 int epubVerticalScreenColumn(int k, int screenColumns);

@@ -30423,3 +30423,28 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      フリックした速さのまま流れ続ける「定速」は、減速ボタンの切り替えから外した(覚えていた設定が定速なら減速 小になる)。
      ボタンが増えたので、小さいボタン(V−/V＋/＜/＞/A−/A＋)の幅を詰め、右端の位置表示は収まらなければ省略する。
    - **確認**: JavaScriptの構文のみ。PHPは未確認。
+
+804. **2026-10-13: EPUBの縦書きの本文で、^O^Cのマウスの範囲指定で字を記録し(Record?(y/n))、^O^Eで記録の一覧(^O^Sと同じ)。^Os→^Of、^O^E→^Os**
+   - **経緯**: 直接のユーザー依頼("usilicのEPUBにも文字列記録が欲しいね。画面はEPUBフォーマットなのでemacsは考慮外。
+     ^O^Eで記録一覧が出て仕様は^O^Sと同じ（その前に^Os⇒^Of（ullscreen）、^O^E⇒^Os（croll））。これでよろしく。")。
+     確認への回答: 記録の操作は"COPYの時のマウスによる範囲指定は？ CUIでも使えるやつ。"、記録のキーは"ドラッグをやめた
+     時点でRecord?(y/n)とか。"、置き場所は「webと同じ形式でローカルに」。
+   - **キー**: K-23(モードラインの表示/非表示)を^Os→^Of、K-101(章区切り/連続)を^O^E→^Os、新しいK-108(^O^E)を記録の一覧に。
+     src/usilicrc・src/usilicrc.en・~/.usilic/usilicrcのKEY節も同じく直した。テストの^O sは^O fへ。
+   - **範囲指定**: 縦書きの本文で^O^C(Application::startEpubSelect())は、行のスナップショットのCOPYではなく縦書きの画面
+     のまま「COPY」になる(モードラインの名前の欄)。マウスのドラッグ(-cの端末のSGRマウス、-gのドラッグ。main.cppは
+     copyMouseActive()で振り分け)で押した所から今の所までのマスを読む順に反転表示し(EpubVerticalSelection、
+     renderEpubVerticalWindow()の引数)、動かしてから離すと位置の欄にRecord?(y/n)。yで記録して本文へ戻り、それ以外の
+     キーは問いだけやめて範囲を残す。^GでCOPYをやめる。ほかのキー(スクロール等)はふだんどおり。
+   - **記録**: ~/.usilic/epub-marks.txt(usilicrcと同じディレクトリ)へ、usilic-webのepub-marks.txtと同じ
+     「本.epub:章のパス:位置: 文字列」を1行追記する。字のマスに論理行の中のバイトの範囲(EpubVerticalCell::byte/byteEnd)
+     を持たせ、範囲の字を論理行ごとに切り出して空白1つでつなぐ(空白の並びは1つに、章の印U+2060は除く)。章のパスは
+     EPUBの変換で本文の各ファイルの始まる行を残し(EpubLayoutHints::chapterFiles)、位置は章の頭からの字数を
+     Application::epubLogicalLines()(fileView_の行を元の行ごとにつなぎ直したもの。rebuildEpubVertical()もこれを使う
+     ように括り出した)の字で数える。webのDOMの字数とは一致しないことがある(ルビの読みの数え方等)。
+   - **一覧**: ^O^E(startEpubMarkList())は、この本の名前の記録を読み、章のパスと字数から本文の行を探して、^O^Sの
+     occurと同じGREPの一覧(GrepMode::setMatches()、検索の代わりに一致を渡す)にする。一覧の行は記録の位置の本文の
+     行で、記録した字を強調(同じ行の記録は1行にまとめる)。縦書きの本は一覧も縦書き、^Mでその行へ飛ぶ。モードラインは
+     「MARK」・「(mark)」。記録の削除は無い(ファイルを直接編集)。
+   - **HELP**: src/HELP_.txtの[EPUB]の表(^Os・^O^C・^O^E)と説明、^Of(モードライン)を直した。
+   - **確認**: make usilicのビルドとmake installのみ(テストは未実行)。

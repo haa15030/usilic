@@ -375,7 +375,7 @@ KEY
 	K-20	C-g         # ^G      Return to previous mode
 	K-21	C-l         # ^L      Redraw
 	K-22	C-z         # ^Z      Suspend
-	K-23	F-2 s       # ^Os     Show/hide mode-line
+	K-23	F-2 f       # ^Of     Show/hide mode-line
 	K-24	F-1 C-c     # ^J^C    Go to current directory
 	K-25	C-]         # ^]      Go to the current directory (same as ^J^C)
 	K-26	F-1 C-b     # ^J^B    Go to parent directory
@@ -453,8 +453,9 @@ KEY
 	K-98	F-0 s       # ^Xs     Reload usilicrc, save/list macros
 	K-99	F-0 C-c     # ^X^C    EXIT
 	K-100	ESC ESC     # ^[^[    EXIT
-	K-101	F-2 C-e     # ^O^E    EPUB: chapter breaks / continuous scroll
+	K-101	F-2 s       # ^Os     EPUB: chapter breaks / continuous scroll
 	K-102	F-2 w       # ^Ow     EPUB: cycle the web link action (URL)
+	K-108	F-2 C-e     # ^O^E    EPUB: list of records (ranges selected and recorded in vertical COPY)
 	K-103	F-1 C-a     # ^J^A    ARC: list (archives in the FILE history)
 	K-104	F-1 C-f     # ^J^F    -g: font list (FONT, SANS-SERIF, SERIF)
 	K-105	F-4 h       # ^J^Oh   From KEY to plain HELP at that line (plain HELP outside KEY)

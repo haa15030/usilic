@@ -1422,7 +1422,7 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
   // 横取りし、Application::copyMouseDown()/copyMouseDrag()/
   // copyMouseUp()へ委譲する"というコメント)と全く同じ理屈で、ここでも
   // 最初に横取りする。
-  if (app.currentMode() == fm::ApplicationMode::Copy) {
+  if (app.copyMouseActive()) {  // 縦書きのEPUBのCOPY(2026-10-13)も
     app.copyMouseDown(startRow, startColumn);
     for (;;) {
       int byte = keyInput.readByte();
@@ -3218,7 +3218,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // 触れさせない――COPYモードの描画は元々ずっと通常のredraw()
       // 経由(CopyMode::render())で、renderScrolled()へ切り替わる
       // 理由が無いため。
-      if (app.currentMode() == fm::ApplicationMode::Copy) {
+      if (app.copyMouseActive()) {  // 縦書きのEPUBのCOPY(2026-10-13)も
         switch (drag->type) {
           case fm::GraphicalDisplay::DragEventType::ButtonDown:
             app.copyMouseDown(drag->row, drag->column);

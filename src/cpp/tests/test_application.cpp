@@ -7679,18 +7679,18 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: 'q' (QuitPager) is a no-op in Directory mo
 // (application.hpp自身のCommand::ToggleModeLineVisibility宣言コメント
 // 参照)。ToggleScrollMode自体はまだ存在する(下の別テスト、
 // handleCommand()経由の直接呼び出し)。
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^O s toggles Display::modeLineVisible() and persists it to History") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O f toggles Display::modeLineVisible() and persists it to History") {
   REQUIRE(app.start(path()));
   CHECK(display.modeLineVisible());
   CHECK(history.modeLineVisible());
 
   REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
-  CHECK(app.feedByte('s', std::nullopt));
+  CHECK(app.feedByte('f', std::nullopt));
   CHECK_FALSE(display.modeLineVisible());
   CHECK_FALSE(history.modeLineVisible());
 
   REQUIRE(app.feedByte(0x0f, std::nullopt));
-  CHECK(app.feedByte('s', std::nullopt));
+  CHECK(app.feedByte('f', std::nullopt));
   CHECK(display.modeLineVisible());
   CHECK(history.modeLineVisible());
 }
@@ -7708,7 +7708,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^O s toggles Display::modeLineVisible() an
 // 幅の変化を明示的に模擬し(RecordingDisplay自身は本物のTerminalDisplay
 // と異なりmodeLineVisible()に連動しないため)、^Ohがそれを正しく
 // FileModeへ反映する(=文字を失わず再折り返しする)ことを検証する。
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^O s while in File mode reflows the content to the new width "
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O f while in File mode reflows the content to the new width "
                            "without losing or duplicating any character at the wrap boundary") {
   std::string original;
   for (int i = 0; i < 300; i++) original += static_cast<char>('a' + (i % 26));
@@ -7726,7 +7726,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^O s while in File mode reflows the conten
   // 連動を持たないため、ここで明示的に模擬する。
   display.setSize(display.rows(), display.columns() - 2);
   REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
-  REQUIRE(app.feedByte('s', std::nullopt));
+  REQUIRE(app.feedByte('f', std::nullopt));
   CHECK_FALSE(display.modeLineVisible());
 
   std::string reflowed;

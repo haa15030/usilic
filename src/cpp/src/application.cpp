@@ -1495,7 +1495,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   }
 
   epubVerticalView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
-    return {std::filesystem::path(fileMode_.currentFile()).filename().string(),
+    // 縦書きのCOPY(epubSelectActive()、2026-10-13)の間はモード名の欄を"COPY"に(横書きのCOPYと同じ)
+    return {epubSelectActive() ? std::string("COPY") : std::filesystem::path(fileMode_.currentFile()).filename().string(),
             std::to_string(contentByteCount(fileView_)), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
             "EPUB 縦書き"};
   });
@@ -1513,10 +1514,11 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   });
 
   grepView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
-    std::string name = grepSyntaxLabel(grepSyntax_);
+    // EPUBの記録の一覧(startEpubMarkList()、2026-10-13)は"MARK"・"(mark)"
+    std::string name = grepMarksList_ ? "MARK" : grepSyntaxLabel(grepSyntax_);
     // 2026-10-10、直接のユーザー依頼("(fgrep)/(egrep)に分けて"): 起動するプログラム名(どちらもgrep)ではなく
     // 検索の種類から付ける(in-placeのバッジ、grepSyntaxBadge()と同じ)。
-    std::string badge = grepSyntaxBadge(grepSyntax_);
+    std::string badge = grepMarksList_ ? "(mark)" : grepSyntaxBadge(grepSyntax_);
     // 2026-08-24修正、直接のユーザー報告("HELPの1.Introductionページ
     // 上で^S→戻り値不良、正しくは「CUT:1.  Introduction」"): これは
     // 以前はDirectory起点の検索についてのみ戻り先のフィールドを
@@ -2610,6 +2612,14 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // resolveCommand()の通常のpage/scrollのキー割り当てや下の^Oリーダー
   // のテーブルは誤って発火しない。
   if (currentMode_ == ApplicationMode::Copy) return feedCopyByte(byte, special);
+  // 縦書きのEPUBのCOPY(2026-10-13、epubSelectActive()): ^GとRecord?(y/n)の答えだけ横取りする。本文から離れた
+  // (一覧へ・別の本へ等)後に残った範囲は捨てる。
+  if (epubSelecting_ && !epubSelectActive() && promptKind_ == PromptKind::None) {
+    epubSelecting_ = false;
+    epubSelectAnchor_.reset();
+    epubRecordAsk_ = false;
+  }
+  if (epubSelectActive() && feedEpubSelectByte(byte, special)) return true;
   // in-place GREP(2026-09-09追加、jumpToGrepInPlaceMatch()自身の
   // コメント参照): セッション中だけ、通常のresolveCommand()の^N/^P
   // (MoveDown/MoveUp)より先に横取りする――Shell/Copyの上の2分岐と
@@ -3521,9 +3531,13 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     switch (byte) {
       // 2026-10-06、直接のユーザー依頼("^Ohを^Osに変更後、HELP表示のCUTと平文の切り換えトグルを^Ohとし
       // ^J^Ohを削除"): モードラインの表示/非表示は^Osへ、^Ohは平文のHELP(旧^J^Oh)。
-      case 's':  // ^O s : モードライン表示/非表示を切り替え(K-23、旧^O h。
+      // 2026-10-13、直接のユーザー依頼("^Os⇒^Of（ullscreen）、^O^E⇒^Os（croll）"): モードラインは^Ofへ、
+      // ^Osは EPUBのスクロールの章区切り/連続(旧^O^E)、^O^EはEPUBの記録の一覧。
+      case 'f':  // ^O f : モードライン表示/非表示を切り替え(K-23、旧^O s、旧々^O h。
                  // Command::ToggleModeLineVisibility自身のコメント参照)
         return handleCommand(Command::ToggleModeLineVisibility);
+      case 's':  // ^O s : EPUBのスクロールの章区切り/連続(K-101、2026-10-03、2026-10-13に^O^Eから)
+        return handleCommand(Command::ToggleEpubChapterBreaks);
       case 'h':  // ^O h : HELPの目次(CUT)と平文の切り替え(K-87、旧^J^Oh、Command::OpenPlainHelp参照)
         return handleCommand(Command::OpenPlainHelp);
       // 2026-09-08、直接のユーザー依頼によるキー再編("^Ol⇒^Oo（←
@@ -3586,8 +3600,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StartUnderlineView);
       case 'e':  // ^O e : (ls)の.epubをARCで開く(K-100、2026-09-29)
         return handleCommand(Command::OpenEpubAsArchive);
-      case 0x05:  // ^O ^E : EPUBのスクロールの章区切り/連続(K-101、2026-10-03)
-        return handleCommand(Command::ToggleEpubChapterBreaks);
+      case 0x05:  // ^O ^E : EPUBの記録の一覧(K-108、2026-10-13、startEpubMarkList())
+        return handleCommand(Command::ShowEpubMarks);
       case 'w':  // ^O w : EPUBのWebのリンクの対処を巡回(K-102、2026-10-04)
         return handleCommand(Command::CycleUrlHandler);
       // 2026-10-07、直接のユーザー依頼("トグルキーのプレフィックスは皆^Oなので^Jaを^Ojで"): ^Jaから移した。
@@ -5449,6 +5463,8 @@ bool Application::handleCommandImpl(Command command) {
       return startRegexPromptList(PromptKind::RecentFile);
     case Command::EnterCopyMode:
       return startCopy();
+    case Command::ShowEpubMarks:
+      return startEpubMarkList();
     // ^O^Y: 実際に編集可能なプロンプトが立っている間だけ意味を持つ
     // (唯一の「貼り付け」先――clipboardText()が常にプレーンテキスト
     // なのはなぜかについてはcopy_mode.hpp自身のクラスコメント参照)。
@@ -8449,16 +8465,15 @@ int Application::epubVerticalRows() const {
   return display_.modeLineVisible() ? std::max(1, display_.rows() - 1) : std::max(1, display_.rows());
 }
 
-void Application::rebuildEpubVertical(int rawLine) {
-  // 横書きの画面の行(折り返し済み)を、元の行番号ごとに論理行へつなぎ直す
+std::vector<Application::EpubLogicalLine> Application::epubLogicalLines(bool skipHorizontal) const {
   const EpubLayoutHints &hints = fileMode_.epubLayoutHints();
-  std::set<int> alignEnd(hints.alignEnd.begin(), hints.alignEnd.end());
   std::set<int> center(hints.center.begin(), hints.center.end());
-  std::set<int> chapterStarts;  // 章の印(行末のタブ、PipeBufferがU+2060にしたもの)のある行
-  std::vector<EpubVerticalSourceLine> logical;
-  for (const auto &original : fileView_.lines()) {
+  std::vector<EpubLogicalLine> logical;
+  const auto &lines = fileView_.lines();
+  for (int index = 0; index < static_cast<int>(lines.size()); index++) {
+    const ContentView::Line &original = lines[index];
     int raw = original.rawLineNumber.value_or(-1);
-    if (raw >= 0 && epubHorizontalRangeAt(raw)) continue;  // 横書きの範囲(epubHorizontalSection_参照)
+    if (skipHorizontal && raw >= 0 && epubHorizontalRangeAt(raw)) continue;  // 横書きの範囲(epubHorizontalSection_参照)
     // 中央寄せの行(EpubLayoutHints::center)は、FileModeが頭に足した空白を取り除く。字下げの行
     // (EpubLayoutHints::indent、横書きの<indentN>が画面の行の頭に空白を入れる)も同じく取り除き、
     // 縦書きでは列の頭を空ける(EpubVerticalSourceLine::indentFirst/indentRest)。
@@ -8470,30 +8485,45 @@ void Application::rebuildEpubVertical(int rawLine) {
       line.text = "[image: " + line.imageKey.substr(line.imageKey.find('\n') + 1) + "]";
       line.attributes.clear();
     }
+    int pad = 0;
     if (center.count(raw) || hints.indent.count(raw)) {
-      std::size_t pad = line.text.find_first_not_of(' ');
-      if (pad == std::string::npos) pad = line.text.size();
-      line.text.erase(0, pad);
+      std::size_t found = line.text.find_first_not_of(' ');
+      if (found == std::string::npos) found = line.text.size();
+      pad = static_cast<int>(found);
+      line.text.erase(0, found);
       for (auto &run : line.attributes) {
-        run.start = std::max(0, run.start - static_cast<int>(pad));
-        run.end = std::max(0, run.end - static_cast<int>(pad));
+        run.start = std::max(0, run.start - pad);
+        run.end = std::max(0, run.end - pad);
       }
     }
-    if (line.text.find("\xE2\x81\xA0") != std::string::npos) chapterStarts.insert(raw);
-    if (logical.empty() || raw < 0 || logical.back().rawLineNumber != raw) {
-      logical.push_back({line.text, line.attributes, raw, alignEnd.count(raw) > 0});
-      if (auto indent = hints.indent.find(raw); indent != hints.indent.end()) {
-        logical.back().indentFirst = indent->second.first;
-        logical.back().indentRest = indent->second.second;
-      }
+    if (logical.empty() || raw < 0 || logical.back().raw != raw) {
+      logical.push_back({raw, line.text, line.attributes, {{index, pad, 0}}});
       continue;
     }
     int offset = static_cast<int>(logical.back().text.size());
     logical.back().text += line.text;
+    logical.back().pieces.push_back({index, pad, offset});
     for (auto run : line.attributes) {
       run.start += offset;
       run.end += offset;
       logical.back().attributes.push_back(run);
+    }
+  }
+  return logical;
+}
+
+void Application::rebuildEpubVertical(int rawLine) {
+  // 横書きの画面の行(折り返し済み)を、元の行番号ごとに論理行へつなぎ直す(epubLogicalLines())
+  const EpubLayoutHints &hints = fileMode_.epubLayoutHints();
+  std::set<int> alignEnd(hints.alignEnd.begin(), hints.alignEnd.end());
+  std::set<int> chapterStarts;  // 章の印(行末のタブ、PipeBufferがU+2060にしたもの)のある行
+  std::vector<EpubVerticalSourceLine> logical;
+  for (auto &line : epubLogicalLines(/*skipHorizontal=*/true)) {
+    if (line.text.find("\xE2\x81\xA0") != std::string::npos) chapterStarts.insert(line.raw);
+    logical.push_back({std::move(line.text), std::move(line.attributes), line.raw, alignEnd.count(line.raw) > 0});
+    if (auto indent = hints.indent.find(line.raw); indent != hints.indent.end()) {
+      logical.back().indentFirst = indent->second.first;
+      logical.back().indentRest = indent->second.second;
     }
   }
   // 2026-10-03追加、直接のユーザー依頼(EPUBの画像を画面内に、"←で画像のページに来たら表示して
@@ -8741,10 +8771,11 @@ void Application::setEpubVerticalView(int first, int cursor, std::optional<int> 
   // 列は空にする。章の間の空の列は飛ばす(stepEpubVerticalFirst()参照)。
   auto [shownFrom, shownUntil] = epubVerticalShownRange(epubVerticalFirst_);
   epubVerticalView_.setContentImages(epubVerticalImagesFor(epubVerticalFirst_, shownFrom, shownUntil));  // 画像ページ
+  std::optional<EpubVerticalSelection> selection = epubSelection();
   epubVerticalView_.setLines(renderEpubVerticalWindow(epubVerticalCols_, epubVerticalFirst_, epubVerticalRows(),
                                                       display_.columns(), !display_.isGraphical(),
                                                       actionable ? epubVerticalCursor_ : -1, shownFrom, shownUntil,
-                                                      highlightLink));
+                                                      highlightLink, selection ? &*selection : nullptr));
   captureEpubVerticalEdges(epubVerticalView_, epubVerticalCols_, epubVerticalFirst_, actionable ? epubVerticalCursor_ : -1,
                            shownFrom, shownUntil, highlightLink);
   epubVerticalView_.setCursorIndex(0);
@@ -8756,7 +8787,9 @@ void Application::setEpubVerticalView(int first, int cursor, std::optional<int> 
   char position[64];
   std::snprintf(position, sizeof(position), "%05d/%05d %3d%%", epubVerticalCursor_ + 1, std::max(total, 1),
                 total > 0 ? static_cast<int>(100L * (epubVerticalCursor_ + 1) / total) : 100);
-  epubVerticalView_.setPositionTextOverride(std::string(position));
+  // 縦書きのCOPY(epubSelectActive()): 離した後の問い(Record?(y/n))を位置の欄に出す
+  if (epubRecordAsk_ && epubSelectActive()) epubVerticalView_.setPositionTextOverride("Record?(y/n)", /*plain=*/true);
+  else epubVerticalView_.setPositionTextOverride(std::string(position));
 }
 
 // 左右のドラッグ/慣性で端から見えてくる列(Display::beginContentEdgeCapture()参照)を、
@@ -8770,9 +8803,10 @@ void Application::captureEpubVerticalEdges(ContentView &view, const std::vector<
   bool images = &view == &epubVerticalView_;  // 画像ページ(epubVerticalImagesFor())は本文だけ
   for (int side : {1, -1}) {
     if (images) view.setContentImages(epubVerticalImagesFor(first + side * kEpubVerticalEdgeColumns, shownFrom, shownUntil));
+    std::optional<EpubVerticalSelection> selection = images ? epubSelection() : std::nullopt;  // 縦書きのCOPY
     view.setLines(renderEpubVerticalWindow(cols, first + side * kEpubVerticalEdgeColumns, epubVerticalRows(),
                                            display_.columns(), false, highlight, shownFrom, shownUntil,
-                                           highlightLink));
+                                           highlightLink, selection ? &*selection : nullptr));
     view.setCursorIndex(0);
     view.setTopIndex(0);
     display_.beginContentEdgeCapture();
@@ -11202,7 +11236,7 @@ std::string Application::previousModeName(ApplicationMode mode) const {
     // shellReturnMode_がGrepの場合――Grep結果一覧を見ている最中に
     // KEY/SHELLを起動する、以前は空欄だった)も一般的に埋まる。
     case ApplicationMode::Grep:
-      return std::string(grepSyntaxLabel(grepSyntax_)) + ": " + grepMode_.pattern();
+      return std::string(grepMarksList_ ? "MARK" : grepSyntaxLabel(grepSyntax_)) + ": " + grepMode_.pattern();
     // Shell(2026-08-13): 直接のユーザーの訂正――drawPromptLabel()自身
     // の宛先trailingフィールドは、以前は`mode == Directory`について
     // のみ何かを表示していた、それが結線されているPromptKindの唯一の
@@ -13221,6 +13255,8 @@ bool Application::toggleListBrowserHistory() {
 // ユーザー自身の期待に一致させている)。
 bool Application::startCopy() {
   if (currentMode_ == ApplicationMode::Copy) return false;
+  // 縦書きのEPUBの本文は、行のスナップショット(CopyMode)ではなく縦書きのまま字を範囲指定する(startEpubSelect())
+  if (currentMode_ == ApplicationMode::File && epubVerticalActive()) return startEpubSelect();
   ContentView &origin = activeContentView();
   ContentView::ModeLineFields frozen = origin.currentModeLineFields();
   copyReturnMode_ = currentMode_;
@@ -13319,6 +13355,14 @@ int clampRowToCopySnapshot(const ContentView &copyView, int row) {
 }  // namespace
 
 void Application::copyMouseDown(int row, int column) {
+  if (epubSelectActive()) {  // 縦書きのCOPY: 押した所から範囲を始め直す
+    epubRecordAsk_ = false;
+    epubSelectAnchor_ = epubSelectCellAt(row, column);
+    epubSelectPoint_ = *epubSelectAnchor_;
+    setEpubVerticalView(epubVerticalFirst_, epubVerticalCursor_);
+    epubVerticalView_.redraw();
+    return;
+  }
   if (currentMode_ != ApplicationMode::Copy) return;
   int lineIndex = clampRowToCopySnapshot(copyView_, row);
   if (lineIndex < 0) return;  // 空のスナップショット――他に手の打ちようが無い
@@ -13338,6 +13382,15 @@ void Application::copyMouseDown(int row, int column) {
 }
 
 void Application::copyMouseDrag(int row, int column) {
+  if (epubSelectActive()) {
+    if (!epubSelectAnchor_) return;
+    auto point = epubSelectCellAt(row, column);
+    if (point == epubSelectPoint_) return;
+    epubSelectPoint_ = point;
+    setEpubVerticalView(epubVerticalFirst_, epubVerticalCursor_);
+    epubVerticalView_.redraw();
+    return;
+  }
   if (currentMode_ != ApplicationMode::Copy) return;
   int lineIndex = clampRowToCopySnapshot(copyView_, row);
   if (lineIndex < 0) return;
@@ -13356,7 +13409,277 @@ void Application::copyMouseUp() {
   // 続けてのドラッグ/キーボード移動による調整に委ねる。このメソッド
   // 自体は今のところ何もしないが、将来ボタン解放固有の処理が必要に
   // なった時のために残しておく。
+  // 縦書きのCOPY(2026-10-13): 範囲があれば(押した所から動かしていれば)Record?(y/n)と問う。
+  if (epubSelectActive()) {
+    if (!epubSelectAnchor_ || *epubSelectAnchor_ == epubSelectPoint_) {
+      epubSelectAnchor_.reset();
+      setEpubVerticalView(epubVerticalFirst_, epubVerticalCursor_);
+      epubVerticalView_.redraw();
+      return;
+    }
+    epubRecordAsk_ = true;
+    setEpubVerticalView(epubVerticalFirst_, epubVerticalCursor_);
+    epubVerticalView_.redraw();
+    return;
+  }
   if (currentMode_ != ApplicationMode::Copy) return;
+}
+
+// ---- 縦書きのEPUBのCOPYと記録(2026-10-13、epubSelectActive()参照) ----
+
+namespace {
+// UTF-8の字数
+long countCodePoints(const std::string &text, std::size_t from = 0, std::size_t to = std::string::npos) {
+  to = std::min(to, text.size());
+  long n = 0;
+  for (std::size_t i = from; i < to; i++)
+    if ((static_cast<unsigned char>(text[i]) & 0xC0) != 0x80) n++;
+  return n;
+}
+
+// n字目のバイトの位置(字数が足りなければ末尾)
+std::size_t byteOfCodePoint(const std::string &text, long n) {
+  for (std::size_t i = 0; i < text.size(); i++) {
+    if ((static_cast<unsigned char>(text[i]) & 0xC0) == 0x80) continue;
+    if (n-- == 0) return i;
+  }
+  return text.size();
+}
+}  // namespace
+
+bool Application::epubSelectActive() const {
+  return epubSelecting_ && currentMode_ == ApplicationMode::File && epubVerticalActive() && !promptActive();
+}
+
+bool Application::startEpubSelect() {
+  epubSelecting_ = true;
+  epubSelectAnchor_.reset();
+  epubRecordAsk_ = false;
+  setEpubVerticalView(epubVerticalFirst_, epubVerticalCursor_);
+  epubVerticalView_.redraw();
+  epubVerticalView_.syncVisibleCursor();
+  return true;
+}
+
+void Application::endEpubSelect() {
+  bool wasActive = epubSelectActive();
+  epubSelecting_ = false;
+  epubSelectAnchor_.reset();
+  epubRecordAsk_ = false;
+  if (!wasActive) return;
+  setEpubVerticalView(epubVerticalFirst_, epubVerticalCursor_);
+  epubVerticalView_.redraw();
+  epubVerticalView_.syncVisibleCursor();
+}
+
+// 画面の行・桁の字のマス(列の番号, 列の上からのマス)。列の間(行間)や画面の外は近い列・マスへ寄せる。
+std::pair<long, int> Application::epubSelectCellAt(int row, int column) const {
+  int columns = display_.columns();
+  int fromRight = std::max(0, columns - 1 - column);
+  int k = std::min(fromRight / epubVerticalColumnPitch(), epubVerticalColumnsPerScreen(columns) - 1);
+  long total = static_cast<long>(epubVerticalCols_.size());
+  long c = std::clamp<long>(static_cast<long>(epubVerticalFirst_) + k, 0, std::max<long>(0, total - 1));
+  return {c, std::clamp(row, 0, std::max(0, epubVerticalRows() - 1))};
+}
+
+std::optional<EpubVerticalSelection> Application::epubSelection() const {
+  if (!epubSelectAnchor_ || !epubSelectActive()) return std::nullopt;
+  auto from = std::min(*epubSelectAnchor_, epubSelectPoint_);
+  auto to = std::max(*epubSelectAnchor_, epubSelectPoint_);
+  return EpubVerticalSelection{from.first, from.second, to.first, to.second};
+}
+
+// 範囲のマスの字を、論理行(元の行)ごとにその論理行の字の範囲として切り出し、空白1つでつなぐ(usilic-webの記録と
+// 同じく、空白の並びは1つの空白に)。章の印(U+2060)は除く。
+std::string Application::epubSelectionText(std::pair<int, int> *start) const {
+  auto selection = epubSelection();
+  if (!selection) return "";
+  struct Range {
+    int raw;
+    int from;
+    int to;
+  };
+  std::vector<Range> ranges;
+  for (long c = selection->fromColumn; c <= selection->toColumn && c < static_cast<long>(epubVerticalCols_.size()); c++) {
+    const EpubVerticalColumn &column = epubVerticalCols_[c];
+    for (int r = 0; r < static_cast<int>(column.cells.size()); r++) {
+      const EpubVerticalCell &cell = column.cells[r];
+      if (cell.byte < 0 || !selection->contains(c, r)) continue;
+      if (ranges.empty() || ranges.back().raw != column.rawLineNumber) {
+        ranges.push_back({column.rawLineNumber, cell.byte, cell.byteEnd});
+        continue;
+      }
+      ranges.back().from = std::min(ranges.back().from, cell.byte);
+      ranges.back().to = std::max(ranges.back().to, cell.byteEnd);
+    }
+  }
+  if (ranges.empty()) return "";
+  std::map<int, std::string> texts;
+  for (auto &line : epubLogicalLines(/*skipHorizontal=*/true))
+    if (line.raw >= 0) texts[line.raw] = std::move(line.text);
+  std::string joined;
+  for (const auto &range : ranges) {
+    auto it = texts.find(range.raw);
+    if (it == texts.end() || range.from >= static_cast<int>(it->second.size())) continue;
+    if (!joined.empty()) joined += ' ';
+    joined += it->second.substr(range.from, range.to - range.from);
+  }
+  std::string out;
+  for (std::size_t i = 0; i < joined.size();) {
+    if (joined.compare(i, 3, "\xE2\x81\xA0") == 0) {
+      i += 3;
+      continue;
+    }
+    char ch = joined[i++];
+    bool space = ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
+    if (space) {
+      if (!out.empty() && out.back() != ' ') out += ' ';
+      continue;
+    }
+    out += ch;
+  }
+  while (!out.empty() && out.back() == ' ') out.pop_back();
+  if (start) *start = {ranges.front().raw, ranges.front().from};
+  return out;
+}
+
+std::string Application::epubMarksPath() const {
+  return std::filesystem::path(usilicrcPath_).parent_path().string() + "/epub-marks.txt";
+}
+
+bool Application::recordEpubSelection() {
+  epubRecordAsk_ = false;
+  std::pair<int, int> start{0, 0};
+  std::string text = epubSelectionText(&start);
+  const auto &files = fileMode_.epubLayoutHints().chapterFiles;
+  // 範囲の始まりの行を含む章(本文のファイル): 始まりの行より前で最後に始まったもの
+  const std::pair<int, std::string> *chapter = nullptr;
+  for (const auto &file : files)
+    if (file.first <= start.first) chapter = &file;
+  if (text.empty() || !chapter) {
+    endEpubSelect();
+    showTransientNotice(epubVerticalView_, text.empty() ? "No string" : "No chapter");
+    return true;
+  }
+  long offset = 0;
+  for (const auto &line : epubLogicalLines(/*skipHorizontal=*/false)) {
+    if (line.raw < chapter->first) continue;
+    if (line.raw >= start.first) {
+      if (line.raw == start.first) offset += countCodePoints(line.text, 0, start.second);
+      break;
+    }
+    offset += countCodePoints(line.text);
+  }
+  std::string book = std::filesystem::path(fileMode_.currentFile()).filename().string();
+  std::ofstream out(epubMarksPath(), std::ios::app);
+  out << book << ':' << chapter->second << ':' << offset << ": " << text << '\n';
+  bool ok = static_cast<bool>(out);
+  out.close();
+  endEpubSelect();
+  std::string snippet = text.substr(0, byteOfCodePoint(text, 20));
+  showTransientNotice(epubVerticalView_, ok ? "Recorded: " + snippet : "Cannot write " + epubMarksPath());
+  return true;
+}
+
+// 縦書きのCOPYの間のキー。^GでCOPYをやめ、Record?(y/n)の間はyで記録、それ以外は問いだけやめる(範囲は残す)。
+// ほかのキーはそのまま(スクロール等はふだんどおり、範囲は列の番号で持つので画面を送っても残る)。
+bool Application::feedEpubSelectByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  if (epubRecordAsk_) {
+    if (!special && (byte == 'y' || byte == 'Y')) return recordEpubSelection();
+    epubRecordAsk_ = false;
+    setEpubVerticalView(epubVerticalFirst_, epubVerticalCursor_);
+    epubVerticalView_.redraw();
+    return true;
+  }
+  if (!special && byte == kControlG) {
+    endEpubSelect();
+    return true;
+  }
+  return false;
+}
+
+// ^O^E(K-108): 今のEPUBの記録(epubMarksPath()の、この本の名前の行)を、^O^S(occur)と同じGREPの一覧にする。
+// 一覧の行は記録の位置の本文の行で、記録した字を強調し、^Mでその行へ飛ぶ。
+bool Application::startEpubMarkList() {
+  if (currentMode_ != ApplicationMode::File || !isEpubFile(fileMode_.currentFile())) return false;
+  endEpubSelect();
+  std::string book = std::filesystem::path(fileMode_.currentFile()).filename().string();
+  const auto &files = fileMode_.epubLayoutHints().chapterFiles;
+  std::vector<EpubLogicalLine> logical = epubLogicalLines(/*skipHorizontal=*/false);
+  const auto &viewLines = fileView_.lines();
+  std::map<int, GrepMatch> byLine;  // fileView_の行→一覧の行(同じ行の記録は1行にまとめる)
+  std::ifstream in(epubMarksPath());
+  std::string entry;
+  while (std::getline(in, entry)) {
+    if (entry.compare(0, book.size() + 1, book + ":") != 0) continue;
+    std::size_t pathEnd = entry.find(':', book.size() + 1);
+    if (pathEnd == std::string::npos) continue;
+    std::size_t offsetEnd = entry.find(": ", pathEnd + 1);
+    if (offsetEnd == std::string::npos) continue;
+    std::string path = entry.substr(book.size() + 1, pathEnd - book.size() - 1);
+    std::string digits = entry.substr(pathEnd + 1, offsetEnd - pathEnd - 1);
+    if (digits.empty() || digits.find_first_not_of("0123456789") != std::string::npos) continue;
+    long remaining = std::atol(digits.c_str());
+    std::string text = entry.substr(offsetEnd + 2);
+    auto file = std::find_if(files.begin(), files.end(), [&](const auto &f) { return f.second == path; });
+    if (file == files.end()) continue;
+    // 章の頭から字数を数えて、記録の始まりの論理行とその中のバイトを探す
+    const EpubLogicalLine *found = nullptr;
+    std::size_t byte = 0;
+    for (const auto &line : logical) {
+      if (line.raw < file->first) continue;
+      long n = countCodePoints(line.text);
+      if (remaining < n) {
+        found = &line;
+        byte = byteOfCodePoint(line.text, remaining);
+        break;
+      }
+      remaining -= n;
+    }
+    if (!found) continue;
+    const EpubLogicalPiece *piece = &found->pieces.front();
+    for (const auto &p : found->pieces)
+      if (p.from <= static_cast<int>(byte)) piece = &p;
+    if (piece->viewIndex < 0 || piece->viewIndex >= static_cast<int>(viewLines.size())) continue;
+    const std::string &shown = viewLines[piece->viewIndex].text;
+    int from = std::min(static_cast<int>(byte) - piece->from + piece->pad, static_cast<int>(shown.size()));
+    std::size_t endByte = byte;
+    for (long k = countCodePoints(text); k > 0 && endByte < found->text.size(); k--)
+      endByte += Utf8::sequence_length(static_cast<unsigned char>(found->text[endByte]));
+    int to = std::min(static_cast<int>(endByte) - piece->from + piece->pad, static_cast<int>(shown.size()));
+    GrepMatch &match = byLine[piece->viewIndex];
+    match.sourceLineIndex = piece->viewIndex;
+    match.text = shown;
+    if (to > from) match.matchSpans.push_back({from, to});
+  }
+  if (byLine.empty()) {
+    showTransientNotice(activeView(), "No marks");
+    return true;
+  }
+  std::vector<GrepMatch> matches;
+  for (auto &[index, match] : byLine) {
+    std::sort(match.matchSpans.begin(), match.matchSpans.end());
+    matches.push_back(std::move(match));
+  }
+  grepJumpMode_.reset();
+  clearGrepJumpHighlight();
+  grepOccurPending_ = false;
+  grepReturnMode_ = ApplicationMode::File;
+  grepMarksList_ = true;
+  bool verticalList = epubBookVertical();  // 縦書きの本は一覧も縦書き(executeGrep()のoccurと同じ)
+  grepMode_.setRedrawOnSearch(!verticalList);
+  grepMode_.setMatches(std::move(matches), book);
+  grepMode_.setRedrawOnSearch(true);
+  currentMode_ = ApplicationMode::Grep;
+  grepReturnsToCandidateList_ = false;
+  pendingSearchFromDirectEntryList_ = false;
+  if (epubVerticalListActive()) {
+    epubGrepFirst_ = 0;
+    refreshEpubTocVertical();
+  }
+  activeView().redraw();
+  activeView().syncVisibleCursor();
+  return true;
 }
 
 // ApplicationMode::Copyが有効な間の、COPY自身の小さなキーの語彙。
@@ -13704,6 +14027,7 @@ bool Application::startOccurPrompt(GrepSyntax syntax) {
 bool Application::startGrepPrompt(GrepSyntax syntax) {
   if (currentMode_ == ApplicationMode::Grep) return false;
   grepOccurPending_ = false;  // occurはstartOccurPrompt()がこの後で立てる
+  grepMarksList_ = false;
   grepJumpMode_.reset();
   clearGrepJumpHighlight();
   grepSyntax_ = syntax;
@@ -19691,6 +20015,7 @@ bool Application::hoverDirectEntryList(int row) {
 }
 
 bool Application::handleMouseClickImpl(int row, int column) {
+  if (epubSelectActive()) return true;  // 縦書きのCOPYはドラッグ(copyMouseDown()等)だけ
   // 2026-10-02変更、直接のユーザー依頼("ハイライト行はマウスに追随するのにハイライト範囲にマウス
   // カーソルが無いと無反応。ハイライト行がある場面では範囲外であってもその場クリックで選択可で"):
   // 以下の一覧のクリックは、列(isColumnWithinRowText()/isColumnWithinLineScope())を問わず、

@@ -64,6 +64,9 @@ struct EpubLayoutHints {
   // (元の行番号)→その行のリンク(下線の並び)の行き先を出てくる順に: "line:<行番号>"(本の中)・
   // "url:<URL>"(Web)・""(行き先が見つからない)。n番目の下線の並びがn番目のリンク。
   std::map<int, std::vector<std::string>> lineLinks;
+  // 2026-10-13追加(縦書きのCOPYで範囲指定した字の記録、usilic-webのepub-marks.txtと同じ「本.epub:章のパス:位置:
+  // 文字列」): 本文の各ファイル(spineの順、zip内のパス)が始まる行(返す文字列の1始まりの行)。行の順。
+  std::vector<std::pair<int, std::string>> chapterFiles;
 };
 
 std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember,
