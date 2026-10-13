@@ -226,6 +226,7 @@
             return p ? { pos: p, text: '' } : null;
         },
         jump: jump,
+        forward: function () { return rtl ? -1 : 1; },
         describe: function (m) {
             var i = chapters.findIndex(function (ch) { return ch.path === m.href; });
             return (i < 0 ? '?' : i + 1) + '/' + chapters.length + '章 ' + m.off + '字目';

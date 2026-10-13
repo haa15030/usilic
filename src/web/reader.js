@@ -7,7 +7,9 @@
 //       jump:       function (mark, select) 記録(marks.phpの一覧の1件)の位置へ飛ぶ,
 //       describe:   function (mark) → 一覧に出す位置の説明,
 //       topPos:     function () → 画面の右端(読んでいる所)の位置(markと同じ形),
-//       font:       {key, def, min, max, step, unit, apply: function (size)}
+//       font:       {key, def, min, max, step, unit, apply: function (size)},
+//       forward:    function () → 先へ進む時のscrollLeftの増える向き(縦書き・右綴じは-1)
+//                   (省略時は-1)
 //   });
 //   r.attach(doc)   その文書(iframeの中など)のtouchも慣性スクロールへ回す
 //   r.restore()     覚えていた位置へ戻る(本文を並べ終えた後に呼ぶ)
@@ -149,71 +151,65 @@ var Reader = function (opt) {
         });
     }
 
-    // targetの文書のtouchを慣性スクロールへ回す。座標はその文書の中の座標だが、
-    // 使うのは動いた量だけなのでiframeの中でもそのまま使える。
+    // targetの文書のtouchとマウスのドラッグ・ホイールを慣性スクロールへ回す。座標はその文書の
+    // 中の座標だが、使うのは動いた量だけなのでiframeの中でもそのまま使える。
     function attach(target, win) {
-        var touch = null;
+        var drag = null;
 
-        target.addEventListener('touchstart', function (e) {
-            if (e.touches.length !== 1) {
-                touch = null;
-                return;
-            }
+        // 押した: 流れていれば止める。止めただけならtrue(範囲指定の解除などをさせない)
+        function down(x, y) {
             var moving = raf !== 0;
             stopInertia();
-            var t = e.touches[0];
-            touch = {
-                x0: t.clientX,
-                y0: t.clientY,
-                x: t.clientX,
+            drag = {
+                x0: x,
+                y0: y,
+                x: x,
                 t0: performance.now(),
-                mode: nearSelection(win, t.clientX, t.clientY) ? 'native' : null,
+                mode: nearSelection(win, x, y) ? 'native' : null,
                 samples: []
             };
             pos = scroller.scrollLeft;
-            // 流れているのを止めるだけのタップでは、範囲指定の解除などをさせない
-            if (moving) {
-                e.preventDefault();
-            }
-        }, { passive: false });
+            return moving;
+        }
 
-        target.addEventListener('touchmove', function (e) {
-            if (!touch || e.touches.length !== 1) {
-                return;
+        // 動いた: スクロールとして扱ったらtrue
+        function move(x, y) {
+            if (!drag) {
+                return false;
             }
-            var t = e.touches[0];
             var now = performance.now();
-            if (touch.mode === null) {
-                var dx = t.clientX - touch.x0, dy = t.clientY - touch.y0;
+            if (drag.mode === null) {
+                var dx = x - drag.x0, dy = y - drag.y0;
                 if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
-                    return;
+                    return false;
                 }
-                // 長押ししてから動かしたのは範囲指定とみなし、Safariに任せる
-                touch.mode = now - touch.t0 < 400 && Math.abs(dx) >= Math.abs(dy) ? 'scroll' : 'native';
+                // 長押ししてから動かしたのは範囲指定とみなし、ブラウザに任せる
+                drag.mode = now - drag.t0 < 400 && Math.abs(dx) >= Math.abs(dy) ? 'scroll' : 'native';
             }
-            if (touch.mode !== 'scroll') {
-                return;
+            if (drag.mode !== 'scroll') {
+                return false;
             }
-            e.preventDefault();
-            // 指の動きに本文が付いてくる向き(指を右へ動かすと先へ進む)
-            pos -= t.clientX - touch.x;
-            touch.x = t.clientX;
+            // 指(マウス)の動きに本文が付いてくる向き(右へ動かすと先へ進む)
+            pos -= x - drag.x;
+            drag.x = x;
             scroller.scrollLeft = pos;
             pos = scroller.scrollLeft;
-            touch.samples.push({ x: t.clientX, t: now });
-            while (touch.samples.length > 2 && now - touch.samples[0].t > 100) {
-                touch.samples.shift();
+            drag.samples.push({ x: x, t: now });
+            while (drag.samples.length > 2 && now - drag.samples[0].t > 100) {
+                drag.samples.shift();
             }
-        }, { passive: false });
+            return true;
+        }
 
-        target.addEventListener('touchend', function () {
-            var tc = touch;
-            touch = null;
-            if (!tc || tc.mode !== 'scroll') {
+        // 離した: 離す直前の速さで慣性を付ける
+        function up() {
+            var d = drag;
+            drag = null;
+            if (!d || d.mode !== 'scroll') {
                 return;
             }
-            var s = tc.samples;
-            // 指を止めてから離した時は慣性を付けない
+            var s = d.samples;
+            // 止めてから離した時は慣性を付けない
             if (s.length < 2 || performance.now() - s[s.length - 1].t > 80) {
                 return;
             }
@@ -223,11 +219,57 @@ var Reader = function (opt) {
             }
             vel = -(b.x - a.x) / (b.t - a.t);
             startInertia();
-        });
+        }
 
-        target.addEventListener('touchcancel', function () {
-            touch = null;
+        target.addEventListener('touchstart', function (e) {
+            if (e.touches.length !== 1) {
+                drag = null;
+                return;
+            }
+            if (down(e.touches[0].clientX, e.touches[0].clientY)) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+        target.addEventListener('touchmove', function (e) {
+            if (e.touches.length === 1 && move(e.touches[0].clientX, e.touches[0].clientY)) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+        target.addEventListener('touchend', up);
+        target.addEventListener('touchcancel', function () { drag = null; });
+
+        // マウス: 素早く左右へドラッグするとスクロール。押したまま0.4秒待ってから動かすと範囲指定。
+        target.addEventListener('mousedown', function (e) {
+            if (e.button !== 0) {
+                return;
+            }
+            if (down(e.clientX, e.clientY)) {
+                e.preventDefault();
+            }
         });
+        target.addEventListener('mousemove', function (e) {
+            if (!(e.buttons & 1)) {
+                drag = null;
+                return;
+            }
+            if (move(e.clientX, e.clientY)) {
+                e.preventDefault();
+                // 動かし始めの8pxで始まった範囲指定を消す
+                win.getSelection().removeAllRanges();
+            }
+        });
+        target.addEventListener('mouseup', up);
+
+        // ホイール: 縦の回転も横のスクロールにする(下へ回すと先へ)
+        target.addEventListener('wheel', function (e) {
+            if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) {
+                return;
+            }
+            e.preventDefault();
+            stopInertia();
+            var unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? scroller.clientWidth : 1;
+            scroller.scrollLeft += e.deltaY * unit * (opt.forward ? opt.forward() : -1);
+        }, { passive: false });
     }
     attach(scroller, window);
 
