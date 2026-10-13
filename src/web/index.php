@@ -3,6 +3,15 @@ require __DIR__ . '/common.php';
 
 $files = array_merge(glob($TEXT_DIR . '/*.txt') ?: [], glob($TEXT_DIR . '/*.epub') ?: []);
 usort($files, function ($a, $b) { return filemtime($b) - filemtime($a); });
+
+// usilic(^J^EのURL)用: 名前だけを1行に1つ(新しい順)。
+if (isset($_GET['list'])) {
+    header('Content-Type: text/plain; charset=utf-8');
+    foreach ($files as $path) {
+        echo basename($path), "\n";
+    }
+    exit;
+}
 ?>
 <!doctype html>
 <html lang="ja">

@@ -16,12 +16,14 @@ iPadで原稿(テキスト)を縦書きで読み、校閲箇所を記録するWe
   book.php    .epubを表示(epub.js)
   file.php    展開した.epubの中のファイルを返す
   marks.php   記録の追加・一覧・削除
+  get.php     原稿をそのまま返す(usilicが本棚から落とす用)
   reader.css  画面
   scroll.js   慣性スクロール・キー(本文の横、本棚のディレクトリ一覧の縦で共通)
   reader.js   読む画面の操作ボタン・記録・記録一覧(.txtと.epubで共通)
   txt.js      .txtの位置(行・桁)
   epub.js     .epubの章を並べる、位置(章・文字数)
   .htaccess   Basic認証、config.php等を直接見せない
+  sample/     見本の.epub(宮沢賢治「雨ニモマケズ」、縦書き)
 
 Debian 13への設置
 -----------------
@@ -69,13 +71,57 @@ Debian 13への設置
 
 7. iPadのSafariで http://debianのホスト名/usilic-web/ を開く。
 
+macOSでの設置(http://localhost/usilic-web/)
+-------------------------------------------
+macOSにはPHPが無いので、Homebrewのhttpdとphpを使う。原稿置き場等はconfig.phpが
+macOSなら自動で~/.local/usilic-web/の下にする(このディレクトリの持ち主のホーム)。
+usilicのmake installがそのディレクトリと見本の.epubを作る。
+
+1. brew install httpd php
+
+2. $(brew --prefix)/etc/httpd/httpd.conf を直す(Listen 8080 を置き換え、末尾に足す)。
+   自分(ユーザー名・staff)として動かすので、~/.local/usilic-web へ書ける。
+
+     Listen 127.0.0.1:80
+     User ユーザー名
+     Group staff
+     LoadModule php_module brewのprefix/opt/php/lib/httpd/modules/libphp.so
+     <FilesMatch \.php$>
+         SetHandler application/x-httpd-php
+     </FilesMatch>
+     DirectoryIndex index.php index.html
+     Alias /usilic-web /Users/ユーザー名/git/usilic/src/web
+     <Directory /Users/ユーザー名/git/usilic/src/web>
+         Require all granted
+     </Directory>
+
+   AllowOverrideを足さないので.htaccess(Basic認証)は効かない。127.0.0.1だけで
+   受けるのでこのMacの中からしか開けない。iPad等からも開くなら Listen 80 にし、
+   AllowOverride AuthConfigと認証(上の4.)を足すこと(同じネットワークの誰でも
+   原稿を読み、上書きし、記録を消せてしまう)。
+
+3. ポート80で受けるので、sudoで起動する(以後ログイン時に自動で起動)。
+
+     sudo brew services start httpd
+
+usilicから開く
+--------------
+usilicの^J^Eの一覧には http://localhost/usilic-web/ が最初から載っている(^Jeに
+入れたusilic-webのURLも載る)。usilicrcのURL節の対処(^Owで巡回)がEpubなら、
+本棚の一覧(index.php?list=1)をusilicの一覧に出し、選んだ本を~/.local/usilic-web/
+texts/へ落として(get.php)開く。localhostで既にそこにあれば落とさない。ほかの対処
+(Open等)ならブラウザ等で開く。Basic認証の付いたサーバー(Debian)からは、~/.netrcに
+書いておけば落とせる(curl --netrc-optional):
+
+  machine debianのホスト名 login ユーザー名 password パスワード
+
 原稿を置く
 ----------
 UTF-8の*.txtか*.epubを、本棚のページの枠へドラッグする(iPadでは枠をタップして
 選ぶ)。同じ名前は上書きする。ディレクトリをドラッグすると中身の一覧が出るので、
 サブディレクトリへも入りながら.txt/.epubを選び(選んだものはディレクトリを移っても
 残る)、「送る」で選んだものだけ送る。一覧も慣性スクロールする(縦。キーは→で
-先へ/←で戻るを始め、流れている間は↓↑でも調整。Escで止める、止まっていれば閉じる)。scpで置いてもよい(.epubは展開が要るので本棚から):
+先へ/←で戻るを始め、流れている間は↓↑でも調整。Escで止める、止まっていれば閉じる)。scpで置いてもよい(.epubは最初に開いた時に展開する):
 
   scp 原稿.txt debian:/srv/usilic-web/texts/
 

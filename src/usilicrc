@@ -290,7 +290,9 @@ URL
 #   Term  program に URL を渡して端末で起動(EXEC と同じ、終われば本へ戻る)
 #   Copy  program の標準入力へ URL を渡す(クリップボードへコピー)
 #   Look  クイックルック(macOS だけ、program は不要)
-#   Epub  「小説家になろう」・「カクヨム」の作品のリンクなら、program(narou2epub)で
+#   Epub  usilic-web(src/web/README)の URL なら、本棚の一覧から選んだ本を
+#         ~/.local/usilic-web/texts へ落として開く(curl が要ります)。
+#         「小説家になろう」・「カクヨム」の作品のリンクなら、program(narou2epub)で
 #         ~/.usilic/data に EPUB を作って開く(SHELL で動く)。lxml・
 #         ebooklib・requests・Pillow が要ります(~/.local/lib/usilic/narou2epub
 #         のコメント参照)

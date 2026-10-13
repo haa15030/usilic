@@ -2,7 +2,7 @@
 require __DIR__ . '/common.php';
 
 $name = $_GET['f'] ?? '';
-if (doc_path($name, 'epub') === false || !is_dir($BOOK_DIR . '/' . $name)) {
+if (book_dir($name) === false) {
     http_response_code(404);
     exit('本がありません。');
 }

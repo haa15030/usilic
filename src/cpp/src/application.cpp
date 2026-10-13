@@ -558,6 +558,50 @@ bool isUsilicWebUrl(const std::string &text) {
   static const std::regex kUsilicWeb(R"(^https?://\S*usilic[-_/]web\S*$)", std::regex::icase);
   return std::regex_match(text, kUsilicWeb);
 }
+
+// 2026-10-14、直接のユーザー依頼("^J^Eの一覧に最初から「http://localhost/usilic-web」が入っていて"): ^J^Eの
+// 一覧に無ければ(末尾の/の有無は問わない)、先頭(いちばん古い所)に足す。履歴そのものには積まない。
+const char *const kUsilicWebDefaultUrl = "http://localhost/usilic-web/";
+
+void addDefaultUsilicWebUrl(std::vector<std::string> &items) {
+  std::string bare = kUsilicWebDefaultUrl;
+  bare.pop_back();
+  for (const auto &item : items)
+    if (item == kUsilicWebDefaultUrl || item == bare) return;
+  items.insert(items.begin(), kUsilicWebDefaultUrl);
+}
+
+// URLの%XX(と+)を戻す/名前を%XXにする(usilic-webのget.php?f=名前、openUsilicWeb()参照)。
+std::string decodeUrlComponent(const std::string &s) {
+  std::string out;
+  for (std::size_t i = 0; i < s.size(); i++) {
+    if (s[i] == '+') {
+      out += ' ';
+    } else if (s[i] == '%' && i + 2 < s.size() && std::isxdigit(static_cast<unsigned char>(s[i + 1])) &&
+               std::isxdigit(static_cast<unsigned char>(s[i + 2]))) {
+      out += static_cast<char>(std::stoi(s.substr(i + 1, 2), nullptr, 16));
+      i += 2;
+    } else {
+      out += s[i];
+    }
+  }
+  return out;
+}
+
+std::string encodeUrlComponent(const std::string &s) {
+  static const char *const kHex = "0123456789ABCDEF";
+  std::string out;
+  for (unsigned char c : s) {
+    if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+      out += static_cast<char>(c);
+    } else {
+      out += '%';
+      out += kHex[c >> 4];
+      out += kHex[c & 15];
+    }
+  }
+  return out;
+}
 }  // namespace
 
 // 2026-09-20追加、openRecentFileEntry()自身のコメント参照: executeCut()
@@ -646,6 +690,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       logFilePath_(tempRootDirectory_ + "/shell"),
       usilicrcPath_(homeDirectory + "/.usilic/usilicrc"),
       historyFilePath_(homeDirectory + "/.usilic/history"),
+      usilicWebTextDirectory_(homeDirectory + "/.local/usilic-web/texts"),
       helpPath_(homeDirectory + "/.local/lib/usilic/HELP"),
       helpBasePath_(helpPath_),
       encoding_(encoding),
@@ -6984,6 +7029,13 @@ bool Application::openSelectedListEntryImpl() {
   // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装――他の全ての分岐
   // (promptHistoryContext_等)より先にチェックする、returnFromTab
   // CompletionList()自身のコメント参照。
+  if (webShelfShowing()) {  // usilic-webの本棚(openUsilicWeb()参照)
+    std::string name = *item;
+    webShelfActive_ = false;
+    currentMode_ = webShelfReturnMode_;
+    if (!fetchUsilicWebBook(webShelfBase_, name)) activeView().redraw();
+    return true;
+  }
   if (tabCompletionContext_) return returnFromTabCompletionList(/*selected=*/true);
   if (promptHistoryContext_) {
     // まず「元の」下層のモードを復元し(プロンプトは、それらが始まった
@@ -7806,6 +7858,7 @@ bool Application::openEpubWebLink(const std::string &url) {
   const auto &handlers = configuration_.urlHandlers();
   if (handlers.empty()) return false;
   const Configuration::UrlHandler &handler = handlers[urlHandlerIndex_ % handlers.size()];
+  if (handler.name == "Epub" && isUsilicWebUrl(url)) return openUsilicWeb(url);  // openUsilicWeb()参照
   if (handler.name == "Look") return openWebLinkInQuickLook(url);
   if (handler.argv.empty()) return false;
   std::vector<std::string> argv = handler.argv;
@@ -7900,6 +7953,92 @@ bool Application::takeFontListRequest() {
   bool requested = fontListRequested_;
   fontListRequested_ = false;
   return requested;
+}
+
+// 2026-10-14、直接のユーザー依頼("^J^Eの一覧に最初から「http://localhost/usilic-web」が入っていて、ブラウザ
+// から同URLを入れたときはブラウザで、EPUBから踏んだときは~/.local/usilic-web/texts/へダウンロードしたのちEPUB
+// 画面で表示"、分け方は「^Owの今の対処で」): ^Owの対処がEpubの時のusilic-web(src/web/)のURL。本棚(本の名前の
+// 無いURL)なら、サーバーの原稿の一覧(index.php?list=1)をListBrowserに出し、選んだ本を落として開く。本のURL
+// (book.php?f=名前・read.php?f=名前)ならその本を直に。Basic認証は~/.netrcで(curl --netrc-optional)。
+bool Application::openUsilicWeb(const std::string &url) {
+  static const std::regex kParts(R"(^(https?://[^?#]*?usilic[-_/]web)[^?#]*(\?[^#]*)?.*$)", std::regex::icase);
+  static const std::regex kName(R"((?:^\?|&)f=([^&]*))");
+  std::smatch match;
+  if (!std::regex_match(url, match, kParts)) return false;
+  std::string base = match[1].str();
+  std::string query = match[2].str();
+  std::smatch nameMatch;
+  if (std::regex_search(query, nameMatch, kName)) return fetchUsilicWebBook(base, decodeUrlComponent(nameMatch[1].str()));
+  if (!programOnPath("curl")) {
+    showTransientNotice(activeView(), "curl: command not found");
+    return false;
+  }
+  drawPromptLabel(PromptKind::EpubLoad, /*positionText=*/"", "Reading...");
+  display_.flush();
+  ChildProcess::Result result = ChildProcess::run({"curl", "-fsS", "--netrc-optional", base + "/index.php?list=1"});
+  std::vector<std::string> names;
+  std::istringstream lines(result.output);
+  for (std::string line; std::getline(lines, line);) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (isEpubFile(line) || std::filesystem::path(line).extension() == ".txt") names.push_back(line);
+  }
+  if (!result.ok || names.empty()) {
+    activeView().redraw();
+    showTransientNotice(activeView(), result.ok ? "No books: " + base : "Cannot get: " + base);
+    return false;
+  }
+  if (!webShelfShowing()) webShelfReturnMode_ = currentMode_;
+  webShelfBase_ = base;
+  webShelfNames_ = names;
+  webShelfActive_ = true;
+  listBrowserChronological_ = false;
+  listBrowserView_.setCursorAtModeLineTrailingEnd(false);
+  listBrowserMode_.show(webShelfNames_);
+  currentMode_ = ApplicationMode::ListBrowser;
+  listBrowserView_.redraw();
+  return true;
+}
+
+// usilic-webの本(.epub/.txt)を~/.local/usilic-web/texts/へ落として開く(openUsilicWeb()参照)。localhostで既に
+// そこにあれば落とさない(macOSのusilic-webの原稿置き場はそのディレクトリ、src/web/config.php)。
+bool Application::fetchUsilicWebBook(const std::string &base, const std::string &name) {
+  bool txt = std::filesystem::path(name).extension() == ".txt";
+  if (name.empty() || name[0] == '.' || name.find('/') != std::string::npos || (!isEpubFile(name) && !txt)) {
+    showTransientNotice(activeView(), "Not a book: " + name);
+    return false;
+  }
+  std::error_code ec;
+  std::filesystem::create_directories(usilicWebTextDirectory_, ec);
+  std::string path = usilicWebTextDirectory_ + "/" + name;
+  static const std::regex kLocal(R"(^https?://(localhost|127\.0\.0\.1|\[::1\])[:/].*)", std::regex::icase);
+  if (!(std::regex_match(base, kLocal) && std::filesystem::is_regular_file(path, ec))) {
+    if (!programOnPath("curl")) {
+      showTransientNotice(activeView(), "curl: command not found");
+      return false;
+    }
+    drawPromptLabel(PromptKind::EpubLoad, /*positionText=*/"", "Downloading...");
+    display_.flush();
+    std::string part = usilicWebTextDirectory_ + "/.part-" + name;  // 落とし終えてから入れ替える
+    std::string from = base + "/get.php?f=" + encodeUrlComponent(name);
+    if (!ChildProcess::run({"curl", "-fsS", "--netrc-optional", "-o", part, from}).ok) {
+      std::filesystem::remove(part, ec);
+      activeView().redraw();
+      showTransientNotice(activeView(), "Cannot get: " + from);
+      return false;
+    }
+    std::filesystem::rename(part, path, ec);
+    if (ec) {
+      std::filesystem::remove(part, ec);
+      activeView().redraw();
+      showTransientNotice(activeView(), "Cannot write: " + path);
+      return false;
+    }
+  }
+  return openRecentFileEntry(path);
+}
+
+bool Application::webShelfShowing() const {
+  return webShelfActive_ && currentMode_ == ApplicationMode::ListBrowser && listBrowserMode_.items() == webShelfNames_;
 }
 
 bool Application::fontListShowing() const {
@@ -9841,6 +9980,7 @@ bool Application::startPartList() {
 // ringCategoryLabel(listBrowserCategory_)に、^J^E(EPUBだけのFILE履歴)の"EPUB"、^J^A(アーカイブだけ)の"ARC"を足したもの。
 std::string Application::listBrowserCategoryLabel() const {
   if (fontListShowing()) return "FONT";
+  if (webShelfShowing()) return "WEB";
   if (promptHistoryContext_ && promptHistoryContext_->epubOnly) return "EPUB";
   if (promptHistoryContext_ && promptHistoryContext_->archiveOnly) return "ARC";
   if (promptHistoryContext_ && promptHistoryContext_->partOnly) return "PART";
@@ -10797,6 +10937,12 @@ bool Application::returnFromListBrowser() {
   }
   // 2026-09-18追加、openSelectedListEntry()自身の同じ理由のコメント
   // 参照。
+  if (webShelfShowing()) {  // usilic-webの本棚(openUsilicWeb()参照)
+    webShelfActive_ = false;
+    currentMode_ = webShelfReturnMode_;
+    activeView().redraw();
+    return true;
+  }
   if (tabCompletionContext_) return returnFromTabCompletionList(/*selected=*/false);
   if (promptHistoryContext_) {
     PromptKind kind = promptHistoryContext_->kind;
@@ -13202,9 +13348,11 @@ bool Application::toggleListBrowserHistory() {
                                 [](const std::string &item) { return !hasArchiveCompatibleSuffix(item); }),
                 items.end());
   }
-  if (promptHistoryContext_ && promptHistoryContext_->epubOnly)  // ^J^E: EPUBだけ(startEpubList()参照)
+  if (promptHistoryContext_ && promptHistoryContext_->epubOnly) {  // ^J^E: EPUBだけ(startEpubList()参照)
     items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item) && !isUsilicWebUrl(item); }),
                 items.end());
+    addDefaultUsilicWebUrl(items);
+  }
   if (promptHistoryContext_ && promptHistoryContext_->archiveOnly)  // ^J^A: アーカイブだけ(startArchiveList()参照)
     items.erase(std::remove_if(items.begin(), items.end(),
                                 [this](const std::string &item) { return !isArchiveHistoryEntry(item); }),
@@ -15645,9 +15793,11 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
                                 [](const std::string &item) { return !hasArchiveCompatibleSuffix(item); }),
                 items.end());
   }
-  if (promptHistoryContext_ && promptHistoryContext_->epubOnly)  // ^J^E: EPUBだけ(startEpubList()参照)
+  if (promptHistoryContext_ && promptHistoryContext_->epubOnly) {  // ^J^E: EPUBだけ(startEpubList()参照)
     items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item) && !isUsilicWebUrl(item); }),
                 items.end());
+    addDefaultUsilicWebUrl(items);
+  }
   if (promptHistoryContext_ && promptHistoryContext_->archiveOnly)  // ^J^A: アーカイブだけ(startArchiveList()参照)
     items.erase(std::remove_if(items.begin(), items.end(),
                                 [this](const std::string &item) { return !isArchiveHistoryEntry(item); }),
@@ -20044,7 +20194,7 @@ bool Application::handleMouseClickImpl(int row, int column) {
   }
   // 2026-10-07追加、直接のユーザー依頼("フォント一覧からはクリックでも選択可能に"): ^J^Fのフォント一覧も
   // Directory等と同じ「1回目で選択、2回目でそのフォントに」。決めるのはEnterと同じ経路。
-  if (fontListShowing()) {
+  if (fontListShowing() || webShelfShowing()) {
     int idx = listBrowserView_.lineIndexAtRow(row);
     if (idx < 0) return false;
     if (idx == listBrowserView_.cursorIndex()) return openSelectedListEntry();

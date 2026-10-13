@@ -2876,6 +2876,15 @@ class Application {
   ApplicationMode fontListReturnMode_ = ApplicationMode::Directory;
   std::optional<std::pair<std::string, std::string>> pendingFontChoice_;
   bool fontListShowing() const;
+  // usilic-webの本棚の一覧(openUsilicWeb()参照)。webShelfShowing()はfontListShowing()と同じく、一覧が今の
+  // ListBrowserの中身である間だけ真。
+  bool openUsilicWeb(const std::string &url);
+  bool fetchUsilicWebBook(const std::string &base, const std::string &name);
+  bool webShelfShowing() const;
+  bool webShelfActive_ = false;
+  std::string webShelfBase_;
+  std::vector<std::string> webShelfNames_;
+  ApplicationMode webShelfReturnMode_ = ApplicationMode::Directory;
   bool archiveListPending_ = false;  // ^J^A: 次のstartPromptHistoryRecall()をアーカイブだけにする
   bool partListPending_ = false;  // ^J^P: 次のstartPromptHistoryRecall()を「"文字列"」付き(PART)だけにする
   bool executeOpenWorkList();       // K-97
@@ -3252,6 +3261,8 @@ private:
   // 2026-10-02変更(.steering/20261002-help-key-usilicrc-reorg/): TUTORIALはHELPへ改名。
   // `~/.local/lib/usilic/HELP`、無ければ`/usr/local/lib/usilic/HELP`(コンストラクタ参照)。^Hは
   // これを^I(タブ)でCUTし(startHelp())、^KはKEY(「：」でCUT、startKey())。^JaでHELP.enと切り替える。
+  // usilic-webの本棚から落とした本の置き場(~/.local/usilic-web/texts、openUsilicWeb()参照)。
+  std::string usilicWebTextDirectory_;
   std::string helpPath_;
   // 2026-09-14追加、直接のユーザー依頼("モード名はTUTORIALだが読み込む
   // ファイルをTUTORIALとTUTORIAL.enとで切り替えを行う^Jaを復活して

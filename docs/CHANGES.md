@@ -30455,3 +30455,22 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      これならopenEpubPromptSpecial()がFILE履歴へ積み、^J^Eの一覧の絞り込み(EPUBだけ)でも残す。一覧で選ぶ・
      ^X^Fの入力欄に入れると、openRecentFileEntry()が^Jeに入れた時と同じく^Owの今の対処で開く。^J^Jの戻り先からは除く。
    - **確認**: make usilicのビルドとmake install/appのみ。
+
+806. **2026-10-14: ^J^Eにhttp://localhost/usilic-web/を最初から載せ、^Owの対処がEpubなら本棚から落としてEPUB画面で開く**
+   - **経緯**: 直接のユーザー依頼("^J^Eの一覧に最初から「http://localhost/usilic-web」が入っていて、ブラウザから同URLを
+     入れたときはブラウザで、EPUBから踏んだときは~/.local/usilic-web/texts/へダウンロードしたのちEPUB画面で表示")。
+     確認への回答: 分け方は「^Owの今の対処で」、~/.local/usilic-web/texts/に置いた.epubが本棚の一覧に出ること、
+     リポジトリに見本の.epubを含めること。
+   - **usilic**: ^J^Eの一覧(EPUBだけの絞り込みの後)に、usilic-webのURLが無ければhttp://localhost/usilic-web/を先頭に
+     足す(履歴には積まない)。openEpubWebLink()は^Owの対処がEpubでusilic-webのURLならopenUsilicWeb()へ。本の名前
+     (?f=)が無ければcurlでindex.php?list=1を読んでListBrowserに出し(名前の欄は"WEB"、^Gで戻る、クリックも)、選んだ本・
+     ?f=の本はfetchUsilicWebBook()がget.php?f=で~/.local/usilic-web/texts/へ落としてopenRecentFileEntry()で開く
+     (.epubはEPUB画面)。localhostで既にあれば落とさない。認証は~/.netrc(curl --netrc-optional)。
+   - **usilic-web**: index.php?list=1(名前を1行ずつ)とget.php(原稿をそのまま)を足した。config.phpはmacOSなら
+     ~/.local/usilic-web/{texts,books,marks}(config.phpの持ち主のホーム)。EPUBの展開はbook_dir()(common.php)で、
+     展開が無いか.epubの方が新しければ開いた時に展開する(cp・scpで置いた.epubも読める)。READMEにmacOS(Homebrewの
+     httpd+php、127.0.0.1:80、認証無し)の設置とusilicからの使い方。
+   - **見本**: src/web/sample/sample.epub(宮沢賢治「雨ニモマケズ」、縦書き、ルビ付き)。make installが
+     ~/.local/usilic-web/の下を作り、見本を(無ければ)置く。
+   - **その他**: usilicrc(.en)のURL節のEpubの説明、src/HELP_.txtの[EPUB]。
+   - **確認**: make usilicのビルドとmake install/appのみ。PHPは手元に無く未確認(macOSでのhttpdの設置も未実施)。

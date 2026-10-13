@@ -187,6 +187,10 @@ install: $(BUILD_DIR)/usilic
 	# 2026-10-04: ページの中のリンク先をまとめてPDFにする(tools/urls2pdf.py参照、加えてpypdfが要る)。
 	install -m 755 tools/urls2pdf $(LIB_DIR)/urls2pdf
 	install -m 644 tools/urls2pdf.py $(LIB_DIR)/urls2pdf.py
+	# 2026-10-14: usilic-web(src/web/)の原稿置き場(^J^Eのhttp://localhost/usilic-web/から落とした本もここ、macOSの
+	# src/web/config.phpもここを使う)と、見本の.epub(既にあれば上書きしない)。
+	install -d $(HOME)/.local/usilic-web/texts $(HOME)/.local/usilic-web/books $(HOME)/.local/usilic-web/marks
+	if [ ! -f $(HOME)/.local/usilic-web/texts/sample.epub ]; then install -m 644 ../web/sample/sample.epub $(HOME)/.local/usilic-web/texts/sample.epub; fi
 
 # macOS .app bundle (2026-08-24, docs/CHANGES.md item 421, a direct
 # user request: "アイコンをクリックして起動する形にはできる？"):

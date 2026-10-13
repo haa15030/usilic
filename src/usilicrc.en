@@ -302,7 +302,9 @@ URL
 #   Term  run program with the URL in the terminal (like EXEC)
 #   Copy  pass the URL to program's standard input (copy to the clipboard)
 #   Look  Quick Look (macOS only, no program needed)
-#   Epub  for a link to a "Shosetsuka ni Naro" work, make an EPUB with program
+#   Epub  for a usilic-web URL (src/web/README), download a book chosen from
+#         its shelf to ~/.local/usilic-web/texts and open it (curl is needed).
+#         For a link to a "Shosetsuka ni Naro" work, make an EPUB with program
 #         (narou2epub) in ~/.usilic/data and open it
 #         (runs in SHELL). lxml, ebooklib, requests and Pillow are needed (see
 #         ~/.local/lib/usilic/narou2epub's comment)

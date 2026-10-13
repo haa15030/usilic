@@ -15,7 +15,7 @@ $TYPES = [
 $parts = explode('/', ltrim($_SERVER['PATH_INFO'] ?? '', '/'), 2);
 $name = $parts[0];
 $inner = $parts[1] ?? '';
-if (doc_path($name, 'epub') === false || $inner === '') {
+if ($inner === '' || book_dir($name) === false) {
     http_response_code(404);
     exit;
 }
@@ -25,7 +25,7 @@ foreach (explode('/', $inner) as $seg) {
         exit;
     }
 }
-$root = realpath($BOOK_DIR . '/' . $name);
+$root = realpath(book_dir($name));
 $path = realpath($root . '/' . $inner);
 if ($root === false || $path === false || strpos($path, $root . '/') !== 0 || !is_file($path)) {
     http_response_code(404);
