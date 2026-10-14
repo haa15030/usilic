@@ -80,6 +80,15 @@ constexpr SDL_Color kHighlightCurrentBgColor{205, 0, 205, 255};
 constexpr SDL_Color kHighlightCurrentFgColor{176, 226, 255, 255};
 constexpr SDL_Color kHighlightBgColor{175, 238, 238, 255};
 
+// 2026-10-14、直接のユーザー依頼("リンクでないアンダーラインがイタリック文字。MSゴシックではたとえGUIでも斜体に
+// ならず分別できない…リンクでないアンダーラインの文字装飾は、.appのデフォルト背景色が黒、を考慮して黒寄りグレー
+// (辛うじて判別可能レベル)のハイライトで表示してみて"): 斜体(Display::Attribute::Italic、EPUBの<i>/<em>、HELPの
+// \fI等)の字は、背景を前景色へ少しだけ寄せた色(既定の黒地・白字なら暗い灰色)で塗る。下線はリンク専用のまま。
+SDL_Color italicBackground(SDL_Color bg, SDL_Color fg) {
+  auto mix = [](Uint8 b, Uint8 f) { return static_cast<Uint8>(b + (f - b) * 0.18); };
+  return SDL_Color{mix(bg.r, fg.r), mix(bg.g, fg.g), mix(bg.b, fg.b), 255};
+}
+
 // Display::Attribute::Color自身のコメント参照(2026-09-26追加): 色番号
 // (256色パレット/24bit直接指定)をRGBへ。基本16色は、本物の端末と違い
 // ウィンドウ側に利用者の配色設定が無いので、xtermの既定値を使う。
@@ -1537,6 +1546,7 @@ void GraphicalDisplay::renderCellBackground(int row, int col) {
   // 2026-09-26: ANSIの色(Cell::fgColor/bgColor)を反映。反転表示なら入れ替える。
   SDL_Color bg = cell.bgColor != Display::kDefaultColor ? ansiColorToSdl(cell.bgColor) : impl_->bg;
   if (cell.standout) bg = cell.fgColor != Display::kDefaultColor ? ansiColorToSdl(cell.fgColor) : impl_->fg;
+  else if (cell.italic && cell.bgColor == Display::kDefaultColor) bg = italicBackground(impl_->bg, impl_->fg);
   // kHighlightCurrentBgColor自身のコメント参照――standoutの結果を
   // 上書きする(この用途では、たまたまカーソル/マークの反転表示と
   // 重なっても、マッチの背景ハイライトの方を優先して常に見える
@@ -1559,6 +1569,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
   SDL_Color fg = cell.fgColor != Display::kDefaultColor ? ansiColorToSdl(cell.fgColor) : impl_->fg;
   SDL_Color bg = cell.bgColor != Display::kDefaultColor ? ansiColorToSdl(cell.bgColor) : impl_->bg;
   if (cell.standout) std::swap(fg, bg);
+  else if (cell.italic && cell.bgColor == Display::kDefaultColor) bg = italicBackground(impl_->bg, impl_->fg);
   // kHighlightCurrentBgColor自身のコメント参照(2026-09-10改訂: 前景色
   // だけの初版から、背景色+コントラストの取れた前景色のペアへ。
   // 2026-09-19追記: 現在位置の一致(highlightCurrent)だけがこのfg+bg
@@ -3894,6 +3905,13 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       SDL_Rect cellRect{Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y, width * impl_->cellWidth,
                          impl_->cellHeight};
       SDL_SetRenderDrawColor(impl_->renderer, runBg.r, runBg.g, runBg.b, 255);
+      SDL_RenderFillRect(impl_->renderer, &cellRect);
+    }
+    if (wantItalic && !wantStandout && wantBg == Display::kDefaultColor) {  // italicBackground()参照
+      SDL_Color itBg = italicBackground(impl_->bg, impl_->fg);
+      SDL_Rect cellRect{Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y, width * impl_->cellWidth,
+                         impl_->cellHeight};
+      SDL_SetRenderDrawColor(impl_->renderer, itBg.r, itBg.g, itBg.b, 255);
       SDL_RenderFillRect(impl_->renderer, &cellRect);
     }
     // renderCellBackground()自身のkHighlightCurrentBgColorコメント
