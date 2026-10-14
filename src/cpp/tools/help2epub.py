@@ -2,9 +2,14 @@
 # usilic -n が作るHELPのroff(doc/HELP.ja.1)を横書きのEPUB3にする(試作)。
 # 使い方: python3 src/cpp/tools/help2epub.py doc/HELP.ja.1 src/HELP.epub
 # 章(h2)ごとに1ファイル、見出し(INFO等、h3)は目次の入れ子。字下げ(.in/.ti)はpadding-left/text-indent(1n=0.5em)。
+# 「後述 FILE」「前述 [EPUB] 参照」のモード名は巻末の注釈(KDPの推奨どおりaside epub:type="footnote"と
+# 両方向のリンク)へのリンクにする。注釈の中身は、入力と同じ所のHELP.notes(doc/HELP.notes)に書いた文、
+# 無ければその見出しの節全体の写し。目次(nav)はspineに入れない(KDPの論理目次としては残る)。
 import datetime, html, re, sys, unicodedata, uuid, zipfile
 
 src, out = sys.argv[1], sys.argv[2]
+import os
+notes_path = os.path.join(os.path.dirname(src) or '.', 'HELP.notes')
 lines = open(src, encoding='utf-8').read().split('\n')
 
 def width(s):
@@ -137,27 +142,108 @@ def xhtml(title, body):
             '<link rel="stylesheet" type="text/css" href="../Style/style.css"/></head>\n<body>\n%s</body>\n</html>\n'
             % (html.escape(title), body))
 
-files = []
+# 見出し(h3)ごとの節(次の見出しまで)。注釈の中身の写しに使う。
+sections = {}  # 見出しの題 -> (章の番号, 節の番号, ブロック)
 for n, ch in enumerate(chapters, 1):
-    body, sub = [], 0
-    pending_sp = False
+    k = -1
     for b in ch['blocks']:
+        if b[0] == 'h' and b[1] == 3:
+            k += 1
+            sections[b[2]] = (n, k, [b])
+        elif b[0] == 'h':
+            k = -1
+        elif k >= 0:
+            sections[ch['subs'][k]][2].append(b)
+
+# HELP.notes: "@見出しの題"(例 "@USILIC：アクセス履歴の一覧")の行の後に注釈の文。空行で段落。#の行は読まない。
+written = {}
+if os.path.exists(notes_path):
+    key = None
+    for l in open(notes_path, encoding='utf-8').read().split('\n'):
+        if l.startswith('#'): continue
+        if l.startswith('@'):
+            key = l[1:].strip()
+            written[key] = []
+        elif key is not None:
+            written[key].append(l)
+
+def note_target(name, after):
+    """モード名nameの見出しの題。同じ名前が2つ(USILIC)なら、続く「の ^Ou」等のキーを節に含む方、無ければ後の方。"""
+    cands = [t for t in sections if re.sub(r'\s+', ' ', t.split('：', 1)[0]) == name]
+    if len(cands) > 1:
+        m = re.match(r'[\s\u00a0]*の[\s\u00a0]*(\^[A-Za-z\[\]^]+)', after)
+        if m:
+            hit = [t for t in cands if any(b[0] == 'p' and m.group(1) + '：' in b[4] for b in sections[t][2])]
+            if hit: return hit[0]
+    return cands[-1] if cands else None
+
+notes = {}   # 見出しの題 -> 注釈のid
+backrefs = {}  # 注釈のid -> [(章のファイル, 参照のid)]
+REF = re.compile(r'(前述|後述)([\s\u00a0]*\[?)<b>([^<]+)</b>(\]?)')
+AND = re.compile(r'(epub:type="noteref"><b>[^<]+</b></a>\]?[\s\u00a0]*と[\s\u00a0]*\[?)<b>([^<]+)</b>')  # 「後述 HELP と KEY」
+def link_refs(h, fname):
+    def ref(name, before, after):
+        target = note_target(name, after)
+        if not target: return None
+        nid = notes.setdefault(target, 'n%d' % (len(notes) + 1))
+        rid = 'r%d' % (sum(len(v) for v in backrefs.values()) + 1)
+        backrefs.setdefault(nid, []).append((fname, rid))
+        return '%s<a id="%s" href="notes.xhtml#%s" epub:type="noteref"><b>%s</b></a>' % (before, rid, nid, name)
+    def rep(m):
+        r = ref(m.group(3), m.group(1) + m.group(2), h[m.end():])
+        return r + m.group(4) if r else m.group(0)
+    h = REF.sub(rep, h)
+    while True:
+        m = AND.search(h)
+        r = m and ref(m.group(2), m.group(1), h[m.end():])
+        if not r: return h
+        h = h[:m.start()] + r + h[m.end():]
+
+def render(blist, fname=None, in_note=False):
+    body, sub, pending_sp = [], 0, False
+    for b in blist:
         if b[0] == 'sp':
             pending_sp = True
             continue
         if b[0] == 'h':
-            tag = 'h%d' % b[1]
-            idattr = ' id="s%d"' % sub if b[1] == 3 else ' id="top"'
-            if b[1] == 3: sub += 1
-            body.append('<%s%s>%s</%s>\n' % (tag, idattr, b[3], tag))
+            if in_note:
+                body.append('<p class="nh">%s</p>\n' % b[3])
+            else:
+                tag = 'h%d' % b[1]
+                idattr = ' id="s%d"' % sub if b[1] == 3 else ' id="top"'
+                if b[1] == 3: sub += 1
+                body.append('<%s%s>%s</%s>\n' % (tag, idattr, b[3], tag))
         else:
             _, i, f, h, raw = b
             c = [cls(i, f)]
             if pending_sp: c.append('sp')
             if re.search(r'^\s|\S {2,}|\t', raw): c.append('pre')
+            if fname: h = link_refs(h, fname)
             body.append('<p class="%s">%s</p>\n' % (' '.join(c), h if h.strip('\u00a0 ') else '\u00a0'))
         pending_sp = False
-    files.append(('Text/ch%02d.xhtml' % n, xhtml(ch['title'], ''.join(body))))
+    return body
+
+files = []
+for n, ch in enumerate(chapters, 1):
+    fname = 'ch%02d.xhtml' % n
+    files.append(('Text/' + fname, xhtml(ch['title'], ''.join(render(ch['blocks'], fname)))))
+
+# 巻末の注釈。注釈の頭に、参照した所へ戻るリンク(複数なら↩1 ↩2…)。
+asides = []
+for target, nid in sorted(notes.items(), key=lambda kv: int(kv[1][1:])):
+    refs = backrefs[nid]
+    back = ' '.join('<a epub:type="noteref" href="%s#%s">↩%s</a>' % (f, r, k + 1 if len(refs) > 1 else '')
+                    for k, (f, r) in enumerate(refs))
+    head = '<p class="nh">%s <b>%s</b></p>\n' % (back, html.escape(target))
+    if target in written:
+        paras = re.split(r'\n\s*\n', '\n'.join(written[target]).strip())
+        inner = ''.join('<p>%s</p>\n' % html.escape(t).replace('\n', '<br/>') for t in paras if t.strip())
+    else:
+        inner = ''.join(render(sections[target][2][1:], in_note=True))
+    asides.append('<aside id="%s" epub:type="footnote">\n%s%s</aside>\n' % (nid, head, inner))
+if asides:
+    chapters.append({'title': '注釈', 'blocks': [], 'subs': [], 'file': 'notes'})
+    files.append(('Text/notes.xhtml', xhtml('注釈', '<h2 id="top">注釈</h2>\n' + ''.join(asides))))
 
 css = ['html { writing-mode: horizontal-tb; }',
        'body { font-family: serif; line-height: 1.7; margin: 0 1em; }',
@@ -165,6 +251,8 @@ css = ['html { writing-mode: horizontal-tb; }',
        'h3 { font-size: 115%; font-family: sans-serif; margin: 1em 0 0.3em; padding-left: 2em; }',
        'p { margin: 0; }',
        'p.sp { margin-top: 0.8em; }',
+       'p.nh { margin-top: 1.2em; }',
+       'aside { margin: 0 0 1em; }',
        'p.pre { font-family: "Osaka-Mono", "MS Gothic", "Noto Sans Mono CJK JP", monospace; }']
 for name, (i, f) in sorted(classes.items(), key=lambda kv: kv[1]):
     css.append('p.%s { padding-left: %gem; text-indent: %gem; }' % (name, i * 0.5, (f - i) * 0.5))
@@ -172,7 +260,7 @@ files.append(('Style/style.css', '\n'.join(css) + '\n'))
 
 navitems = []
 for n, ch in enumerate(chapters, 1):
-    item = '<li><a href="ch%02d.xhtml#top">%s</a>' % (n, html.escape(ch['title']))
+    item = '<li><a href="%s.xhtml#top">%s</a>' % (ch.get('file', 'ch%02d' % n), html.escape(ch['title']))
     if ch['subs']:
         item += '\n<ol>' + ''.join('<li><a href="ch%02d.xhtml#s%d">%s</a></li>' % (n, k, html.escape(t))
                                    for k, t in enumerate(ch['subs'])) + '</ol>\n'
@@ -186,10 +274,11 @@ version = plain(th.group(4)) if th else 'usilic'
 modified = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 manifest = ['<item id="nav" href="Text/nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>',
             '<item id="css" href="Style/style.css" media-type="text/css"/>']
-spine = ['<itemref idref="nav"/>']
-for n in range(1, len(chapters) + 1):
-    manifest.append('<item id="ch%02d" href="Text/ch%02d.xhtml" media-type="application/xhtml+xml"/>' % (n, n))
-    spine.append('<itemref idref="ch%02d"/>' % n)
+spine = []  # navは入れない(目次のページは出さない)
+for n, ch in enumerate(chapters, 1):
+    f = ch.get('file', 'ch%02d' % n)
+    manifest.append('<item id="%s" href="Text/%s.xhtml" media-type="application/xhtml+xml"/>' % (f, f))
+    spine.append('<itemref idref="%s"/>' % f)
 opf = '''<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id" xml:lang="ja">
 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
@@ -219,6 +308,9 @@ with zipfile.ZipFile(out, 'w') as z:
     z.writestr('META-INF/container.xml', container, compress_type=zipfile.ZIP_DEFLATED)
     for name, data in files:
         z.writestr('OEBPS/' + name, data, compress_type=zipfile.ZIP_DEFLATED)
-print('%d chapters, %d blocks, %d indent classes -> %s' % (len(chapters), len(blocks), len(classes), out))
+print('%d chapters, %d blocks, %d indent classes, %d notes (%d refs) -> %s' % (
+    len(chapters), len(blocks), len(classes), len(notes), sum(len(v) for v in backrefs.values()), out))
+for t, nid in notes.items():
+    print('  note', nid, t, '(HELP.notes)' if t in written else '(節の写し)', [r for _, r in backrefs[nid]])
 for ch in chapters:
     print(' ', ch['title'], '/', len(ch['subs']))
