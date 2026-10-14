@@ -295,7 +295,7 @@ var Reader = function (opt) {
     // サイズが変化し指を離すと確定"): 指を動かしている間も、1フレームに1回まで(requestAnimationFrame)大きさを
     // 変えて見せる。全部の組み直しは重いので、その間はfont.preview(EPUBは読んでいる章だけ測り直す、無ければ
     // font.apply)で、指を離した時にsetFont()で確定する。刻みはA−/A＋の半分(細かく追うため)。位置はA−/A＋と
-    // 同じく変える前の所へ戻す。
+    // 同じく変える前の所へ戻す。(指を動かしている間の組み直しは、下の同日の依頼で画面のtransformに替えた。)
     // 同日、直接のユーザー依頼("ピンチが右端で起きるのは位置の記憶用かもしれないが出来れば中央がいい…中央確定で
     // いい"): 基準は画面の右端(A−/A＋のfontAnchor)ではなく画面中央の字(pinchAnchor)。縦書きはその字を画面上の
     // 同じ横位置(pinchX)に留め、横書きの段組み(opt.charXがnull)はその字の段へjump()する。
@@ -312,20 +312,20 @@ var Reader = function (opt) {
             scroller.scrollLeft += x - pinchX;
         }
     }
-    var pinchSize = 0, pinchShown = 0, pinchFrame = 0;
+    // 同日、直接のユーザー依頼("Kinoppy仕様では画面全体が画像のように中央へ収縮・中央から拡大したのち指を離した後
+    // タップで全体に広がる。タップは要らないので指を離した時点でそうなる"): 指を動かしている間は組み直さず、
+    // 画面(scroller)を画像のように中央を中心にCSSのtransformで拡大・縮小して見せる。指を離した時に字の大きさを
+    // 変えて組み直し、中央の字を保つ。
+    var pinchSize = 0, pinchScale = 1, pinchFrame = 0;
     function touchDistance(e) {
         var a = e.touches[0], b = e.touches[1];
         return Math.hypot(a.screenX - b.screenX, a.screenY - b.screenY);
     }
     function showPinch() {
         pinchFrame = 0;
-        if (!pinchStart || pinchSize === pinchShown) {
-            return;
+        if (pinchStart) {
+            scroller.style.transform = 'scale(' + pinchScale + ')';
         }
-        pinchShown = pinchSize;
-        (font.preview || font.apply)(pinchSize, pinchAnchor);
-        keepPinchCenter();
-        repaint();
     }
     function pinch(target) {
         target.addEventListener('touchstart', function (e) {
@@ -335,7 +335,9 @@ var Reader = function (opt) {
                 var x = pinchAnchor && opt.charX ? opt.charX(pinchAnchor) : null;
                 pinchX = x === null ? 0 : x;
                 pinchStart = { dist: Math.max(touchDistance(e), 1), size: fontSize };
-                pinchSize = pinchShown = fontSize;
+                pinchSize = fontSize;
+                pinchScale = 1;
+                scroller.style.transformOrigin = '50% 50%';
                 e.preventDefault();
             }
         }, { passive: false });
@@ -344,34 +346,36 @@ var Reader = function (opt) {
                 return;
             }
             e.preventDefault();
+            var want = Math.min(font.max, Math.max(font.min, pinchStart.size * touchDistance(e) / pinchStart.dist));
+            pinchScale = want / pinchStart.size;
             var unit = font.step / 2;
-            var size = Math.round(pinchStart.size * touchDistance(e) / pinchStart.dist / unit) * unit;
-            size = Math.min(font.max, Math.max(font.min, size));
+            var size = Math.min(font.max, Math.max(font.min, Math.round(want / unit) * unit));
             if (size !== pinchSize) {
                 pinchSize = size;
                 toast('文字の大きさ ' + size + (font.unit || (font.key === 'efs' ? '%' : 'px')));
-                if (!pinchFrame) {
-                    pinchFrame = requestAnimationFrame(showPinch);
-                }
+            }
+            if (!pinchFrame) {
+                pinchFrame = requestAnimationFrame(showPinch);
             }
         }, { passive: false });
         function end(e) {
             if (!pinchStart || e.touches.length >= 2) {
                 return;
             }
-            var size = pinchSize, shown = pinchShown;
+            var size = pinchSize;
             pinchStart = null;
             if (pinchFrame) {
                 cancelAnimationFrame(pinchFrame);
                 pinchFrame = 0;
             }
-            if (size !== fontSize || shown !== fontSize) {
-                fontSize = Math.min(font.max, Math.max(font.min, size));
+            scroller.style.transform = '';
+            if (size !== fontSize) {
+                fontSize = size;
                 save(font.key, fontSize);
                 font.apply(fontSize);
                 keepPinchCenter();
-                repaint();
             }
+            repaint();
             pinchAnchor = null;
             fontAnchor = null;  // A−/A＋の基準は、次に押した時の画面から取り直す
         }
