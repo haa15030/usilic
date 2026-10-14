@@ -1044,6 +1044,14 @@ class BodyConverter {
   void changeStyle(int &counter, int delta, const char *tag) {
     int before = counter;
     counter = std::max(0, counter + delta);
+    // 2026-10-14、直接のユーザー報告("`EXEC`手前の空白にもアンダーラインがある。`file(1)`のハイライトも同様。
+    // モードライン解説の実例もそれが理由で全部繋がっている"=jk/=jl): 「が <i>usilicrc</i>」の空白は保留
+    // (pendingSpace_)のまま次の字の直前に出すので、開きのタグの後ろ(装飾の内側)に入っていた。開く前に出す
+    // (和文どうしの間の改行は空白にしない、text()の判定は次の字が分からないので、改行を含む保留はそのまま)。
+    if (before == 0 && counter > 0 && pendingSpace_ && lineVisible_ && !pendingNewline_) {
+      line_ += ' ';
+      pendingSpace_ = false;
+    }
     if (before == 0 && counter > 0 && !line_.empty()) line_ += std::string("<") + tag + ">";
     if (before > 0 && counter == 0 && !line_.empty()) line_ += std::string("</") + tag + ">";
   }
