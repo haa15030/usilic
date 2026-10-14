@@ -1393,6 +1393,11 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
       continue;
     }
     view.redraw();
+    // 2026-10-15、直接のユーザー報告("-c起動では選択行の無いベタファイル表示の慣性スクロール時にブロックカーソルが
+    // いなくなる"): ハイライト行の無い画面(FILE等)は、端末のカーソルを先端行(上のcursorIndex_)へ置き直す。
+    // redraw()だけでは、カーソルは最後に描いた所(モードライン等)に残る。
+    view.syncVisibleCursor();
+    display.flush();
   }
 }
 
