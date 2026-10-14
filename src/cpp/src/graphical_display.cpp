@@ -80,16 +80,6 @@ constexpr SDL_Color kHighlightCurrentBgColor{205, 0, 205, 255};
 constexpr SDL_Color kHighlightCurrentFgColor{176, 226, 255, 255};
 constexpr SDL_Color kHighlightBgColor{175, 238, 238, 255};
 
-// 2026-10-14、直接のユーザー依頼("リンクでないアンダーラインがイタリック文字。MSゴシックではたとえGUIでも斜体に
-// ならず分別できない…リンクでないアンダーラインの文字装飾は、.appのデフォルト背景色が黒、を考慮して黒寄りグレー
-// (辛うじて判別可能レベル)のハイライトで表示してみて"): 斜体(Display::Attribute::Italic、EPUBの<i>/<em>、HELPの
-// \fI等)の字は、背景を前景色へ少しだけ寄せた色(既定の黒地・白字なら暗い灰色)で塗る。下線はリンク専用のまま。
-// 字は斜めにしない(同日、"`usilic(1)`、`usilicrc`とか斜体のままだけど？"、-cも同じ灰色、TerminalDisplay参照)。
-SDL_Color italicBackground(SDL_Color bg, SDL_Color fg) {
-  auto mix = [](Uint8 b, Uint8 f) { return static_cast<Uint8>(b + (f - b) * 0.18); };
-  return SDL_Color{mix(bg.r, fg.r), mix(bg.g, fg.g), mix(bg.b, fg.b), 255};
-}
-
 // Display::Attribute::Color自身のコメント参照(2026-09-26追加): 色番号
 // (256色パレット/24bit直接指定)をRGBへ。基本16色は、本物の端末と違い
 // ウィンドウ側に利用者の配色設定が無いので、xtermの既定値を使う。
@@ -1547,7 +1537,6 @@ void GraphicalDisplay::renderCellBackground(int row, int col) {
   // 2026-09-26: ANSIの色(Cell::fgColor/bgColor)を反映。反転表示なら入れ替える。
   SDL_Color bg = cell.bgColor != Display::kDefaultColor ? ansiColorToSdl(cell.bgColor) : impl_->bg;
   if (cell.standout) bg = cell.fgColor != Display::kDefaultColor ? ansiColorToSdl(cell.fgColor) : impl_->fg;
-  else if (cell.italic && cell.bgColor == Display::kDefaultColor) bg = italicBackground(impl_->bg, impl_->fg);
   // kHighlightCurrentBgColor自身のコメント参照――standoutの結果を
   // 上書きする(この用途では、たまたまカーソル/マークの反転表示と
   // 重なっても、マッチの背景ハイライトの方を優先して常に見える
@@ -1570,7 +1559,6 @@ void GraphicalDisplay::renderCell(int row, int col) {
   SDL_Color fg = cell.fgColor != Display::kDefaultColor ? ansiColorToSdl(cell.fgColor) : impl_->fg;
   SDL_Color bg = cell.bgColor != Display::kDefaultColor ? ansiColorToSdl(cell.bgColor) : impl_->bg;
   if (cell.standout) std::swap(fg, bg);
-  else if (cell.italic && cell.bgColor == Display::kDefaultColor) bg = italicBackground(impl_->bg, impl_->fg);
   // kHighlightCurrentBgColor自身のコメント参照(2026-09-10改訂: 前景色
   // だけの初版から、背景色+コントラストの取れた前景色のペアへ。
   // 2026-09-19追記: 現在位置の一致(highlightCurrent)だけがこのfg+bg
@@ -1634,7 +1622,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
   int style = TTF_STYLE_NORMAL;
   if (cell.bold) style |= TTF_STYLE_BOLD;
   if (underline) style |= TTF_STYLE_UNDERLINE;
-  // 斜体は斜めにせず背景の灰色で示す(italicBackground()参照)
+  if (cell.italic) style |= TTF_STYLE_ITALIC;
 
   // メインフォントに欠けているグリフについては、CJK対応フォント
   // (loadCjkFallbackFont()自身のコメント参照)へフォールバックする
@@ -1974,7 +1962,7 @@ void GraphicalDisplay::renderCursor() {
   int style = TTF_STYLE_NORMAL;
   if (cell.bold) style |= TTF_STYLE_BOLD;
   if (cell.underline) style |= TTF_STYLE_UNDERLINE;
-  // 斜体は斜めにせず背景の灰色で示す(italicBackground()参照)
+  if (cell.italic) style |= TTF_STYLE_ITALIC;
 
   // renderCell()と同じメイン/フォールバックフォントのグリフ有無の
   // 判定――それ自身のコメント参照。
@@ -3908,13 +3896,6 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       SDL_SetRenderDrawColor(impl_->renderer, runBg.r, runBg.g, runBg.b, 255);
       SDL_RenderFillRect(impl_->renderer, &cellRect);
     }
-    if (wantItalic && !wantStandout && wantBg == Display::kDefaultColor) {  // italicBackground()参照
-      SDL_Color itBg = italicBackground(impl_->bg, impl_->fg);
-      SDL_Rect cellRect{Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y, width * impl_->cellWidth,
-                         impl_->cellHeight};
-      SDL_SetRenderDrawColor(impl_->renderer, itBg.r, itBg.g, itBg.b, 255);
-      SDL_RenderFillRect(impl_->renderer, &cellRect);
-    }
     // renderCellBackground()自身のkHighlightCurrentBgColorコメント
     // 参照――wantStandoutの背景塗りと同じ理屈だが、standoutと重なった
     // 場合はこちらを優先する(常に見えてほしいマッチハイライトなので、
@@ -3966,7 +3947,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       int style = TTF_STYLE_NORMAL;
       if (wantBold) style |= TTF_STYLE_BOLD;
       if (wantUnderline) style |= TTF_STYLE_UNDERLINE;
-      // 斜体は斜めにせず背景の灰色で示す(italicBackground()参照)
+      if (wantItalic) style |= TTF_STYLE_ITALIC;
       // renderCell()と同じ半角用ヒンティングの調整――それ自身のコメント
       // 参照(項目264、項目263のTTF_HINTING_LIGHTを置き換えたもの)。
       // (TTF_SetFontStyle()/TTF_SetFontHinting()自体は、下で呼ばれる
