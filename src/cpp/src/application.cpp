@@ -9676,7 +9676,13 @@ bool Application::clickEpubVertical(int row, int column) {
     setEpubVerticalView(epubVerticalFirst_, static_cast<int>(c), cells[row].link);
     return activateEpubVerticalColumn(c);
   }
-  if (c == epubVerticalCursor_) return activateEpubVerticalColumn(c);
+  if (c == epubVerticalCursor_) {
+    // 2026-10-14(clickEpubHorizontalLink()の後の同日の注記参照): リンクは字のクリック(上)だけで飛び、
+    // 列のリンクでない所のクリックでは飛ばない。画像は従来どおり2回目で開く。
+    auto target = epubVerticalColumnTarget(c);
+    if (target && (target->link || !target->url.empty())) return true;
+    return activateEpubVerticalColumn(c);
+  }
   setEpubVerticalView(epubVerticalFirst_, static_cast<int>(c));  // 1回目は列カーソルを動かすだけ
   epubVerticalView_.redraw();
   epubVerticalView_.syncVisibleCursor();  // -cの端末のカーソルを列カーソルの頭へ(setEpubVerticalView()参照)
@@ -20315,14 +20321,12 @@ bool Application::handleMouseClickImpl(int row, int column) {
   if (currentMode_ == ApplicationMode::File && isEpubFile(fileMode_.currentFile())) {
     int idx = fileView_.lineIndexAtRow(row);
     if (idx >= 0 && clickEpubHorizontalLink(idx, column)) return true;  // 下線の字のクリック
+    // 2026-10-14、直接のユーザー依頼("画面ドラッグの際、行の中にリンクがあると注釈へ。予期せぬ動きになって
+    // しまうので行ではなくリンクをクリックで飛んでほしい"): リンクの行の、リンク(下線)でない所のクリックでは
+    // 飛ばない(リンクの字は上のclickEpubHorizontalLink())。画像の行は従来どおり2回目で開く。
     if (idx >= 0 && fileView_.isColumnWithinRowText(idx, column) &&
-        (fileMode_.hasEpubLinkAt(idx) || fileView_.lines()[idx].text.find("[image: ") != std::string::npos)) {
-      if (idx == fileView_.cursorIndex())
-        return fileMode_.followEpubLink() || openEpubWebLinkAtCursor() || openEpubLineImage(fileView_);
-      if (fileMode_.hasEpubLinkAt(idx)) {  // リンクは1回目で飛ぶ(clickEpubVertical()の2026-09-30の注記参照)
-        fileView_.setCursorIndex(idx);
-        return fileMode_.followEpubLink() || openEpubWebLinkAtCursor();
-      }
+        fileView_.lines()[idx].text.find("[image: ") != std::string::npos) {
+      if (idx == fileView_.cursorIndex()) return openEpubLineImage(fileView_);
       fileView_.setCursorIndex(idx);
       fileView_.redraw();
       return true;
