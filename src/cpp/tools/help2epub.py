@@ -185,10 +185,11 @@ def link_refs(h, fname):
     return REF.sub(rep, h)
 
 def render(blist, fname):
-    body, sub, pending_sp = [], 0, False
+    body, sub = [], 0
     for b in blist:
         if b[0] == 'sp':
-            pending_sp = True
+            # 空行(HELPの「#」の行、.sp)は、余白(margin)ではなく空の行にする(usilicのEPUB表示は余白を読まない)
+            body.append('<p class="blank"><br/></p>\n')
             continue
         if b[0] == 'h':
             tag = 'h%d' % b[1]
@@ -198,11 +199,9 @@ def render(blist, fname):
         else:
             _, i, f, h, raw = b
             c = [cls(i, f)]
-            if pending_sp: c.append('sp')
             if re.search(r'^\s|\S {2,}|\t', raw): c.append('pre')
             h = link_refs(h, fname)
             body.append('<p class="%s">%s</p>\n' % (' '.join(c), h if h.strip('\u00a0 ') else '\u00a0'))
-        pending_sp = False
     return body
 
 files = []
@@ -235,7 +234,6 @@ css = ['html { writing-mode: horizontal-tb; }',
        'h2 { font-size: 140%; font-family: sans-serif; margin: 1em 0 0.5em; }',
        'h3 { font-size: 115%; font-family: sans-serif; margin: 1em 0 0.3em; padding-left: 2em; }',
        'p { margin: 0; }',
-       'p.sp { margin-top: 0.8em; }',
        'p.nh { margin-top: 1.2em; }',
        'aside { margin: 0 0 1em; }',
        'p.rc { font-family: "Osaka-Mono", "MS Gothic", "Noto Sans Mono CJK JP", monospace; padding-left: 1em; }',
