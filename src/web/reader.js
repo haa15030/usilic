@@ -52,13 +52,18 @@ var Reader = function (opt) {
 
     var ready = false;
     var saveTimer = 0;
+    // 文字の大きさを変える前に読んでいた位置(setFont()参照)。そこから自分でスクロールするまで使う。
+    var fontAnchor = null, fontAnchorScroll = 0;
+    function anchored() {
+        return fontAnchor && Math.abs(scroller.scrollLeft - fontAnchorScroll) <= 1;
+    }
     function savePos() {
         if (!ready) {
             return;
         }
         clearTimeout(saveTimer);
         saveTimer = setTimeout(function () {
-            var m = opt.topPos();
+            var m = anchored() ? fontAnchor : opt.topPos();
             if (m) {
                 save('pos:' + file, JSON.stringify(m));
                 whereEl.textContent = opt.describe(m);
@@ -225,13 +230,20 @@ var Reader = function (opt) {
 
     var font = opt.font;
     var fontSize = +load(font.key, font.def) || font.def;
+    // 2026-10-14、直接のユーザー報告("フォントサイズを変えると現在地が大幅にズレまくるので直前の位置を記憶して
+    // おいてほしい"): 戻る先を押すたびに画面から取り直すと、戻った所のずれが積み重なる。最初に押す前の位置を
+    // 覚えておき、自分でスクロールするまでは何度押してもそこへ戻る(読んでいた位置の記録もそれにする)。
     function setFont(size) {
-        var keep = opt.topPos();
+        inertia.stop();
+        if (!anchored()) {
+            fontAnchor = opt.topPos();
+        }
         fontSize = Math.min(font.max, Math.max(font.min, size));
         save(font.key, fontSize);
         font.apply(fontSize);
-        if (keep) {
-            opt.jump(keep, false);
+        if (fontAnchor) {
+            opt.jump(fontAnchor, false);
+            fontAnchorScroll = scroller.scrollLeft;
         }
     }
 
