@@ -264,11 +264,62 @@ var Reader = function (opt) {
     onTap(document.getElementById('smaller'), function () { setFont(fontSize - font.step); });
     onTap(document.getElementById('larger'), function () { setFont(fontSize + font.step); });
 
+    // 2026-10-15、直接のユーザー依頼("ピンチで文字拡大縮小ができるのは反応今イチのKinnopyだけなので（Kindle、
+    // iBooksいずれも不能）助かる。よろしく"): 2本指の間隔の比で文字の大きさを変える。組み直し(章の測り直し)は
+    // 重いので、指を動かしている間は大きさをtoastに出すだけにし、離した時に1回だけsetFont()する
+    // (位置はA−/A＋と同じく変える前の所へ戻る)。ブラウザ自身の拡大は止める。
+    var pinchStart = null;  // {dist, size}
+    var pinchSize = 0;
+    function touchDistance(e) {
+        var a = e.touches[0], b = e.touches[1];
+        return Math.hypot(a.screenX - b.screenX, a.screenY - b.screenY);
+    }
+    function pinch(target) {
+        target.addEventListener('touchstart', function (e) {
+            if (e.touches.length === 2) {
+                inertia.stop();
+                pinchStart = { dist: Math.max(touchDistance(e), 1), size: fontSize };
+                pinchSize = fontSize;
+                e.preventDefault();
+            }
+        }, { passive: false });
+        target.addEventListener('touchmove', function (e) {
+            if (!pinchStart || e.touches.length !== 2) {
+                return;
+            }
+            e.preventDefault();
+            var size = Math.round(pinchStart.size * touchDistance(e) / pinchStart.dist / font.step) * font.step;
+            size = Math.min(font.max, Math.max(font.min, size));
+            if (size !== pinchSize) {
+                pinchSize = size;
+                toast('文字の大きさ ' + size + (font.unit || (font.key === 'efs' ? '%' : 'px')));
+            }
+        }, { passive: false });
+        function end(e) {
+            if (!pinchStart || e.touches.length >= 2) {
+                return;
+            }
+            var size = pinchSize;
+            pinchStart = null;
+            if (size !== fontSize) {
+                setFont(size);
+            }
+        }
+        target.addEventListener('touchend', end);
+        target.addEventListener('touchcancel', end);
+        // iOSのSafariは、viewportのuser-scalable=noがあってもピンチで拡大するので止める
+        target.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+    }
+    pinch(document);
+
     showFriction();
     font.apply(fontSize);
 
     return {
-        attach: inertia.attach,
+        attach: function (doc, win) {
+            inertia.attach(doc, win);
+            pinch(doc);
+        },
         restore: restore,
         toast: toast,
         fontSize: function () { return fontSize; }
