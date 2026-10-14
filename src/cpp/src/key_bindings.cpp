@@ -117,7 +117,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {84, "F-4 u"},     // ^J^Ou ~/.usilic/usilicrc
       {85, "F-4 e"},     // ^J^Oe ERROR
       {86, "F-4 s"},     // ^J^Os SHELLのログ(2026-09-27、^J^Olから)
-      {87, "F-2 h"},     // ^Oh   HELPの目次(CUT)と平文の切り替え(2026-10-06、^J^Ohから)
+      // (87: ^Oh HELPの目次(CUT)と平文の切り替え、2026-10-14廃止。番号は詰めない)
       {88, "F-4 d"},     // ^J^Od ~/.usilic/data/
       {89, "F-4 w"},     // ^J^Ow WORK
       {90, "C-h"},       // ^H    HELP

@@ -536,11 +536,6 @@ std::string truncateToPathPrefix(const std::string &path, int digit) {
 // 同じU+2060へ変換してから検索するので、この定数はそのまま生の
 // '\t'でよい(^Q^Iで打ち込む本物のCUT検索と全く同じ変換経路を共有)。
 const char *const kHelpPattern = "\t";
-// HELPの目次の章の行(2026-10-08、直接のユーザー依頼"HELPの検索も「行頭に^Iが無い」かつ「行末が^I」"): 行頭が
-// タブの行はページャー起動のKEYの行(startKey()参照)なので、章の見出し(行末がタブ)から外す。GrepSyntax::Basic。
-// 折り返し(PipeBuffer::wrapLine())でタブはU+2060+次のタブ位置までの空白になり(CutMode::split()がパターンの
-// タブも同じU+2060にする)、行末のタブの後には字下げの印(U+FEFF)も続くことがある。
-const char *const kHelpChapterPattern = "^[^\t].*\t[ \xEF\xBB\xBF]*$";
 
 // tempRootDirectory_自身のコメント(application.hpp)参照: 明示的な
 // `tempRootDirectory`(main()自身の/tmp/.usilic.<pid>、引数付きで
@@ -1299,8 +1294,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // Directory起点の選択(導出された名前ではなく、リテラルな"CUT"
     // ――名付けるべき単一のファイルが存在しない)を反映している。
     std::string name;
-    if (cutOrigin_ == CutOrigin::Help || cutOrigin_ == CutOrigin::Key) {
-      name = cutOrigin_ == CutOrigin::Key ? "KEY" : "HELP";
+    if (cutOrigin_ == CutOrigin::Key) {
+      name = "KEY";
     } else if (cutOrigin_ == CutOrigin::Directory) {
       name = "PART";
       // 2026-09-15追加、直接のユーザー方針("CUT、F/EGREPは[MAN、
@@ -1348,7 +1343,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       fields.trailing3 = name;
       return fields;
     }
-    if (cutOrigin_ == CutOrigin::Help || cutOrigin_ == CutOrigin::Key) {
+    if (cutOrigin_ == CutOrigin::Key) {
       return {name, trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", label};
     }
     // 2026-09-27変更、直接のユーザー依頼("選択後の戻り値が、一覧で選んだ行の
@@ -1388,8 +1383,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // Man/Locate/Du(2026-09-15追加、cutContentView_自身の同一の
     // 2026-09-15修正のコメント参照): 「所在地の宣言はモード名で
     // なされる」という同じ慣習に揃えている。
-    std::string name = (cutOrigin_ == CutOrigin::Help)     ? "HELP"
-                        : (cutOrigin_ == CutOrigin::Key)    ? "KEY"
+    std::string name = (cutOrigin_ == CutOrigin::Key)      ? "KEY"
                         : (cutOrigin_ == CutOrigin::Log)    ? "LOG"
                         : (cutOrigin_ == CutOrigin::Man)    ? "MAN"
                         : (cutOrigin_ == CutOrigin::Locate) ? "LOCATE"
@@ -1434,7 +1428,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       return {name, std::to_string(contentByteCount(cutView_)), /*fillTrailingToEdge=*/false,
               /*rightWatermark=*/ContentView::programWatermark(), ""};
     }
-    if ((cutOrigin_ == CutOrigin::Help || cutOrigin_ == CutOrigin::Key) && !cutMode_.parentPattern()) {
+    if (cutOrigin_ == CutOrigin::Key && !cutMode_.parentPattern()) {
       return {name, std::to_string(contentByteCount(cutView_)), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
               directoryMode_.currentDirectory()};
     }
@@ -3591,8 +3585,6 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::ToggleModeLineVisibility);
       case 's':  // ^O s : EPUBのスクロールの章区切り/連続(K-101、2026-10-03、2026-10-13に^O^Eから)
         return handleCommand(Command::ToggleEpubChapterBreaks);
-      case 'h':  // ^O h : HELPの目次(CUT)と平文の切り替え(K-87、旧^J^Oh、Command::OpenPlainHelp参照)
-        return handleCommand(Command::OpenPlainHelp);
       // 2026-09-08、直接のユーザー依頼によるキー再編("^Ol⇒^Oo（←
       // ファイル名以外はomission）")で'l'から移行。
       case 'o':  // ^O o : `ls`出力の形式を切り替え(K-26、旧^O l)
@@ -5382,11 +5374,9 @@ bool Application::handleCommandImpl(Command command) {
     case Command::KeyJumpToHelp:
       // ^J^Oh(K-105、2026-10-08復活、直接のユーザー依頼"KEYからは、トグルのはずの^Ohで常時平文、がどうも
       // 違和感なので^J^Ohを復活させてhのマクロにあてたい"): KEYの中では選んでいる行の平文のHELPの同じ行へ、
-      // KEYの外では平文のHELP。^Ohはどこでも目次と平文の切り替え(toggleHelpView())だけにした。
+      // KEYの外では平文のHELP。(^Ohの目次と平文の切り替えは2026-10-14に廃止、Command::StartHelp参照。)
       if (currentMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Key) return jumpFromKeyToHelp();
       return openPlainHelp();
-    case Command::OpenPlainHelp:
-      return toggleHelpView();
     case Command::ToggleGuiMode:
       if (display_.isGraphical() && !guiToggleReturnsToTerminal_) {
         showTransientNotice(activeView(), "Already in GUI");
@@ -5598,16 +5588,22 @@ bool Application::handleCommandImpl(Command command) {
     case Command::StartEdit:
       return executeEdit();
     case Command::StartHelp:
-      // 2026-10-13、直接のユーザー依頼("既定のHELP閲覧を平文に変更。^Ohは温存"): ^H・^J^Hは平文のHELP
-      // (openPlainHelp())。目次(startHelp()のCUT)へは^Oh(toggleHelpView())で。
+      // 2026-10-13、直接のユーザー依頼("既定のHELP閲覧を平文に変更"): ^H・^J^Hは平文のHELP(openPlainHelp())。
+      // 2026-10-14、直接のユーザー依頼("PART（旧CUT）はHELPに絡ませなくていい…マニュアルは通読できないと逆に
+      // 不便"): HELPの目次(CUT)と、目次と平文を切り替える^Oh(K-87)は廃止した。
       if (currentMode_ == ApplicationMode::File && !plainHelpPath_.empty() &&
           fileMode_.currentFile() == plainHelpPath_) {
         showTransientNotice(activeView(), "Already in HELP");
         return true;
       }
-      if ((currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
-          cutOrigin_ == CutOrigin::Help)
-        return startHelp();  // "Already in HELP"
+      // 2026-10-04、直接のユーザー報告("~/.local/lib/usilic/HELPが新しくなったのに^Hでは変更点が更新されない"):
+      // 起動時に読んだHELPのファイルが書き換えられていれば読み直す(make install等。旧startHelp()から)。
+      if (!helpLoadedPath_.empty()) {
+        std::error_code ec;
+        auto time = std::filesystem::last_write_time(helpLoadedPath_, ec);
+        if (ec || time != helpLoadedTime_) reloadHelpText();
+      }
+      if (helpText_.empty()) return showHelpNotFound();
       return openPlainHelp();
     case Command::StartMacroRecord:
       return startMacroRecording();
@@ -10031,7 +10027,7 @@ bool Application::returnToDirectory() {
   // だけが設定するフラグをクリアするのを覚えておく必要が、(約10個
   // ある呼び出し箇所の)それぞれに生じるのではなく、他のどんな
   // ファイルがロードされた瞬間にも自己修正される。
-  // 2026-10-10、直接のユーザー報告("HELP上で…^G連打で無限行き来"): 平文のHELP(^Oh)はHELPのファイルのある
+  // 2026-10-10、直接のユーザー報告("HELP上で…^G連打で無限行き来"): 平文のHELP(^H)はHELPのファイルのある
   // ディレクトリ(~/.usilic/等)へ移さず、開いた時の(ls)へ戻る。以前はそこへ移ったため、(ls)の^G
   // (goToRecentDirectory())が元のディレクトリとの間を行き来し続けた。
   if (fileMode_.currentFile() != bannerFilePath() && fileMode_.currentFile() != plainHelpPath_) {
@@ -19288,49 +19284,7 @@ bool Application::jumpFromKeyToHelp() {
   return openPlainHelp(content.front().rawLineNumber);
 }
 
-// ^Oh(K-87、2026-10-06、直接のユーザー依頼"HELP表示のCUTと平文の切り換えトグルを^Oh"): HELPの目次・本文
-// (CUT/CutContent)では選んでいる所の平文のHELPへ、平文のHELPでは今の行を含む章を選んだ目次へ。どちらも
-// ^Gで戻る先はHELPへ入る前の所(行き来を^Gでたどらない)。HELPの外では平文のHELP。
-bool Application::toggleHelpView() {
-  bool inHelpCut = (currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
-                   cutOrigin_ == CutOrigin::Help;
-  auto outside = [](ApplicationMode mode) {
-    return (mode == ApplicationMode::Cut || mode == ApplicationMode::CutContent) ? ApplicationMode::Directory : mode;
-  };
-  if (inHelpCut) {
-    std::optional<int> raw;
-    if (currentMode_ == ApplicationMode::CutContent) {
-      const auto &lines = cutContentView_.lines();
-      int idx = cutContentView_.cursorIndex();
-      if (idx >= 0 && idx < static_cast<int>(lines.size())) raw = lines[idx].rawLineNumber;
-    } else if (const CutSegment *segment = cutMode_.selectedSegment()) {
-      std::vector<StyledLine> content = cutMode_.segmentContent(*segment);
-      if (!content.empty()) raw = content.front().rawLineNumber;
-    }
-    ApplicationMode back = outside(cutReturnMode_);
-    if (!openPlainHelp(raw)) return false;
-    fileReturnMode_ = back;
-    return true;
-  }
-  if (currentMode_ == ApplicationMode::File && !plainHelpPath_.empty() && fileMode_.currentFile() == plainHelpPath_) {
-    int raw = fileRawLineAtCursor();
-    ApplicationMode back = outside(fileReturnMode_);
-    if (!startHelp()) return false;
-    cutReturnMode_ = back;
-    const auto &segments = cutMode_.segments();
-    int index = 0;
-    for (int i = 0; i < static_cast<int>(segments.size()); i++) {
-      std::vector<StyledLine> content = cutMode_.segmentContent(segments[i]);
-      if (!content.empty() && content.front().rawLineNumber > 0 && content.front().rawLineNumber <= raw) index = i;
-    }
-    cutView_.setCursorIndex(index);
-    cutView_.redraw();
-    return true;
-  }
-  return openPlainHelp();
-}
-
-// 平文のHELP(helpPath_のファイルをそのまま、^Oh)。rawLineがあればその行へ。KEYから来たなら^GでKEYへ戻る。
+// 平文のHELP(helpPath_のファイルをそのまま、^H)。rawLineがあればその行へ。KEYから来たなら^GでKEYへ戻る。
 bool Application::openPlainHelp(std::optional<int> rawLine) {
   bool fromKey = currentMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Key;
   std::string path = helpPath_;
@@ -19362,7 +19316,7 @@ bool Application::openPlainHelp(std::optional<int> rawLine) {
   if (!fileMode_.loadFile(path)) return false;
   // 2026-10-11、直接のユーザー依頼("(groff)表示は親の平文HELPでも"): roff版をgroffで組んだものならモードラインに(groff)。
   if (!helpRoff_.empty()) fileMode_.setContentProgram("groff");
-  plainHelpPath_ = fileMode_.currentFile();  // toggleHelpView()参照
+  plainHelpPath_ = fileMode_.currentFile();  // Command::StartHelp参照
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = fromKey ? ApplicationMode::Cut : ApplicationMode::Directory;
   if (rawLine) {
@@ -19950,88 +19904,10 @@ bool Application::loadHelpText(const std::string &text) {
   return !helpText_.empty();
 }
 
-// menu.cのM_help/T_helpケースから移植――なぜこれがそれ自身の表示の
-// 仕組みではなくCutModeの分割(本物のCUTとHELPは1つのインスタンス
-// を共有する)なのかについてはクラスコメント参照。どのモードから
-// でも到達可能(legacyのinit_bp()のデフォルトケースにも、M_help/
-// T_helpについてのモードの文脈のガードは無い)。
-// 2026-09-20更新: CUTパターンをkHelpPattern(旧: 番号付き見出しの
-// 正規表現)/GrepSyntax::Regexから、全角「：」の固定文字列検索
-// (GrepSyntax::Fixed)へ切り替えた――kHelpPattern自身の定義コメント
-// 参照。
 // 2026-10-05、直接のユーザー報告(MSYS2で"^H/^Kが利かない"): HELPのファイルが読めていない時は、何も
 // 起きないのではなく、探した場所を一時表示する(^HはHELPを、^KはそのHELPを「：」で切ったものを使う)。
 bool Application::showHelpNotFound() {
   showTransientNotice(activeView(), "HELP not found: " + helpPath_ + " (make install)");
-  return true;
-}
-
-bool Application::startHelp() {
-  // 2026-10-02追加、直接のユーザー依頼("HELPでの^Hも同じようにして"、startKey()の"Already in KEY"と同じ):
-  // HELP(目次・本文)の中の^H/^J^Hは、開き直さずにそう知らせる。
-  if ((currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
-      cutOrigin_ == CutOrigin::Help) {
-    showTransientNotice(activeView(), "Already in HELP");
-    return true;
-  }
-  // 2026-10-04、直接のユーザー報告("~/.local/lib/usilic/HELPが新しくなったのに^Hでは変更点が更新されない"):
-  // 起動時に読んだHELPのファイルが書き換えられていれば読み直す(make install等)。
-  if (!helpLoadedPath_.empty()) {
-    std::error_code ec;
-    auto time = std::filesystem::last_write_time(helpLoadedPath_, ec);
-    if (ec || time != helpLoadedTime_) reloadHelpText();
-  }
-  if (helpText_.empty()) return showHelpNotFound();
-  std::vector<StyledLine> helpLines = wrapHelpText(display_.columns());
-
-  bool preserveExistingCut = (currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent);
-  bool ok;
-  if (preserveExistingCut) {
-    // 本物のCUTセッションが既に表示されている――(ネストした
-    // splitSelected()の再分割が使うのと「同じ」仕組みで)それをプッシュ
-    // するので、HELPから抜ける^Gは、Back既存のcanGoBack()/goBack()
-    // チェック経由でそれを再開する。ここでは意図的にcutSyntax_/
-    // cutOrigin_に触れない: どちらも単一の共有されたフィールドである
-    // (ModeStackのレベルごとに保存/復元されない)ので、それらをその
-    // ままにしておくことで、保存されている本物のcutが既に持っていた
-    // ものが保たれる――HELP自身の都合でそれらを設定すると、^Gがそれ
-    // を復元した時点で、その本物のcut自身の状態を壊してしまう。
-    ok = cutMode_.pushSplit(helpLines, kHelpChapterPattern, GrepSyntax::Basic);
-  } else {
-    // 2026-09-14追加、直接のユーザー報告("-g: HELPのカーソル行が
-    // 保存されていない（^Hで常に最上行）"): cutOrigin_はCUT系セッション
-    // を抜けた後もそのまま残る(このファイル内、新規の最上位セッションを
-    // 作るまさにこの手の代入以外では一切書き換えられない――他の全ての
-    // 代入箇所を確認済み)ので、「今まさにcutOrigin_がHelpである」こと
-    // 自体が「前回もHELPだった(=このcutView_のcursorIndex()は前回の
-    // HELP閲覧位置をまだ保持している)」ことの十分な証拠になる。前回の
-    // カーソル位置を退避してから、下のsplit()(常にインデックス0へ
-    // リセットする、CutMode::split()自身のコメント参照)を呼び、直後に
-    // 復元する。
-    bool resumingHelpSession = (cutOrigin_ == CutOrigin::Help);
-    int previousCursorIndex = resumingHelpSession ? cutView_.cursorIndex() : 0;
-    cutReturnMode_ = currentMode_;  // 保存すべきものが無い――本物のCUTが使うのと同じ「Cutを...へ戻す」という錨
-    // 新規の最上位の分割――リサイズ時のリフローの対象になる。split()
-    // の返り値をチェックした後ではなく、それを呼ぶ前に設定する
-    // ――なぜかについてはexecuteCut()自身のFileの分岐の2026-08-18の
-    // コメント参照(CutMode::split()は、この関数が実行される機会を
-    // 一度も得る前に内部でcutView_を再描画する;実際の報告――LOG
-    // 自身のモードラインが一瞬"LOG"ではなく"CUT"を表示していた――
-    // が、まさにこの順序のバグまで突き止められた、これはこのファイル
-    // 内の他の全てのcutOrigin_の代入にも影響していたと判明した、
-    // HELP自身のものも含めて)。
-    cutOrigin_ = CutOrigin::Help;
-    cutSyntax_ = GrepSyntax::Basic;  // ここで設定しても安全: この分岐では古い値に依存する本物のものは何も無い
-    ok = cutMode_.split(helpLines, kHelpChapterPattern, GrepSyntax::Basic);
-    if (ok && resumingHelpSession && previousCursorIndex > 0) {
-      int last = static_cast<int>(cutMode_.segments().size()) - 1;
-      cutView_.setCursorIndex(std::clamp(previousCursorIndex, 0, std::max(0, last)));
-      cutView_.redraw();
-    }
-  }
-  if (!ok) return false;
-
-  currentMode_ = ApplicationMode::Cut;
   return true;
 }
 
@@ -20097,8 +19973,6 @@ void Application::handleResize() {
     std::vector<StyledLine> freshSource;
     if (cutOrigin_ == CutOrigin::Key) {
       freshSource = keySourceLines(display_.columns());
-    } else if (cutOrigin_ == CutOrigin::Help) {
-      freshSource = wrapHelpText(display_.columns());
     } else if (cutOrigin_ == CutOrigin::Directory) {
       // 2026-08-11: ディレクトリ一覧の行は、File/Manのテキストがそう
       // するようには幅に合わせてリフロー/折り返しされない

@@ -272,7 +272,7 @@ TEST_CASE("MACRO directive: M-n key K-numbers, skipping the -- marker and empty 
 // M-n・キー・要素の間をタブではなく空白で区切った行も読める。
 TEST_CASE("MACRO directive: fields separated by spaces instead of tabs") {
   Configuration config;
-  REQUIRE(config.loadRcText("MACRO\n  M-1 ; K-1 K-2 K-14   # ^G^P^M\nM-2 h K-87\n", true));
+  REQUIRE(config.loadRcText("MACRO\n  M-1 ; K-1 K-2 K-14   # ^G^P^M\nM-2 h K-105\n", true));
   REQUIRE(config.macros().size() == 2);
   CHECK(config.macros()[0].keySpec == ";");
   CHECK(config.macros()[0].items.size() == 3);

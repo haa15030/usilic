@@ -30600,3 +30600,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      1回目で選び2回目で開く。縦書きはclickEpubVertical()で、列カーソルの列の2回目のクリックでも、その列の行き先が
      リンク(本の中・Web)なら飛ばない(リンクの字のクリックは従来どおり1回目で飛ぶ、画像は2回目で開く)。
    - **確認**: ビルドのみ。
+
+820. **2026-10-14: HELPの目次(PART)と^Oh(K-87)を廃止し、HELPは平文だけにする**
+   - **経緯**: 直接のユーザー判断("PART（旧CUT）はHELPに絡ませなくていいかなと感じ始めてる"、続けて"PARTをHELPに
+     絡ませたくなくなったのは、たとえばコマンド出力の検証用途ならログを区切ったほうがわかりやすいかもしれないが
+     マニュアルは通読できないと逆に不便だから。ところがHELP.epubは^O^S仕様なので事情が違う。あらかじめマニュアルで
+     言及し、他のEPUBも同じだと一言触れておけばいい")。消す対象を確かめ、^J^Oh(K-105、KEYのh)ではなく、HELPを
+     PARTにする^Oh(K-87)のほうと決まった。EPUBの章の一覧(本文の^G・右クリック、;/:)はそのまま。
+   - **内容**: application.cppのstartHelp()・toggleHelpView()・kHelpChapterPattern・Command::OpenPlainHelp・
+     CutOrigin::Helpとその分岐を削除。^H・^J^H(Command::StartHelp)は平文のHELPだけで、startHelp()にあった
+     「HELPのファイルが書き換えられていれば読み直す」「読めなければHELP not found」はここへ移した。
+     key_bindings.cppの87は欠番(番号は詰めない)、src/usilicrc・usilicrc.enのK-87の行を削除。
+     test_configuration.cppのMACROの例をK-87からK-105へ。
+   - **HELP**: src/HELP_.txtの^Ohの行を消し、HELPの説明を平文表示に直し、EPUBの節に「本文の^G(右クリック)で
+     章の一覧、;/:で前後の章。HELP.epubも含めどのEPUBでも同じ」を足した(HELP_en_.txtは未修正)。
+   - **確認**: ビルドのみ。HELPのCUTを前提にしたtest_application.cppのテストは直していない。

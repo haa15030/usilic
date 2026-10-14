@@ -426,7 +426,6 @@ KEY
 	K-84	F-4 u       # ^J^Ou   ~/.usilic/usilicrc
 	K-85	F-4 e       # ^J^Oe   ERROR
 	K-86	F-4 s       # ^J^Os   SHELLのログ
-	K-87	F-2 h       # ^Oh     HELPの目次と平文の切り替え
 	K-88	F-4 d       # ^J^Od   ~/.usilic/data/
 	K-89	F-4 w       # ^J^Ow   WORK
 	K-90	C-h         # ^H      HELP

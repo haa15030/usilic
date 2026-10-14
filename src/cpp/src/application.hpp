@@ -323,12 +323,10 @@ enum class Command {
   // 2026-10-02追加、直接のユーザー依頼(.steering/20261002-help-key-usilicrc-reorg/):
   //   StartKey(^K、^J^K): KEYモード。HELPを「：」でCUTした一覧(冒頭の「--」は除く)。startKey()参照。
   //   KeyJumpToHelp(^J^Oh、2026-10-08): KEYの中では選んでいる行の、平文のHELPの同じ行へ。外では平文のHELP。
-  //   OpenPlainHelp(^Oh、2026-10-06): HELPの目次と平文の切り替え(toggleHelpView())。
   //   OpenUserUsilicrc(^J^Ou): ~/.usilic/usilicrc。
   //   SaveMacro(^Xs、2026-10-03に^X^Sから): usilicrcの読み直し、記録したマクロの保存とマクロの一覧。saveMacroToUsilicrc()参照。
   StartKey,
   KeyJumpToHelp,
-  OpenPlainHelp,
   OpenUserUsilicrc,
   SaveMacro,
   StartMacroRecord,
@@ -2857,7 +2855,7 @@ class Application {
   bool startEpubList();                                   // K-99(^J^E)
   bool startArchiveList();                                // K-103(^J^A)
   std::string installLibDirectory_;
-  bool showHelpNotFound();  // startHelp()参照
+  bool showHelpNotFound();  // Command::StartHelp参照
   bool openVideos(const std::vector<std::string> &paths);  // 動画をIINA/VLC等で(2026-10-05)
   bool isArchiveHistoryEntry(const std::string &item) const;  // startArchiveList()参照
   std::string listBrowserCategoryLabel() const;           // startEpubList()参照
@@ -3119,7 +3117,6 @@ class Application {
   bool executeArchiveExtract(const std::string &destination);
   bool executePathInput(const std::string &path);
   bool executeEdit();
-  bool startHelp();
   bool startKey();  // Command::StartKey参照
   bool viewedThroughProgram(const std::string &path) const;  // executeEdit()参照
   // 2026-10-11、直接のユーザー依頼: ページャー起動のKEYは、HELP画面用に組んだ本文から行頭がタブの行だけ、-Kの
@@ -3151,7 +3148,7 @@ public:
   void setHelpEnglish(bool english) { helpPath_ = english ? helpBasePath_ + ".en" : helpBasePath_; }
   // HELP(helpPath_のファイル)を読み直す(起動時・^Ja)。読めなければfalse(helpText_はそのまま)。
   bool reloadHelpText();
-  // reloadHelpText()が読んだHELPのファイルとその更新時刻(startHelp()が、書き換えられていれば読み直す)。
+  // reloadHelpText()が読んだHELPのファイルとその更新時刻(^Hが、書き換えられていれば読み直す。Command::StartHelp参照)。
   std::string helpLoadedPath_;
   std::filesystem::file_time_type helpLoadedTime_{};
 private:
@@ -3260,7 +3257,8 @@ private:
   // 別の概念である。
   // 2026-10-02変更(.steering/20261002-help-key-usilicrc-reorg/): TUTORIALはHELPへ改名。
   // `~/.local/lib/usilic/HELP`、無ければ`/usr/local/lib/usilic/HELP`(コンストラクタ参照)。^Hは
-  // これを^I(タブ)でCUTし(startHelp())、^KはKEY(「：」でCUT、startKey())。^JaでHELP.enと切り替える。
+  // これを平文で開き(openPlainHelp()、2026-10-14にタブでCUTする目次は廃止)、^KはKEY(「：」でCUT、startKey())。
+  // ^OjでHELP.enと切り替える。
   // usilic-webの本棚から落とした本の置き場(~/.local/usilic-web/texts、openUsilicWeb()参照)。
   std::string usilicWebTextDirectory_;
   std::string helpPath_;
@@ -3650,7 +3648,7 @@ private:
   // DU等に]関与（検索）できる"): Directory起点(directoryView_.lines()
   // を分割する)と全く同じ発想で、manView_/locateView_/duView_.lines()
   // を分割する――executeCut()自身の新設の分岐参照。
-  enum class CutOrigin { File, Help, Directory, Log, Man, Locate, Du, Epub, Key };  // Epub: openEpub()参照、Key: startKey()参照
+  enum class CutOrigin { File, Directory, Log, Man, Locate, Du, Epub, Key };  // Epub: openEpub()参照、Key: startKey()参照
   CutOrigin cutOrigin_ = CutOrigin::File;
 
   bool recordingMacro_ = false;
@@ -3678,9 +3676,8 @@ private:
   // EPUBの本文からKEYを開いた時の、元の章の一覧の^Gの戻り先(startKey()参照)。
   std::optional<ApplicationMode> keyOverEpubReturnMode_;
   bool helpJumpHighlight_ = false;
-  // 平文のHELPとして最後に開いたファイル(toggleHelpView()が「平文のHELPを見ている」と判断する)。
+  // 平文のHELPとして最後に開いたファイル(^Hが「平文のHELPを見ている」と判断する、Command::StartHelp参照)。
   std::string plainHelpPath_;
-  bool toggleHelpView();
   void saveKeyCursor();  // executeSelectedKeyLine()がキーを流している間(startKey()参照)
   // ^J^W・^Jwが最後にSHELLのコマンド行へ入れたコマンド(SHELLの^Wで出し直す、2026-10-03)。
   std::string lastShellInsertCommand_;
