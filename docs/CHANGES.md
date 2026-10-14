@@ -30682,3 +30682,20 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      epub.jsのpreviewは読んでいる章(位置の記録の章)だけ測り直す(全部の章の測り直しは重いので、確定の時だけ)。
      txt.jsはpreviewが無いので、applyのまま(CSSの変数を変えるだけ)。
    - **確認**: 構文の確認(jsc)のみ。
+828. **2026-10-15: usilic-web: iOSで文字の大きさを変えた後に画面が空白になる**
+   - **経緯**: 直接のユーザー報告("iOSではSafariでもChromeでも拡大時画面が空白になった。スクロールすれば文字は
+     戻る。ファイルを変えると再現。Xiaomiでは起きない")。
+   - **原因(推定)**: iOSのWebKitは、章の枠(iframe)の幅と中の字の大きさを変えた後、スクロールするまで描き直さない
+     ことがある。
+   - **内容**(reader.js): setFont()とピンチの途中の変更の後、repaint()で次のフレームにscrollLeftを1px動かし、
+     その次のフレームで戻す(戻した位置を、変える前の位置へ戻すための記録fontAnchorScrollにも入れる)。
+   - **確認**: 構文の確認(jsc)のみ。iOSで未確認。
+829. **2026-10-15: ^J^Eの一覧に、なろう・ノクターン・カクヨム・青空文庫の入口を最初から載せる**
+   - **経緯**: 直接のユーザー依頼("^O^Eの既定URLとして`http://localhost/usilic-web/`以外にも`なろう`、
+     `ノクターン`、`カクヨム`、`青空文庫`へのリンクを載せて欲しい"。localhostが載っているのは^J^Eなので、^J^Eの
+     ことと受け取った)。
+   - **内容**(application.cpp): kEpubListSiteUrls(https://yomou.syosetu.com/・https://noc.syosetu.com/・
+     https://kakuyomu.jp/・https://www.aozora.gr.jp/)を、addDefaultUsilicWebUrl()がusilic-webの後に並べて足す
+     (一覧に無いものだけ)。選ぶと(RecentFileのプロンプト・openRecentFileEntry())openEpubListSiteUrl()で、
+     ^Owの今の対処で開く。対処がEpub(narou2epub)の時は、サイトの入口はEPUBにできないのでOpenで開く。
+   - **確認**: ビルドのみ。

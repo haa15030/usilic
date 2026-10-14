@@ -558,12 +558,36 @@ bool isUsilicWebUrl(const std::string &text) {
 // 一覧に無ければ(末尾の/の有無は問わない)、先頭(いちばん古い所)に足す。履歴そのものには積まない。
 const char *const kUsilicWebDefaultUrl = "http://localhost/usilic-web/";
 
+// 2026-10-15、直接のユーザー依頼("^J^Eの既定URLとしてhttp://localhost/usilic-web/以外にも`なろう`、`ノクターン`、
+// `カクヨム`、`青空文庫`へのリンクを載せて欲しい"): 作品を探すサイトの入口。選ぶと^Owの今の対処で開く
+// (Epubの時はサイトの入口をEPUBにはできないのでOpen、openEpubListSiteUrl()参照)。
+const char *const kEpubListSiteUrls[] = {
+    "https://yomou.syosetu.com/",   // 小説家になろう(読もう)
+    "https://noc.syosetu.com/",     // ノクターンノベルズ
+    "https://kakuyomu.jp/",         // カクヨム
+    "https://www.aozora.gr.jp/",    // 青空文庫
+};
+
+bool isEpubListSiteUrl(const std::string &text) {
+  for (const char *url : kEpubListSiteUrls) {
+    std::string bare = url;
+    bare.pop_back();
+    if (text == url || text == bare) return true;
+  }
+  return false;
+}
+
+// 一覧に無ければ(末尾の/の有無は問わない)、先頭(いちばん古い所)にusilic-web、なろう…の順で足す。
 void addDefaultUsilicWebUrl(std::vector<std::string> &items) {
-  std::string bare = kUsilicWebDefaultUrl;
-  bare.pop_back();
-  for (const auto &item : items)
-    if (item == kUsilicWebDefaultUrl || item == bare) return;
-  items.insert(items.begin(), kUsilicWebDefaultUrl);
+  std::vector<std::string> defaults{kUsilicWebDefaultUrl};
+  defaults.insert(defaults.end(), std::begin(kEpubListSiteUrls), std::end(kEpubListSiteUrls));
+  std::vector<std::string> missing;
+  for (const auto &url : defaults) {
+    std::string bare = url.substr(0, url.size() - 1);
+    if (std::none_of(items.begin(), items.end(), [&](const std::string &item) { return item == url || item == bare; }))
+      missing.push_back(url);
+  }
+  items.insert(items.begin(), missing.begin(), missing.end());
 }
 
 // URLの%XX(と+)を戻す/名前を%XXにする(usilic-webのget.php?f=名前、openUsilicWeb()参照)。
@@ -7166,6 +7190,7 @@ bool Application::relaunchUsilicEntry(std::string entry) {
 bool Application::openRecentFileEntry(const std::string &path) {
   if (hasUsilicTag(path)) return relaunchUsilicEntry(path);
   if (isUsilicWebUrl(path)) return openEpubPromptSpecial(path);  // usilic-webのURL(isUsilicWebUrl()参照)
+  if (isEpubListSiteUrl(path)) return openEpubListSiteUrl(path);  // ^J^Eのなろう等(kEpubListSiteUrls参照)
   // 2026-09-24追加、直接のユーザー報告("^J^Jでカーソル位置が保存
   // されない。^Vでスクロールしたのち^J^Jしてもスクロール前の位置に
   // なる"): openSelectedArchiveEntry()自身の2026-08-27修正・
@@ -7861,6 +7886,23 @@ bool Application::openEpubLineImage(const ContentView &view) {
 // ほしい"): URLをWebの場所のファイル(.webloc)にしてクイックルック(runQuickLook())に渡す。
 // 2026-10-04、直接のユーザー依頼("usilicrcで選べるようにして、既定はA(既定のブラウザ)。^Owでモードを
 // 巡回"): Configuration::urlHandlers()の今の対処(urlHandlerIndex_)で開く。以前のクイックルックはLook。
+// ^J^Eのなろう・カクヨム等のサイトの入口(kEpubListSiteUrls参照): ^Owの今の対処で開く。Epub(narou2epub)は作品の
+// URLしかEPUBにできないので、その時はOpen(既定のブラウザ等)で。
+bool Application::openEpubListSiteUrl(const std::string &url) {
+  const auto &handlers = configuration_.urlHandlers();
+  if (!handlers.empty() && handlers[urlHandlerIndex_ % handlers.size()].name == "Epub") {
+    for (std::size_t i = 0; i < handlers.size(); i++)
+      if (handlers[i].name == "Open") {
+        std::size_t saved = urlHandlerIndex_;
+        urlHandlerIndex_ = i;
+        bool ok = openEpubWebLink(url);
+        urlHandlerIndex_ = saved;
+        return ok;
+      }
+  }
+  return openEpubWebLink(url);
+}
+
 bool Application::openEpubWebLink(const std::string &url) {
   const auto &handlers = configuration_.urlHandlers();
   if (handlers.empty()) return false;
@@ -13362,7 +13404,7 @@ bool Application::toggleListBrowserHistory() {
                 items.end());
   }
   if (promptHistoryContext_ && promptHistoryContext_->epubOnly) {  // ^J^E: EPUBだけ(startEpubList()参照)
-    items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item) && !isUsilicWebUrl(item); }),
+    items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item) && !isUsilicWebUrl(item) && !isEpubListSiteUrl(item); }),
                 items.end());
     addDefaultUsilicWebUrl(items);
   }
@@ -15399,6 +15441,7 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
     case PromptKind::RecentFile:
       if (hasUsilicTag(text)) return relaunchUsilicEntry(text);  // 外部起動の印(kUsilicTag)
       if (isUsilicWebUrl(text)) return openRecentFileEntry(text);  // usilic-webのURL(isUsilicWebUrl()参照)
+      if (isEpubListSiteUrl(text)) return openEpubListSiteUrl(text);  // ^J^Eのなろう等(kEpubListSiteUrls参照)
       // recentFileDisplayText()参照: 入力欄がハイライト行の(/を見せない)文字列のままなら、
       // ハイライト行そのもの(「パス/」ならARC)で開く。
       if (const std::string *selected = listBrowserMode_.selectedItem();
@@ -15807,7 +15850,7 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
                 items.end());
   }
   if (promptHistoryContext_ && promptHistoryContext_->epubOnly) {  // ^J^E: EPUBだけ(startEpubList()参照)
-    items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item) && !isUsilicWebUrl(item); }),
+    items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item) && !isUsilicWebUrl(item) && !isEpubListSiteUrl(item); }),
                 items.end());
     addDefaultUsilicWebUrl(items);
   }

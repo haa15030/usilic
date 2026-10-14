@@ -233,6 +233,30 @@ var Reader = function (opt) {
     // 2026-10-14、直接のユーザー報告("フォントサイズを変えると現在地が大幅にズレまくるので直前の位置を記憶して
     // おいてほしい"): 戻る先を押すたびに画面から取り直すと、戻った所のずれが積み重なる。最初に押す前の位置を
     // 覚えておき、自分でスクロールするまでは何度押してもそこへ戻る(読んでいた位置の記録もそれにする)。
+    // 2026-10-15、直接のユーザー報告("iOSではSafariでもChromeでも拡大時画面が空白になった。スクロールすれば文字は
+    // 戻る…Xiaomiでは起きない"): iOSのWebKitは、章の枠(iframe)の大きさと中の字の大きさを変えた後、スクロール
+    // するまで描き直さないことがある。次のフレームで1px動かし、その次のフレームで元へ戻して描き直させる。
+    var repaintFrame = 0;
+    function repaint() {
+        if (repaintFrame) {
+            return;
+        }
+        repaintFrame = requestAnimationFrame(function () {
+            var x = scroller.scrollLeft;
+            scroller.scrollLeft = x - 1;
+            if (scroller.scrollLeft === x) {
+                scroller.scrollLeft = x + 1;
+            }
+            requestAnimationFrame(function () {
+                repaintFrame = 0;
+                scroller.scrollLeft = x;
+                if (fontAnchor) {
+                    fontAnchorScroll = scroller.scrollLeft;
+                }
+            });
+        });
+    }
+
     function setFont(size) {
         inertia.stop();
         if (!anchored()) {
@@ -245,6 +269,7 @@ var Reader = function (opt) {
             opt.jump(fontAnchor, false);
             fontAnchorScroll = scroller.scrollLeft;
         }
+        repaint();
     }
 
     onTap(document.getElementById('mark'), record);
@@ -288,6 +313,7 @@ var Reader = function (opt) {
             opt.jump(fontAnchor, false);
             fontAnchorScroll = scroller.scrollLeft;
         }
+        repaint();
     }
     function pinch(target) {
         target.addEventListener('touchstart', function (e) {

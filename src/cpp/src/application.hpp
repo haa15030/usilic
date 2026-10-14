@@ -2763,6 +2763,7 @@ class Application {
     std::string url;          // http(s)のリンク(2026-09-30、openEpubWebLink())
   };
   bool openEpubWebLink(const std::string &url);
+  bool openEpubListSiteUrl(const std::string &url);  // ^J^Eのなろう等(application.cppのkEpubListSiteUrls参照)
   bool openEpubWebLinkAtCursor();
   std::optional<EpubVerticalTarget> epubVerticalColumnTarget(long column) const;
   bool activateEpubVerticalColumn(long column);
