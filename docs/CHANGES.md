@@ -30615,3 +30615,17 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **HELP**: src/HELP_.txtの^Ohの行を消し、HELPの説明を平文表示に直し、EPUBの節に「本文の^G(右クリック)で
      章の一覧、;/:で前後の章。HELP.epubも含めどのEPUBでも同じ」を足した(HELP_en_.txtは未修正)。
    - **確認**: ビルドのみ。HELPのCUTを前提にしたtest_application.cppのテストは直していない。
+
+821. **2026-10-14: usilic -e(HELPの原稿→HELP.epub)と、^HでHELP.epubを開く**
+   - **経緯**: 直接のユーザー依頼("HELPモードを正式にHELP.epubとしたい（注釈を見れるので）。usilic -e HELP.txt >
+     ~/.local/lib/usilic/HELP.epub の実装よろしく")。
+   - **内容**: help_to_epub.cpp(新規)のconvertMsRoffToHelpEpub()は、tools/help2epub.py(試作、項目812〜814・818)の
+     C++版。-nのroffを章ごとのXHTML・注釈(notes.xhtml)・nav・OPFにし、無圧縮のzip(CRC32は自前)で返す。
+     main.cppの-eは、原稿を-nと同じconvertMarkupToMsRoffSource()でroffにしてから変換し、標準出力へ(章・注釈の数は
+     標準エラー出力へ)。注釈に使うusilicrc・HELP.notesは~/.local/lib/usilic/、/usr/local/lib/usilic/、原稿の
+     ディレクトリの順に探す(~/usilicという10/1の古い写しが原稿の隣にあり、先に読むと注釈が14→9個に減った)。
+     make installでdoc/HELP.notesも入れる。^H・^J^H(Command::StartHelp)は、HELPの隣(無ければ
+     /usr/local/lib/usilic/)に"HELP.epub"(HELP.enならHELP.en.epub)があればEPUBとして開く(helpEpubPath())。
+     無ければ従来の平文。^J^Oh(KEYの外)は平文のまま。
+   - **確認**: ~/HELP.txtから作ったものが、help2epub.pyの出力とdescription・modified以外一致(unzip -tも通る)。
+     ^Hで開く所は未確認。

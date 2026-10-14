@@ -167,6 +167,7 @@
 #include "history.hpp"
 #include "key_input.hpp"
 #include "mac_font_resolver.hpp"
+#include "help_to_epub.hpp"
 #include "markup_to_roff.hpp"
 #include "mouse_sgr.hpp"
 #include "usilicrc_file.hpp"
@@ -4511,7 +4512,8 @@ bool tryHandoffToParentShell(int argc, char **argv) {
   // と-h(使い方)は画面を使わずに終わるので、SHELLの中でも親へは渡さずにその場で実行する。以前は
   // "-m"とパスが「開くファイル」として親へ渡っていた。
   for (int i = 1; i < argc; i++)
-    if (std::strcmp(argv[i], "-m") == 0 || std::strcmp(argv[i], "-n") == 0 || std::strcmp(argv[i], "-h") == 0)
+    if (std::strcmp(argv[i], "-m") == 0 || std::strcmp(argv[i], "-n") == 0 || std::strcmp(argv[i], "-e") == 0 ||
+        std::strcmp(argv[i], "-h") == 0)
       return false;
 
   // 2026-09-20追加、直接のユーザー報告("SHELLプロンプトでman ls...
@@ -4912,6 +4914,45 @@ int main(int argc, char **argv) {
       std::ostringstream buffer;
       buffer << in.rdbuf();
       std::cout << fm::convertMarkupToMsRoffSource(buffer.str());
+      return 0;
+    } else if (std::strcmp(argv[i], "-e") == 0) {
+      // 2026-10-14、直接のユーザー依頼("HELPモードを正式にHELP.epubとしたい（注釈を見れるので）。usilic -e HELP.txt >
+      // ~/.local/lib/usilic/HELP.epub の実装よろしく"): -nのroffを横書きのEPUB3にして標準出力へ
+      // (convertMsRoffToHelpEpub()参照)。注釈に使うusilicrcとHELP.notesは、~/.local/lib/usilic/(make installが
+      // 最新にする)、/usr/local/lib/usilic/、HELPの原稿と同じディレクトリの順に探す(原稿の隣の古い写しより先に)。
+      if (i + 1 >= argc) {
+        std::cerr << "usilic: -e requires a markup file path (e.g. -e HELP.txt > ~/.local/lib/usilic/HELP.epub).\n";
+        return 1;
+      }
+      std::string markupPath = argv[++i];
+      std::ifstream in(markupPath, std::ios::binary);
+      if (!in) {
+        std::cerr << "usilic: -e: cannot read " << markupPath << ".\n";
+        return 1;
+      }
+      std::ostringstream buffer;
+      buffer << in.rdbuf();
+      std::vector<std::string> dirs;
+      if (const char *home = std::getenv("HOME")) dirs.push_back(std::string(home) + "/.local/lib/usilic");
+      dirs.push_back("/usr/local/lib/usilic");
+      std::string markupDir = std::filesystem::path(markupPath).parent_path().string();
+      dirs.push_back(markupDir.empty() ? "." : markupDir);
+      auto find = [&](const std::string &name) {
+        for (const auto &dir : dirs) {
+          std::ifstream file(dir + "/" + name, std::ios::binary);
+          if (!file) continue;
+          std::ostringstream text;
+          text << file.rdbuf();
+          return text.str();
+        }
+        return std::string();
+      };
+      std::string summary;
+      std::string epub = fm::convertMsRoffToHelpEpub(fm::convertMarkupToMsRoffSource(buffer.str()), find("usilicrc"),
+                                                     find("HELP.notes"), &summary);
+      std::cout.write(epub.data(), static_cast<std::streamsize>(epub.size()));
+      std::cout.flush();
+      std::cerr << "usilic -e: " << summary << "\n";
       return 0;
     } else positionalArgs.push_back(argv[i]);
   }

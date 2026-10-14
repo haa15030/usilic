@@ -5596,6 +5596,17 @@ bool Application::handleCommandImpl(Command command) {
         showTransientNotice(activeView(), "Already in HELP");
         return true;
       }
+      // 2026-10-14、直接のユーザー依頼("HELPモードを正式にHELP.epubとしたい（注釈を見れるので）"): HELPの隣に
+      // HELP.epub(usilic -eで作る、HELP.enならHELP.en.epub)があれば、それをEPUBとして開く(^Gで章の一覧、
+      // もう一度^Gで(ls))。平文のHELPは^J^Oh(KEYの外)で。
+      if (std::optional<std::string> epub = helpEpubPath()) {
+        if ((currentMode_ == ApplicationMode::File || currentMode_ == ApplicationMode::Cut) &&
+            cutOrigin_ == CutOrigin::Epub && fileMode_.currentFile() == *epub) {
+          showTransientNotice(activeView(), "Already in HELP");
+          return true;
+        }
+        return openEpub(*epub);
+      }
       // 2026-10-04、直接のユーザー報告("~/.local/lib/usilic/HELPが新しくなったのに^Hでは変更点が更新されない"):
       // 起動時に読んだHELPのファイルが書き換えられていれば読み直す(make install等。旧startHelp()から)。
       if (!helpLoadedPath_.empty()) {
@@ -19284,7 +19295,17 @@ bool Application::jumpFromKeyToHelp() {
   return openPlainHelp(content.front().rawLineNumber);
 }
 
-// 平文のHELP(helpPath_のファイルをそのまま、^H)。rawLineがあればその行へ。KEYから来たなら^GでKEYへ戻る。
+// HELPのEPUB版(Command::StartHelp参照): helpPath_の隣(無ければ/usr/local/lib/usilic/)の"<HELPの名前>.epub"。
+std::optional<std::string> Application::helpEpubPath() const {
+  std::string name = std::filesystem::path(helpPath_).filename().string() + ".epub";
+  std::error_code ec;
+  for (const std::string &path : {std::filesystem::path(helpPath_).parent_path().string() + "/" + name,
+                                  "/usr/local/lib/usilic/" + name})
+    if (std::filesystem::is_regular_file(path, ec)) return path;
+  return std::nullopt;
+}
+
+// 平文のHELP(helpPath_のファイルをそのまま、HELP.epubが無ければ^H、^J^Oh)。rawLineがあればその行へ。KEYから来たなら^GでKEYへ戻る。
 bool Application::openPlainHelp(std::optional<int> rawLine) {
   bool fromKey = currentMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Key;
   std::string path = helpPath_;
