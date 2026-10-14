@@ -124,6 +124,24 @@
             var rc = innerRect();
             return posAt(rc.right - 2, rc.top + 2);
         },
+        // ピンチの基準(reader.jsのpinch参照): 画面中央の字と、その字の画面上の横位置
+        centerPos: function () {
+            var rc = innerRect();
+            return posAt((rc.left + rc.right) / 2, (rc.top + rc.bottom) / 2);
+        },
+        charX: function (m) {
+            var p = paras[Math.min(Math.max(m.line || 1, 1), paras.length) - 1];
+            var pt = p && pointAt(p, m.col || 1);
+            if (!pt) {
+                return null;
+            }
+            var r = document.createRange();
+            r.setStart(pt.node, pt.offset);
+            r.collapse(true);
+            var rects = r.getClientRects();
+            var cr = rects.length ? rects[0] : p.getBoundingClientRect();
+            return (cr.left + cr.right) / 2;
+        },
         font: {
             key: 'fs', def: 22, min: 12, max: 48, step: 2,
             apply: function (size) { text.style.setProperty('--fs', size + 'px'); }

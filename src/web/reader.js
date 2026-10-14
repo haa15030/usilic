@@ -296,7 +296,22 @@ var Reader = function (opt) {
     // 変えて見せる。全部の組み直しは重いので、その間はfont.preview(EPUBは読んでいる章だけ測り直す、無ければ
     // font.apply)で、指を離した時にsetFont()で確定する。刻みはA−/A＋の半分(細かく追うため)。位置はA−/A＋と
     // 同じく変える前の所へ戻す。
+    // 同日、直接のユーザー依頼("ピンチが右端で起きるのは位置の記憶用かもしれないが出来れば中央がいい…中央確定で
+    // いい"): 基準は画面の右端(A−/A＋のfontAnchor)ではなく画面中央の字(pinchAnchor)。縦書きはその字を画面上の
+    // 同じ横位置(pinchX)に留め、横書きの段組み(opt.charXがnull)はその字の段へjump()する。
     var pinchStart = null;  // {dist, size}
+    var pinchAnchor = null, pinchX = 0;
+    function keepPinchCenter() {
+        if (!pinchAnchor) {
+            return;
+        }
+        var x = opt.charX ? opt.charX(pinchAnchor) : null;
+        if (x === null) {
+            opt.jump(pinchAnchor, false);
+        } else {
+            scroller.scrollLeft += x - pinchX;
+        }
+    }
     var pinchSize = 0, pinchShown = 0, pinchFrame = 0;
     function touchDistance(e) {
         var a = e.touches[0], b = e.touches[1];
@@ -308,20 +323,17 @@ var Reader = function (opt) {
             return;
         }
         pinchShown = pinchSize;
-        (font.preview || font.apply)(pinchSize, fontAnchor);
-        if (fontAnchor) {
-            opt.jump(fontAnchor, false);
-            fontAnchorScroll = scroller.scrollLeft;
-        }
+        (font.preview || font.apply)(pinchSize, pinchAnchor);
+        keepPinchCenter();
         repaint();
     }
     function pinch(target) {
         target.addEventListener('touchstart', function (e) {
             if (e.touches.length === 2) {
                 inertia.stop();
-                if (!anchored()) {
-                    fontAnchor = opt.topPos();
-                }
+                pinchAnchor = opt.centerPos ? opt.centerPos() : opt.topPos();
+                var x = pinchAnchor && opt.charX ? opt.charX(pinchAnchor) : null;
+                pinchX = x === null ? 0 : x;
                 pinchStart = { dist: Math.max(touchDistance(e), 1), size: fontSize };
                 pinchSize = pinchShown = fontSize;
                 e.preventDefault();
@@ -354,8 +366,14 @@ var Reader = function (opt) {
                 pinchFrame = 0;
             }
             if (size !== fontSize || shown !== fontSize) {
-                setFont(size);
+                fontSize = Math.min(font.max, Math.max(font.min, size));
+                save(font.key, fontSize);
+                font.apply(fontSize);
+                keepPinchCenter();
+                repaint();
             }
+            pinchAnchor = null;
+            fontAnchor = null;  // A−/A＋の基準は、次に押した時の画面から取り直す
         }
         target.addEventListener('touchend', end);
         target.addEventListener('touchcancel', end);

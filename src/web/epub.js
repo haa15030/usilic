@@ -252,6 +252,28 @@
             var br = book.getBoundingClientRect();
             return posAt(rtl ? br.right - 12 : br.left + 12, br.top + br.height * 0.1);
         },
+        // ピンチの基準(reader.jsのpinch参照): 画面中央の字と、その字の画面上の横位置。横書きの章は段組みで
+        // 1段ずつ送るので、横位置は返さない(nullならreader.jsはその字の段へjump()する)。
+        centerPos: function () {
+            var br = book.getBoundingClientRect();
+            return posAt(br.left + br.width / 2, br.top + br.height / 2);
+        },
+        charX: function (m) {
+            var ch = chapterOf(m.href);
+            var doc = ch && ch.vertical ? docOf(ch) : null;
+            var pt = doc ? pointAt(doc, m.off || 1) : null;
+            if (!pt) {
+                return null;
+            }
+            var r = doc.createRange();
+            r.setStart(pt.node, pt.offset);
+            r.collapse(true);
+            var rects = r.getClientRects();
+            if (!rects.length) {
+                return null;
+            }
+            return ch.frame.getBoundingClientRect().left + (rects[0].left + rects[0].right) / 2;
+        },
         font: {
             key: 'efs', def: 100, min: 60, max: 250, step: 10,
             apply: function (pct) {
