@@ -1190,6 +1190,16 @@ void applyHoverRowAndRedraw(fm::ContentView &view, int mouseRow, bool moveCursor
   view.redraw();
 }
 
+// 2026-10-15、直接のユーザー報告("-cで慣性スクロールを中断すると^P/^Nがk/jになる。ブロックカーソルも行方不明"):
+// 慣性・ドラッグ・クリックの後(runCoastLoop()・runTerminalMouseDrag()から戻った所)は、ハイライト行の無い画面
+// (FILE等)の端末のカーソルを、今の行(慣性が止めた先端の行)へ置き直す。redraw()だけではカーソルはモードラインの
+// 端に残り、今の行が見えないので、端の行での^N/^P(画面が1行動く)がj/kに見えていた。プロンプトの中では触らない。
+void syncTerminalCursorAfterMouse(fm::Application &app, fm::Display &display) {
+  if (app.promptActive()) return;
+  app.activeContentView().syncVisibleCursor();
+  display.flush();
+}
+
 // Runs the real-terminal equivalent of runGuiPhase()'s drag-scroll
 // coasting -- see CLAUDE.md's 2026-07-30 note on why this exists
 // alongside the SDL path rather than instead of it: it trades true
@@ -1860,6 +1870,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
           app.noteUserActivity();  // 慣性の開始でも一時的な表示を消す(Application::noteUserActivity()参照)
           int delta = arrow == 'B' || arrow == (app.leftArrowAdvances() ? 'D' : 'C') ? 1 : -1;
           TerminalCoastResult coast = runCoastLoop(app, display, keyInput, resolveCoastLevel(1), delta, /*fromDrag=*/false);
+          syncTerminalCursorAfterMouse(app, display);
           if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
           continue;
         }
@@ -1902,6 +1913,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
           // Left/Right -- see runTerminalMouseDrag()'s own comment
           // for why this isn't decided as click-vs-drag until release.
           TerminalCoastResult coast = runTerminalMouseDrag(app, display, keyInput, mouse->row, mouse->column);
+          syncTerminalCursorAfterMouse(app, display);
           if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
         } else if (mouse->motionOnly && app.directEntryListActive()) {
           app.hoverDirectEntryList(mouse->row);  // Application::directEntryListActive()参照
