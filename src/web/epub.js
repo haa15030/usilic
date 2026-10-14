@@ -257,6 +257,16 @@
             apply: function (pct) {
                 fontPct = pct;
                 measureAll();
+            },
+            // ピンチの間(reader.jsのshowPinch()): 読んでいる章だけ測り直す(全部は指を離した時のapply)
+            preview: function (pct, anchor) {
+                fontPct = pct;
+                var ch = anchor && chapterOf(anchor.href);
+                if (ch) {
+                    measure(ch);
+                } else {
+                    measureAll();
+                }
             }
         }
     });

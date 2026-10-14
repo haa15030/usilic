@@ -265,21 +265,39 @@ var Reader = function (opt) {
     onTap(document.getElementById('larger'), function () { setFont(fontSize + font.step); });
 
     // 2026-10-15、直接のユーザー依頼("ピンチで文字拡大縮小ができるのは反応今イチのKinnopyだけなので（Kindle、
-    // iBooksいずれも不能）助かる。よろしく"): 2本指の間隔の比で文字の大きさを変える。組み直し(章の測り直し)は
-    // 重いので、指を動かしている間は大きさをtoastに出すだけにし、離した時に1回だけsetFont()する
-    // (位置はA−/A＋と同じく変える前の所へ戻る)。ブラウザ自身の拡大は止める。
+    // iBooksいずれも不能）助かる。よろしく"): 2本指の間隔の比で文字の大きさを変える。ブラウザ自身の拡大は止める。
+    // 同日、直接のユーザー依頼("Kinoppyのようにリアルタイムの拡大／縮小はできる？指の開き/閉じに連動してフォント
+    // サイズが変化し指を離すと確定"): 指を動かしている間も、1フレームに1回まで(requestAnimationFrame)大きさを
+    // 変えて見せる。全部の組み直しは重いので、その間はfont.preview(EPUBは読んでいる章だけ測り直す、無ければ
+    // font.apply)で、指を離した時にsetFont()で確定する。刻みはA−/A＋の半分(細かく追うため)。位置はA−/A＋と
+    // 同じく変える前の所へ戻す。
     var pinchStart = null;  // {dist, size}
-    var pinchSize = 0;
+    var pinchSize = 0, pinchShown = 0, pinchFrame = 0;
     function touchDistance(e) {
         var a = e.touches[0], b = e.touches[1];
         return Math.hypot(a.screenX - b.screenX, a.screenY - b.screenY);
+    }
+    function showPinch() {
+        pinchFrame = 0;
+        if (!pinchStart || pinchSize === pinchShown) {
+            return;
+        }
+        pinchShown = pinchSize;
+        (font.preview || font.apply)(pinchSize, fontAnchor);
+        if (fontAnchor) {
+            opt.jump(fontAnchor, false);
+            fontAnchorScroll = scroller.scrollLeft;
+        }
     }
     function pinch(target) {
         target.addEventListener('touchstart', function (e) {
             if (e.touches.length === 2) {
                 inertia.stop();
+                if (!anchored()) {
+                    fontAnchor = opt.topPos();
+                }
                 pinchStart = { dist: Math.max(touchDistance(e), 1), size: fontSize };
-                pinchSize = fontSize;
+                pinchSize = pinchShown = fontSize;
                 e.preventDefault();
             }
         }, { passive: false });
@@ -288,20 +306,28 @@ var Reader = function (opt) {
                 return;
             }
             e.preventDefault();
-            var size = Math.round(pinchStart.size * touchDistance(e) / pinchStart.dist / font.step) * font.step;
+            var unit = font.step / 2;
+            var size = Math.round(pinchStart.size * touchDistance(e) / pinchStart.dist / unit) * unit;
             size = Math.min(font.max, Math.max(font.min, size));
             if (size !== pinchSize) {
                 pinchSize = size;
                 toast('文字の大きさ ' + size + (font.unit || (font.key === 'efs' ? '%' : 'px')));
+                if (!pinchFrame) {
+                    pinchFrame = requestAnimationFrame(showPinch);
+                }
             }
         }, { passive: false });
         function end(e) {
             if (!pinchStart || e.touches.length >= 2) {
                 return;
             }
-            var size = pinchSize;
+            var size = pinchSize, shown = pinchShown;
             pinchStart = null;
-            if (size !== fontSize) {
+            if (pinchFrame) {
+                cancelAnimationFrame(pinchFrame);
+                pinchFrame = 0;
+            }
+            if (size !== fontSize || shown !== fontSize) {
                 setFont(size);
             }
         }
