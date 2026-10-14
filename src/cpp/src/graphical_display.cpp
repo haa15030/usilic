@@ -84,6 +84,7 @@ constexpr SDL_Color kHighlightBgColor{175, 238, 238, 255};
 // ならず分別できない…リンクでないアンダーラインの文字装飾は、.appのデフォルト背景色が黒、を考慮して黒寄りグレー
 // (辛うじて判別可能レベル)のハイライトで表示してみて"): 斜体(Display::Attribute::Italic、EPUBの<i>/<em>、HELPの
 // \fI等)の字は、背景を前景色へ少しだけ寄せた色(既定の黒地・白字なら暗い灰色)で塗る。下線はリンク専用のまま。
+// 字は斜めにしない(同日、"`usilic(1)`、`usilicrc`とか斜体のままだけど？"、-cも同じ灰色、TerminalDisplay参照)。
 SDL_Color italicBackground(SDL_Color bg, SDL_Color fg) {
   auto mix = [](Uint8 b, Uint8 f) { return static_cast<Uint8>(b + (f - b) * 0.18); };
   return SDL_Color{mix(bg.r, fg.r), mix(bg.g, fg.g), mix(bg.b, fg.b), 255};
@@ -1633,7 +1634,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
   int style = TTF_STYLE_NORMAL;
   if (cell.bold) style |= TTF_STYLE_BOLD;
   if (underline) style |= TTF_STYLE_UNDERLINE;
-  if (cell.italic) style |= TTF_STYLE_ITALIC;
+  // 斜体は斜めにせず背景の灰色で示す(italicBackground()参照)
 
   // メインフォントに欠けているグリフについては、CJK対応フォント
   // (loadCjkFallbackFont()自身のコメント参照)へフォールバックする
@@ -1973,7 +1974,7 @@ void GraphicalDisplay::renderCursor() {
   int style = TTF_STYLE_NORMAL;
   if (cell.bold) style |= TTF_STYLE_BOLD;
   if (cell.underline) style |= TTF_STYLE_UNDERLINE;
-  if (cell.italic) style |= TTF_STYLE_ITALIC;
+  // 斜体は斜めにせず背景の灰色で示す(italicBackground()参照)
 
   // renderCell()と同じメイン/フォールバックフォントのグリフ有無の
   // 判定――それ自身のコメント参照。
@@ -3965,7 +3966,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       int style = TTF_STYLE_NORMAL;
       if (wantBold) style |= TTF_STYLE_BOLD;
       if (wantUnderline) style |= TTF_STYLE_UNDERLINE;
-      if (wantItalic) style |= TTF_STYLE_ITALIC;
+      // 斜体は斜めにせず背景の灰色で示す(italicBackground()参照)
       // renderCell()と同じ半角用ヒンティングの調整――それ自身のコメント
       // 参照(項目264、項目263のTTF_HINTING_LIGHTを置き換えたもの)。
       // (TTF_SetFontStyle()/TTF_SetFontHinting()自体は、下で呼ばれる

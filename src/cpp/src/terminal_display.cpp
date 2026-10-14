@@ -309,6 +309,11 @@ void TerminalDisplay::setAttribute(Attribute attr) {
   // 2026-09-26追加: HighlightOff自身の"\x1b[39;49m"は色を既定へ戻して
   // しまうので、ANSIの色(setColor())が有効ならそれを送り直す。
   if (attr == Attribute::HighlightOff) emitColor();
+  // 斜体(灰色の背景)を解いた"\x1b[49m"も背景を既定へ戻すので、検索のハイライト・ANSIの色を送り直す。
+  if (attr == Attribute::ItalicOff) {
+    if (highlightVariant_) tputs(attributeEscape(*highlightVariant_).c_str(), 1, outc);
+    else emitColor();
+  }
 
   std::fflush(stdout);
 }
@@ -327,10 +332,13 @@ std::string TerminalDisplay::attributeEscape(Attribute attr) const {
       return caps_.standoutOn;
     case Attribute::StandoutOff:
       return caps_.standoutOff;
+    // 2026-10-14、直接のユーザー報告("`usilic(1)`、`usilicrc`とか斜体のままだけど？"=ji、項目815の続き): 斜体を
+    // 持たないフォント(MSゴシック等)では見分けられないので、斜体にはせず、背景を黒寄りの灰色(256色の236、
+    // #303030)にする(GraphicalDisplayのitalicBackground()と同じ趣旨)。下線はリンク専用。
     case Attribute::Italic:
-      return caps_.italicOn;
+      return "\x1b[48;5;236m";
     case Attribute::ItalicOff:
-      return caps_.italicOff;
+      return "\x1b[49m";
     case Attribute::Serif:
     case Attribute::SerifOff:
     case Attribute::Large:
