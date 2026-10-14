@@ -30498,3 +30498,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      2行に分かれたF/EGREPの見出しは1つにまとめる。字下げは(.in, .ti)の組ごとのクラスでpadding-left/text-indent
      (1n=0.5em、usilicのEPUB表示も読む)。タブは8桁ごとに展開し、桁そろえの空白はnbspに、その段落は等幅の書体に。
    - **確認**: 13章・XHTMLの整形式のみ(src/HELP.epubはコミットしない)。usilicやブラウザでの見た目は未確認。
+
+810. **2026-10-14: application.hppの`leftArrowAdvances() const const`をUbuntuのg++で通るように直す**
+   - **経緯**: 直接のユーザー報告("Ubuntuでは src/application.hpp:2102:34: error: duplicate cv-qualifier となる。")。
+     項目788で宣言にconstを2つ書いていた。macOSのclangは警告で通すが、g++はエラーにする。
+   - **内容**: constを1つにした。
+
+811. **2026-10-14: -gの縦書きで、大きい字の並びの中の横倒しの欧文を、大きい字と同じくマス目から外して置く**
+   - **経緯**: 直接のユーザー報告("Ocean端末で試してみると本のタイトルで（）が重なってる。"=jg.png、フォントは
+     SFNSMono=jh.png)。見本の.epubの扉の題「雨ニモマケズ（usilic の見本）」で、「（」と横倒しの「usilic」が「ズ」に
+     重なり、「usilic」と「の」の間が空いていた。
+   - **原因**: 大きい字(cell.size > 0)はplaceLargeGlyph()でマス目から外して、字の間隔ごと広げて下へずらすが、
+     renderCell()の横倒し(同じ列に半角2字のマスが上下に続く並び)の分岐は元のマスの位置・大きさのまま描いていた。
+   - **内容**: 横倒しの並びの頭のマスが大きい字なら、largeGlyphPlacementAt()の頭の位置から、間隔(pitch)倍の高さの
+     枠に、pitch倍までの大きさで描く。
+   - **確認**: ビルドのみ(実際の見た目はユーザー確認待ち)。

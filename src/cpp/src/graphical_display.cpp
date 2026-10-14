@@ -1757,11 +1757,22 @@ void GraphicalDisplay::renderCell(int row, int col) {
         SDL_Texture *runTexture = cachedGlyphTexture(*impl_, renderFont, run, style, hinting, fg, true, pw, ph);
         if (!runTexture) return;
         int boxW = impl_->cellWidth * 2, boxH = impl_->cellHeight * (bottom - top + 1);
+        int boxY = box.y;
+        double limit = 1.0;
+        // 2026-10-14、直接のユーザー報告(=jg.png、見本の扉の大きい字の題「雨ニモマケズ（usilic の見本）」で
+        // 「（」「usilic」が「ズ」に重なる): 大きい字(cell.size > 0)の並びはマス目から外して下へずらして置く
+        // (placeLargeGlyph())のに、横倒しの並びだけ元のマスに描いていた。並びの頭も間隔も大きい字に合わせる。
+        if (cell.size > 0) {
+          LargeGlyphPlacement place = impl_->largeGlyphPlacementAt(top, runColumn);
+          boxY = box.y + static_cast<int>((place.start - top) * impl_->cellHeight);
+          boxH = static_cast<int>(boxH * place.pitch);
+          limit = place.pitch;
+        }
         // 回した後の幅はph、高さはpw
-        double scale =
-            std::min({1.0, static_cast<double>(boxW) / std::max(ph, 1), static_cast<double>(boxH) / std::max(pw, 1)});
+        double scale = std::min(
+            {limit, boxW * limit / std::max(ph, 1), static_cast<double>(boxH) / std::max(pw, 1)});
         int dw = static_cast<int>(pw * scale), dh = static_cast<int>(ph * scale);
-        int centerX = box.x + boxW / 2, centerY = box.y + dw / 2;  // 上から詰める
+        int centerX = box.x + boxW / 2, centerY = boxY + dw / 2;  // 上から詰める
         SDL_Rect dst{centerX - dw / 2, centerY - dh / 2, dw, dh};
         SDL_RenderCopyEx(impl_->renderer, runTexture, nullptr, &dst, 90.0, nullptr, SDL_FLIP_NONE);
         return;

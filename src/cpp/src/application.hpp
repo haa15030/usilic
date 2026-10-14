@@ -2099,7 +2099,7 @@ class Application {
   // 2026-10-13、直接のユーザー依頼("横書きでの速度調整(上下の矢印の機能が左右にも割り振られている)の左右を逆に。縦書きは
   // ←で左へ加速だが、そのまま奥付へ移動すると←が減速となるのがNG"): EPUBの横書き(縦書きの本の奥付等の横書きの範囲、
   // 横書きの本)では、慣性の速さの←を先へ(縦書きと同じ)、→を手前へにする(main.cppの左右のキー)。
-  bool leftArrowAdvances() const const;
+  bool leftArrowAdvances() const;
   bool scrollEpubVertical(int delta);  // 右端の列が実際に動いたらtrue
   // 2026-09-29追加、直接のユーザー依頼("左右方向の画面ドラッグを実装で"): 縦書きの本文で
   // 左右ドラッグを受け付けるか(app/main.cpp、GraphicalDisplay::setContentOffsetX()参照)。
