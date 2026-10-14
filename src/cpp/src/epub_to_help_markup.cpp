@@ -1120,7 +1120,7 @@ class BodyConverter {
         lineCenter_ = center_;
         startLineIndent();
       } else if (pendingRestIndent_ && (static_cast<unsigned char>(c) & 0xC0) != 0x80) {
-        line_ += "<indent" + std::to_string(lineIndentRest_ * 2) + ">";  // 2字目以降(折り返した行)
+        line_ += "<indent" + std::to_string(lineIndentRest_) + ">";  // 2字目以降(折り返した行)
         pendingRestIndent_ = false;
       }
       line_ += c;
@@ -1142,13 +1142,18 @@ class BodyConverter {
     pendingRestIndent_ = false;
     bool vertical = vertical_.value_or(bookVertical_);
     double padding = vertical ? paddingTopEm_ : paddingLeftEm_;
+    // 2026-10-15、直接のユーザー報告("HELP.epubでは<indent?>による字下げが半角一文字分、一律後退している"):
+    // 横書きの<indentN>は半角の数(0.5em単位)で丸める。以前はemで丸めてから2倍していたので、HELP.epubの
+    // 0.5em刻みの字下げ(padding-left:9.5em等)が半角1字ずれていた。縦書き(indentLines_)は今までどおり字(em)単位。
     int first = std::max(0, static_cast<int>(std::lround(padding + textIndentEm_)));
     int rest = std::max(0, static_cast<int>(std::lround(padding)));
-    if (first == 0 && rest == 0) return;
-    indentLines_[currentLineNumber()] = {first, rest};
-    if (first > 0) line_ += "<indent" + std::to_string(first * 2) + ">";
-    lineIndentRest_ = rest;
-    pendingRestIndent_ = rest != first;
+    int firstColumns = std::max(0, static_cast<int>(std::lround((padding + textIndentEm_) * 2)));
+    int restColumns = std::max(0, static_cast<int>(std::lround(padding * 2)));
+    if (firstColumns == 0 && restColumns == 0) return;
+    if (first != 0 || rest != 0) indentLines_[currentLineNumber()] = {first, rest};
+    if (firstColumns > 0) line_ += "<indent" + std::to_string(firstColumns) + ">";
+    lineIndentRest_ = restColumns;
+    pendingRestIndent_ = restColumns != firstColumns;
     indentOpen_ = true;
   }
 
@@ -1280,7 +1285,7 @@ class BodyConverter {
   // 字下げ(CssFontRule::paddingTop等、em): 開いている要素のpaddingの和と、継承したtext-indent。
   double paddingTopEm_ = 0, paddingLeftEm_ = 0, textIndentEm_ = 0;
   bool bookVertical_ = false;       // 本全体が縦書き(epubIsRightToLeft())
-  int lineIndentRest_ = 0;          // 今の行の2字目以降の字下げ(em)
+  int lineIndentRest_ = 0;          // 今の行の2字目以降の字下げ(半角の数)
   bool pendingRestIndent_ = false;  // 最初の字の後に<indent>(2字目以降の字下げ)を出す
   bool indentOpen_ = false;         // 行末で</indent>を出す
   int hiddenDepth_ = 0;             // display:noneの要素を開いた時のdepth_(0なら中ではない)
