@@ -30490,3 +30490,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **作品一覧**: 青空文庫のlist_person_all_extended_utf8.zip(2026-08-22更新)から、作品著作権フラグ「なし」の
      17,352作品(全17,840)を作品IDごとに1行のタブ区切り(作品ID・作品名・副題・著者・その他・文字遣い・公開日・
      図書カード/テキスト/XHTMLのURL)にして~/.local/usilic-web/aozora-free.tsvへ置いた(リポジトリには入れない)。
+
+809. **2026-10-14: HELPのroff(doc/HELP.ja.1)を横書きのEPUBにする試作(src/cpp/tools/help2epub.py)**
+   - **経緯**: 直接のユーザー依頼("doc/HELP.ja.1をsrc/HELP.epubに変換してみて。"、"横書きepubで。")。
+   - **内容**: usilic -nが出すroffの命令(.in/.ti/.sp、\fB/\fI、\f[JPM]、\[uXXXX]、\e、\*[usilic-tab])だけを読む。
+     見出しは行末が\*[usilic-tab]の行と字下げ0の行(字下げ0ならh2で章のファイルを分け、INFO等はh3で目次の入れ子)。
+     2行に分かれたF/EGREPの見出しは1つにまとめる。字下げは(.in, .ti)の組ごとのクラスでpadding-left/text-indent
+     (1n=0.5em、usilicのEPUB表示も読む)。タブは8桁ごとに展開し、桁そろえの空白はnbspに、その段落は等幅の書体に。
+   - **確認**: 13章・XHTMLの整形式のみ(src/HELP.epubはコミットしない)。usilicやブラウザでの見た目は未確認。
