@@ -2,14 +2,16 @@
 # usilic -n が作るHELPのroff(doc/HELP.ja.1)を横書きのEPUB3にする(試作)。
 # 使い方: python3 src/cpp/tools/help2epub.py doc/HELP.ja.1 src/HELP.epub
 # 章(h2)ごとに1ファイル、見出し(INFO等、h3)は目次の入れ子。字下げ(.in/.ti)はpadding-left/text-indent(1n=0.5em)。
-# 「後述 FILE」「前述 [EPUB] 参照」のモード名は巻末の注釈(KDPの推奨どおりaside epub:type="footnote"と
-# 両方向のリンク)へのリンクにする。注釈の中身は、入力と同じ所のHELP.notes(doc/HELP.notes)に書いた文、
-# 無ければその見出しの節全体の写し。目次(nav)はspineに入れない(KDPの論理目次としては残る)。
+# 「usilicrc の URL」等の設定項目の名前は巻末の注釈(KDPの推奨どおりaside epub:type="footnote"と両方向の
+# リンク)へのリンクにする。注釈の中身はusilicrc(3つ目の引数、省略時は入力の../src/usilicrc)のその項目の
+# 見出しの直後の「#」の行。入力と同じ所のHELP.notes(doc/HELP.notes)に書いてあればその文。
+# 目次(nav)はspineに入れない(KDPの論理目次としては残る)。
 import datetime, html, re, sys, unicodedata, uuid, zipfile
 
 src, out = sys.argv[1], sys.argv[2]
 import os
 notes_path = os.path.join(os.path.dirname(src) or '.', 'HELP.notes')
+rc_path = sys.argv[3] if len(sys.argv) > 3 else os.path.join(os.path.dirname(src) or '.', '..', 'src', 'usilicrc')
 lines = open(src, encoding='utf-8').read().split('\n')
 
 def width(s):
@@ -142,20 +144,20 @@ def xhtml(title, body):
             '<link rel="stylesheet" type="text/css" href="../Style/style.css"/></head>\n<body>\n%s</body>\n</html>\n'
             % (html.escape(title), body))
 
-# 見出し(h3)ごとの節(次の見出しまで)。注釈の中身の写しに使う。
-sections = {}  # 見出しの題 -> (章の番号, 節の番号, ブロック)
-for n, ch in enumerate(chapters, 1):
-    k = -1
-    for b in ch['blocks']:
-        if b[0] == 'h' and b[1] == 3:
-            k += 1
-            sections[b[2]] = (n, k, [b])
-        elif b[0] == 'h':
-            k = -1
-        elif k >= 0:
-            sections[ch['subs'][k]][2].append(b)
+# usilicrcの設定項目(行頭が英大文字の見出し)ごとの、見出しの直後に続く「#」の行(注釈の中身)。
+rc_comments = {}
+if os.path.exists(rc_path):
+    item = None
+    for l in open(rc_path, encoding='utf-8').read().split('\n'):
+        if re.match(r'[A-Z][A-Z-]*\s*$', l):
+            item = l.strip()
+            rc_comments[item] = []
+        elif item and l.startswith('#'):
+            rc_comments[item].append(re.sub(r'^# ?', '', l))
+        else:
+            item = None
 
-# HELP.notes: "@見出しの題"(例 "@USILIC：アクセス履歴の一覧")の行の後に注釈の文。空行で段落。#の行は読まない。
+# HELP.notes: "@設定項目"(例 "@URL")の行の後に注釈の文を書くと、usilicrcのコメントの代わりにそれを使う。
 written = {}
 if os.path.exists(notes_path):
     key = None
@@ -167,58 +169,38 @@ if os.path.exists(notes_path):
         elif key is not None:
             written[key].append(l)
 
-def note_target(name, after):
-    """モード名nameの見出しの題。同じ名前が2つ(USILIC)なら、続く「の ^Ou」等のキーを節に含む方、無ければ後の方。"""
-    cands = [t for t in sections if re.sub(r'\s+', ' ', t.split('：', 1)[0]) == name]
-    if len(cands) > 1:
-        m = re.match(r'[\s\u00a0]*の[\s\u00a0]*(\^[A-Za-z\[\]^]+)', after)
-        if m:
-            hit = [t for t in cands if any(b[0] == 'p' and m.group(1) + '：' in b[4] for b in sections[t][2])]
-            if hit: return hit[0]
-    return cands[-1] if cands else None
-
-notes = {}   # 見出しの題 -> 注釈のid
+notes = {}   # 設定項目 -> 注釈のid
 backrefs = {}  # 注釈のid -> [(章のファイル, 参照のid)]
-REF = re.compile(r'(前述|後述)([\s\u00a0]*\[?)<b>([^<]+)</b>(\]?)')
-AND = re.compile(r'(epub:type="noteref"><b>[^<]+</b></a>\]?[\s\u00a0]*と[\s\u00a0]*\[?)<b>([^<]+)</b>')  # 「後述 HELP と KEY」
+# 「usilicrc の URL」「usilicrc の \fBEGREP\fR」の設定項目の名前
+REF = re.compile(r'(<i>usilicrc</i>[\s\u00a0]*の[\s\u00a0]*)(<b>)?([A-Z][A-Z-]*[A-Z])(</b>)?')
 def link_refs(h, fname):
-    def ref(name, before, after):
-        target = note_target(name, after)
-        if not target: return None
-        nid = notes.setdefault(target, 'n%d' % (len(notes) + 1))
+    def rep(m):
+        item = m.group(3)
+        if not (rc_comments.get(item) or written.get(item)): return m.group(0)
+        nid = notes.setdefault(item, 'n%d' % (len(notes) + 1))
         rid = 'r%d' % (sum(len(v) for v in backrefs.values()) + 1)
         backrefs.setdefault(nid, []).append((fname, rid))
-        return '%s<a id="%s" href="notes.xhtml#%s" epub:type="noteref"><b>%s</b></a>' % (before, rid, nid, name)
-    def rep(m):
-        r = ref(m.group(3), m.group(1) + m.group(2), h[m.end():])
-        return r + m.group(4) if r else m.group(0)
-    h = REF.sub(rep, h)
-    while True:
-        m = AND.search(h)
-        r = m and ref(m.group(2), m.group(1), h[m.end():])
-        if not r: return h
-        h = h[:m.start()] + r + h[m.end():]
+        return '%s<a id="%s" href="notes.xhtml#%s" epub:type="noteref">%s%s%s</a>' % (
+            m.group(1), rid, nid, m.group(2) or '', item, m.group(4) or '')
+    return REF.sub(rep, h)
 
-def render(blist, fname=None, in_note=False):
+def render(blist, fname):
     body, sub, pending_sp = [], 0, False
     for b in blist:
         if b[0] == 'sp':
             pending_sp = True
             continue
         if b[0] == 'h':
-            if in_note:
-                body.append('<p class="nh">%s</p>\n' % b[3])
-            else:
-                tag = 'h%d' % b[1]
-                idattr = ' id="s%d"' % sub if b[1] == 3 else ' id="top"'
-                if b[1] == 3: sub += 1
-                body.append('<%s%s>%s</%s>\n' % (tag, idattr, b[3], tag))
+            tag = 'h%d' % b[1]
+            idattr = ' id="s%d"' % sub if b[1] == 3 else ' id="top"'
+            if b[1] == 3: sub += 1
+            body.append('<%s%s>%s</%s>\n' % (tag, idattr, b[3], tag))
         else:
             _, i, f, h, raw = b
             c = [cls(i, f)]
             if pending_sp: c.append('sp')
             if re.search(r'^\s|\S {2,}|\t', raw): c.append('pre')
-            if fname: h = link_refs(h, fname)
+            h = link_refs(h, fname)
             body.append('<p class="%s">%s</p>\n' % (' '.join(c), h if h.strip('\u00a0 ') else '\u00a0'))
         pending_sp = False
     return body
@@ -228,18 +210,21 @@ for n, ch in enumerate(chapters, 1):
     fname = 'ch%02d.xhtml' % n
     files.append(('Text/' + fname, xhtml(ch['title'], ''.join(render(ch['blocks'], fname)))))
 
-# 巻末の注釈。注釈の頭に、参照した所へ戻るリンク(複数なら↩1 ↩2…)。
+# 巻末の注釈。注釈の頭に、参照した所へ戻るリンク(複数なら↩1 ↩2…)。中身はusilicrcのその項目の
+# コメント(字下げ・桁そろえを保つので等幅で1行ずつ)、HELP.notesに書いてあればその文。
 asides = []
-for target, nid in sorted(notes.items(), key=lambda kv: int(kv[1][1:])):
+for item, nid in sorted(notes.items(), key=lambda kv: int(kv[1][1:])):
     refs = backrefs[nid]
     back = ' '.join('<a epub:type="noteref" href="%s#%s">↩%s</a>' % (f, r, k + 1 if len(refs) > 1 else '')
                     for k, (f, r) in enumerate(refs))
-    head = '<p class="nh">%s <b>%s</b></p>\n' % (back, html.escape(target))
-    if target in written:
-        paras = re.split(r'\n\s*\n', '\n'.join(written[target]).strip())
+    head = '<p class="nh">%s <i>usilicrc</i> の <b>%s</b></p>\n' % (back, html.escape(item))
+    if item in written:
+        paras = re.split(r'\n\s*\n', '\n'.join(written[item]).strip())
         inner = ''.join('<p>%s</p>\n' % html.escape(t).replace('\n', '<br/>') for t in paras if t.strip())
     else:
-        inner = ''.join(render(sections[target][2][1:], in_note=True))
+        lines_ = rc_comments[item]
+        while lines_ and not lines_[-1].strip(): lines_ = lines_[:-1]
+        inner = ''.join('<p class="rc">%s</p>\n' % (inline(l.replace('\\', '\\e'), 0) or '\u00a0') for l in lines_)
     asides.append('<aside id="%s" epub:type="footnote">\n%s%s</aside>\n' % (nid, head, inner))
 if asides:
     chapters.append({'title': '注釈', 'blocks': [], 'subs': [], 'file': 'notes'})
@@ -253,6 +238,7 @@ css = ['html { writing-mode: horizontal-tb; }',
        'p.sp { margin-top: 0.8em; }',
        'p.nh { margin-top: 1.2em; }',
        'aside { margin: 0 0 1em; }',
+       'p.rc { font-family: "Osaka-Mono", "MS Gothic", "Noto Sans Mono CJK JP", monospace; padding-left: 1em; }',
        'p.pre { font-family: "Osaka-Mono", "MS Gothic", "Noto Sans Mono CJK JP", monospace; }']
 for name, (i, f) in sorted(classes.items(), key=lambda kv: kv[1]):
     css.append('p.%s { padding-left: %gem; text-indent: %gem; }' % (name, i * 0.5, (f - i) * 0.5))
@@ -311,6 +297,6 @@ with zipfile.ZipFile(out, 'w') as z:
 print('%d chapters, %d blocks, %d indent classes, %d notes (%d refs) -> %s' % (
     len(chapters), len(blocks), len(classes), len(notes), sum(len(v) for v in backrefs.values()), out))
 for t, nid in notes.items():
-    print('  note', nid, t, '(HELP.notes)' if t in written else '(節の写し)', [r for _, r in backrefs[nid]])
+    print('  note', nid, t, '(HELP.notes)' if t in written else '(usilicrcのコメント %d行)' % len(rc_comments[t]), [r for _, r in backrefs[nid]])
 for ch in chapters:
     print(' ', ch['title'], '/', len(ch['subs']))
