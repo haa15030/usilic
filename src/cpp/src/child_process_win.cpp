@@ -15,6 +15,7 @@
 #include <optional>
 #include <thread>
 
+#include "native_file.hpp"
 #include "native_grep.hpp"
 #include "native_ls.hpp"
 #include "native_unzip.hpp"
@@ -232,6 +233,12 @@ ChildProcess::Result ChildProcess::run(const std::vector<std::string> &argv, con
   // unzip(EPUBの中身・ARCの一覧と展開)も、PATHに無ければ内蔵のもので(native_unzip.hpp参照)。
   if (argv[0] == "unzip" && !onPath("unzip")) {
     result.exitStatus = nativeUnzip(std::vector<std::string>(argv.begin() + 1, argv.end()), result.output);
+    result.ok = result.exitStatus == 0;
+    return result;
+  }
+  // file(バイナリのファイルの「(^X) 種類」・クイックルックの判定)も、PATHに無ければ内蔵のもので(native_file.hpp参照)。
+  if (argv[0] == "file" && !onPath("file")) {
+    result.exitStatus = nativeFile(std::vector<std::string>(argv.begin() + 1, argv.end()), result.output);
     result.ok = result.exitStatus == 0;
     return result;
   }

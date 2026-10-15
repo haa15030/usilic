@@ -30777,3 +30777,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      egrep・fgrep・unzip)を「ある」と答える(EPUBの「unzip: command not found」を出さない)。
    - **確認**: tests/test_native_unzip.cpp(sample.epubで一覧・全部の中身・展開が本物のunzipと一致)。Kbt.epubの37個・
      HELP.epubの19個の中身も一致。Windowsでの動作は未確認。
+
+837. **Windowsのネイティブでfileを内蔵する**(2026-10-15、直接のユーザー報告"NarouToEpub3-master.zipは`(^C) cannot
+     execute 'file'`")
+   - **原因**: バイナリのファイルを開いた時の「(^X) 種類」の1行(FileMode::binaryTypeText())は`file -b`で種類を
+     得るが、Windowsのネイティブにはfileが無い。
+   - **直し**: native_file.cpp(nativeFile())。先頭のバイト(マジックナンバー)で、書庫(zip・EPUB・tar・7z・rar)・
+     圧縮(gzip・bzip2・xz・zstd)・画像・PDF・音声・動画・実行ファイル・フォント・テキストをfile(1)に似た言葉で答え、
+     知らないものは"data"。`-b`・`--mime-type`に対応。ChildProcessのWindows版が、PATHにfileが無い時に使う。
+     programOnPath()の内蔵の一覧にfileを足した。
+   - **確認**: tests/test_native_file.cpp(2件)。Windowsでの動作は未確認。
