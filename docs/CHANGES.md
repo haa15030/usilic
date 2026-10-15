@@ -30974,3 +30974,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      usilicへの受け渡し、^[lのLOG。
    - **確認**: Macでmake usilic・make WINDOWS=1 usilicが通り、tests/test_shell.cppが通った。Windowsでの動作は
      未確認(このMacにはWindowsもWineも無い)。
+
+855. **cmd.exeのSHELLでは、^J^Wのcatをtypeにする**(2026-10-16、直接のユーザー報告(Windows)"1.で`'cat'は、内部
+     コマンドまたは外部コマンド、...として認識されていません。`と出た以外は全部OK"、項目854の確認の1.)
+   - ^J^Wは今の画面をファイルへ書き、SHELLのコマンド行に`cat 'そのパス'`を入れる。cmd.exeにはcatが無いので、
+     Shell::usesCmdSyntax()の時は`type C:\…`(typeは/をスイッチと取るので\区切り)。
+   - cmd.exeの起動時のコマンドに`chcp 65001 >nul`を足した。^J^Wのファイルは UTF-8 なので、既定のCP932のままだと
+     typeの出力をConPTYがCP932として読んで化ける。
+   - 項目854の確認の残り(dir・cd ..・日本語のファイル名・^C・exit)はWindowsでOKだった(ユーザーの確認)。

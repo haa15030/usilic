@@ -12018,6 +12018,14 @@ bool Application::shellInsertBufferContent() {
   // (shellQuoteArg()、このファイルが1つを組み立てる他の全ての場所で
   // 既に使われている――それ自身のコメント参照)が正しい道具である。
   lastShellInsertCommand_ = "cat " + shellQuoteArg(savePath);  // ^Wで出し直す(feedShellByte()の^W参照)
+  if (shell_.usesCmdSyntax()) {
+    // 2026-10-16、直接のユーザー報告(Windows、"'cat'は、内部コマンドまたは外部コマンド、...として認識されて
+    // いません"): cmd.exeにはcatが無いのでtype。typeは/をスイッチと取るので\区切りにする。
+    std::string windowsPath = savePath;
+    for (char &c : windowsPath)
+      if (c == '/') c = '\\';
+    lastShellInsertCommand_ = "type " + cmdQuoteArg(windowsPath);
+  }
   shell_.commandLine().setText(lastShellInsertCommand_);
   shell_.commandLine().redraw();
   return true;

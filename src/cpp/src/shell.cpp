@@ -1401,6 +1401,9 @@ std::string Shell::buildSetupCommand(const std::string &initialDirectory) const 
       if (dir.size() > 3 && dir.back() == '\\') dir.pop_back();
       line += "cd /d \"" + dir + "\" & ";
     }
+    // chcp 65001: usilicが書くファイル(^J^Wのtype等)はUTF-8なので、cmd.exeの組み込みのコマンドや古い
+    // プログラムの出力もUTF-8として扱わせる(既定のCP932のままだと、ConPTYがCP932として読んで化ける)。
+    line += "chcp 65001 >nul & ";
     line += "prompt " + cmdPromptText(mark + prog + ":") + "$P$G " + cmdPromptText(mark);
     // &の前に空白を置かない(置くとPROMPTの末尾に入る)。
     line += "& cls & echo #e^os" + std::to_string(childPid_) + "#\n";
