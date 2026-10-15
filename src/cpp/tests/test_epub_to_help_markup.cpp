@@ -225,4 +225,5 @@ TEST_CASE("epubToHelpMarkup: KDP-style notes -- footnote asides, endnote list it
   CHECK(notes[1].find("二段落目") != std::string::npos);
   CHECK(notes[2].find("後注") != std::string::npos);
   CHECK(notes[2].find("脚注") == std::string::npos);
+  CHECK(notes[2].find("1.") == std::string::npos);  // 注釈の項目にはリストの番号を付けない
 }

@@ -936,7 +936,13 @@ class BodyConverter {
         if (name == "ul" || name == "ol") listStack_.push_back(name == "ol" ? 1 : 0);
         if (name == "li" && !listStack_.empty()) {
           int &counter = listStack_.back();
-          text(counter ? std::to_string(counter++) + ". " : "・");
+          // 2026-10-15、直接のユーザー指摘("usilicでは注釈に入るのは１項目だけなので通し番号も不要"): 注釈の項目
+          // (<li epub:type="endnote">等)には「1.」「・」を付けない(注釈には［注4］等の自分の番号がある)。
+          if (isNoteType(attr(t, "type"))) {
+            if (counter) counter++;
+          } else {
+            text(counter ? std::to_string(counter++) + ". " : "・");
+          }
         }
       }
       if (close) {
