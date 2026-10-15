@@ -9009,9 +9009,23 @@ void Application::setEpubVerticalView(int first, int cursor, std::optional<int> 
   bool onImage = total > 0 && !epubVerticalCols_[epubVerticalCursor_].image.empty();
   epubVerticalView_.setContentCursorColumn(
       onImage ? -1 : std::max(0, epubVerticalScreenColumn(epubVerticalCursor_ - epubVerticalFirst_, display_.columns())));
+  // 2026-10-15、直接のユーザー報告("Kbt.epubの奥付から始めると総行数が300台なのが縦書きに変わると1000台になる"):
+  // 横書き(applyRawLineNumbers())と同じく、列ではなく元の行(rawLineNumber)で数える。章の頭等に足した空の列
+  // (rawLineNumberが0)は、手前の列の行にする。総数は横書きの範囲(奥付等)も含めた本の全体(fileView_の最後の行)。
+  int rawCurrent = 0, rawTotal = 0;
+  for (int i = 0; i < total; i++) {
+    rawTotal = std::max(rawTotal, epubVerticalCols_[i].rawLineNumber);
+    if (i <= epubVerticalCursor_) rawCurrent = std::max(rawCurrent, epubVerticalCols_[i].rawLineNumber);
+  }
+  if (!fileView_.lines().empty()) rawTotal = std::max(rawTotal, fileView_.lines().back().rawLineNumber.value_or(0));
+  if (rawTotal <= 0) {
+    rawCurrent = epubVerticalCursor_ + 1;
+    rawTotal = total;
+  }
+  rawCurrent = std::max(rawCurrent, 1);
   char position[64];
-  std::snprintf(position, sizeof(position), "%05d/%05d %3d%%", epubVerticalCursor_ + 1, std::max(total, 1),
-                total > 0 ? static_cast<int>(100L * (epubVerticalCursor_ + 1) / total) : 100);
+  std::snprintf(position, sizeof(position), "%05d/%05d %3d%%", rawCurrent, std::max(rawTotal, 1),
+                rawTotal > 0 ? static_cast<int>(100L * rawCurrent / rawTotal) : 100);
   // 縦書きのCOPY(epubSelectActive()): 離した後の問い(Record?(y/n))を位置の欄に出す
   if (epubRecordAsk_ && epubSelectActive()) epubVerticalView_.setPositionTextOverride("Record?(y/n)", /*plain=*/true);
   else epubVerticalView_.setPositionTextOverride(std::string(position));

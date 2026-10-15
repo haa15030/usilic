@@ -30787,3 +30787,17 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      知らないものは"data"。`-b`・`--mime-type`に対応。ChildProcessのWindows版が、PATHにfileが無い時に使う。
      programOnPath()の内蔵の一覧にfileを足した。
    - **確認**: tests/test_native_file.cpp(2件)。Windowsでの動作は未確認。
+
+838. **Windowsのネイティブで、慣性スクロールの速い段が一気に速くなる**(2026-10-15、直接のユーザー報告
+     "7段目くらいから急激に速くなるので画面ドラッグでスクロール中、その領域にハマると一瞬で文末になる")
+   - **原因**: MinGWのusleepはSleep(us/1000)で、1000未満は待たない(Sleep(0))。usilicrcのARROW
+     (200000 … 1000 500 200 100 50 20)の7段目より速い段の1ドットごとの待ちが0になっていた。
+   - **直し**: posix_compat.hppでWindowsのusleepをpreciseSleepMicroseconds()に置き換えた。残りが2ミリ秒を超える
+     間はSleep、最後はQueryPerformanceCounterを見ながら回り、マイクロ秒単位で待つ。Windowsでの動作は未確認。
+
+839. **縦書きのEPUBの総行数を、横書きと同じく元の行で数える**(2026-10-15、直接のユーザー報告"Kbt.epubの奥付から
+     始めると総行数が300台なのが縦書きに変わると1000台になる"、macOSでも)
+   - **原因**: 縦書きの位置の欄(Application::setEpubVerticalView()の終わり)は列の数で数えていた。横書きは元の行
+     (rawLineNumber、applyRawLineNumbers())で数える。
+   - **直し**: 縦書きも、カーソルの列までの元の行番号で今の行、本の全体(横書きの範囲も含めfileView_の最後の行)で
+     総数を出す。章の頭等の空の列は手前の列の行。
