@@ -111,6 +111,16 @@
         return null;
     }
 
+    // 箱boxの章の先(fwd=1)か前(-1)の隣の章も横書きなら、その箱と、それが画面にぴったりになるscrollLeft
+    function nextInner(box, fwd) {
+        var i = chapters.findIndex(function (ch) { return ch.box === box; });
+        var nb = i < 0 ? null : chapters[i + (fwd > 0 ? 1 : -1)];
+        if (!nb || nb.vertical) {
+            return null;
+        }
+        return { el: nb.box, left: book.scrollLeft + nb.box.getBoundingClientRect().left - book.getBoundingClientRect().left };
+    }
+
     // 横に流れて、前の位置prevから今の位置nowまでの間に、横書きの章のboxがぴったりになる位置を越えたか
     function enterInner(prev, now) {
         if (prev === now) {
@@ -279,6 +289,7 @@
         forward: function () { return rtl ? -1 : 1; },
         inner: alignedInner,
         enter: enterInner,
+        next: nextInner,
         describe: function (m) {
             var i = chapters.findIndex(function (ch) { return ch.path === m.href; });
             return (i < 0 ? '?' : i + 1) + '/' + chapters.length + '章 ' + m.off + '字目';

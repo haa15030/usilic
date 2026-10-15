@@ -10,7 +10,7 @@
 //       font:       {key, def, min, max, step, unit, apply: function (size)},
 //       forward:    function () → 先へ進む時のscrollLeftの増える向き(縦書き・右綴じは-1)
 //                   (省略時は-1)
-//       inner, enter: 横書きの章を上下に流す箱(scroll.jsのInertia参照、省略可)
+//       inner, enter, next: 横書きの章を上下に流す箱(scroll.jsのInertia参照、省略可)
 //   });
 //   r.attach(doc, win, innerOf)  その文書(iframeの中など)のtouch等も慣性スクロールへ回す(innerOfはInertia参照)
 //   r.savePos()     読んでいる位置を覚え直す(上下に流す箱をスクロールした時等)
@@ -108,7 +108,8 @@ var Reader = function (opt) {
         friction: function () { return FRICTIONS[frictionIdx].k; },
         toast: toast,
         inner: opt.inner,
-        enter: opt.enter
+        enter: opt.enter,
+        next: opt.next
     });
 
     // ---- 記録 ----

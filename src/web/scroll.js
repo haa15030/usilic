@@ -9,6 +9,8 @@
 //   });
 //       inner:    function () → 画面にぴったり収まっている「縦に流す箱」(横の本文の中の横書きの章)か null(省略可),
 //       enter:    function (前の位置, 今の位置) → 横に流れていてその箱の位置を越えたら {el: 箱, left: その位置} か null
+//       next:     function (箱, fwd) → その箱の先(fwd=1)か前(-1)の隣も縦に流す箱なら {el: 箱, left: その箱がぴったりになる
+//                 位置} か null(省略可)
 //   });
 //   s.attach(doc, win, innerOf)  その文書(iframeの中など)のtouch・マウス・ホイール・キーも受ける。innerOfは、
 //                       その文書が縦に流す箱の中にあればその箱を返す関数(省略可)
@@ -17,6 +19,8 @@
 // 横書きの章は、usilicと同じく上下に流す。その章の箱(inner)の中で縦に指を動かすと箱を上下に、横に動かすと本文を
 // 左右に動かす。慣性で箱の端に着いたら同じ速さで本文の横の慣性として続け、横の慣性で箱の位置を越えたら(enter)
 // 箱にそろえて縦の慣性として続ける(先へなら箱の上から、戻るなら下から)。
+// 同日、直接のユーザー依頼(HELP.epubで"章毎にスクロール方向の縦横が切り替わる"の直し): 箱の端に着いた時、隣も
+// 縦に流す箱(横書きの章が続く)なら、横に流さずに隣の箱へ移り、縦のまま続ける(opt.next)。
 //   s.stop()            止める
 //   s.coast(dir)        矢印キーの慣性を1段変える(dirは先へ=1、戻る=-1。止まっていれば最低速で流し始める)
 //   s.page(dir)         画面1枚分(dirはスクロール位置が増える向き=1、減る向き=-1)
@@ -62,14 +66,25 @@ var Inertia = function (scroller, opt) {
     }
     // 止まっている時にキー等で動かし始める先。画面にぴったりの箱があり、その向き(fwdは先へ=1)の端に
     // 着いていなければ箱、そうでなければ本文。
+    function atEnd(box, fwd) {
+        return fwd > 0 ? box.scrollTop >= box.scrollHeight - box.clientHeight - 1 : box.scrollTop <= 0;
+    }
+    // 箱の端に着いた時、隣も縦に流す箱ならそこへ移る(先へなら上から、戻るなら下から)。移ったらその箱
+    function hopTo(box, fwd) {
+        var nx = opt.next ? opt.next(box, fwd) : null;
+        if (!nx) {
+            return null;
+        }
+        scroller.scrollLeft = nx.left;
+        nx.el.scrollTop = fwd > 0 ? 0 : nx.el.scrollHeight;
+        return nx.el;
+    }
     function chooseTarget(fwd) {
         var inn = opt.inner ? opt.inner() : null;
-        if (inn) {
-            var atEnd = fwd > 0 ? inn.scrollTop >= inn.scrollHeight - inn.clientHeight - 1 : inn.scrollTop <= 0;
-            cur = atEnd ? null : inn;
-        } else {
-            cur = null;
+        if (inn && atEnd(inn, fwd)) {
+            inn = hopTo(inn, fwd);
         }
+        cur = inn;
     }
 
     var MIN_SPEED = 0.003;  // px/ms。これより遅くなったら止める
@@ -119,9 +134,16 @@ var Inertia = function (scroller, opt) {
                 return;
             }
         }
-        // 縦に流す箱の端に着いたら、同じ速さで本文の横の慣性へ
+        // 縦に流す箱の端に着いたら、隣も箱ならそこへ移って縦のまま、そうでなければ同じ速さで本文の横の慣性へ
         if (cur && Math.abs(getPos() - pos) > 1) {
             var fwdOut = vel > 0;
+            var hop = hopTo(cur, fwdOut ? 1 : -1);
+            if (hop) {
+                cur = hop;
+                pos = getPos();
+                raf = requestAnimationFrame(step);
+                return;
+            }
             cur = null;
             vel = (fwdOut ? 1 : -1) * mainForward() * Math.abs(vel);
             pos = getPos();
@@ -299,6 +321,13 @@ var Inertia = function (scroller, opt) {
             pos -= p - drag.p;
             drag.p = p;
             setPos(pos);
+            // 指で縦に流す箱の端を越えたら、隣も箱ならそこへ移る
+            if (cur && Math.abs(getPos() - pos) > 1) {
+                var hop = hopTo(cur, pos > getPos() ? 1 : -1);
+                if (hop) {
+                    cur = hop;
+                }
+            }
             pos = getPos();
             if (!drag.samples.length || drag.samples[drag.samples.length - 1].p !== p) {
                 drag.samples.push({ p: p, t: now });
@@ -402,7 +431,7 @@ var Inertia = function (scroller, opt) {
             if (inn) {
                 var top = inn.scrollTop;
                 inn.scrollTop = top + e.deltaY * unit;
-                if (inn.scrollTop !== top) {
+                if (inn.scrollTop !== top || hopTo(inn, e.deltaY > 0 ? 1 : -1)) {
                     return;
                 }
             }
