@@ -8,12 +8,11 @@
 //       describe:   function (mark) → 一覧に出す位置の説明,
 //       topPos:     function () → 画面の右端(読んでいる所)の位置(markと同じ形),
 //       font:       {key, def, min, max, step, unit, apply: function (size)},
-//       forward:    function () → 先へ進む時のscrollLeftの増える向き(縦書き・右綴じは-1)
+//       forward:    function () → 先へ進む時のスクロール位置の増える向き(縦書き・右綴じは-1)
 //                   (省略時は-1)
-//       inner, enter, next: 横書きの章を上下に流す箱(scroll.jsのInertia参照、省略可)
+//       axis:       function () → 'x'(横に流す、省略時)か'y'(縦に流す。EPUBで最初の章が横書きの本、epub.js参照)
 //   });
-//   r.attach(doc, win, innerOf)  その文書(iframeの中など)のtouch等も慣性スクロールへ回す(innerOfはInertia参照)
-//   r.savePos()     読んでいる位置を覚え直す(上下に流す箱をスクロールした時等)
+//   r.attach(doc, win)  その文書(iframeの中など)のtouch等も慣性スクロールへ回す
 //   r.restore()     覚えていた位置へ戻る(本文を並べ終えた後に呼ぶ)
 var Reader = function (opt) {
     'use strict';
@@ -22,6 +21,20 @@ var Reader = function (opt) {
     var file = scroller.dataset.file;
     var whereEl = document.getElementById('where');
     var toastEl = document.getElementById('toast');
+    // スクロールの位置(横に流す時はscrollLeft、縦ならscrollTop)
+    function vertical() {
+        return opt.axis && opt.axis() === 'y';
+    }
+    function scrollPos() {
+        return vertical() ? scroller.scrollTop : scroller.scrollLeft;
+    }
+    function setScrollPos(v) {
+        if (vertical()) {
+            scroller.scrollTop = v;
+        } else {
+            scroller.scrollLeft = v;
+        }
+    }
     var panel = document.getElementById('panel');
     var panelList = document.getElementById('panel-list');
 
@@ -57,7 +70,7 @@ var Reader = function (opt) {
     // 文字の大きさを変える前に読んでいた位置(setFont()参照)。そこから自分でスクロールするまで使う。
     var fontAnchor = null, fontAnchorScroll = 0;
     function anchored() {
-        return fontAnchor && Math.abs(scroller.scrollLeft - fontAnchorScroll) <= 1;
+        return fontAnchor && Math.abs(scrollPos() - fontAnchorScroll) <= 1;
     }
     function savePos() {
         if (!ready) {
@@ -106,10 +119,7 @@ var Reader = function (opt) {
         axis: 'x',
         forward: function () { return opt.forward ? opt.forward() : -1; },
         friction: function () { return FRICTIONS[frictionIdx].k; },
-        toast: toast,
-        inner: opt.inner,
-        enter: opt.enter,
-        next: opt.next
+        toast: toast
     });
 
     // ---- 記録 ----
@@ -247,16 +257,16 @@ var Reader = function (opt) {
             return;
         }
         repaintFrame = requestAnimationFrame(function () {
-            var x = scroller.scrollLeft;
-            scroller.scrollLeft = x - 1;
-            if (scroller.scrollLeft === x) {
-                scroller.scrollLeft = x + 1;
+            var x = scrollPos();
+            setScrollPos(x - 1);
+            if (scrollPos() === x) {
+                setScrollPos(x + 1);
             }
             requestAnimationFrame(function () {
                 repaintFrame = 0;
-                scroller.scrollLeft = x;
+                setScrollPos(x);
                 if (fontAnchor) {
-                    fontAnchorScroll = scroller.scrollLeft;
+                    fontAnchorScroll = scrollPos();
                 }
             });
         });
@@ -272,7 +282,7 @@ var Reader = function (opt) {
         font.apply(fontSize);
         if (fontAnchor) {
             opt.jump(fontAnchor, false);
-            fontAnchorScroll = scroller.scrollLeft;
+            fontAnchorScroll = scrollPos();
         }
         repaint();
     }
@@ -395,12 +405,12 @@ var Reader = function (opt) {
     font.apply(fontSize);
 
     return {
-        attach: function (doc, win, innerOf) {
-            inertia.attach(doc, win, innerOf);
+        attach: function (doc, win) {
+            inertia.attach(doc, win);
             pinch(doc);
         },
-        savePos: savePos,
         restore: restore,
+        setAxis: function (axis) { inertia.setAxis(axis); },
         toast: toast,
         fontSize: function () { return fontSize; }
     };

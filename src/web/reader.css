@@ -156,10 +156,11 @@ body.reader {
     touch-action: none;
     background: #fff;
 }
-/* 章のiframeを包む箱(epub.js)。横書きの章はこの箱を上下にスクロールする(慣性はscroll.jsが受け持つ)。 */
-#book .chapter-box {
-    flex: none;
-    overflow: hidden;
+/* 最初の章が横書きの本(epub.jsのaxis)は、章を縦に並べて上下に流す */
+#book.flow-y {
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 #book iframe.chapter {
     flex: none;

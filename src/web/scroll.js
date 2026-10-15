@@ -7,24 +7,12 @@
 //       toast:    function (msg) 短い知らせを出す,
 //       active:   function () → キーを受け付けるか(省略時は常に)
 //   });
-//       inner:    function () → 画面にぴったり収まっている「縦に流す箱」(横の本文の中の横書きの章)か null(省略可),
-//       enter:    function (前の位置, 今の位置) → 横に流れていてその箱の位置を越えたら {el: 箱, left: その位置} か null
-//       next:     function (箱, fwd) → その箱の先(fwd=1)か前(-1)の隣も縦に流す箱なら {el: 箱, left: その箱がぴったりになる
-//                 位置} か null(省略可)
-//   });
-//   s.attach(doc, win, innerOf)  その文書(iframeの中など)のtouch・マウス・ホイール・キーも受ける。innerOfは、
-//                       その文書が縦に流す箱の中にあればその箱を返す関数(省略可)
-//
-// 2026-10-15、直接のユーザー依頼("奥付は縦方向、縦書きに切り替わると横方向、が理想"): 横の本文(EPUB)の中の
-// 横書きの章は、usilicと同じく上下に流す。その章の箱(inner)の中で縦に指を動かすと箱を上下に、横に動かすと本文を
-// 左右に動かす。慣性で箱の端に着いたら同じ速さで本文の横の慣性として続け、横の慣性で箱の位置を越えたら(enter)
-// 箱にそろえて縦の慣性として続ける(先へなら箱の上から、戻るなら下から)。
-// 同日、直接のユーザー依頼(HELP.epubで"章毎にスクロール方向の縦横が切り替わる"の直し): 箱の端に着いた時、隣も
-// 縦に流す箱(横書きの章が続く)なら、横に流さずに隣の箱へ移り、縦のまま続ける(opt.next)。
+//   s.attach(doc, win)  その文書(iframeの中など)のtouch・マウス・ホイール・キーも受ける
 //   s.stop()            止める
 //   s.coast(dir)        矢印キーの慣性を1段変える(dirは先へ=1、戻る=-1。止まっていれば最低速で流し始める)
 //   s.page(dir)         画面1枚分(dirはスクロール位置が増える向き=1、減る向き=-1)
 //   s.moving()          流れているか
+//   s.setAxis(axis)     向きを変える('x'か'y'。EPUBで最初の章が横書きの本は、全部を縦に並べて上下に流す、epub.js参照)
 //
 // 操作: フリック(マウスでは素早いドラッグ)で流れ、タップ(クリック)で止まる。押したまま0.4秒
 // 待ってから動かすと、ブラウザの範囲指定に任せる。キーはusilicと同じく、止まっている時は
@@ -35,56 +23,24 @@
 var Inertia = function (scroller, opt) {
     'use strict';
 
-    var horiz = opt.axis !== 'y';
+    var horiz = opt.axis !== 'y';  // setAxis()で変わる
     var DEBUG = /[?&]debug\b/.test(location.search);
-    var cur = null;  // 縦に流している箱(opt.inner参照)。nullならscroller自身(opt.axisの向き)
 
-    function isHoriz() {
-        return cur ? false : horiz;
-    }
-    function el() {
-        return cur || scroller;
-    }
     function getPos() {
-        return isHoriz() ? el().scrollLeft : el().scrollTop;
+        return horiz ? scroller.scrollLeft : scroller.scrollTop;
     }
     function setPos(v) {
-        if (isHoriz()) {
-            el().scrollLeft = v;
+        if (horiz) {
+            scroller.scrollLeft = v;
         } else {
-            el().scrollTop = v;
+            scroller.scrollTop = v;
         }
     }
     function pageSize() {
-        return isHoriz() ? el().clientWidth : el().clientHeight;
-    }
-    function mainForward() {
-        return opt.forward ? opt.forward() : 1;
+        return horiz ? scroller.clientWidth : scroller.clientHeight;
     }
     function forwardSign() {
-        return cur ? 1 : mainForward();
-    }
-    // 止まっている時にキー等で動かし始める先。画面にぴったりの箱があり、その向き(fwdは先へ=1)の端に
-    // 着いていなければ箱、そうでなければ本文。
-    function atEnd(box, fwd) {
-        return fwd > 0 ? box.scrollTop >= box.scrollHeight - box.clientHeight - 1 : box.scrollTop <= 0;
-    }
-    // 箱の端に着いた時、隣も縦に流す箱ならそこへ移る(先へなら上から、戻るなら下から)。移ったらその箱
-    function hopTo(box, fwd) {
-        var nx = opt.next ? opt.next(box, fwd) : null;
-        if (!nx) {
-            return null;
-        }
-        scroller.scrollLeft = nx.left;
-        nx.el.scrollTop = fwd > 0 ? 0 : nx.el.scrollHeight;
-        return nx.el;
-    }
-    function chooseTarget(fwd) {
-        var inn = opt.inner ? opt.inner() : null;
-        if (inn && atEnd(inn, fwd)) {
-            inn = hopTo(inn, fwd);
-        }
-        cur = inn;
+        return opt.forward ? opt.forward() : 1;
     }
 
     var MIN_SPEED = 0.003;  // px/ms。これより遅くなったら止める
@@ -117,39 +73,8 @@ var Inertia = function (scroller, opt) {
         if (coastLevel < 0) {
             vel *= Math.pow(opt.friction(), dt / 16.67);
         }
-        var before = getPos();
         pos += vel * dt;
         setPos(pos);
-        // 横の慣性で縦に流す箱の位置を越えたら、箱にそろえて縦の慣性へ(先へなら箱の上から)
-        if (!cur && horiz && opt.enter) {
-            var e = opt.enter(before, getPos());
-            if (e) {
-                var fwdIn = vel * mainForward() > 0;
-                scroller.scrollLeft = e.left;
-                cur = e.el;
-                cur.scrollTop = fwdIn ? 0 : cur.scrollHeight;
-                vel = (fwdIn ? 1 : -1) * Math.abs(vel);
-                pos = getPos();
-                raf = requestAnimationFrame(step);
-                return;
-            }
-        }
-        // 縦に流す箱の端に着いたら、隣も箱ならそこへ移って縦のまま、そうでなければ同じ速さで本文の横の慣性へ
-        if (cur && Math.abs(getPos() - pos) > 1) {
-            var fwdOut = vel > 0;
-            var hop = hopTo(cur, fwdOut ? 1 : -1);
-            if (hop) {
-                cur = hop;
-                pos = getPos();
-                raf = requestAnimationFrame(step);
-                return;
-            }
-            cur = null;
-            vel = (fwdOut ? 1 : -1) * mainForward() * Math.abs(vel);
-            pos = getPos();
-            raf = requestAnimationFrame(step);
-            return;
-        }
         // 端に着いた(思った位置まで動けなかった)か、十分遅くなったら止める
         if (Math.abs(getPos() - pos) > 1 || (coastLevel < 0 && Math.abs(vel) < MIN_SPEED)) {
             pos = getPos();
@@ -172,9 +97,9 @@ var Inertia = function (scroller, opt) {
     // 矢印キーの慣性。dirは先へ=1、戻る=-1。
     // フリック等の慣性中に押した時は、その速さに一番近い段から変える。
     function stepCoast(dir) {
-        var way = 0;
+        var cur = 0;
         if (raf && glideTo === null && vel !== 0) {
-            way = vel * forwardSign() > 0 ? 1 : -1;
+            cur = vel * forwardSign() > 0 ? 1 : -1;
             if (coastLevel < 0) {
                 var speed = Math.abs(vel), best = 0;
                 ARROW.forEach(function (v, i) {
@@ -186,22 +111,21 @@ var Inertia = function (scroller, opt) {
             }
         }
         var level = coastLevel;
-        if (way === 0) {
+        if (cur === 0) {
             stop();
-            chooseTarget(dir);
-            way = dir;
+            cur = dir;
             level = 0;
-        } else if (way === dir) {
+        } else if (cur === dir) {
             level = Math.min(level + 1, ARROW.length - 1);
         } else if (level > 0) {
             level--;
         } else {
-            way = dir;
+            cur = dir;
         }
         var running = raf !== 0 && glideTo === null;
         coastLevel = level;
-        vel = way * forwardSign() * ARROW[level];
-        opt.toast('速さ ' + (level + 1) + '/' + ARROW.length + (way > 0 ? ' 先へ' : ' 戻る'));
+        vel = cur * forwardSign() * ARROW[level];
+        opt.toast('速さ ' + (level + 1) + '/' + ARROW.length + (cur > 0 ? ' 先へ' : ' 戻る'));
         if (!running) {
             pos = getPos();
             lastT = performance.now();
@@ -241,15 +165,6 @@ var Inertia = function (scroller, opt) {
         }
     }
 
-    // 画面1枚分、先へ(fwd=1)か戻る(-1)。止まっていれば、縦に流す箱か本文かをここで選ぶ。
-    function glideFwd(fwd) {
-        if (glideTo === null) {
-            stop();
-            chooseTarget(fwd);
-        }
-        glideBy(pageSize() * 0.9 * forwardSign() * fwd);
-    }
-
     // 範囲指定の取っ手の近くを触った時は、取っ手の操作とみなしてスクロールしない
     function nearSelection(win, x, y) {
         var sel = win.getSelection();
@@ -273,18 +188,17 @@ var Inertia = function (scroller, opt) {
     var drag = null;
     var noClickUntil = 0;   // マウスでスクロールした直後のclickは、項目を選んだことにしない
 
-    function attach(target, win, innerOf) {
+    function attach(target, win) {
 
         // 押した: 流れていれば止める。止めただけならtrue(範囲指定の解除などをさせない)
         // x, yは画面の座標、cx, cyはその文書の中の座標(範囲指定の取っ手との距離用)
         function down(x, y, cx, cy) {
             var moving = raf !== 0;
             stop();
-            cur = innerOf ? innerOf() : null;
             drag = {
                 x0: x,
                 y0: y,
-                p: isHoriz() ? x : y,
+                p: horiz ? x : y,
                 t0: performance.now(),
                 mode: nearSelection(win, cx, cy) ? 'native' : null,
                 samples: []
@@ -304,30 +218,17 @@ var Inertia = function (scroller, opt) {
                 if (dx < 8 && dy < 8) {
                     return false;
                 }
-                // 縦に流す箱の中で横に動かしたのは、本文を横に動かす
-                if (cur && dx > dy) {
-                    cur = null;
-                    drag.p = x;
-                    pos = getPos();
-                }
                 // 長押ししてから動かしたのは範囲指定とみなし、ブラウザに任せる
-                drag.mode = now - drag.t0 < 400 && (isHoriz() ? dx >= dy : dy >= dx) ? 'scroll' : 'native';
+                drag.mode = now - drag.t0 < 400 && (horiz ? dx >= dy : dy >= dx) ? 'scroll' : 'native';
             }
             if (drag.mode !== 'scroll') {
                 return false;
             }
             // 指(マウス)の動きに中身が付いてくる向き
-            var p = isHoriz() ? x : y;
+            var p = horiz ? x : y;
             pos -= p - drag.p;
             drag.p = p;
             setPos(pos);
-            // 指で縦に流す箱の端を越えたら、隣も箱ならそこへ移る
-            if (cur && Math.abs(getPos() - pos) > 1) {
-                var hop = hopTo(cur, pos > getPos() ? 1 : -1);
-                if (hop) {
-                    cur = hop;
-                }
-            }
             pos = getPos();
             if (!drag.samples.length || drag.samples[drag.samples.length - 1].p !== p) {
                 drag.samples.push({ p: p, t: now });
@@ -418,28 +319,15 @@ var Inertia = function (scroller, opt) {
         });
 
         // ホイール: 横のスクロールでは、縦の回転も横にする(下へ回すと先へ)。
-        // 縦のスクロールはブラウザに任せ、流れていれば止めるだけ。
-        // 縦に流す箱の中(か、箱が画面にぴったりの時)の縦の回転は箱を上下に。箱の端では本文を横に。
+        // 縦のスクロールも、章のiframe(中はスクロールしない)の上の回転がscrollerへ届くよう、ここで動かす。
         target.addEventListener('wheel', function (e) {
             stop();
-            if (!horiz || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) {
+            if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) {
                 return;
             }
             e.preventDefault();
-            var inn = (innerOf && innerOf()) || (opt.inner ? opt.inner() : null);
-            var unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? (inn || scroller).clientHeight : 1;
-            if (inn) {
-                var top = inn.scrollTop;
-                inn.scrollTop = top + e.deltaY * unit;
-                if (inn.scrollTop !== top || hopTo(inn, e.deltaY > 0 ? 1 : -1)) {
-                    return;
-                }
-            }
-            cur = null;
-            if (e.deltaMode === 2) {
-                unit = scroller.clientWidth;
-            }
-            setPos(getPos() + e.deltaY * unit * mainForward());
+            var unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? pageSize() : 1;
+            setPos(getPos() + e.deltaY * unit * (horiz ? forwardSign() : 1));
         }, { passive: false });
 
         win.addEventListener('keydown', function (e) {
@@ -455,11 +343,11 @@ var Inertia = function (scroller, opt) {
             // 交差する向きの矢印(開始と調整)と、スクロールの向きの矢印(流れている間の調整と、
             // Shiftで画面1枚分)。それぞれ先へ向かう方を前に。
             var cross = horiz ? ['ArrowDown', 'ArrowUp'] : ['ArrowRight', 'ArrowLeft'];
-            var along = horiz ? (mainForward() < 0 ? ['ArrowLeft', 'ArrowRight'] : ['ArrowRight', 'ArrowLeft'])
+            var along = horiz ? (forwardSign() < 0 ? ['ArrowLeft', 'ArrowRight'] : ['ArrowRight', 'ArrowLeft'])
                 : ['ArrowDown', 'ArrowUp'];
-            var fwd;
+            var d;
             if (e.shiftKey && along.indexOf(e.key) >= 0) {
-                fwd = e.key === along[0] ? 1 : -1;
+                d = pageSize() * 0.9 * forwardSign() * (e.key === along[0] ? 1 : -1);
             } else if (cross.indexOf(e.key) >= 0) {
                 e.preventDefault();
                 stepCoast(e.key === cross[0] ? 1 : -1);
@@ -472,7 +360,7 @@ var Inertia = function (scroller, opt) {
                 }
                 return;
             } else if (e.key === ' ') {
-                fwd = e.shiftKey ? -1 : 1;
+                d = pageSize() * 0.9 * forwardSign() * (e.shiftKey ? -1 : 1);
             } else if (e.key === 'Escape') {
                 stop();
                 return;
@@ -480,7 +368,7 @@ var Inertia = function (scroller, opt) {
                 return;
             }
             e.preventDefault();
-            glideFwd(fwd);
+            glideBy(d);
         });
     }
     attach(scroller, window);
@@ -490,7 +378,11 @@ var Inertia = function (scroller, opt) {
         stop: stop,
         coast: stepCoast,
         // 画面1枚分。dirはスクロール位置が増える向き(1)か減る向き(-1)。横なら右(1)か左(-1)
-        page: function (dir) { glideFwd(dir * mainForward()); },
-        moving: function () { return raf !== 0; }
+        page: function (dir) { glideBy(pageSize() * 0.9 * dir); },
+        moving: function () { return raf !== 0; },
+        setAxis: function (axis) {
+            stop();
+            horiz = axis !== 'y';
+        }
     };
 };
