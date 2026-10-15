@@ -176,6 +176,11 @@ SHELL
 # bash, zsh, tcsh or csh, that one is used, and this setting is used only
 # otherwise (fish etc.).  Without this setting either, bash is used.  SHELL
 # mode supports bash, zsh, tcsh and csh.
+#
+# On Windows the environment variable SHELL is ignored, and this setting is
+# used only when it is a path with a drive letter, \ or / (e.g.
+# "C:\Program Files\Git\bin\bash.exe", quoted if it contains spaces).
+# Otherwise (including this plain bash) cmd.exe (%ComSpec%) is used.
 
 	bash
 #	tcsh

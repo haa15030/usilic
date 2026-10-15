@@ -181,6 +181,12 @@ class Shell {
   // ロジックを行使できるよう、別々に保たれている。
   bool onPtyReadable();
   void processOutputBytes(const std::string &bytes);
+  // 出力(か子の終わり)が届いていればtrue。timeoutMsまで待つ。WindowsのネイティブはptyFd()が無い(-1)ので、
+  // メインのループはpoll()の代わりにこれで確かめる(2026-10-16、ConPTY)。
+  bool outputReady(int timeoutMs = 0);
+  // シェルがcmd.exe(Windowsのネイティブで、usilicrcのSHELLにbash等のパスが無い時の既定)。Applicationが
+  // SHELLへ打ち込むコマンドの書き方(引用符・cd)をsh系と変えるため。
+  bool usesCmdSyntax() const;
 
   // -- コマンド行 --
   LineEditor &commandLine();
@@ -445,6 +451,7 @@ class Shell {
  private:
   void handlePromptDetected(const std::string &tailBeforeMark);
   void appendBodyByte(unsigned char c);
+  void processOutputByte(unsigned char c);  // processOutputBytes()の1バイト分(flushNewScrollbackLines()は呼ばない)
   void flushPendingLine();  // pendingLine_に関するappendBodyByte()自身のコメント参照
   // 子自身の出力からの、本物の端末のANSI/VT100エスケープシーケンス
   // (SGRカラーコード、bracketed paste modeの有効化/無効化など――
@@ -519,6 +526,16 @@ class Shell {
   bool handshakeDone_ = false;  // start()のハンドシェイク完了後true(writeToPty()の2026-09-27のコメント参照)
   int childPid_ = -1;
   bool isBash_ = true;
+#ifdef _WIN32
+  struct PseudoConsole *console_ = nullptr;  // pseudo_console_win.hpp(ConPTY)
+  int consoleRows_ = 24;  // ConPTYの行数(vtRow_の上限)
+  // ConPTYの出力の今の行(1から)。ConPTYは改行の代わりにカーソルの移動(CSI H等)で下の行へ進むことがあるので、
+  // その分の改行を本文へ足すために数える(applyConsoleCursorSequence())。
+  int vtRow_ = 1;
+  void applyConsoleCursorSequence(const std::string &sequence);
+  void advanceConsoleRows(const std::string &bytes);  // 本文へは渡さず、行だけを数える(ハンドシェイクの前の分)
+#endif
+  bool isCmd_ = false;
   bool isZsh_ = false;  // これがなぜ単に「bashではない」ではなく自身の分岐を必要とするかについてはisZshProgram()自身のコメント参照
 
   PipeBuffer pipeBuffer_;

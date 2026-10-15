@@ -258,6 +258,24 @@ std::string shellQuoteArgv(const std::vector<std::string> &argv) {
   return line;
 }
 
+// cmd.exe(WindowsのネイティブのSHELL、2026-10-16、Shell::usesCmdSyntax())の書き方。空白や&|<>^()等を
+// 含む語は"..."で囲む(cmd.exeには'...'が無い)。
+std::string cmdQuoteArg(const std::string &arg) {
+  if (!arg.empty() && arg.find_first_of(" \t\"&|<>^()%!,;=") == std::string::npos) return arg;
+  std::string out = "\"";
+  for (char c : arg) out += c == '"' ? std::string("\"\"") : std::string(1, c);
+  return out + "\"";
+}
+
+std::string cmdQuoteArgv(const std::vector<std::string> &argv) {
+  std::string line;
+  for (const auto &arg : argv) {
+    if (!line.empty()) line += " ";
+    line += cmdQuoteArg(arg);
+  }
+  return line;
+}
+
 // シェルと同じ規則(空白で区切る、'...'はそのまま、"..."と裸の\はバックスラッシュで次の1文字)で語に分ける
 // (2026-10-10、Application::runExternalUsilicPager()が^Jpの"usilic ..."・^Ouの引数を分けるため。展開はしない)。
 std::vector<std::string> splitShellWords(const std::string &line) {
@@ -8214,7 +8232,7 @@ bool Application::runNarouToEpub(const Configuration::UrlHandler &handler, const
   }
   std::vector<std::string> argv = handler.argv;
   argv.push_back(url);
-  std::string command = shellQuoteArgv(argv);
+  std::string command = shell_.usesCmdSyntax() ? cmdQuoteArgv(argv) : shellQuoteArgv(argv);
   shell_.commandLine().setText(command);
   shell_.submitLine();
   history_.pushRecent(RingCategory::ShellCommand, command);
@@ -11822,7 +11840,7 @@ bool Application::shellChangeDirectory() {
   }
   if (dir.empty()) return false;
   if (!ensureShellActive()) return false;
-  shell_.commandLine().setText("cd '" + dir + "'");
+  shell_.commandLine().setText(shell_.usesCmdSyntax() ? "cd /d " + cmdQuoteArg(dir) : "cd '" + dir + "'");
   shell_.submitLine();
   return true;
 }
@@ -17602,7 +17620,10 @@ bool Application::executeProgram(const std::string &command) {
       activeView().redraw();
       return false;
     }
-    std::string line = programPromptDirectory_.empty() ? command : "(" + cdWrap(programPromptDirectory_, command) + ")";
+    std::string line = programPromptDirectory_.empty() ? command
+                       : shell_.usesCmdSyntax()
+                           ? "pushd " + cmdQuoteArg(programPromptDirectory_) + " && " + command + " & popd"
+                           : "(" + cdWrap(programPromptDirectory_, command) + ")";
     programPromptDirectory_.clear();
     shell_.commandLine().setText(line);
     shell_.submitLine();
@@ -17996,6 +18017,11 @@ bool Application::startCpMvRmShellRun(const std::vector<std::string> &argv, cons
     activeView().redraw();
     return false;
   }
+  // 2026-10-16: cmd.exe(WindowsのネイティブのSHELL)には、まだCP/MV/RMの書き方(sh系の引用符・$?)を作っていない。
+  if (shell_.usesCmdSyntax()) {
+    showTransientNotice(activeView(), "CP/MV/RM: not supported with cmd.exe");
+    return false;
+  }
   pendingCpMvRmShellRun_ = PendingCpMvRmShellRun{shell_.promptGeneration(), destination, sourceDirectory,
                                                  std::move(targetBasenames), cpMvRmOrigin_};
   cpMvRmOrigin_ = ApplicationMode::Directory;  // 対象は上のargvに確定済み
@@ -18161,7 +18187,7 @@ void Application::pollPendingArchiveExtractShellRun() {
 
 bool Application::pollShellHandoff() {
 #ifdef _WIN32  // .steering/20261015-windows-native-gui/
-  return false;  // SHELLはWindowsでは未対応
+  return false;  // SHELLから子のusilicへの受け渡し(ソケット・FIFO)はWindowsでは未対応
 #else
   if (currentMode_ != ApplicationMode::Shell || !shell_.alive()) return false;
   std::string path = "/tmp/.usilic-shell/s." + std::to_string(::getuid()) + "." + std::to_string(shell_.childPid());
@@ -18775,6 +18801,11 @@ bool Application::executeArchiveExtract(const std::string &destination) {
   ApplicationMode returnMode = currentMode_;
   if (!ensureShellActive()) {
     activeView().redraw();
+    return false;
+  }
+  // 2026-10-16: startCpMvRmShellRun()と同じく、cmd.exeの書き方はまだ無い。
+  if (shell_.usesCmdSyntax()) {
+    showTransientNotice(activeView(), "Extract: not supported with cmd.exe");
     return false;
   }
   // 2026-09-09修正、PendingArchiveExtractShellRun::topLevelNames自身の

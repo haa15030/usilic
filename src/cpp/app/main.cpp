@@ -3791,9 +3791,9 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     bool watchShellPty =
         app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive() && !app.promptActive();
     if (watchShellPty) {
-      struct pollfd fd{app.shell().ptyFd(), POLLIN, 0};
       // POLLHUP/POLLERR too -- see the CUI phase's own comment on why.
-      if (poll(&fd, 1, 0) > 0 && (fd.revents & (POLLIN | POLLHUP | POLLERR))) {
+      // (2026-10-16) Shell::outputReady()はWindowsのネイティブ(ConPTY、ptyFd()が無い)でも使える。
+      if (app.shell().outputReady(0)) {
         if (app.shell().onPtyReadable()) {
           anyEventThisFrame = true;
           lastShellPtyActivity = std::chrono::steady_clock::now();

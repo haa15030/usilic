@@ -875,6 +875,15 @@ std::vector<std::string> Configuration::editorArgv(const std::string &path, int 
 }
 
 std::vector<std::string> Configuration::shellArgv(const std::string &envShell) const {
+#ifdef _WIN32
+  // 2026-10-16(Windowsのネイティブ、ConPTY): 環境変数SHELL(Git Bashから起動するとMSYSの/usr/bin/bash)は見ない。
+  // usilicrcのSHELLは、ドライブ名か\・/の付いたパスで書いた時だけ使う(既定の「bash」のままだとPATHで
+  // C:\Windows\System32\bash.exe、つまりWSLが見つかってしまうため)。それ以外はcmd.exe(%ComSpec%)。
+  (void)envShell;
+  if (!shellProgram_.empty() && shellProgram_[0].find_first_of(":/\\") != std::string::npos) return shellProgram_;
+  if (const char *comspec = std::getenv("ComSpec"); comspec && *comspec) return {comspec};
+  return {"cmd.exe"};
+#endif
   auto supported = [](const std::string &program) {
     std::string base = program.substr(program.find_last_of('/') + 1);
     return base == "bash" || base == "zsh" || base == "tcsh" || base == "csh";

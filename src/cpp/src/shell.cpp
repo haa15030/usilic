@@ -19,6 +19,7 @@
 #include <chrono>
 
 #include <algorithm>
+#include <cctype>
 #include <csignal>
 #include <cstdlib>
 
@@ -29,12 +30,15 @@
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <termios.h>
+#else
+#include "pseudo_console_win.hpp"
 #endif
 
 namespace fm {
 
 namespace {
 
+#ifndef _WIN32  // fork/execのためのもの(WindowsはConPTY、pseudo_console_win.cpp)
 std::vector<char *> toArgv(const std::vector<std::string> &args) {
   std::vector<char *> argv;
   argv.reserve(args.size() + 1);
@@ -46,6 +50,7 @@ std::vector<char *> toArgv(const std::vector<std::string> &args) {
 void resetSignalsToDefault() {
   for (int i = 1; i < NSIG; i++) std::signal(i, SIG_DFL);
 }
+#endif
 
 // application.cpp自身の同名ヘルパー(anonymous namespace)と全く同じ
 // 内容の重複定義――理由もそちらと同じ(2つの別個のLineEditorインス
@@ -61,8 +66,21 @@ bool shouldSearchPath(const std::string &text) {
 }
 
 std::string baseName(const std::string &argv0) {
+#ifdef _WIN32
+  // Windowsのネイティブ(2026-10-16、ConPTY): C:\Windows\system32\cmd.exeのような\区切りと.exeも。
+  auto pos = argv0.find_last_of("/\\");
+  std::string base = (pos == std::string::npos) ? argv0 : argv0.substr(pos + 1);
+  if (base.size() > 4) {
+    std::string ext = base.substr(base.size() - 4);
+    for (char &c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (ext == ".exe") base.erase(base.size() - 4);
+  }
+  for (char &c : base) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return base;
+#else
   auto pos = argv0.find_last_of('/');
   return (pos == std::string::npos) ? argv0 : argv0.substr(pos + 1);
+#endif
 }
 
 bool isBashProgram(const std::string &argv0) { return baseName(argv0) == "bash"; }
@@ -85,6 +103,56 @@ bool isBashProgram(const std::string &argv0) { return baseName(argv0) == "bash";
 // 出す。
 bool isZshProgram(const std::string &argv0) { return baseName(argv0) == "zsh"; }
 
+bool isCmdProgram(const std::string &argv0) { return baseName(argv0) == "cmd"; }
+
+#ifdef _WIN32
+// cmd.exeのPROMPTの文字列にする(<>|&等はそのままだとリダイレクト等になるので、$L・$G等の書き方へ)。
+std::string cmdPromptText(const std::string &text) {
+  std::string out;
+  for (char c : text) {
+    switch (c) {
+      case '<': out += "$L"; break;
+      case '>': out += "$G"; break;
+      case '|': out += "$B"; break;
+      case '&': out += "$A"; break;
+      case '$': out += "$$"; break;
+      case '=': out += "$Q"; break;
+      case '(': out += "$C"; break;
+      case ')': out += "$F"; break;
+      case '^': out += "^^"; break;
+      default: out += c;
+    }
+  }
+  return out;
+}
+
+// CSIの引数(ESC [ と終わりの1字を除いた所)を;で分けて数にする。無い・空の所は0。
+std::vector<int> csiParameters(const std::string &sequence) {
+  std::vector<int> params;
+  if (sequence.size() < 3) return params;
+  std::string body = sequence.substr(2, sequence.size() - 3);
+  int value = 0;
+  bool any = false;
+  for (char c : body) {
+    if (c >= '0' && c <= '9') {
+      value = value * 10 + (c - '0');
+      any = true;
+      if (value > 100000) value = 100000;
+    } else if (c == ';') {
+      params.push_back(any ? value : 0);
+      value = 0;
+      any = false;
+    }
+  }
+  params.push_back(any ? value : 0);
+  return params;
+}
+
+int csiParameter(const std::vector<int> &params, std::size_t index, int fallback) {
+  return index < params.size() && params[index] > 0 ? params[index] : fallback;
+}
+#endif
+
 // 移植可能なpty取得(POSIX/Unix98のAPI)、sub.cのopen_pty()からほぼ
 // 逐語のまま移植――これがなぜ元々のBSDの/dev/ptyp0..
 // "/dev/ptysf"というデバイスノードの走査アプローチ(現代のLinuxや
@@ -92,11 +160,8 @@ bool isZshProgram(const std::string &argv0) { return baseName(argv0) == "zsh"; }
 // の履歴参照。open_pty()とは異なり、これは常にマスターfdを開いた
 // ままにする(legacyのf_open==0という「単に予約するだけ」モードは、
 // Shellが書かれた時点でそれを使う呼び出し元がもう残っていなかった)。
+#ifndef _WIN32  // WindowsはConPTY(pseudo_console_win.cpp)
 int openPty(std::string &slavePathOut) {
-#ifdef _WIN32  // .steering/20261015-windows-native-gui/
-  (void)slavePathOut;
-  return -1;
-#else
   int fd = posix_openpt(O_RDWR | O_NOCTTY);
   if (fd < 0) return -1;
   if (grantpt(fd) < 0 || unlockpt(fd) < 0) {
@@ -110,8 +175,8 @@ int openPty(std::string &slavePathOut) {
   }
   slavePathOut = slave;
   return fd;
-#endif
 }
+#endif
 
 }  // namespace
 
@@ -141,6 +206,7 @@ Shell::Shell(Display &display, const ShellOptions &options)
   if (!options_.argv.empty()) {
     isBash_ = isBashProgram(options_.argv[0]);
     isZsh_ = isZshProgram(options_.argv[0]);
+    isCmd_ = isCmdProgram(options_.argv[0]);
   }
   // 3つの明確な、永続的に「固定された」行(2026-08-04の改訂):
   // scrollback_自身の「内容」領域はheight_ = viewportRows_-2行の
@@ -205,9 +271,27 @@ Shell::Shell(Display &display, const ShellOptions &options)
 Shell::~Shell() { terminate(); }
 
 bool Shell::start(const std::string &initialDirectory) {
-#ifdef _WIN32  // .steering/20261015-windows-native-gui/
-  (void)initialDirectory;
-  return false;  // SHELL(擬似端末)はWindowsでは未対応(第2段でConPTY)
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/の第2段(2026-10-16): ptyの代わりにConPTY
+  if (console_) return true;
+  if (options_.argv.empty()) return false;
+  resetSessionState();
+  vtRow_ = 1;
+  consoleRows_ = std::max(1, display_.rows());
+  // POSIX版の子の側のsetenv()と同じもの。bashの1024桁(行を折り返させない)も同じ理由で、cmd.exeにも同じ幅を
+  // 渡す(ConPTYは幅を超えた行を、カーソルの移動で折り返して出すため)。
+  std::vector<std::pair<std::string, std::string>> env = {{"USILIC", "1"}, {"USILIC_LIVE_SHELL", "1"}};
+  if (isBash_) env.push_back({"COLUMNS", "1024"});
+  int pid = -1;
+  console_ = startPseudoConsole(options_.argv, consoleRows_, 1024, "", env, pid);
+  if (!console_) return false;
+  childPid_ = pid;
+  writeToPty(buildSetupCommand(initialDirectory));
+  if (!waitForHandshake()) {
+    terminate();
+    return false;
+  }
+  handshakeDone_ = true;
+  return true;
 #else
   if (masterFd_ >= 0) return true;
   if (options_.argv.empty()) return false;
@@ -413,7 +497,7 @@ bool Shell::start(const std::string &initialDirectory) {
 
 bool Shell::alive() const {
 #ifdef _WIN32  // .steering/20261015-windows-native-gui/
-  return false;
+  return console_ != nullptr;  // シェルの終わりはonPtyReadable()のfalse(出力の終わり)で知らせる
 #else
   if (childPid_ <= 0) return false;
   return kill(childPid_, 0) == 0;
@@ -424,8 +508,11 @@ int Shell::childPid() const { return childPid_; }
 
 void Shell::terminate() {
 #ifdef _WIN32  // .steering/20261015-windows-native-gui/
+  if (console_) {
+    closePseudoConsole(console_);
+    console_ = nullptr;
+  }
   childPid_ = -1;
-  masterFd_ = -1;
   handshakeDone_ = false;
 #else
   if (childPid_ > 0) {
@@ -468,9 +555,27 @@ void Shell::terminate() {
 
 int Shell::ptyFd() const { return masterFd_; }
 
+bool Shell::outputReady(int timeoutMs) {
+#ifdef _WIN32
+  return console_ && waitPseudoConsole(console_, timeoutMs);
+#else
+  if (masterFd_ < 0) return false;
+  struct pollfd pfd {
+    masterFd_, POLLIN, 0
+  };
+  return poll(&pfd, 1, timeoutMs) > 0 && (pfd.revents & (POLLIN | POLLHUP | POLLERR));
+#endif
+}
+
+bool Shell::usesCmdSyntax() const { return isCmd_; }
+
 bool Shell::onPtyReadable() {
 #ifdef _WIN32  // .steering/20261015-windows-native-gui/
-  return false;
+  if (!console_) return false;
+  char buf[4096];
+  int n = readPseudoConsole(console_, buf, sizeof(buf));
+  if (n > 0) processOutputBytes(std::string(buf, static_cast<std::size_t>(n)));
+  return n >= 0;  // -1: シェルが終わって出力も尽きた
 #else
   if (masterFd_ < 0) return false;
   char buf[4096];
@@ -499,62 +604,67 @@ bool Shell::onPtyReadable() {
 // として再生される。同じケースに対するlegacy自身の巻き戻し挙動に
 // 合わせている。
 void Shell::processOutputBytes(const std::string &bytes) {
-  const std::string &mark = options_.promptMark;
-  for (unsigned char c : bytes) {
-    if (consumeEscapeByte(c)) continue;
-
-    if (inPromptTail_) {
-      promptTailBuffer_.push_back(static_cast<char>(c));
-      if (!mark.empty() && promptTailBuffer_.size() >= mark.size() &&
-          promptTailBuffer_.compare(promptTailBuffer_.size() - mark.size(), mark.size(), mark) == 0) {
-        std::string tail = promptTailBuffer_.substr(0, promptTailBuffer_.size() - mark.size());
-        inPromptTail_ = false;
-        promptTailBuffer_.clear();
-        handlePromptDetected(tail);
-      } else if (promptTailBuffer_.size() > 4096) {
-        // 安全弁: もっともらしい量の出力の中に閉じるマークが現れ
-        // なかった。これが本物のプロンプトであることを諦め、永遠
-        // にバッファし続けるのではなく、バッファされたバイトを
-        // 通常の内容として再生する。
-        for (unsigned char b : promptTailBuffer_) appendBodyByte(b);
-        promptTailBuffer_.clear();
-        inPromptTail_ = false;
-      }
-      continue;
-    }
-
-    if (!markerPrefix_.empty() && c == static_cast<unsigned char>(markerPrefix_[markerMatchPos_])) {
-      markerMatchBuffer_.push_back(static_cast<char>(c));
-      markerMatchPos_++;
-      if (markerMatchPos_ == markerPrefix_.size()) {
-        markerMatchPos_ = 0;
-        markerMatchBuffer_.clear();
-        inPromptTail_ = true;
-        promptTailBuffer_.clear();
-      }
-      continue;
-    }
-
-    // 不一致: これまでの仮のマッチは誤報だった――それを通常の内容
-    // として再生し、その後現在のバイトを位置0から再試行する
-    // (それ自体が新しいマッチを始めるかもしれない)。
-    for (unsigned char b : markerMatchBuffer_) appendBodyByte(b);
-    markerMatchBuffer_.clear();
-    markerMatchPos_ = 0;
-    if (!markerPrefix_.empty() && c == static_cast<unsigned char>(markerPrefix_[0])) {
-      markerMatchBuffer_.push_back(static_cast<char>(c));
-      markerMatchPos_ = 1;
-      if (markerMatchPos_ == markerPrefix_.size()) {
-        markerMatchPos_ = 0;
-        markerMatchBuffer_.clear();
-        inPromptTail_ = true;
-        promptTailBuffer_.clear();
-      }
-    } else {
-      appendBodyByte(c);
-    }
-  }
+  for (unsigned char c : bytes) processOutputByte(c);
   flushNewScrollbackLines();
+}
+
+void Shell::processOutputByte(unsigned char c) {
+  const std::string &mark = options_.promptMark;
+  if (consumeEscapeByte(c)) return;
+#ifdef _WIN32
+  if (c == '\n' && vtRow_ < consoleRows_) vtRow_++;
+#endif
+
+  if (inPromptTail_) {
+    promptTailBuffer_.push_back(static_cast<char>(c));
+    if (!mark.empty() && promptTailBuffer_.size() >= mark.size() &&
+        promptTailBuffer_.compare(promptTailBuffer_.size() - mark.size(), mark.size(), mark) == 0) {
+      std::string tail = promptTailBuffer_.substr(0, promptTailBuffer_.size() - mark.size());
+      inPromptTail_ = false;
+      promptTailBuffer_.clear();
+      handlePromptDetected(tail);
+    } else if (promptTailBuffer_.size() > 4096) {
+      // 安全弁: もっともらしい量の出力の中に閉じるマークが現れ
+      // なかった。これが本物のプロンプトであることを諦め、永遠
+      // にバッファし続けるのではなく、バッファされたバイトを
+      // 通常の内容として再生する。
+      for (unsigned char b : promptTailBuffer_) appendBodyByte(b);
+      promptTailBuffer_.clear();
+      inPromptTail_ = false;
+    }
+    return;
+  }
+
+  if (!markerPrefix_.empty() && c == static_cast<unsigned char>(markerPrefix_[markerMatchPos_])) {
+    markerMatchBuffer_.push_back(static_cast<char>(c));
+    markerMatchPos_++;
+    if (markerMatchPos_ == markerPrefix_.size()) {
+      markerMatchPos_ = 0;
+      markerMatchBuffer_.clear();
+      inPromptTail_ = true;
+      promptTailBuffer_.clear();
+    }
+    return;
+  }
+
+  // 不一致: これまでの仮のマッチは誤報だった――それを通常の内容
+  // として再生し、その後現在のバイトを位置0から再試行する
+  // (それ自体が新しいマッチを始めるかもしれない)。
+  for (unsigned char b : markerMatchBuffer_) appendBodyByte(b);
+  markerMatchBuffer_.clear();
+  markerMatchPos_ = 0;
+  if (!markerPrefix_.empty() && c == static_cast<unsigned char>(markerPrefix_[0])) {
+    markerMatchBuffer_.push_back(static_cast<char>(c));
+    markerMatchPos_ = 1;
+    if (markerMatchPos_ == markerPrefix_.size()) {
+      markerMatchPos_ = 0;
+      markerMatchBuffer_.clear();
+      inPromptTail_ = true;
+      promptTailBuffer_.clear();
+    }
+  } else {
+    appendBodyByte(c);
+  }
 }
 
 // クラス自身の宣言コメント参照。
@@ -593,6 +703,13 @@ bool Shell::consumeEscapeByte(unsigned char c) {
         // markerMatchBuffer_)には混ぜない――そちらはプロンプト文字列
         // そのものの照合用。
         if (c == 'm' && !inPromptTail_ && markerMatchBuffer_.empty()) appendEscapeSequence(escapeSequence_);
+#ifdef _WIN32
+        if (console_ && c != 'm') {
+          std::string sequence;
+          sequence.swap(escapeSequence_);
+          applyConsoleCursorSequence(sequence);
+        }
+#endif
         escapeSequence_.clear();
       }
       return true;
@@ -691,6 +808,113 @@ std::string stripSgr(const std::string &line) {
   return out;
 }
 }  // namespace
+
+#ifdef _WIN32
+// ConPTYは裏のコンソールの画面を描き直す形で出力するので、Unixのptyのような「字と改行の流れ」に、カーソルの
+// 移動が混ざる。下の行への移動(CUP・VPA・CNL・CUD)は改行に、同じ行の右への移動(CUF・CHA、空白の並びは
+// ECHとCUFに縮められる)は空白に、行の頭への移動は裸のCRに直して、本文の流れへ戻す。上の行への移動(描き直し)は
+// 行の数え直しだけ。
+void Shell::applyConsoleCursorSequence(const std::string &sequence) {
+  if (sequence.size() < 3 || sequence[2] == '?' || sequence[2] == '>' || sequence[2] == '=') return;
+  char final = sequence.back();
+  std::vector<int> params = csiParameters(sequence);
+  auto currentColumn = [&]() -> int {
+    if (sawBareCr_ || inPromptTail_ || !markerMatchBuffer_.empty()) return -1;  // 分からない
+    return displayWidth(stripSgr(pendingLine_));
+  };
+  auto moveToColumn = [&](int column) {  // columnは1から
+    if (column <= 1) {
+      processOutputByte('\r');
+      return;
+    }
+    int now = currentColumn();
+    if (now < 0) return;
+    for (int i = now; i < column - 1 && i < 4096; i++) processOutputByte(' ');
+  };
+  auto moveDown = [&](int rows) {
+    for (int i = 0; i < rows && i < 4096; i++) processOutputByte('\n');
+  };
+  switch (final) {
+    case 'H':
+    case 'f': {
+      int row = csiParameter(params, 0, 1), column = csiParameter(params, 1, 1);
+      if (row > vtRow_) {
+        moveDown(row - vtRow_);
+        vtRow_ = row;
+        if (column > 1) moveToColumn(column);
+      } else if (row == vtRow_) {
+        moveToColumn(column);
+      } else {
+        vtRow_ = row;
+      }
+      break;
+    }
+    case 'd': {
+      int row = csiParameter(params, 0, 1);
+      if (row > vtRow_) moveDown(row - vtRow_);
+      vtRow_ = row;
+      break;
+    }
+    case 'E':
+    case 'B':
+      moveDown(csiParameter(params, 0, 1));
+      break;
+    case 'G':
+      moveToColumn(csiParameter(params, 0, 1));
+      break;
+    case 'C': {
+      int now = currentColumn();
+      if (now >= 0) moveToColumn(now + 1 + csiParameter(params, 0, 1));
+      break;
+    }
+    case 'J':
+      if (csiParameter(params, 0, 0) >= 2) vtRow_ = 1;
+      break;
+    default:
+      break;  // K(行の残りを消す)・X(ECH)・A(上へ)等は無視
+  }
+  if (vtRow_ > consoleRows_) vtRow_ = consoleRows_;
+  if (vtRow_ < 1) vtRow_ = 1;
+}
+
+void Shell::advanceConsoleRows(const std::string &bytes) {
+  std::string sequence;
+  bool inCsi = false, sawEsc = false;
+  for (unsigned char c : bytes) {
+    if (inCsi) {
+      sequence.push_back(static_cast<char>(c));
+      if (c < 0x40 || c > 0x7e) continue;
+      inCsi = false;
+      if (sequence[2] == '?') continue;
+      std::vector<int> params = csiParameters(sequence);
+      switch (c) {
+        case 'H':
+        case 'f':
+        case 'd': vtRow_ = csiParameter(params, 0, 1); break;
+        case 'E':
+        case 'B': vtRow_ += csiParameter(params, 0, 1); break;
+        case 'A': vtRow_ -= csiParameter(params, 0, 1); break;
+        case 'J':
+          if (csiParameter(params, 0, 0) >= 2) vtRow_ = 1;
+          break;
+        default: break;
+      }
+    } else if (sawEsc) {
+      sawEsc = false;
+      if (c == '[') {
+        inCsi = true;
+        sequence = "\x1b[";
+      }
+    } else if (c == 0x1b) {
+      sawEsc = true;
+    } else if (c == '\n') {
+      vtRow_++;
+    }
+    if (vtRow_ > consoleRows_) vtRow_ = consoleRows_;
+    if (vtRow_ < 1) vtRow_ = 1;
+  }
+}
+#endif
 
 void Shell::appendBodyByte(unsigned char c) {
   if (sawBareCr_) {
@@ -926,9 +1150,21 @@ void Shell::handlePromptDetected(const std::string &tailBeforeMark) {
   // 代わりにstd::stringで構築されている。
   std::string dir = tailBeforeMark;
   if (dir.size() >= 2 && dir.back() == ' ' &&
-      (dir[dir.size() - 2] == '$' || dir[dir.size() - 2] == '#' || dir[dir.size() - 2] == '%')) {
+      (dir[dir.size() - 2] == '$' || dir[dir.size() - 2] == '#' || dir[dir.size() - 2] == '%' ||
+       (isCmd_ && dir[dir.size() - 2] == '>'))) {
     dir.erase(dir.size() - 2);
   }
+#ifdef _WIN32
+  // 2026-10-16(ConPTY): usilicの中のパスは/区切り(platform_win.cpp)。cmd.exeの$Pは\区切り、MSYSのbashの\wは
+  // /c/Users/…の形なので、C:/Users/…へ直す。
+  for (char &c : dir)
+    if (c == '\\') c = '/';
+  if (dir.size() >= 2 && dir[0] == '/' && std::isalpha(static_cast<unsigned char>(dir[1])) &&
+      (dir.size() == 2 || dir[2] == '/')) {
+    dir = std::string(1, static_cast<char>(std::toupper(static_cast<unsigned char>(dir[1])))) + ":" +
+          (dir.size() == 2 ? "/" : dir.substr(2));
+  }
+#endif
   // 2026-08-17の修正: zshのデフォルトPS1(`%~`)――そしてbashの
   // `\w`も――は、cwdがそれ自体$HOMEであるかそのサブディレクトリで
   // ある時は常に、それを先頭の'~'で省略する(例えば「~」や
@@ -1151,6 +1387,26 @@ std::string shellQuotePath(const std::string &path) {
 std::string Shell::buildSetupCommand(const std::string &initialDirectory) const {
   const std::string &mark = options_.promptMark;
   const std::string &prog = options_.programName;
+#ifdef _WIN32
+  // 2026-10-16、cmd.exe(ConPTY): PS1の代わりにPROMPTで同じ「mark prog:ディレクトリ> mark」を出させる。clsで
+  // 起動時の表示(バージョン等)を消してから番兵を出す。番兵の^は実行の時に消えるので、エコーされたコマンドの
+  // 文字(#e^os…#)は番兵そのものに一致しない(下の`$$`の話と同じ理由)。cmd.exeには$$が無いので、番兵の番号は
+  // こちらで分かっている子のプロセスID。
+  if (isCmd_) {
+    std::string line;
+    if (!initialDirectory.empty()) {
+      std::string dir = initialDirectory;
+      for (char &c : dir)
+        if (c == '/') c = '\\';
+      if (dir.size() > 3 && dir.back() == '\\') dir.pop_back();
+      line += "cd /d \"" + dir + "\" & ";
+    }
+    line += "prompt " + cmdPromptText(mark + prog + ":") + "$P$G " + cmdPromptText(mark);
+    // &の前に空白を置かない(置くとPROMPTの末尾に入る)。
+    line += "& cls & echo #e^os" + std::to_string(childPid_) + "#\n";
+    return line;
+  }
+#endif
   // 2026-09-15追加、initialDirectory自身の宣言コメント(shell.hpp)
   // 参照。cd自体の成功/失敗に関わらず後続の文は続行してよいので
   // (存在しなくなったディレクトリを渡された場合でも、シェル自体が
@@ -1217,7 +1473,13 @@ std::string Shell::buildSetupCommand(const std::string &initialDirectory) const 
     std::string pagerCommand = "'" + options_.pagerPath + "'\" --usilic-pager $$\"";
     pagerStatements = {"export PAGER=" + pagerCommand, "export MANPAGER=" + pagerCommand};
   }
+#ifdef _WIN32
+  // Windowsのbash(Git Bash等のMSYS)の$$はWindowsのプロセスIDと違うので、こちらの分かっている子のIDを、エコー
+  // された文字が番兵に一致しないよう""で区切って書く。
+  std::string eos = "echo \"#eos\"\"" + std::to_string(childPid_) + "#\"";
+#else
   std::string eos = "echo \"#eos$$#\"";
+#endif
   // 文を1つの論理的なコマンドへ結合する: 各ペアの間に" ; \<改行>"
   // (文の区切り+行の継続。これによりシェルは各物理行の後に実行/
   // プロンプトするのではなく読み続ける)、そして最後の文の後には、
@@ -1373,8 +1635,33 @@ std::string Shell::buildSetupCommand(const std::string &initialDirectory) const 
 // していたのと同じように、フィルタされずに供給される――退行では
 // なく、単に「唯一の」挙動ではなくなっただけである。
 bool Shell::waitForHandshake() {
-#ifdef _WIN32  // .steering/20261015-windows-native-gui/
-  return false;
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/の第2段(2026-10-16、ConPTY)
+  // POSIX版と同じ: 番兵の後、出力が落ち着くまで待つ。ConPTYの行の数え(vtRow_)のため、捨てる分も
+  // advanceConsoleRows()へ通す。
+  std::string sentinel = "#eos" + std::to_string(childPid_) + "#";
+  std::string all;
+  std::size_t sentinelEnd = std::string::npos;
+  for (int attempt = 0; attempt < 500; attempt++) {  // 500 * 20ms = 最大10秒ほど
+    if (!waitPseudoConsole(console_, 20)) {
+      if (sentinelEnd != std::string::npos) break;  // 番兵の後のまとまりが届き終わった
+      continue;
+    }
+    char buf[4096];
+    int n = readPseudoConsole(console_, buf, sizeof(buf));
+    if (n < 0) return false;  // シェルが終わった
+    all.append(buf, static_cast<std::size_t>(n));
+    if (sentinelEnd == std::string::npos) {
+      if (std::size_t pos = all.find(sentinel); pos != std::string::npos) sentinelEnd = pos + sentinel.size();
+    }
+  }
+  if (sentinelEnd == std::string::npos) return false;
+  std::size_t cut = sentinelEnd;
+  if (!markerPrefix_.empty()) {
+    if (std::size_t markerPos = all.find(markerPrefix_, sentinelEnd); markerPos != std::string::npos) cut = markerPos;
+  }
+  advanceConsoleRows(all.substr(0, cut));
+  if (cut < all.size()) processOutputBytes(all.substr(cut));
+  return true;
 #else
   std::string sentinel = "#eos" + std::to_string(childPid_) + "#";
   std::string scan;
@@ -1590,8 +1877,13 @@ void Shell::resetTabArm() { tabArmed_ = false; }
 void Shell::sendControlByte(unsigned char byte) { writeToPty(std::string(1, static_cast<char>(byte))); }
 
 void Shell::writeToPty(const std::string &bytes) {
-#ifdef _WIN32  // .steering/20261015-windows-native-gui/
-  (void)bytes;
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/の第2段(2026-10-16、ConPTY)
+  if (!console_) return;
+  // コンソールのEnterはCR(LFはcmd.exeでは改行にならない)。MSYSのbashもCRを改行として受け取る。
+  std::string converted = bytes;
+  for (char &c : converted)
+    if (c == '\n') c = '\r';
+  writePseudoConsole(console_, converted);
 #else
   if (masterFd_ < 0) return;
   std::size_t off = 0;
@@ -1688,7 +1980,12 @@ void Shell::onResize(int rows, int columns, bool redraw) {
   // awaitingRealPrompt_中にウィンドウがリサイズされても、列0・全幅
   // への拡張をstaleなpromptColで踏みつぶさない。
   refreshCommandLineField();
-#ifndef _WIN32
+#ifdef _WIN32
+  // 幅はstart()と同じく1024桁のまま(折り返させない)、行数だけ合わせる。
+  consoleRows_ = std::max(1, rows);
+  if (vtRow_ > consoleRows_) vtRow_ = consoleRows_;
+  resizePseudoConsole(console_, consoleRows_, 1024);
+#else
   if (masterFd_ >= 0) {
     struct winsize ws {};
     ws.ws_row = static_cast<unsigned short>(rows);

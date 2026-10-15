@@ -30947,3 +30947,30 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **確認**(Mac): narou2epub.pyで「吾輩は猫である」(card789)のEPUBができ、XMLとして正しく、外字(2-88-74)は「譃」に
      なった。usilicの-cで縦書き・ルビ付きで開けた(00011/02313)。^Jeに走れメロス(card1567)の図書カードのURLを
      入れると、SHELLでnarou2epubが動き、~/.usilic/dataに作ったEPUBが縦書きで開いた。
+
+854. **WindowsのネイティブのSHELLを、ConPTYで動かす**(2026-10-16、直接のユーザー質問"WindowsのusilicにSHELLは
+     インプリメントできない？"への答えの後の依頼"進めて"、.steering/20261015-windows-native-gui/の第2段の最初)
+   - **pseudo_console_win.cpp**(新規): CreatePseudoConsole・STARTUPINFOEXのPROC_THREAD_ATTRIBUTE_PSEUDOCONSOLEで
+     シェルを起動する。ConPTYはシェルが終わっても出力のパイプを閉じず、ClosePseudoConsoleは出力が読み尽くされる
+     まで戻らないことがあるので、出力は読み取りのスレッドがバッファへ溜め、別のスレッドがシェルの終わりを待って
+     ClosePseudoConsoleを呼ぶ。出力のパイプの終わりが「シェルが終わった」。
+   - **Shell**: Windowsではstart()・alive()・terminate()・onPtyReadable()・waitForHandshake()・writeToPty()・
+     onResize()をConPTYで。Enterは\rで送る。幅はbashと同じく1024桁(折り返させない)、行数は窓に合わせる。
+     ConPTYは画面を描き直す形で出力するので、下の行へのカーソルの移動(CUP・VPA・CNL・CUD)は改行に、右への移動
+     (CUF・CHA、ECH+CUFに縮められた空白)は空白に、行の頭への移動は裸のCRに直す(applyConsoleCursorSequence()、
+     そのためprocessOutputBytes()を1バイトずつのprocessOutputByte()に分けた)。outputReady()を足し、-gのループは
+     poll()の代わりにそれで出力を確かめる。
+   - **cmd.exe**: PS1の代わりに`prompt $Lusilic$Gusilic:$P$G $Lusilic$G`、clsの後に番兵`echo #e^os<pid>#`(^は実行の
+     時に消えるので、エコーされたコマンドの文字は番兵に一致しない。$$が無いので番号はWindowsのプロセスID)。
+     プロンプトの「C:\…> 」の\は/に直してディレクトリにする。MSYSのbash(Git Bash)はsh用のままで、番兵だけ
+     `"#eos""<pid>#"`(MSYSの$$はWindowsのプロセスIDと違う)、/c/Users/…はC:/Users/…に。
+   - **シェルの選び方**(Configuration::shellArgv()): Windowsでは環境変数SHELLを見ない。usilicrcのSHELLはドライブ名・
+     \・/の付いたパスの時だけ(既定の「bash」はPATHでWSLのbash.exeが見つかるので使わない)、それ以外は%ComSpec%。
+     usilicrc・usilicrc.enのSHELL節に追記。
+   - **Application**: cmd.exeの時、^J^W等のcd(`cd /d "…"`)・プログラムの行のディレクトリ(`pushd "…" && … & popd`)・
+     ^Je等のnarou2epubのコマンドの引用符(cmdQuoteArgv())をcmd.exeの書き方に。CP/MV/RM・ARCの展開はsh用の書き方
+     ($?)しか無いので、cmd.exeでは「not supported with cmd.exe」と出して行わない。
+   - **未対応**: 実行中のプログラムがあるか(foregroundJobRunning())は分からない(常にfalse)。SHELLから子の
+     usilicへの受け渡し、^[lのLOG。
+   - **確認**: Macでmake usilic・make WINDOWS=1 usilicが通り、tests/test_shell.cppが通った。Windowsでの動作は
+     未確認(このMacにはWindowsもWineも無い)。
