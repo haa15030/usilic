@@ -22,12 +22,14 @@
 #include <csignal>
 #include <cstdlib>
 
+#include <unistd.h>
+#ifndef _WIN32  // Windowsのネイティブ(.steering/20261015-windows-native-gui/)ではSHELLは未対応
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <termios.h>
-#include <unistd.h>
+#endif
 
 namespace fm {
 
@@ -91,6 +93,10 @@ bool isZshProgram(const std::string &argv0) { return baseName(argv0) == "zsh"; }
 // ままにする(legacyのf_open==0という「単に予約するだけ」モードは、
 // Shellが書かれた時点でそれを使う呼び出し元がもう残っていなかった)。
 int openPty(std::string &slavePathOut) {
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/
+  (void)slavePathOut;
+  return -1;
+#else
   int fd = posix_openpt(O_RDWR | O_NOCTTY);
   if (fd < 0) return -1;
   if (grantpt(fd) < 0 || unlockpt(fd) < 0) {
@@ -104,6 +110,7 @@ int openPty(std::string &slavePathOut) {
   }
   slavePathOut = slave;
   return fd;
+#endif
 }
 
 }  // namespace
@@ -198,6 +205,10 @@ Shell::Shell(Display &display, const ShellOptions &options)
 Shell::~Shell() { terminate(); }
 
 bool Shell::start(const std::string &initialDirectory) {
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/
+  (void)initialDirectory;
+  return false;  // SHELL(擬似端末)はWindowsでは未対応(第2段でConPTY)
+#else
   if (masterFd_ >= 0) return true;
   if (options_.argv.empty()) return false;
   resetSessionState();
@@ -397,16 +408,26 @@ bool Shell::start(const std::string &initialDirectory) {
   }
   handshakeDone_ = true;
   return true;
+#endif
 }
 
 bool Shell::alive() const {
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/
+  return false;
+#else
   if (childPid_ <= 0) return false;
   return kill(childPid_, 0) == 0;
+#endif
 }
 
 int Shell::childPid() const { return childPid_; }
 
 void Shell::terminate() {
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/
+  childPid_ = -1;
+  masterFd_ = -1;
+  handshakeDone_ = false;
+#else
   if (childPid_ > 0) {
     kill(childPid_, SIGHUP);
     int status = 0;
@@ -442,11 +463,15 @@ void Shell::terminate() {
     masterFd_ = -1;
   }
   handshakeDone_ = false;
+#endif
 }
 
 int Shell::ptyFd() const { return masterFd_; }
 
 bool Shell::onPtyReadable() {
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/
+  return false;
+#else
   if (masterFd_ < 0) return false;
   char buf[4096];
   ssize_t n = read(masterFd_, buf, sizeof(buf));
@@ -457,6 +482,7 @@ bool Shell::onPtyReadable() {
   if (n == 0) return false;  // EOF: シェルの子が終了した
   if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return true;  // 今のところデータが無い
   return false;
+#endif
 }
 
 // output_shell()のメインの読み取りループ(errp[]/f.i_err/
@@ -1347,6 +1373,9 @@ std::string Shell::buildSetupCommand(const std::string &initialDirectory) const 
 // していたのと同じように、フィルタされずに供給される――退行では
 // なく、単に「唯一の」挙動ではなくなっただけである。
 bool Shell::waitForHandshake() {
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/
+  return false;
+#else
   std::string sentinel = "#eos" + std::to_string(childPid_) + "#";
   std::string scan;
   bool sentinelFound = false;
@@ -1392,6 +1421,7 @@ bool Shell::waitForHandshake() {
   }
   if (!postSentinel.empty()) processOutputBytes(postSentinel);
   return true;
+#endif
 }
 
 LineEditor &Shell::commandLine() { return commandLine_; }
@@ -1560,6 +1590,9 @@ void Shell::resetTabArm() { tabArmed_ = false; }
 void Shell::sendControlByte(unsigned char byte) { writeToPty(std::string(1, static_cast<char>(byte))); }
 
 void Shell::writeToPty(const std::string &bytes) {
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/
+  (void)bytes;
+#else
   if (masterFd_ < 0) return;
   std::size_t off = 0;
   // 書き込みが進まない状態の開始時刻(下の諦める判定用)。回数ではなく時間で
@@ -1611,6 +1644,7 @@ void Shell::writeToPty(const std::string &bytes) {
     }
     break;  // 本物の書き込みエラー――諦める
   }
+#endif
 }
 
 void Shell::setDirectoryChangedCallback(std::function<void(const std::string &)> callback) {
@@ -1635,9 +1669,13 @@ void Shell::setHistoryRecorder(std::function<void(const std::string &)> recorder
 void Shell::setBusy(bool busy) { busy_ = busy; }
 // foregroundJobRunning()自身の宣言コメント(shell.hpp)参照。
 bool Shell::foregroundJobRunning() const {
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/
+  return false;
+#else
   if (masterFd_ < 0 || childPid_ <= 0) return false;
   pid_t fg = ::tcgetpgrp(masterFd_);
   return fg > 0 && fg != static_cast<pid_t>(childPid_);
+#endif
 }
 bool Shell::busy() const { return busy_ || foregroundJobRunning(); }
 
@@ -1650,12 +1688,14 @@ void Shell::onResize(int rows, int columns, bool redraw) {
   // awaitingRealPrompt_中にウィンドウがリサイズされても、列0・全幅
   // への拡張をstaleなpromptColで踏みつぶさない。
   refreshCommandLineField();
+#ifndef _WIN32
   if (masterFd_ >= 0) {
     struct winsize ws {};
     ws.ws_row = static_cast<unsigned short>(rows);
     ws.ws_col = static_cast<unsigned short>(columns);
     ioctl(masterFd_, TIOCSWINSZ, &ws);
   }
+#endif
   // 2026-10-11、直接のユーザー報告(-gのHELPの子の画面が起動時になぜかSHELLになり、クリックで直った): SHELLを
   // 表示していない時は描かない(`redraw`、Application::handleResize())。以前は表示中の画面の上に一度SHELLを描き、
   // その後で今の画面を描き直していたが、-gではSHELLが残ることがあった。

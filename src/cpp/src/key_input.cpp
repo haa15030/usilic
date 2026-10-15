@@ -8,16 +8,20 @@
 #include <cstdio>
 #include <cstring>
 
+#include <unistd.h>
+#ifndef _WIN32  // Windowsのネイティブ(.steering/20261015-windows-native-gui/)は端末を読まない(常に-g)
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <termios.h>
-#include <unistd.h>
+#endif
 
 namespace fm {
 
 struct KeyInput::RawState {
+#ifndef _WIN32
   struct termios original {};
   struct termios raw {};
+#endif
   bool haveOriginal = false;
 };
 
@@ -31,6 +35,7 @@ KeyInput *g_active = nullptr;
 volatile std::sig_atomic_t g_resizePending = 0;
 volatile int g_foregroundChildPid = 0;
 
+#ifndef _WIN32
 void handleWinch(int) {
   std::signal(SIGWINCH, handleWinch);
   g_resizePending = 1;
@@ -107,6 +112,7 @@ void handleFatalSignal(int sig) {
   std::signal(sig, SIG_DFL);
   ::raise(sig);
 }
+#endif  // _WIN32
 
 }  // namespace
 
@@ -145,6 +151,11 @@ int KeyInput::readByte() {
 }
 
 void KeyInput::open(const std::string &ttyPath) {
+#ifdef _WIN32
+  (void)ttyPath;
+  fd_ = -1;
+  return;
+#else
   int fd = ::open(ttyPath.c_str(), O_RDONLY);
   fd_ = (fd < 0) ? 2 : fd;  // legacyのvt_init(1): 標準エラーのfdへフォールバック
   if (!isatty(fd_)) {
@@ -184,30 +195,41 @@ void KeyInput::open(const std::string &ttyPath) {
   raw_->raw.c_cc[VMIN] = 0;
   raw_->raw.c_cc[VTIME] = 1;
   tcsetattr(fd_, TCSANOW, &raw_->raw);
+#endif
 }
 
 void KeyInput::leaveRawMode() {
+#ifndef _WIN32
   if (fd_ < 0 || !raw_->haveOriginal) return;
   tcsetattr(fd_, TCSANOW, &raw_->original);
+#endif
 }
 
 void KeyInput::reenterRawMode() {
+#ifndef _WIN32
   if (fd_ < 0 || !raw_->haveOriginal) return;
   tcsetattr(fd_, TCSANOW, &raw_->raw);
+#endif
 }
 
 void KeyInput::close() {
   leaveRawMode();
+#ifndef _WIN32
   if (g_restoreFd == fd_) g_restoreFd = -1;  // ふつうに終わった(atexit()で画面をもう一度戻さない)
   if (fd_ >= 0 && fd_ != 2) ::close(fd_);
+#endif
   fd_ = -1;
 }
 
 void KeyInput::setPolling(bool polling) {
+#ifdef _WIN32
+  (void)polling;
+#else
   if (fd_ < 0 || !raw_->haveOriginal) return;
   raw_->raw.c_cc[VMIN] = 0;
   raw_->raw.c_cc[VTIME] = polling ? 1 : 0;
   tcsetattr(fd_, TCSANOW, &raw_->raw);
+#endif
 }
 
 std::optional<KeyInput::SpecialKey> KeyInput::readEscapeSequence() {
@@ -292,16 +314,20 @@ std::optional<KeyInput::SpecialKey> KeyInput::readEscapeSequence() {
 const std::string &KeyInput::lastEscapeBytes() const { return lastEscapeBytes_; }
 
 void KeyInput::installSignalHandlers() {
+#ifndef _WIN32
   std::signal(SIGWINCH, handleWinch);
   std::signal(SIGTTOU, handleTtou);
   std::signal(SIGCONT, handleCont);
+#endif
 }
 
 bool KeyInput::consumeResizeSignal() {
   if (!g_resizePending) return false;
   g_resizePending = 0;
+#ifndef _WIN32
   int rows, columns;
   if (queryWindowSize(fd_, &rows, &columns)) display_.setSize(rows, columns);
+#endif
   return true;
 }
 

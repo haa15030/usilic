@@ -2,6 +2,8 @@
 
 #include <cstdlib>
 
+#include "posix_compat.hpp"
+
 #include "child_process.hpp"
 #include "pipe_buffer.hpp"
 

@@ -511,6 +511,8 @@ TTF_Font *loadSerifFont(int pointSize, std::string *openedPath = nullptr) {
       "/usr/share/fonts/truetype/noto/NotoSerifCJK-Regular.ttc",
       "/usr/share/fonts/opentype/ipaexfont-mincho/ipaexm.ttf",
       "/usr/share/fonts/truetype/fonts-japanese-mincho.ttf",
+      "C:/Windows/Fonts/yumin.ttf",  // Windowsのネイティブ(2026-10-15)
+      "C:/Windows/Fonts/msmincho.ttc",
   };
   return openFirstJapaneseFont(userSerifCandidates(), candidates, sizeof(candidates) / sizeof(candidates[0]),
                                pointSize, openedPath);
@@ -528,6 +530,9 @@ TTF_Font *loadCjkFallbackFont(int pointSize, std::string *openedPath = nullptr) 
       "/System/Library/Fonts/PingFang.ttc",
       "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
       "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+      "C:/Windows/Fonts/meiryo.ttc",  // Windowsのネイティブ(2026-10-15)
+      "C:/Windows/Fonts/YuGothM.ttc",
+      "C:/Windows/Fonts/msgothic.ttc",
   };
   return openFirstJapaneseFont(userSansSerifCandidates(), candidates, sizeof(candidates) / sizeof(candidates[0]),
                                pointSize, openedPath);

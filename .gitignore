@@ -61,6 +61,7 @@ src/install.sh
 src/.config
 src/doc/usilic.1.gz
 src/cpp/build/
+src/cpp/build-win/
 
 # Node.js (claude-code-book scaffold)
 node_modules/

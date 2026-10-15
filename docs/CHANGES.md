@@ -30718,3 +30718,25 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      字の大きさ(A−/A＋の半分の刻み)を変えて組み直し、中央の字を保つ(項目830のkeepPinchCenter())。
      epub.jsのfont.preview(読んでいる章だけの測り直し)は使わなくなったので消した。
    - **確認**: 構文の確認(jsc)のみ。
+832. **2026-10-15: Windowsのネイティブ(MinGW-w64、互換層無し)の-gだけのusilic.exe(第1段)**
+   - **経緯**: 直接のユーザー依頼("usilic をWindowsでネイティブ動作させるには？"に、A(MSYS2版にDLL・外部ツールを
+     同梱)とB(互換層無し)を示したところ"Aはあとでいい。Bを-gで始めて。")。.steering/20261015-windows-native-gui/。
+   - **ビルド**: `make WINDOWS=1 usilic`(Makefileの先頭で分け、設定はsrc/cpp/windows.mk)。Macからのクロスビルド
+     (Homebrewのmingw-w64、SDL2・SDL2_ttfのMinGW向けの配布物を~/.local/mingwに)。SDL2はDLL、libstdc++・libgcc・
+     winpthreadは静的(外のDLLはSDL2.dll・SDL2_ttf.dllだけ)。-mwindows(コンソールの窓を出さない)。マニフェスト
+     (packaging/windows/、activeCodePage=UTF-8・PerMonitorV2)をwindresで埋め込み、狭い文字のAPIをUTF-8で使う。
+     `make WINDOWS=1 dist`でbuild-win/usilic-win64.zip(strip済みのexe・DLL・lib/usilic/)。
+   - **POSIXの置き換え**: *_win.cppをMakefileで差し替える(Mac・Linuxのビルドからは外す): terminal_display_win.cpp
+     (何も出さない)、child_process_win.cpp(CreateProcessW・匿名パイプ・標準入力はスレッドで書く・打ち切りは
+     TerminateProcess・pid_tはプロセスID)、platform_win.cpp(exeの場所・%TEMP%・HOMEにUSERPROFILE・ShellExecuteW・
+     メッセージボックス)、posix_compat_win.cpp(kill)。key_input.cpp・shell.cppは端末・擬似端末の部分だけ_WIN32で
+     外した(SHELLは未対応)。posix_compat.hpp(setenv・getuid・lstat・mkdir(path,mode)・何も届かないpoll)。
+     application.cpp・main.cppは、FIFO・UNIXソケット(親子のusilic・SHELLからの引き渡し)・termios・fork(クイック
+     ルック)を_WIN32で外し、Windowsは常に-g。
+   - **(ls)**: native_ls.cppのnativeLsAlF()が`ls -alF`と同じ形の行を作り、ChildProcessのWindows版がPATHにls.exeが
+     無い時に使う(tests/test_native_ls.cpp)。DirectoryModeはパスの\を/にそろえ、ドライブの根(C:/)の親はそのまま。
+   - **その他**: フォントの候補にC:/Windows/Fonts(MSゴシック・Consolas・メイリオ・游ゴシック・游明朝・MS明朝)。
+     外で開く・クリップボードはhasWindowsHost()にネイティブも加え、ShellExecuteW・clip.exe。HELP等はexeの隣の
+     lib/usilic/。docs/BUILD.mdに「Windows(ネイティブ、MinGW-w64、-gだけ)」の節。
+   - **確認**: Macでクロスビルドがリンクまで通り(`objdump -p`で外のDLLはSDL2.dll・SDL2_ttf.dllとシステムのものだけ)、
+     Macの通常のビルドも通る。native_lsのテストは通った。Windowsでの動作は未確認(ユーザーのWindows機で)。

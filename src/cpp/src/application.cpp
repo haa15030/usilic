@@ -3,7 +3,9 @@
 
 #include "epub_vertical.hpp"
 
+#ifndef _WIN32  // Windowsのネイティブ(.steering/20261015-windows-native-gui/)に無いもの
 #include <poll.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -20,11 +22,13 @@
 #include <sstream>
 #include <tuple>
 #include <fcntl.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
+#include <unistd.h>
+#ifndef _WIN32
+#include <sys/socket.h>
 #include <sys/un.h>
 #include <termios.h>
-#include <unistd.h>
+#endif
 
 #include <cstring>
 
@@ -33,6 +37,7 @@
 #include "mode_line.hpp"
 #include "pipe_buffer.hpp"
 #include "platform.hpp"
+#include "posix_compat.hpp"
 #include "utf8.hpp"
 #if defined(__clang__)
 #pragma clang diagnostic push
@@ -6119,10 +6124,14 @@ bool Application::keyInterruptRequested() {
   // 見ない(KeyInput::readByte()ではなく端末fdを直接read()する)。
   if (interruptPeeker_ && interruptPeeker_()) return true;
   if (keyInput_.fd() < 0) return false;
+#ifdef _WIN32  // Windowsのネイティブは端末を読まない(fdは常に負、.steering/20261015-windows-native-gui/)
+  return false;
+#else
   struct pollfd pfd{keyInput_.fd(), POLLIN, 0};
   if (::poll(&pfd, 1, 0) <= 0 || !(pfd.revents & POLLIN)) return false;
   unsigned char discarded;
   return ::read(keyInput_.fd(), &discarded, 1) > 0;
+#endif
 }
 
 // ^O^M/^[^Mの一覧版(2026-09-27追加、直接のユーザー依頼"^O^M、^[^MをLOCATE、
@@ -12144,7 +12153,9 @@ bool Application::handleSuspend() {
   // シェルの「Stopped」やプロンプトが一覧の途中に割り込んでいた。
   display_.leaveForSuspend();
   keyInput_.leaveRawMode();
+#ifndef _WIN32  // Windowsは常に-g(上で戻る)
   ::kill(::getpid(), SIGTSTP);
+#endif
   // ここへ戻ってくるのはSIGCONTで再開された後――key_input.cpp自身の
   // handleCont()が(非同期のシグナルハンドラとして)既にreenterRawMode()
   // を呼び、g_resizePendingも立てている。consumeResizeSignal()で
@@ -17990,6 +18001,9 @@ void Application::pollPendingArchiveExtractShellRun() {
 }
 
 bool Application::pollShellHandoff() {
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/
+  return false;  // SHELLはWindowsでは未対応
+#else
   if (currentMode_ != ApplicationMode::Shell || !shell_.alive()) return false;
   std::string path = "/tmp/.usilic-shell/s." + std::to_string(::getuid()) + "." + std::to_string(shell_.childPid());
   struct stat st;
@@ -18081,6 +18095,7 @@ bool Application::pollShellHandoff() {
   fileReturnMode_ = ApplicationMode::Directory;
   activeView().redraw();  // 通常のキー入力ごとの再描画サイクルの外での一度限りの呼び出し、startPagerFileList()自身のコメント参照
   return true;
+#endif
 }
 
 // 2026-10-09、直接のユーザー依頼("ファイルを参照しながらの操作を可能にしたいので`^Jpusilic ...^M`および
@@ -19167,12 +19182,19 @@ std::string channelDirectory(long ownerPid) {
 // `ownerPid`の受け渡しのFIFO `name`へ`message`(1行、PIPE_BUF以下なら一度に書かれる)を書く。読む側が
 // いなければ(FIFOが無い・開いているプロセスが無い)false。
 bool sendToChannel(long ownerPid, const std::string &name, const std::string &message) {
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/
+  (void)ownerPid;
+  (void)name;
+  (void)message;
+  return false;  // 親子のusilic(FIFO)はWindowsでは未対応
+#else
   std::string path = channelDirectory(ownerPid) + "/" + name;
   int fd = ::open(path.c_str(), O_WRONLY | O_NONBLOCK);
   if (fd < 0) return false;
   ssize_t n = ::write(fd, message.data(), message.size());
   ::close(fd);
   return n == static_cast<ssize_t>(message.size());
+#endif
 }
 
 // HELPの行を、組み方(groffの字下げ・印のタブ、U+2060・U+E000・U+FEFF)によらず比べられる形に: 空白類と
@@ -20428,6 +20450,10 @@ void Application::pollShellOfferFollowUp() {
 // 1行で書く。親はキーを今の画面で実行し(executeRemoteKeys())、HELPの行はHELPの子の"help"へ回す(いなければ
 // HELPの子を開き直して、起動時にその行へ飛ばす、forwardHelpRequest())。
 void Application::openChildChannel(long ownerPid, const std::string &name) {
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/
+  (void)ownerPid;
+  (void)name;  // 親子のusilic(FIFO)はWindowsでは未対応
+#else
   closeChildChannel();
   std::string dir = channelDirectory(ownerPid);
   ::mkdir(dir.c_str(), 0700);
@@ -20440,6 +20466,7 @@ void Application::openChildChannel(long ownerPid, const std::string &name) {
   if (channelFd_ < 0) return;
   channelKeepFd_ = ::open(path.c_str(), O_WRONLY | O_NONBLOCK);
   channelPath_ = path;
+#endif
 }
 
 // 外部起動の子: 親の受け渡しのディレクトリに"pid.<自分のPID>"を置く(親のterminateChildren()が使う)。
@@ -20487,7 +20514,7 @@ void Application::terminateChildren() {
 void Application::closeChildChannel() {
   if (!childPidFile_.empty()) {
     ::unlink(childPidFile_.c_str());
-    ::rmdir(std::filesystem::path(childPidFile_).parent_path().c_str());  // 親が先に終わっていて空なら
+    ::rmdir(std::filesystem::path(childPidFile_).parent_path().string().c_str());  // 親が先に終わっていて空なら
     childPidFile_.clear();
   }
   if (channelFd_ >= 0) ::close(channelFd_);
@@ -20495,7 +20522,7 @@ void Application::closeChildChannel() {
   channelFd_ = channelKeepFd_ = -1;
   if (!channelPath_.empty()) {
     ::unlink(channelPath_.c_str());
-    ::rmdir(std::filesystem::path(channelPath_).parent_path().c_str());  // 空なら(他方のFIFOが残っていれば残る)
+    ::rmdir(std::filesystem::path(channelPath_).parent_path().string().c_str());  // 空なら(他方のFIFOが残っていれば残る)
   }
   channelPath_.clear();
   channelBuffer_.clear();

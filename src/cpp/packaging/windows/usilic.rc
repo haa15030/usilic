@@ -1,0 +1,3 @@
+// usilic.exeの資源(windows.mk): マニフェスト(UTF-8のactiveCodePage・DPI)。
+#include <winuser.h>
+CREATE_PROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "usilic.manifest"

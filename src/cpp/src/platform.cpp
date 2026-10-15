@@ -40,17 +40,26 @@ bool isMsys() {
 #endif
 }
 
-bool hasWindowsHost() { return isWsl() || isMsys(); }
+bool hasWindowsHost() { return isWsl() || isMsys() || isNativeWindows(); }
 
 std::string windowsPathFor(const std::string &path) {
+#ifdef _WIN32  // ネイティブ(.steering/20261015-windows-native-gui/): もうWindowsのパス、区切りを\に
+  std::string native = path;
+  std::replace(native.begin(), native.end(), '/', '\\');
+  return native;
+#else
   ChildProcess::Result result = ChildProcess::run({isMsys() ? "cygpath" : "wslpath", "-w", path});
   if (!result.ok) return "";
   std::string out = result.output;
   while (!out.empty() && (out.back() == '\n' || out.back() == '\r')) out.pop_back();
   return out;
+#endif
 }
 
 bool openOnWindowsHost(const std::string &target) {
+#ifdef _WIN32
+  return openWithWindowsShell(target);
+#else
   std::string arg = target;
   if (target.compare(0, 7, "http://") != 0 && target.compare(0, 8, "https://") != 0) {
     arg = windowsPathFor(target);
@@ -58,6 +67,7 @@ bool openOnWindowsHost(const std::string &target) {
   }
   ChildProcess::Result result = ChildProcess::run({"explorer.exe", arg});
   return result.exitStatus != -1 && result.exitStatus != 127;  // 127: 起動できなかった(コマンドが無い)
+#endif
 }
 
 std::string utf8ToUtf16LeWithBom(const std::string &utf8) {

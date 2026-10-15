@@ -138,16 +138,20 @@
 #include <fstream>
 #include <iostream>
 #include <cmath>
+#ifndef _WIN32  // Windowsのネイティブ(.steering/20261015-windows-native-gui/)に無いもの
 #include <poll.h>
+#endif
 #include <set>
 #include <sstream>
 #include <string>
-#include <sys/socket.h>
 #include <sys/stat.h>
+#include <unistd.h>
+#ifndef _WIN32
+#include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <termios.h>
-#include <unistd.h>
+#endif
 #include <utility>
 #include <vector>
 #ifdef __APPLE__
@@ -172,6 +176,12 @@
 #include "mouse_sgr.hpp"
 #include "usilicrc_file.hpp"
 #include "terminal_display.hpp"
+#include "posix_compat.hpp"
+#include "platform.hpp"
+#ifdef _WIN32
+// Windowsのネイティブでは端末の段の関数の本体を外すので、引数が使われなくなる。
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#endif
 
 namespace {
 
@@ -355,6 +365,9 @@ std::string resolveGuiFontPath(std::optional<TerminalAppearance> appearance = st
       "/System/Library/Fonts/Monaco.ttf",
       "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
       "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
+      // Windowsのネイティブ(2026-10-15、.steering/20261015-windows-native-gui/): 和文も等幅のMSゴシック、無ければConsolas。
+      "C:/Windows/Fonts/msgothic.ttc",
+      "C:/Windows/Fonts/consola.ttf",
   };
   for (const char *path : candidates) {
     std::ifstream probe(path, std::ios::binary);
@@ -447,8 +460,12 @@ int resolveCoastLevel(int computedLevel) { return gScrollDebugLevel.value_or(com
 // more silent failure than the original "front window" bug this was
 // meant to fix.
 std::string currentTtyPath() {
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/
+  return "";
+#else
   const char *path = ttyname(STDIN_FILENO);
   return path ? path : "";
+#endif
 }
 
 // AppleScript's own RGB color type is always a {r, g, b} list in the
@@ -4070,6 +4087,9 @@ bool raiseLaunchingTerminalWindow() {
 pid_t gBackgroundQuickLookPid = -1;
 
 bool stopBackgroundQuickLook() {
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/
+  return false;  // クイックルックはmacOSだけ
+#else
   if (gBackgroundQuickLookPid <= 0) return false;
   int status = 0;
   pid_t pid = gBackgroundQuickLookPid;
@@ -4078,9 +4098,13 @@ bool stopBackgroundQuickLook() {
   ::kill(pid, SIGTERM);
   ::waitpid(pid, &status, 0);
   return true;
+#endif
 }
 
 void startBackgroundQuickLook(const std::string &command) {
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/
+  (void)command;
+#else
   stopBackgroundQuickLook();
   pid_t pid = ::fork();
   if (pid == 0) {
@@ -4094,6 +4118,7 @@ void startBackgroundQuickLook(const std::string &command) {
     ::_exit(127);
   }
   if (pid > 0) gBackgroundQuickLookPid = pid;
+#endif
 }
 
 bool runProgramInLaunchingTerminal(const std::string &command, fm::GraphicalDisplay &gui) {
@@ -4345,6 +4370,11 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   // 標準入力がパイプのページャー起動では、ISIGが一度も有効にならず^Cが
   // 効かなかった。キー入力(KeyInput::open("/dev/tty"))と同じく、標準入力が
   // 端末でなければ制御端末/dev/ttyそのものを相手にする。
+#ifdef _WIN32  // 端末が無い(Ctrl+Cの扱いも無い)
+  bool termiosSaved = false, closeSignalTty = false;
+  int signalTtyFd = -1;
+  void (*previousSigint)(int) = std::signal(SIGINT, handleSigintForGuiSession);
+#else
   int signalTtyFd = STDIN_FILENO;
   bool closeSignalTty = false;
   if (!isatty(signalTtyFd)) {
@@ -4362,6 +4392,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   }
   gGuiSessionSigintReceived = 0;
   void (*previousSigint)(int) = std::signal(SIGINT, handleSigintForGuiSession);
+#endif
 
   fm::GraphicalDisplay *guiForFrame = gui.get();
   app.setGuiFrameProvider([guiForFrame] { return guiFrameText(*guiForFrame); });
@@ -4371,8 +4402,14 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   app.setGuiFontProvider(nullptr);
 
   std::signal(SIGINT, previousSigint);
+#ifndef _WIN32
   if (termiosSaved) tcsetattr(signalTtyFd, TCSANOW, &savedTermios);
   if (closeSignalTty) ::close(signalTtyFd);
+#else
+  (void)termiosSaved;
+  (void)closeSignalTty;
+  (void)signalTtyFd;
+#endif
 
   app.programMode().setForegroundLauncher(nullptr);  // back to plain ChildProcess::runInteractive() in terminal mode
   app.editMode().setForegroundLauncher(nullptr);
@@ -4451,6 +4488,8 @@ std::string resolveOwnExecutablePath() {
   std::error_code ec;
   auto resolved = std::filesystem::canonical(buf.c_str(), ec);
   return ec ? std::string() : resolved.string();
+#elif defined(_WIN32)
+  return fm::windowsExecutablePath();
 #else
   std::error_code ec;
   auto resolved = std::filesystem::canonical("/proc/self/exe", ec);
@@ -4524,6 +4563,9 @@ void checkInvalidTerminalMarker() {
 // getenv("USILIC") says "your real work belongs to the parent, not
 // you": no normal Application/Display startup ever happens here.
 bool tryHandoffToParentShell(int argc, char **argv) {
+#ifdef _WIN32  // .steering/20261015-windows-native-gui/
+  return false;  // SHELLの中のusilicはWindowsでは無い
+#else
   if (!std::getenv("USILIC")) return false;
   // 2026-10-02追加、直接のユーザー報告("-m/-nが利かない"): -m/-n(マークアップの変換を標準出力へ)
   // と-h(使い方)は画面を使わずに終わるので、SHELLの中でも親へは渡さずにその場で実行する。以前は
@@ -4710,6 +4752,7 @@ bool tryHandoffToParentShell(int argc, char **argv) {
   }
   ::unlink(path.c_str());  // 誰も拾わなかった――後始末してから通常起動へ
   return false;
+#endif
 }
 
 }  // namespace
@@ -4798,6 +4841,10 @@ void applyRcOptions(fm::Configuration &configuration, const std::vector<RcOption
 }
 
 int main(int argc, char **argv) {
+#ifdef _WIN32
+  // HOMEをUSERPROFILEで(~・~/.usilic/のため)。argvはSDL2mainがUTF-8にしてくれる。
+  fm::prepareWindowsEnvironment();
+#endif
   checkInvalidTerminalMarker();
   if (tryHandoffToParentShell(argc, argv)) return 0;
   loadScrollDebugLevelFromEnvironment();
@@ -5003,6 +5050,11 @@ int main(int argc, char **argv) {
   }
   bool isFileLaunch = !filePaths.empty() && filePaths.size() == positionalArgs.size();
 
+#ifdef _WIN32
+  // Windowsのネイティブ(.steering/20261015-windows-native-gui/)は-gだけ(端末の画面を持たない)。
+  forceCui = false;
+  forceGui = true;
+#endif
   if (forceCui && forceGui) {
     std::cerr << "usilic: -c and -g are mutually exclusive.\n";
     return 1;
@@ -5202,7 +5254,11 @@ int main(int argc, char **argv) {
   // isn't a concern -- /tmp itself gets cleared independently (this
   // project's own already-accepted /tmp-scratch tolerance, see
   // materializeArchiveTempFile()'s own comment).
+#ifdef _WIN32
+  std::string pidTempDirectory = fm::windowsTempDirectory() + "/.usilic." + std::to_string(::getpid());
+#else
   std::string pidTempDirectory = "/tmp/.usilic." + std::to_string(::getpid());
+#endif
   ::mkdir(pidTempDirectory.c_str(), S_IRWXU);
   // 2026-08-25 (a direct user request): a piped stdin launch (no
   // positional arguments at all, checked here via isatty() the same
@@ -5340,7 +5396,11 @@ int main(int argc, char **argv) {
   // 入れた時にもusilicrc・HELPを見つけるため(Application::setInstallLibDirectory()参照)。
   std::string installLibDir;
   if (std::string exe = resolveOwnExecutablePath(); !exe.empty())
+#ifdef _WIN32  // 配る形(windows.mkのdist)は、usilic.exeの隣のlib/usilic/
+    installLibDir = std::filesystem::path(exe).parent_path().string() + "/lib/usilic/";
+#else
     installLibDir = std::filesystem::path(exe).parent_path().parent_path().string() + "/lib/usilic/";
+#endif
   fm::usilicrc::setInstallLibDirectory(installLibDir);
   // 2026-10-02追加(fm::usilicrc::ensureUser()参照): ~/.usilic/usilicrcが無ければ既定のものをコピーする。
   if (homeEnv) fm::usilicrc::ensureUser(homeEnv);
@@ -5934,8 +5994,13 @@ int main(int argc, char **argv) {
       // way -- same as if the user had pressed ^Og once by hand.
       app.setGuiToggleReturnsToTerminal(keyInput.fd() >= 0);  // ^Ogで下の端末の実行ループへ戻れる
       if (!tryEnterGuiPhase(app, display, *terminalDisplay, history)) {
+#ifdef _WIN32  // コンソールが無いので(端末の画面にも戻れない)、メッセージボックスで
+        fm::showWindowsError("Cannot open the usilic window (no font found in C:/Windows/Fonts, or SDL2.dll/SDL2_ttf.dll "
+                             "missing next to usilic.exe).");
+#else
         std::cerr << "usilic: -g requested but no usable GUI (no font found, or no display) "
                      "-- falling back to terminal mode.\n";
+#endif
       }
     }
     // 2026-08-30 (直接のユーザー報告、「usilicウィンドウの赤(終了)を

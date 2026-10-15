@@ -16,6 +16,14 @@ bool procVersionLooksLikeWsl(const std::string &procVersion);
 // MSYS2/Cygwinの実行環境か(Git Bash・MSYS2の端末。2026-10-05、.steering/20261005-windows-gitbash/)。
 // こちらはビルドしたマシン=動かすマシンの実行環境(msys-2.0.dll)なのでコンパイル時に決まる。
 bool isMsys();
+// Windowsのネイティブ(MinGW-w64・MSVC、_WIN32。MSYS2/Cygwinは含まない、.steering/20261015-windows-native-gui/)。
+constexpr bool isNativeWindows() {
+#ifdef _WIN32
+  return true;
+#else
+  return false;
+#endif
+}
 // Windows側のアプリ・クリップボードへつなぐか(WSL2かMSYS)。呼び出し元はこれで分岐する。
 bool hasWindowsHost();
 // `wslpath -w path`(MSYSでは`cygpath -w path`)の結果(Windowsのパス、例: \\wsl.localhost\Ubuntu\home\u\a.mp4)。失敗したら空。
@@ -28,5 +36,17 @@ bool openOnWindowsHost(const std::string &target);
 std::string utf8ToUtf16LeWithBom(const std::string &utf8);
 // Windowsのクリップボードへ(WSLはclip.exe、MSYSは/dev/clipboardへUTF-8のまま書く)。
 bool copyToWindowsClipboard(const std::string &utf8);
+
+#ifdef _WIN32
+// Windowsのネイティブだけのもの(platform_win.cpp)。パスはUTF-8で、区切りは/にする。
+std::string windowsExecutablePath();  // このusilic.exe
+std::string windowsTempDirectory();   // %TEMP%(末尾の/無し)
+// 起動の最初に呼ぶ: HOMEが無ければUSERPROFILEを入れる(~・~/.usilic/をPOSIXと同じく扱うため)。
+void prepareWindowsEnvironment();
+// 既定のアプリ(ブラウザ・エクスプローラ等)で開く(ShellExecuteW)。
+bool openWithWindowsShell(const std::string &target);
+// コンソールの無いusilic.exeで、起動できない理由をメッセージボックスで知らせる。
+void showWindowsError(const std::string &message);
+#endif
 
 }  // namespace fm

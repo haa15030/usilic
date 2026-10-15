@@ -1,0 +1,20 @@
+// posix_compat.hpp(Windowsのネイティブ、.steering/20261015-windows-native-gui/)の実装のうち、windows.hの要るもの。
+#include "posix_compat.hpp"
+
+#include <windows.h>
+
+int kill(long long pid, int sig) {
+  HANDLE h = OpenProcess(sig == 0 ? PROCESS_QUERY_LIMITED_INFORMATION : PROCESS_TERMINATE |
+                                                                          PROCESS_QUERY_LIMITED_INFORMATION,
+                         FALSE, static_cast<DWORD>(pid));
+  if (!h) return -1;
+  int result = 0;
+  if (sig == 0) {
+    DWORD code = 0;
+    if (!GetExitCodeProcess(h, &code) || code != STILL_ACTIVE) result = -1;
+  } else if (!TerminateProcess(h, 1)) {
+    result = -1;
+  }
+  CloseHandle(h);
+  return result;
+}

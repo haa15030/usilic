@@ -1,3 +1,8 @@
+# 2026-10-15、直接のユーザー依頼("Bを-gで始めて"、.steering/20261015-windows-native-gui/): `make WINDOWS=1 usilic`は
+# MinGW-w64でWindowsのネイティブのusilic.exe(-gだけ)を作る。設定はwindows.mk。それ以外はこのファイルの残り。
+ifeq ($(WINDOWS),1)
+include windows.mk
+else
 CXX      ?= c++
 # graphical_display.cpp (the SDL2/SDL2_ttf-backed GUI-mode Display,
 # see docs/ideas/IDEAS.md) needs both SDL2 and SDL2_ttf's headers/libs
@@ -78,6 +83,8 @@ BUILD_DIR = build
 # this wildcard -- run_tests already gets its own main() from
 # tests/test_main.cpp (doctest's), and two main()s would conflict.
 SRCS     = $(wildcard $(SRC_DIR)/*.cpp)
+# *_win.cppはWindowsのネイティブ(windows.mk)だけのもの。
+SRCS    := $(filter-out $(SRC_DIR)/%_win.cpp, $(SRCS))
 # mac_cursor.mm/mac_cursor_stub.cpp (2026-08-10, the real NSCursor.openHand
 # for content dragging -- see mac_cursor.hpp's own class comment) are
 # mutually exclusive, same-symbols implementations, picked by platform
@@ -248,3 +255,4 @@ $(BUILD_DIR):
 
 clean:
 	rm -rf $(BUILD_DIR)
+endif  # WINDOWS

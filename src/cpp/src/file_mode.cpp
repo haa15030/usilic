@@ -16,6 +16,7 @@
 #include <system_error>
 
 #include "charset.hpp"
+#include "platform.hpp"
 #include "child_process.hpp"
 #include "epub_to_help_markup.hpp"
 #include "help_text.hpp"
@@ -942,7 +943,14 @@ bool FileMode::loadFileAsPipe(const std::string &path) {
 namespace {
 // `content`を書いた無名の一時ファイル(unlink済み、ディスク上に残らない)の、先頭へ巻き戻したfd。失敗なら-1。
 int unlinkedTempFdWith(const std::string &content) {
+#ifdef _WIN32  // Windowsのネイティブは%TEMP%(.steering/20261015-windows-native-gui/)
+  std::string pattern = windowsTempDirectory() + "/usilic-pipe-XXXXXX";
+  std::vector<char> pathBuffer(pattern.begin(), pattern.end());
+  pathBuffer.push_back('\0');
+  char *tempPath = pathBuffer.data();
+#else
   char tempPath[] = "/tmp/usilic-pipe-XXXXXX";
+#endif
   int fd = ::mkstemp(tempPath);
   if (fd < 0) return -1;
   ::unlink(tempPath);  // POSIXでは開いたままのfdは生き続ける――ディスク上に何も残さない
@@ -1388,7 +1396,9 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   // 生きたSHELLからの引き渡しの生きたパイプ/ソケット以外――通常の
   // ファイル/リダイレクトされたstdin等――ではどのみち意味の無い
   // フラグ)。
+#ifndef _WIN32  // Windowsの匿名パイプにO_NONBLOCKは無い(.steering/20261015-windows-native-gui/)
   ::fcntl(streamFd_, F_SETFL, ::fcntl(streamFd_, F_GETFL, 0) | O_NONBLOCK);
+#endif
   streamBytesRead_ = 0;  // 自身の宣言コメント参照――新しいストリームはこれを0から再開する
   // 2026-09-15追加、loadFileAsPipe()自身のコメント参照: noWrapMode_は
   // 本来loadFileImpl()/readAndWrap()専用だったが、loadFileAsPipe()が

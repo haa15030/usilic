@@ -3,6 +3,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "posix_compat.hpp"
+
 namespace fm {
 
 CpMvRmMode::CpMvRmMode(const Configuration &configuration, KeyInput &keyInput, const std::string *errorLogPath)

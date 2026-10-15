@@ -187,6 +187,45 @@ SDL2が見つからないとMakefileが自動で`NO_GUI=1`になり、`src/graph
    (`~/.minttyrc`に`FontHeight=14`のように入る)。Git Bash(`C:\Users\<名前>`)と
    MSYS2(`C:\msys64\home\<名前>`)はホームが別なので、それぞれで設定する。
 
+## Windows(ネイティブ、MinGW-w64、-gだけ)
+
+2026-10-15追加(`.steering/20261015-windows-native-gui/`)。POSIXの互換層(MSYS2の`msys-2.0.dll`)を使わない、
+Windowsのふつうの`usilic.exe`。**今は-g(SDLの窓)だけ**で、SHELL・-c・親子のusilic(-H/-K)は使えない
+(第2段)。(ls)の一覧はWindowsに`ls`が無いので、usilicの中で`ls -alF`と同じ形の行を作る
+(`src/cpp/src/native_ls.cpp`)。外部コマンドは`CreateProcessW`で起動する(`src/cpp/src/child_process_win.cpp`)。
+ファイル名はマニフェストの`activeCodePage`でUTF-8にしているので、**Windows 10 1903以降**が要る。
+
+### Macからクロスビルドする
+
+1. **ツール**: `brew install mingw-w64`。
+2. **SDL2・SDL2_ttf**: GitHubのlibsdl-orgのリリースから`SDL2-devel-<版>-mingw.tar.gz`・
+   `SDL2_ttf-devel-<版>-mingw.tar.gz`を落とし、中の`x86_64-w64-mingw32/`の`include`・`lib`・`bin`を
+   `~/.local/mingw/`へコピーする(別の場所なら`make`に`WIN_SDL_DIR=...`)。
+3. **ビルド**:
+   ```
+   cd src/cpp
+   make WINDOWS=1 -j8 usilic     # build-win/usilic.exe(設定はwindows.mk)
+   make WINDOWS=1 dist           # build-win/usilic/ と build-win/usilic-win64.zip
+   ```
+   `dist`は、strip済みの`usilic.exe`・`SDL2.dll`・`SDL2_ttf.dll`と、`lib/usilic/`(usilicrc・HELP・
+   HELP.notes、`~/.local/lib/usilic/HELP.epub`があればそれも)をまとめる。
+
+### Windowsで使う
+
+1. `usilic-win64.zip`を好きな所(例えば`C:\Users\<名前>\usilic\`)に展開する。
+2. `usilic.exe`をダブルクリックするか、コマンドプロンプトから`usilic.exe [ディレクトリ|ファイル]`。
+   引数が無ければカレントディレクトリ(ダブルクリックならexeの場所)の(ls)。
+3. 設定・履歴は`%USERPROFILE%\.usilic\`(HOMEが無ければUSERPROFILEを使う)、HELP・既定のusilicrcは
+   exeの隣の`lib\usilic\`。フォントは`C:\Windows\Fonts`のMSゴシック(無ければConsolas)、和文の
+   ゴシック体はメイリオ、明朝体は游明朝。
+4. 窓が出ない時はメッセージボックスで理由を出す(フォントが無い等)。`SDL2.dll`が無いとWindows自身が
+   起動前に知らせる。
+
+### Windows上でビルドする
+
+MSYS2の**UCRT64**の端末で`pacman -S --needed mingw-w64-ucrt-x86_64-gcc make zip`、SDL2・SDL2_ttfは
+上と同じ配布物を`WIN_SDL_DIR`に置き、`make WINDOWS=1 CXX=g++ WINDRES=windres STRIP=strip usilic`。
+
 ## Docker(`.devcontainer/`)
 
 このリポジトリの`.devcontainer/Dockerfile`(Ubuntu 26.04ベース)
@@ -250,6 +289,8 @@ ad-hoc署名し直す(`codesign --force --deep -s -`、単体実行
 | `make app` | `build/usilic.app`(Finderから起動できる`.app`バンドル、macOS用)を生成 |
 | `make test` | `build/run_tests`を生成し、そのまま実行(doctest) |
 | `make clean` | `build/`を削除 |
+| `make WINDOWS=1 usilic` | `build-win/usilic.exe`(Windowsのネイティブ、-gだけ。MinGW-w64、windows.mk) |
+| `make WINDOWS=1 dist` | `build-win/usilic-win64.zip`(exe・SDLのDLL・HELP等) |
 | `sudo make install` | `build/usilic`を`/usr/local/bin/U`へインストール |
 
 `make`(ターゲット省略)は`Makefile`内で最初に書かれている`test`が

@@ -268,6 +268,11 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   // `/tmp`自身のシンボリックリンク行("1/1 END")だけが表示され、
   // その実際の内容は表示されなかった。
   std::string normalizedPath = path;
+#ifdef _WIN32
+  // Windowsのネイティブ(.steering/20261015-windows-native-gui/): std::filesystem(absolute・lexically_normal等)は
+  // \区切りで返すので、ここで/にそろえる(usilicのパスは/区切り、Windows APIは/も受け付ける)。
+  std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
+#endif
   if (!normalizedPath.empty() && normalizedPath.back() != '/') normalizedPath += '/';
 
   std::vector<std::string> argv = ls.argv;
@@ -447,6 +452,10 @@ const DirectoryEntry *DirectoryMode::selectedEntry() const {
 
 std::string DirectoryMode::parentDirectory(const std::string &dir) {
   if (dir.empty() || dir == "/") return "/";
+#ifdef _WIN32
+  // Windowsのネイティブ(.steering/20261015-windows-native-gui/): ドライブの根(C:/)の親はそのドライブの根のまま。
+  if (dir.size() >= 2 && dir.size() <= 3 && dir[1] == ':') return dir.substr(0, 2) + "/";
+#endif
   std::string trimmed = dir;
   if (trimmed.back() == '/') trimmed.pop_back();
   std::size_t slash = trimmed.find_last_of('/');
