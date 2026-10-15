@@ -9839,8 +9839,8 @@ std::vector<Application::EpubHorizontalLink> Application::epubHorizontalLinks(in
 }
 
 // 横書きのEPUBの本文で、次(delta>0)/前のリンクを選ぶ(↑↓・^N/^P)。本文全体で次/前のリンクを
-// 探し、画面に見えていれば選び、見えていなければ1行スクロールする(繰り返せば、先のリンクが画面に
-// 入った所で選ばれる)。2026-09-30訂正、直接のユーザー報告("↓↑でリンク位置は変わるけど画面が
+// 探して選ぶ(画面の外なら、その行を画面の中央に。2026-10-15まではここで1行スクロールし、繰り返せば
+// 先のリンクが画面に入った所で選んでいた)。2026-09-30訂正、直接のユーザー報告("↓↑でリンク位置は変わるけど画面が
 // スクロールしない"): 以前は画面の中のリンクだけを見て、尽きたら従来の動き(見えないカーソルの
 // 移動)に任せていた――選んだ時にカーソルをリンクの行へ動かしていたので、画面の端に届くまで
 // スクロールしなかった。カーソルは動かさない。本にリンクが1つも無ければfalse(従来どおり)。
@@ -9870,9 +9870,15 @@ bool Application::selectAdjacentEpubHorizontalLink(int delta) {
     for (const auto &link : epubHorizontalLinks(0, here.index + 1))
       if (before(link, here)) target = link;
   }
-  if (target && target->index >= top && target->index < bottom) {
+  // 2026-10-15、直接のユーザー依頼("注釈をもう一度読みたいときも^N/^Pで探せれば便利なので^S/^J^Sの検索結果と
+  // 同じく、本文全体にわたってリンクをたどれるようにしてほしい"): 以前は画面に見えているリンクだけを選び、見えて
+  // いなければ1行スクロールしていた。画面の外のリンクも選び、検索の^N/^P(jumpToGrepInPlaceMatch())と同じく
+  // その行を画面の中央にする。先(前)にリンクが無ければ、従来どおり1行スクロールする。
+  if (target) {
+    bool visible = target->index >= top && target->index < bottom;
     epubHorizontalLink_ = target;
     fileView_.setCursorIndex(target->index);  // 選ぶリンクはカーソルの行のもの(syncEpubHorizontalPresentation())
+    if (!visible) fileView_.centerOnCursor();
   } else if (delta > 0) {
     fileView_.scrollLineDown();
   } else {
