@@ -15,6 +15,7 @@
 #include <optional>
 #include <thread>
 
+#include "native_grep.hpp"
 #include "native_ls.hpp"
 
 namespace fm {
@@ -211,6 +212,20 @@ ChildProcess::Result ChildProcess::run(const std::vector<std::string> &argv, con
     result.output = nativeLsAlF(std::vector<std::string>(argv.begin() + 1, argv.end()), &ok);
     result.ok = ok;
     result.exitStatus = ok ? 0 : 2;
+    return result;
+  }
+  // grep・egrep・fgrep(CUT/PART・KEY・EPUBの章分け・FGREP/EGREP)も、PATHに無ければ内蔵のもので
+  // (2026-10-15、直接のユーザー報告"^K不能"、native_grep.hpp参照)。
+  if ((argv[0] == "grep" || argv[0] == "egrep" || argv[0] == "fgrep") && !onPath(argv[0])) {
+    std::vector<std::string> args(argv.begin() + 1, argv.end());
+    if (argv[0] != "grep") args.insert(args.begin(), argv[0] == "egrep" ? "-E" : "-F");
+    result.exitStatus = nativeGrep(args, options.input ? *options.input : std::string(), result.output);
+    if (options.maxOutputBytes && result.output.size() > options.maxOutputBytes) {
+      std::size_t newline = result.output.rfind('\n', options.maxOutputBytes);
+      result.output.resize(newline == std::string::npos ? options.maxOutputBytes : newline + 1);
+      result.truncated = true;
+    }
+    result.ok = result.exitStatus == 0 || result.truncated;
     return result;
   }
   HANDLE outRead = nullptr, outWrite = nullptr, inRead = nullptr, inWrite = nullptr;

@@ -30757,3 +30757,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **内容**: openPlainHelp()・helpEpubPath()もinstallLibDirectory_を見る(MSYS2のPREFIX等でも同じ)。
      launchHelpChildren()はWindowsでは何もしない。^Kは原因が見つからず、この版で試してもらう。
    - **確認**: クロスビルドのみ。
+835. **2026-10-15: Windowsのネイティブで^K(KEY)が開かない: grepを内蔵する**
+   - **経緯**: 直接のユーザー報告(項目834の後も"^K不能"、切り分けで"^J^Kも開かない、^Hは開く、何も表示されない")。
+   - **原因**: KEYはHELPを「：」で分ける(CUT/PARTと同じCutMode::split())が、分けるのに外部の`grep -Fne`を使う。
+     Windowsにgrepは無く、ChildProcessが失敗してstartKey()が黙ってfalseを返していた。CUT/PART・EPUBの章分け・
+     FGREP/EGREPも同じ。
+   - **内容**: native_grep.cppのnativeGrep()(-F/-E/-G・-n・-i・-v・-e、本文は標準入力かファイル、出力は「行番号:行」、
+     正規表現はstd::regex)を、ChildProcessのWindows版がPATHにgrep(egrep・fgrep)が無い時に使う。
+     tests/test_native_grep.cpp(Macの本物のgrepと7通りの出力・終了状態が一致)。あわせてprogramOnPath()を
+     Windowsでは;区切り・.exe等で探すようにした(以前は常に「無い」になっていた)。
+   - **確認**: テストとクロスビルド。Windowsでの^Kは未確認。

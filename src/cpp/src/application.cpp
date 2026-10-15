@@ -390,6 +390,20 @@ std::size_t contentByteCount(const ContentView &view) { return view.totalByteCou
 // 同じ形で、リテラルな末尾として照合される。
 // programがPATHにあるか(/を含めばそのパス)。2026-10-04のopenEpubWebLink()から括り出した(2026-10-05)。
 bool programOnPath(const std::string &program) {
+#ifdef _WIN32
+  // Windowsのネイティブ(.steering/20261015-windows-native-gui/): PATHは;区切り、実行ファイルは.exe等(X_OKは無い)。
+  auto exists = [](const std::string &path) {
+    for (const char *ext : {"", ".exe", ".bat", ".cmd", ".com"})
+      if (::access((path + ext).c_str(), 0) == 0 && !std::filesystem::is_directory(path + ext)) return true;
+    return false;
+  };
+  if (program.find_first_of("/\\") != std::string::npos) return exists(program);
+  const char *winPath = std::getenv("PATH");
+  std::stringstream winDirs(winPath ? winPath : "");
+  for (std::string dir; std::getline(winDirs, dir, ';');)
+    if (!dir.empty() && exists(dir + "/" + program)) return true;
+  return false;
+#endif
   if (program.find('/') != std::string::npos) return ::access(program.c_str(), X_OK) == 0;
   const char *path = std::getenv("PATH");
   std::stringstream dirs(path ? path : "/usr/bin:/bin");
