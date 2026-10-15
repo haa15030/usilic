@@ -32,6 +32,7 @@ import re
 import time
 import datetime
 import random
+import zipfile
 
 from argparse import ArgumentParser
 import requests
@@ -918,11 +919,138 @@ class DrawText():
       y += height_spacing
     return (result_lefttop_x, result_lefttop_y, result_rightbottom_x, result_rightbottom_y)
 
+# usilic(2026-10-15、直接のユーザー依頼"^J^Eに収録の...青空文庫...作品番号を渡すだけでEPUB画面に出せる"、"両方作って
+# みて"): 青空文庫(www.aozora.gr.jp)の作品を、縦書きのEPUB3にする。図書カード(cards/<人物>/card<番号>.html)か
+# XHTML版(cards/<人物>/files/<番号>_<番号>.html)のURLを受け取る。図書カードならXHTML版へのリンクをたどる。
+# XHTML版(Shift_JIS)の本文(div.main_text)・底本の情報(div.bibliographical_information)・表記の注
+# (div.notation_notes)をそのまま1つのXHTMLにし、見出し(h3〜h5、o-/naka-/ko-midashi)を目次にする。ルビは<ruby>の
+# まま。外字の画像(img.gaiji)は、altのJIS X 0213の面区点(「第3水準1-88-91」等)をUnicodeの字に直し、直せなければ
+# altの字(※(「…」))にする。字下げ(jisage_N)・地付き(chitsuki_N)はEPUBのCSS(縦書きの行頭はtop)へ。
+AOZORA_SITE = r"https://www.aozora.gr.jp/"
+
+def aozoraGaiji(alt):
+  m = re.search(r"([12])-([0-9]{1,2})-([0-9]{1,2})", alt or "")
+  if m:
+    plane, row, cell = (int(x) for x in m.groups())
+    data = bytes([0xA0 + row, 0xA0 + cell])
+    if plane == 2:
+      data = b"\x8f" + data
+    try:
+      return data.decode("euc_jis_2004")
+    except UnicodeDecodeError:
+      pass
+  return alt or "※"
+
+def aozoraXhtmlUrl(url):
+  url = url.strip()
+  if re.search(r"/files/[0-9]+_[0-9]+\.html$", url):
+    return url
+  response = fetch(url)
+  if response.status_code != 200:
+    raise Exception(r"No such page: " + url)
+  root = lxml.html.fromstring(response.content)
+  for href in root.xpath(r"//a/@href"):
+    if re.search(r"files/[0-9]+_[0-9]+\.html$", href):
+      return urllib.parse.urljoin(url, href)
+  raise Exception(r"No XHTML in Aozora Bunko card: " + url)
+
+def aozoraToEpub(url, outputDirectory):
+  xhtmlUrl = aozoraXhtmlUrl(url)
+  print(xhtmlUrl)
+  response = fetch(xhtmlUrl)
+  if response.status_code != 200:
+    raise Exception(r"No such page: " + xhtmlUrl)
+  page = response.content.decode("cp932", errors="replace")
+  page = re.sub(r"^\s*<\?xml[^>]*\?>", "", page)  # lxmlは宣言付きの文字列を読まない
+  root = lxml.html.fromstring(page)
+  def text(xpath):
+    found = root.xpath(xpath)
+    return found[0].text_content().strip() if found else ""
+  title = text(r"//h1[@class='title']") or "無題"
+  author = text(r"//h2[@class='author']")
+  subtitle = text(r"//h2[@class='subtitle']")
+  main = root.xpath(r"//div[@class='main_text']")
+  if not main:
+    raise Exception(r"No text in: " + xhtmlUrl)
+  parts = main + root.xpath(r"//div[@class='bibliographical_information']") + root.xpath(r"//div[@class='notation_notes']")
+  for part in parts:
+    for img in part.xpath(r".//img[contains(@class,'gaiji')]"):
+      img.tail = aozoraGaiji(img.get("alt")) + (img.tail or "")
+      img.drop_tree()
+    for el in part.xpath(r".//*[@style]"):
+      del el.attrib["style"]
+    for el in part.xpath(r".//*[@id='contents']"):
+      el.drop_tree()
+  # 見出しに目次のための通し番号のidを付ける
+  toc = []
+  for i, h in enumerate(main[0].xpath(r".//h3|.//h4|.//h5")):
+    h.set("id", "midashi%d" % (i + 1))
+    toc.append((h.get("id"), h.text_content().strip(), {"h3": 1, "h4": 2, "h5": 3}[h.tag]))
+  def serialize(el):
+    return lxml.etree.tostring(el, method="xml", encoding="unicode")
+  esc = lambda t: t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+  body = "".join(serialize(part) for part in parts)
+  heading = "<h1 class=\"title\">" + esc(title) + "</h1>\n"
+  if subtitle:
+    heading += "<h2 class=\"subtitle\">" + esc(subtitle) + "</h2>\n"
+  if author:
+    heading += "<h2 class=\"author\">" + esc(author) + "</h2>\n"
+  xhtml = ("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE html>\n"
+           "<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\" xml:lang=\"ja\" lang=\"ja\">\n"
+           "<head><meta charset=\"UTF-8\"/><title>" + esc(title) + "</title>"
+           "<link rel=\"stylesheet\" type=\"text/css\" href=\"style.css\"/></head>\n<body>\n" + heading + body + "\n</body></html>\n")
+  css = ["html { writing-mode: vertical-rl; -epub-writing-mode: vertical-rl; -webkit-writing-mode: vertical-rl; }",
+         "body { line-height: 1.8; }",
+         "h1.title, h2.subtitle, h2.author { font-weight: bold; }",
+         "h3, h4, h5 { font-weight: bold; }",
+         "em.sesame_dot { font-style: normal; text-emphasis: sesame; -webkit-text-emphasis: sesame; }"]
+  css += [".jisage_%d { padding-top: %dem; }" % (n, n) for n in range(1, 21)]
+  css += [".chitsuki_%d { text-align: end; padding-bottom: %dem; }" % (n, n) for n in range(0, 21)]
+  css += ["div.bibliographical_information, div.notation_notes { writing-mode: horizontal-tb; "
+          "-epub-writing-mode: horizontal-tb; -webkit-writing-mode: horizontal-tb; }"]
+  navItems = "".join("<li><a href=\"text.xhtml#%s\">%s</a></li>\n" % (anchor, esc(label)) for anchor, label, _ in toc)
+  if not navItems:
+    navItems = "<li><a href=\"text.xhtml\">" + esc(title) + "</a></li>\n"
+  nav = ("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE html>\n"
+         "<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\" xml:lang=\"ja\" lang=\"ja\">\n"
+         "<head><meta charset=\"UTF-8\"/><title>目次</title></head>\n<body>\n<nav epub:type=\"toc\"><h1>目次</h1><ol>\n" +
+         navItems + "</ol></nav>\n</body></html>\n")
+  work = re.search(r"cards/([0-9]+)/(?:card([0-9]+)\.html|files/([0-9]+)_)", xhtmlUrl + " " + url)
+  bookId = "aozora-" + (work.group(2) or work.group(3) if work else datetime.datetime.now().strftime(r"%Y%m%d%H%M%S"))
+  modified = datetime.datetime.now(datetime.timezone.utc).strftime(r"%Y-%m-%dT%H:%M:%SZ")
+  opf = ("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+         "<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"id\" xml:lang=\"ja\">\n"
+         "<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n"
+         "<dc:identifier id=\"id\">" + esc(bookId) + "</dc:identifier>\n<dc:title>" + esc(title) + "</dc:title>\n" +
+         ("<dc:creator>" + esc(author) + "</dc:creator>\n" if author else "") +
+         "<dc:language>ja</dc:language>\n<dc:source>" + esc(xhtmlUrl) + "</dc:source>\n"
+         "<meta property=\"dcterms:modified\">" + modified + "</meta>\n</metadata>\n"
+         "<manifest>\n<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>\n"
+         "<item id=\"css\" href=\"style.css\" media-type=\"text/css\"/>\n"
+         "<item id=\"text\" href=\"text.xhtml\" media-type=\"application/xhtml+xml\"/>\n</manifest>\n"
+         "<spine page-progression-direction=\"rtl\"><itemref idref=\"text\"/></spine>\n</package>\n")
+  container = ("<?xml version=\"1.0\"?>\n<container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\">"
+               "<rootfiles><rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/>"
+               "</rootfiles></container>\n")
+  name = (title + ("_" + author if author else "")).translate(HAN2ZEN)
+  name = re.sub(r"[\\/:*?\"<>|\s]", "", name)[:80] + "_" + bookId.upper() + "_" + datetime.datetime.now().strftime(r"%Y%m%d")
+  path = os.path.join(outputDirectory, name + ".epub")
+  with zipfile.ZipFile(path, "w") as z:
+    z.writestr(zipfile.ZipInfo("mimetype"), "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+    z.writestr("META-INF/container.xml", container, compress_type=zipfile.ZIP_DEFLATED)
+    z.writestr("OEBPS/content.opf", opf, compress_type=zipfile.ZIP_DEFLATED)
+    z.writestr("OEBPS/nav.xhtml", nav, compress_type=zipfile.ZIP_DEFLATED)
+    z.writestr("OEBPS/style.css", "\n".join(css) + "\n", compress_type=zipfile.ZIP_DEFLATED)
+    z.writestr("OEBPS/text.xhtml", xhtml, compress_type=zipfile.ZIP_DEFLATED)
+  print(path)
+  return path
+
 if __name__ == '__main__':
     # usilic: 出力先(-o)、URLも受け付ける、作業用の一時ディレクトリ、最後にEPUBのパスを標準出力へ。
     parser = ArgumentParser(description=r"EPUB3になろう(usilic narou2epub)")
     parser.add_argument("-n", "--ncode", type=str, help="N-code or https://ncode.syosetu.com/n.../ (novel18.syosetu.com too), "
-                        "or a Kakuyomu work ID or https://kakuyomu.jp/works/<ID>", nargs='+', required=True)
+                        "or a Kakuyomu work ID or https://kakuyomu.jp/works/<ID>, "
+                        "or an Aozora Bunko card https://www.aozora.gr.jp/cards/<person>/card<no>.html", nargs='+', required=True)
     parser.add_argument("-o", "--output", type=str, help="output directory (default: ~/.usilic/data)")
     args = parser.parse_args()
 
@@ -934,6 +1062,10 @@ if __name__ == '__main__':
       raise Exception("No such directory: " + outputDirectory)
 
     for ncode in args.ncode:
+      # usilic: 青空文庫(図書カードかXHTML版のURL、aozoraToEpub())
+      if "aozora.gr.jp/cards/" in ncode:
+        builtins.print(aozoraToEpub(ncode, outputDirectory), flush=True)
+        continue
       # usilic: カクヨム(kakuyomu.jp/works/<ID>、またはIDの数字だけ)
       match = re.search(r"kakuyomu\.jp/works/([0-9]+)", ncode) or re.fullmatch(r"\s*([0-9]{10,})\s*", ncode)
       if not match:

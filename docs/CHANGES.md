@@ -30930,3 +30930,20 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      番号は数え続ける(後に続くふつうの項目の番号は変わらない)。
    - **確認**: tests/test_epub_to_help_markup.cppのKDPの注釈のテストに1行。Macの-c、notes.epubの［注4］→
      「［注4］　後注(endnote)の形の注釈。」の1行だけ(1/1 END)。
+
+853. **^Je・narou2epubで、青空文庫の作品も縦書きのEPUBにして開く**(2026-10-15、直接のユーザー質問"作品番号を渡す
+     だけでEPUB画面に出せるのは`なろう`と`カクヨム`だけ？"への答えの後の依頼"両方作ってみて")
+   - 「両方」のうちノクターンは、番号だけで既に開けた(項目774、narou2epub.pyが年齢確認に回されたらnovel18で
+     取り直す)。答えた時にこれを見落として「開けない」と書いていたので、訂正した。作ったのは青空文庫だけ。
+   - **narou2epub.py**: aozoraToEpub()。図書カード(cards/<人物>/card<番号>.html)ならXHTML版へのリンクをたどり、
+     XHTML版(Shift_JIS)の本文(div.main_text)・底本の情報・表記の注を1つのXHTMLにした縦書き(page-progression
+     rtl、writing-mode vertical-rl)のEPUB3を、zipfileで直接作る(ebooklibは使わない)。ルビは<ruby>のまま、見出し
+     (h3〜h5)を目次に、外字の画像はaltのJIS X 0213の面区点をeuc_jis_2004で字に直す(直せなければaltの字)。字下げ・
+     地付きはCSS、底本の情報・表記の注は横書き(usilicでは奥付と同じ横書きの範囲)。保存は
+     「題名＿著者_AOZORA-番号_日付.epub」。tools/narou2epubのコメントも。
+   - **Application**: ^Jeに青空文庫の図書カード・XHTML版のURLを入れたら、^Owの今の対処に関わらずnarou2epub
+     (URL節のEpub)で(openEpubPromptSpecial())。runNarouToEpub()も青空文庫のURLを受け付ける(本の中のリンクを
+     Epubで踏んだ時も)。usilicrc・usilicrc.enのURL節の説明、HELP_.txt(未コミット)に追記。
+   - **確認**(Mac): narou2epub.pyで「吾輩は猫である」(card789)のEPUBができ、XMLとして正しく、外字(2-88-74)は「譃」に
+     なった。usilicの-cで縦書き・ルビ付きで開けた(00011/02313)。^Jeに走れメロス(card1567)の図書カードのURLを
+     入れると、SHELLでnarou2epubが動き、~/.usilic/dataに作ったEPUBが縦書きで開いた。

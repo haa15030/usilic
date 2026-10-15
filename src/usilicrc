@@ -292,7 +292,8 @@ URL
 #   Look  クイックルック(macOS だけ、program は不要)
 #   Epub  usilic-web(src/web/README)の URL なら、本棚の一覧から選んだ本を
 #         ~/.local/usilic-web/texts へ落として開く(curl が要ります)。
-#         「小説家になろう」・「カクヨム」の作品のリンクなら、program(narou2epub)で
+#         「小説家になろう」・「カクヨム」・青空文庫(図書カード)の作品のリンクなら、
+#         program(narou2epub)で
 #         ~/.usilic/data に EPUB を作って開く(SHELL で動く)。lxml・
 #         ebooklib・requests・Pillow が要ります(~/.local/lib/usilic/narou2epub
 #         のコメント参照)
