@@ -48,7 +48,6 @@ function reader_bar()
 <a href="index.php">本棚</a>
 <button id="mark">記録</button>
 <button id="list">記録一覧</button>
-<button id="friction"></button>
 <button id="slower" class="small">V−</button>
 <button id="faster" class="small">V＋</button>
 <button id="page-left" class="small">＜</button>

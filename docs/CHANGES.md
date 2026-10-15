@@ -30856,3 +30856,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 記録の位置へ飛ぶ・読んでいた位置・文字の大きさを変えた後の位置は、'y'では字の行を画面の上の方に。
    - scroll.jsのInertiaにsetAxis()、reader.jsにopt.axis(scrollLeft/scrollTopの使い分け)。ホイールは縦の向きでも
      scrollerを動かす(章のiframeの上の回転が届くように)。ブラウザでの動作は未確認(構文はjscで確かめた)。
+
+846. **usilic-web: 「減速 大/中/小」のボタンを無くす**(2026-10-15、直接のユーザー依頼"減速ボタンは廃棄でよろしく")
+   - common.phpのボタン(#friction)と、reader.jsの切り替えを取り除いた。フリックの減速は、以前に選んでいた値
+     (localStorageのfriction)があればそれ、無ければ中(0.997)。本棚の一覧(index.php)も同じ値を使う。READMEも直した。

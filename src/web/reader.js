@@ -104,21 +104,15 @@ var Reader = function (opt) {
     // ---- 慣性スクロール ----
 
     // 1フレーム(約16.7ms)ごとに速さに掛ける値。一定の速さで流すのはV−/V＋(矢印キーと同じ段)で。
-    var FRICTIONS = [
-        { label: '減速 大', k: 0.99 },
-        { label: '減速 中', k: 0.997 },
-        { label: '減速 小', k: 0.999 }
-    ];
+    // 2026-10-15、直接のユーザー依頼("減速ボタンは廃棄でよろしく"): 「減速 大/中/小」のボタンは無くした。以前に
+    // 選んでいた値(ブラウザが覚えている)があればそれ、無ければ中。
+    var FRICTIONS = [0.99, 0.997, 0.999];
     var frictionIdx = Math.min(+load('friction', 1) || 0, FRICTIONS.length - 1);
-    var frictionBtn = document.getElementById('friction');
-    function showFriction() {
-        frictionBtn.textContent = FRICTIONS[frictionIdx].label;
-    }
 
     var inertia = Inertia(scroller, {
         axis: 'x',
         forward: function () { return opt.forward ? opt.forward() : -1; },
-        friction: function () { return FRICTIONS[frictionIdx].k; },
+        friction: function () { return FRICTIONS[frictionIdx]; },
         toast: toast
     });
 
@@ -290,11 +284,6 @@ var Reader = function (opt) {
     onTap(document.getElementById('mark'), record);
     onTap(document.getElementById('list'), openPanel);
     document.getElementById('panel-close').addEventListener('click', function () { panel.hidden = true; });
-    onTap(frictionBtn, function () {
-        frictionIdx = (frictionIdx + 1) % FRICTIONS.length;
-        save('friction', frictionIdx);
-        showFriction();
-    });
     // V−/V＋: 矢印キー(↑/↓)と同じく1段ずつ。止まっていればV＋で先へ、V−で戻るを最低速で流し始める。
     onTap(document.getElementById('slower'), function () { inertia.coast(-1); });
     onTap(document.getElementById('faster'), function () { inertia.coast(1); });
@@ -401,7 +390,6 @@ var Reader = function (opt) {
     }
     pinch(document);
 
-    showFriction();
     font.apply(fontSize);
 
     return {
