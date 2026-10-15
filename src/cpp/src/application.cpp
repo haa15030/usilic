@@ -19365,6 +19365,7 @@ std::optional<std::string> Application::helpEpubPath() const {
   std::string name = std::filesystem::path(helpPath_).filename().string() + ".epub";
   std::error_code ec;
   for (const std::string &path : {std::filesystem::path(helpPath_).parent_path().string() + "/" + name,
+                                  installLibDirectory_.empty() ? std::string() : installLibDirectory_ + name,
                                   "/usr/local/lib/usilic/" + name})
     if (std::filesystem::is_regular_file(path, ec)) return path;
   return std::nullopt;
@@ -19375,8 +19376,15 @@ bool Application::openPlainHelp(std::optional<int> rawLine) {
   bool fromKey = currentMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Key;
   std::string path = helpPath_;
   std::error_code ec;
-  if (!std::filesystem::is_regular_file(path, ec))  // reloadHelpText()と同じく/usr/local/lib/usilic/の同名のもの
-    path = "/usr/local/lib/usilic/" + std::filesystem::path(helpPath_).filename().string();
+  // reloadHelpText()と同じく、実行ファイルから見たlib/usilic/(installLibDirectory_)、/usr/local/lib/usilic/の
+  // 同名のもの。2026-10-15、直接のユーザー報告(Windowsのネイティブで"^H、^Kが利かない"): 以前は
+  // installLibDirectory_を見ておらず、exeの隣のlib/usilic/にしかHELPが無いと何も開かなかった。
+  std::string helpName = std::filesystem::path(helpPath_).filename().string();
+  if (!std::filesystem::is_regular_file(path, ec) && !installLibDirectory_.empty() &&
+      std::filesystem::is_regular_file(installLibDirectory_ + helpName, ec))
+    path = installLibDirectory_ + helpName;
+  else if (!std::filesystem::is_regular_file(path, ec))
+    path = "/usr/local/lib/usilic/" + helpName;
   // KEY節でキーを変えていれば、キーの表記を置き換えたもの(KeyBindings::rewriteHelpText())を作業用の
   // 一時ディレクトリに書いて、それを開く。
   if (!helpRoff_.empty()) {
@@ -20530,6 +20538,12 @@ void Application::closeChildChannel() {
 
 void Application::launchHelpChildren() {
   if (helpLoadedPath_.empty()) return;
+#ifdef _WIN32
+  // Windowsのネイティブ(.steering/20261015-windows-native-gui/)には親子のusilicのつながり(FIFO)がまだ無く、
+  // 子が親と関係の無いusilic.exeとして立ち上がるだけなので、最初の起動・-HのHELP・KEYの窓は開かない
+  // (2026-10-15、直接のユーザー報告"子プロセスではないusilic.exeが複数起動")。
+  return;
+#endif
   std::string quoted = "'";
   for (char c : helpLoadedPath_) quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
   setExternalWindowSlot(1);

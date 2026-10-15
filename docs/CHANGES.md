@@ -30740,3 +30740,20 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      lib/usilic/。docs/BUILD.mdに「Windows(ネイティブ、MinGW-w64、-gだけ)」の節。
    - **確認**: Macでクロスビルドがリンクまで通り(`objdump -p`で外のDLLはSDL2.dll・SDL2_ttf.dllとシステムのものだけ)、
      Macの通常のビルドも通る。native_lsのテストは通った。Windowsでの動作は未確認(ユーザーのWindows機で)。
+833. **2026-10-15: ドラッグ・慣性の間のモードラインの行数を、止まっている時と同じく折り返す前の行で数える**
+   - **経緯**: 直接のユーザー報告(Windowsのネイティブで"HELPの画面ドラッグ中は総行数が「1050」なのに止めると「759」")。
+   - **原因**: content_view.cppのscrollModeLineText()・scrollModeLineSegments()(-gのドラッグ・慣性の間のモード
+     ライン)は、画面の行(折り返した後)で数えていた。止まっている時(renderModeLine()等)はapplyRawLineNumbers()で
+     元の行(折り返す前)に直す。Windowsに限らない。
+   - **内容**: applyRawLineNumbersAt()(画面の行の番号を、その行の元の行番号に)を足し、両方で使う。
+   - **確認**: ビルドのみ。
+834. **2026-10-15: Windowsのネイティブで^Hが開かない、最初の起動で親と関係の無いusilic.exeが立ち上がる**
+   - **経緯**: 直接のユーザー報告(項目832を試して"^H、^Kが利かない"、"^X^Fでは「C:/Users/…/lib/usilic/HELP」
+     「C:\Users\…\lib\usilic\HELP (usilic)」の二行が出る"、"子プロセスではないusilic.exeが複数起動")。
+   - **原因**: (1)openPlainHelp()はHELPを~/.local/lib/usilic/と/usr/local/lib/usilic/でしか探さず、exeの隣の
+     lib/usilic/(installLibDirectory_、reloadHelpText()は見ている)を見ていなかった。(2)最初の起動(履歴が空)の
+     HELP・KEYの子の窓(launchHelpChildren())が、Windowsでは親子のつながり(FIFO)が無いまま別のusilic.exeとして
+     立ち上がっていた。^X^Fの\区切りの「(usilic)」の行は、その時の履歴。
+   - **内容**: openPlainHelp()・helpEpubPath()もinstallLibDirectory_を見る(MSYS2のPREFIX等でも同じ)。
+     launchHelpChildren()はWindowsでは何もしない。^Kは原因が見つからず、この版で試してもらう。
+   - **確認**: クロスビルドのみ。

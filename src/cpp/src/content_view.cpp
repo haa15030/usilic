@@ -1433,6 +1433,7 @@ std::string ContentView::scrollModeLineText() const {
     current = topIndex_ + 1;  // ここでtopIndex_==0は自然にTOPを表示する
   }
   applyLivePromptLineAdjustment(total, current);
+  applyRawLineNumbersAt(current, total);
   return composeModeLineRow(positionTextOverride_ ? *positionTextOverride_
                              : useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total)
                                                        : ModeLine::format(current, total));
@@ -1480,6 +1481,7 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments(bool t
     current = topIndex_ + 1;
   }
   applyLivePromptLineAdjustment(total, current);
+  applyRawLineNumbersAt(current, total);
   std::string positionText = positionTextOverride_ ? *positionTextOverride_
                               : useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total)
                                                         : ModeLine::format(current, total);
@@ -1688,6 +1690,16 @@ void ContentView::applyLivePromptLineAdjustment(int &total, int &current) const 
 // nullopt)があればそちらへ翻訳する――無ければ何もしない(既存の
 // 挙動のまま)。applyLivePromptLineAdjustment()の「後」に呼ぶこと
 // (Shell自身の生きたプロンプト行の水増しと独立した、別の補正のため)。
+// 2026-10-15、直接のユーザー報告("HELPの画面ドラッグ中は総行数が「1050」なのに止めると「759」"): ドラッグ・慣性の
+// 間のモードライン(scrollModeLineText()・scrollModeLineSegments())も、止まっている時(applyRawLineNumbers())と
+// 同じく折り返す前の行で数える。currentは画面の行の番号(1始まり)で、その行の元の行番号にする。
+void ContentView::applyRawLineNumbersAt(int &current, int &total) const {
+  if (total <= 0 || lines_.empty() || !lines_[0].rawLineNumber) return;
+  int idx = std::clamp(current - 1, 0, static_cast<int>(lines_.size()) - 1);
+  current = lines_[idx].rawLineNumber.value_or(current);
+  total = lines_.back().rawLineNumber.value_or(total);
+}
+
 void ContentView::applyRawLineNumbers(int &current, int &total) const {
   if (total <= 0 || lines_.empty() || !lines_[0].rawLineNumber) return;
   int idx = std::clamp(cursorIndex_, 0, static_cast<int>(lines_.size()) - 1);
