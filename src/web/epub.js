@@ -96,7 +96,10 @@
             if (doc.body) {
                 doc.body.style.direction = '';
             }
-            ch.frame.style.height = Math.max(root.scrollHeight, (doc.body || root).scrollHeight, ch.vertical ? h : 1) + 'px';
+            // 2026-10-15、直接のユーザー報告("箱の空行領域は切り詰められない？"): scrollHeightは枠(iframe)の高さより
+            // 小さくならず、短い章も画面1枚分になっていた。章の末尾の空行(空の段落等)も含んでいた。最後の字か画像の
+            // 下端までにし、次の章との間を少し空ける。
+            ch.frame.style.height = (ch.vertical ? h : contentBottom(doc) + 24) + 'px';
             return;
         }
         if (!ch.vertical) {
@@ -113,6 +116,27 @@
             }
         }
         ch.frame.style.width = Math.max(root.scrollWidth, 1) + 'px';
+    }
+
+    // 文書の、空白でない字・画像の下端(文書の先頭から、px)
+    function contentBottom(doc) {
+        var body = doc.body || doc.documentElement;
+        var bottom = 0;
+        var walker = doc.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+        var range = doc.createRange();
+        var node;
+        while ((node = walker.nextNode())) {
+            if (!/\S/.test(node.data)) {
+                continue;
+            }
+            range.selectNodeContents(node);
+            bottom = Math.max(bottom, range.getBoundingClientRect().bottom);
+        }
+        Array.prototype.forEach.call(body.querySelectorAll('img, svg, video, table, hr'), function (el) {
+            bottom = Math.max(bottom, el.getBoundingClientRect().bottom);
+        });
+        var win = doc.defaultView;
+        return Math.ceil(bottom + (win ? win.scrollY || 0 : 0));
     }
 
     function measureAll() {
