@@ -4227,7 +4227,9 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   if (!appearance) {
     if (savedGui.rows > 0 && savedGui.columns > 0) {
       rows = savedGui.rows;
-      columns = savedGui.columns;
+      // 2026-10-16、直接のユーザー依頼(Windowsの-g、=jo.png"横幅が80未満ならもう少し広くていいかも"): 前回
+      // 狭めた窓のままだと一覧の名前やモードラインが詰まるので、起動時は少なくとも80桁にする。
+      columns = std::max(savedGui.columns, 80);
     }
     if (savedGui.fontPointSize > 0) fontPointSize = savedGui.fontPointSize;
     if (gGuiFrame.valid) {  // 親と同じ大きさ(gGuiFrame参照)

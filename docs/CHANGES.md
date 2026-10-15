@@ -30982,3 +30982,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - cmd.exeの起動時のコマンドに`chcp 65001 >nul`を足した。^J^Wのファイルは UTF-8 なので、既定のCP932のままだと
      typeの出力をConPTYがCP932として読んで化ける。
    - 項目854の確認の残り(dir・cd ..・日本語のファイル名・^C・exit)はWindowsでOKだった(ユーザーの確認)。
+
+856. **cmd.exeのSHELLでは、^J,のls -lをdirにする**(2026-10-16、直接のユーザー報告(Windows)"`^J,`とやると`'ls' is
+     not recognized as an internal ...`と今度はなぜか英語")
+   - shellRunLsL()は`ls -l`を決め打ちで送っていた。Shell::usesCmdSyntax()の時は`dir`。
+   - 英語になったのは、項目855で足したchcp 65001のため(コード ページが65001のコンソールでは、cmd.exeは自分の
+     メッセージを英語で出す)。UTF-8で出力するプログラム(^J^Wのtype・Python・Git等)が化けない方を取って、そのまま。
+
+857. **-gの窓は、起動時に少なくとも80桁で開く**(2026-10-16、直接のユーザー依頼(Windowsの-g、=jo.png)"横幅が80未満
+     ならもう少し広くていいかも")
+   - tryEnterGuiPhase()は前回の窓の行数・桁数(History::guiPreferences())をそのまま使っていたので、前回狭めると
+     次も狭いまま開いた(=jo.pngは66桁ほど)。保存した桁数が80未満なら80桁にする。行数・文字の大きさはそのまま。
+     子のusilicが親と同じ大きさで開く時(gGuiFrame)は変えない。

@@ -11853,7 +11853,9 @@ bool Application::shellChangeDirectory() {
 bool Application::shellRunLsL() {
   if (refuseIfShellBusy()) return false;
   if (!ensureShellActive()) return false;
-  shell_.commandLine().setText("ls -l");
+  // 2026-10-16、直接のユーザー報告(Windows、"'ls' is not recognized as an internal ..."): cmd.exeにはlsが
+  // 無いのでdir(ls -lと同じく、日時・大きさ付きの一覧)。
+  shell_.commandLine().setText(shell_.usesCmdSyntax() ? "dir" : "ls -l");
   shell_.submitLine();
   return true;
 }
