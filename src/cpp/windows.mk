@@ -37,7 +37,11 @@ $(BUILD_DIR)/usilic.exe: $(OBJS)
 
 $(OBJ_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -I$(SRC_DIR) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -MMD -MP -I$(SRC_DIR) -c $< -o $@
+
+# ヘッダ(posix_compat.hpp等)を直した時も、それを読むものを作り直す(2026-10-15、usleepの差し替えがmain.oに
+# 入っていなかった)。
+-include $(OBJS:.o=.d)
 
 $(OBJ_DIR)/usilic_res.o: packaging/windows/usilic.rc packaging/windows/usilic.manifest
 	@mkdir -p $(dir $@)
