@@ -1693,16 +1693,24 @@ void ContentView::applyLivePromptLineAdjustment(int &total, int &current) const 
 // 2026-10-15、直接のユーザー報告("HELPの画面ドラッグ中は総行数が「1050」なのに止めると「759」"): ドラッグ・慣性の
 // 間のモードライン(scrollModeLineText()・scrollModeLineSegments())も、止まっている時(applyRawLineNumbers())と
 // 同じく折り返す前の行で数える。currentは画面の行の番号(1始まり)で、その行の元の行番号にする。
+// 2026-10-15、直接のユーザー報告(EPUBの奥付(横書きの範囲)を下へずらして縦書きへ戻る間、"「293/382 78％」...
+// 「燈色の場　合冊版」の行は306...306行が最上行を離れて以降最下行に消えるまでは306固定でいいかも"): 描く範囲
+// (setShownIndexRange()、横書きの範囲)があれば、範囲の外の行(画面には描かない縦書きの部分)は範囲の端の行にする。
+int ContentView::clampToShownRange(int index) const {
+  if (!shownIndexRange_ || shownIndexRange_->second <= shownIndexRange_->first) return index;
+  return std::clamp(index, shownIndexRange_->first, shownIndexRange_->second - 1);
+}
+
 void ContentView::applyRawLineNumbersAt(int &current, int &total) const {
   if (total <= 0 || lines_.empty() || !lines_[0].rawLineNumber) return;
-  int idx = std::clamp(current - 1, 0, static_cast<int>(lines_.size()) - 1);
+  int idx = clampToShownRange(std::clamp(current - 1, 0, static_cast<int>(lines_.size()) - 1));
   current = lines_[idx].rawLineNumber.value_or(current);
   total = lines_.back().rawLineNumber.value_or(total);
 }
 
 void ContentView::applyRawLineNumbers(int &current, int &total) const {
   if (total <= 0 || lines_.empty() || !lines_[0].rawLineNumber) return;
-  int idx = std::clamp(cursorIndex_, 0, static_cast<int>(lines_.size()) - 1);
+  int idx = clampToShownRange(std::clamp(cursorIndex_, 0, static_cast<int>(lines_.size()) - 1));
   current = lines_[idx].rawLineNumber.value_or(current);
   total = lines_.back().rawLineNumber.value_or(total);
 }

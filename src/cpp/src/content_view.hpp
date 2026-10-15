@@ -1352,7 +1352,8 @@ class ContentView {
   void applyLivePromptLineAdjustment(int &total, int &current) const;
   // 2026-09-08追加、content_view.cpp自身のコメント参照。
   void applyRawLineNumbers(int &current, int &total) const;
-  void applyRawLineNumbersAt(int &current, int &total) const;  // ドラッグ・慣性の間の同じもの
+  void applyRawLineNumbersAt(int &current, int &total) const;
+  int clampToShownRange(int index) const;  // .cpp側のコメント参照  // ドラッグ・慣性の間の同じもの
   // ModeLineFields::splitLayoutWhenCrowded自身のコメント参照。
   // その経路自身の素朴な幅チェックが失敗した時点で、renderModeLine()
   // によって、通常のfitModeLineFields()/withTruncatedFields()経路
