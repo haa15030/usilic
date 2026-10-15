@@ -1704,15 +1704,15 @@ int ContentView::clampToShownRange(int index) const {
 void ContentView::applyRawLineNumbersAt(int &current, int &total) const {
   if (total <= 0 || lines_.empty() || !lines_[0].rawLineNumber) return;
   int idx = clampToShownRange(std::clamp(current - 1, 0, static_cast<int>(lines_.size()) - 1));
-  current = lines_[idx].rawLineNumber.value_or(current);
-  total = lines_.back().rawLineNumber.value_or(total);
+  current = lines_[idx].rawLineNumber.value_or(current) - rawLineBase_;
+  total = lines_.back().rawLineNumber.value_or(total) - rawLineBase_;
 }
 
 void ContentView::applyRawLineNumbers(int &current, int &total) const {
   if (total <= 0 || lines_.empty() || !lines_[0].rawLineNumber) return;
   int idx = clampToShownRange(std::clamp(cursorIndex_, 0, static_cast<int>(lines_.size()) - 1));
-  current = lines_[idx].rawLineNumber.value_or(current);
-  total = lines_.back().rawLineNumber.value_or(total);
+  current = lines_[idx].rawLineNumber.value_or(current) - rawLineBase_;
+  total = lines_.back().rawLineNumber.value_or(total) - rawLineBase_;
 }
 
 void ContentView::setMarkedPredicate(std::function<bool(int)> predicate) { markedPredicate_ = std::move(predicate); }

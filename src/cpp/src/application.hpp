@@ -2788,6 +2788,24 @@ class Application {
   };
   std::optional<EpubJumpOrigin> epubJumpOrigin_;
   bool restoreEpubJumpOrigin();
+  // 2026-10-15追加、直接のユーザー依頼(HELP.epubの注釈を"PART形式に...区画に切り分ければそれしか無い状態にできる
+  // から(BUFFERならBUFFERの内容だけ。次のCODEは無い)。注釈だけは、^G(右クリック)で一覧には戻らずに本文の元に
+  // 位置にもどる"): 横書きの本で、リンクから注釈の区画(EpubLayoutHints::notes)へ飛んだら、fileView_の行をその
+  // 注釈の行だけに差し替える(PARTの中身の画面と同じく、スクロールの端・ENDは注釈の端)。^G・右クリックで本文の
+  // 行と元の位置に戻す(leaveEpubNote())。fullLinesは差し替える前の本文の行、shownDataは差し替えた行の先頭
+  // (読み直し・折り返し直しでfileView_の行が替わったら、注釈の表示は終わったものとみなす、epubNoteActive())。
+  struct EpubNoteView {
+    std::string file;
+    std::vector<ContentView::Line> fullLines;
+    const ContentView::Line *shownData = nullptr;
+    int originTop = 0;
+    int originCursor = 0;
+  };
+  std::optional<EpubNoteView> epubNote_;
+  bool epubNoteActive();
+  bool showEpubNoteAt(int raw);
+  bool leaveEpubNote(bool redraw = true);
+  bool followEpubLinkAtCursor();
   std::string epubVerticalPath_;  // epubBookVertical()参照
   int epubVerticalFirst_ = 0;                         // 右端に置いている列
   int epubVerticalCursor_ = 0;                        // 列カーソル(setEpubVerticalView()参照)

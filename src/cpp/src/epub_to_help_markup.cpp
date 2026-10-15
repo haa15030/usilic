@@ -692,6 +692,7 @@ class BodyConverter {
   const std::vector<int> &centerLines() const { return centerLines_; }
   const std::map<int, std::pair<int, int>> &indentLines() const { return indentLines_; }
   const std::map<int, std::string> &chapterLabels() const { return chapterLabels_; }
+  const std::vector<std::pair<int, int>> &noteRanges() const { return noteRanges_; }
   void setBookVertical(bool vertical) { bookVertical_ = vertical; }
 
   void convert(const std::string &xhtml, const std::string &path, const std::vector<TocEntry> *tocEntries) {
@@ -904,14 +905,24 @@ class BodyConverter {
     } else if (name == "td" || name == "th") {
       if (close) pendingSpace_ = true;
     } else if (kBlockElements.count(name)) {
+      // 注釈の区画(EpubLayoutHints::notes): <aside epub:type="footnote">等の行の範囲
+      bool note = name == "aside" && attr(t, "type").find("note") != std::string::npos;
       if (open) {
         endLine(false);
+        if (name == "aside") noteStarts_.push_back(note && t.kind == XmlToken::Open ? currentLineNumber() : -1);
         if (name == "pre") preDepth_++;
         if (name == "ul" || name == "ol") listStack_.push_back(name == "ol" ? 1 : 0);
         if (name == "li" && !listStack_.empty()) {
           int &counter = listStack_.back();
           text(counter ? std::to_string(counter++) + ". " : "・");
         }
+      }
+      if (close && name == "aside" && !noteStarts_.empty()) {
+        endLine(false);
+        int start = noteStarts_.back();
+        noteStarts_.pop_back();
+        int end = currentLineNumber() - 1;
+        if (start > 0 && end >= start) noteRanges_.push_back({start, end});
       }
       if (close) {
         if (name == "pre" && preDepth_ > 0) preDepth_--;
@@ -1293,6 +1304,8 @@ class BodyConverter {
   std::string hiddenHeadingText_;
   std::optional<std::string> hiddenHeadingLabel_;  // 次の章の行の、章の一覧での名前
   std::map<int, std::string> chapterLabels_;        // 行→章の一覧での名前(EpubLayoutHints::chapterLabel)
+  std::vector<int> noteStarts_;                      // 開いているasideの最初の行(注釈でなければ-1)
+  std::vector<std::pair<int, int>> noteRanges_;      // EpubLayoutHints::notes
   std::map<int, std::pair<int, int>> indentLines_;  // 行→(最初の字下げ, 続く字下げ)(em)
   std::map<int, LineKind> lineKinds_;
   bool inStyle_ = false;
@@ -1491,6 +1504,8 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
       if (line - leading >= 1) layoutHints->center.push_back(line - leading);
     for (const auto &[line, indent] : converter.indentLines())
       if (line - leading >= 1) layoutHints->indent[line - leading] = indent;
+    for (const auto &[from, until] : converter.noteRanges())
+      if (from - leading >= 1) layoutHints->notes.push_back({from - leading, until - leading});
     for (const auto &[line, label] : converter.chapterLabels())
       if (line - leading >= 1) layoutHints->chapterLabel[line - leading] = label;
     // ファイルの頭(アンカー"パス#")の行。字の無いファイルは次のファイルと同じ行になるので、同じ行なら後の

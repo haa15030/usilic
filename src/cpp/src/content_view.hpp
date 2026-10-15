@@ -1353,7 +1353,12 @@ class ContentView {
   // 2026-09-08追加、content_view.cpp自身のコメント参照。
   void applyRawLineNumbers(int &current, int &total) const;
   void applyRawLineNumbersAt(int &current, int &total) const;
-  int clampToShownRange(int index) const;  // .cpp側のコメント参照  // ドラッグ・慣性の間の同じもの
+  int clampToShownRange(int index) const;  // .cpp側のコメント参照
+ public:
+  // 位置の欄の元の行番号から引く数(2026-10-15、EPUBの注釈だけを見せている間、Application::showEpubNoteAt()):
+  // 注釈の最初の行が1になるように。0なら本の行番号のまま。
+  void setRawLineBase(int base) { rawLineBase_ = base; }
+ private:  // ドラッグ・慣性の間の同じもの
   // ModeLineFields::splitLayoutWhenCrowded自身のコメント参照。
   // その経路自身の素朴な幅チェックが失敗した時点で、renderModeLine()
   // によって、通常のfitModeLineFields()/withTruncatedFields()経路
@@ -1514,6 +1519,7 @@ class ContentView {
   std::function<bool(int)> markedPredicate_;
   bool cursorRowAlsoHighlighted_ = true;
   std::optional<std::pair<int, int>> shownIndexRange_;  // setShownIndexRange()参照
+  int rawLineBase_ = 0;                                  // setRawLineBase()参照
   std::vector<int> chapterStarts_;  // setChapterStarts()参照
   bool verticalText_ = false;  // setVerticalText()参照
   std::optional<ByteSpan> extraStandout_;  // setExtraStandout()参照

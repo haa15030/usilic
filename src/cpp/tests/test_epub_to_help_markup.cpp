@@ -142,3 +142,39 @@ TEST_CASE("epubToHelpMarkup: in-book links are underlined and mapped to their ta
         "\n");
   CHECK(links == std::map<int, int>{{2, 9}, {5, 7}});
 }
+
+// 2026-10-15(EpubLayoutHints::notes): <aside epub:type="footnote">の行の範囲を、注釈ごとに返す(HELP.epubの注釈)。
+TEST_CASE("epubToHelpMarkup: footnote asides are reported as note ranges") {
+  std::map<std::string, std::string> files = {
+      {"META-INF/container.xml", kContainer},
+      {"OEBPS/content.opf", R"(<package><metadata/><manifest>
+  <item id="a" href="a.xhtml" media-type="application/xhtml+xml"/>
+  <item id="n" href="n.xhtml" media-type="application/xhtml+xml"/>
+</manifest><spine><itemref idref="a"/><itemref idref="n"/></spine></package>)"},
+      {"OEBPS/a.xhtml", R"(<html><body><p>本文 <a href="n.xhtml#n1">BUFFER</a></p></body></html>)"},
+      {"OEBPS/n.xhtml", R"(<html><body><h2>注釈</h2>
+<aside id="n1" epub:type="footnote"><p>BUFFER</p><p>書式: サイズ</p></aside>
+<aside id="n2" epub:type="footnote"><p>CODE</p></aside>
+<aside id="x"><p>注釈ではない</p></aside></body></html>)"},
+  };
+  std::map<int, int> links;
+  fm::EpubLayoutHints hints;
+  auto out = fm::epubToHelpMarkup(readerFor(files), &links, &hints);
+  REQUIRE(out);
+  std::vector<std::string> lines;
+  for (std::size_t p = 0, q; p < out->size(); p = q + 1) {
+    q = out->find('\n', p);
+    if (q == std::string::npos) q = out->size();
+    lines.push_back(out->substr(p, q - p));
+  }
+  auto textOf = [&](int from, int until) {
+    std::string s;
+    for (int i = from; i <= until; i++) s += lines[i - 1] + "|";
+    return s;
+  };
+  REQUIRE(hints.notes.size() == 2);
+  CHECK(textOf(hints.notes[0].first, hints.notes[0].second) == "<serif>BUFFER</serif>|<serif>書式: サイズ</serif>|");
+  CHECK(textOf(hints.notes[1].first, hints.notes[1].second) == "<serif>CODE</serif>|");
+  REQUIRE(links.size() == 1);
+  CHECK(links.begin()->second == hints.notes[0].first);
+}

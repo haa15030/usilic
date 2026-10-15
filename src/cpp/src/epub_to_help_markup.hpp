@@ -67,6 +67,11 @@ struct EpubLayoutHints {
   // 2026-10-13追加(縦書きのCOPYで範囲指定した字の記録、usilic-webのepub-marks.txtと同じ「本.epub:章のパス:位置:
   // 文字列」): 本文の各ファイル(spineの順、zip内のパス)が始まる行(返す文字列の1始まりの行)。行の順。
   std::vector<std::pair<int, std::string>> chapterFiles;
+  // 2026-10-15追加、直接のユーザー依頼(HELP.epubの注釈を"PART形式にはできないかな？...区画に切り分ければそれしか
+  // 無い状態にできるから(BUFFERならBUFFERの内容だけ。次のCODEは無い)。注釈だけは、^G(右クリック)で一覧には
+  // 戻らずに本文の元に位置にもどる"): 注釈の区画(<aside epub:type="footnote">等、typeに"note"を含むaside)の行の
+  // 範囲(元の行番号、両端を含む)。行の順。Application::showEpubNote()参照。
+  std::vector<std::pair<int, int>> notes;
 };
 
 std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember,
