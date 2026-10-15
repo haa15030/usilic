@@ -667,6 +667,21 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
   return rules;
 }
 
+// epub:typeの語(空白区切り)に、注釈そのもの(footnote・endnote・rearnote・note)があるか。KDP(Kindle Publishing
+// Guidelines)の注釈は<aside epub:type="footnote">・<li epub:type="endnote">等。"noteref"(本文の側のリンク)や
+// "endnotes"(注釈の並びの入れ物)は注釈そのものではない。
+bool isNoteType(const std::string &type) {
+  std::size_t p = 0;
+  while (p < type.size()) {
+    std::size_t q = type.find(' ', p);
+    if (q == std::string::npos) q = type.size();
+    std::string word = type.substr(p, q - p);
+    if (word == "footnote" || word == "endnote" || word == "rearnote" || word == "note") return true;
+    p = q + 1;
+  }
+  return false;
+}
+
 const std::set<std::string> kBlockElements = {
     "p",       "div",     "li",     "blockquote", "dd",     "dt",      "tr",   "section", "article",
     "aside",   "header",  "footer", "nav",        "figure", "figcaption", "table", "ul", "ol",
@@ -693,10 +708,13 @@ class BodyConverter {
   const std::map<int, std::pair<int, int>> &indentLines() const { return indentLines_; }
   const std::map<int, std::string> &chapterLabels() const { return chapterLabels_; }
   const std::vector<std::pair<int, int>> &noteRanges() const { return noteRanges_; }
+  // "ファイル#id"→そのidを持つ(か、囲む一番内側の)ブロックの行の範囲(out_の1始まりの行、両端を含む)
+  const std::map<std::string, std::pair<int, int>> &anchorBlocks() const { return anchorBlocks_; }
   void setBookVertical(bool vertical) { bookVertical_ = vertical; }
 
   void convert(const std::string &xhtml, const std::string &path, const std::vector<TocEntry> *tocEntries) {
     path_ = path;
+    blockStack_.clear();  // 前のファイルで閉じ忘れたブロックを持ち越さない
     pendingAnchors_.push_back(path + "#");
     tocEntries_ = tocEntries;
     pendingLabel_.reset();
@@ -792,6 +810,8 @@ class BodyConverter {
     if (open) {
       std::string id = attr(t, "id");
       if (!id.empty()) pendingAnchors_.push_back(path_ + "#" + id);
+      // ブロックでない要素(<a id="fn1">等)のidは、それを囲む一番内側のブロックの範囲にする(anchorBlocks_)
+      if (!id.empty() && !kBlockElements.count(name) && !blockStack_.empty()) blockStack_.back().ids.push_back(path_ + "#" + id);
       if (!id.empty() && tocEntries_)
         for (const auto &e : *tocEntries_)
           if (e.fragment == id) {
@@ -905,24 +925,19 @@ class BodyConverter {
     } else if (name == "td" || name == "th") {
       if (close) pendingSpace_ = true;
     } else if (kBlockElements.count(name)) {
-      // 注釈の区画(EpubLayoutHints::notes): <aside epub:type="footnote">等の行の範囲
-      bool note = name == "aside" && attr(t, "type").find("note") != std::string::npos;
       if (open) {
         endLine(false);
-        if (name == "aside") noteStarts_.push_back(note && t.kind == XmlToken::Open ? currentLineNumber() : -1);
+        // ブロックの行の範囲(注釈の区画、EpubLayoutHints::notes)。閉じた所(下)で記録する。
+        if (t.kind == XmlToken::Open) {
+          blockStack_.push_back({currentLineNumber(), isNoteType(attr(t, "type")), {}});
+          if (std::string id = attr(t, "id"); !id.empty()) blockStack_.back().ids.push_back(path_ + "#" + id);
+        }
         if (name == "pre") preDepth_++;
         if (name == "ul" || name == "ol") listStack_.push_back(name == "ol" ? 1 : 0);
         if (name == "li" && !listStack_.empty()) {
           int &counter = listStack_.back();
           text(counter ? std::to_string(counter++) + ". " : "・");
         }
-      }
-      if (close && name == "aside" && !noteStarts_.empty()) {
-        endLine(false);
-        int start = noteStarts_.back();
-        noteStarts_.pop_back();
-        int end = currentLineNumber() - 1;
-        if (start > 0 && end >= start) noteRanges_.push_back({start, end});
       }
       if (close) {
         if (name == "pre" && preDepth_ > 0) preDepth_--;
@@ -934,6 +949,16 @@ class BodyConverter {
           endLine(false);
           if (pendingLabel_ && depth_ <= pendingDepth_) emitLabelLine();
         }
+      }
+    }
+    // ブロックを閉じた: その行の範囲を、中のid(anchorBlocks_)と注釈(noteRanges_)に記録する
+    if (t.kind == XmlToken::Close && kBlockElements.count(name) && !blockStack_.empty()) {
+      BlockFrame frame = std::move(blockStack_.back());
+      blockStack_.pop_back();
+      int end = currentLineNumber() - 1;
+      if (end >= frame.start) {
+        for (const auto &id : frame.ids) anchorBlocks_.emplace(id, std::make_pair(frame.start, end));
+        if (frame.note) noteRanges_.push_back({frame.start, end});
       }
     }
     // 明朝体/ゴシック体(fontRules_参照): 要素の中身の間だけ、その要素に当てはまる
@@ -1304,8 +1329,14 @@ class BodyConverter {
   std::string hiddenHeadingText_;
   std::optional<std::string> hiddenHeadingLabel_;  // 次の章の行の、章の一覧での名前
   std::map<int, std::string> chapterLabels_;        // 行→章の一覧での名前(EpubLayoutHints::chapterLabel)
-  std::vector<int> noteStarts_;                      // 開いているasideの最初の行(注釈でなければ-1)
-  std::vector<std::pair<int, int>> noteRanges_;      // EpubLayoutHints::notes
+  struct BlockFrame {
+    int start;                     // ブロックの最初の行
+    bool note;                     // epub:typeが注釈(isNoteType())
+    std::vector<std::string> ids;  // その中のid("ファイル#id")
+  };
+  std::vector<BlockFrame> blockStack_;                          // 開いているブロック
+  std::vector<std::pair<int, int>> noteRanges_;                 // EpubLayoutHints::notes
+  std::map<std::string, std::pair<int, int>> anchorBlocks_;     // anchorBlocks()参照
   std::map<int, std::pair<int, int>> indentLines_;  // 行→(最初の字下げ, 続く字下げ)(em)
   std::map<int, LineKind> lineKinds_;
   bool inStyle_ = false;
@@ -1370,6 +1401,54 @@ bool epubIsRightToLeft(const EpubMemberReader &readMember) {
       return attr(t, "page-progression-direction") == "rtl";
   return false;
 }
+
+namespace {
+
+// 本の中のリンク(行fromから行toへ、targetは"ファイル#id")。
+struct ResolvedLink {
+  int from;
+  int to;
+  std::string target;
+};
+
+// 2026-10-15、直接のユーザー依頼("KDPガイドライン準拠な注釈付きの縦書き本をusilicに通してもちゃんと読めるように
+// して。お手本が無いのが難点だがよろしく"): KDPは注釈を本文と双方向のリンクでつなぐよう求めている(epub:typeが
+// 無い本もある)。リンクの行き先のidを持つ(か囲む)ブロックの中に、元の行へ戻るリンクがあれば、そのブロックを注釈の
+// 区画にする(EpubLayoutHints::notes)。注釈は参照する行より後ろにあるものだけ(双方向なので、本文の段落も注釈から
+// 見れば行き先で、戻るリンクを持つ)。目次と章の見出しの行き来(Kat.epubの「あとがき」等)を注釈にしないよう、
+// ブロックが章の行(行末のタブ)を含むもの・40行を超えるものは除く。
+void addBidirectionalNotes(const std::string &out, const std::vector<ResolvedLink> &resolved,
+                           const std::map<std::string, std::pair<int, int>> &anchorBlocks, int leading,
+                           std::vector<std::pair<int, int>> &notes) {
+  std::set<int> chapterLines;
+  int lineNo = 1;
+  for (std::size_t p = 0; p < out.size(); p++) {
+    if (out[p] == '\t' && (p + 1 == out.size() || out[p + 1] == '\n')) chapterLines.insert(lineNo);
+    if (out[p] == '\n') lineNo++;
+  }
+  std::set<std::pair<int, int>> found(notes.begin(), notes.end());
+  for (const auto &link : resolved) {
+    auto block = anchorBlocks.find(link.target);
+    if (block == anchorBlocks.end()) continue;
+    int first = block->second.first - leading, last = block->second.second - leading;
+    // 注釈は参照する行より後ろ(章末・巻末)にある。前にあるブロックは、注釈から戻るリンクの行き先(本文の段落)。
+    if (first < 1 || last - first + 1 > 40 || first <= link.from) continue;
+    auto chapter = chapterLines.lower_bound(first);
+    if (chapter != chapterLines.end() && *chapter <= last) continue;
+    bool back = std::any_of(resolved.begin(), resolved.end(), [&](const ResolvedLink &r) {
+      return r.from >= first && r.from <= last && r.to == link.from;
+    });
+    if (!back) continue;
+    // 既にある注釈(epub:type)と重なるものは足さない
+    bool overlaps = std::any_of(found.begin(), found.end(), [&](const std::pair<int, int> &n) {
+      return n.first <= last && first <= n.second;
+    });
+    if (!overlaps) found.insert({first, last});
+  }
+  notes.assign(found.begin(), found.end());
+}
+
+}  // namespace
 
 std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, std::map<int, int> *links,
                                             EpubLayoutHints *layoutHints) {
@@ -1519,6 +1598,7 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
       else files.emplace_back(line, path);
     }
   }
+  std::vector<ResolvedLink> resolved;  // addBidirectionalNotes()用
   if (links) {
     links->clear();
     const auto &anchors = converter.anchors();
@@ -1537,8 +1617,10 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
       int from = link.line - leading, to = std::max(1, it->second - leading);
       if (layoutHints && from >= 1) layoutHints->lineLinks[from].back() = "line:" + std::to_string(to);
       if (from >= 1 && !(layoutHints && layoutHints->webLinks.count(from))) links->emplace(from, to);
+      if (from >= 1) resolved.push_back({from, to, link.target});
     }
   }
+  if (layoutHints) addBidirectionalNotes(out, resolved, converter.anchorBlocks(), leading, layoutHints->notes);
   return out;
 }
 

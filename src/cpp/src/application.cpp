@@ -4874,7 +4874,8 @@ bool Application::handleCommandImpl(Command command) {
   }
   // 2026-10-01(enterEpubHorizontalAtBookEnd()参照): 縦書きの本の横書きの範囲(奥付等)でも、
   // ^[</^[>は縦書きと同じ向き――^[<は本の末尾(奥付の最下行)、^[>は本の冒頭(縦書きの最初)。
-  if (currentMode_ == ApplicationMode::File && epubBookVertical() && epubHorizontalSection_) {
+  // 注釈(epubNoteActive()、縦書きの本でも横書きで見せる)の中では、^[</^[>はふつうに注釈の頭/末尾へ。
+  if (currentMode_ == ApplicationMode::File && epubBookVertical() && epubHorizontalSection_ && !epubNoteActive()) {
     if (command == Command::GoToTop) {
       if (enterEpubHorizontalAtBookEnd()) return true;
     } else if (command == Command::GoToBottom) {
@@ -9839,8 +9840,8 @@ std::vector<Application::EpubHorizontalLink> Application::epubHorizontalLinks(in
 }
 
 // 横書きのEPUBの本文で、次(delta>0)/前のリンクを選ぶ(↑↓・^N/^P)。本文全体で次/前のリンクを
-// 探して選ぶ(画面の外なら、その行を画面の中央に。2026-10-15まではここで1行スクロールし、繰り返せば
-// 先のリンクが画面に入った所で選んでいた)。2026-09-30訂正、直接のユーザー報告("↓↑でリンク位置は変わるけど画面が
+// 探して選ぶ(画面の外なら、その行を画面の中央に。本文の端では反対の端のリンクへ回り込む。2026-10-15までは
+// ここで1行スクロールし、繰り返せば先のリンクが画面に入った所で選んでいた)。2026-09-30訂正、直接のユーザー報告("↓↑でリンク位置は変わるけど画面が
 // スクロールしない"): 以前は画面の中のリンクだけを見て、尽きたら従来の動き(見えないカーソルの
 // 移動)に任せていた――選んだ時にカーソルをリンクの行へ動かしていたので、画面の端に届くまで
 // スクロールしなかった。カーソルは動かさない。本にリンクが1つも無ければfalse(従来どおり)。
@@ -9870,6 +9871,12 @@ bool Application::selectAdjacentEpubHorizontalLink(int delta) {
     for (const auto &link : epubHorizontalLinks(0, here.index + 1))
       if (before(link, here)) target = link;
   }
+  // 2026-10-15、直接のユーザー依頼("^S/^J^Sのように最後のリンクから最初のリンクへ回り込んでほしい"): 先(前)に
+  // リンクが無ければ、本文の最初(最後)のリンクへ回り込む。
+  if (!target) {
+    std::vector<EpubHorizontalLink> all = epubHorizontalLinks(0, total);
+    if (!all.empty()) target = delta > 0 ? all.front() : all.back();
+  }
   // 2026-10-15、直接のユーザー依頼("注釈をもう一度読みたいときも^N/^Pで探せれば便利なので^S/^J^Sの検索結果と
   // 同じく、本文全体にわたってリンクをたどれるようにしてほしい"): 以前は画面に見えているリンクだけを選び、見えて
   // いなければ1行スクロールしていた。画面の外のリンクも選び、検索の^N/^P(jumpToGrepInPlaceMatch())と同じく
@@ -9898,10 +9905,7 @@ bool Application::activateEpubHorizontalLink(const EpubHorizontalLink &link) {
   if (target.compare(0, 5, "line:") != 0) return false;
   int raw = std::atoi(target.c_str() + 5);
   if (showEpubNoteAt(raw)) return true;  // 注釈の区画へ(epubNote_参照)
-  if (epubNoteActive()) {                // 注釈の中のリンク(↩等)から本文へ
-    leaveEpubNote(/*redraw=*/false);
-    return fileMode_.jumpToEpubRawLine(raw);
-  }
+  if (epubNoteActive()) return jumpFromEpubNote(raw);  // 注釈の中のリンク(↩等)から本文へ
   epubJumpOrigin_ = EpubJumpOrigin{link, fileView_.topIndex()};
   epubHorizontalLink_.reset();
   if (epubBookVertical()) {  // 縦書きの本の奥付等から: 縦書き(か横書きの範囲)へ
@@ -9931,19 +9935,28 @@ bool Application::epubNoteActive() {
   return false;
 }
 
-// 元の行rawが注釈の区画(EpubLayoutHints::notes)の中なら、fileView_をその注釈の行だけにしてtrue。横書きの本だけ
-// (縦書きの本の注釈は今までどおり)。注釈の中から別の注釈へ飛んでも、戻り先は最初の本文の位置のまま。
+// 元の行rawが注釈の区画(EpubLayoutHints::notes、入れ子なら一番狭いもの)の中なら、fileView_をその注釈の行だけに
+// してtrue。縦書きの本では横書きの範囲として横書きで見せる(EpubNoteView参照)。注釈の中から別の注釈へ飛んでも、
+// 戻り先は最初の本文の位置のまま。
 bool Application::showEpubNoteAt(int raw) {
-  if (currentMode_ != ApplicationMode::File || !isEpubFile(fileMode_.currentFile()) || epubBookVertical()) return false;
+  if (currentMode_ != ApplicationMode::File || !isEpubFile(fileMode_.currentFile())) return false;
   const auto &notes = fileMode_.epubLayoutHints().notes;
-  auto range = std::find_if(notes.begin(), notes.end(), [raw](const auto &r) { return r.first <= raw && raw <= r.second; });
-  if (range == notes.end()) return false;
+  const std::pair<int, int> *range = nullptr;
+  for (const auto &r : notes)
+    if (r.first <= raw && raw <= r.second && (!range || r.second - r.first < range->second - range->first)) range = &r;
+  if (!range) return false;
   auto [from, until] = *range;
-  int originTop = fileView_.topIndex(), originCursor = fileView_.cursorIndex();
+  EpubNoteView origin;
   if (epubNoteActive()) {
-    originTop = epubNote_->originTop;
-    originCursor = epubNote_->originCursor;
+    origin = *epubNote_;
     leaveEpubNote(/*redraw=*/false);
+  } else {
+    origin.originTop = fileView_.topIndex();
+    origin.originCursor = fileView_.cursorIndex();
+    origin.originVertical = epubVerticalActive();
+    origin.originVerticalFirst = epubVerticalFirst_;
+    origin.originVerticalCursor = epubVerticalCursor_;
+    origin.originSection = epubHorizontalSection_;
   }
   std::vector<ContentView::Line> note;
   for (const auto &line : fileView_.lines()) {
@@ -9953,7 +9966,10 @@ bool Application::showEpubNoteAt(int raw) {
   while (!note.empty() && note.back().text.find_first_not_of(' ') == std::string::npos && note.back().imageKey.empty())
     note.pop_back();  // 注釈の後ろの空行
   if (note.empty()) return false;
-  epubNote_ = EpubNoteView{fileMode_.currentFile(), fileView_.lines(), nullptr, originTop, originCursor};
+  origin.file = fileMode_.currentFile();
+  origin.fullLines = fileView_.lines();
+  epubNote_ = std::move(origin);
+  if (epubBookVertical()) epubHorizontalSection_ = std::make_pair(from, until);  // 縦書きの本: 横書きで見せる
   epubHorizontalLink_.reset();
   fileView_.setLines(std::move(note));
   fileView_.setRawLineBase(from - 1);  // モードラインは注釈の中の行番号(1/8等)
@@ -9976,10 +9992,12 @@ bool Application::leaveEpubNote(bool redraw) {
   fileView_.setCursorIndex(note.originCursor);
   fileView_.setTopIndex(note.originTop);
   epubHorizontalLink_.reset();
+  if (epubBookVertical()) epubHorizontalSection_ = note.originSection;
+  syncEpubHorizontalPresentation();
+  if (note.originVertical && epubVerticalActive()) setEpubVerticalView(note.originVerticalFirst, note.originVerticalCursor);
   if (redraw) {
-    syncEpubHorizontalPresentation();
-    fileView_.redraw();
-    fileView_.syncVisibleCursor();
+    activeView().redraw();
+    activeView().syncVisibleCursor();
   }
   return true;
 }
@@ -9993,8 +10011,18 @@ bool Application::followEpubLinkAtCursor() {
   std::optional<int> target = fileMode_.epubLinkTargetForRawLine(*lines[cursor].rawLineNumber);
   if (!target || !isEpubFile(fileMode_.currentFile())) return false;
   if (showEpubNoteAt(*target)) return true;
-  if (epubNoteActive()) leaveEpubNote(/*redraw=*/false);
+  if (epubNoteActive()) return jumpFromEpubNote(*target);
   return fileMode_.jumpToEpubRawLine(*target);
+}
+
+// 注釈の中のリンク(↩等)から本文の元の行rawへ: 本文の行に戻してから、縦書きの本なら縦書きの画面のその行へ。
+bool Application::jumpFromEpubNote(int raw) {
+  leaveEpubNote(/*redraw=*/false);
+  if (!epubBookVertical()) return fileMode_.jumpToEpubRawLine(raw);
+  showEpubVerticalRaw(raw);
+  activeView().redraw();
+  activeView().syncVisibleCursor();
+  return true;
 }
 
 bool Application::restoreEpubJumpOrigin() {
@@ -10101,6 +10129,7 @@ bool Application::activateEpubVerticalColumn(long c) {
   if (!target) return false;
   if (!target->url.empty()) return openEpubWebLink(target->url);
   if (target->link) {
+    if (showEpubNoteAt(*target->link)) return true;  // 注釈の区画へ(epubNote_参照)
     epubVerticalMark_ = epubVerticalCursor_;
     epubJumpRaw_.reset();
     showEpubVerticalRaw(*target->link);

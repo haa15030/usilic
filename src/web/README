@@ -26,6 +26,9 @@ iPadで原稿(テキスト)を縦書きで読み、校閲箇所を記録するWe
   sample/     見本の.epub(宮澤賢治〔雨ニモマケズ〕、青空文庫の本文、縦書き)
               src/がその中身。作り直すには src/ で
               zip -X0 ../sample.epub mimetype && zip -X9r ../sample.epub META-INF OEBPS
+              notes.epubは注釈の見本(縦書き、KDPの3通りの注釈の書き方: <aside epub:type=
+              "footnote">・<li epub:type="endnote">・epub:typeの無い双方向のリンク)。
+              notes-src/がその中身(作り直し方は上と同じ)。
 
 Debian 13への設置
 -----------------

@@ -2794,18 +2794,26 @@ class Application {
   // 注釈の行だけに差し替える(PARTの中身の画面と同じく、スクロールの端・ENDは注釈の端)。^G・右クリックで本文の
   // 行と元の位置に戻す(leaveEpubNote())。fullLinesは差し替える前の本文の行、shownDataは差し替えた行の先頭
   // (読み直し・折り返し直しでfileView_の行が替わったら、注釈の表示は終わったものとみなす、epubNoteActive())。
+  // 縦書きの本(2026-10-15、直接のユーザー依頼"KDPガイドライン準拠な注釈付きの縦書き本をusilicに通してもちゃんと
+  // 読めるようにして"): 注釈は奥付と同じく横書きの範囲(epubHorizontalSection_)として横書きで見せ、戻る時は縦書きの
+  // 画面の位置(originVerticalFirst・originVerticalCursor)と、その時の横書きの範囲(originSection)に戻す。
   struct EpubNoteView {
     std::string file;
     std::vector<ContentView::Line> fullLines;
     const ContentView::Line *shownData = nullptr;
     int originTop = 0;
     int originCursor = 0;
+    bool originVertical = false;
+    int originVerticalFirst = 0;
+    int originVerticalCursor = 0;
+    std::optional<std::pair<int, int>> originSection;
   };
   std::optional<EpubNoteView> epubNote_;
   bool epubNoteActive();
   bool showEpubNoteAt(int raw);
   bool leaveEpubNote(bool redraw = true);
   bool followEpubLinkAtCursor();
+  bool jumpFromEpubNote(int raw);
   std::string epubVerticalPath_;  // epubBookVertical()参照
   int epubVerticalFirst_ = 0;                         // 右端に置いている列
   int epubVerticalCursor_ = 0;                        // 列カーソル(setEpubVerticalView()参照)

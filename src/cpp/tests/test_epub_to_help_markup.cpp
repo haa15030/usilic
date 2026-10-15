@@ -178,3 +178,51 @@ TEST_CASE("epubToHelpMarkup: footnote asides are reported as note ranges") {
   REQUIRE(links.size() == 1);
   CHECK(links.begin()->second == hints.notes[0].first);
 }
+
+// 2026-10-15: KDP(Kindle Publishing Guidelines)の注釈の3つの書き方が、どれも注釈の区画になること――
+// <aside epub:type="footnote">、<li epub:type="endnote">(<section epub:type="endnotes">の入れ物は注釈ではない)、
+// epub:typeが無く双方向のリンクだけでつながった章末の段落。目次と章の見出しの行き来は注釈にしない。
+TEST_CASE("epubToHelpMarkup: KDP-style notes -- footnote asides, endnote list items, bidirectional paragraphs") {
+  std::map<std::string, std::string> files = {
+      {"META-INF/container.xml", kContainer},
+      {"OEBPS/content.opf", R"(<package><metadata/><manifest>
+  <item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>
+  <item id="c2" href="c2.xhtml" media-type="application/xhtml+xml"/>
+  <item id="n" href="notes.xhtml" media-type="application/xhtml+xml"/>
+</manifest><spine page-progression-direction="rtl"><itemref idref="c1"/><itemref idref="c2"/><itemref idref="n"/></spine></package>)"},
+      {"OEBPS/c1.xhtml", R"(<html><body><h2 id="h1">第一章</h2>
+<p>本文<a id="ref1" href="notes.xhtml#fn1" epub:type="noteref">注1</a></p>
+<p><a href="notes.xhtml#top">注の章へ</a></p></body></html>)"},
+      {"OEBPS/c2.xhtml", R"(<html><body><h2>第二章</h2>
+<p>本文<a id="r3" href="#n3">※3</a>と<a id="r4" href="notes.xhtml#en4" epub:type="noteref">注4</a></p>
+<p id="n3"><a href="#r3">※3</a> 章末の注</p></body></html>)"},
+      {"OEBPS/notes.xhtml", R"(<html><body><h2 id="top">注</h2>
+<p><a href="c1.xhtml#h1">第一章へ</a></p>
+<aside id="fn1" epub:type="footnote"><p><a href="c1.xhtml#ref1">注1</a> 脚注</p><p>二段落目</p></aside>
+<section epub:type="endnotes"><ol><li id="en4" epub:type="endnote"><p><a href="c2.xhtml#r4">注4</a> 後注</p></li></ol></section>
+</body></html>)"},
+  };
+  std::map<int, int> links;
+  fm::EpubLayoutHints hints;
+  auto out = fm::epubToHelpMarkup(readerFor(files), &links, &hints);
+  REQUIRE(out);
+  std::vector<std::string> lines;
+  for (std::size_t p = 0, q; p < out->size(); p = q + 1) {
+    q = out->find('\n', p);
+    if (q == std::string::npos) q = out->size();
+    lines.push_back(out->substr(p, q - p));
+  }
+  std::vector<std::string> notes;
+  for (const auto &[from, until] : hints.notes) {
+    std::string s;
+    for (int i = from; i <= until; i++) s += lines[i - 1] + "|";
+    notes.push_back(s);
+  }
+  REQUIRE(notes.size() == 3);
+  CHECK(notes[0].find("章末の注") != std::string::npos);
+  CHECK(notes[0].find("本文") == std::string::npos);
+  CHECK(notes[1].find("脚注") != std::string::npos);
+  CHECK(notes[1].find("二段落目") != std::string::npos);
+  CHECK(notes[2].find("後注") != std::string::npos);
+  CHECK(notes[2].find("脚注") == std::string::npos);
+}
