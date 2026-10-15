@@ -30767,3 +30767,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      tests/test_native_grep.cpp(Macの本物のgrepと7通りの出力・終了状態が一致)。あわせてprogramOnPath()を
      Windowsでは;区切り・.exe等で探すようにした(以前は常に「無い」になっていた)。
    - **確認**: テストとクロスビルド。Windowsでの^Kは未確認。
+836. **2026-10-15: Windowsのネイティブでunzipを内蔵し、EPUB・ARCの.zipを読めるようにする**
+   - **経緯**: 直接のユーザー依頼(項目835の報告の"EPUBも中で読めるようにできる、進めるなら"に"進めて。")。
+   - **内容**: native_unzip.cppのnativeUnzip()が、zipの中央ディレクトリを読み、無圧縮とDeflate(stb_imageのzlibの
+     stbi_zlib_decode_noheader_malloc()で戻す)の中身を取り出す。`unzip -p 書庫 中のファイル`(EPUBの
+     epubMemberReader())、`unzip -l`(ARCの一覧、ZipReader::parseListing()が読む形)、`unzip -o 書庫 [中のファイル…]
+     -d 先`(ARCの展開)。EPUBは章ごとに何度も読むので、最後に読んだ書庫を(同じ更新時刻の間)覚えておく。
+     ChildProcessのWindows版が、PATHにunzipが無い時に使う。programOnPath()はWindowsでは内蔵のもの(ls・grep・
+     egrep・fgrep・unzip)を「ある」と答える(EPUBの「unzip: command not found」を出さない)。
+   - **確認**: tests/test_native_unzip.cpp(sample.epubで一覧・全部の中身・展開が本物のunzipと一致)。Kbt.epubの37個・
+     HELP.epubの19個の中身も一致。Windowsでの動作は未確認。

@@ -17,6 +17,7 @@
 
 #include "native_grep.hpp"
 #include "native_ls.hpp"
+#include "native_unzip.hpp"
 
 namespace fm {
 
@@ -226,6 +227,12 @@ ChildProcess::Result ChildProcess::run(const std::vector<std::string> &argv, con
       result.truncated = true;
     }
     result.ok = result.exitStatus == 0 || result.truncated;
+    return result;
+  }
+  // unzip(EPUBの中身・ARCの一覧と展開)も、PATHに無ければ内蔵のもので(native_unzip.hpp参照)。
+  if (argv[0] == "unzip" && !onPath("unzip")) {
+    result.exitStatus = nativeUnzip(std::vector<std::string>(argv.begin() + 1, argv.end()), result.output);
+    result.ok = result.exitStatus == 0;
     return result;
   }
   HANDLE outRead = nullptr, outWrite = nullptr, inRead = nullptr, inWrite = nullptr;

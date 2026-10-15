@@ -398,6 +398,9 @@ bool programOnPath(const std::string &program) {
     return false;
   };
   if (program.find_first_of("/\\") != std::string::npos) return exists(program);
+  // ChildProcessのWindows版が内蔵しているもの(native_ls・native_grep・native_unzip)は、いつでもある。
+  for (const char *builtin : {"ls", "grep", "egrep", "fgrep", "unzip"})
+    if (program == builtin) return true;
   const char *winPath = std::getenv("PATH");
   std::stringstream winDirs(winPath ? winPath : "");
   for (std::string dir; std::getline(winDirs, dir, ';');)
