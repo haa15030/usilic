@@ -103,16 +103,13 @@ var Reader = function (opt) {
 
     // ---- 慣性スクロール ----
 
-    // 1フレーム(約16.7ms)ごとに速さに掛ける値。一定の速さで流すのはV−/V＋(矢印キーと同じ段)で。
-    // 2026-10-15、直接のユーザー依頼("減速ボタンは廃棄でよろしく"): 「減速 大/中/小」のボタンは無くした。以前に
-    // 選んでいた値(ブラウザが覚えている)があればそれ、無ければ中。
-    var FRICTIONS = [0.99, 0.997, 0.999];
-    var frictionIdx = Math.min(+load('friction', 1) || 0, FRICTIONS.length - 1);
+    // 2026-10-15、直接のユーザー依頼("減速ボタンは廃棄でよろしく"、"減り方は常時０でよろしく"): 「減速 大/中/小」の
+    // ボタンは無くし、フリックした後は減速せず、離した時の速さのまま流れ続ける(タップか端で止まる)。
 
     var inertia = Inertia(scroller, {
         axis: 'x',
         forward: function () { return opt.forward ? opt.forward() : -1; },
-        friction: function () { return FRICTIONS[frictionIdx]; },
+        friction: function () { return 1; },
         toast: toast
     });
 

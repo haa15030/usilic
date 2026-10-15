@@ -30860,3 +30860,5 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 846. **usilic-web: 「減速 大/中/小」のボタンを無くす**(2026-10-15、直接のユーザー依頼"減速ボタンは廃棄でよろしく")
    - common.phpのボタン(#friction)と、reader.jsの切り替えを取り除いた。フリックの減速は、以前に選んでいた値
      (localStorageのfriction)があればそれ、無ければ中(0.997)。本棚の一覧(index.php)も同じ値を使う。READMEも直した。
+   - **続き**(同日、直接のユーザー依頼"減り方は常時０でよろしく"): フリックした後は減速しない(reader.js・index.php
+     とも、Inertiaのfrictionを常に1)。離した時の速さのまま、タップか端まで流れる。localStorageのfrictionは使わない。

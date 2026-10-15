@@ -231,16 +231,7 @@ if (isset($_GET['list'])) {
     var list = Inertia(dirList, {
         axis: 'y',
         forward: function () { return 1; },
-        friction: function () {
-            var k = [0.99, 0.997, 0.999, 1];
-            var i = 1;
-            try {
-                i = +(localStorage.getItem('friction') || 1);
-            } catch (e) {
-                // 既定のまま
-            }
-            return k[Math.min(Math.max(i, 0), k.length - 1)];
-        },
+        friction: function () { return 1; },  // 減速しない(reader.jsと同じ)
         toast: toast,
         active: function () { return !dir.hidden; }
     });
