@@ -18,3 +18,21 @@ int kill(long long pid, int sig) {
   CloseHandle(h);
   return result;
 }
+
+void preciseSleepMicroseconds(long microseconds) {
+  if (microseconds <= 0) return;
+  LARGE_INTEGER frequency, start, now;
+  QueryPerformanceFrequency(&frequency);
+  QueryPerformanceCounter(&start);
+  const long long target = start.QuadPart + frequency.QuadPart * microseconds / 1000000;
+  for (;;) {
+    QueryPerformanceCounter(&now);
+    long long remaining = (target - now.QuadPart) * 1000000 / frequency.QuadPart;  // マイクロ秒
+    if (remaining <= 0) return;
+    if (remaining > 2000) {
+      Sleep(static_cast<DWORD>(remaining / 1000 - 1));
+    } else {
+      YieldProcessor();
+    }
+  }
+}

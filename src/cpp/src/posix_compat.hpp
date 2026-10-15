@@ -40,6 +40,13 @@ int kill(long long pid, int sig);
 #define SIGTSTP 20
 #endif
 
+// 2026-10-15、直接のユーザー報告(Windowsで"7段目くらいから急激に速くなる"): MinGWのusleepはSleep(us/1000)で、
+// 1000未満は待たず(Sleep(0))、それ以上も1ミリ秒単位でしか待てない。慣性スクロールの1ドットごとの待ち(usilicrcの
+// SPEED・ARROWの500・200・100等)が0になり、その段から一気に速くなっていた。usleepの代わりに、残りが2ミリ秒を
+// 超える間はSleepで、最後は高分解能の時計(QueryPerformanceCounter)を見ながら回って、マイクロ秒単位で待つ。
+void preciseSleepMicroseconds(long microseconds);
+#define usleep(us) preciseSleepMicroseconds(static_cast<long>(us))
+
 // mkdir(path, mode): Windowsのmkdirは権限を取らない。
 #include <direct.h>
 inline int mkdir(const char *path, int mode) {
