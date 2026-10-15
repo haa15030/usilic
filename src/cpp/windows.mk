@@ -32,8 +32,12 @@ OBJS = $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(SRCS) $(APP_SRCS)) $(OBJ_DIR)/usilic_re
 .PHONY: usilic dist clean
 usilic: $(BUILD_DIR)/usilic.exe
 
+# 窓のタイトルに出すビルドの日時(2026-10-15、どのusilic.exeを動かしているかを見分けるため、graphical_display.cpp
+# のusilicBuildStamp参照)。リンクのたびに作り直す。
 $(BUILD_DIR)/usilic.exe: $(OBJS)
-	$(CXX) $(OBJS) -o $@ $(LDLIBS)
+	printf 'namespace fm { extern const char usilicBuildStamp[] = "%s"; }\n' "$$(date '+%Y-%m-%d %H:%M')" > $(OBJ_DIR)/build_stamp.cpp
+	$(CXX) $(CXXFLAGS) -c $(OBJ_DIR)/build_stamp.cpp -o $(OBJ_DIR)/build_stamp.o
+	$(CXX) $(OBJS) $(OBJ_DIR)/build_stamp.o -o $@ $(LDLIBS)
 
 $(OBJ_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)

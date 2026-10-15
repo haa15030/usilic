@@ -1241,8 +1241,15 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   // ――ユーザーがこのウィンドウの端をドラッグする時、同じセルサイズ
   // で「より多くの」行/列が見えるようになることを期待する。どんな
   // 端末エミュレータも既に持っている通常のリサイズの挙動である。
+#ifdef _WIN32
+  // Windowsのネイティブ: どのusilic.exeを動かしているかが分かるよう、タイトルにビルドの日時(windows.mk)を出す。
+  extern const char usilicBuildStamp[];
+  const std::string windowTitle = std::string("usilic (") + usilicBuildStamp + ")";
+#else
+  const std::string windowTitle = "usilic";
+#endif
   SDL_Window *window = SDL_CreateWindow(
-      "usilic", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+      windowTitle.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
       cellWidth * columns + Impl::kMarginX * 2 + cellHeight, cellHeight * rows + Impl::kMarginY * 2,
       SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE);
   if (!window) {
