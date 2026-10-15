@@ -6,7 +6,10 @@
     var book = document.getElementById('book');
     var base = book.dataset.base;
     var XHTML = 'http://www.w3.org/1999/xhtml';
-    var chapters = [];   // {path, frame, vertical}
+    // {path, box, frame, vertical}。boxは章のiframeを包むdiv(画面の高さ)。横書きの章は、usilicと同じく上下に
+    // 流す(2026-10-15、直接のユーザー依頼"奥付は縦方向、縦書きに切り替わると横方向、が理想"): iframeを中身の
+    // 高さにし、boxを画面の幅にして、boxを縦にスクロールする(scroll.jsのInertiaのinner・enter)。
+    var chapters = [];
     var rtl = true;
     var fontPct = 100;
 
@@ -67,7 +70,8 @@
         }
     }
 
-    // 画面の高さに合わせ、中身の幅だけ横に広げる
+    // 縦書きの章は画面の高さに合わせ、中身の幅だけ横に広げる。横書きの章は画面の幅にし、中身の高さだけ
+    // 縦に伸ばす(boxが画面の高さで上下にスクロールする)。
     function measure(ch) {
         var doc = docOf(ch);
         if (!doc || !doc.documentElement) {
@@ -77,23 +81,53 @@
         var root = doc.documentElement;
         ch.frame.style.height = h + 'px';
         ch.frame.style.width = w + 'px';
+        ch.box.style.height = h + 'px';
         root.style.fontSize = fontPct + '%';
         var wm = getComputedStyle(doc.body || root).writingMode || '';
         ch.vertical = wm.indexOf('vertical') === 0;
-        if (!ch.vertical) {
-            // 横書きの章は段組みで横へ流す。右綴じの本では段も右から並べる
-            // (段の並びは段組みの要素のdirectionで決まるので、本文の向きはbodyで元に戻す)。
-            var gap = 48;
-            root.style.height = h + 'px';
-            root.style.columnWidth = (w - gap * 2) + 'px';
-            root.style.columnGap = gap + 'px';
-            root.style.columnFill = 'auto';
-            root.style.direction = rtl ? 'rtl' : '';
-            if (doc.body && rtl) {
-                doc.body.style.direction = 'ltr';
+        if (ch.vertical) {
+            ch.frame.style.width = Math.max(root.scrollWidth, 1) + 'px';
+            ch.box.style.width = ch.frame.style.width;
+            ch.box.scrollTop = 0;
+        } else {
+            ch.box.style.width = w + 'px';
+            ch.frame.style.height = Math.max(root.scrollHeight, (doc.body || root).scrollHeight, h) + 'px';
+        }
+    }
+
+    // 横書きの章で、boxが画面にぴったり収まっている(左右のずれが2px以内)もの
+    function alignedInner() {
+        var br = book.getBoundingClientRect();
+        for (var i = 0; i < chapters.length; i++) {
+            var ch = chapters[i];
+            if (ch.vertical) {
+                continue;
+            }
+            var r = ch.box.getBoundingClientRect();
+            if (Math.abs(r.left - br.left) <= 2 && r.width > 0) {
+                return ch.box;
             }
         }
-        ch.frame.style.width = Math.max(root.scrollWidth, 1) + 'px';
+        return null;
+    }
+
+    // 横に流れて、前の位置prevから今の位置nowまでの間に、横書きの章のboxがぴったりになる位置を越えたか
+    function enterInner(prev, now) {
+        if (prev === now) {
+            return null;
+        }
+        var br = book.getBoundingClientRect();
+        for (var i = 0; i < chapters.length; i++) {
+            var ch = chapters[i];
+            if (ch.vertical) {
+                continue;
+            }
+            var left = now + ch.box.getBoundingClientRect().left - br.left;  // boxがぴったりになるscrollLeft
+            if ((prev - left) * (now - left) < 0 || (now === left && prev !== left)) {
+                return { el: ch.box, left: left };
+            }
+        }
+        return null;
     }
 
     function measureAll() {
@@ -109,7 +143,7 @@
         var style = doc.createElementNS(XHTML, 'style');
         style.textContent = 'html{overflow:hidden!important;touch-action:none;-webkit-text-size-adjust:100%}';
         (doc.head || doc.documentElement).appendChild(style);
-        reader.attach(doc, ch.frame.contentWindow);
+        reader.attach(doc, ch.frame.contentWindow, function () { return ch.vertical ? null : ch.box; });
         measure(ch);
         if (ch.vertical) {
             sidelineRight(doc);
@@ -192,7 +226,8 @@
         var fr = ch.frame.getBoundingClientRect();
         var pt = doc ? pointAt(doc, m.off || 1) : null;
         if (!pt) {
-            book.scrollLeft += rtl ? fr.right - br.right : fr.left - br.left;
+            var bx = ch.box.getBoundingClientRect();
+            book.scrollLeft += rtl ? bx.right - br.right : bx.left - br.left;
             return;
         }
         var r = doc.createRange();
@@ -202,14 +237,12 @@
         var cr = rects.length ? rects[0] : (pt.node.parentNode.getBoundingClientRect
             ? pt.node.parentNode.getBoundingClientRect() : null);
         if (cr) {
-            // 縦書きはその文字の列を画面の右端へ、横書きはその文字の段を画面に収める
+            // 縦書きはその文字の列を画面の右端へ、横書きはその章のboxを画面にそろえ、その文字の行を上の方へ
             if (ch.vertical) {
                 book.scrollLeft += fr.left + cr.right - (br.right - 24);
             } else {
-                // 段の間隔はmeasure()の段組みと同じ(段の幅 = 画面の幅 - 2*48、間 = 48)
-                var pitch = br.width - 48;
-                var col = Math.floor(cr.left / pitch);
-                book.scrollLeft += fr.left + col * pitch - br.left;
+                book.scrollLeft += ch.box.getBoundingClientRect().left - br.left;
+                ch.box.scrollTop = Math.max(0, cr.top - br.height * 0.1);
             }
         }
         if (select && m.text && m.text !== '(位置のみ)') {
@@ -244,6 +277,8 @@
         },
         jump: jump,
         forward: function () { return rtl ? -1 : 1; },
+        inner: alignedInner,
+        enter: enterInner,
         describe: function (m) {
             var i = chapters.findIndex(function (ch) { return ch.path === m.href; });
             return (i < 0 ? '?' : i + 1) + '/' + chapters.length + '章 ' + m.off + '字目';
@@ -289,8 +324,12 @@
         return Promise.all(paths.map(function (path) {
             return new Promise(function (resolveLoad) {
                 var frame = document.createElement('iframe');
-                var ch = { path: path, frame: frame, vertical: true };
+                var box = document.createElement('div');
+                var ch = { path: path, box: box, frame: frame, vertical: true };
                 chapters.push(ch);
+                box.className = 'chapter-box';
+                box.addEventListener('scroll', function () { reader.savePos(); });
+                box.appendChild(frame);
                 frame.className = 'chapter';
                 frame.setAttribute('scrolling', 'no');
                 frame.addEventListener('load', function () {
@@ -298,7 +337,7 @@
                     resolveLoad();
                 }, { once: true });
                 frame.src = base + encodePath(path);
-                book.appendChild(frame);
+                book.appendChild(box);
             });
         }));
     }).then(function () {
