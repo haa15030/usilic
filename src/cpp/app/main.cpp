@@ -400,7 +400,10 @@ void loadScrollDebugLevelFromEnvironment() {
   gScrollDebugLevel = std::clamp(level, 1, maxLevel);
 }
 
-int resolveCoastLevel(int computedLevel) { return gScrollDebugLevel.value_or(computedLevel); }
+// 2026-10-15: ドラッグで始めた慣性も、矢印キーと同じ最速の段(fm::arrowSpeedMaxLevel()、Windowsでは速すぎる段を除く)まで。
+int resolveCoastLevel(int computedLevel) {
+  return std::min(gScrollDebugLevel.value_or(computedLevel), fm::arrowSpeedMaxLevel());
+}
 
 // Queries the calling terminal's own background/text colors, font
 // size, AND font name via AppleScript, for the "実はすでにGUI" launch
