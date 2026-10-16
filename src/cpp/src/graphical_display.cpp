@@ -399,16 +399,29 @@ LargeGlyphPlacement placeLargeGlyph(const std::vector<int> &kinds, int index) {
 // 2026-10-16、直接のユーザー報告(Windows、=ka〜=kd.png): ピクセルの指定は字の大きさを変えると合わなくなる
 // (22pt前後の字に18ピクセルの行で、横書きの字が縮んだ)ので倍率も受け付け、字の大きさを変えた時(adjustFontSize()・
 // setFont())にも当てる(以前は起動時だけで、^+等で字の大きさを変えると消えていた)。
-int lineHeightFor(int pointSize, int computed) {
+//
+// 2026-10-16、直接のユーザー判断("…（三点リーダー）の繋がりから見ると1.0だが行間はせまい"の後の提案に"それでやって
+// みて"): usilicrcのLINE-HEIGHT(GraphicalDisplay::setLineHeightRatios())で、横書きの行の高さと縦書きの字の送りを
+// 字の大きさに対する倍率で別々に持つ(縦書きは1行が1字なので、行の高さがそのまま字と字の間になる)。verticalは
+// 縦書きの画面か(GraphicalDisplay::setVerticalLineSpacing())。USILICLINEHEIGHTは両方より先に効く(試す時用)。
+double &lineHeightRatio(bool vertical) {
+  static double ratios[2] = {0.0, 0.0};
+  return ratios[vertical ? 1 : 0];
+}
+
+int lineHeightFor(int pointSize, int computed, bool vertical) {
   const char *env = std::getenv("USILICLINEHEIGHT");
-  if (!env || !*env) return computed;
-  if (std::string(env).find('.') != std::string::npos) {
-    double ratio = std::atof(env);
-    if (ratio > 0.0) return std::max(1, static_cast<int>(pointSize * ratio + 0.5));
-    return computed;
+  if (env && *env) {
+    if (std::string(env).find('.') != std::string::npos) {
+      double ratio = std::atof(env);
+      if (ratio > 0.0) return std::max(1, static_cast<int>(pointSize * ratio + 0.5));
+    } else if (int parsed = std::atoi(env); parsed > 0) {
+      return parsed;
+    }
   }
-  int parsed = std::atoi(env);
-  return parsed > 0 ? parsed : computed;
+  double ratio = lineHeightRatio(vertical);
+  if (ratio > 0.0) return std::max(1, static_cast<int>(pointSize * ratio + 0.5));
+  return computed;
 }
 
 SDL_Rect fitGlyphRect(int boxX, int boxY, int maxW, int maxH, int surfaceW, int surfaceH,
@@ -760,6 +773,10 @@ struct GraphicalDisplay::Impl {
   // 縦書き用の字(U+FE10〜FE19・FE30〜FE4F)を持つフォント(verticalFormFontFor()参照)。開いた時の大きさも覚える。
   TTF_Font *verticalFormsFont = nullptr;
   int verticalFormsFontPointSize = 0;
+  // 縦書きの画面の行の高さを使っているか(setVerticalLineSpacing())と、フォントから求めた(倍率を当てる前の)
+  // 行の高さ(倍率もUSILICLINEHEIGHTも無い時の値)。
+  bool verticalSpacing = false;
+  int naturalCellHeight = 0;
   // 今開いているフォントのファイル(GraphicalDisplay::currentFontPath()参照)。
   std::string fontPath, fallbackFontPath, serifFontPath;
   // setContentOffsetX()参照。
@@ -1291,7 +1308,8 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   // コード変更+再ビルドのラウンドではなく環境変数経由で調整可能」
   // というパターン。設定されると、完全に計算されたcellHeight
   // (CJKフォールバックの最大値の後)を完全に上書きする。
-  cellHeight = lineHeightFor(fontPointSize, cellHeight);  // 2026-10-16、倍率も(lineHeightFor()参照)
+  int naturalCellHeight = cellHeight;
+  cellHeight = lineHeightFor(fontPointSize, cellHeight, false);  // 2026-10-16、倍率も(lineHeightFor()参照)
 
   // SDL_WINDOW_ALLOW_HIGHDPI: これが無いと、Retina/HiDPIディスプレイ
   // では、SDLはウィンドウの実際の描画領域を「論理的な」ポイント解像
@@ -1376,6 +1394,7 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   display->impl_->fallbackFontPath = fallbackFontPath;
   display->impl_->cellWidth = cellWidth;
   display->impl_->cellHeight = cellHeight;
+  display->impl_->naturalCellHeight = naturalCellHeight;
   display->impl_->scrollbarWidth = cellHeight;  // Impl::scrollbarWidth自身のコメント参照
   display->impl_->baseFontPointSize = fontPointSize;
   display->impl_->currentFontPointSize = fontPointSize;
@@ -2382,6 +2401,28 @@ void GraphicalDisplay::handleWindowResized(int newPixelWidth, int newPixelHeight
   impl_->needsRedraw = true;  // リサイズしたばかりのグリッドは完全に空白から始まる――全画面再描画を強制する
 }
 
+void GraphicalDisplay::setLineHeightRatios(double horizontal, double vertical) {
+  lineHeightRatio(false) = horizontal;
+  lineHeightRatio(true) = vertical;
+}
+
+// 縦書きの画面か横書きの画面かで、行の高さ(lineHeightFor())を切り替える。窓の大きさはそのままで、収まる行数が
+// 変わる(窓の端をドラッグした時と同じくhandleWindowResized()、メインのループはconsumeSizeChanged()で
+// Application::handleResize()を呼ぶ)。字の面の切り出し(cachedGlyphTexture())がマスの高さによるので、字の
+// キャッシュも捨てる。
+void GraphicalDisplay::setVerticalLineSpacing(bool vertical) {
+  if (!impl_->window || vertical == impl_->verticalSpacing) return;
+  impl_->verticalSpacing = vertical;
+  int natural = impl_->naturalCellHeight > 0 ? impl_->naturalCellHeight : impl_->cellHeight;
+  int height = lineHeightFor(impl_->currentFontPointSize, natural, vertical);
+  if (height == impl_->cellHeight || height <= 0) return;
+  impl_->cellHeight = height;
+  clearGlyphCache(*impl_);
+  int w = 0, h = 0;
+  SDL_GetWindowSize(impl_->window, &w, &h);
+  handleWindowResized(w, h);
+}
+
 bool GraphicalDisplay::consumeSizeChanged() {
   bool value = impl_->sizeChanged;
   impl_->sizeChanged = false;
@@ -2427,7 +2468,8 @@ void GraphicalDisplay::adjustFontSize(int deltaPoints) {
       cellHeight = std::max(cellHeight, cjkHeight);
     }
   }
-  cellHeight = lineHeightFor(newPointSize, cellHeight);
+  impl_->naturalCellHeight = cellHeight;
+  cellHeight = lineHeightFor(newPointSize, cellHeight, impl_->verticalSpacing);
   impl_->currentFontPointSize = newPointSize;
   impl_->cellWidth = cellWidth;
   impl_->cellHeight = cellHeight;
@@ -2527,7 +2569,8 @@ bool GraphicalDisplay::setFont(FontKind kind, const std::string &path) {
   if (resized) setSizeAll(impl_->currentFontPointSize);
   int cellWidth = 0, cellHeight = 0;
   measure(cellWidth, cellHeight);
-  cellHeight = lineHeightFor(impl_->currentFontPointSize, cellHeight);
+  if (cellHeight > 0) impl_->naturalCellHeight = cellHeight;
+  cellHeight = lineHeightFor(impl_->currentFontPointSize, cellHeight, impl_->verticalSpacing);
   if (cellWidth > 0 && cellHeight > 0) {
     impl_->cellWidth = cellWidth;
     impl_->cellHeight = cellHeight;

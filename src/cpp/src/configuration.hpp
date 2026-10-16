@@ -3,6 +3,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "charset.hpp"
@@ -344,6 +345,9 @@ class Configuration {
   // それ用のオプションは欲しい...矢印キー用のみ10段階で"): 横書きの画面の慣性スクロールの段ごとの速さ
   // (SPEEDと同じ書式、fm::applyArrowSpeedOverride()へ)。無ければSPEEDの表。2026-10-09から縦書きのEPUBの左右も。
   const std::vector<long> &arrowSpeedValues() const { return arrowSpeedValues_; }
+  // LINE-HEIGHT(2026-10-16): -gの横書きの行の高さと縦書きの字の送りの、字の大きさに対する倍率
+  // (GraphicalDisplay::setLineHeightRatios())。節が無ければ{0, 0}(フォントから求めた高さのまま)。
+  std::pair<double, double> lineHeightRatios() const { return lineHeightRatios_; }
   const std::string &fontPath() const { return fontPath_; }
   // MACRO(2026-10-02新設): 「M-n キー K-a K-b ...」の行。キーはKEY節と同じ表記、K番号の並びは
   // それぞれの既定のキー列を続けて本体へ渡す(KeyBindings::configure()参照)。K番号の無い行は無視。
@@ -434,6 +438,7 @@ class Configuration {
   std::vector<long> speedValues_;  // SPEED
   std::vector<long> dragValues_;   // DRAG
   std::vector<long> arrowSpeedValues_;  // ARROW
+  std::pair<double, double> lineHeightRatios_{0.0, 0.0};  // LINE-HEIGHT
   std::string fontPath_;           // FONT
   std::vector<MacroEntry> macros_;  // MACRO
   std::vector<UrlHandler> urlHandlers_;  // URL

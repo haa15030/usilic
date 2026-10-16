@@ -8,6 +8,7 @@ src = open('src/graphical_display.cpp', encoding='utf-8').read()
 pat = re.compile(r'^([^\n#/ ][^\n;{}]*?\bGraphicalDisplay::(~?\w+)\((?:[^(){};]|\([^()]*\))*\)\s*(?:const)?)\s*\{',
                  re.M)
 defs, seen = [], set()
+WINDOWS_ONLY = {'scanFontFiles'}
 for m in pat.finditer(src):
     sig, name = m.group(1).strip(), m.group(2)
     if name in ('GraphicalDisplay', '~GraphicalDisplay') or sig in seen:
@@ -16,7 +17,11 @@ for m in pat.finditer(src):
     sig = re.sub(r'\s*=\s*[^,)]+(?=[,)])', '', sig)  # 既定引数を除く
     ret = sig[:sig.index('GraphicalDisplay::' + name)].strip()
     body = '{}' if ret == 'void' else '{ return nullptr; }' if name == 'create' else '{ return {}; }'
-    defs.append(sig + ' ' + body)
+    definition = sig + ' ' + body
+    # Windowsのネイティブだけで宣言しているもの(graphical_display.hppの#ifdef _WIN32の中、2026-10-16)。
+    if name in WINDOWS_ONLY:
+        definition = '#ifdef _WIN32\n' + definition + '\n#endif'
+    defs.append(definition)
 
 header = '''// GUI無しのビルド(2026-10-05、.steering/20261005-windows-gitbash/): SDL2の無い環境(MSYS2の
 // MSYS環境等)で、graphical_display.cppの代わりにビルドする(Makefileの USILIC_NO_GUI)。

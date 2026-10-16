@@ -332,6 +332,12 @@ class GraphicalDisplay : public Display {
   // keyInput.consumeResizeSignal()チェックが既に持っているのと
   // 同じ形。
   bool consumeSizeChanged();
+  // usilicrcのLINE-HEIGHT(2026-10-16): 横書きの行の高さと縦書きの字の送りの、字の大きさに対する倍率。0はフォント
+  // から求めた高さのまま。create()より前に呼ぶ。
+  static void setLineHeightRatios(double horizontal, double vertical);
+  // 縦書きの画面を見せている間はtrue(メインのループが毎回渡す)。行の高さが変われば、窓の大きさはそのままで行数が
+  // 変わり、consumeSizeChanged()がtrueになる。
+  void setVerticalLineSpacing(bool vertical);
 
   struct MouseClick {
     int row;

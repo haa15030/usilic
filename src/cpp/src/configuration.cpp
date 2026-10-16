@@ -59,6 +59,8 @@ const std::vector<std::string> &directiveKeywords() {
       "URL",
       // 2026-10-08追加(arrowSpeedValues()参照)。
       "ARROW",
+      // 2026-10-16追加(lineHeightRatios()参照)。
+      "LINE-HEIGHT",
   };
   return kKeywords;
 }
@@ -703,6 +705,21 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
             }
             values.push_back(std::atol(token.c_str()));
           }
+        break;
+      }
+      case 26: {  // LINE-HEIGHT(lineHeightRatios()参照): 横書き 縦書き(縦書きを省けば横書きと同じ)
+        std::vector<double> ratios;
+        while (auto data = nextDataLine(lines, i))
+          for (const auto &token : tokenize(*data)) {
+            char *end = nullptr;
+            double value = std::strtod(token.c_str(), &end);
+            if (token.empty() || *end != '\0' || value <= 0.0 || value > 10.0) {
+              errors_.push_back("LINE-HEIGHT: not a ratio: " + token);
+              continue;
+            }
+            ratios.push_back(value);
+          }
+        if (!ratios.empty()) lineHeightRatios_ = {ratios[0], ratios.size() > 1 ? ratios[1] : ratios[0]};
         break;
       }
       case 22: {  // FONT

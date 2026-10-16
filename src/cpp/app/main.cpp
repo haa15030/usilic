@@ -2717,6 +2717,8 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // keyInput.consumeResizeSignal() branch already makes for a real
     // terminal's SIGWINCH -- it reads the Display's current rows()/
     // columns() itself, already updated by the time this runs.
+    // 2026-10-16(GraphicalDisplay::setVerticalLineSpacing()参照): 縦書きの画面では縦書きの字の送りの行の高さに。
+    gui.setVerticalLineSpacing(app.verticalLayoutShown());
     if (gui.consumeSizeChanged()) {
       app.handleResize();
       anyEventThisFrame = true;
@@ -5452,6 +5454,9 @@ int main(int argc, char **argv) {
   // usilicrcのSERIF/SANS-SERIF(2026-09-29、GraphicalDisplay::setFontFamilyCandidates()参照)。
   fm::GraphicalDisplay::setFontFamilyCandidates(configuration.serifFontCandidates(),
                                                 configuration.sansSerifFontCandidates());
+  // usilicrcのLINE-HEIGHT(2026-10-16、GraphicalDisplay::setLineHeightRatios()参照)。
+  fm::GraphicalDisplay::setLineHeightRatios(configuration.lineHeightRatios().first,
+                                            configuration.lineHeightRatios().second);
   // usilicrcのHISTORY(History::setRetentionCount()自身のコメント参照、2026-09-25)。
   history.setRetentionCount(configuration.historyRetentionCount());
 

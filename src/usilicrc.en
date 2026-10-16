@@ -292,6 +292,19 @@ FONT
 
 #	/Library/Fonts/MS-Gothic.ttf
 
+LINE-HEIGHT
+# Format: `horizontal  vertical'
+#
+# The height of one line of the -g window, as a ratio to the character size
+# (as CSS line-height).  Horizontal text uses it between lines; a vertical
+# EPUB puts one character per line, so there it is the space between
+# characters.  The vertical value is used while a vertical screen is shown,
+# and the number of lines changes with the window size unchanged.  Without
+# the vertical value it is the same as the horizontal one.  Without this
+# section the font's own line height is used.
+
+	1.2  1.0
+
 URL
 # Format: `name  program  (option)'
 #

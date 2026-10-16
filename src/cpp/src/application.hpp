@@ -1952,6 +1952,9 @@ class Application {
   // 一度だけ返す。showNotice()は次のキーで消える一時メッセージ(-gでない時の知らせ等)。
   bool takeFontListRequest();
   void showFontList(const std::vector<FontListEntry> &entries);
+  // 縦書きの画面(縦書きの本文・章の一覧・検索結果)を見せているか(2026-10-16、-gの行の高さを縦書き用に
+  // 切り替えるため、GraphicalDisplay::setVerticalLineSpacing()参照)。
+  bool verticalLayoutShown() const;
   std::optional<std::pair<std::string, std::string>> takeFontChoice();
   void showNotice(const std::string &text);
 

@@ -42,9 +42,15 @@ int GraphicalDisplay::rows() const { return {}; }
 int GraphicalDisplay::columns() const { return {}; }
 void GraphicalDisplay::setSize(int rows, int columns) {}
 void GraphicalDisplay::handleWindowResized(int newPixelWidth, int newPixelHeight) {}
+void GraphicalDisplay::setLineHeightRatios(double horizontal, double vertical) {}
+void GraphicalDisplay::setVerticalLineSpacing(bool vertical) {}
 bool GraphicalDisplay::consumeSizeChanged() { return {}; }
 void GraphicalDisplay::adjustFontSize(int deltaPoints) {}
 bool GraphicalDisplay::setFont(FontKind kind, const std::string &path) { return {}; }
+#ifdef _WIN32
+std::vector<GraphicalDisplay::ScannedFontFace> GraphicalDisplay::scanFontFiles(
+    const std::vector<std::string> &directories) { return {}; }
+#endif
 std::string GraphicalDisplay::currentFontPath(FontKind kind) const { return {}; }
 void GraphicalDisplay::cycleColorPreset() {}
 std::string GraphicalDisplay::keySequence(Key) const { return {}; }

@@ -31056,3 +31056,19 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - updateUserIfOlder(): usilic自身が書き込む節(FONT・SANS-SERIF・SERIF・SPEED・DRAG・WAIT・BUFFER・LINE、
      setSection()の呼び出し元)は、利用者の値が新しい版と違えば引き継ぐ。それ以外の節は今まで通り新しい版のもの。
    - tests/test_usilicrc_file.cppにテストを1つ。
+
+864. **-gの1行の高さを、横書きと縦書きで別々に(usilicrcのLINE-HEIGHT)**(2026-10-16、直接のユーザー質問"…（三点
+     リーダー）の繋がりから見ると1.0だが行間はせまい。どうしようか。=ke〜=kj.png"への提案に"それでやってみて")
+   - 縦書きのEPUBは1行に1字を置くので、行の高さが字と字の間になる。=kh(1.0)で「……」がつながり、横書きは=kg
+     (1.2)が読みやすいが、1つの行の高さでは両立しない。
+   - **usilicrcのLINE-HEIGHT**(新設、Configuration::lineHeightRatios()): 「横書き 縦書き」の、字の大きさに対する
+     倍率(CSSのline-heightと同じ)。縦書きを省けば横書きと同じ。節が無ければ今まで通りフォントの行の高さ。配る
+     usilicrc・usilicrc.enは「1.2 1.0」(Macの見た目も変わる)。
+   - **GraphicalDisplay**: setLineHeightRatios()(main()がusilicrcから)、setVerticalLineSpacing()(-gのループが毎回
+     Application::verticalLayoutShown()、縦書きの本文・章の一覧・検索結果か、を渡す)。変われば行の高さを替えて、
+     窓の大きさはそのままでhandleWindowResized()(行数が変わり、consumeSizeChanged()でApplication::handleResize())。
+     lineHeightFor()に縦書きかを足し、字の大きさ・フォントを変えた時もその時の向きの倍率で。フォントから求めた
+     高さ(naturalCellHeight)を覚えておく。USILICLINEHEIGHTは両方より先に効く(試す時用)。
+   - tools/gen_graphical_display_stub.py: Windowsだけで宣言しているもの(scanFontFiles)は#ifdef _WIN32で囲む。
+   - HELP_.txt(未コミット)の「補足 usilicrc」にLINE-HEIGHTを足した。
+   - 確認: make usilic・make WINDOWS=1 usilicが通った。-gの見た目は未確認(Macのこの環境では窓を撮れなかった)。

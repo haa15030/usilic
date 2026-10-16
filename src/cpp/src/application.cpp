@@ -8498,6 +8498,10 @@ bool Application::returnToEpubToc() {
 // 切り替えは、元の行番号(rawLineNumber)で両者を対応させる(syncEpubVerticalToFile())。
 bool Application::epubVerticalActive() const { return epubBookVertical() && !epubHorizontalSection_; }
 
+bool Application::verticalLayoutShown() const {
+  return (currentMode_ == ApplicationMode::File && epubVerticalActive()) || epubVerticalListActive();
+}
+
 // 縦書きの列を組んだ本(openEpub()のepubVerticalPath_)を見ている時だけ(2026-09-30、openEpubReturningTo()
 // 参照――openEpub()を通らずに別の.epubを読むと、前の本の縦書きが残っていた)。
 bool Application::epubBookVertical() const {
