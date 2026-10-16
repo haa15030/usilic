@@ -4473,7 +4473,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
     // (fontPointSize/rows/columns/色)以外は保持されるようにする。
     fm::History::GuiPreferences prefs = history.guiPreferences();
     prefs.fontPointSize = gui->fontPointSize();
-    prefs.rows = gui->rows();
+    prefs.rows = gui->horizontalRows();  // 縦書きの画面で終えても横書きの行数(2026-10-16)
     prefs.columns = gui->columns();
     fm::GraphicalDisplay::Color fg = gui->foregroundColor();
     fm::GraphicalDisplay::Color bg = gui->backgroundColor();
@@ -5689,6 +5689,7 @@ int main(int argc, char **argv) {
   // since the real terminal was never used for rendering).
   std::unique_ptr<fm::GraphicalDisplay> launchGui;
   bool guiOwnsWholeSession = false;
+  bool overlayUsesSavedSize = false;  // 下のlaunchGuiの作り方のコメント参照(2026-10-16)
   // Window-bounds match is now a HARD requirement alongside the color/
   // font appearance match, not an optional nicety (changed 2026-08-03,
   // "-gは隠れ機能なのでウィンドウの重ね打ち可を必須としたい"): this
@@ -5745,9 +5746,18 @@ int main(int argc, char **argv) {
         std::fclose(f);
       }
     }
+    // 2026-10-16、直接のユーザー報告("macOSの-gでもフォントサイズとウィンドウサイズが保存されない"): この経路
+    // (端末の窓に重ねる)は、いつも端末の大きさ・字の大きさに合わせ、保存した値を読まず、終わりに保存もしていな
+    // かった。前に-gで字の大きさか窓の大きさを変えて保存してあれば(下のrunGuiPhase()の後、tryEnterGuiPhase()の
+    // 保存も)、その字の大きさ・行数・桁数で開く(位置と色は今まで通り端末に合わせる)。
+    fm::History::GuiPreferences savedGui = history.guiPreferences();
+    overlayUsesSavedSize = savedGui.rows > 0 && savedGui.columns > 0 && savedGui.fontPointSize > 0;
     launchGui = fontPath.empty() ? nullptr
-                                  : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath,
-                                                                  appearance->fontPointSize);
+                : overlayUsesSavedSize
+                    ? fm::GraphicalDisplay::create(savedGui.rows, std::max(savedGui.columns, 80), fontPath,
+                                                   savedGui.fontPointSize)
+                    : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath,
+                                                   appearance->fontPointSize);
     if (launchGui) {
       if (appearance->hasColors) launchGui->setColors(appearance->foreground, appearance->background);
       // Overlay this window exactly where the calling terminal's own
@@ -5784,7 +5794,7 @@ int main(int argc, char **argv) {
       // real terminal profiles in a way no font-metric heuristic
       // reliably captured -- see matchWindowSize()'s own comment).
       launchGui->setWindowPosition(bounds->x, bounds->y);
-      launchGui->matchWindowSize(bounds->width, bounds->height);
+      if (!overlayUsesSavedSize) launchGui->matchWindowSize(bounds->width, bounds->height);
       launchGui->open();
       display.setBackend(*launchGui);
       clearLaunchingTerminal();  // see its own comment -- covered by the GUI window now, so this never flashes
@@ -6034,7 +6044,19 @@ int main(int argc, char **argv) {
     app.setGuiFrameProvider([guiForFrame] { return guiFrameText(*guiForFrame); });
     app.setGuiFontProvider(
         [guiForFrame] { return guiForFrame->currentFontPath(fm::GraphicalDisplay::FontKind::Base); });
+    int openedFont = launchGui->fontPointSize(), openedRows = launchGui->horizontalRows(),
+        openedColumns = launchGui->columns();
     runGuiPhase(app, *launchGui);
+    // 2026-10-16(launchGuiの作り方のコメント参照): 使っている間に字の大きさか窓の大きさを変えたら保存する
+    // (変えなければ保存しない。端末に合わせただけの大きさで、次の起動を縛らないため)。
+    if (launchGui->fontPointSize() != openedFont || launchGui->horizontalRows() != openedRows ||
+        launchGui->columns() != openedColumns) {
+      fm::History::GuiPreferences prefs = history.guiPreferences();
+      prefs.fontPointSize = launchGui->fontPointSize();
+      prefs.rows = launchGui->horizontalRows();
+      prefs.columns = launchGui->columns();
+      history.setGuiPreferences(prefs);
+    }
     app.setGuiFrameProvider(nullptr);
     app.setGuiFontProvider(nullptr);
     app.programMode().setForegroundLauncher(nullptr);

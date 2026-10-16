@@ -2423,6 +2423,15 @@ void GraphicalDisplay::setVerticalLineSpacing(bool vertical) {
   handleWindowResized(w, h);
 }
 
+int GraphicalDisplay::horizontalRows() const {
+  if (!impl_->verticalSpacing || !impl_->window) return impl_->rows;
+  int natural = impl_->naturalCellHeight > 0 ? impl_->naturalCellHeight : impl_->cellHeight;
+  int height = lineHeightFor(impl_->currentFontPointSize, natural, false);
+  int w = 0, h = 0;
+  SDL_GetWindowSize(impl_->window, &w, &h);
+  return height > 0 ? std::max(1, (h - Impl::kMarginY * 2) / height) : impl_->rows;
+}
+
 bool GraphicalDisplay::consumeSizeChanged() {
   bool value = impl_->sizeChanged;
   impl_->sizeChanged = false;

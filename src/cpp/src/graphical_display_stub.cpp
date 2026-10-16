@@ -44,6 +44,7 @@ void GraphicalDisplay::setSize(int rows, int columns) {}
 void GraphicalDisplay::handleWindowResized(int newPixelWidth, int newPixelHeight) {}
 void GraphicalDisplay::setLineHeightRatios(double horizontal, double vertical) {}
 void GraphicalDisplay::setVerticalLineSpacing(bool vertical) {}
+int GraphicalDisplay::horizontalRows() const { return {}; }
 bool GraphicalDisplay::consumeSizeChanged() { return {}; }
 void GraphicalDisplay::adjustFontSize(int deltaPoints) {}
 bool GraphicalDisplay::setFont(FontKind kind, const std::string &path) { return {}; }
