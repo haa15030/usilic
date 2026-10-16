@@ -102,6 +102,15 @@ class GraphicalDisplay : public Display {
   enum class FontKind { Base, SansSerif, Serif };
   bool setFont(FontKind kind, const std::string &path);
   std::string currentFontPath(FontKind kind) const;
+#ifdef _WIN32
+  // ^J^Fのフォント一覧のWindowsのネイティブ版(2026-10-16、fc-listが無いので): directoriesの.ttf・.ttc・.otfの
+  // 0番目の書体を開いて、名前・等幅か(半角の幅が揃っているか)・日本語(「あ」)があるかを調べる。
+  struct ScannedFontFace {
+    std::string path, name;
+    bool monospace = false, japanese = false;
+  };
+  static std::vector<ScannedFontFace> scanFontFiles(const std::vector<std::string> &directories);
+#endif
   static std::unique_ptr<GraphicalDisplay> create(int rows, int columns, const std::string &fontPath,
                                                     int fontPointSize = 16);
 

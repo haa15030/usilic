@@ -3,10 +3,12 @@
 #include "epub_vertical.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
+#include <filesystem>
 #include <map>
 #include <set>
 #include <tuple>
@@ -2460,6 +2462,44 @@ bool GraphicalDisplay::setFont(FontKind kind, const std::string &path) {
 }
 
 // 明朝体はふだん最初に明朝の字を描く時に読み込む(serifFontFor())ので、まだなら読み込んでから答える。
+#ifdef _WIN32
+std::vector<GraphicalDisplay::ScannedFontFace> GraphicalDisplay::scanFontFiles(
+    const std::vector<std::string> &directories) {
+  std::vector<ScannedFontFace> faces;
+  bool initialized = TTF_WasInit() != 0;
+  if (!initialized && TTF_Init() != 0) return faces;
+  for (const auto &directory : directories) {
+    std::error_code ec;
+    for (const auto &entry : std::filesystem::directory_iterator(directory, ec)) {
+      std::string ext = entry.path().extension().string();
+      for (char &c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      if (ext != ".ttf" && ext != ".ttc" && ext != ".otf") continue;
+      std::string path = entry.path().generic_string();
+      TTF_Font *font = TTF_OpenFontIndex(path.c_str(), 16, 0);
+      if (!font) continue;
+      const char *family = TTF_FontFaceFamilyName(font);
+      const char *style = TTF_FontFaceStyleName(font);
+      if (family && *family && *family != '@' && *family != '.') {
+        ScannedFontFace face;
+        face.path = path;
+        face.name = std::string(family) + (style && *style ? std::string(" ") + style : std::string());
+        int narrow = 0, wide = 0;
+        // 等幅の印(post表)が無い和文の等幅(MSゴシック等)もあるので、iとMの送りの幅が同じかでも見る。
+        face.monospace = TTF_FontFaceIsFixedWidth(font) ||
+                         (TTF_GlyphMetrics(font, 'i', nullptr, nullptr, nullptr, nullptr, &narrow) == 0 &&
+                          TTF_GlyphMetrics(font, 'M', nullptr, nullptr, nullptr, nullptr, &wide) == 0 && narrow > 0 &&
+                          narrow == wide);
+        face.japanese = TTF_GlyphIsProvided(font, 0x3042) != 0;
+        faces.push_back(std::move(face));
+      }
+      TTF_CloseFont(font);
+    }
+  }
+  if (!initialized) TTF_Quit();
+  return faces;
+}
+#endif
+
 std::string GraphicalDisplay::currentFontPath(FontKind kind) const {
   switch (kind) {
     case FontKind::Base:

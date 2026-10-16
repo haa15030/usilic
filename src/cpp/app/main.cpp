@@ -2390,6 +2390,27 @@ std::vector<fm::FontListEntry> buildFontList(const fm::GraphicalDisplay &gui) {
     std::sort(mono.begin(), mono.end(), byName);
     std::sort(japanese.begin(), japanese.end(), byName);
   }
+#ifdef _WIN32
+  // Windowsのネイティブ(2026-10-16、直接のユーザー報告"^J^Fしたけどno font"): fc-listが無いので、
+  // GraphicalDisplay::scanFontFiles()でWindowsのフォントのフォルダと、ユーザーごとに入れたフォントのフォルダを調べる。
+  {
+    std::vector<std::string> directories;
+    const char *windir = std::getenv("WINDIR");
+    directories.push_back(std::string(windir && *windir ? windir : "C:/Windows") + "/Fonts");
+    if (const char *local = std::getenv("LOCALAPPDATA"); local && *local)
+      directories.push_back(std::string(local) + "/Microsoft/Windows/Fonts");
+    for (auto &directory : directories)
+      for (char &c : directory)
+        if (c == '\\') c = '/';
+    for (const auto &face : fm::GraphicalDisplay::scanFontFiles(directories)) {
+      if (face.monospace) mono.push_back({face.path, face.name});
+      if (face.japanese) japanese.push_back({face.path, face.name});
+    }
+    auto byName = [](const Face &a, const Face &b) { return a.name < b.name; };
+    std::sort(mono.begin(), mono.end(), byName);
+    std::sort(japanese.begin(), japanese.end(), byName);
+  }
+#endif
   if (mono.empty() && japanese.empty()) return {};
   for (const auto &face : japanese) (looksSerif(face.name) ? serif : sans).push_back(face);
   std::vector<fm::FontListEntry> entries;

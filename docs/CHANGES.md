@@ -31014,3 +31014,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      history・history.old、起動ディレクトリの記録(main.cpp)、usilicrcの書き換え(usilicrc_file.cppの
      writeAtomically())で使う。std::filesystem::rename()の所(application.cpp)は、libstdc++がWindowsでも
      置き換えるのでそのまま。
+
+860. **Windowsの^J^Fのフォント一覧**(2026-10-16、直接のユーザー報告(Windows)"^J^Fしたけどno font"、質問"明朝体の
+     フォントは何？")
+   - buildFontList()はfc-list(WSLではfc-scanも)で一覧を作るので、fc-listの無いWindowsのネイティブでは空だった。
+   - GraphicalDisplay::scanFontFiles()(Windowsだけ): %WINDIR%/Fontsと%LOCALAPPDATA%/Microsoft/Windows/Fontsの
+     .ttf・.ttc・.otfの0番目の書体をSDL_ttfで開き、名前(family+style)・等幅か(post表の印か、iとMの送りの幅が
+     同じ。MSゴシック等の和文の等幅は印が無いことがある)・日本語(「あ」)があるかを調べる。等幅はFONT、日本語の
+     入ったものはSANS-SERIF・SERIF(名前にMincho等があればSERIF)の一覧へ。「@」で始まる縦書き用の書体は除く。
+   - 明朝体(SERIF)の既定は、Windowsでは游明朝(yumin.ttf)、無ければMS明朝(msmincho.ttc)。
+   - 確認: make WINDOWS=1 usilicが通った。Windowsでは未確認。
