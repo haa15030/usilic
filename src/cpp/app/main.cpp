@@ -402,9 +402,18 @@ void loadScrollDebugLevelFromEnvironment() {
   gScrollDebugLevel = std::clamp(level, 1, maxLevel);
 }
 
-// 2026-10-15: ドラッグで始めた慣性も、矢印キーと同じ最速の段(fm::arrowSpeedMaxLevel()、Windowsでは速すぎる段を除く)まで。
-int resolveCoastLevel(int computedLevel) {
-  return std::min(gScrollDebugLevel.value_or(computedLevel), fm::arrowSpeedMaxLevel());
+// 2026-10-15: ドラッグで始めた慣性も、矢印キーと同じ最速の段(maxLevel)まで。maxLevelはCUIではusilicrcのARROW
+// (fm::arrowSpeedMaxLevel())、-gではSPEED(guiSpeedMaxLevel()、2026-10-16)。
+int resolveCoastLevel(int computedLevel, int maxLevel = fm::arrowSpeedMaxLevel()) {
+  return std::min(gScrollDebugLevel.value_or(computedLevel), maxLevel);
+}
+
+// 2026-10-16、直接のユーザー依頼("-g起動では明らかにARROWの設定で動いている。-gではARROWは不要でよろしく"):
+// ARROWはCUIの行単位のスクロールに合わせた値(HELPの「補足 usilicrc」のARROW)なので、-gの慣性(矢印キー・
+// ドラッグ、縦書きの左右も)はSPEEDの段(fm::kScrollSpeedLevels、-sで変わる)で動かす。
+int guiSpeedMaxLevel() { return static_cast<int>(fm::kScrollSpeedLevels.size()) - 1; }
+const fm::ScrollStep &guiSpeedStep(int level) {
+  return fm::kScrollSpeedLevels[static_cast<std::size_t>(std::clamp(level, 0, guiSpeedMaxLevel()))];
 }
 
 // Queries the calling terminal's own background/text colors, font
@@ -977,16 +986,16 @@ void performScrollStepDelay(const fm::ScrollStep &step) {
 // 逆向き最低速、以後は加速"): 慣性スクロールを始める/速さを変えるキー(←→、縦書きでは↓↑)の1回分。
 // 止まっていれば`pressed`の向きに最低速で始め、同じ向きなら1段速く、逆向きなら1段遅く、最低速から
 // さらに逆を押すと逆向きの最低速(以後同じキーで加速)。
-// maxLevelは最速の段(横書きはfm::arrowSpeedMaxLevel()、usilicrcのARROWの数とずらし方による)。
+// maxLevelは最速の段(CUIはfm::arrowSpeedMaxLevel()、usilicrcのARROWの数とずらし方による。-gはguiSpeedMaxLevel())。
 void stepCoastByKey(int &level, int &direction, int pressed,
                     int maxLevel = static_cast<int>(fm::kScrollSpeedLevels.size()) - 1) {
   if (level == 0) {
-    level = resolveCoastLevel(1);
+    level = resolveCoastLevel(1, maxLevel);
     direction = pressed;
   } else if (pressed == direction) {
-    level = resolveCoastLevel(std::min(level + 1, maxLevel));
+    level = resolveCoastLevel(std::min(level + 1, maxLevel), maxLevel);
   } else if (level > 1) {
-    level = resolveCoastLevel(level - 1);
+    level = resolveCoastLevel(level - 1, maxLevel);
   } else {
     direction = pressed;
   }
@@ -3008,24 +3017,24 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // 矢印(一覧の↓↑、縦書きの本文の←→)でも速さを変える。開始は今まで通り交差する向き(一覧は←→、
         // 縦書きは↓↑)だけ。
         if (app.epubVerticalDragActive() && epubCoastLevel > 0 && (leftKey || rightKey)) {
-          stepCoastByKey(epubCoastLevel, epubCoastDirection, leftKey ? 1 : -1, fm::arrowSpeedMaxLevel());  // ←で先へ(右から左へ読む)
+          stepCoastByKey(epubCoastLevel, epubCoastDirection, leftKey ? 1 : -1, guiSpeedMaxLevel());  // ←で先へ(右から左へ読む)
           consecutiveEscapes = 0;
           continue;
         }
         if (!app.epubVerticalScrollActive() && coastLevel > 0 && (upKey || downKey)) {
-          stepCoastByKey(coastLevel, coastDirection, downKey ? -1 : 1, fm::arrowSpeedMaxLevel());  // ↓で先へ(-1、coastDirection参照)
+          stepCoastByKey(coastLevel, coastDirection, downKey ? -1 : 1, guiSpeedMaxLevel());  // ↓で先へ(-1、coastDirection参照)
           consecutiveEscapes = 0;
           continue;
         }
         if (app.epubVerticalDragActive() && (upKey || downKey)) {
-          stepCoastByKey(epubCoastLevel, epubCoastDirection, downKey ? 1 : -1, fm::arrowSpeedMaxLevel());
+          stepCoastByKey(epubCoastLevel, epubCoastDirection, downKey ? 1 : -1, guiSpeedMaxLevel());
           consecutiveEscapes = 0;
           continue;
         }
         if (!app.epubVerticalScrollActive() && (leftKey || rightKey)) {
           if (coastLevel == 0) app.activeContentView().setHoverIndex(std::nullopt);  // ホイールで始めていた時と同じ(2026-09-03)
           bool forwardKey = app.leftArrowAdvances() ? leftKey : rightKey;  // Application::leftArrowAdvances()参照
-          stepCoastByKey(coastLevel, coastDirection, forwardKey ? -1 : 1, fm::arrowSpeedMaxLevel());  // coastDirection自身のコメント参照: -1で先へ
+          stepCoastByKey(coastLevel, coastDirection, forwardKey ? -1 : 1, guiSpeedMaxLevel());  // coastDirection自身のコメント参照: -1で先へ
           consecutiveEscapes = 0;
           continue;
         }
@@ -3326,7 +3335,8 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
             for (auto &sample : epubRecentMotion)
               if (sample.first >= cutoff) releaseDistance += sample.second;
             epubCoastLevel =
-                resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, std::max(gui.cellHeightPixels(), 1)));
+                resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, std::max(gui.cellHeightPixels(), 1)),
+                                  guiSpeedMaxLevel());
             // 2026-10-10、直接のユーザー依頼("-gではスクロールが行ではなくドット単位なので2段ズラさなくとも
             // 滑らかにつながる。なので-gではズラし無しで"): マウスで始めた慣性の段のずらし
             // (fm::kDragArrowSpeedOffset)は端末(runCoastLoop())だけにし、-gではずらさない。
@@ -3386,7 +3396,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
             for (auto &sample : recentMotion)
               if (sample.first >= cutoff) releaseDistance += sample.second;
             // 段のずらし(fm::kDragArrowSpeedOffset)は-gではしない(上の縦書きの同日のコメント参照)。
-            coastLevel = resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, cellHeight));
+            coastLevel = resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, cellHeight), guiSpeedMaxLevel());
             coastDirection = coastLevel > 0 ? (releaseDistance > 0 ? 1 : -1) : 0;
           } else {
             coastLevel = 0;
@@ -3522,7 +3532,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     }
 
     if (coastLevel > 0 && !dragging) {
-      const fm::ScrollStep &step = fm::arrowSpeedStep(coastLevel);  // usilicrcのARROW(無ければSPEED)
+      const fm::ScrollStep &step = guiSpeedStep(coastLevel);  // SPEED(-gではARROWを使わない、guiSpeedStep()参照)
       auto frameDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(16);
       // Move-THEN-delay, not delay-then-move (this used to be the
       // other way around) -- a real user report (2026-08-06): the
@@ -3760,7 +3770,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     if (epubCoastLevel > 0) {
       bool stop = !app.epubVerticalDragActive();
       if (!stop) {
-        const fm::ScrollStep &step = fm::arrowSpeedStep(epubCoastLevel);  // usilicrcのARROW(2026-10-09から縦書きも)
+        const fm::ScrollStep &step = guiSpeedStep(epubCoastLevel);  // SPEED(guiSpeedStep()参照)
         int pitch = std::max(1, gui.cellWidthPixels() * fm::epubVerticalColumnPitch());
         auto frameDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(16);
         do {
@@ -3776,7 +3786,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // 変えてそのまま縦方向に継続してほしい"): 左右の慣性で横書きの範囲(奥付等)へ入ったら
       // (scrollEpubVertical()が入る)、同じ段階の上下の慣性として続ける(先へなら下へ)。
       if (stop && app.epubHorizontalSectionActive() && app.currentMode() == fm::ApplicationMode::File) {
-        coastLevel = std::min(epubCoastLevel, fm::arrowSpeedMaxLevel());
+        coastLevel = std::min(epubCoastLevel, guiSpeedMaxLevel());
         coastDirection = epubCoastDirection > 0 ? -1 : 1;
         pixelOffset = 0;
       }
@@ -4835,21 +4845,6 @@ void applyRcOptions(fm::Configuration &configuration, const std::vector<RcOption
           std::cerr << "usilic: -" << option.letter << " only tunes " << tunable << " levels; the extra "
                     << (option.values.size() - tunable) << " trailing value(s) will be ignored.\n";
         fm::applyScrollSpeedOverride(numbers(option.values));
-#ifdef _WIN32
-        // 2026-10-16、直接のユーザー依頼(Windows、"-sで調整してみたい"): 矢印キー・ドラッグで始めた慣性の段は
-        // usilicrcのARROW(fm::arrowSpeedStep())で決まり、SPEEDだけを変えても効かなかった。-c(CUI)の無い
-        // Windowsのネイティブだけ、-sの値をARROWにもそのまま当て、-SならARROWにも書き込む(SPEEDは下の共通の
-        // 書き込み)。MacとLinuxでは当てない(直接のユーザー指摘"-cで起動出来るMacとLinuxでは-sをARROWに当てる
-        // わけにはいかない": ARROWはCUIの行単位のスクロールに合わせた値、HELPの「補足 usilicrc」のARROW)。
-        fm::applyArrowSpeedOverride(numbers(option.values));
-        if (save) {
-          std::string arrow;
-          for (const auto &v : option.values) arrow += (arrow.empty() ? "" : " ") + v;
-          if (!fm::usilicrc::setSection(home, "ARROW", {arrow}))
-            std::cerr << "usilic: -" << option.letter << ": cannot write ARROW to " << fm::usilicrc::userPath(home)
-                      << "\n";
-        }
-#endif
         section = "SPEED";
         // 書く値は、足りない段を今の値で埋めた全段(どの段が何μsかを一目で分かるように)。
         std::string line;

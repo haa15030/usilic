@@ -31118,3 +31118,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      重ねる経路に「引数無しの自動の-g」も挙げたが誤り。2026-09-26から制御端末があれば引数無しはCUIが既定で、重ねる
      のは`usilic -g`と^Ogだけ。usilic.app(制御端末が無い)はいつも-gで、重ねる端末が無いのでtryEnterGuiPhase()の
      appearance無しの経路。
+
+869. **-gの慣性スクロールはARROWを使わず、SPEEDの段で動かす**(2026-10-16、直接のユーザー指摘と依頼"-g起動では明らかに
+     ARROWの設定で動いている。-gではARROWは不要でよろしく")
+   - ARROWはCUIの行単位のスクロールに合わせた値(HELPの「補足 usilicrc」のARROW)だが、2026-10-09・10-15から-gの
+     矢印キー・縦書きの左右・ドラッグで始めた慣性の最速の段も、ARROW(fm::arrowSpeedStep()・arrowSpeedMaxLevel())で
+     動いていた。
+   - main.cppにguiSpeedStep()・guiSpeedMaxLevel()(SPEED、fm::kScrollSpeedLevels)を足し、-gの経路(runGuiPhase()の
+     矢印キーのstepCoastByKey()、慣性の1ドットの待ち、縦書きの左右、ドラッグを離した時のresolveCoastLevel())は
+     それを使う。resolveCoastLevel()に最速の段の引数を足した(CUIは今まで通りARROW)。
+   - これで-gは-sで調整できるので、項目865・866の「Windowsだけ-sの値をARROWにも当てる」は取り消した。usilicrc・
+     usilicrc.enのARROWの説明は「CUI(-c)だけ、-gはSPEED」に、HELP_.txt(未コミット)の711行目も同じ趣旨に直した。
