@@ -111,6 +111,26 @@ bool ensureUser(const std::string &home) {
   return std::filesystem::copy_file(*installed, user, ec) && !ec;
 }
 
+namespace {
+bool writeAtomically(const std::string &path, const std::string &text);  // 下で定義
+
+// 節の値の行(前後の空白を除いたもの)。節が無ければnullopt。
+std::optional<std::vector<std::string>> sectionValues(const std::string &text, const std::string &section) {
+  std::vector<std::string> lines = splitKeepingLines(text);
+  auto header = findHeader(lines, section);
+  if (!header) return std::nullopt;
+  std::vector<std::string> values;
+  for (std::size_t i = *header + 1; i < sectionEnd(lines, *header); i++) {
+    if (!isValueLine(lines[i])) continue;
+    std::string value = lines[i].substr(lines[i].find_first_not_of(" \t"));
+    while (!value.empty() && (value.back() == '\n' || value.back() == '\r' || value.back() == ' ' || value.back() == '\t'))
+      value.pop_back();
+    values.push_back(value);
+  }
+  return values;
+}
+}  // namespace
+
 std::string updateUserIfOlder(const std::string &home) {
   if (home.empty()) return {};
   std::string user = userPath(home);
@@ -128,8 +148,16 @@ std::string updateUserIfOlder(const std::string &home) {
   std::string backup = user + "." + day + ".bak";
   if (std::filesystem::exists(backup, ec)) backup = user + "." + stamp + ".bak";
   if (!std::filesystem::copy_file(user, backup, ec) || ec) return {};
-  if (!std::filesystem::copy_file(*installed, user, std::filesystem::copy_options::overwrite_existing, ec) || ec)
-    return {};
+  // 2026-10-16、直接のユーザー報告(Windows、"^J^Fの設定が保存されてなかったみたい"): usilic自身が書き込む節
+  // (^J^FのFONT・SANS-SERIF・SERIF、-s等の起動オプションで保存するもの、setSection()の呼び出し元)は、
+  // 置き換えても前の値を引き継ぐ。以前は新しい版(Windowsではzipを展開し直すたび)で起動すると消えていた。
+  std::string userText = readFile(user), installedText = readFile(*installed), merged = installedText;
+  for (const char *section : {"FONT", "SANS-SERIF", "SERIF", "SPEED", "DRAG", "WAIT", "BUFFER", "LINE"}) {
+    auto mine = sectionValues(userText, section);
+    if (mine && *mine != sectionValues(installedText, section).value_or(std::vector<std::string>{}))
+      merged = replaceSection(merged, section, *mine, installedText);
+  }
+  if (!writeAtomically(user, merged)) return {};
   return backup;
 }
 

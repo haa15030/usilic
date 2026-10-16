@@ -394,6 +394,23 @@ LargeGlyphPlacement placeLargeGlyph(const std::vector<int> &kinds, int index) {
   return {s - shift + (index - s) * pitch, pitch};
 }
 
+// 環境変数USILICLINEHEIGHTによる1行の高さ(マスの高さ)。整数はピクセル、小数点を含めば字の大きさ(ポイント=
+// ピクセル)に対する倍率(CSSのline-heightと同じ、例: 1.2)。無い・不正ならcomputed(フォントから求めた高さ)のまま。
+// 2026-10-16、直接のユーザー報告(Windows、=ka〜=kd.png): ピクセルの指定は字の大きさを変えると合わなくなる
+// (22pt前後の字に18ピクセルの行で、横書きの字が縮んだ)ので倍率も受け付け、字の大きさを変えた時(adjustFontSize()・
+// setFont())にも当てる(以前は起動時だけで、^+等で字の大きさを変えると消えていた)。
+int lineHeightFor(int pointSize, int computed) {
+  const char *env = std::getenv("USILICLINEHEIGHT");
+  if (!env || !*env) return computed;
+  if (std::string(env).find('.') != std::string::npos) {
+    double ratio = std::atof(env);
+    if (ratio > 0.0) return std::max(1, static_cast<int>(pointSize * ratio + 0.5));
+    return computed;
+  }
+  int parsed = std::atoi(env);
+  return parsed > 0 ? parsed : computed;
+}
+
 SDL_Rect fitGlyphRect(int boxX, int boxY, int maxW, int maxH, int surfaceW, int surfaceH,
                        bool allowWidthOverflow = false) {
   float scale = allowWidthOverflow
@@ -1274,10 +1291,7 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   // コード変更+再ビルドのラウンドではなく環境変数経由で調整可能」
   // というパターン。設定されると、完全に計算されたcellHeight
   // (CJKフォールバックの最大値の後)を完全に上書きする。
-  if (const char *env = std::getenv("USILICLINEHEIGHT")) {
-    int parsed = std::atoi(env);
-    if (parsed > 0) cellHeight = parsed;
-  }
+  cellHeight = lineHeightFor(fontPointSize, cellHeight);  // 2026-10-16、倍率も(lineHeightFor()参照)
 
   // SDL_WINDOW_ALLOW_HIGHDPI: これが無いと、Retina/HiDPIディスプレイ
   // では、SDLはウィンドウの実際の描画領域を「論理的な」ポイント解像
@@ -2413,6 +2427,7 @@ void GraphicalDisplay::adjustFontSize(int deltaPoints) {
       cellHeight = std::max(cellHeight, cjkHeight);
     }
   }
+  cellHeight = lineHeightFor(newPointSize, cellHeight);
   impl_->currentFontPointSize = newPointSize;
   impl_->cellWidth = cellWidth;
   impl_->cellHeight = cellHeight;
@@ -2512,6 +2527,7 @@ bool GraphicalDisplay::setFont(FontKind kind, const std::string &path) {
   if (resized) setSizeAll(impl_->currentFontPointSize);
   int cellWidth = 0, cellHeight = 0;
   measure(cellWidth, cellHeight);
+  cellHeight = lineHeightFor(impl_->currentFontPointSize, cellHeight);
   if (cellWidth > 0 && cellHeight > 0) {
     impl_->cellWidth = cellWidth;
     impl_->cellHeight = cellHeight;
