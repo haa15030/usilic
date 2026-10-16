@@ -281,6 +281,12 @@ ARROW
 # levels faster (25000 with the values below); the arrow keys then use all
 # the levels. Without this section, SPEED is used.  The -g window does not
 # use it and runs with the SPEED values.
+#
+# Unlike -g, which scrolls by dots, the CUI scrolls by lines, so carrying the
+# drag speed straight into coasting would leave no slow speed suitable for
+# reading.  So coasting started by a drag starts two levels faster, and the
+# slow side is adjusted with the arrow keys.  There is no option like
+# usilic -s to try values, so edit the values here.
 
 	200000 100000 25000 10000 5000 2000 1000 500 200 100 50 20
 
@@ -300,7 +306,7 @@ LINE-HEIGHT
 # The height of one line of the -g window, as a ratio to the character size
 # (as CSS line-height).  Horizontal text uses it between lines; a vertical
 # EPUB puts one character per line, so there it is the space between
-# characters.  The vertical value is used while a vertical screen is shown,
+# characters (1.0 joins up the dots of "……").  The vertical value is used while a vertical screen is shown,
 # and the number of lines changes with the window size unchanged.  Without
 # the vertical value it is the same as the horizontal one.  Without this
 # section the font's own line height is used.
@@ -317,7 +323,12 @@ URL
 #   Open  run program with the URL (open it in the default browser etc.)
 #   Pdf   make the whole page one tall PDF page with program (url2pdf), save
 #         it in ~/Downloads and open it with Quick Look (xdg-open on Linux).
-#         Playwright is needed (see ~/.local/lib/usilic/url2pdf's comment)
+#         It runs a headless Chromium with Playwright, so this setup is
+#         needed (on Linux also playwright install-deps (sudo) and a
+#         Japanese font):
+#           python3 -m venv ~/.local/lib/usilic/venv
+#           ~/.local/lib/usilic/venv/bin/pip install playwright
+#           ~/.local/lib/usilic/venv/bin/python -m playwright install chromium
 #   Dump  read the output of program with the URL in usilic (^G back to the book)
 #   Term  run program with the URL in the terminal (like EXEC)
 #   Copy  pass the URL to program's standard input (copy to the clipboard)

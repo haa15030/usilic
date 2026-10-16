@@ -270,6 +270,12 @@ ARROW
 # 慣性は 2 つ速い方へずらした段(下の値なら 25000)から始まり、その後の矢印
 # キーでは全部の段を使えます。この節が無ければ SPEED の値。-g の画面では使わず、
 # SPEED の値で動きます。
+#
+# ドット単位でスクロールする -g と違い、CUI は行単位でスクロールするので、
+# ドラッグの速さをそのまま慣性につなげると、読むのに向いた低速が使えません。
+# そこでドラッグで始めた慣性は 2 段速い方から始め、低速は矢印キーで合わせる
+# ようにしています。usilic -s のような試すオプションは無いので、ここの値を
+# 直して調整してください。
 
 	200000 100000 25000 10000 5000 2000 1000 500 200 100 50 20
 
@@ -287,8 +293,9 @@ LINE-HEIGHT
 #
 # -g の画面の 1 行の高さを、字の大きさに対する倍率で書きます(CSS の
 # line-height と同じ)。横書きは行と行の間、縦書きの EPUB は 1 行に 1 字を
-# 置くので字と字の間になります。縦書きの画面ではそちらの値に切り替わり、
-# 窓の大きさはそのままで行数が変わります。縦書きを省けば横書きと同じ値。
+# 置くので字と字の間になります(1.0 で「……」がつながります)。縦書きの画面
+# ではそちらの値に切り替わり、窓の大きさはそのままで行数が変わります。縦書き
+# を省けば横書きと同じ値。
 # この節が無ければ、フォントの行の高さを使います。
 
 	1.2  1.0
@@ -302,8 +309,12 @@ URL
 #   Open  program に URL を渡して起動(既定のブラウザで開く等)
 #   Pdf   program(url2pdf)でページ全体を縦長の 1 ページの PDF にして
 #         ~/Downloads へ保存し、クイックルックで開く(Linux は xdg-open)。
-#         Playwright の準備が要ります(~/.local/lib/usilic/url2pdf の
-#         コメント参照)
+#         画面無しの Chromium を Playwright で動かすので、次の準備が
+#         要ります(Linux ではさらに playwright install-deps(要 sudo)と
+#         日本語フォント)。
+#           python3 -m venv ~/.local/lib/usilic/venv
+#           ~/.local/lib/usilic/venv/bin/pip install playwright
+#           ~/.local/lib/usilic/venv/bin/python -m playwright install chromium
 #   Dump  program に URL を渡した出力を usilic の画面で読む(^G で本へ戻る)
 #   Term  program に URL を渡して端末で起動(EXEC と同じ、終われば本へ戻る)
 #   Copy  program の標準入力へ URL を渡す(クリップボードへコピー)

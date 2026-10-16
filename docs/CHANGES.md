@@ -31129,3 +31129,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      それを使う。resolveCoastLevel()に最速の段の引数を足した(CUIは今まで通りARROW)。
    - これで-gは-sで調整できるので、項目865・866の「Windowsだけ-sの値をARROWにも当てる」は取り消した。usilicrc・
      usilicrc.enのARROWの説明は「CUI(-c)だけ、-gはSPEED」に、HELP_.txt(未コミット)の711行目も同じ趣旨に直した。
+
+870. **HELPの「補足 usilicrc」(ARROW・LINE-HEIGHT・URL)をusilicrcのコメントへ移し、HELP.epubからは注釈で参照**
+     (2026-10-16、直接のユーザー依頼"src/HELP_.txtのそれらは削除してusilicrcのコメント文にマージしてくれればいい。
+     HELP.epubからは注釈で参照")
+   - usilicrc・usilicrc.en: ARROWにCUIでドラッグの慣性を2段速い方から始める理由と「試すオプションは無いのでここを
+     直す」を、LINE-HEIGHTに「1.0で「……」がつながる」を、URLのPdfにPlaywrightの準備のコマンド3行を足した(HELP
+     の補足にしか無かった説明)。help2epub.pyは「usilicrc の ARROW」等を巻末の注釈にし、中身はこのコメント
+     (見出しの直後の「#」の行が続く所まで)。
+   - HELP_.txt(未コミット): 「補足」の「④usilicrc」の項(ARROW・LINE-HEIGHT・URL)を消した。本文から注釈で
+     参照されるよう、「端末でのマウス」に「慣性スクロールの速さは、SPEED ではなく usilicrc の ARROW の値です」、
+     GUIのウィンドウの大きさの所に「行の高さ…は usilicrc の LINE-HEIGHT で変えられます」を足し、「後述 usilicrc
+     の URL」「前述の usilicrc の URL」は「usilicrc の URL」に。
