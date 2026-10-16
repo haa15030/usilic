@@ -740,6 +740,9 @@ struct GraphicalDisplay::Impl {
   // 読み込む(見つからなければserifFontMissingを立て、以後はふだんのフォントで描く)。
   TTF_Font *serifFont = nullptr;
   bool serifFontMissing = false;
+  // 縦書き用の字(U+FE10〜FE19・FE30〜FE4F)を持つフォント(verticalFormFontFor()参照)。開いた時の大きさも覚える。
+  TTF_Font *verticalFormsFont = nullptr;
+  int verticalFormsFontPointSize = 0;
   // 今開いているフォントのファイル(GraphicalDisplay::currentFontPath()参照)。
   std::string fontPath, fallbackFontPath, serifFontPath;
   // setContentOffsetX()参照。
@@ -1001,6 +1004,44 @@ TTF_Font *serifFontFor(ImplT &impl, unsigned int codepoint) {
   return impl.serifFont;
 }
 
+// 2026-10-16、直接のユーザー報告(Windows、=ju.png・=jx.png、縦書きの句読点・括弧が豆腐): 縦書きの句読点・括弧は
+// 縦書き用の字(epub_vertical.cppのverticalForms())に置き換えてあるが、MS明朝・MSゴシックはその字を持たない。
+// 選んだフォント(chosen)に無ければ、開いている他のフォント、それにも無ければ持っているフォント(游明朝・
+// 游ゴシック・メイリオ・ヒラギノ・Noto等)をその字だけに使う。どれにも無ければchosenのまま。
+template <typename ImplT>
+TTF_Font *verticalFormFontFor(ImplT &impl, TTF_Font *chosen, unsigned int codepoint) {
+  bool verticalForm = (codepoint >= 0xFE10 && codepoint <= 0xFE19) || (codepoint >= 0xFE30 && codepoint <= 0xFE4F);
+  if (!verticalForm || glyphProvidedByFont(chosen, codepoint)) return chosen;
+  for (TTF_Font *other : {impl.serifFont, impl.fallbackFont, impl.font})
+    if (glyphProvidedByFont(other, codepoint)) return other;
+  if (impl.verticalFormsFontPointSize != impl.currentFontPointSize) {
+    if (impl.verticalFormsFont) TTF_CloseFont(impl.verticalFormsFont);
+    impl.verticalFormsFont = nullptr;
+    impl.verticalFormsFontPointSize = impl.currentFontPointSize;
+    static const char *const candidates[] = {
+        "C:/Windows/Fonts/yumin.ttf",
+        "C:/Windows/Fonts/YuGothM.ttc",
+        "C:/Windows/Fonts/meiryo.ttc",
+        "/mnt/c/Windows/Fonts/yumin.ttf",
+        "/mnt/c/Windows/Fonts/meiryo.ttc",
+        "/System/Library/Fonts/ヒラギノ明朝 ProN.ttc",
+        "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    };
+    for (const char *path : candidates) {
+      TTF_Font *opened = TTF_OpenFont(path, std::max(impl.currentFontPointSize, 1));
+      if (!opened) continue;
+      if (glyphProvidedByFont(opened, 0xFE11)) {
+        impl.verticalFormsFont = opened;
+        break;
+      }
+      TTF_CloseFont(opened);
+    }
+  }
+  return glyphProvidedByFont(impl.verticalFormsFont, codepoint) ? impl.verticalFormsFont : chosen;
+}
+
 template <typename ImplT>
 SDL_Texture *cachedGlyphTexture(ImplT &impl, TTF_Font *font, const std::string &glyph, int style, int hinting,
                                  SDL_Color color, bool narrow, int &outW, int &outH, bool rotate90 = false) {
@@ -1016,6 +1057,27 @@ SDL_Texture *cachedGlyphTexture(ImplT &impl, TTF_Font *font, const std::string &
   SDL_Surface *surface = TTF_RenderUTF8_Blended(font, glyph.c_str(), color);
   if (!surface) return nullptr;
   if (narrow) boostGlyphAlpha(surface, kNarrowGlyphAlphaGamma);
+  // 2026-10-16、直接のユーザー報告(Windows、=jv.png・=jz.png、USILICLINEHEIGHT=18/19で横書きの和文の字の間が空く):
+  // 面の高さはフォントの行の高さ(メイリオは字の大きさの約1.5倍)で、マスより高いとfitGlyphRect()が字ごと縮めて
+  // いた。全角の字は、縮めずに字の本体(emの箱、和文は上端がベースラインの0.88em上)を中心にマスの高さだけ切り出す。
+  // emの箱自体がマスより大きい時は、今まで通りfitGlyphRect()が縮める。
+  if (!narrow && !rotate90 && surface->h > impl.cellHeight && impl.cellHeight > 0) {
+    int em = std::max(impl.currentFontPointSize, 1);
+    int emCenter = TTF_FontAscent(font) - static_cast<int>(em * 0.38 + 0.5);
+    int keep = std::max(impl.cellHeight, std::min(surface->h, em));
+    int top = std::clamp(emCenter - keep / 2, 0, std::max(0, surface->h - keep));
+    SDL_Surface *source = SDL_ConvertSurfaceFormat(surface, SDL_PIXELFORMAT_ARGB8888, 0);
+    SDL_Surface *cropped = source ? SDL_CreateRGBSurfaceWithFormat(0, source->w, keep, 32, SDL_PIXELFORMAT_ARGB8888)
+                                  : nullptr;
+    if (cropped) {
+      SDL_Rect src{0, top, source->w, keep};
+      SDL_SetSurfaceBlendMode(source, SDL_BLENDMODE_NONE);
+      SDL_BlitSurface(source, &src, cropped, nullptr);
+      SDL_FreeSurface(surface);
+      surface = cropped;
+    }
+    if (source) SDL_FreeSurface(source);
+  }
   // 2026-10-06追加、直接のユーザー報告(WSL、"「ループ」の「ー」...ひだりに10(5？)度ほど傾いている"):
   // 縦書きの「ー」等はSDL_RenderCopyEx()で90度回していたが、レンダラーによっては回転がちょうど
   // 90度にならない(WSLでだけ傾く)と見て、画素そのものを時計回りに90度入れ替えた面を作り、
@@ -1371,6 +1433,7 @@ GraphicalDisplay::~GraphicalDisplay() {
     }
   }
   if (impl_->serifFont) TTF_CloseFont(impl_->serifFont);
+  if (impl_->verticalFormsFont) TTF_CloseFont(impl_->verticalFormsFont);
   if (impl_->fallbackFont) TTF_CloseFont(impl_->fallbackFont);
   if (impl_->font) TTF_CloseFont(impl_->font);
   TTF_Quit();
@@ -1690,6 +1753,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // おかしい"、スクリーンショット=iu: M・O・U・D・W・m等だけ小さい): 明朝体の欧文は字ごとに幅が違うので、幅の広い字が
   // 半角1マスに収まらず縮めて描かれていた。半角(1マス幅)の字は明朝体にせず基本の等幅フォントで描く(縦書きは2マス幅)。
   if (TTF_Font *serif = cell.serif && isWide ? serifFontFor(*impl_, codepoint) : nullptr) renderFont = serif;
+  renderFont = verticalFormFontFor(*impl_, renderFont, codepoint);  // 縦書き用の字が無いフォント(それ自身のコメント参照)
   // 2026-08-11: TTF_HINTING_LIGHT(項目263)もフォント依存だと判明した
   // ――実際の報告により、デフォルトプロファイルの「MS Gothic」の組み
   // 合わせでは完全に直る(fontTools経由で確認済み: msgothic.ttcのgasp
@@ -1989,6 +2053,7 @@ void GraphicalDisplay::renderCursor() {
   // おかしい"、スクリーンショット=iu: M・O・U・D・W・m等だけ小さい): 明朝体の欧文は字ごとに幅が違うので、幅の広い字が
   // 半角1マスに収まらず縮めて描かれていた。半角(1マス幅)の字は明朝体にせず基本の等幅フォントで描く(縦書きは2マス幅)。
   if (TTF_Font *serif = cell.serif && isWide ? serifFontFor(*impl_, codepoint) : nullptr) renderFont = serif;
+  renderFont = verticalFormFontFor(*impl_, renderFont, codepoint);  // 縦書き用の字が無いフォント(それ自身のコメント参照)
   // renderCell()と同じ半角用ヒンティングの調整――それ自身のコメント
   // 参照。(TTF_SetFontStyle()/TTF_SetFontHinting()自体は、下で呼ばれる
   // cachedGlyphTexture()の中へ移動した――それ自身のコメント参照。)
@@ -4003,6 +4068,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
         renderFont = impl_->fallbackFont;
       if (TTF_Font *serif = wantSerif && isWide ? serifFontFor(*impl_, codepoint) : nullptr)
         renderFont = serif;  // 明朝体(半角はrenderCell()と同じく等幅フォント、2026-10-11)
+      renderFont = verticalFormFontFor(*impl_, renderFont, codepoint);
       // renderCell()自身のもの(`if (cell.bold) style |= TTF_STYLE_BOLD;`
       // 等)と同じスタイルの計算――この関数は以前は`attributes`に
       // 関わらず常にTTF_STYLE_NORMALをレンダリングしていた(この関数
