@@ -1,5 +1,7 @@
 #include "usilicrc_file.hpp"
 
+#include "platform.hpp"
+
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -180,7 +182,7 @@ bool writeAtomically(const std::string &path, const std::string &text) {
     out << text;
     if (!out) return false;
   }
-  return std::rename(temp.c_str(), path.c_str()) == 0;
+  return replaceFile(temp, path);  // Windowsでも置き換える(platform.hpp参照)
 }
 }  // namespace
 

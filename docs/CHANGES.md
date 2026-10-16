@@ -31001,3 +31001,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      tryEnterGuiPhase()が使う前回の大きさ・作る行数と桁数、GraphicalDisplay::open()で表示した時の行数・桁数・
      セルの大きさ・窓とレンダラーのピクセル数をUSILICGUIDEBUGのファイルへ書く。
    - cmd.exeのメッセージが英語なのはそのままでいい(ユーザーの返事、項目856)。
+
+859. **Windowsで、history等の書き換えが最初の1回の後ずっと失敗していたのを直す**(2026-10-16、項目858のログ
+     (=gui.log)から)
+   - ログ: `tryEnterGuiPhase: saved 0x0 0pt ... create rows 24 columns 80 16pt`、`open: rows 24 columns 80 cell 8x24
+     ... window 684x596 ... font=C:/Windows/Fonts/msgothic.ttc`。窓は最初から80桁で開いていた(MSゴシック16ptの
+     半角が8ピクセルなので、80桁で640ピクセル)。「80桁未満」に見えたのは字が小さいため。
+   - 前回の大きさが0x0(保存されていない)なのは、saveHistoryToDisk()が一時ファイルからstd::rename()で置き換えて
+     いたため。Windowsのrename()は置き換え先があると失敗するので、historyが一度できた後は、窓の大きさを含めて
+     一度も書き換わっていなかった。
+   - fm::replaceFile()(platform.hpp、POSIXはrename()、WindowsはMoveFileExWのMOVEFILE_REPLACE_EXISTING)を足し、
+     history・history.old、起動ディレクトリの記録(main.cpp)、usilicrcの書き換え(usilicrc_file.cppの
+     writeAtomically())で使う。std::filesystem::rename()の所(application.cpp)は、libstdc++がWindowsでも
+     置き換えるのでそのまま。

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <fstream>
 #include <iterator>
 #include <sys/stat.h>
@@ -10,6 +11,12 @@
 #include "child_process.hpp"
 
 namespace fm {
+
+#ifndef _WIN32  // Windowsはplatform_win.cpp(MoveFileExW)
+bool replaceFile(const std::string &from, const std::string &to) {
+  return std::rename(from.c_str(), to.c_str()) == 0;
+}
+#endif
 
 bool procVersionLooksLikeWsl(const std::string &procVersion) {
   std::string lower = procVersion;

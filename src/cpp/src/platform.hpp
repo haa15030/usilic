@@ -36,6 +36,9 @@ bool openOnWindowsHost(const std::string &target);
 std::string utf8ToUtf16LeWithBom(const std::string &utf8);
 // Windowsのクリップボードへ(WSLはclip.exe、MSYSは/dev/clipboardへUTF-8のまま書く)。
 bool copyToWindowsClipboard(const std::string &utf8);
+// fromをtoへ名前を変える。toが既にあれば置き換える(2026-10-16: Windowsのrename()は、toがあると失敗する。
+// 一時ファイルに書いてから置き換える保存(history等)が、Windowsでは最初の1回の後ずっと失敗していた)。
+bool replaceFile(const std::string &from, const std::string &to);
 
 #ifdef _WIN32
 // Windowsのネイティブだけのもの(platform_win.cpp)。パスはUTF-8で、区切りは/にする。

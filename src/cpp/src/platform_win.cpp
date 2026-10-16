@@ -61,6 +61,10 @@ void prepareWindowsEnvironment() {
   }
 }
 
+bool replaceFile(const std::string &from, const std::string &to) {
+  return MoveFileExW(widen(from).c_str(), widen(to).c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED) != 0;
+}
+
 bool openWithWindowsShell(const std::string &target) {
   std::wstring wide = widen(target);
   // URLでなければ\区切りにする(エクスプローラは/のパスを開けないことがある)。

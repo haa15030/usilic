@@ -286,8 +286,10 @@ void saveHistoryToDisk(const fm::History &sessionHistory, const std::string &usi
     std::ofstream out(historyTmpPath, std::ios::binary);
     out << diskHistory.serialize("usilic", currentTimestampText());
   }
-  if (!currentDiskText.empty()) std::rename(historyPath.c_str(), historyOldPath.c_str());
-  std::rename(historyTmpPath.c_str(), historyPath.c_str());
+  // fm::replaceFile(): std::rename()はWindowsでは置き換え先があると失敗し、historyが最初の1回の後ずっと
+  // 更新されなかった(2026-10-16、-gの窓の大きさが保存されていなかった件)。
+  if (!currentDiskText.empty()) fm::replaceFile(historyPath, historyOldPath);
+  fm::replaceFile(historyTmpPath, historyPath);
 
   releaseHistoryLock(historyLockPath);
 }
@@ -4722,7 +4724,7 @@ bool tryHandoffToParentShell(int argc, char **argv) {
   if (out) {
     out << resolved << "\n";
     out.close();
-    ::rename(tmpPath.c_str(), path.c_str());
+    fm::replaceFile(tmpPath, path);  // Windowsでも置き換える(saveHistoryToDisk()参照)
   }
   // 2026-09-10追加: 元は直接のユーザー報告("^Jpusilic ...が反応しない
   // →/tmp/に戻るだけ")の調査中に見つけた、別口の潜在バグの防御。
