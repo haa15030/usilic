@@ -31092,7 +31092,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 
 867. **端末の窓に重ねて開く-g(macOSの「実はすでにGUI」)でも、字の大きさと窓の大きさを保存して使う**(2026-10-16、
      直接のユーザー報告"macOSの-gでもフォントサイズとウィンドウサイズが保存されない")
-   - Terminal.app等から`usilic -g`(や引数無しの自動の-g)で起動すると、端末の窓にぴったり重ねる経路
+   - Terminal.app等から`usilic -g`で起動すると(引数無しはCUIが既定、項目868の後の訂正参照)、端末の窓にぴったり重ねる経路
      (guiOwnsWholeSession)を通り、窓の大きさ・字の大きさは毎回端末に合わせていた(matchWindowSize())。保存した
      値(History::guiPreferences())を読まず、終わりに保存もしていなかった(保存はtryEnterGuiPhase()、つまり
      usilic.app・^Ogの時だけ)。
@@ -31114,3 +31114,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      大きさ・色を使い、usilicrcのFONTもUSILICFONTも無ければ保存した端末のフォントを使う。
    - GuiPreferences::terminalFontPath(新設)は、historyのUSILICの行の末尾(modeLineVisibleの後)に足した(古い
      historyでは空)。
+   - **訂正**(同日、直接のユーザー質問"usilic.appは常に-g起動だっけ？"への答えで気付いた): 項目867と返答では、端末に
+     重ねる経路に「引数無しの自動の-g」も挙げたが誤り。2026-09-26から制御端末があれば引数無しはCUIが既定で、重ねる
+     のは`usilic -g`と^Ogだけ。usilic.app(制御端末が無い)はいつも-gで、重ねる端末が無いのでtryEnterGuiPhase()の
+     appearance無しの経路。
