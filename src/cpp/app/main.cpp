@@ -4826,9 +4826,20 @@ void applyRcOptions(fm::Configuration &configuration, const std::vector<RcOption
       case 's': {
         int tunable = static_cast<int>(fm::kScrollSpeedLevels.size()) - 1;
         if (static_cast<int>(option.values.size()) > tunable)
-          std::cerr << "usilic: -" << option.letter << " only tunes " << tunable << " levels; the extra "
-                    << (option.values.size() - tunable) << " trailing value(s) will be ignored.\n";
+          std::cerr << "usilic: -" << option.letter << ": SPEED uses only " << tunable << " levels (ARROW uses all "
+                    << option.values.size() << ").\n";
         fm::applyScrollSpeedOverride(numbers(option.values));
+        // 2026-10-16、直接のユーザー依頼(Windows、"-sで調整してみたい"): 矢印キー・ドラッグで始めた慣性の段は
+        // usilicrcのARROW(fm::arrowSpeedStep())で決まり、SPEEDだけを変えても効かなかった。-sの値をARROWにも
+        // そのまま当て、-SならARROWにも書き込む(SPEEDは下の共通の書き込み)。
+        fm::applyArrowSpeedOverride(numbers(option.values));
+        if (save) {
+          std::string arrow;
+          for (const auto &v : option.values) arrow += (arrow.empty() ? "" : " ") + v;
+          if (!fm::usilicrc::setSection(home, "ARROW", {arrow}))
+            std::cerr << "usilic: -" << option.letter << ": cannot write ARROW to " << fm::usilicrc::userPath(home)
+                      << "\n";
+        }
         section = "SPEED";
         // 書く値は、足りない段を今の値で埋めた全段(どの段が何μsかを一目で分かるように)。
         std::string line;
@@ -4926,7 +4937,7 @@ int main(int argc, char **argv) {
                    "  -c            CUI (terminal) mode\n"
                    "  -g            GUI (window) mode\n"
                    "  -H            also open HELP in a child usilic\n"
-                   "  -s usec ...   scroll SPEED per level (1-10)\n"
+                   "  -s usec ...   scroll SPEED per level (1-10), also ARROW (all levels)\n"
                    "  -d dot ...    flick DRAG thresholds per level (1-10)\n"
                    "  -f file       FONT file for -g\n"
                    "  -w wait       macro WAIT (x 10 msec)\n"

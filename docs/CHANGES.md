@@ -31072,3 +31072,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - tools/gen_graphical_display_stub.py: Windowsだけで宣言しているもの(scanFontFiles)は#ifdef _WIN32で囲む。
    - HELP_.txt(未コミット)の「補足 usilicrc」にLINE-HEIGHTを足した。
    - 確認: make usilic・make WINDOWS=1 usilicが通った。-gの見た目は未確認(Macのこの環境では窓を撮れなかった)。
+
+865. **Windowsの慣性スクロールの最速の段の制限を外し、-sをARROWにも当てる**(2026-10-16、直接のユーザー依頼
+     (Windows)"スクロールの最高速が遅すぎるんで規制を解除してみて。-sで調整してみたい")
+   - arrowSpeedMaxLevel()の、Windowsのネイティブでは1ドットの待ちが2000usec未満の段を使わない制限(項目840)を
+     外した。
+   - 矢印キー・ドラッグで始めた慣性の段はusilicrcのARROW(arrowSpeedStep())で決まり、-sが変えるSPEEDは(ARROWが
+     ある限り)効かなかった。-sの値をARROWにもそのまま当て(applyArrowSpeedOverride())、-SならARROWにも書き込む。
+     SPEEDの段数(10)を超えた値の警告は「SPEEDは10段だけ、ARROWは全部」に。usageの-sの説明、usilicrc・
+     usilicrc.enのARROWの説明、HELP_.txt(未コミット)のARROWの補足も直した。usilicrcの冒頭の節の一覧に
+     LINE-HEIGHT(項目864)を足した。

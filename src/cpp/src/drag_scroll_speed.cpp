@@ -93,18 +93,8 @@ int dragArrowSpeedOffset() { return gArrowSpeedValues.empty() ? 0 : kDragArrowSp
 int arrowSpeedMaxLevel() {
   int max = gArrowSpeedValues.empty() ? static_cast<int>(kScrollSpeedLevels.size()) - 1
                                       : static_cast<int>(gArrowSpeedValues.size());
-#ifdef _WIN32
-  // 2026-10-15、直接のユーザー報告(Windows 11、"7,8段目から瞬時に末尾・先頭。一瞬で到達...瞬時の手前を見極めて
-  // それより高速は無しでもいいんじゃない？画面ドラッグスクロールで実用的なのは定速の方だから"): Windowsのネイティブ
-  // では、1ドットごとの待ちが2000usec未満の段(ARROWの既定では7段目の1000から)は使わず、その手前の段を最速にする。
-  // 待ちを正確にしても(preciseSleepMicroseconds())直らなかった。
-  constexpr long kWindowsFastestMicros = 2000;
-  while (max > 1) {
-    const ScrollStep &step = arrowSpeedStep(max);
-    if (!step.busyLoop && step.microseconds >= kWindowsFastestMicros) break;
-    max--;
-  }
-#endif
+  // 2026-10-15にWindowsのネイティブでは1ドットの待ちが2000usec未満の段を使わないようにしたが、2026-10-16に外した
+  // (直接のユーザー依頼"スクロールの最高速が遅すぎるんで規制を解除してみて。-sで調整してみたい")。
   return max;
 }
 

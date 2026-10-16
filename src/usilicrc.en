@@ -6,7 +6,8 @@
 # other line is an error.
 #
 # ARCHIVE, FILE, EXEC, EGREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
-# LINE, WAIT, CP, MV, RM, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT, URL, KEY, MACRO
+# LINE, WAIT, CP, MV, RM, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT, LINE-HEIGHT, URL,
+# KEY, MACRO
 #
 # usilicrc is the same file with Japanese comments.
 # -------------------------------------------------------------
@@ -278,7 +279,8 @@ ARROW
 # the arrow keys on horizontal-text screens and for left/right on vertical
 # EPUB. Coasting started by a mouse drag starts two levels faster (25000 with
 # the values below); the arrow keys then use all the levels. Without this
-# section, SPEED is used.
+# section, SPEED is used.  The values of usilic -s also apply here, and
+# usilic -S writes them here too.
 
 	200000 100000 25000 10000 5000 2000 1000 500 200 100 50 20
 
