@@ -399,6 +399,16 @@ Configuration::Configuration() {
       command = {windowsTarArgv({"-tvf"}), std::nullopt};
     }
 #endif
+#ifdef __APPLE__
+    // 2026-10-16: macOSのtar(bsdtar)は"._X"(AppleDouble)を直後の項目の付加情報として一覧から隠す。本体の
+    // 無い"._"だけの書庫では半分が消えるので、全部を受け取り、本体と組になるものだけを
+    // TarReader::parseListing()が隠す(archive_reader.cppのisPairedAppleDouble()参照)。
+    if (kind == ArchiveKind::Tar && !command.argv.empty() && command.argv[0] == "tar" && command.argv.size() >= 2 &&
+        command.argv[1] == "tvf") {
+      command.argv[1] = "-tvf";
+      command.argv.insert(command.argv.begin() + 1, {"--options", "tar:!mac-ext"});
+    }
+#endif
     SuffixEntry e;
     e.suffix = suffix;
     e.command = std::move(command);

@@ -1,3 +1,5 @@
+#include <cstdio>
+
 #include "archive_reader.hpp"
 #include "doctest.h"
 
@@ -45,14 +47,59 @@ TEST_CASE("TarReader::parseListing: GNU tar format (owner/group field)") {
       "-rw-r--r-- haa15030/wheel  163 2026-07-28 00:57 sub/._file1.txt\n"
       "-rw-r--r-- haa15030/wheel    6 2026-07-28 00:57 sub/file1.txt\n";
   auto entries = reader.parseListing(listing);
-  REQUIRE(entries.size() == 4);
-  CHECK(entries[0].name == "._sub");
-  CHECK(entries[0].size == 163);
-  CHECK(entries[1].name == "sub/");
-  CHECK(entries[1].isDirectory == true);
-  CHECK(entries[1].size == 0);
-  CHECK(entries[3].name == "sub/file1.txt");
-  CHECK(entries[3].size == 6);
+  // 2026-10-16: 本体のすぐ前の"._sub"・"sub/._file1.txt"は付加情報として隠す(isPairedAppleDouble())。
+  REQUIRE(entries.size() == 2);
+  CHECK(entries[0].name == "sub/");
+  CHECK(entries[0].isDirectory == true);
+  CHECK(entries[0].size == 0);
+  CHECK(entries[1].name == "sub/file1.txt");
+  CHECK(entries[1].size == 6);
+}
+
+// 2026-10-16、直接のユーザー報告(src/dot.tar、"._"だけ16個の書庫がMacでは8件): 本体と組にならない
+// "._"は全部出し、すぐ後ろに本体がある"._X"だけを隠す。
+TEST_CASE("TarReader::parseListing: only AppleDouble sidecars followed by their file are hidden") {
+  TarReader reader;
+  std::string listing =
+      "-rwxrw-rw-  0 nobody nogroup  4096  9 16 17:39 ._a.ts\n"
+      "-rwxrw-rw-  0 nobody nogroup  4096  9 16 17:39 ._b.ts\n"
+      "-rw-r--r--  0 u      staff     163 10 16 12:00 ._c.txt\n"
+      "-rw-r--r--  0 u      staff       6 10 16 12:00 c.txt\n";
+  auto entries = reader.parseListing(listing);
+  REQUIRE(entries.size() == 3);
+  CHECK(entries[0].name == "._a.ts");
+  CHECK(entries[1].name == "._b.ts");
+  CHECK(entries[2].name == "c.txt");
+}
+
+TEST_CASE("TarReader::locateContent: skips only the sidecar paired with the next entry") {
+  auto pad = [](std::string s, std::size_t n) { s.resize(((s.size() + n - 1) / n) * n, '\0'); return s; };
+  auto tarHeader = [&](const std::string &name, std::size_t size) {
+    std::string h = pad(name, 512);
+    char octal[12];
+    std::snprintf(octal, sizeof octal, "%011zo", size);
+    h.replace(124, 11, octal);
+    return h;
+  };
+  std::string data;
+  data += tarHeader("._orphan", 6);
+  data += pad("ORPHAN", 512);
+  data += tarHeader("._c.txt", 4);
+  data += pad("META", 512);
+  data += tarHeader("c.txt", 6);
+  data += pad("hello\n", 512);
+  data += std::string(1024, '\0');
+
+  TarReader reader;
+  std::string listing =
+      "-rw-r--r--  0 u staff 6 10 16 12:00 ._orphan\n"
+      "-rw-r--r--  0 u staff 4 10 16 12:00 ._c.txt\n"
+      "-rw-r--r--  0 u staff 6 10 16 12:00 c.txt\n";
+  auto entries = reader.parseListing(listing);
+  REQUIRE(entries.size() == 2);
+  reader.locateContent(reinterpret_cast<const unsigned char *>(data.data()), data.size(), entries);
+  CHECK(data.substr(entries[0].contentOffset, 6) == "ORPHAN");
+  CHECK(data.substr(entries[1].contentOffset, 6) == "hello\n");
 }
 
 // 2026-08-19 fix, a real report + reproduction: tarring a directory

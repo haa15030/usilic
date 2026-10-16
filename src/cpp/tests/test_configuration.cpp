@@ -74,13 +74,21 @@ TEST_CASE("built-in defaults: the ARCHIVE table's compiled-in suffixes resolve w
   ArchiveKind kind = ArchiveKind::None;
   auto tar = config.programForSuffix("backup.tar", &kind);
   REQUIRE(tar.has_value());
+#ifdef __APPLE__
+  CHECK(tar->argv == std::vector<std::string>{"tar", "--options", "tar:!mac-ext", "-tvf"});
+#else
   CHECK(tar->argv == std::vector<std::string>{"tar", "tvf"});
+#endif
   CHECK_FALSE(tar->pipedFromArgv.has_value());
   CHECK(kind == ArchiveKind::Tar);
 
   auto tgz = config.programForSuffix("backup.tgz", &kind);
   REQUIRE(tgz.has_value());
+#ifdef __APPLE__
+  CHECK(tgz->argv == std::vector<std::string>{"tar", "--options", "tar:!mac-ext", "-tvf", "-"});
+#else
   CHECK(tgz->argv == std::vector<std::string>{"tar", "tvf", "-"});
+#endif
   REQUIRE(tgz->pipedFromArgv.has_value());
   CHECK(*tgz->pipedFromArgv == std::vector<std::string>{"gzip", "-dc"});
 
@@ -169,7 +177,11 @@ TEST_CASE("ARCHIVE directive: aliases a new suffix onto an existing built-in com
   ArchiveKind kind = ArchiveKind::None;
   auto aliased = config.programForSuffix("thing.tzst", &kind);
   REQUIRE(aliased.has_value());
+#ifdef __APPLE__
+  CHECK(aliased->argv == std::vector<std::string>{"tar", "--options", "tar:!mac-ext", "-tvf", "-"});
+#else
   CHECK(aliased->argv == std::vector<std::string>{"tar", "tvf", "-"});
+#endif
   REQUIRE(aliased->pipedFromArgv.has_value());
   CHECK(*aliased->pipedFromArgv == std::vector<std::string>{"gzip", "-dc"});
   CHECK(kind == ArchiveKind::Tar);

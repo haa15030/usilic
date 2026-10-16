@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
+#include <cstring>
 
 namespace fm {
 
@@ -149,9 +151,24 @@ ArchiveEntry parseTarLine(const std::string &rawLine) {
 
 }  // namespace
 
+// 2026-10-16、直接のユーザー依頼(dot.tarがMacでは8件、Windowsでは16件。"._"だけを集めたtar): sidecarが
+// AppleDoubleの"._X"で、nextがそのすぐ後ろの本体のX(ディレクトリなら"X/")か。macOSのtarは"._"を、名前に
+// 関係なく「直後の項目の付加情報」として一覧から隠していた(本体の無い"._"が続くと半分が消える)。今は
+// `tar --options tar:!mac-ext`(configuration.cpp)で全部を受け取り、本体と組になる"._X"だけをusilicが隠す。
+bool isPairedAppleDouble(const std::string &sidecar, std::string next) {
+  std::size_t slash = sidecar.rfind('/');
+  std::size_t base = slash == std::string::npos ? 0 : slash + 1;
+  if (sidecar.compare(base, 2, "._") != 0 || sidecar.size() <= base + 2) return false;
+  if (next.size() > 1 && next.back() == '/') next.pop_back();
+  return sidecar.substr(0, base) + sidecar.substr(base + 2) == next;
+}
+
 std::vector<ArchiveEntry> TarReader::parseListing(const std::string &listing) const {
+  std::vector<ArchiveEntry> all;
+  for (const auto &line : splitLines(listing)) all.push_back(parseTarLine(line));
   std::vector<ArchiveEntry> entries;
-  for (const auto &line : splitLines(listing)) entries.push_back(parseTarLine(line));
+  for (std::size_t i = 0; i < all.size(); i++)
+    if (!(i + 1 < all.size() && isPairedAppleDouble(all[i].name, all[i + 1].name))) entries.push_back(all[i]);
   return entries;
 }
 
@@ -229,32 +246,68 @@ long parseTarOctalField(const unsigned char *p, int len) {
 // 移植自身の実際のutf8.tar再現アーカイブ)。フィールド内の「最後の」
 // '/'を探すことで両方を扱える: '/'が全く無ければ何もしない
 // (フィールド全体が既にベース名である)。
-bool isSidecarHeader(const unsigned char *header, const unsigned char *end) {
-  const unsigned char *limit = std::min(header + 100, end);
-  const unsigned char *nameEnd = header;
-  while (nameEnd < limit && *nameEnd != '\0') nameEnd++;
-  const unsigned char *base = header;
-  for (const unsigned char *q = header; q < nameEnd; q++) {
-    if (*q == '/') base = q + 1;
+//
+// 2026-10-16: 一覧が本体の無い"._"も載せるようになった(isPairedAppleDouble()参照)ので、ここで飛ばすのも
+// 「すぐ後ろの本体と組になる"._X"」だけにした。名前は、一覧の文字列(macOSではNFDに直される)ではなく、
+// 生のヘッダー同士(PAXの"path="、GNUの'L'、ustarのprefix+name)で比べる。
+
+// pから(PAXの'x'・GNUの長い名前の'L'の前置きを越えた)本物のヘッダーと、その完全な名前。
+struct RawTarHeader {
+  const unsigned char *header;
+  std::string name;
+};
+
+RawTarHeader readRawTarHeader(const unsigned char *p, const unsigned char *end) {
+  std::string longName;
+  while (p + 512 <= end + 1) {
+    char type = static_cast<char>(p[156]);
+    if (type != 'x' && type != 'X' && type != 'L') break;
+    long size = parseTarOctalField(p + 124, 12);
+    const unsigned char *data = p + 512;
+    if (size <= 0 || data + size > end + 1) return {p + 512, longName};  // 不正な形――ベストエフォート、単に通り過ぎる
+    std::string body(reinterpret_cast<const char *>(data), static_cast<std::size_t>(size));
+    if (type == 'L') {
+      longName = body.substr(0, body.find('\0'));
+    } else {
+      // PAXのレコード: "<長さ> <鍵>=<値>\n"の繰り返し。
+      std::size_t pos = 0;
+      while (pos < body.size()) {
+        std::size_t space = body.find(' ', pos);
+        if (space == std::string::npos) break;
+        std::size_t length = std::strtoul(body.c_str() + pos, nullptr, 10);
+        if (length == 0 || pos + length > body.size()) break;
+        std::string record = body.substr(space + 1, pos + length - space - 2);  // 末尾の\nを除く
+        if (record.rfind("path=", 0) == 0) longName = record.substr(5);
+        pos += length;
+      }
+    }
+    p = data + ((static_cast<std::size_t>(size) + 511) / 512) * 512;
   }
-  return base + 2 <= nameEnd && base[0] == '.' && base[1] == '_';
+  if (p >= end) return {p, longName};
+  if (!longName.empty()) return {p, longName};
+  auto field = [p](int offset, int length) {
+    const char *f = reinterpret_cast<const char *>(p + offset);
+    return std::string(f, strnlen(f, static_cast<std::size_t>(length)));
+  };
+  std::string name = field(0, 100);
+  if (std::memcmp(p + 257, "ustar", 5) == 0) {
+    std::string prefix = field(345, 155);
+    if (!prefix.empty()) name = prefix + "/" + name;
+  }
+  return {p, name};
 }
 
 const unsigned char *findTarHeader(const unsigned char *cp, const unsigned char *base, const unsigned char *end) {
   const unsigned char *p = base + (((cp - base) + 511) & ~511);
   while (p < end) {
-    const unsigned char *header = p;
-    if (p + 157 <= end && (p[156] == 'x' || p[156] == 'X')) {
-      long paxSize = parseTarOctalField(p + 124, 12);
-      const unsigned char *paxData = p + 512;
-      header = (paxSize > 0 && paxData + paxSize <= end)
-                   ? paxData + ((static_cast<std::size_t>(paxSize) + 511) / 512) * 512
-                   : p + 512;  // 不正な形のPAXレコード――ベストエフォート、単に通り過ぎる
-    }
-    if (header >= end || !isSidecarHeader(header, end)) return header;
-    long entrySize = parseTarOctalField(header + 124, 12);
+    RawTarHeader current = readRawTarHeader(p, end);
+    if (current.header >= end) return current.header;
+    long entrySize = parseTarOctalField(current.header + 124, 12);
     std::size_t entryBlocks = 1 + (static_cast<std::size_t>(std::max<long>(0, entrySize)) + 511) / 512;
-    p = header + entryBlocks * 512;
+    const unsigned char *next = current.header + entryBlocks * 512;
+    if (next >= end) return current.header;
+    if (!isPairedAppleDouble(current.name, readRawTarHeader(next, end).name)) return current.header;
+    p = next;
   }
   return end;
 }

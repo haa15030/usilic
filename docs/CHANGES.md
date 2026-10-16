@@ -31205,3 +31205,19 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (C:/・C:\)と\\で始まるパスを絶対パスとして扱い、途中に打った"/C:/"からも始め直す。正規化した結果は
      /区切りにした(generic_string())。
    - 確認: macOS・Windows(クロス)のビルドと、ARC・PathResolverのテストのみ。
+
+875. **ARCのtar: 本体と組になる"._X"(AppleDouble)だけを隠し、本体の無い"._"は全部出す(Mac・Windows・Linux)**
+   (2026-10-16、直接のユーザー報告「名前は直ったが件数は違う」(src/dot.tar、Windows 16件・Mac 8件)→
+   説明の後「その形で作って」)
+   - 原因: dot.tarは"._"(AppleDouble)だけが16個入った書庫。macOSのtar(bsdtar)は、"._"を名前に関係なく
+     「直後の項目の付加情報」として一覧から隠すので、"._"が続くと1・3・5…番目が消えていた。
+   - configuration.cpp: macOSの組み込みのtarの一覧を`tar --options tar:!mac-ext -tvf …`にして全部を受け取る。
+   - archive_reader.cpp: TarReader::parseListing()は、すぐ後ろに本体X(ディレクトリはX/)がある"._X"だけを
+     隠す(isPairedAppleDouble())。Macで作った普通のtarは今までどおり本体だけが並ぶ。
+   - locateContent()(Macの中身の表示)のfindTarHeader()も、飛ばすのを「組になる"._X"」だけにした。名前は
+     生のヘッダー同士(PAXのpath=、GNUの'L'、ustarのprefix+name)で比べる(一覧の名前はmacOSでNFDに
+     直されるため)。以前のisSidecarHeader()(全部の"._"を飛ばす)は無くした。
+   - 取り出しは今までどおり(Macのtarは取り出しの時に"._"を本体の拡張属性として戻す)。
+   - テスト: test_archive_reader.cppのGNU tarの一覧のテストを新しい動きに直し、組にならない"._"の一覧・
+     中身の位置のテストを足した。test_configuration.cppはmacOSの一覧のコマンドを#ifdefで分けた。
+     実物のdot.tar(16件)とMacで作ったtar(._d・d/・d/._c.txt・d/c.txt→d/・d/c.txtの2件)で確認した。
