@@ -1,5 +1,6 @@
 #include "path_resolver.hpp"
 
+#include <cctype>
 #include <filesystem>
 
 namespace fm {
@@ -41,11 +42,28 @@ ResolvedPath PathResolver::resolve(const std::string &rawPath, const std::string
   // 2つ目の絶対パスによる上書きが、先に入力された分より優先される。
   std::size_t lastDoubleSlash = path.rfind("//");
   if (lastDoubleSlash != std::string::npos) path = path.substr(lastDoubleSlash + 1);
+#ifdef _WIN32
+  // 2026-10-16、直接のユーザー報告(Windows 11、"^X^Fは一覧が出るだけで選んでもスルーされる"): Windowsの
+  // 絶対パスはドライブ名で始まる(C:/Users/…)。以前は'/'で始まらないので相対パスとみなしてbaseDirectoryを
+  // 前に付け、存在しないパスにしていた。上の"//"と同じく、途中に打ち込んだ"/C:/"もそこから始め直す。
+  auto isDriveAt = [&path](std::size_t i) {
+    return i + 2 < path.size() && std::isalpha(static_cast<unsigned char>(path[i])) && path[i + 1] == ':' &&
+           (path[i + 2] == '/' || path[i + 2] == '\\');
+  };
+  for (std::size_t i = path.size(); i-- > 1;)
+    if ((path[i - 1] == '/' || path[i - 1] == '\\') && isDriveAt(i)) {
+      path = path.substr(i);
+      break;
+    }
+  bool windowsAbsolute = isDriveAt(0) || path.rfind("\\\\", 0) == 0;
+#else
+  bool windowsAbsolute = false;
+#endif
 
   // まだ相対パスのまま(先頭が'/'でなく、上の~展開も効いていない)
   // 場合: 呼び出し側がbaseDirectoryを渡していればそこへ結合する
   // ――このパラメータ自身の宣言コメント参照。
-  if (!path.empty() && path.front() != '/' && !baseDirectory.empty()) {
+  if (!path.empty() && path.front() != '/' && !windowsAbsolute && !baseDirectory.empty()) {
     std::string base = baseDirectory;
     if (base.back() != '/') base += '/';
     path = base + path;
@@ -58,7 +76,11 @@ ResolvedPath PathResolver::resolve(const std::string &rawPath, const std::string
   bool isDir = std::filesystem::is_directory(path, ec) && !ec;
   bool exists = std::filesystem::exists(path, ec) && !ec;
 
+#ifdef _WIN32
+  std::string normalized = std::filesystem::path(path).lexically_normal().generic_string();  // \でなく/で
+#else
   std::string normalized = std::filesystem::path(path).lexically_normal().string();
+#endif
   if (isDir && (normalized.empty() || normalized.back() != '/')) normalized += '/';
 
   result.path = normalized;

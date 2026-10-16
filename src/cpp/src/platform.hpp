@@ -1,6 +1,8 @@
 #pragma once
 
+#include <initializer_list>
 #include <string>
+#include <vector>
 
 namespace fm {
 
@@ -54,6 +56,9 @@ void showWindowsError(const std::string &message);
 // tar・圧縮したtar・zip・7z・rar・lzhのどれもこれで行う(2026-10-16)。cmd.exeは/で書いたプログラムのパスを
 // 読めないので、区切りは\のまま。
 std::string windowsTarCommand();
+// tar.exeの最初の引数: 名前をtarの中ではUTF-8として読ませる(既定はシステムのコードページなので、MacやLinuxで
+// 作ったtarの日本語の名前が化ける。tarの形式だけに効くので、CP932で書かれたlzh・zipはそのまま)。
+std::vector<std::string> windowsTarArgv(std::initializer_list<std::string> args);
 // tar.exe等の出力がUTF-8でなければ、システムのANSIのコードページ(日本語版ではCP932)として読んでUTF-8にする
 // (usilic.exe自身はマニフェストでUTF-8だが、子のプログラムはシステムのコードページで書く)。
 std::string windowsSystemTextToUtf8(const std::string &text);

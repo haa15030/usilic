@@ -31187,3 +31187,21 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (^は打った行の写しがマーカーと一致しないように)。マーカーの後ろの空白・\rは除いて比べる(ConPTY)。
    - 確認: macOS・Windows(クロス)のビルドと、ARCのテスト(--source-file='*archive*')のみ。Windowsでの動作、
      特に日本語の名前(CP932で出るか)は未確認。
+
+874. **Windows 11: tarの日本語の名前、(ls)から開く.zip、^X^Fで選んだファイルが開かない件**
+   (2026-10-16、直接のユーザー報告「win11版へsrc/dot.tarをコピーして開いてみたらこうなった。=kl.png
+   src/にある.lzh、.7z、.rarは問題無し。.zipは未実装？ ^X^Fは一覧が出るだけで選んでもスルーされる。」)
+   - dot.tar: tar.exeは、tarの中の名前をシステムのコードページ(CP932)として読む。MacやLinuxで作ったtarは
+     UTF-8なので、名前が化けたり\351のような8進のエスケープになったりしていた。tar.exeには必ず
+     `--options tar:hdrcharset=UTF-8`を付ける(platform.hppのwindowsTarArgv())。この指定はtarの形式にだけ効くので、
+     CP932で書かれたlzh・zipには影響しない。
+   - .zip: (ls)の^MでのARCの一覧は、Application::startArchiveLoadAsync()→ChildProcess::startCapturing()を通る。
+     ここはrun()と違って内蔵のunzipを使わず、unzip.exeを起動しようとして失敗し、zipを普通のファイルとして
+     開いていた。Windows版のstartCapturing()は、内蔵のもの(ls・grep・unzip・file)がPATHに無い時、
+     別のスレッドでrun()を動かし、その出力をパイプへ書くようにした。スレッドのハンドルを、プロセスのハンドルと
+     同じくg_processesに入れるので、hasExited()はそのまま使える。^O^Mのバッジも"(tar)"にした。
+   - ^X^F: 選んだパスはexecutePathInput()→PathResolver::resolve()を通る。resolve()は「'/'で始まらなければ
+     相対パス」とみなしていたので、C:/Users/…の前に今のディレクトリを付けていた。Windowsでは、ドライブ名
+     (C:/・C:\)と\\で始まるパスを絶対パスとして扱い、途中に打った"/C:/"からも始め直す。正規化した結果は
+     /区切りにした(generic_string())。
+   - 確認: macOS・Windows(クロス)のビルドと、ARC・PathResolverのテストのみ。

@@ -39,6 +39,12 @@ std::string windowsTarCommand() {
   return (root && *root ? narrow(root) : std::string("C:\\Windows")) + "\\System32\\tar.exe";
 }
 
+std::vector<std::string> windowsTarArgv(std::initializer_list<std::string> args) {
+  std::vector<std::string> argv = {windowsTarCommand(), "--options", "tar:hdrcharset=UTF-8"};
+  argv.insert(argv.end(), args.begin(), args.end());
+  return argv;
+}
+
 std::string windowsSystemTextToUtf8(const std::string &text) {
   if (text.empty()) return text;
   if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), static_cast<int>(text.size()), nullptr, 0) > 0)

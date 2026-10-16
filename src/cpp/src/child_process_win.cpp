@@ -11,6 +11,7 @@
 #include <windows.h>
 
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -377,9 +378,63 @@ bool ChildProcess::hasExited(pid_t pid) {
   return true;
 }
 
+namespace {
+
+// startCapturing()で内蔵のもの(run()参照)を動かすスレッドに渡すもの。
+struct BuiltinCapture {
+  std::vector<std::string> argv;
+  ChildProcess::Options options;
+  HANDLE write;
+};
+
+DWORD WINAPI runBuiltinCapture(LPVOID param) {
+  std::unique_ptr<BuiltinCapture> job(static_cast<BuiltinCapture *>(param));
+  std::string output = ChildProcess::run(job->argv, job->options).output;
+  std::size_t off = 0;
+  while (off < output.size()) {
+    DWORD n = 0;
+    DWORD chunk = static_cast<DWORD>(std::min<std::size_t>(output.size() - off, 1 << 16));
+    if (!WriteFile(job->write, output.data() + off, chunk, &n, nullptr) || n == 0) break;  // 読む側が閉じた(^G)
+    off += n;
+  }
+  CloseHandle(job->write);
+  return 0;
+}
+
+}  // namespace
+
 ChildProcess::AsyncCapture ChildProcess::startCapturing(const std::vector<std::string> &argv, const Options &options) {
   AsyncCapture capture;
   if (argv.empty()) return capture;
+  // 2026-10-16、直接のユーザー報告(Windows 11、".zipは未実装？"): (ls)の^MのARCの一覧(Application::
+  // startArchiveLoadAsync())はここを通るので、run()が内蔵のもの(ls・grep・unzip・file)で済ませる時も、
+  // 別のスレッドでrun()を動かしてその出力をパイプへ書く。以前はunzip.exeを起動しようとして失敗し、zipを
+  // 普通のファイルとして開いていた。スレッドのハンドルはプロセスと同じく待てるので、hasExited()はそのまま
+  // 使える(スレッドIDはプロセスIDと同じ番号の空間から振られるので、生きている間は重ならない)。
+  bool builtin = argv[0] == "ls" || argv[0] == "grep" || argv[0] == "egrep" || argv[0] == "fgrep" ||
+                 argv[0] == "unzip" || argv[0] == "file";
+  if (builtin && !onPath(argv[0])) {
+    HANDLE outRead = nullptr, outWrite = nullptr;
+    if (!makePipe(outRead, outWrite, false)) return capture;
+    SetHandleInformation(outWrite, HANDLE_FLAG_INHERIT, 0);  // 同じ頃に起動する子に渡さない(閉じられなくなる)
+    auto *job = new BuiltinCapture{argv, options, outWrite};
+    job->options.input = nullptr;
+    DWORD threadId = 0;
+    HANDLE thread = CreateThread(nullptr, 0, runBuiltinCapture, job, 0, &threadId);
+    if (!thread) {
+      delete job;
+      closeHandle(outWrite);
+      closeHandle(outRead);
+      return capture;
+    }
+    {
+      std::lock_guard<std::mutex> lock(g_mutex);
+      g_processes[static_cast<pid_t>(threadId)] = thread;
+    }
+    capture.pid = static_cast<pid_t>(threadId);
+    capture.fd = _open_osfhandle(reinterpret_cast<intptr_t>(outRead), _O_RDONLY | _O_BINARY);
+    return capture;
+  }
   HANDLE outRead = nullptr, outWrite = nullptr;
   if (!makePipe(outRead, outWrite, false)) return capture;
   HANDLE in = openNul(false), err = openStderr(options);

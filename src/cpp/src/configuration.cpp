@@ -396,7 +396,7 @@ Configuration::Configuration() {
     if (kind == ArchiveKind::Tar || kind == ArchiveKind::Lha || kind == ArchiveKind::Rar ||
         kind == ArchiveKind::SevenZip) {
       kind = ArchiveKind::Tar;
-      command = {{windowsTarCommand(), "tvf"}, std::nullopt};
+      command = {windowsTarArgv({"-tvf"}), std::nullopt};
     }
 #endif
     SuffixEntry e;

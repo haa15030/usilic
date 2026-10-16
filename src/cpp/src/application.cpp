@@ -13178,6 +13178,9 @@ bool Application::startArchivePagerLoadAsync(const std::string &path, const std:
   archiveLoadPendingPath_ = path;
   archiveLoadPendingDirectory_ = directory;
   archiveLoadPendingBadge_ = command->argv.empty() ? "" : "(" + command->argv.front() + ")";
+#ifdef _WIN32
+  if (!command->argv.empty() && command->argv.front() == windowsTarCommand()) archiveLoadPendingBadge_ = "(tar)";
+#endif
   archiveLoadForPager_ = true;
   return true;  // 今は待機中――awaitingArchiveLoad()/pollArchiveLoadCompletion()参照
 }
@@ -13389,7 +13392,7 @@ std::vector<std::string> Application::buildArchiveExtractArgv(const std::string 
   // zipは、Windowsに付いているtar.exe(bsdtar)で取り出す。cmd.exeには内蔵のunzipが無いため。中の名前は
   // そのまま渡す(bsdtarの\はWindowsではパスの区切りとも読まれるので、エスケープしない)。
   if (kind == ArchiveKind::Tar || kind == ArchiveKind::Zip) {
-    std::vector<std::string> argv = {windowsTarCommand(), "xf", archivePath, "-C", destination};
+    std::vector<std::string> argv = windowsTarArgv({"-xf", archivePath, "-C", destination});
     argv.insert(argv.end(), members.begin(), members.end());
     return argv;
   }

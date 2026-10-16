@@ -347,7 +347,7 @@ std::optional<std::vector<unsigned char>> ArchiveMode::extractSelected() {
     std::filesystem::remove_all(tempDir, ec);
     std::filesystem::create_directories(tempDir, ec);
     ChildProcess::Result result =
-        ChildProcess::run({windowsTarCommand(), "xf", currentArchive_, "-C", tempDir, entries_[idx].name});
+        ChildProcess::run(windowsTarArgv({"-xf", currentArchive_, "-C", tempDir, entries_[idx].name}));
     std::optional<std::vector<unsigned char>> content;
     std::ifstream in(tempDir + "/" + entries_[idx].name, std::ios::binary);
     if (result.ok && in)
