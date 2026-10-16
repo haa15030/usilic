@@ -5,9 +5,9 @@
 # section; the lines inside a section begin with a tab (or spaces).  Any
 # other line is an error.
 #
-# ARCHIVE, FILE, EXEC, EGREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
-# LINE, WAIT, CP, MV, RM, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT, LINE-HEIGHT, URL,
-# KEY, MACRO
+# ARCHIVE, FILTER, LAUNCH, EGREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
+# LINE, WAIT, CP, MV, RM, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT,
+# LINE-HEIGHT, URL, KEY, MACRO
 #
 # usilicrc is the same file with Japanese comments.
 # -------------------------------------------------------------
@@ -44,11 +44,11 @@ ARCHIVE
 #	.apk	.zip
 #	.cbr	.rar
 
-FILE
+FILTER
 # Format: `suffix' `program' (option)
 #
 # The `program' displays the content of a file with the `suffix' as
-# plain text.
+# plain text.  (The former section name FILE is also accepted.)
 
 	.gz	gzip	-dc
 	.bz2	bzip2	-dc
@@ -57,10 +57,11 @@ FILE
 	.lzma	xz	-dc
 	.zst	zstd	-dc
 
-EXEC
+LAUNCH
 # Format: `suffix' `program' (option)
 #
 # The `program' is launched with a file that has the `suffix'.
+# (The former section name EXEC is also accepted.)
 #
 # macOS note: a bare app name (e.g. IINA) is not a command on $PATH, so
 # it cannot be launched.  Use `open' (the .mp4 examples below).  `open -a'
@@ -330,7 +331,7 @@ URL
 #           ~/.local/lib/usilic/venv/bin/pip install playwright
 #           ~/.local/lib/usilic/venv/bin/python -m playwright install chromium
 #   Dump  read the output of program with the URL in usilic (^G back to the book)
-#   Term  run program with the URL in the terminal (like EXEC)
+#   Term  run program with the URL in the terminal (like LAUNCH)
 #   Copy  pass the URL to program's standard input (copy to the clipboard)
 #   Look  Quick Look (macOS only, no program needed)
 #   Epub  for a usilic-web URL (src/web/README), download a book chosen from

@@ -31141,3 +31141,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      参照されるよう、「端末でのマウス」に「慣性スクロールの速さは、SPEED ではなく usilicrc の ARROW の値です」、
      GUIのウィンドウの大きさの所に「行の高さ…は usilicrc の LINE-HEIGHT で変えられます」を足し、「後述 usilicrc
      の URL」「前述の usilicrc の URL」は「usilicrc の URL」に。
+
+871. **usilicrcの節名FILEをFILTER、EXECをLAUNCHに改める**(2026-10-16、直接のユーザー質問"FILEがモード名と同じで
+     紛らわしいのとEXECは同じ機能を果たす、より適切な項目名って何かない？"への案に"FILTER、LAUNCHでよろしく")
+   - Configuration: directiveKeywords()の"FILE"・"EXEC"を"FILTER"・"LAUNCH"に(添字は同じ)。canonicalKeyword()で
+     以前のFILE・EXEC(とEGREP→GREP)も同じ節として読む。KEY・MACROの節の終わりの判定(isDirectiveKeyword())も
+     別名を見る。tests/test_configuration.cppにテストを1つ。
+   - usilicrc・usilicrc.en: 節名と冒頭の一覧を改め、「以前の節名 FILE/EXEC も使えます」を足した。URLのTermの
+     「EXEC と同じ」は「LAUNCH と同じ」に。HELP_.txt(未コミット)の「usilicrc の ＦＩＬＥ」(2か所、モード名と紛れない
+     よう全角にしてあった)は「usilicrc の FILTER」、「usilicrc の EXEC」は「usilicrc の LAUNCH」に(半角なので
+     HELP.epubでは注釈になる)。
+   - ~/.usilic/usilicrcは、新しい版の最初の起動で(配ったusilicrcの方が新しいので)新しい節名のものに置き換わる
+     (項目683・863)。

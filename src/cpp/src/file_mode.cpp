@@ -542,7 +542,7 @@ std::string FileMode::loadAndTransformContent(const std::string &path) const {
       return expandHelpMarkup(*markup);
   }
   // 2026-10-02追加、直接のユーザー報告(doc/tcb.1.gzを^Mするとバイナリ判定、"gzip -dcは何処へ？"):
-  // usilicrcのFILE節(拡張子ごとの表示用フィルタ、.gz→gzip -dc等)は読み込むだけで、表示に一度も
+  // usilicrcのFILTER節(以前のFILE、拡張子ごとの表示用フィルタ、.gz→gzip -dc等)は読み込むだけで、表示に一度も
   // 使っていなかった。最も長く一致した拡張子がFILE節のもの(ARCHIVE・EXECではない)なら、その
   // コマンドにファイルを渡した出力を内容にし、以降の整形(roffならgroff等)はそのまま通す。
   // コマンドが失敗したら、従来どおりファイルそのものを読む。

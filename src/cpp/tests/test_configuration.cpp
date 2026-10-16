@@ -472,3 +472,14 @@ TEST_CASE("built-in archive aliases: .tar.gz/.taz/.tar.z/.jar/.tbz2/.txz/.tzst w
   CHECK(kindOf("a.tar.gz") == fm::ArchiveKind::Tar);
   CHECK(kindOf("a.gz") == fm::ArchiveKind::None);
 }
+
+// 2026-10-16(canonicalKeyword()参照): 節名はFILTER・LAUNCHが正式で、以前のFILE・EXECも同じ節として読む。
+TEST_CASE("Configuration: FILTER/LAUNCH and the former FILE/EXEC names") {
+  for (const char *names : {"FILTER\nLAUNCH", "FILE\nEXEC"}) {
+    std::string filter = std::string(names).substr(0, std::string(names).find('\n'));
+    std::string launch = std::string(names).substr(std::string(names).find('\n') + 1);
+    fm::Configuration config;
+    REQUIRE(config.loadRcText(filter + "\n\t.gz\tgzip\t-dc\n\n" + launch + "\n\t.xcf\topen\t-a\tGIMP\n", true));
+    CHECK(config.errors().empty());
+  }
+}

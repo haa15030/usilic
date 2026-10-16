@@ -43,7 +43,8 @@ const std::vector<std::string> &directiveKeywords() {
   // 無い――ディレクティブはusilicrc内でどの順序でも現れてよい――
   // が、str.cとの照合を容易にするために保持されている)。
   static const std::vector<std::string> kKeywords = {
-      "ARCHIVE", "FILE", "EXEC",   "EDITOR", "SHELL", "GREP", "PROGRAM", "BUFFER", "CODE",
+      // 2026-10-16: "FILTER"・"LAUNCH"は以前の"FILE"・"EXEC"(canonicalKeyword()参照)。
+      "ARCHIVE", "FILTER", "LAUNCH", "EDITOR", "SHELL", "GREP", "PROGRAM", "BUFFER", "CODE",
       // "LINE"は2026-10-02にHISTORYから改名(.steering/20261002-help-key-usilicrc-reorg/)。
       "LINE",    "WAIT", "SCROLL", "LS",     "KEY",   "CP",   "MV",      "RM",
       // 2026-09-12追加、直接のユーザー依頼(columnThreshold()自身の
@@ -63,6 +64,23 @@ const std::vector<std::string> &directiveKeywords() {
       "LINE-HEIGHT",
   };
   return kKeywords;
+}
+
+// 節名の別名を正式な名前(directiveKeywords()の名前)にする。
+// 2026-09-27、直接のユーザー依頼("usilicrcのGREP（←「EGREP」に変更よろしく）"): 節名はEGREPが正式。以前の
+// usilicrcのGREPも同じ節として受け付ける(内部の添字は元のGREPのまま)。
+// 2026-10-16、直接のユーザー依頼(FILE・EXECは"FILEがモード名と同じで紛らわしいのとEXECは同じ機能を果たす、より
+// 適切な項目名って何かない？"への案に"FILTER、LAUNCHでよろしく"): FILE→FILTER、EXEC→LAUNCH。以前の名前も読む。
+std::string canonicalKeyword(const std::string &keyword) {
+  if (keyword == "EGREP") return "GREP";
+  if (keyword == "FILE") return "FILTER";
+  if (keyword == "EXEC") return "LAUNCH";
+  return keyword;
+}
+
+bool isDirectiveKeyword(const std::string &token) {
+  const auto &keywords = directiveKeywords();
+  return std::find(keywords.begin(), keywords.end(), canonicalKeyword(token)) != keywords.end();
 }
 
 std::vector<std::string> splitLines(const std::string &text) {
@@ -477,11 +495,7 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
     while (i < lines.size() && isContinuationLine(lines[i])) i++;
     if (i >= lines.size()) break;
 
-    std::string keyword = firstToken(lines[i]);
-    // 2026-09-27、直接のユーザー依頼("usilicrcのGREP（←「EGREP」に変更
-    // よろしく）"): 節名はEGREPが正式。以前のusilicrcのGREPも同じ節として
-    // 受け付ける(内部の添字は元のGREPのまま)。
-    if (keyword == "EGREP") keyword = "GREP";
+    std::string keyword = canonicalKeyword(firstToken(lines[i]));  // 別名(canonicalKeyword()参照)
     auto it = std::find(keywords.begin(), keywords.end(), keyword);
     if (it == keywords.end()) {
       errors_.push_back("unrecognized directive: " + lines[i]);
@@ -517,8 +531,8 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         }
         break;
       }
-      case 1:    // FILE
-      case 2: {  // EXEC
+      case 1:    // FILTER(以前のFILE)
+      case 2: {  // LAUNCH(以前のEXEC)
         bool exec = (index == 2);
         while (auto data = nextDataLine(lines, i)) {
           if (auto parsed = parseSuffixLine(*data, errors_)) {
@@ -646,7 +660,7 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         // やコメントだけの行)は無視する。キー表記自体の検査は、組み込みの
         // 表と突き合わせるKeyBindings::configure()が行う。
         while (i < lines.size()) {
-          if (std::find(keywords.begin(), keywords.end(), firstToken(lines[i])) != keywords.end()) break;
+          if (isDirectiveKeyword(firstToken(lines[i]))) break;
           auto trimmed = trimCommentAndLeadingWs(lines[i]);
           i++;
           if (!trimmed) continue;
@@ -733,7 +747,7 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
       case 23: {  // MACRO(macros()自身のコメント参照)
         macros_.clear();
         while (i < lines.size()) {
-          if (std::find(keywords.begin(), keywords.end(), firstToken(lines[i])) != keywords.end()) break;
+          if (isDirectiveKeyword(firstToken(lines[i]))) break;
           auto trimmed = trimCommentAndLeadingWs(lines[i]);
           i++;
           if (!trimmed) continue;

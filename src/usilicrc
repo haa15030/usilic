@@ -4,9 +4,9 @@
 # 行頭が以下の見出しの行が節の始まりで、節の中身の行はタブ(または空白)で
 # 始めます。それ以外の文字で始まる行はエラーになります。
 #
-# ARCHIVE, FILE, EXEC, EGREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
-# LINE, WAIT, CP, MV, RM, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT, LINE-HEIGHT, URL,
-# KEY, MACRO
+# ARCHIVE, FILTER, LAUNCH, EGREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
+# LINE, WAIT, CP, MV, RM, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT,
+# LINE-HEIGHT, URL, KEY, MACRO
 #
 # 英語のコメント付きの同じ内容のファイルが usilicrc.en です。
 # -------------------------------------------------------------
@@ -43,10 +43,11 @@ ARCHIVE
 #	.apk	.zip
 #	.cbr	.rar
 
-FILE
+FILTER
 # 書式: suffix  program  (option)
 #
 # suffix を持つ file の内容を、program を実行して平文で表示します。
+# (以前の節名 FILE も使えます。)
 
 	.gz	gzip	-dc
 	.bz2	bzip2	-dc
@@ -55,10 +56,11 @@ FILE
 	.lzma	xz	-dc
 	.zst	zstd	-dc
 
-EXEC
+LAUNCH
 # 書式: suffix  program  (option)
 #
 # suffix を持つ file を引数にして program を起動します。
+# (以前の節名 EXEC も使えます。)
 #
 # macOS の注意: アプリ名だけ(例: IINA)は $PATH 上のコマンドではないので
 # 起動できません。open を使います(下の .mp4 の例)。open -a の直後には
@@ -316,7 +318,7 @@ URL
 #           ~/.local/lib/usilic/venv/bin/pip install playwright
 #           ~/.local/lib/usilic/venv/bin/python -m playwright install chromium
 #   Dump  program に URL を渡した出力を usilic の画面で読む(^G で本へ戻る)
-#   Term  program に URL を渡して端末で起動(EXEC と同じ、終われば本へ戻る)
+#   Term  program に URL を渡して端末で起動(LAUNCH と同じ、終われば本へ戻る)
 #   Copy  program の標準入力へ URL を渡す(クリップボードへコピー)
 #   Look  クイックルック(macOS だけ、program は不要)
 #   Epub  usilic-web(src/web/README)の URL なら、本棚の一覧から選んだ本を
