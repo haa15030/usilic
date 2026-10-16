@@ -213,6 +213,20 @@ CP
 #
 # Command of CP.  (default: cp -vR)
 #
+# The macOS cp also copies extended attributes and resource forks (Finder tags
+# and comments, the URL a file was downloaded from, etc.).  Where the
+# destination cannot hold extended attributes (FAT/exFAT USB drives, some
+# NAS, etc.), it puts them in a file named "._<name>" next to the copy (as
+# Finder does; MV across disks does the same).  Seen from Windows or Linux,
+# these "._" files look like files without content.  Even so, -X (do not copy
+# extended attributes) is not the default:
+#  1. Dropped metadata cannot be restored (extra "._" files can be removed
+#     later, e.g. with dot_clean).
+#  2. "._" files appear only when copying to a place that cannot hold
+#     extended attributes (never when copying within APFS on the Mac).
+# Write cp -vRX if you do not want "._" files.  The Linux (GNU) cp does not
+# copy extended attributes with -vR anyway.
+#
 
 #	cp -vRi
 
