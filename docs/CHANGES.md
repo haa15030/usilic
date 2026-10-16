@@ -31221,3 +31221,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - テスト: test_archive_reader.cppのGNU tarの一覧のテストを新しい動きに直し、組にならない"._"の一覧・
      中身の位置のテストを足した。test_configuration.cppはmacOSの一覧のコマンドを#ifdefで分けた。
      実物のdot.tar(16件)とMacで作ったtar(._d・d/・d/._c.txt・d/c.txt→d/・d/c.txtの2件)で確認した。
+
+876. **Windows 11のARC: tar.exeの一覧の\201等(＜＞▽)を元の字に戻す**
+   (2026-10-16、直接のユーザー報告「確認OK。と思ってよくよく見たら\201が付いていた。=kp.png」)
+   - 原因: Windowsのtar.exe(bsdtar)は名前をCP932で書く。その時、2バイト目が0x80以上の字(＜=81 83、
+     ＞=81 84、▽=81 A5等)のバイトを、表示できないものとして\ooo(\201\203等)と書いていた。「…」(81 63)・
+     「　」(81 40)のように2バイト目がASCIIの範囲の字はそのまま出ていた。
+   - archive_mode.cpp: Windowsのtarの一覧は、CP932からUTF-8へ直す前に、\ooo(8進3桁)と\\を元のバイトへ
+     戻す(unescapeBsdtarOctal())。bsdtarは名前の中の\自体を\\と書くので、取り違えない。
+   - 確認: macOS・Windows(クロス)のビルドのみ。

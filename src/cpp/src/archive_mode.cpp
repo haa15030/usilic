@@ -241,6 +241,30 @@ bool ArchiveMode::loadArchive(const std::string &path) {
 // finishLoadFromOutput()自身の宣言コメント参照。loadArchive()自身の
 // 「コマンドを実行する」部分の「後」半分――結果をパースし、状態を
 // 確定する。
+#ifdef _WIN32
+namespace {
+// bsdtarの一覧の\ooo(8進3桁)と\\を元のバイトへ戻す(ArchiveMode::finishLoadFromOutput()参照)。
+std::string unescapeBsdtarOctal(const std::string &text) {
+  auto isOctal = [](char c) { return c >= '0' && c <= '7'; };
+  std::string out;
+  out.reserve(text.size());
+  for (std::size_t i = 0; i < text.size(); i++) {
+    if (text[i] == '\\' && i + 1 < text.size() && text[i + 1] == '\\') {
+      out += '\\';
+      i++;
+    } else if (text[i] == '\\' && i + 3 < text.size() && isOctal(text[i + 1]) && isOctal(text[i + 2]) &&
+               isOctal(text[i + 3])) {
+      out += static_cast<char>(((text[i + 1] - '0') << 6) | ((text[i + 2] - '0') << 3) | (text[i + 3] - '0'));
+      i += 3;
+    } else {
+      out += text[i];
+    }
+  }
+  return out;
+}
+}  // namespace
+#endif
+
 bool ArchiveMode::finishLoadFromOutput(const std::string &path, const std::string &output) {
   ArchiveKind kind = ArchiveKind::None;
   auto command = configuration_.programForSuffix(path, &kind);
@@ -251,7 +275,11 @@ bool ArchiveMode::finishLoadFromOutput(const std::string &path, const std::strin
 
 #ifdef _WIN32
   // Windowsのtar.exeは名前をシステムのコードページ(CP932等)で書く(windowsSystemTextToUtf8()参照)。
-  std::vector<ArchiveEntry> entries = reader->parseListing(windowsSystemTextToUtf8(output));
+  // 2026-10-16、直接のユーザー報告(=kp.png、"\201が付いていた"): その時、2バイト目が0x80以上の字
+  // (＜=81 83・＞=81 84・▽=81 A5等)のバイトを\ooo(\201等)と書いてしまうので、先に元のバイトへ戻す
+  // (bsdtarは名前の中の\自体を\\と書くので、取り違えない)。
+  std::vector<ArchiveEntry> entries = reader->parseListing(
+      windowsSystemTextToUtf8(kind == ArchiveKind::Tar ? unescapeBsdtarOctal(output) : output));
 #else
   std::vector<ArchiveEntry> entries = reader->parseListing(output);
 #endif
