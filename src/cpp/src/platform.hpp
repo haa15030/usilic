@@ -50,6 +50,13 @@ void prepareWindowsEnvironment();
 bool openWithWindowsShell(const std::string &target);
 // コンソールの無いusilic.exeで、起動できない理由をメッセージボックスで知らせる。
 void showWindowsError(const std::string &message);
+// Windows 10以降に付いているtar.exe(%SystemRoot%\System32\tar.exe、libarchiveのbsdtar)。ARCの一覧・中身・取り出しを
+// tar・圧縮したtar・zip・7z・rar・lzhのどれもこれで行う(2026-10-16)。cmd.exeは/で書いたプログラムのパスを
+// 読めないので、区切りは\のまま。
+std::string windowsTarCommand();
+// tar.exe等の出力がUTF-8でなければ、システムのANSIのコードページ(日本語版ではCP932)として読んでUTF-8にする
+// (usilic.exe自身はマニフェストでUTF-8だが、子のプログラムはシステムのコードページで書く)。
+std::string windowsSystemTextToUtf8(const std::string &text);
 #endif
 
 }  // namespace fm

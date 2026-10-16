@@ -387,6 +387,18 @@ Configuration::Configuration() {
   // str.cの組み込みARCHIVE[]テーブルからの移植、逐語的な
   // suffix->commandの対応付け。
   auto addBuiltinArchive = [&](const std::string &suffix, ArchiveKind kind, ProgramCommand command) {
+#ifdef _WIN32
+    // 2026-10-16、直接のユーザー依頼(Windows 11のARC): Windowsにはgzip・xz・lha・7z・lsar等が無いので、tar・
+    // 圧縮したtar・lzh・rar・7zは、どれもWindowsに付いているtar.exe(bsdtar、圧縮の種類と書庫の形式を自分で
+    // 見分ける)で一覧し、ArchiveKind::Tarとして扱う(一覧はMacのtarと同じ形、中身・取り出しもtar.exe。
+    // ArchiveMode::extractSelected()・Application::buildArchiveExtractArgv())。zipは内蔵のunzipのまま
+    // (native_unzip.hpp)。
+    if (kind == ArchiveKind::Tar || kind == ArchiveKind::Lha || kind == ArchiveKind::Rar ||
+        kind == ArchiveKind::SevenZip) {
+      kind = ArchiveKind::Tar;
+      command = {{windowsTarCommand(), "tvf"}, std::nullopt};
+    }
+#endif
     SuffixEntry e;
     e.suffix = suffix;
     e.command = std::move(command);

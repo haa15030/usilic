@@ -13384,6 +13384,16 @@ std::string Application::escapeArchiveMemberPattern(const std::string &name) {
 std::vector<std::string> Application::buildArchiveExtractArgv(const std::string &archivePath, ArchiveKind kind,
                                                                 const std::vector<std::string> &members,
                                                                 const std::string &destination) const {
+#ifdef _WIN32
+  // 2026-10-16(Windows 11のARC): tar(圧縮したtar・lzh・rar・7zもArchiveKind::Tar、configuration.cpp参照)と
+  // zipは、Windowsに付いているtar.exe(bsdtar)で取り出す。cmd.exeには内蔵のunzipが無いため。中の名前は
+  // そのまま渡す(bsdtarの\はWindowsではパスの区切りとも読まれるので、エスケープしない)。
+  if (kind == ArchiveKind::Tar || kind == ArchiveKind::Zip) {
+    std::vector<std::string> argv = {windowsTarCommand(), "xf", archivePath, "-C", destination};
+    argv.insert(argv.end(), members.begin(), members.end());
+    return argv;
+  }
+#endif
   if (kind == ArchiveKind::Tar) {
     std::vector<std::string> argv = {"tar", "xf", archivePath, "-C", destination};
     for (const auto &m : members) argv.push_back(escapeArchiveMemberPattern(m));
@@ -18177,7 +18187,9 @@ void Application::pollPendingArchiveExtractShellRun() {
   static const std::size_t kMarkerLen = std::char_traits<char>::length(kCpMvRmExitMarker);
   for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
     if (it->text.compare(0, kMarkerLen, kCpMvRmExitMarker) == 0) {
-      ok = (it->text.substr(kMarkerLen) == "0");
+      std::string status = it->text.substr(kMarkerLen);
+      while (!status.empty() && (status.back() == ' ' || status.back() == '\r')) status.pop_back();  // ConPTY
+      ok = (status == "0");
       break;
     }
   }
@@ -18817,11 +18829,6 @@ bool Application::executeArchiveExtract(const std::string &destination) {
     activeView().redraw();
     return false;
   }
-  // 2026-10-16: startCpMvRmShellRun()と同じく、cmd.exeの書き方はまだ無い。
-  if (shell_.usesCmdSyntax()) {
-    showTransientNotice(activeView(), "Extract: not supported with cmd.exe");
-    return false;
-  }
   // 2026-09-09修正、PendingArchiveExtractShellRun::topLevelNames自身の
   // コメント参照(直接のユーザー報告、展開前後のディレクトリ一覧の
   // 差分方式では「以前にも同じ場所へ展開したことがある」場合に機能
@@ -18874,7 +18881,14 @@ bool Application::executeArchiveExtract(const std::string &destination) {
   }
   pendingArchiveExtractShellRun_ = PendingArchiveExtractShellRun{
       shell_.promptGeneration(), returnMode, resolvedDestination, archivePath, std::move(topLevelNames)};
-  shell_.commandLine().setText(shellQuoteArgv(argv) + chmodSuffix + "; echo " + kCpMvRmExitMarker + "$?");
+  if (shell_.usesCmdSyntax()) {
+    // cmd.exe(2026-10-16): $?の代わりに&&・||で0か1を出す。^は打った行の写しがマーカーと一致しないように。
+    std::string marker = kCpMvRmExitMarker;
+    marker.insert(marker.size() - 1, "^");
+    shell_.commandLine().setText(cmdQuoteArgv(argv) + " && echo " + marker + "0|| echo " + marker + "1");
+  } else {
+    shell_.commandLine().setText(shellQuoteArgv(argv) + chmodSuffix + "; echo " + kCpMvRmExitMarker + "$?");
+  }
   shell_.submitLine();
   return true;
 }

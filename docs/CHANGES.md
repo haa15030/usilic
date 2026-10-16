@@ -31169,3 +31169,21 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - HELP_.txt(未コミット)の-gの説明に、Linuxの端末が無い時とランチャー、端末の設定を覚えてusilic.app・
      ランチャーで使うことを足した。
    - 確認: macOS・Windows(クロス)のビルドのみ。LinuxのビルドとUbuntuでの動作は未確認(Dockerも無い)。
+
+873. **Windows 11のARC: tar・圧縮したtar・zip・7z・rar・lzhを、Windowsに付いているtar.exeで一覧・中身・取り出し**
+   (2026-10-16、直接のユーザー依頼「win11版のARCはどこまでできそう？」→「作ってみて」。`tar --version`は
+   bsdtar 3.8.8、zlib・liblzma・bz2lib・libzstd付き)
+   - configuration.cpp: Windowsでは組み込みの.tar・.tgz・.tar.bz2・.tar.xz・.tar.zst・.lzh・.rar・.7z(と別名)を
+     `C:\Windows\System32\tar.exe tvf 書庫`(パイプ無し、bsdtarが圧縮と形式を見分ける)にし、ArchiveKind::Tarに
+     する。zipは内蔵のunzip(native_unzip)のまま。platform_win.cppにwindowsTarCommand()を足した(cmd.exeは
+     /で書いたプログラムのパスを読めないので\のまま)。
+   - ArchiveMode: Windowsでは一覧がUTF-8でなければシステムのANSIのコードページ(CP932等、GetACP()は
+     マニフェストでUTF-8なのでLOCALE_IDEFAULTANSICODEPAGE)として読む(windowsSystemTextToUtf8())。中身の
+     表示(extractSelected())は、生のバイト列を辿らず、%TEMP%/usilic-arc.<pid>.<n>/へ1つだけ取り出して読む
+     (-Oの標準出力がテキストモードで\nを変えるおそれがあるため)。バッジは"(tar)"。
+   - archive_reader.cppのsplitLines(): 行末の\rを除く(tar.exeのCRLF)。
+   - 取り出し(^X^M・^Oa): Windowsではtar・zipとも`tar.exe xf 書庫 -C 先 中の名前…`(名前はエスケープしない)。
+     cmd.exeでの拒否をやめ、`… && echo usilic-cpmvrm-exit^:0|| echo usilic-cpmvrm-exit^:1`で終了を知らせる
+     (^は打った行の写しがマーカーと一致しないように)。マーカーの後ろの空白・\rは除いて比べる(ConPTY)。
+   - 確認: macOS・Windows(クロス)のビルドと、ARCのテスト(--source-file='*archive*')のみ。Windowsでの動作、
+     特に日本語の名前(CP932で出るか)は未確認。

@@ -34,6 +34,28 @@ std::string forwardSlashes(std::string path) {
 
 }  // namespace
 
+std::string windowsTarCommand() {
+  const wchar_t *root = _wgetenv(L"SystemRoot");
+  return (root && *root ? narrow(root) : std::string("C:\\Windows")) + "\\System32\\tar.exe";
+}
+
+std::string windowsSystemTextToUtf8(const std::string &text) {
+  if (text.empty()) return text;
+  if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), static_cast<int>(text.size()), nullptr, 0) > 0)
+    return text;
+  // GetACP()はマニフェストのためにUTF-8を返すので、システムの既定のANSIのコードページを尋ねる。
+  UINT codePage = CP_ACP;
+  DWORD value = 0;
+  if (GetLocaleInfoW(LOCALE_SYSTEM_DEFAULT, LOCALE_IDEFAULTANSICODEPAGE | LOCALE_RETURN_NUMBER,
+                     reinterpret_cast<LPWSTR>(&value), sizeof(value) / sizeof(wchar_t)) > 0 && value)
+    codePage = value;
+  int n = MultiByteToWideChar(codePage, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
+  if (n <= 0) return text;
+  std::wstring wide(static_cast<std::size_t>(n), L'\0');
+  MultiByteToWideChar(codePage, 0, text.data(), static_cast<int>(text.size()), wide.data(), n);
+  return narrow(wide);
+}
+
 std::string windowsExecutablePath() {
   std::wstring buf(32768, L'\0');
   DWORD n = GetModuleFileNameW(nullptr, buf.data(), static_cast<DWORD>(buf.size()));

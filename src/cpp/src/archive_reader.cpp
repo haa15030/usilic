@@ -13,6 +13,7 @@ std::vector<std::string> splitLines(const std::string &text) {
   while (pos < text.size()) {
     std::size_t eol = text.find('\n', pos);
     std::string line = (eol == std::string::npos) ? text.substr(pos) : text.substr(pos, eol - pos);
+    if (!line.empty() && line.back() == '\r') line.pop_back();  // Windowsのtar.exe等(CRLF、2026-10-16)
     if (!line.empty()) lines.push_back(line);
     pos = (eol == std::string::npos) ? text.size() : eol + 1;
   }

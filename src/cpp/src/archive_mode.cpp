@@ -3,10 +3,15 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <memory>
+#ifdef _WIN32
+#include <process.h>  // _getpid()
+#endif
 
 #include "child_process.hpp"
 #include "file_mode.hpp"  // isEpubFile()
+#include "platform.hpp"
 
 namespace fm {
 
@@ -244,7 +249,12 @@ bool ArchiveMode::finishLoadFromOutput(const std::string &path, const std::strin
   auto reader = readerFor(kind);
   if (!reader) return false;
 
+#ifdef _WIN32
+  // Windowsのtar.exeは名前をシステムのコードページ(CP932等)で書く(windowsSystemTextToUtf8()参照)。
+  std::vector<ArchiveEntry> entries = reader->parseListing(windowsSystemTextToUtf8(output));
+#else
   std::vector<ArchiveEntry> entries = reader->parseListing(output);
+#endif
   // 2026-09-25追加(ARCHIVE節の要否の検討で、直接のユーザー依頼により実際の
   // 動作を確認して判明): 一覧が1件も取れなければ、アーカイブとして読めなかった
   // (中身がその形式でないファイルに別名を付けた等、一覧のコマンドが失敗した)
@@ -264,6 +274,12 @@ bool ArchiveMode::finishLoadFromOutput(const std::string &path, const std::strin
   currentArchive_ = path;
   archiveKind_ = kind;
   archiveCommand_ = command->argv.empty() ? "" : command->argv.front();
+#ifdef _WIN32
+  // C:\Windows\System32\tar.exe(configuration.cpp)のバッジは"(tar)"にする。
+  archiveCommand_ = archiveCommand_.substr(archiveCommand_.find_last_of("/\\") + 1);
+  if (archiveCommand_.size() > 4 && archiveCommand_.compare(archiveCommand_.size() - 4, 4, ".exe") == 0)
+    archiveCommand_.resize(archiveCommand_.size() - 4);
+#endif
   entries_ = std::move(entries);
   markedIndices_.clear();  // マークはそれが行われた一覧にスコープされる、DirectoryMode自身の慣習に合わせている
 
@@ -320,6 +336,27 @@ std::optional<std::vector<unsigned char>> ArchiveMode::extractSelected() {
   if (!reader) return std::nullopt;
 
   std::vector<unsigned char> data;
+#ifdef _WIN32
+  // Windowsのtar(tar.exe、圧縮したtar・lzh・rar・7zも、configuration.cpp参照)は、生のバイト列を辿らず、
+  // 1つだけ一時ディレクトリへ取り出して読む(-Oの標準出力はテキストモードで\nが変わるおそれがあるため)。
+  if (archiveKind_ == ArchiveKind::Tar) {
+    static int serial = 0;
+    std::string tempDir = windowsTempDirectory() + "/usilic-arc." + std::to_string(::_getpid()) + "." +
+                          std::to_string(++serial);
+    std::error_code ec;
+    std::filesystem::remove_all(tempDir, ec);
+    std::filesystem::create_directories(tempDir, ec);
+    ChildProcess::Result result =
+        ChildProcess::run({windowsTarCommand(), "xf", currentArchive_, "-C", tempDir, entries_[idx].name});
+    std::optional<std::vector<unsigned char>> content;
+    std::ifstream in(tempDir + "/" + entries_[idx].name, std::ios::binary);
+    if (result.ok && in)
+      content = std::vector<unsigned char>(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    in.close();
+    std::filesystem::remove_all(tempDir, ec);
+    return content;
+  }
+#endif
   switch (archiveKind_) {
     case ArchiveKind::Tar: {
       // tarのエントリは、生の.tarファイル自体の中の、実際にパース
