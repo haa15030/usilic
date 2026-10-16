@@ -4238,6 +4238,13 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
       fontPointSize = gGuiFrame.pointSize;
     }
   }
+  if (const char *dbg = std::getenv("USILICGUIDEBUG")) {  // 2026-10-16、GraphicalDisplay::open()のログと同じ理由
+    if (FILE *f = std::fopen(dbg, "a")) {
+      std::fprintf(f, "tryEnterGuiPhase: saved %dx%d %dpt, frame %d, create rows %d columns %d %dpt\n", savedGui.rows,
+                   savedGui.columns, savedGui.fontPointSize, gGuiFrame.valid ? 1 : 0, rows, columns, fontPointSize);
+      std::fclose(f);
+    }
+  }
   std::unique_ptr<fm::GraphicalDisplay> gui =
       fontPath.empty() ? nullptr : fm::GraphicalDisplay::create(rows, columns, fontPath, fontPointSize);
   if (!gui) return false;  // no usable font, or window/renderer creation failed -- stay in terminal mode

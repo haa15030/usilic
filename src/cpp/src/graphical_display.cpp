@@ -2779,6 +2779,18 @@ void GraphicalDisplay::open() {
   SDL_ShowWindow(impl_->window);
   syncHighDpiRenderScale(impl_->window, impl_->renderer);  // それ自身のコメント参照
   SDL_RaiseWindow(impl_->window);
+  // 2026-10-16、Windowsで窓が80桁より狭く開く件(=jo.png・=jp.png)を調べるため: 表示した時の大きさ。
+  if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+    if (FILE *f = std::fopen(dbg, "a")) {
+      int w = 0, h = 0, pw = 0, ph = 0;
+      SDL_GetWindowSize(impl_->window, &w, &h);
+      SDL_GetRendererOutputSize(impl_->renderer, &pw, &ph);
+      std::fprintf(f, "open: rows %d columns %d cell %dx%d font %dpt window %dx%d renderer %dx%d font=%s\n",
+                   impl_->rows, impl_->columns, impl_->cellWidth, impl_->cellHeight, impl_->currentFontPointSize, w,
+                   h, pw, ph, impl_->fontPath.c_str());
+      std::fclose(f);
+    }
+  }
 }
 void GraphicalDisplay::close() {}  // 代わりにデストラクタで破棄される、それ自身のコメント参照
 
