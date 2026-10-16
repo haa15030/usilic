@@ -31241,3 +31241,23 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      要らなければcp -vRXと書くこと。既定(cp -vR)は変えていない。
    - HELP_.txt(未コミット)のCP/MVの説明に「（usilicrc の CP）」を足した。help2epub.pyは、これをCP節の
      コメントへの注釈にする。
+
+878. **Windows 11のCP/MV/RMを、cmd.exeの命令(copy・xcopy・move・del・rmdir)でSHELLで行う**
+   (2026-10-16、直接のユーザー依頼「cmdの命令でよろしく」。それまでは「CP/MV/RM: not supported with cmd.exe」
+   と出して断っていた)
+   - application.cpp: cmdFileOpLine()(Windowsだけ)で、対象ごとの命令を&&でつないだ1行を作る。
+     - CP: ディレクトリは`xcopy 元 先 /E /I /H /K /Y`。行き先が既にあるディレクトリならその中へ同じ名前で、
+       無ければその名前で作る(cp -Rと同じ)。ファイルは、行き先がディレクトリなら`xcopy 元 先 /H /K /Y`
+       (隠しファイルも)、そうでなければ`copy /Y 元 先`。
+     - MV: `move /Y 元 先`。ディレクトリをドライブをまたいで移すことは、moveではできない。
+     - RM: ファイルは`del /F /Q /A`、ディレクトリは`rmdir /S /Q`。消せなくても終了コードが0のことがあるので、
+       `(… & if exist 対象 cmd /c exit 1)`で失敗にする。
+     - copy・xcopyは/を指定の始まりと読むので、パスは\で書く。
+   - startCpMvRmShellRun()はcmdLineを受け取り、cmd.exeの時はそれを送る。終了は`&& echo
+     usilic-cpmvrm-exit^:0|| echo …^:1`で知らせる(ARCの取り出しと同じ)。マーカーの後ろの空白・\rは除いて
+     比べる。
+   - resolveCpMvDestination(): Windowsではドライブ名で始まる行き先(C:/…・C:\…)を絶対パスとして扱う
+     (以前は今のディレクトリの下のパスにしていた)。
+   - usilicrcのCP・MV・RMの指定は、Windowsでは使わない。HELP_.txt(未コミット)のCP/MVの説明にその旨を
+     足した。
+   - 確認: macOS・Windows(クロス)のビルドのみ。

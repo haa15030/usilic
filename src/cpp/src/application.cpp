@@ -276,6 +276,58 @@ std::string cmdQuoteArgv(const std::vector<std::string> &argv) {
   return line;
 }
 
+#ifdef _WIN32
+// 2026-10-16、直接のユーザー依頼(Windows 11のCP/MV/RM、"cmdの命令でよろしく"): cp・mv・rmの無いWindowsで、
+// CP/MV/RMをcmd.exeの命令の1行にする(SHELLで動かし、経過がSHELLに残るのは他のOSと同じ)。
+//   CP: ディレクトリはxcopy /E /I /H /K /Y(中身ごと・空のディレクトリ・隠しファイル・属性も)。行き先が既にある
+//       ディレクトリならその中へ同じ名前で、無ければその名前で作る(cp -Rと同じ)。ファイルは、行き先が
+//       ディレクトリならxcopy /H /K /Y(隠しファイルも)、そうでなければcopy /Y(その名前のファイルにする)。
+//   MV: move /Y(ファイルもディレクトリも。ディレクトリをドライブをまたいで移すことは、moveではできない)。
+//   RM: ファイルはdel /F /Q /A(読み出し専用・隠しファイルも)、ディレクトリはrmdir /S /Q。delとrmdirは消せ
+//       なくても終了コードが0のことがあるので、残っていれば`cmd /c exit 1`で失敗にする。
+// 複数のものは&&でつなぎ、最初の失敗で止める。copy・xcopyは/を指定の始まりと読むので、パスは\で書く。
+enum class CmdFileOp { Copy, Move, Remove };
+
+std::string cmdFileOpLine(CmdFileOp op, const std::vector<std::string> &targets, const std::string &destination) {
+  auto trimmed = [](std::string path) {
+    while (path.size() > 3 && path.back() == '/') path.pop_back();
+    return path;
+  };
+  auto native = [&trimmed](const std::string &path) {
+    std::string out = trimmed(path);
+    for (char &c : out)
+      if (c == '/') c = '\\';
+    return cmdQuoteArg(out);
+  };
+  std::error_code ec;
+  bool destinationIsDirectory = !destination.empty() && std::filesystem::is_directory(destination, ec);
+  std::string line;
+  for (const auto &rawTarget : targets) {
+    std::string target = trimmed(rawTarget);
+    bool isDirectory = std::filesystem::is_directory(target, ec);
+    std::string name = std::filesystem::path(target).filename().string();
+    std::string command;
+    if (op == CmdFileOp::Copy) {
+      if (isDirectory)
+        command = "xcopy " + native(target) + " " +
+                  native(destinationIsDirectory ? trimmed(destination) + "/" + name : destination) + " /E /I /H /K /Y";
+      else if (destinationIsDirectory)
+        command = "xcopy " + native(target) + " " + native(destination) + " /H /K /Y";
+      else
+        command = "copy /Y " + native(target) + " " + native(destination);
+    } else if (op == CmdFileOp::Move) {
+      command = "move /Y " + native(target) + " " + native(destination);
+    } else {
+      command = "(" + std::string(isDirectory ? "rmdir /S /Q " : "del /F /Q /A ") + native(target) +
+                " & if exist " + native(target) + " cmd /c exit 1)";
+    }
+    if (!line.empty()) line += " && ";
+    line += command;
+  }
+  return line;
+}
+#endif
+
 // シェルと同じ規則(空白で区切る、'...'はそのまま、"..."と裸の\はバックスラッシュで次の1文字)で語に分ける
 // (2026-10-10、Application::runExternalUsilicPager()が^Jpの"usilic ..."・^Ouの引数を分けるため。展開はしない)。
 std::vector<std::string> splitShellWords(const std::string &line) {
@@ -17932,6 +17984,16 @@ bool Application::executeLocate(const std::string &query) {
 // 自身のcwdに関わらず、常に同じ曖昧さの無い絶対パスを見る。
 std::string Application::resolveCpMvDestination(const std::string &destination) const {
   if (destination.empty() || destination.front() == '/') return destination;
+#ifdef _WIN32
+  // ドライブ名で始まる絶対パス(C:/…・C:\…、PathResolver::resolve()と同じ、2026-10-16)。
+  if (destination.size() >= 3 && std::isalpha(static_cast<unsigned char>(destination[0])) && destination[1] == ':' &&
+      (destination[2] == '/' || destination[2] == '\\')) {
+    std::string path = destination;
+    for (char &c : path)
+      if (c == '\\') c = '/';
+    return path;
+  }
+#endif
   // 2026-10-04、直接のユーザー報告("~/.local/lib/usilicにCPしようとしたら~が$HOMEに展開されない"):
   // 先頭の~(~/…)はホームに(シェルを通さずにcpへ渡すので、ここで展開する)。
   if (const char *home = std::getenv("HOME"); home && (destination == "~" || destination.compare(0, 2, "~/") == 0))
@@ -17978,7 +18040,12 @@ bool Application::executeCopy(const std::string &destination) {
   targetBasenames.reserve(targets.size());
   for (const auto &target : targets)
     targetBasenames.push_back(stripLsFTypeMarker(std::filesystem::path(target).filename().string()));
+#ifdef _WIN32
+  return startCpMvRmShellRun(argv, resolvedDestination, cpMvRmSourceDirectory(), targetBasenames,
+                             cmdFileOpLine(CmdFileOp::Copy, targets, resolvedDestination));
+#else
   return startCpMvRmShellRun(argv, resolvedDestination, cpMvRmSourceDirectory(), targetBasenames);
+#endif
 }
 
 // executeCopy()と同じ2026-08-22の再設計――それ自身のコメント参照。
@@ -18002,7 +18069,12 @@ bool Application::executeMove(const std::string &destination) {
   targetBasenames.reserve(targets.size());
   for (const auto &target : targets)
     targetBasenames.push_back(stripLsFTypeMarker(std::filesystem::path(target).filename().string()));
+#ifdef _WIN32
+  return startCpMvRmShellRun(argv, resolvedDestination, cpMvRmSourceDirectory(), targetBasenames,
+                             cmdFileOpLine(CmdFileOp::Move, targets, resolvedDestination));
+#else
   return startCpMvRmShellRun(argv, resolvedDestination, cpMvRmSourceDirectory(), targetBasenames);
+#endif
 }
 
 // m_dest()のT_rmの分岐から移植: `confirmation`はまさに"y"でなければ
@@ -18026,7 +18098,12 @@ bool Application::executeRemove(const std::string &confirmation) {
     return false;
   }
   for (const auto &target : targets) argv.push_back(target);
+#ifdef _WIN32
+  return startCpMvRmShellRun(argv, /*destination=*/"", cpMvRmSourceDirectory(), {},
+                             cmdFileOpLine(CmdFileOp::Remove, targets, ""));
+#else
   return startCpMvRmShellRun(argv, /*destination=*/"", cpMvRmSourceDirectory());
+#endif
 }
 
 // executeCopy()/executeMove()/executeRemove()の共有される末尾
@@ -18039,13 +18116,13 @@ bool Application::executeRemove(const std::string &confirmation) {
 // ――pollPendingCpMvRmShellRun()参照。
 bool Application::startCpMvRmShellRun(const std::vector<std::string> &argv, const std::string &destination,
                                        const std::string &sourceDirectory,
-                                       std::vector<std::string> targetBasenames) {
+                                       std::vector<std::string> targetBasenames, const std::string &cmdLine) {
   if (!ensureShellActive()) {
     activeView().redraw();
     return false;
   }
-  // 2026-10-16: cmd.exe(WindowsのネイティブのSHELL)には、まだCP/MV/RMの書き方(sh系の引用符・$?)を作っていない。
-  if (shell_.usesCmdSyntax()) {
+  // cmd.exe(WindowsのネイティブのSHELL)では、呼び出し元が作ったcmdの行(cmdFileOpLine())を送る。
+  if (shell_.usesCmdSyntax() && cmdLine.empty()) {
     showTransientNotice(activeView(), "CP/MV/RM: not supported with cmd.exe");
     return false;
   }
@@ -18053,7 +18130,14 @@ bool Application::startCpMvRmShellRun(const std::vector<std::string> &argv, cons
                                                  std::move(targetBasenames), cpMvRmOrigin_};
   cpMvRmOrigin_ = ApplicationMode::Directory;  // 対象は上のargvに確定済み
   cpMvRmListTargets_.clear();
-  shell_.commandLine().setText(shellQuoteArgv(argv) + "; echo " + kCpMvRmExitMarker + "$?");
+  if (shell_.usesCmdSyntax()) {
+    // startArchiveExtractShellRun()と同じく、$?の代わりに&&・||で0か1を出す。
+    std::string marker = kCpMvRmExitMarker;
+    marker.insert(marker.size() - 1, "^");
+    shell_.commandLine().setText(cmdLine + " && echo " + marker + "0|| echo " + marker + "1");
+  } else {
+    shell_.commandLine().setText(shellQuoteArgv(argv) + "; echo " + kCpMvRmExitMarker + "$?");
+  }
   shell_.submitLine();
   return true;
 }
@@ -18080,7 +18164,9 @@ void Application::pollPendingCpMvRmShellRun() {
   static const std::size_t kMarkerLen = std::char_traits<char>::length(kCpMvRmExitMarker);
   for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
     if (it->text.compare(0, kMarkerLen, kCpMvRmExitMarker) == 0) {
-      ok = (it->text.substr(kMarkerLen) == "0");
+      std::string status = it->text.substr(kMarkerLen);
+      while (!status.empty() && (status.back() == ' ' || status.back() == '\r')) status.pop_back();  // ConPTY
+      ok = (status == "0");
       for (auto prev = std::next(it); !ok && prev != lines.rend(); ++prev)
         if (prev->text.find_first_not_of(' ') != std::string::npos) {
           errorText = prev->text;

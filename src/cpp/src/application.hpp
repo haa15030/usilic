@@ -3140,9 +3140,10 @@ class Application {
   // そのまま渡す(directory_mode.hpp自身のコメント参照)。RM
   // (executeRemove())は空のまま渡す(削除後に「対象」を表示する意味が
   // ないため、requirements.mdのスコープ外)。
+  // cmdLine: シェルがcmd.exe(Windows)の時にargvの代わりに送る行(cmdFileOpLine()、2026-10-16)。
   bool startCpMvRmShellRun(const std::vector<std::string> &argv, const std::string &destination,
                             const std::string &sourceDirectory,
-                            std::vector<std::string> targetBasenames = {});
+                            std::vector<std::string> targetBasenames = {}, const std::string &cmdLine = "");
   bool executeExit(const std::string &confirmation);
   bool executeArchiveExtract(const std::string &destination);
   bool executePathInput(const std::string &path);
