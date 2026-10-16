@@ -4246,6 +4246,11 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   // rows/columns/fontPointSizeとは違い、常にユーザーの意図が最優先
   // されるべきため(resolveGuiFontPath()自身の優先順位コメント参照)。
   std::string fontPath = resolveGuiFontPath(appearance, savedGui.fontPath);
+  // 2026-10-16(runGuiPhase()の後の、端末に重ねる起動の保存のコメント参照): 重ねる端末が無く、usilicrcのFONTも
+  // USILICFONTも無ければ、最後に-gで重ねた端末のフォント。
+  if (!appearance && savedGui.fontPath.empty() && !std::getenv("USILICFONT") && !savedGui.terminalFontPath.empty() &&
+      std::filesystem::is_regular_file(savedGui.terminalFontPath))
+    fontPath = savedGui.terminalFontPath;
   int rows = display.rows(), columns = display.columns();
   int fontPointSize = 16;  // GraphicalDisplay::create()'s own default
   if (appearance) fontPointSize = appearance->fontPointSize;  // 端末の文字の大きさ(^Og、2026-10-12)
@@ -4474,6 +4479,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
     fm::History::GuiPreferences prefs = history.guiPreferences();
     prefs.fontPointSize = gui->fontPointSize();
     prefs.rows = gui->horizontalRows();  // 縦書きの画面で終えても横書きの行数(2026-10-16)
+    if (appearance && !gTerminalFontPath.empty()) prefs.terminalFontPath = gTerminalFontPath;  // ^Ogで重ねた時
     prefs.columns = gui->columns();
     fm::GraphicalDisplay::Color fg = gui->foregroundColor();
     fm::GraphicalDisplay::Color bg = gui->backgroundColor();
@@ -5689,7 +5695,6 @@ int main(int argc, char **argv) {
   // since the real terminal was never used for rendering).
   std::unique_ptr<fm::GraphicalDisplay> launchGui;
   bool guiOwnsWholeSession = false;
-  bool overlayUsesSavedSize = false;  // 下のlaunchGuiの作り方のコメント参照(2026-10-16)
   // Window-bounds match is now a HARD requirement alongside the color/
   // font appearance match, not an optional nicety (changed 2026-08-03,
   // "-gは隠れ機能なのでウィンドウの重ね打ち可を必須としたい"): this
@@ -5746,18 +5751,9 @@ int main(int argc, char **argv) {
         std::fclose(f);
       }
     }
-    // 2026-10-16、直接のユーザー報告("macOSの-gでもフォントサイズとウィンドウサイズが保存されない"): この経路
-    // (端末の窓に重ねる)は、いつも端末の大きさ・字の大きさに合わせ、保存した値を読まず、終わりに保存もしていな
-    // かった。前に-gで字の大きさか窓の大きさを変えて保存してあれば(下のrunGuiPhase()の後、tryEnterGuiPhase()の
-    // 保存も)、その字の大きさ・行数・桁数で開く(位置と色は今まで通り端末に合わせる)。
-    fm::History::GuiPreferences savedGui = history.guiPreferences();
-    overlayUsesSavedSize = savedGui.rows > 0 && savedGui.columns > 0 && savedGui.fontPointSize > 0;
     launchGui = fontPath.empty() ? nullptr
-                : overlayUsesSavedSize
-                    ? fm::GraphicalDisplay::create(savedGui.rows, std::max(savedGui.columns, 80), fontPath,
-                                                   savedGui.fontPointSize)
-                    : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath,
-                                                   appearance->fontPointSize);
+                                  : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath,
+                                                                  appearance->fontPointSize);
     if (launchGui) {
       if (appearance->hasColors) launchGui->setColors(appearance->foreground, appearance->background);
       // Overlay this window exactly where the calling terminal's own
@@ -5794,7 +5790,7 @@ int main(int argc, char **argv) {
       // real terminal profiles in a way no font-metric heuristic
       // reliably captured -- see matchWindowSize()'s own comment).
       launchGui->setWindowPosition(bounds->x, bounds->y);
-      if (!overlayUsesSavedSize) launchGui->matchWindowSize(bounds->width, bounds->height);
+      launchGui->matchWindowSize(bounds->width, bounds->height);
       launchGui->open();
       display.setBackend(*launchGui);
       clearLaunchingTerminal();  // see its own comment -- covered by the GUI window now, so this never flashes
@@ -6044,17 +6040,21 @@ int main(int argc, char **argv) {
     app.setGuiFrameProvider([guiForFrame] { return guiFrameText(*guiForFrame); });
     app.setGuiFontProvider(
         [guiForFrame] { return guiForFrame->currentFontPath(fm::GraphicalDisplay::FontKind::Base); });
-    int openedFont = launchGui->fontPointSize(), openedRows = launchGui->horizontalRows(),
-        openedColumns = launchGui->columns();
     runGuiPhase(app, *launchGui);
-    // 2026-10-16(launchGuiの作り方のコメント参照): 使っている間に字の大きさか窓の大きさを変えたら保存する
-    // (変えなければ保存しない。端末に合わせただけの大きさで、次の起動を縛らないため)。
-    if (launchGui->fontPointSize() != openedFont || launchGui->horizontalRows() != openedRows ||
-        launchGui->columns() != openedColumns) {
+    // 2026-10-16、直接のユーザー依頼("最後に-gしたときの端末設定（文字・背景色）の共有は？usilic.appをクリック
+    // したときもそれらの設定で起動できない？"): 端末に重ねる起動はいつも端末の大きさ・字・色に合わせる(保存した
+    // 値は読まない)が、終わりにその時の字の大きさ・行数・桁数・色・端末のフォントを保存し、重ねる端末の無い起動
+    // (usilic.app等、tryEnterGuiPhase()のappearance無し)がそれを使う。tryEnterGuiPhase()の終わりの保存と同じ。
+    {
       fm::History::GuiPreferences prefs = history.guiPreferences();
       prefs.fontPointSize = launchGui->fontPointSize();
       prefs.rows = launchGui->horizontalRows();
       prefs.columns = launchGui->columns();
+      fm::GraphicalDisplay::Color fg = launchGui->foregroundColor(), bg = launchGui->backgroundColor();
+      prefs.hasColors = true;
+      prefs.fgR = fg.r; prefs.fgG = fg.g; prefs.fgB = fg.b;
+      prefs.bgR = bg.r; prefs.bgG = bg.g; prefs.bgB = bg.b;
+      if (!gTerminalFontPath.empty()) prefs.terminalFontPath = gTerminalFontPath;
       history.setGuiPreferences(prefs);
     }
     app.setGuiFrameProvider(nullptr);

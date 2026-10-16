@@ -574,6 +574,8 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     // ファイルとの前方互換)でさらに末尾に追加。無い場合の既定は
     // 「表示」(旧来からの唯一の挙動と一致させる)。
     modeLineVisible_ = toks.size() > 14 ? std::atoi(toks[14].c_str()) != 0 : true;
+    // terminalFontPath(2026-10-16)――同じ理由でさらに末尾に。
+    if (toks.size() > 15) guiPreferences_.terminalFontPath = decodeField(toks[15]);
   }
 
   complete_ = (i < lines.size() && !lines[i].empty() && lines[i][0] == kSubEof);
@@ -655,7 +657,7 @@ std::string History::serialize(const std::string &programName, const std::string
          std::to_string(guiPreferences_.fgG) + " " + std::to_string(guiPreferences_.fgB) + " " +
          std::to_string(guiPreferences_.bgR) + " " + std::to_string(guiPreferences_.bgG) + " " +
          std::to_string(guiPreferences_.bgB) + " " + encodeField(guiPreferences_.fontPath) + " " +
-         std::to_string(modeLineVisible_ ? 1 : 0) + "\n";
+         std::to_string(modeLineVisible_ ? 1 : 0) + " " + encodeField(guiPreferences_.terminalFontPath) + "\n";
   out += std::string(1, kSubEof) + "\n";
   return out;
 }

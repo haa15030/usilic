@@ -275,6 +275,10 @@ class History {
     // パスを、fontPointSize同様セッションをまたいで記憶する。空文字列
     // == 未設定。
     std::string fontPath;
+    // 2026-10-16、直接のユーザー依頼("最後に-gしたときの端末設定（文字・背景色）の共有は？usilic.appをクリック
+    // したときもそれらの設定で起動できない？"): 最後に端末に重ねて-gを使った時の端末のフォントのファイル。
+    // usilic.app等、重ねる端末の無い起動で、usilicrcのFONTが無い時に使う。空 == 未設定。
+    std::string terminalFontPath;
   };
   GuiPreferences guiPreferences() const;
   void setGuiPreferences(const GuiPreferences &preferences);

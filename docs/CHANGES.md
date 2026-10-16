@@ -31100,3 +31100,17 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      合わせる。使っている間に字の大きさか窓の大きさを変えたら、終わりに保存する(変えなければ保存しない)。
    - 縦書きの画面で終えると、rows()が縦書きの字の送りの行数(項目864)になっているので、保存はGraphicalDisplay::
      horizontalRows()(横書きの行の高さでの行数)で。tryEnterGuiPhase()の保存も同じ。
+
+868. **端末に重ねる-gは元通り端末に合わせ、その設定(字・窓の大きさ・色・端末のフォント)をusilic.appの起動で使う**
+     (2026-10-16、直接のユーザー指摘と依頼"win11での試用を繰り返すうちに、CUI画面とピッタリ重ねて起動するので
+     パッと見CUIだが実はすでにGUI、の仕様をすっかり忘れてた。最後に-gしたときの端末設定（文字・背景色）の共有は？
+     usilic.appをクリックしたときもそれらの設定で起動できない？")
+   - 項目867の「保存した大きさで開く」は取り消し、端末に重ねる起動(guiOwnsWholeSession)は今まで通りいつも端末の
+     大きさ・字の大きさ・色に合わせる。
+   - その終わりに、字の大きさ・行数(horizontalRows())・桁数・色・端末のフォント(gTerminalFontPath)を毎回
+     History::guiPreferences()へ保存する(項目867の「変えた時だけ」もやめた)。^Ogで重ねた時(tryEnterGuiPhase()の
+     appearance有り)も端末のフォントを保存する。
+   - 重ねる端末の無い起動(usilic.app等、tryEnterGuiPhase()のappearance無し)は、今まで通り保存した大きさ・字の
+     大きさ・色を使い、usilicrcのFONTもUSILICFONTも無ければ保存した端末のフォントを使う。
+   - GuiPreferences::terminalFontPath(新設)は、historyのUSILICの行の末尾(modeLineVisibleの後)に足した(古い
+     historyでは空)。
