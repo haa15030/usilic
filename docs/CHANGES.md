@@ -31082,3 +31082,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      SPEEDの段数(10)を超えた値の警告は「SPEEDは10段だけ、ARROWは全部」に。usageの-sの説明、usilicrc・
      usilicrc.enのARROWの説明、HELP_.txt(未コミット)のARROWの補足も直した。usilicrcの冒頭の節の一覧に
      LINE-HEIGHT(項目864)を足した。
+
+866. **-sをARROWにも当てるのは、Windowsのネイティブだけにする**(2026-10-16、直接のユーザー指摘"-cで起動出来るMacと
+     Linuxでは-sをARROWに当てるわけにはいかない。src/HELP_txt:712を読んでみて")
+   - ARROWはCUIの行単位のスクロールに合わせた値(HELPの「補足 usilicrc」のARROW: CUIではドラッグの速さをそのまま
+     慣性に繋げると低速が使えないので、ドラッグは2段速い方から始め、低速は矢印キーで)。項目865の-s→ARROWは、
+     -c(CUI)の無いWindowsのネイティブ(#ifdef _WIN32)だけにした。Mac・Linuxの-sは元通りSPEEDだけ。usageの-sの
+     説明と警告は元に戻し、usilicrc・usilicrc.enのARROWの説明はWindowsだけと書き直し、HELP_.txtの713行目は元の文に。
