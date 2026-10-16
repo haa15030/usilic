@@ -5177,6 +5177,15 @@ int main(int argc, char **argv) {
     }
   }
 #else
+  // 2026-10-16、直接のユーザー依頼(Ubuntuのアイコンからの起動): Linux等でも、制御端末が一切無ければ(デスクトップの
+  // ランチャー等)、上のmacOSと同じくGUIを既定にする(CUIでは何も表示できない)。GUI無しのビルドはCUIのまま。
+#if !defined(USILIC_NO_GUI) && !defined(_WIN32)  // Windowsのネイティブは上で常に-g
+  if (!forceCui && !forceGui) {
+    int ttyFd = ::open("/dev/tty", O_RDWR | O_NOCTTY);
+    if (ttyFd >= 0) ::close(ttyFd);
+    else forceGui = true;
+  }
+#endif
   if (!forceCui && !forceGui) forceCui = true;
 #endif
 
@@ -6065,7 +6074,10 @@ int main(int argc, char **argv) {
       // ordinary terminal-first loop below afterward is correct either
       // way -- same as if the user had pressed ^Og once by hand.
       app.setGuiToggleReturnsToTerminal(keyInput.fd() >= 0);  // ^Ogで下の端末の実行ループへ戻れる
-      if (!tryEnterGuiPhase(app, display, *terminalDisplay, history)) {
+      // 2026-10-16、直接のユーザー依頼(Ubuntu、"もう重ねなくていい。直す案で作ってみて"): 端末に重ねられない時
+      // (Linuxは端末の窓の位置を調べられない)も、読み取れた端末の色・フォント(appearance)で開き、終わりに
+      // 保存する(^Ogと同じ、tryEnterGuiPhase()の終わりの保存)。アイコンからの起動はその保存した設定で開く。
+      if (!tryEnterGuiPhase(app, display, *terminalDisplay, history, appearance)) {
 #ifdef _WIN32  // コンソールが無いので(端末の画面にも戻れない)、メッセージボックスで
         fm::showWindowsError("Cannot open the usilic window (no font found in C:/Windows/Fonts, or SDL2.dll/SDL2_ttf.dll "
                              "missing next to usilic.exe).");

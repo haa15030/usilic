@@ -200,6 +200,19 @@ install: $(BUILD_DIR)/usilic
 	# src/web/config.phpもここを使う)と、見本の.epub(既にあれば上書きしない)。
 	install -d $(HOME)/.local/usilic-web/texts $(HOME)/.local/usilic-web/books $(HOME)/.local/usilic-web/marks
 	if [ ! -f $(HOME)/.local/usilic-web/texts/sample.epub ]; then install -m 644 ../web/sample/sample.epub $(HOME)/.local/usilic-web/texts/sample.epub; fi
+ifeq ($(shell uname), Linux)
+ifneq ($(NO_GUI),1)
+	# 2026-10-16、直接のユーザー依頼(Ubuntu、アイコンからの起動): デスクトップのランチャー(-gで起動。制御端末の無い
+	# 起動はmain()がGUIにする)とアイコン。パスは絶対で書く(デスクトップのセッションのPATHに~/.local/binが無い
+	# ことがある)。端末から-g・^Ogで使った時の色・フォント・大きさ(~/.usilic/history)で開く。
+	install -m 644 packaging/usilic_icon_1024.png $(LIB_DIR)/usilic.png
+	install -d $(PREFIX)/share/applications
+	printf '[Desktop Entry]\nType=Application\nName=usilic\nComment=Text-based file manager\nExec=%s -g\nIcon=%s\nTerminal=false\nCategories=Utility;FileManager;\n' \
+	  "$(INSTALL_DIR)/$(INSTALL_NAME)" "$(LIB_DIR)/usilic.png" > $(PREFIX)/share/applications/usilic.desktop
+	chmod 644 $(PREFIX)/share/applications/usilic.desktop
+	-command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database $(PREFIX)/share/applications
+endif
+endif
 
 # macOS .app bundle (2026-08-24, docs/CHANGES.md item 421, a direct
 # user request: "アイコンをクリックして起動する形にはできる？"):

@@ -31153,3 +31153,19 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      HELP.epubでは注釈になる)。
    - ~/.usilic/usilicrcは、新しい版の最初の起動で(配ったusilicrcの方が新しいので)新しい節名のものに置き換わる
      (項目683・863)。
+
+872. **Ubuntu: 端末の色・フォントを-gでも受け継いで保存し、アイコン(デスクトップのランチャー)から起動できるように**
+     (2026-10-16、直接のユーザー質問"ubuntuのデフォルトターミナルは背景色が茶色っぽいやつなんだが、-gで起動後、アイコン
+     起動したらちゃんと反映されるんだろうか？"への答えの後の依頼"もう重ねなくていい。直す案で作ってみて")
+   - Linuxは端末の窓の位置を調べられないので端末に重ねる起動にならず、`usilic -g`は端末の色を渡さずに
+     (tryEnterGuiPhase()のappearance無し)保存した色か既定の色で開いていた。端末の色を受け継ぐのは^Ogだけだった。
+     main(): -gで重ねられなかった時も、読み取れた端末の色・フォント(appearance)をtryEnterGuiPhase()へ渡す
+     (窓は重ねない。終わりに色・フォント・大きさを保存するのは項目868と同じ)。
+   - main(): Linux等(macOS・Windows以外、GUI有りのビルド)でも、制御端末が無ければ-gを既定にする(以前はCUIで、
+     ランチャーから起動すると何も出せなかった)。
+   - Makefileのinstall(Linux、GUI有り): ~/.local/share/applications/usilic.desktop(Exec=絶対パスのusilic -g、
+     Icon=~/.local/lib/usilic/usilic.png、packaging/usilic_icon_1024.png)を入れ、update-desktop-databaseがあれば
+     呼ぶ。
+   - HELP_.txt(未コミット)の-gの説明に、Linuxの端末が無い時とランチャー、端末の設定を覚えてusilic.app・
+     ランチャーで使うことを足した。
+   - 確認: macOS・Windows(クロス)のビルドのみ。LinuxのビルドとUbuntuでの動作は未確認(Dockerも無い)。
