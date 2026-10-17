@@ -5887,6 +5887,8 @@ int main(int argc, char **argv) {
   // (この行より前のGUI起動経路自身のsetBackend()呼び出し参照)、
   // ここで一度適用しておけば両方の起動経路を一箇所でカバーできる。
   display.setModeLineVisible(hasSavedHistory ? history.modeLineVisible() : true);
+  // EPUBの明朝体・ゴシック体(^Ot、Command::ToggleEpubTypeface): 前回の終了時の選択(-gへ移った後もDelegatingDisplayが渡す)。
+  display.setSerifSuppressed(hasSavedHistory && history.epubSansSerif());
   // 2026-09-12追加: fm::Application appのコンストラクタ(このsetModeLineVisible()
   // 呼び出しより前の行で既に構築済み)は自身のlayoutViews()を構築時点の
   // display.modeLineVisible()(まだ既定のtrueのまま)で1回実行してしまって

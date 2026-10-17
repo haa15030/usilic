@@ -775,6 +775,7 @@ struct GraphicalDisplay::Impl {
   int savedRow = 0, savedCol = 0;
   bool standoutActive = false, boldActive = false, underlineActive = false, italicActive = false,
        highlightActive = false, highlightCurrentActive = false, serifActive = false;
+  bool serifSuppressed = false;  // GraphicalDisplay::setSerifSuppressed()参照
   bool largeActive = false, smallActive = false;  // Display::Attribute::Large/Small参照
   // 明朝体(Display::Attribute::Serif参照)。最初に明朝の字を描く時にloadSerifFont()で
   // 読み込む(見つからなければserifFontMissingを立て、以後はふだんのフォントで描く)。
@@ -1040,6 +1041,7 @@ namespace {
 // 同じくテンプレートにしてある。
 template <typename ImplT>
 TTF_Font *serifFontFor(ImplT &impl, unsigned int codepoint) {
+  if (impl.serifSuppressed) return nullptr;  // GraphicalDisplay::setSerifSuppressed()参照(ゴシック体で描く)
   if (!impl.serifFont && !impl.serifFontMissing) {
     impl.serifFont = loadSerifFont(impl.currentFontPointSize, &impl.serifFontPath);
     impl.serifFontMissing = impl.serifFont == nullptr;
@@ -2409,6 +2411,13 @@ void GraphicalDisplay::handleWindowResized(int newPixelWidth, int newPixelHeight
   impl_->grid.assign(static_cast<std::size_t>(newRows) * newColumns, Cell{});
   impl_->sizeChanged = true;
   impl_->needsRedraw = true;  // リサイズしたばかりのグリッドは完全に空白から始まる――全画面再描画を強制する
+}
+
+void GraphicalDisplay::setSerifSuppressed(bool suppressed) {
+  if (impl_->serifSuppressed == suppressed) return;
+  impl_->serifSuppressed = suppressed;
+  if (impl_->renderer) clearGlyphCache(*impl_);  // 明朝体で描いた字の面を捨てる
+  impl_->needsRedraw = true;
 }
 
 void GraphicalDisplay::setLineHeightRatios(double horizontal, double vertical) {

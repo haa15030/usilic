@@ -3779,6 +3779,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::ToggleHelpLanguage);
       case 'd':  // ^O d : ホイールの向きの切り替え(K-107、2026-10-11、Command::ToggleWheelDirection)
         return handleCommand(Command::ToggleWheelDirection);
+      case 't':  // ^O t : EPUBの明朝体・ゴシック体の切り換え(K-111、2026-10-17、Command::ToggleEpubTypeface)
+        return handleCommand(Command::ToggleEpubTypeface);
       case 'a':  // ^O a : ARC展開(旧^X a、K-58)――^O aはここへ移る
                  // 前にHELP/KEYの表示言語切り替えが占めていたが、
                  // それは^J aへ先に移した(kKeyTable自身の"^Ja"コメント
@@ -5486,6 +5488,19 @@ bool Application::handleCommandImpl(Command command) {
       // 切り替えた方(Windowsの向き)をnormalと呼ぶ。
       showTransientNotice(activeView(), wheelReversed_ ? "Wheel: normal" : "Wheel: reversed");
       return true;
+    case Command::ToggleEpubTypeface: {
+      // 2026-10-17、直接のユーザー依頼("他のEPUBリーダーの例にならい、EPUB画面でも明朝・ゴシックの切り換え機能は
+      // 入れてほしい（historyへも反映で）"): 明朝体(本のCSSの指定どおり、指定が無ければ明朝体)と、全部をゴシック体
+      // (ふだんのフォント)で描くのとを切り換える。~/.usilic/historyに残し、次の起動でも同じ(main.cpp)。
+      // 字を選べるのは-gだけ(端末ではその旨を出すが、切り換えは残す)。
+      bool sansSerif = !history_.epubSansSerif();
+      history_.setEpubSansSerif(sansSerif);
+      display_.setSerifSuppressed(sansSerif);
+      activeView().redraw();
+      showTransientNotice(activeView(), std::string(sansSerif ? "EPUB: sans-serif" : "EPUB: serif") +
+                                            (display_.isGraphical() ? "" : " (-g only)"));
+      return true;
+    }
     case Command::ToggleHelpLanguage: {
       // HELP.enが無ければ切り替えない(読めないファイルへ切り替わって^Hが効かなくなるのを避ける)。
       std::string previous = helpPath_;

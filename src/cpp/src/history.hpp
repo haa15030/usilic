@@ -236,6 +236,10 @@ class History {
   // ない(main.cppのDock自動再表示ロジック自身のコメント参照)。
   bool modeLineVisible() const;
   void setModeLineVisible(bool visible);
+  // 2026-10-17: EPUBをゴシック体で読むか(^Ot、Command::ToggleEpubTypeface)。modeLineVisible()と同じ永続化の形
+  // (USILICのトレーラーの末尾)。既定は明朝体(本の指定どおり)。
+  bool epubSansSerif() const;
+  void setEpubSansSerif(bool sansSerif);
   int lsMode() const;
   void setLsMode(int mode);
   // 未設定(新規の履歴)の場合、または読み込み時に環境の文字コードが
@@ -335,6 +339,7 @@ class History {
   std::size_t limitFor(RingCategory category) const;  // setRetentionCount()参照
   bool smoothScrollEnabled_ = false;
   bool modeLineVisible_ = true;
+  bool epubSansSerif_ = false;  // epubSansSerif()参照
   int lsMode_ = 0;
   GuiPreferences guiPreferences_;
   std::optional<Charset::Encoding> savedCharset_;
@@ -357,6 +362,7 @@ class History {
   void mirrorToUsilicImpl(RingCategory source, const std::string &name);
   void setSmoothScrollEnabledImpl(bool enabled);
   void setModeLineVisibleImpl(bool visible);
+  void setEpubSansSerifImpl(bool sansSerif);
   void setLsModeImpl(int mode);
   void setSavedCharsetImpl(Charset::Encoding encoding);
   void setGuiPreferencesImpl(const GuiPreferences &preferences);

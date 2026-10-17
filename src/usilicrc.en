@@ -511,6 +511,7 @@ KEY
 	K-108	F-2 C-e     # ^O^E    EPUB: list of records (ranges selected and recorded in vertical COPY)
 	K-109	ESC [       # ^[[     -g: line height 1 dot taller
 	K-110	ESC ]       # ^[]     -g: line height 1 dot shorter
+	K-111	F-2 t       # ^Ot     EPUB: switch between serif (Mincho) and sans-serif (Gothic) (-g)
 	K-103	F-1 C-a     # ^J^A    ARC: list (archives in the FILE history)
 	K-104	F-1 C-f     # ^J^F    -g: font list (FONT, SANS-SERIF, SERIF)
 	K-105	F-4 h       # ^J^Oh   From KEY to plain HELP at that line (plain HELP outside KEY)

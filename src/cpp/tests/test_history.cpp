@@ -203,6 +203,17 @@ TEST_CASE("session state and trailer settings round trip through explicit setter
   CHECK(h.modeLineVisible() == false);
 }
 
+// 2026-10-17(^Ot、EPUBの明朝体・ゴシック体、History::epubSansSerif()参照)。
+TEST_CASE("serialize() then loadHistoryText() keeps the EPUB sans-serif choice") {
+  History h(10);
+  CHECK_FALSE(h.epubSansSerif());
+  h.setEpubSansSerif(true);
+  History loaded(10);
+  REQUIRE(loaded.loadHistoryText(h.serialize("usilic", "Mon Jan  1 00:00:00 2026"),
+                                 /*environmentCharsetExplicitlySet=*/false));
+  CHECK(loaded.epubSansSerif());
+}
+
 TEST_CASE("serialize() then loadHistoryText() round-trips every category") {
   History h(50);
   h.setPosition(PositionCategory::File, "/a/b.txt", {3, 10, 0, 7});

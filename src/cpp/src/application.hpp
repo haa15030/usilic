@@ -172,6 +172,7 @@ enum class Command {
   // 切替として復活し、2026-10-02にTUTORIALがHELPへ改名されたのに合わせて改名。
   ToggleHelpLanguage,
   ToggleWheelDirection,  // ^Od(K-107、2026-10-11): ホイールの回転とスクロールの向きの対応を逆にする(wheelReversed())
+  ToggleEpubTypeface,  // ^Ot(K-111、2026-10-17): EPUBの明朝体・ゴシック体の切り換え(History::epubSansSerif())
   StartMan,
   StartManList,
   StartProgram,

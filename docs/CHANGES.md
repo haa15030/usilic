@@ -31340,3 +31340,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      項目873のとおり、Windowsではtar・圧縮したtar・.lzh・.rar・.7zはtar.exe、.zip・.jarは内蔵のunzip。
      .rpm(rpm)・.deb(ar)はWindowsには無いので、一覧が取れず通常のfileとして開く。
    - コードの変更は無い。
+887. **EPUBの明朝体・ゴシック体を^Otで切り換え、~/.usilic/historyに残す**
+   (2026-10-17、直接のユーザー依頼「他のEPUBリーダーの例にならい、EPUB画面でも明朝・ゴシックの切り換え機能は
+   入れてほしい（historyへも反映で）」)
+   - キー: K-111 ^Ot(空いていた^Oの字から、typefaceのt)。key_bindings.cppの表、src/usilicrc・usilicrc.enの
+     KEY節に足した。キーの指定は無かったので、usilicrcのKEYで変えられる。
+   - 切り換えるもの: 明朝体(本のCSSのfont-familyどおり、指定が無ければ明朝体、項目のepub_to_help_markupの
+     既定)と、全部をゴシック体(ふだんのフォント)で描くこと。明朝体で描くのは和文の字だけ(今までどおり)。
+   - Display::setSerifSuppressed()を足し、GraphicalDisplayはserifFontFor()が明朝体のフォントを返さなくなる
+     (本文・縦書き・ルビの全部がこれを通る)。切り換えた時は字の面のキャッシュを捨てて描き直す。端末の画面は
+     何もしない(フォントを選べない)が切り換えは残し、モードラインに「EPUB: sans-serif (-g only)」と出す。
+     DelegatingDisplayが値を覚え、^Ogで-gへ移った時にも渡す。
+   - application.cpp: Command::ToggleEpubTypeface。モードラインに「EPUB: sans-serif」/「EPUB: serif」。
+   - History: epubSansSerif()をUSILICのトレーラーの末尾(terminalFontPathの後ろ)に足した。古いファイルには
+     無いので明朝体。main.cppが起動時に前回の選択をdisplay.setSerifSuppressed()へ渡す。
+   - テスト: test_history.cppに往復の1件。PTYの端末の画面で^Otの表示を確かめた(-gの画面では試していない)。

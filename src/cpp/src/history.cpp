@@ -341,6 +341,13 @@ void History::setModeLineVisible(bool visible) {
 }
 void History::setModeLineVisibleImpl(bool visible) { modeLineVisible_ = visible; }
 
+bool History::epubSansSerif() const { return epubSansSerif_; }
+void History::setEpubSansSerif(bool sansSerif) {
+  journal_.emplace_back([sansSerif](History &h) { h.setEpubSansSerifImpl(sansSerif); });
+  setEpubSansSerifImpl(sansSerif);
+}
+void History::setEpubSansSerifImpl(bool sansSerif) { epubSansSerif_ = sansSerif; }
+
 int History::lsMode() const { return lsMode_; }
 void History::setLsMode(int mode) {
   journal_.emplace_back([mode](History &h) { h.setLsModeImpl(mode); });
@@ -582,6 +589,8 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     modeLineVisible_ = toks.size() > 14 ? std::atoi(toks[14].c_str()) != 0 : true;
     // terminalFontPath(2026-10-16)――同じ理由でさらに末尾に。
     if (toks.size() > 15) guiPreferences_.terminalFontPath = decodeField(toks[15]);
+    // epubSansSerif_(2026-10-17)――同じ理由でさらに末尾に。無ければ明朝体。
+    epubSansSerif_ = toks.size() > 16 && std::atoi(toks[16].c_str()) != 0;
   }
 
   complete_ = (i < lines.size() && !lines[i].empty() && lines[i][0] == kSubEof);
@@ -663,7 +672,8 @@ std::string History::serialize(const std::string &programName, const std::string
          std::to_string(guiPreferences_.fgG) + " " + std::to_string(guiPreferences_.fgB) + " " +
          std::to_string(guiPreferences_.bgR) + " " + std::to_string(guiPreferences_.bgG) + " " +
          std::to_string(guiPreferences_.bgB) + " " + encodeField(guiPreferences_.fontPath) + " " +
-         std::to_string(modeLineVisible_ ? 1 : 0) + " " + encodeField(guiPreferences_.terminalFontPath) + "\n";
+         std::to_string(modeLineVisible_ ? 1 : 0) + " " + encodeField(guiPreferences_.terminalFontPath) + " " +
+         std::to_string(epubSansSerif_ ? 1 : 0) + "\n";
   out += std::string(1, kSubEof) + "\n";
   return out;
 }

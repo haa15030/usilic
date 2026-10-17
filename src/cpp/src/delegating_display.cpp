@@ -9,6 +9,7 @@ DelegatingDisplay::DelegatingDisplay(Display &backend) : backend_(&backend) {}
 void DelegatingDisplay::setBackend(Display &backend) {
   backend_ = &backend;
   if (imageProvider_) backend_->setImageProvider(imageProvider_);  // 新しい裏の画面にも(setImageProvider()参照)
+  backend_->setSerifSuppressed(serifSuppressed_);  // 端末から-gへ移った時も(setSerifSuppressed()参照)
 }
 Display &DelegatingDisplay::backend() const { return *backend_; }
 
@@ -55,6 +56,10 @@ void DelegatingDisplay::leaveForExternalProgram() { backend_->leaveForExternalPr
 void DelegatingDisplay::reenterFromExternalProgram() { backend_->reenterFromExternalProgram(); }
 void DelegatingDisplay::leaveForSuspend() { backend_->leaveForSuspend(); }
 void DelegatingDisplay::setVerticalTextHint(bool vertical) { backend_->setVerticalTextHint(vertical); }
+void DelegatingDisplay::setSerifSuppressed(bool suppressed) {
+  serifSuppressed_ = suppressed;
+  backend_->setSerifSuppressed(suppressed);
+}
 void DelegatingDisplay::beginContentEdgeCapture() { backend_->beginContentEdgeCapture(); }
 bool DelegatingDisplay::drawsRuby() const { return backend_->drawsRuby(); }
 void DelegatingDisplay::setPendingRuby(const std::string &reading, int span, bool vertical) {

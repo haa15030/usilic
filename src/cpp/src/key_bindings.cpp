@@ -141,6 +141,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {108, "F-2 C-e"},  // ^O^E  EPUB: 記録の一覧(2026-10-13、縦書きのCOPYで範囲指定して記録したもの)
       {109, "ESC ["},    // ^[[   -g: 行の高さを1ドット広げる(2026-10-17)
       {110, "ESC ]"},    // ^[]   -g: 行の高さを1ドット狭める(2026-10-17)
+      {111, "F-2 t"},    // ^Ot   EPUB: 明朝体・ゴシック体の切り換え(2026-10-17、~/.usilic/historyに残す)
   };
   return entries;
 }

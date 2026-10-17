@@ -381,6 +381,9 @@ class Display {
   // 「：」等を90度回して描く(直接のユーザー報告"-gなので改善を期待")。端末は
   // 字の置き方を変えられないので何もしない。
   virtual void setVerticalTextHint(bool) {}
+  // 2026-10-17(EPUBの明朝・ゴシックの切り換え、Command::ToggleEpubTypeface): trueなら明朝体(Attribute::Serif)の
+  // 字もゴシック体(ふだんのフォント)で描く。-gだけが効き、端末は何もしない(フォントを選べない)。
+  virtual void setSerifSuppressed(bool) {}
   // ルビ(Attribute::RubyBase参照)を親字に添えて描けるか(-gだけ)。
   virtual bool drawsRuby() const { return false; }
   // 次に書く字(親字の最初の字)に読みを添える。spanは親字の幅(横書きは桁、verticalなら

@@ -494,6 +494,7 @@ KEY
 	K-108	F-2 C-e     # ^O^E    EPUB: 記録の一覧(縦書きのCOPYで範囲指定して記録)
 	K-109	ESC [       # ^[[     -g: 行の高さを1ドット広げる
 	K-110	ESC ]       # ^[]     -g: 行の高さを1ドット狭める
+	K-111	F-2 t       # ^Ot     EPUB: 明朝体・ゴシック体の切り換え(-g)
 	K-103	F-1 C-a     # ^J^A    ARC: 一覧(アーカイブだけのFILE履歴)
 	K-104	F-1 C-f     # ^J^F    -g: フォント一覧(FONT・SANS-SERIF・SERIF)
 	K-105	F-4 h       # ^J^Oh   KEYから平文のHELPの当該位置へ(KEYの外では平文のHELP)
