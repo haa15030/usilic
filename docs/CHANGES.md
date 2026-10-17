@@ -31345,7 +31345,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    入れてほしい（historyへも反映で）」)
    - キー: K-111 ^Ot(空いていた^Oの字から、typefaceのt)。key_bindings.cppの表、src/usilicrc・usilicrc.enの
      KEY節に足した。キーの指定は無かったので、usilicrcのKEYで変えられる。
-   - 切り換えるもの: 明朝体(本のCSSのfont-familyどおり、指定が無ければ明朝体、項目のepub_to_help_markupの
+   - 切り換えるもの: 明朝体(本のCSSのfont-familyどおり、指定が無ければ明朝体、epub_to_help_markupの
      既定)と、全部をゴシック体(ふだんのフォント)で描くこと。明朝体で描くのは和文の字だけ(今までどおり)。
    - Display::setSerifSuppressed()を足し、GraphicalDisplayはserifFontFor()が明朝体のフォントを返さなくなる
      (本文・縦書き・ルビの全部がこれを通る)。切り換えた時は字の面のキャッシュを捨てて描き直す。端末の画面は
