@@ -5129,6 +5129,13 @@ int main(int argc, char **argv) {
     std::cerr << "usilic: -c and -g are mutually exclusive.\n";
     return 1;
   }
+  // 2026-10-17、直接のユーザー依頼("ssh起動かどうかはわかる？わかるなら-c固定でよろしく"): ssh越しの起動
+  // (sshdが立てるSSH_CONNECTION・SSH_TTY)では、-gを付けても端末の画面(-c)で動かす。-gの窓はssh先(この
+  // usilicが動いている側)の画面に開いてしまい、手元には出ないため。^Ogも同じく断る(Command::ToggleGuiMode)。
+  if (std::getenv("SSH_CONNECTION") || std::getenv("SSH_TTY")) {
+    forceGui = false;
+    forceCui = true;
+  }
 #ifdef USILIC_NO_GUI
   // 2026-10-05、直接のユーザー依頼(MSYS2で-gを試したら"CUI画面上にエラーメッセージが重なっているので
   // 起動せずにメッセージだけ表示して終わりでいい"): GUI無しのビルドでは、端末の画面を作る前に終える。

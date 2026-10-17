@@ -5509,6 +5509,12 @@ bool Application::handleCommandImpl(Command command) {
         showTransientNotice(activeView(), "Already in GUI");
         return false;
       }
+      // 2026-10-17、直接のユーザー依頼("ssh起動かどうかはわかる？わかるなら-c固定で"): ssh越し(SSH_CONNECTION・
+      // SSH_TTY)では-gにしない(窓はssh先の画面に開いてしまう、main.cppの起動時の判定と同じ)。
+      if (!display_.isGraphical() && (std::getenv("SSH_CONNECTION") || std::getenv("SSH_TTY"))) {
+        showTransientNotice(activeView(), "-g not available over ssh");
+        return false;
+      }
       guiModeToggleRequested_ = true;
       toggleChildrenGuiMode();
       return true;

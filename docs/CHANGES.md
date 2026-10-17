@@ -31323,3 +31323,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      節が無ければ既定(10ms単位で10)。起動時の-wの指定は、読み直すとusilicrcの値に置き換わる。
    - usilicrc・usilicrc.enのWAITの説明に、その場で効くことを足した。
    - 確認: macOSのビルドのみ。
+885. **ssh越しの起動では、-gを付けても端末の画面(-c)で動かし、^Ogも断る**
+   (2026-10-17、直接のユーザー依頼「ssh起動かどうかはわかる？　わかるなら-c固定でよろしく。」)
+   - 判定: sshdがログインのたびに立てる環境変数SSH_CONNECTION・SSH_TTYのどちらかがあればssh越し
+     (openInNewTerminalWindow()が既に使っている判定と同じ)。引数無しの起動は2026-09-26から端末があれば
+     -cなので、変わるのは-gを付けた時と^Ogの時。
+   - main.cpp: ssh越しならforceGui=false・forceCui=true。-gの窓はusilicが動いている側(ssh先)の画面に開いて
+     しまい、手元には出ないため。
+   - application.cpp: Command::ToggleGuiMode(^Og)は、端末の画面からssh越しの時は「-g not available over ssh」を
+     出して何もしない。
+   - 確認: PTYで、SSH_TTYを立てて`usilic -g`が端末の画面で開き、^Ogで上の文が出ること。
