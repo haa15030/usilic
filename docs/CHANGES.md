@@ -31421,3 +31421,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 確認: PTYで、「「小説家になろう」・「カクヨム」と青空文庫の話。」の本で3つに下線が付き、^Nで選んで^Owが
      「Open only」になること。^J^Eの一覧で入口の4行に「(作品ID)」が付き、^Owが「Open only」になること
      (^Mでブラウザが開くかは未確認)。
+894. **2026-10-17: usilic-web(src/web/)をWindows 11でも、PHP付属のサーバー(php -S)で http://localhost/usilic-web/ に置けるようにする**
+   - **経緯**: 直接のユーザー質問「Win11ではlocalhostのsrc/webはできる？」→ WSL2(Debianの手順のまま)か、Windowsに
+     直接PHPを入れるかの2案を示し、後者に要る手直しを伝えたところ「進めて。」。
+   - config.php: PHP_OS_FAMILYがWindowsなら、置き場所を%USERPROFILE%/.local/usilic-web/のtexts・books・marksにする
+     (Windows版のusilicの~、USERPROFILEの~/.local/usilic-web/textsと同じ所。make installが無いので無ければ作る)。
+   - file.php: 展開したEPUBの外を見せない確かめ(realpath()の結果が本のディレクトリの下か)が、Windowsでは区切りが\のため
+     常に外と判定され、本の中のファイルが全部404になるところだった。/にそろえてから比べる。
+   - common.php: 展開したディレクトリのtouch()を@付きに(Windowsではディレクトリのtouchが失敗して警告がヘッダーより前に
+     出ることがある。展開した時刻のままでも、原稿の.epubより新しいので足りる)。
+   - README: 「Windows 11での設置」の節(PHP 8.4のzipを展開しPATHへ、php.iniでzipと送れる大きさ、公開ディレクトリの中へ
+     src/webをジャンクションで置く、php -S 127.0.0.1:80、shell:startupで自動起動、80番が使えない時)を足した。
+   - 確認: Macでphp -S 127.0.0.1:8099 -t <src/webをusilic-webとして置いたディレクトリ>にし、本棚の一覧・
+     file.php/sample.epub/META-INF/container.xml(PATH_INFO)・/usilic-web/が200になること。Windowsでは未確認。

@@ -109,6 +109,47 @@ usilicのmake installがそのディレクトリと見本の.epubを作る。
 
      sudo brew services start httpd
 
+Windows 11での設置(http://localhost/usilic-web/)
+-------------------------------------------------
+Apacheは使わず、PHP付属のサーバー(php -S)で動かす。原稿置き場等はconfig.phpが
+Windowsなら自動で%USERPROFILE%\.local\usilic-web\の下にする(無ければ作る。Windows版
+のusilicが本棚から落とした本を置く所と同じ)。WSL2のUbuntuに置くなら、上の
+「Debian 13への設置」と同じでよい(WSL2のlocalhostはWindowsからも開ける)。
+
+1. https://windows.php.net/download/ から PHP 8.4 の「VS17 x64 Thread Safe」の
+   zipを落とし、C:\php へ展開して、C:\php をPATHに足す(設定→システム→バージョン
+   情報→システムの詳細設定→環境変数)。
+
+2. C:\php\php.ini-production を C:\php\php.ini へ写し、次の行を探して直す
+   (先頭の;を外す)。.epubの展開にzipが要る。
+
+     extension_dir = "ext"
+     extension=zip
+     upload_max_filesize = 64M
+     post_max_size = 64M
+
+3. 公開ディレクトリを作り、その中へこのディレクトリをジャンクションで置く
+   (cmd.exeで。リポジトリの場所は合わせて変える)。
+
+     mkdir %USERPROFILE%\.local\usilic-web\www
+     mklink /J %USERPROFILE%\.local\usilic-web\www\usilic-web %USERPROFILE%\git\usilic\src\web
+
+4. 起動する(終わるまでそのウィンドウで動く。Ctrl+Cで止める)。
+
+     php -S 127.0.0.1:80 -t %USERPROFILE%\.local\usilic-web\www
+
+   ログイン時に自動で起動するには、次の1行のusilic-web.cmdを作り、エクスプローラー
+   のアドレス欄に shell:startup と入れて開いたフォルダーへ置く。
+
+     start "usilic-web" /min php -S 127.0.0.1:80 -t %USERPROFILE%\.local\usilic-web\www
+
+   80番を他のもの(IIS等)が使っていて起動できなければ、127.0.0.1:8080 等にして
+   http://localhost:8080/usilic-web/ で開く(usilicの^J^Eの一覧の既定は80番なので、
+   ^Jeにそのポートのurlを入れる)。
+
+   127.0.0.1だけで受け、.htaccess(Basic認証)は効かないので、このPCの中からしか
+   開けない。php -Sは開発用の簡単なサーバーで、一度に1つずつしか受けない。
+
 usilicから開く
 --------------
 usilicの^J^Eの一覧には http://localhost/usilic-web/ が最初から載っている(^Jeに

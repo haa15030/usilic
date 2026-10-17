@@ -26,8 +26,12 @@ foreach (explode('/', $inner) as $seg) {
     }
 }
 $root = realpath(book_dir($name));
-$path = realpath($root . '/' . $inner);
-if ($root === false || $path === false || strpos($path, $root . '/') !== 0 || !is_file($path)) {
+$path = $root === false ? false : realpath($root . '/' . $inner);
+// Windowsのrealpath()は区切りが\なので、/にそろえてから比べる
+$under = function ($p, $r) {
+    return strpos(str_replace('\\', '/', $p), str_replace('\\', '/', $r) . '/') === 0;
+};
+if ($root === false || $path === false || !$under($path, $root) || !is_file($path)) {
     http_response_code(404);
     exit;
 }

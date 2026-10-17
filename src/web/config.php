@@ -13,6 +13,23 @@ if (PHP_OS_FAMILY === 'Darwin') {
     return;
 }
 
+// Windows(PHP付属のサーバーで http://localhost/usilic-web/、README参照)では、%USERPROFILE%\.local\usilic-webの下
+// (Windows版のusilicが本棚から落とした本を置く所と同じ)。make installが無いので、無ければここで作る。
+if (PHP_OS_FAMILY === 'Windows') {
+    $home = getenv('USERPROFILE') ?: (getenv('HOMEDRIVE') . getenv('HOMEPATH'));
+    $base = str_replace('\\', '/', $home) . '/.local/usilic-web';
+    foreach (['texts', 'books', 'marks'] as $d) {
+        if (!is_dir("$base/$d")) {
+            @mkdir("$base/$d", 0775, true);
+        }
+    }
+    $TEXT_DIR = $base . '/texts';
+    $BOOK_DIR = $base . '/books';
+    $MARK_FILE = $base . '/marks/marks.txt';
+    $EPUB_MARK_FILE = $base . '/marks/epub-marks.txt';
+    return;
+}
+
 // 原稿(UTF-8の*.txt)と*.epubの置き場所。scpで置くか、一覧ページへドラッグする。
 // ドラッグで置くには、apache(www-data)が書き込めること。
 $TEXT_DIR = '/srv/usilic-web/texts';

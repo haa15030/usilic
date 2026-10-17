@@ -144,6 +144,6 @@ function book_dir($name)
     if (!class_exists('ZipArchive') || extract_epub($epub, $dir) !== null) {
         return false;
     }
-    touch($dir);
+    @touch($dir);  // Windowsではディレクトリのtouchが失敗することがある(展開した時刻のままでも足りる)
     return $dir;
 }
