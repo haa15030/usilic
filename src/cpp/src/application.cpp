@@ -3201,6 +3201,7 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
   // 実行される時点でもまだ本来のreturnMode(例: File)を読めるように
   // なる。
   activatePrompt(kind, seed, positionText);
+  epubListSubmitting_ = promptHistoryContext_ && promptHistoryContext_->epubOnly;  // ^J^Eの一覧から打ち始めた
   promptHistoryContext_ = std::nullopt;
   return feedPromptByte(byte);
 }
@@ -7200,11 +7201,13 @@ bool Application::openSelectedListEntryImpl() {
     bool fromSortedManList =
         kind == PromptKind::ManName && promptHistoryContext_->isDirectEntry && !listBrowserChronological_;
     currentMode_ = promptHistoryContext_->returnMode;
+    epubListSubmitting_ = promptHistoryContext_->epubOnly;
     promptHistoryContext_ = std::nullopt;
     bool fromDirectEntry = pendingSearchFromDirectEntryList_;
     std::string originDirectory = directoryMode_.currentDirectory();
     bool fromDirectoryMode = currentMode_ == ApplicationMode::Directory;
     bool ok = executePromptSubmission(kind, text);
+    epubListSubmitting_ = false;
     if (ok && kind == PromptKind::RecentFile && fromDirectEntry && fromDirectoryMode &&
         currentMode_ == ApplicationMode::File) {
       // 2026-09-21、直接のユーザー判断(選択肢B): FILE一覧(^X^F)から選んだファイルも、
@@ -15714,6 +15717,19 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
       if (const std::string *selected = listBrowserMode_.selectedItem();
           selected && *selected != text && recentFileDisplayText(*selected) == text)
         return openRecentFileEntry(*selected);
+      // 2026-10-17、直接のユーザー報告("^J^Eでhttps://nc.syosetu.com/N6486MG^M等やってもスルー。ヒットしないときの
+      // エラーメッセージをよろしく"): ^J^Eに打ったなろうの作品の番号・URLは^Jeと同じく扱い(openEpubPromptSpecial()、
+      // 作品でないURLは^Owの今の対処で開き、EpubならNot a Narou work)、それ以外で開けなければその旨を出す。
+      if (epubListSubmitting_) {
+        epubListSubmitting_ = false;
+        if (openEpubPromptSpecial(text)) return true;
+        ResolvedPath resolved = pathResolver_.resolve(text, directoryMode_.currentDirectory());
+        if (!resolved.exists) {
+          activeView().redraw();
+          showTransientNotice(activeView(), "No such EPUB: " + text);
+          return false;
+        }
+      }
       return executePathInput(text);
     case PromptKind::RecentDirectory: {
       // PathInputとは異なり、K-48はopenSelectedListEntry()の「旧」
@@ -17293,6 +17309,7 @@ void Application::refreshDirectEntryModeLine() {
 void Application::activatePrompt(PromptKind kind, const std::string &initialText, const std::string &positionText,
                                   bool cursorAtStart, bool selectAllOnSeed) {
   promptKind_ = kind;
+  epubListSubmitting_ = false;  // epubListSubmitting_参照
   // feedPromptByte()自身の^N/^P処理参照――空でないpositionTextは
   // feedRegexListByte()の編集への遷移によってのみ渡される(他の全ての
   // activatePrompt()の呼び出し箇所はそれを""のデフォルトのままにする)

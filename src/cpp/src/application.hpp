@@ -2891,6 +2891,9 @@ class Application {
   std::string listBrowserCategoryLabel() const;           // startEpubList()参照
   bool epubPathPending_ = false;  // ^Jeのパス入力中(PathInputの投入をopenEpub()へ回す)
   bool epubListPending_ = false;  // ^J^E: 次のstartPromptHistoryRecall()をEPUBだけにする
+  // ^J^Eの一覧で^Mした文字列・一覧から打ち始めたプロンプトの文字列か(executePromptSubmission()のRecentFile、
+  // activatePrompt()で消す)。
+  bool epubListSubmitting_ = false;
   // ^Ofのフォント一覧(takeFontListRequest()参照)。fontListShowing()は、一覧が今のListBrowserの
   // 中身である間だけ真(別の一覧へ移った後にフラグが残っても、その一覧のEnterを横取りしない)。
   bool fontListRequested_ = false;

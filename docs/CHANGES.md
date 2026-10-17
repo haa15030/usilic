@@ -8887,7 +8887,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ManName/Fgrep/Egrep系テスト計187件・1988アサーション全通過。
 879. **TOOL・SHELLのコマンドの履歴(^J^T^Rの実行順の一覧等)に、同じコマンドを2つ並べない**
    (2026-10-17、直接のユーザー報告「^J^T^Rの履歴一覧には同じ内容は登録しない（修正してもらったような気が）」)
-   - 原因: History::pushRecentImpl()は直前の1件と同じ時だけ積まなかった(項目のFILE/DIRの^R(HISTORY)は
+   - 原因: History::pushRecentImpl()は直前の1件と同じ時だけ積まなかった(FILE・DIRの^R(HISTORY)は
      重複ありの生の記録という2026-08-04の決め事に合わせたもの)。コマンドの履歴も同じ扱いだったので、
      A→B→Aと実行すると実行順の一覧にAが2つ並んだ。以前にこれを直した記録は見つからなかった。
    - history.cpp: RingCategory::ShellCommand(^J^T・SHELLのコマンド)だけは、同じものが前にあればそれを
@@ -31270,3 +31270,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - usilicrcのCP・MV・RMの指定は、Windowsでは使わない。HELP_.txt(未コミット)のCP/MVの説明にその旨を
      足した。
    - 確認: macOS・Windows(クロス)のビルドのみ。
+880. **^J^Eの一覧に打った文字列が開けない時は「No such EPUB: …」を出し、作品の番号・URLは^Jeと同じく扱う**
+   (2026-10-17、直接のユーザー報告「^J^Eでhttps://nc.syosetu.com/N6486MG^M等やってもスルー。ヒットしないときの
+   エラーメッセージをよろしく」)
+   - 原因: ^J^Eの一覧で字を打つと、FILE履歴の入力(PromptKind::RecentFile)に切り替わり、その時に一覧の
+     情報(promptHistoryContext_、epubOnly)を消していた。^Mの文字列はexecutePathInput()へ行き、無いパスは
+     何も出さずに(ls)へ戻っていた。URLもパスとして探すだけだった。
+   - application.cpp: 一覧から打ち始めた時(feedRegexListByte())と一覧の行で^Mした時
+     (openSelectedListEntryImpl())に、^J^Eの一覧だったことをepubListSubmitting_に残す(activatePrompt()で
+     消す)。RecentFileの^Mで^J^Eの一覧だった時は、まずopenEpubPromptSpecial()(^Jeと同じ、なろう・
+     カクヨム・青空文庫の作品の番号・URLはnarou2epub、それ以外のURLは^Owの今の対処で開く、Epubの時は
+     「Not a Narou work: …」)。それでもなく、パスとして無ければ「No such EPUB: <打った文字列>」を出す。
+   - 確認: PTYで、^J^E→^A^K→nosuch.epub^Mで「No such EPUB: nosuch.epub」が出ること。
