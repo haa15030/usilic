@@ -520,6 +520,13 @@ KEY
 	K-105	F-4 h       # ^J^Oh   From KEY to plain HELP at that line (plain HELP outside KEY)
 
 MACRO
+# Keyboard macros.
+#
+# Format: M-n  key  K-n ...   (the key runs the K-n functions in order)
+#
+# Keys recorded with ^X( ... ^X) are added at the "--" line by ^Xs right
+# after ^Xe, and saved as M-n under the key (one letter) you are asked for
+# (effective at once).  WAIT sets the interval between the keys.
 	M-1	;	K-20 K-4 K-28			# ^G^P^M	Open previous entry
 	M-2	:	K-20 K-3 K-28			# ^G^N^M	Open next entry
 	M-3	[	K-35 K-4			# .^P		Select and move up

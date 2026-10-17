@@ -26156,6 +26156,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      名前の説明なので除く。usilicrcに無い名前(narou2epub)の注釈の見出しには「usilicrc の」を付けない。
    - doc/HELP.notes: 「@narou2epub」(何をするものか・書式・保存先・準備・配布しない注意)を足した。
    - 確認: ~/HELP.txtから作り直して18 notes (36 refs)。リンクにならないのは冒頭の表記の一覧のSHELLと「SHELL busy」だけ。
+893. **usilicrcのMACROの見出しの後に説明のコメントを足す(HELP.epubの注釈になる)**
+   (2026-10-17、項目892と同じ依頼。HELPの原稿でMACROを斜体にしていたが、usilicrcのMACROの見出しの後に「#」の行が
+   無かったので、注釈ができなかった)
+   - src/usilicrc・src/usilicrc.en: MACROの見出しの直後に、書式(M-n キー K-n ...)と、^Xe直後の^Xsでの保存
+     (その場で効く、reloadUsilicrcKeys())、WAITで間隔、の説明を足した。
+   - 確認: usilic -eでMACROの注釈ができること(項目892の18 notesに含む)。MACRO関係のテストは通る。
 
 
 ## 27. その他
