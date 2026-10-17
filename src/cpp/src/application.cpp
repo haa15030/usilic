@@ -19430,6 +19430,10 @@ namespace {
 std::vector<int> keyBytesFromHelpLabel(std::string label) {
   std::size_t colon = label.find("\xEF\xBC\x9A");  // 「：」
   if (colon != std::string::npos) label.erase(colon);
+  // 行頭がタブの行(ページャーのキー)は、タブがU+2060+空白になって来る(CutMode::split()のconvertTabsForSearch()
+  // 参照)。2026-10-17、直接のユーザー報告("「ファイル閲覧：ページャー」の項目で^Mが効かない"): このU+2060を
+  // キーの字と見て「解釈できない」にしていた。
+  for (std::size_t p; (p = label.find("\xE2\x81\xA0")) != std::string::npos;) label.erase(p, 3);
   std::size_t first = label.find_first_not_of(" \t");
   if (first == std::string::npos) return {};
   label = label.substr(first);
