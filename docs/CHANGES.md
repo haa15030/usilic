@@ -31333,3 +31333,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - application.cpp: Command::ToggleGuiMode(^Og)は、端末の画面からssh越しの時は「-g not available over ssh」を
      出して何もしない。
    - 確認: PTYで、SSH_TTYを立てて`usilic -g`が端末の画面で開き、^Ogで上の文が出ること。
+886. **HELPのARCの対応するsuffixの一覧に、Windowsで扱えるものを書き足した**
+   (2026-10-17、直接のユーザー依頼「WindowsでのARC対応拡張子をHELPに併記。」)
+   - src/HELP_.txt(追跡対象外)のARCのsuffixの一覧の次の行に「（Windows では .rpm .deb を除く上記全て。.zip .jar
+     は内蔵の unzip、他は Windows 付属の tar.exe で扱います）」を足した。src/HELP_en_.txtにも英語で同じ行。
+     項目873のとおり、Windowsではtar・圧縮したtar・.lzh・.rar・.7zはtar.exe、.zip・.jarは内蔵のunzip。
+     .rpm(rpm)・.deb(ar)はWindowsには無いので、一覧が取れず通常のfileとして開く。
+   - コードの変更は無い。
