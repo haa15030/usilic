@@ -7218,7 +7218,9 @@ bool Application::openSelectedListEntryImpl() {
       fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, fileMode_.currentFile(),
                                                     "FILE");
       fileReturnsToFileList_ = true;
-      fileView_.redraw();
+      // 2026-10-17、直接のユーザー報告("^J^Eでなろう本を選ぶと横書き表示、何か操作すると縦書きになる"): 縦書きの
+      // EPUBは縦書きで描き終わっているので、fileView_を横書きで描き直さない(activeView()が縦横を合わせる)。
+      activeView().redraw();
     }
     if (ok && kind == PromptKind::RecentDirectory && fromDirectEntry && currentMode_ == ApplicationMode::Directory) {
       // 2026-09-21追加、直接のユーザー依頼(一覧ありモードの仕様統一): DIR一覧

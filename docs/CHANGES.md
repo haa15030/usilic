@@ -31288,3 +31288,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      カクヨム・青空文庫の作品の番号・URLはnarou2epub、それ以外のURLは^Owの今の対処で開く、Epubの時は
      「Not a Narou work: …」)。それでもなく、パスとして無ければ「No such EPUB: <打った文字列>」を出す。
    - 確認: PTYで、^J^E→^A^K→nosuch.epub^Mで「No such EPUB: nosuch.epub」が出ること。
+882. **^J^Eの一覧で縦書きの本を選ぶと、最初の画面だけ横書きで出る件**
+   (2026-10-17、直接のユーザー報告「^J^Eで`なろう`本を選ぶと横書き表示、何か操作すると縦書きになる。」)
+   - 原因: 一覧で選んだファイルに^Gで一覧へ戻る印を付ける所(openSelectedListEntryImpl()のRecentFileの後始末、
+     2026-09-21)が、最後にfileView_.redraw()を呼んでいた。openEpub()が縦書きで描き終えた画面を、横書きの
+     本文(fileView_)で上から描き直していた。次のキーでactiveView()を通る描き直しが起き、縦書きに戻っていた。
+   - application.cpp: そこをactiveView().redraw()にする(縦書きの本なら縦書きで描く)。
+   - 確認: PTYで、^J^Eからなろうの本を選んだ直後の画面が縦書きのままであること。
