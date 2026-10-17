@@ -614,7 +614,45 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       pos = end;
     }
     out += h.substr(pos);
-    return out;
+    // 2026-10-17、直接のユーザー依頼("斜体箇所が注釈だがそれにそってnoteを更新してみて。narou2epub も入れてみたけど
+    // noteにできる？"): HELPの原稿は「usilicrc の」を付けずに、設定項目の名前を斜体(全角の英字)で書くようになった。
+    // 斜体の名前が注釈のある項目(usilicrcのコメントかHELP.notesの文、narou2epub等のusilicrcに無い名前はHELP.notesの
+    // @の行だけ)なら注釈へのリンクにする。ただし「」の中(「SHELL busy」等の出力するメッセージ)と、名前の後に「 :」が
+    // 続く所(冒頭の表記の一覧の「SHELL : 仮想端末」等)は名前の説明なのでリンクにしない。
+    std::string linked;
+    pos = 0;
+    for (;;) {
+      std::size_t m = out.find("<i>", pos);
+      if (m == std::string::npos) break;
+      std::size_t close = out.find("</i>", m + 3);
+      if (close == std::string::npos) break;
+      std::string item = out.substr(m + 3, close - m - 3);
+      std::size_t end = close + 4;
+      bool inQuote = m >= 3 && out.compare(m - 3, 3, "\xE3\x80\x8C") == 0;  // 「
+      // 表記の一覧の「SHELL : 仮想端末」(名前の後に「 :」)
+      std::size_t after = end;
+      while (int n = spaceLength(out, after)) after += n;
+      bool legend = out.compare(after, 1, ":") == 0;
+      bool inLink = out.rfind("<a ", m) != std::string::npos &&
+                    (out.rfind("</a>", m) == std::string::npos || out.rfind("</a>", m) < out.rfind("<a ", m));
+      if (item.empty() || item.find('<') != std::string::npos || inQuote || legend || inLink || !hasNote(item)) {
+        linked += out.substr(pos, end - pos);
+        pos = end;
+        continue;
+      }
+      if (!noteIds.count(item)) {
+        noteIds[item] = "n" + std::to_string(noteIds.size() + 1);
+        noteOrder.push_back(item);
+      }
+      std::string nid = noteIds[item];
+      std::string rid = "r" + std::to_string(++refCount);
+      backrefs[nid].push_back({fname, rid});
+      linked += out.substr(pos, m - pos);
+      linked += "<a id=\"" + rid + "\" href=\"notes.xhtml#" + nid + "\" epub:type=\"noteref\"><i>" + item + "</i></a>";
+      pos = end;
+    }
+    linked += out.substr(pos);
+    return linked;
   };
 
   std::map<std::pair<int, int>, std::string> classes;
@@ -685,8 +723,11 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
         inner += "<p class=\"rc\">" + (t.empty() ? std::string(kNbsp) : t) + "</p>\n";
       }
     }
-    asides += "<aside id=\"" + nid + "\" epub:type=\"footnote\">\n<p class=\"nh\">" + back +
-              " <i>usilicrc</i> \xE3\x81\xAE <b>" + escapeHtml(item) + "</b></p>\n" + inner + "</aside>\n";
+    // usilicrcに無い名前(narou2epub等、HELP.notesの文だけ)は、見出しに「usilicrc の」を付けない。
+    std::string title = rcComments.count(item) ? " <i>usilicrc</i> \xE3\x81\xAE <b>" + escapeHtml(item) + "</b>"
+                                               : " <b>" + escapeHtml(item) + "</b>";
+    asides += "<aside id=\"" + nid + "\" epub:type=\"footnote\">\n<p class=\"nh\">" + back + title + "</p>\n" + inner +
+              "</aside>\n";
   }
   if (!asides.empty()) {
     chapters.push_back({"\xE6\xB3\xA8\xE9\x87\x88", {}, {}, "notes"});  // 注釈

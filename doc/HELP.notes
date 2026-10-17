@@ -2,3 +2,14 @@
 # 注釈は本文の「usilicrc の URL」等の設定項目ごとに1つで、中身はsrc/usilicrcのその項目の見出しの直後の
 # 「#」の行。ここに「@設定項目」(例: @URL)の行の後に文を書くと、その注釈はこちらの文になる(空行で段落)。
 # #で始まる行は読まない。
+
+@narou2epub
+「小説家になろう」（ノクターンノベルズ等も）・「カクヨム」・「青空文庫」の作品を縦書きの EPUB3 にするプログラム（~/.local/lib/usilic/narou2epub、make install で入ります）。
+narou2epub Nコード|カクヨムの作品ID|作品の URL|青空文庫の図書カードの URL ... [-o directory]
+directory（省略時は ~/.usilic/data/）へ「題名_Nコード（作品ID）_日付.epub」で保存し、そのパスを出力します。SHELL の中で実行すると、作り終えた EPUB をそのまま開きます。
+
+事前に次の準備が必要です。
+python3 -m venv ~/.local/lib/usilic/venv
+~/.local/lib/usilic/venv/bin/pip install lxml ebooklib requests Pillow
+
+作った EPUB は個人で楽しむためだけに使い、他人に配布しないでください（作品の著作権は作者にあります）。
