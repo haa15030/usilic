@@ -31369,3 +31369,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - History: epubSansSerif()をUSILICのトレーラーの末尾(terminalFontPathの後ろ)に足した。古いファイルには
      無いので明朝体。main.cppが起動時に前回の選択をdisplay.setSerifSuppressed()へ渡す。
    - テスト: test_history.cppに往復の1件。PTYの端末の画面で^Otの表示を確かめた(-gの画面では試していない)。
+890. **EPUBの注釈の表示では^X^Xを効かなくし、戻るのは^G(右クリック)だけにする**
+   (2026-10-17、直接のユーザー依頼「注釈から^X^Xで戻るのは紛らわしくならない？（^X^Xで注釈へ戻らないとおかしいとか）」
+   への回答の選択肢(a)「注釈では^X^Xを効かなくし、戻るのは^Gだけにする」)
+   - 注釈の表示(epubNote_)はfileView_の本文の行を注釈の行だけに差し替えたもので、ジャンプマークは本文の行を
+     指しているため、注釈の中の^X^Xは思わぬ位置へ動いていた。
+   - application.cpp: handleCommandImpl()の先頭で、ファイル閲覧中に注釈を表示している(epubNoteActive())時の
+     Command::ExchangeJumpMarkは何もせず、モードラインに「^G to return from note」を出す。
+   - HELPの原稿(~/HELP_.txt:71「^G および ^X^X（またはマウスの右クリック）で元の位置へ戻ります」)は、ユーザーに
+     書き換えを依頼(src/HELP_.txtには該当の記述が無い)。
+   - 確認: ビルドのみ(注釈のあるEPUBでの実機確認は未)。

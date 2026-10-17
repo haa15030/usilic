@@ -4924,6 +4924,13 @@ bool Application::handleCommandImpl(Command command) {
   if ((command == Command::MoveDown || command == Command::MoveUp) &&
       selectAdjacentEpubHorizontalLink(command == Command::MoveDown ? 1 : -1))
     return true;
+  // 2026-10-17、直接のユーザー依頼("注釈から^X^Xで戻るのは紛らわしくならない？"→(a)、^X^Xは効かなくし^Gだけで
+  // 戻る): 注釈の表示(epubNote_)の行はfileView_の本文の行を差し替えたもので、ジャンプマークは本文の行を指すため、
+  // ^X^Xは注釈の中の思わぬ位置へ動いていた。
+  if (command == Command::ExchangeJumpMark && currentMode_ == ApplicationMode::File && epubNoteActive()) {
+    showTransientNotice(activeView(), "^G to return from note");
+    return false;
+  }
   // 横書きの本の^X^X: ContentViewのジャンプマークで戻った先がリンクの行なら、飛ぶ前の画面の位置と
   // 選んでいたリンクも戻す(restoreEpubJumpOrigin())。
   if (command == Command::ExchangeJumpMark && epubHorizontalLinksActive() && !epubBookVertical() &&
