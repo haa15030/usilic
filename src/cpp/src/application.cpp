@@ -1545,8 +1545,10 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
               /*rightWatermark=*/ContentView::programWatermark(), ""};
     }
     if (cutOrigin_ == CutOrigin::Key && !cutMode_.parentPattern()) {
+      // 2026-10-17、直接のユーザー報告("file から ^K したときは戻り値が file でないと"): ^Gの戻り先がファイル閲覧なら、
+      // (ls)のディレクトリではなくそのファイル。
       return {name, std::to_string(contentByteCount(cutView_)), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
-              directoryMode_.currentDirectory()};
+              cutReturnMode_ == ApplicationMode::File ? fileMode_.currentFile() : directoryMode_.currentDirectory()};
     }
     // バイト数(2026-08-24修正、実際の報告+参照: "CUT" "01/13 TOP"
     // "435" "/Users/.../CLAUDE.md         "――このプロバイダには以前は

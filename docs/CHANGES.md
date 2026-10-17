@@ -2169,6 +2169,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      他の節の行(タブ無し)は効いていたので、前回は再現できなかった。
    - application.cpp: keyBytesFromHelpLabel()で、先にU+2060を全部除く。
    - 確認: PTYで、fileを開いて^K→「j：画面を１行下へ」で^M→fileへ戻って1行進むこと。
+889. **fileから^Kで開いたKEYの戻り値欄を、(ls)のディレクトリではなくそのfileにする**
+   (2026-10-17、直接のユーザー報告「さらに file から ^K したときは戻り値が file でないと。」)
+   - application.cpp: cutView_のモードライン(CutOrigin::Key)の戻り値欄を、^Gの戻り先(cutReturnMode_)が
+     ファイル閲覧ならfileMode_.currentFile()に。それ以外は従来どおり(ls)のディレクトリ。^G自体は元々fileへ戻っていた。
+   - 確認: PTYで、fileから^Kしたモードラインの右端が「…/a.txt」になること。
 
 ## 3. FGREP / EGREP
 
