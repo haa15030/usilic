@@ -8885,6 +8885,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      配下の各種ファイル等)を正しく返すことを確認。関連するListBrowser/
      RecentFile/RecentDirectory/History/GrepPattern/CutPattern/
      ManName/Fgrep/Egrep系テスト計187件・1988アサーション全通過。
+879. **TOOL・SHELLのコマンドの履歴(^J^T^Rの実行順の一覧等)に、同じコマンドを2つ並べない**
+   (2026-10-17、直接のユーザー報告「^J^T^Rの履歴一覧には同じ内容は登録しない（修正してもらったような気が）」)
+   - 原因: History::pushRecentImpl()は直前の1件と同じ時だけ積まなかった(項目のFILE/DIRの^R(HISTORY)は
+     重複ありの生の記録という2026-08-04の決め事に合わせたもの)。コマンドの履歴も同じ扱いだったので、
+     A→B→Aと実行すると実行順の一覧にAが2つ並んだ。以前にこれを直した記録は見つからなかった。
+   - history.cpp: RingCategory::ShellCommand(^J^T・SHELLのコマンド)だけは、同じものが前にあればそれを
+     消してから末尾へ積む。~/.usilic/historyのHISTORY節を読む時も同じにし、既に積み上がった分は新しい方
+     だけを残す。FILE・DIR等の他の履歴は今までどおり。
+   - テスト: test_history.cppに1件足した。
 
 
 ## 11. CP / MV / RM / ARC

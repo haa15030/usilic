@@ -157,6 +157,18 @@ TEST_CASE("ring history: evicts the single oldest entry once at the retention ca
   CHECK(entries[2] == "cmd4");
 }
 
+// 2026-10-17(^J^T^Rの実行順の一覧に同じコマンドを並べない、History::pushRecentImpl()参照)。
+TEST_CASE("ring history: a command run again moves to the end instead of being listed twice") {
+  History h(10);
+  h.pushRecent(RingCategory::ShellCommand, "ls");
+  h.pushRecent(RingCategory::ShellCommand, "make");
+  h.pushRecent(RingCategory::ShellCommand, "ls");
+  const auto &entries = h.recentEntries(RingCategory::ShellCommand);
+  REQUIRE(entries.size() == 2);
+  CHECK(entries[0] == "make");
+  CHECK(entries[1] == "ls");
+}
+
 TEST_CASE("retentionCount() reflects the constructor argument (no F6-sentinel dance needed)") {
   History h(42);
   CHECK(h.retentionCount() == 42);

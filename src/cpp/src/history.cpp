@@ -249,6 +249,9 @@ void History::pushRecentImpl(RingCategory category, const std::string &name) {
   // 含まないことに頼るのではなく、今は表示時に自力で重複排除を行う。
   auto &ring = rings_[category];
   if (!ring.empty() && ring.back() == name) return;
+  // 2026-10-17、直接のユーザー報告("^J^T^Rの履歴一覧には同じ内容は登録しない"): TOOL・SHELLで実行した
+  // コマンドの履歴は、同じものが前にあればそれを消してから末尾へ積む(実行順の一覧に同じ行が並ばない)。
+  if (category == RingCategory::ShellCommand) ring.erase(std::remove(ring.begin(), ring.end(), name), ring.end());
   ring.push_back(name);
   if (ring.size() > limitFor(category)) ring.pop_front();
 
@@ -477,6 +480,9 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     // コメント参照。
     auto &ring = rings_[category];
     while (i < lines.size() && !isSectionBoundary(lines[i])) {
+      // コマンドの履歴は同じものを1つだけ(pushRecentImpl()参照、前に積み上がった分も新しい方だけ残す)。
+      if (category == RingCategory::ShellCommand)
+        ring.erase(std::remove(ring.begin(), ring.end(), decodeField(lines[i])), ring.end());
       ring.push_back(decodeField(lines[i]));
       if (ring.size() > limitFor(category)) ring.pop_front();
       i++;
