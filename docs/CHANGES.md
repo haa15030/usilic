@@ -31316,3 +31316,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 確認: macOSのビルドと、PTYの端末の画面で「LINE-HEIGHT: -g only」が出ることのみ。-gの画面では試していない。
      test_key_bindings.cppの「KEY sections equal the built-in table」のKEYの比較は通る(同じテストのMACROの数の
      確認(12個)は、この変更の前から失敗している。src/usilicrcのMACROは6個)。
+884. **usilicrcのWAIT(マクロの間隔)も、usilicrcを直したらその場で効かせる**
+   (2026-10-17、直接のユーザー依頼「WAITもusilicrc編集で即時反映。」)
+   - configuration.cpp: Configuration::reloadKeysAndMacros()(EDITでusilicrcを直した後・^Xs)で、WAITも
+     読み直す。WAITはマクロを実行する時(playRecordedMacro())に毎回読むので、次の^Xeから新しい間隔になる。
+     節が無ければ既定(10ms単位で10)。起動時の-wの指定は、読み直すとusilicrcの値に置き換わる。
+   - usilicrc・usilicrc.enのWAITの説明に、その場で効くことを足した。
+   - 確認: macOSのビルドのみ。

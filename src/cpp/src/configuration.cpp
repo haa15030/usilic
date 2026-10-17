@@ -890,6 +890,8 @@ void Configuration::reloadKeysAndMacros(const std::string &rcText) {
   // 2026-10-17、直接のユーザー依頼("LINE-HEIGHTでは0.1単位かつ即時反映"): LINE-HEIGHTも読み直す(-gの画面へは
   // main.cppが当て直す)。節が無ければ既定(フォントの高さ)へ戻る。
   lineHeightRatios_ = fresh.lineHeightRatios_;
+  // 同日、直接のユーザー依頼("WAITもusilicrc編集で即時反映"): マクロの間隔(使う時に読む)も。
+  waitIntervalMicros_ = fresh.waitIntervalMicros_;
 }
 
 std::optional<ProgramCommand> Configuration::programForSuffix(const std::string &filename,
