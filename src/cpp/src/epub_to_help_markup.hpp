@@ -74,6 +74,14 @@ struct EpubLayoutHints {
   std::vector<std::pair<int, int>> notes;
 };
 
+// 2026-10-17追加、直接のユーザー依頼(「小説家になろう」・「小説を読もう」・「ノクターンノベルズ」・「カクヨム」・「青空文庫」は
+// `https://`のアンダーラインで表示し、^MでOpen): 本文中のこれらのサイトの名前→そのサイトの入口のURL。本文の<a>の外で
+// 名前が出てきたら、Webのリンク(下線、EpubLayoutHints::webLinks/lineLinks)にする。
+const std::vector<std::pair<std::string, std::string>> &epubNovelSiteLinks();
+// `url`が上のサイトの入口(末尾の/の有無、http/httpsは問わない)か。作品の番号を探すために開くので、^Owの対処によらず
+// 常にOpen(既定のブラウザ等)で開く(Application::openEpubWebLink())。
+bool isEpubNovelSiteUrl(const std::string &url);
+
 std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember,
                                             std::map<int, int> *links = nullptr,
                                             EpubLayoutHints *layoutHints = nullptr);

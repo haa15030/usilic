@@ -573,6 +573,9 @@ std::vector<std::string> fileHistoryBadges(const Configuration &configuration, R
     bool epubArchive = item.size() > 1 && item.back() == '/' && isEpubFile(item.substr(0, item.size() - 1));
     if (epubArchive) badges.push_back(archiveBadgeFor(configuration, item.substr(0, item.size() - 1)));
     else if (isEpubFile(item)) badges.push_back("(epub)");
+    // 2026-10-17、直接のユーザー依頼("^J^E一覧だが、やはり"(作品ID)"を付けて欲しい"): 小説サイトの入口は、作品の
+    // 番号(ID)を探しに開く所なので"(作品ID)"。
+    else if (isEpubNovelSiteUrl(item)) badges.push_back("(\xE4\xBD\x9C\xE5\x93\x81ID)");  // (作品ID)
     else badges.push_back(archiveBadgeFor(configuration, item));
   }
   return badges;
@@ -8027,24 +8030,32 @@ bool Application::openEpubLineImage(const ContentView &view) {
 // ほしい"): URLをWebの場所のファイル(.webloc)にしてクイックルック(runQuickLook())に渡す。
 // 2026-10-04、直接のユーザー依頼("usilicrcで選べるようにして、既定はA(既定のブラウザ)。^Owでモードを
 // 巡回"): Configuration::urlHandlers()の今の対処(urlHandlerIndex_)で開く。以前のクイックルックはLook。
-// ^J^Eのなろう・カクヨム等のサイトの入口(kEpubListSiteUrls参照): ^Owの今の対処で開く。Epub(narou2epub)は作品の
-// URLしかEPUBにできないので、その時はOpen(既定のブラウザ等)で。
-bool Application::openEpubListSiteUrl(const std::string &url) {
-  const auto &handlers = configuration_.urlHandlers();
-  if (!handlers.empty() && handlers[urlHandlerIndex_ % handlers.size()].name == "Epub") {
-    for (std::size_t i = 0; i < handlers.size(); i++)
-      if (handlers[i].name == "Open") {
-        std::size_t saved = urlHandlerIndex_;
-        urlHandlerIndex_ = i;
-        bool ok = openEpubWebLink(url);
-        urlHandlerIndex_ = saved;
-        return ok;
-      }
-  }
-  return openEpubWebLink(url);
-}
+// ^J^Eのなろう・カクヨム等のサイトの入口(kEpubListSiteUrls参照)。2026-10-17から、^Owの対処によらずOpen
+// (openEpubWebLink()のisEpubNovelSiteUrl()参照)。
+bool Application::openEpubListSiteUrl(const std::string &url) { return openEpubWebLink(url); }
 
 bool Application::openEpubWebLink(const std::string &url) {
+  const auto &handlers = configuration_.urlHandlers();
+  if (handlers.empty()) return false;
+  // 2026-10-17、直接のユーザー依頼("リンクをOpenで開くのは５つの小説サイトのみ。作品IDを確認するためだからPDF等に
+  // してもしょうがない"): 小説サイトの入口(本文のサイトの名前・^J^Eの一覧)は、^Owの今の対処によらずOpenで開く。
+  if (isEpubNovelSiteUrl(url)) {
+    auto open = std::find_if(handlers.begin(), handlers.end(),
+                             [](const Configuration::UrlHandler &h) { return h.name == "Open"; });
+    if (open == handlers.end()) {
+      showTransientNotice(activeView(), "No Open in URL (usilicrc)");
+      return false;
+    }
+    std::size_t saved = urlHandlerIndex_;
+    urlHandlerIndex_ = static_cast<std::size_t>(open - handlers.begin());
+    bool ok = openEpubWebLinkWithCurrentHandler(url);
+    urlHandlerIndex_ = saved;
+    return ok;
+  }
+  return openEpubWebLinkWithCurrentHandler(url);
+}
+
+bool Application::openEpubWebLinkWithCurrentHandler(const std::string &url) {
   const auto &handlers = configuration_.urlHandlers();
   if (handlers.empty()) return false;
   const Configuration::UrlHandler &handler = handlers[urlHandlerIndex_ % handlers.size()];
@@ -8282,6 +8293,12 @@ void Application::showNotice(const std::string &text) { showTransientNotice(acti
 bool Application::cycleUrlHandler() {
   const auto &handlers = configuration_.urlHandlers();
   if (handlers.empty()) return false;
+  // 2026-10-17、直接のユーザー依頼("^Owしようとすると「Openのみ」エラーでよろしく。それ以外のサイトでは^Owで切り換え
+  // 可能"): 選んでいるリンクが小説サイトの入口(openEpubWebLink()参照)なら巡回しない。
+  if (auto url = selectedEpubWebUrl(); url && isEpubNovelSiteUrl(*url)) {
+    showTransientNotice(activeView(), "Open only");
+    return false;
+  }
   urlHandlerIndex_ = (urlHandlerIndex_ + 1) % handlers.size();
   showTransientNotice(activeView(), handlers[urlHandlerIndex_].name);
   return true;
@@ -8385,6 +8402,33 @@ bool Application::openEpubPromptSpecial(const std::string &text) {
     return true;
   }
   return false;
+}
+
+// 本文で今選んでいるWebのリンクのURL(^M・クリックで開くもの)。縦書きは列カーソルの列、横書きは選んでいるリンク(無ければ
+// カーソルの行の最初のWebのリンク)。^J^Eの一覧ではカーソルの行。cycleUrlHandler()用。
+std::optional<std::string> Application::selectedEpubWebUrl() {
+  if (currentMode_ == ApplicationMode::ListBrowser && promptHistoryContext_ && promptHistoryContext_->epubOnly) {
+    const auto &items = listBrowserMode_.items();
+    int index = listBrowserView_.cursorIndex();
+    if (index >= 0 && index < static_cast<int>(items.size())) return items[index];
+    return std::nullopt;
+  }
+  if (currentMode_ != ApplicationMode::File || !isEpubFile(fileMode_.currentFile())) return std::nullopt;
+  if (epubVerticalActive()) {
+    auto target = epubVerticalColumnTarget(epubVerticalCursor_);
+    if (target && !target->url.empty()) return target->url;
+    return std::nullopt;
+  }
+  if (epubHorizontalLink_ && epubHorizontalLinksActive()) {
+    const auto &lineLinks = fileMode_.epubLayoutHints().lineLinks;
+    auto it = lineLinks.find(epubHorizontalLink_->raw);
+    int ordinal = epubHorizontalLink_->ordinal;
+    if (it != lineLinks.end() && ordinal >= 0 && ordinal < static_cast<int>(it->second.size()) &&
+        it->second[ordinal].compare(0, 4, "url:") == 0)
+      return it->second[ordinal].substr(4);
+    return std::nullopt;
+  }
+  return fileMode_.epubWebLinkForRawLine(fileRawLineAtCursor());
 }
 
 // 横書きの本文のカーソルの行のWebのリンク(openEpubWebLink())。

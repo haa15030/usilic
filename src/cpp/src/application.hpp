@@ -2888,6 +2888,8 @@ class Application {
   bool returnToEpubToc();                                 // 同上
   bool startEpubPrompt();
   bool openEpubPromptSpecial(const std::string &text);  // ^Jeのなろうの作品の番号・URL(2026-10-12)
+  bool openEpubWebLinkWithCurrentHandler(const std::string &url);  // openEpubWebLink()参照
+  std::optional<std::string> selectedEpubWebUrl();                // cycleUrlHandler()参照
   bool runNarouToEpub(const Configuration::UrlHandler &handler, const std::string &url);                                 // K-98(^Je)
   bool startEpubList();                                   // K-99(^J^E)
   bool startArchiveList();                                // K-103(^J^A)

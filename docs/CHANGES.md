@@ -31379,3 +31379,28 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - HELPの原稿(~/HELP_.txt:71「^G および ^X^X（またはマウスの右クリック）で元の位置へ戻ります」)は、ユーザーに
      書き換えを依頼(src/HELP_.txtには該当の記述が無い)。
    - 確認: ビルドのみ(注釈のあるEPUBでの実機確認は未)。
+891. **EPUBの本文の小説サイトの名前を下線のリンクにし、小説サイトの入口は^Owによらず常にOpenで開く。^J^Eの一覧の入口には「(作品ID)」**
+   (2026-10-17、直接のユーザー依頼「EPUBモードからのwebアクセスは常時Open、「小説家になろう」・「小説を読もう」・
+   「ノクターンノベルズ」・「カクヨム」・「青空文庫」は`https://`のアンダーラインで表示し、^MでOpen。」、確認への回答
+   「リンクをOpenで開くのは５つの小説サイトのみ。作品IDを確認するためだからPDF等にしてもしょうがない。^Owしようとすると
+   「Openのみ」エラーでよろしく。それ以外のサイトでは^Owで切り換え可能。アンダーラインは本文中に。^J^E一覧だが、やはり
+   "(作品ID)"を付けて欲しい。」)
+   - epub_to_help_markup.cpp/.hpp: epubNovelSiteLinks()(名前→入口のURL: 小説家になろう→https://syosetu.com/、
+     小説を読もう→https://yomou.syosetu.com/、ノクターンノベルズ→https://noc.syosetu.com/、カクヨム→https://kakuyomu.jp/、
+     青空文庫→https://www.aozora.gr.jp/)とisEpubNovelSiteUrl()(末尾の/、http/httpsは問わない)を足した。
+     text()で、<a>の外・ルビと<pre>と傍点の外に名前が出てきたら、<a href>のWebのリンクと同じく下線を付けて
+     "url:"のリンクとして記録する(EpubLayoutHints::lineLinks/webLinks、1行に複数あれば^N^Pで選べる)。
+     HELP.epub(「小説家になろう」・「カクヨム」等をHELPの本文で書いている)にもそのまま効く。
+   - application.cpp: openEpubWebLink()は、URLが小説サイトの入口ならusilicrcのURLのOpenで開く(無ければ
+     「No Open in URL (usilicrc)」)。それ以外は従来どおり今の対処(openEpubWebLinkWithCurrentHandler())。
+     ^J^Eの入口(openEpubListSiteUrl())もこれに任せた(以前はEpubの時だけOpen、他は^Owの今の対処)。
+   - application.cpp: cycleUrlHandler()(^Ow)は、選んでいるリンク(selectedEpubWebUrl(): 縦書きは列カーソルの列、
+     横書きは選んでいるリンクかカーソルの行の最初のWebのリンク、^J^Eの一覧はカーソルの行)が小説サイトの入口なら、
+     巡回せずに「Open only」を出す。
+   - application.cpp: fileHistoryBadges()で、小説サイトの入口のバッジを「(作品ID)」に。
+   - src/usilicrc・src/usilicrc.en: URLの節の説明に、小説サイトの入口は常にOpenと書き足した。
+   - HELPの原稿(~/HELP_.txt:340「選ぶと ^Ow の今のモードで開きます（Epub の時はブラウザ等で開きます）」)は、
+     ユーザーに書き換えを依頼。
+   - 確認: PTYで、「「小説家になろう」・「カクヨム」と青空文庫の話。」の本で3つに下線が付き、^Nで選んで^Owが
+     「Open only」になること。^J^Eの一覧で入口の4行に「(作品ID)」が付き、^Owが「Open only」になること
+     (^Mでブラウザが開くかは未確認)。

@@ -1108,6 +1108,29 @@ class BodyConverter {
   }
 
   void text(const std::string &s) {
+    // 本文中の小説サイトの名前(epubNovelSiteLinks())は、<a>の外ならWebのリンクにする(最初に出てくる名前から順に)。
+    if (!linkTarget_ && !emphasizing_ && !linkingSiteName_ && !rubyBase_ && !rubyText_ && preDepth_ == 0) {
+      std::size_t at = std::string::npos;
+      const std::pair<std::string, std::string> *site = nullptr;
+      for (const auto &entry : epubNovelSiteLinks())
+        if (std::size_t p = s.find(entry.first); p < at) {
+          at = p;
+          site = &entry;
+        }
+      if (site) {
+        linkingSiteName_ = true;
+        text(s.substr(0, at));
+        linkTarget_ = "url:" + site->second;
+        linkLineRecorded_ = false;
+        changeStyle(underline_, +1, "u");
+        text(site->first);
+        changeStyle(underline_, -1, "u");
+        linkTarget_.reset();
+        linkingSiteName_ = false;
+        text(s.substr(at + site->first.size()));
+        return;
+      }
+    }
     // 傍点(emphasis_): 字ごとに、その字を親字・傍点を読みにしたルビにする(-gが字の右/上に
     // 描く、-cは《》ごと出さない――ContentView::renderLine()・toCells()参照)。ルビの中
     // (親字・読み)と<pre>の中は今までどおり。
@@ -1323,6 +1346,7 @@ class BodyConverter {
   // 出している最中(読みの字に傍点を付けないため)。
   std::string emphasis_;
   bool emphasizing_ = false;
+  bool linkingSiteName_ = false;  // text()が小説サイトの名前をリンクにしている間
   int fontSize_ = 0;  // 字の大きさ(CssFontRule::fontSize)
   // 字下げ(CssFontRule::paddingTop等、em): 開いている要素のpaddingの和と、継承したtext-indent。
   double paddingTopEm_ = 0, paddingLeftEm_ = 0, textIndentEm_ = 0;
@@ -1455,6 +1479,33 @@ void addBidirectionalNotes(const std::string &out, const std::vector<ResolvedLin
 }
 
 }  // namespace
+
+const std::vector<std::pair<std::string, std::string>> &epubNovelSiteLinks() {
+  static const std::vector<std::pair<std::string, std::string>> sites{
+      {"\xE5\xB0\x8F\xE8\xAA\xAC\xE5\xAE\xB6\xE3\x81\xAB\xE3\x81\xAA\xE3\x82\x8D\xE3\x81\x86", "https://syosetu.com/"},  // 小説家になろう
+      {"\xE5\xB0\x8F\xE8\xAA\xAC\xE3\x82\x92\xE8\xAA\xAD\xE3\x82\x82\xE3\x81\x86", "https://yomou.syosetu.com/"},  // 小説を読もう
+      {"\xE3\x83\x8E\xE3\x82\xAF\xE3\x82\xBF\xE3\x83\xBC\xE3\x83\xB3\xE3\x83\x8E\xE3\x83\x99\xE3\x83\xAB\xE3\x82\xBA",
+       "https://noc.syosetu.com/"},  // ノクターンノベルズ
+      {"\xE3\x82\xAB\xE3\x82\xAF\xE3\x83\xA8\xE3\x83\xA0", "https://kakuyomu.jp/"},  // カクヨム
+      {"\xE9\x9D\x92\xE7\xA9\xBA\xE6\x96\x87\xE5\xBA\xAB", "https://www.aozora.gr.jp/"},  // 青空文庫
+  };
+  return sites;
+}
+
+bool isEpubNovelSiteUrl(const std::string &url) {
+  auto bare = [](std::string u) {
+    if (u.compare(0, 8, "https://") == 0) u.erase(0, 8);
+    else if (u.compare(0, 7, "http://") == 0) u.erase(0, 7);
+    else return std::string();
+    while (!u.empty() && u.back() == '/') u.pop_back();
+    return u;
+  };
+  std::string target = bare(url);
+  if (target.empty()) return false;
+  for (const auto &site : epubNovelSiteLinks())
+    if (bare(site.second) == target) return true;
+  return false;
+}
 
 std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, std::map<int, int> *links,
                                             EpubLayoutHints *layoutHints) {

@@ -339,6 +339,9 @@ URL
 # What to do when a web link (http etc.) in an EPUB body is followed with
 # [Enter] or a click.  ^Ow cycles through the lines in the order written and
 # shows the name (4 letters) on the mode-line; the first line is the default.
+# The entrances of the novel sites (Shosetsuka ni Naro, Shosetsu wo Yomo,
+# Nocturne Novels, Kakuyomu, Aozora Bunko) are always opened with Open, since
+# they are for finding a work ID (^Ow says "Open only" there).
 # The name is one of:
 #   Open  run program with the URL (open it in the default browser etc.)
 #   Pdf   make the whole page one tall PDF page with program (url2pdf), save
