@@ -17636,6 +17636,8 @@ bool Application::executeMan(const std::string &name) {
   history_.pushRecent(RingCategory::RecentManPage, name);  // 下のloadPage()自身の結果に関わらず記録される
   if (!manMode_.loadPage(name)) {
     activeView().redraw();
+    // 2026-10-17、直接のユーザー報告("MANで該当するマニュアルページが無い場合のエラーメッセージが無い")。
+    showTransientNotice(activeView(), "No manual entry for " + name);
     return false;
   }
   currentMode_ = ApplicationMode::Man;
