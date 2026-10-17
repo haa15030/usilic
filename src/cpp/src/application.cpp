@@ -3418,6 +3418,14 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // ESC u (2026-09-21、直接のユーザー依頼): USILICのCUT風目次(MAN/DIR/FILE)。
       case 'u':
         return handleCommand(Command::StartUsilicToc);
+      // 2026-10-17、直接のユーザー依頼("^[[/^[]をドット単位の行間変更キーに設定"): -gの今の向きの行の高さを
+      // 1ドット広げる(^[[)・狭める(^[])。HELPの「^[[ / ^[] … 行間の増減」の順。画面はmain.cppが変える。
+      case '[':
+        lineHeightAdjustRequest_++;
+        return true;
+      case ']':
+        lineHeightAdjustRequest_--;
+        return true;
       // (ESC i: 2026-09-10追加、2026-09-19削除) ESC iは
       // Command::StartIncrementalGrepの元々の専用キーだったが、直接の
       // ユーザー依頼("^[iでインクリメンタルサーチを廃止して、^Sで
@@ -8105,6 +8113,13 @@ bool Application::takeFontListRequest() {
   bool requested = fontListRequested_;
   fontListRequested_ = false;
   return requested;
+}
+
+int Application::takeLineHeightAdjustRequest() { return std::exchange(lineHeightAdjustRequest_, 0); }
+
+std::optional<std::pair<double, double>> Application::takeLineHeightReloadRequest() {
+  if (!std::exchange(lineHeightReloadRequested_, false)) return std::nullopt;
+  return configuration_.lineHeightRatios();
 }
 
 // 2026-10-14、直接のユーザー依頼("^J^Eの一覧に最初から「http://localhost/usilic-web」が入っていて、ブラウザ
@@ -20316,6 +20331,7 @@ void Application::reloadUsilicrcKeys() {
   if (text.empty()) return;
   configuration_.reloadKeysAndMacros(text);
   keyBindingPending_ = {};
+  lineHeightReloadRequested_ = true;  // LINE-HEIGHTもその場で(takeLineHeightReloadRequest()参照)
   reloadHelpText();
 }
 

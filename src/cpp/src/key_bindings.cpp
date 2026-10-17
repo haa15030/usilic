@@ -139,6 +139,8 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {106, "F-1 C-p"},  // ^J^P  PART: 一覧(2026-10-10、FILE履歴の「file "文字列"」だけ)
       {107, "F-2 d"},    // ^Od   ホイールの向きの切り替え(2026-10-11)
       {108, "F-2 C-e"},  // ^O^E  EPUB: 記録の一覧(2026-10-13、縦書きのCOPYで範囲指定して記録したもの)
+      {109, "ESC ["},    // ^[[   -g: 行の高さを1ドット広げる(2026-10-17)
+      {110, "ESC ]"},    // ^[]   -g: 行の高さを1ドット狭める(2026-10-17)
   };
   return entries;
 }

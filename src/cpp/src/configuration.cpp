@@ -887,6 +887,9 @@ void Configuration::reloadKeysAndMacros(const std::string &rcText) {
   keyEntrySpecs_ = fresh.keyEntrySpecs_;
   macros_ = fresh.macros_;
   keyBindings_ = fresh.keyBindings_;
+  // 2026-10-17、直接のユーザー依頼("LINE-HEIGHTでは0.1単位かつ即時反映"): LINE-HEIGHTも読み直す(-gの画面へは
+  // main.cppが当て直す)。節が無ければ既定(フォントの高さ)へ戻る。
+  lineHeightRatios_ = fresh.lineHeightRatios_;
 }
 
 std::optional<ProgramCommand> Configuration::programForSuffix(const std::string &filename,

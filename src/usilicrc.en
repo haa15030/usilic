@@ -325,6 +325,10 @@ LINE-HEIGHT
 # and the number of lines changes with the window size unchanged.  Without
 # the vertical value it is the same as the horizontal one.  Without this
 # section the font's own line height is used.
+# Editing this file with EDIT (or ^Xs) applies it at once.  In the -g window,
+# ^[[ / ^[] make the line height of the current direction (horizontal or
+# vertical) 1 dot taller / shorter (not written here; reading this file again
+# goes back to the values here).
 
 	1.2  1.0
 
@@ -504,6 +508,8 @@ KEY
 	K-101	F-2 s       # ^Os     EPUB: chapter breaks / continuous scroll
 	K-102	F-2 w       # ^Ow     EPUB: cycle the web link action (URL)
 	K-108	F-2 C-e     # ^O^E    EPUB: list of records (ranges selected and recorded in vertical COPY)
+	K-109	ESC [       # ^[[     -g: line height 1 dot taller
+	K-110	ESC ]       # ^[]     -g: line height 1 dot shorter
 	K-103	F-1 C-a     # ^J^A    ARC: list (archives in the FILE history)
 	K-104	F-1 C-f     # ^J^F    -g: font list (FONT, SANS-SERIF, SERIF)
 	K-105	F-4 h       # ^J^Oh   From KEY to plain HELP at that line (plain HELP outside KEY)

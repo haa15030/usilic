@@ -1957,6 +1957,12 @@ class Application {
   bool verticalLayoutShown() const;
   std::optional<std::pair<std::string, std::string>> takeFontChoice();
   void showNotice(const std::string &text);
+  // ^[[ / ^[](K-109/K-110、2026-10-17): -gの今の向き(横書き・縦書き)の行の高さを1ドットずつ変える要求。
+  // main.cppが受け取ってGraphicalDisplay::adjustLineHeight()へ渡す(返すのは足すドット数の合計、無ければ0)。
+  int takeLineHeightAdjustRequest();
+  // usilicrcを読み直した時(reloadUsilicrcKeys())に、読み直したLINE-HEIGHT(横書き, 縦書き)を一度だけ返す。
+  // main.cppがその場で当て直す。
+  std::optional<std::pair<double, double>> takeLineHeightReloadRequest();
 
   // 「表示」行/列でのマウスクリック(この座標空間と現在の
   // Directoryモード限定のスコープについてはクラスコメント自身の
@@ -2897,6 +2903,8 @@ class Application {
   // ^Ofのフォント一覧(takeFontListRequest()参照)。fontListShowing()は、一覧が今のListBrowserの
   // 中身である間だけ真(別の一覧へ移った後にフラグが残っても、その一覧のEnterを横取りしない)。
   bool fontListRequested_ = false;
+  int lineHeightAdjustRequest_ = 0;      // takeLineHeightAdjustRequest()参照
+  bool lineHeightReloadRequested_ = false;  // takeLineHeightReloadRequest()参照
   bool fontListActive_ = false;
   // ^J^Fの一覧を最後に離れた時のカーソル(2026-10-11、直接のユーザー報告"^J^Fの一覧でカーソル位置が保存されてない")。
   // 次に開いた時はここから(一覧の行数が同じ時だけ、違えば今のフォントの行)。-1なら未設定。

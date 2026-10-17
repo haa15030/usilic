@@ -1812,6 +1812,10 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     }
     if (app.consumeGuiModeToggleRequest()) return leavePhase(true);  // ^Og(Command::ToggleGuiMode参照)
     if (app.takeFontListRequest()) app.showNotice("Font list: -g only");  // ^J^F(buildFontList()参照)
+    if (app.takeLineHeightAdjustRequest()) app.showNotice("LINE-HEIGHT: -g only");  // ^[[ / ^[]
+    // 端末の画面には行の高さが無いが、^Ogで-gへ切り替えた時に読み直した値で開くよう、倍率だけは入れておく。
+    if (auto ratios = app.takeLineHeightReloadRequest())
+      fm::GraphicalDisplay::setLineHeightRatios(ratios->first, ratios->second);
     // See Application::awaitingLocateUpdateDb()'s own comment: this
     // loop's own poll() below already ticks every ~100ms regardless of
     // input, so a detached `updatedb` launched by ^Jl is noticed and
@@ -2642,6 +2646,19 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     if (app.takeFontListRequest()) app.showFontList(buildFontList(gui));  // ^J^F(buildFontList()参照)
     if (app.takeRaiseRequest()) gui.raise();  // 子が開いたら親が前へ(Application::requestParentRaise())
     if (auto choice = app.takeFontChoice()) applyFontChoice(app, gui, choice->first, choice->second);
+    // ^[[ / ^[](2026-10-17、Application::takeLineHeightAdjustRequest()参照): 今の向きの行の高さをドット単位で。
+    if (int delta = app.takeLineHeightAdjustRequest()) {
+      auto [pixels, ratio] = gui.adjustLineHeight(delta);
+      char ratioText[16];
+      std::snprintf(ratioText, sizeof ratioText, "%.2f", ratio);
+      app.showNotice(std::string(app.verticalLayoutShown() ? "LINE-HEIGHT (vertical): " : "LINE-HEIGHT: ") +
+                     std::to_string(pixels) + " dots (" + ratioText + ")");
+    }
+    // usilicrcを読み直した(EDITでusilicrcを直した・^Xs)なら、LINE-HEIGHTをその場で当て直す。
+    if (auto ratios = app.takeLineHeightReloadRequest()) {
+      fm::GraphicalDisplay::setLineHeightRatios(ratios->first, ratios->second);
+      gui.reapplyLineHeight();
+    }
     // See Application::awaitingLocateUpdateDb()'s own comment: this is
     // exactly the call whose ABSENCE (before this fix) let a real ^G
     // click/keypress get queued by SDL but never processed -- a

@@ -335,6 +335,12 @@ class GraphicalDisplay : public Display {
   // usilicrcのLINE-HEIGHT(2026-10-16): 横書きの行の高さと縦書きの字の送りの、字の大きさに対する倍率。0はフォント
   // から求めた高さのまま。create()より前に呼ぶ。
   static void setLineHeightRatios(double horizontal, double vertical);
+  // ^[[ / ^[](2026-10-17): 今の向き(横書き・縦書き)の行の高さを`deltaPixels`ドット変え、その場で組み直す
+  // (setVerticalLineSpacing()と同じく行数が変わる)。LINE-HEIGHT・フォントから求めた高さに足す分として持つので、
+  // 字の大きさを変えても残る。新しい高さ(ドット)と字の大きさに対する倍率を返す。
+  std::pair<int, double> adjustLineHeight(int deltaPixels);
+  // usilicrcを読み直した後(setLineHeightRatios()の後)に呼ぶ: ^[[ / ^[]で足した分を捨て、今の向きの高さを当て直す。
+  void reapplyLineHeight();
   // 縦書きの画面を見せている間はtrue(メインのループが毎回渡す)。行の高さが変われば、窓の大きさはそのままで行数が
   // 変わり、consumeSizeChanged()がtrueになる。
   void setVerticalLineSpacing(bool vertical);
@@ -582,6 +588,7 @@ class GraphicalDisplay : public Display {
   // イベントが発火した、またはsetSize()/matchWindowSize()自身が
   // 引き起こしたもの)は何もしない。
   void handleWindowResized(int newPixelWidth, int newPixelHeight);
+  void reapplyLineHeightKeepingExtra();  // adjustLineHeight()・reapplyLineHeight()参照
 
   // pumpEvents()自身の、Cmd+=/Cmd+-/Cmd+0のためのSDL_KEYDOWN
   // ハンドラ(2026-08-24、docs/CHANGES.md項目426、項目425への

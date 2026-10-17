@@ -376,7 +376,7 @@ class Configuration {
   };
   const std::vector<UrlHandler> &urlHandlers() const;
   // usilicrcのKEY・MACROの節だけを読み直して置き換える(2026-10-03、直接のユーザー依頼"マクロ設定の
-  // その場反映はできない？")。他の節は起動時のまま。
+  // その場反映はできない？")。2026-10-17からLINE-HEIGHT・WAITも。他の節は起動時のまま。
   void reloadKeysAndMacros(const std::string &rcText);
   // COLUMNディレクティブ(2026-09-12追加、直接のユーザー依頼):
   // DirectoryMode自身の同名の使用箇所コメント参照――現在の端末幅から

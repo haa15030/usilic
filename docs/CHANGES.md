@@ -31295,3 +31295,24 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      本文(fileView_)で上から描き直していた。次のキーでactiveView()を通る描き直しが起き、縦書きに戻っていた。
    - application.cpp: そこをactiveView().redraw()にする(縦書きの本なら縦書きで描く)。
    - 確認: PTYで、^J^Eからなろうの本を選んだ直後の画面が縦書きのままであること。
+883. **-gの^[[ / ^[]で行の高さを1ドットずつ増減し、usilicrcのLINE-HEIGHTも直したらその場で効かせる**
+   (2026-10-17、直接のユーザー依頼「`^[[`/`^[]`をドット単位（LINE-HEIGHTでは0.1単位かつ即時反映）の行間変更キーに
+   設定。」。HELP_.txt(ユーザーの原稿)には既に「^[[ / ^[] を押すと、LINE-HEIGHT を変更することにより行間の増減を
+   行います。」とあり、キーはまだ無かった)
+   - キー: K-109 ^[[(1ドット広げる)、K-110 ^[](1ドット狭める)。向きはHELPの「^[[ / ^[] … 増減」の順。
+     key_bindings.cppの表、src/usilicrc・usilicrc.enのKEY節に足した。
+   - application.cpp: ESCの後の'['・']'で、足すドット数をlineHeightAdjustRequest_に溜める。main.cppが
+     takeLineHeightAdjustRequest()で受け取り、GraphicalDisplay::adjustLineHeight()に渡して、モードラインに
+     「LINE-HEIGHT: 25 dots (1.25)」(縦書きの画面では「LINE-HEIGHT (vertical): …」)を出す。端末の画面では
+     「LINE-HEIGHT: -g only」。
+   - graphical_display.cpp: 足したドット数を向きごとに持ち(lineHeightExtraPixels())、lineHeightFor()が
+     LINE-HEIGHT(またはフォントの高さ、USILICLINEHEIGHT)から求めた高さに足す。字の大きさを変えても残る。
+     1ドット未満・字の大きさの4倍より上にはしない。usilicrcには書き込まない。
+   - usilicrcを読み直した時(EDITでusilicrcを直した後・^Xs、reloadUsilicrcKeys())、
+     Configuration::reloadKeysAndMacros()がLINE-HEIGHTも読み直し、main.cppがtakeLineHeightReloadRequest()で
+     GraphicalDisplay::setLineHeightRatios()とreapplyLineHeight()(足したドットを捨てて当て直す)を呼ぶ。端末の
+     画面では倍率だけを入れておき、^Ogで-gにした時にその値で開く。
+   - usilicrc・usilicrc.enのLINE-HEIGHTの説明に、その場で効くことと^[[ / ^[]を足した。
+   - 確認: macOSのビルドと、PTYの端末の画面で「LINE-HEIGHT: -g only」が出ることのみ。-gの画面では試していない。
+     test_key_bindings.cppの「KEY sections equal the built-in table」のKEYの比較は通る(同じテストのMACROの数の
+     確認(12個)は、この変更の前から失敗している。src/usilicrcのMACROは6個)。

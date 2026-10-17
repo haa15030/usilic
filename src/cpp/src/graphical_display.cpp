@@ -409,7 +409,13 @@ double &lineHeightRatio(bool vertical) {
   return ratios[vertical ? 1 : 0];
 }
 
-int lineHeightFor(int pointSize, int computed, bool vertical) {
+// ^[[ / ^[](GraphicalDisplay::adjustLineHeight())で足したドット数(横書き・縦書き)。
+int &lineHeightExtraPixels(bool vertical) {
+  static int extra[2] = {0, 0};
+  return extra[vertical ? 1 : 0];
+}
+
+int lineHeightForBase(int pointSize, int computed, bool vertical) {
   const char *env = std::getenv("USILICLINEHEIGHT");
   if (env && *env) {
     if (std::string(env).find('.') != std::string::npos) {
@@ -422,6 +428,10 @@ int lineHeightFor(int pointSize, int computed, bool vertical) {
   double ratio = lineHeightRatio(vertical);
   if (ratio > 0.0) return std::max(1, static_cast<int>(pointSize * ratio + 0.5));
   return computed;
+}
+
+int lineHeightFor(int pointSize, int computed, bool vertical) {
+  return std::max(1, lineHeightForBase(pointSize, computed, vertical) + lineHeightExtraPixels(vertical));
 }
 
 SDL_Rect fitGlyphRect(int boxX, int boxY, int maxW, int maxH, int surfaceW, int surfaceH,
@@ -2415,6 +2425,37 @@ void GraphicalDisplay::setVerticalLineSpacing(bool vertical) {
   impl_->verticalSpacing = vertical;
   int natural = impl_->naturalCellHeight > 0 ? impl_->naturalCellHeight : impl_->cellHeight;
   int height = lineHeightFor(impl_->currentFontPointSize, natural, vertical);
+  if (height == impl_->cellHeight || height <= 0) return;
+  impl_->cellHeight = height;
+  clearGlyphCache(*impl_);
+  int w = 0, h = 0;
+  SDL_GetWindowSize(impl_->window, &w, &h);
+  handleWindowResized(w, h);
+}
+
+std::pair<int, double> GraphicalDisplay::adjustLineHeight(int deltaPixels) {
+  bool vertical = impl_->verticalSpacing;
+  int natural = impl_->naturalCellHeight > 0 ? impl_->naturalCellHeight : impl_->cellHeight;
+  int base = lineHeightForBase(impl_->currentFontPointSize, natural, vertical);
+  // 1ドットより低くはしない。上は字の大きさの4倍まで。
+  int limit = std::max(base + 1, impl_->currentFontPointSize * 4);
+  int extra = std::clamp(lineHeightExtraPixels(vertical) + deltaPixels, 1 - base, limit - base);
+  lineHeightExtraPixels(vertical) = extra;
+  reapplyLineHeightKeepingExtra();
+  return {impl_->cellHeight, static_cast<double>(impl_->cellHeight) / std::max(1, impl_->currentFontPointSize)};
+}
+
+void GraphicalDisplay::reapplyLineHeight() {
+  lineHeightExtraPixels(false) = 0;
+  lineHeightExtraPixels(true) = 0;
+  reapplyLineHeightKeepingExtra();
+}
+
+// 今の向きの行の高さを求め直し、変わっていれば字のキャッシュを捨てて組み直す(setVerticalLineSpacing()と同じ)。
+void GraphicalDisplay::reapplyLineHeightKeepingExtra() {
+  if (!impl_->window) return;
+  int natural = impl_->naturalCellHeight > 0 ? impl_->naturalCellHeight : impl_->cellHeight;
+  int height = lineHeightFor(impl_->currentFontPointSize, natural, impl_->verticalSpacing);
   if (height == impl_->cellHeight || height <= 0) return;
   impl_->cellHeight = height;
   clearGlyphCache(*impl_);
