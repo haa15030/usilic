@@ -26263,6 +26263,17 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - src/usilicrc・src/usilicrc.en: WAITの値を100→1。
    - configuration.hpp: usilicrcにWAITが無い時の組み込みの値(waitIntervalMicros_)を100000→10000。
    - doc/HELP.epub: 作り直し(WAITの注釈の既定値が1)。~/.usilic/usilicrcの値(10)は触っていない。
+907. **-gのドラッグで始めた慣性を、2段速い方からではなく最も遅い段から始める**
+   (2026-10-18、直接のユーザー報告(別のWindows 11機)"画面ドラッグで慣性スクロール開始の速度が2段目から始まっている
+   ような気がするので（修正済みのはずだけど）もう一度確認して。")
+   - 原因: 2026-10-10に-gでやめた「2段のずらし」はARROWのkDragArrowSpeedOffsetだけで、levelForReleaseDistance()自身の
+     一律の+2(kReleaseLevelBias、2026-08-06)が残っていた。そのため-gのドラッグの慣性は、どんなに静かに離しても
+     段3(SPEEDの10000)から始まっていた。
+   - drag_scroll_speed.cpp/hpp: levelForReleaseDistance()に引数releaseBias(既定true)。main.cppの-gの経路(横書きの
+     ドラッグと縦書きの左右のドラッグを離した時)はfalseで、ずらさない。CUI(runCoastLoop())は今まで通り。
+   - 報告の画面(=jo.png)のタイトルのビルドは2026-10-16 07:04で、項目857〜869(80桁・historyの保存・-gはSPEED)より
+     前のもの。窓が狭い(80桁未満に見える)のは項目857〜859の件。
+   - 確認: macOS・Windows(クロス)のビルドのみ。make install、usilic-win64.zip(20:59)を作り直した。
 896. **-H・初回起動のHELPの窓もHELP.epubを開き、平文のHELPの上の^HもHELP.epubへ移る**
    (2026-10-18、直接のユーザー報告「^Hとやっても~/.local/lib/usilic/HELP.epubを読まないんだが。」)
    - 新しく起動したusilic -cの^HはHELP.epubを開いた(擬似端末で確認)。ところが-H・初回起動の窓

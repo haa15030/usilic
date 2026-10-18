@@ -136,7 +136,7 @@ void applyReleaseDistanceOverride(const std::vector<long> &thresholds) { gReleas
 
 const std::vector<long> &currentReleaseDistances() { return gReleaseDistanceOverride; }
 
-int levelForReleaseDistance(int pixels, int cellHeightPixels) {
+int levelForReleaseDistance(int pixels, int cellHeightPixels, bool releaseBias) {
   int magnitude = std::abs(pixels);
   int maxLevel = static_cast<int>(kScrollSpeedLevels.size()) - 1;
   if (!gReleaseDistanceOverride.empty()) {
@@ -202,7 +202,7 @@ int levelForReleaseDistance(int pixels, int cellHeightPixels) {
   // の末尾を超えるレベルを決して選ばないようmaxLevelでクランプ
   // される。
   constexpr int kReleaseLevelBias = 2;
-  return std::min(level + kReleaseLevelBias, maxLevel);
+  return std::min(level + (releaseBias ? kReleaseLevelBias : 0), maxLevel);  // releaseBiasは宣言のコメント参照
 }
 
 ScrollStep scaledForRow(const ScrollStep &pixelStep, int dotsPerRow) {

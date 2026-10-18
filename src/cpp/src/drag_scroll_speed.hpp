@@ -95,7 +95,10 @@ int dragArrowSpeedOffset();
 // 下のapplyReleaseDistanceOverride()が明示的な閾値を設定している
 // 場合、この組み込みの倍化/除数/バイアスの式の代わりに、そちらが
 // そのまま使われる――そちら自身のコメント参照。
-int levelForReleaseDistance(int pixels, int cellHeightPixels);
+// 2026-10-18、直接のユーザー報告(Windows、"画面ドラッグで慣性スクロール開始の速度が2段目から始まっている"):
+// releaseBiasがfalseなら、下の式の一律の2段のずらし(kReleaseLevelBias)をしない。-gはドラッグがドット単位で
+// 慣性と滑らかにつながるので、ずらさずに最も遅い段から始める(2026-10-10の「-gではズラし無し」と同じ趣旨)。
+int levelForReleaseDistance(int pixels, int cellHeightPixels, bool releaseBias = true);
 
 // 上のapplyScrollSpeedOverride()の「距離」側の対応物――意図的に
 // 別の関数/CLIフラグにしてある(2026-08-21、「-i」、「-u」自身の
