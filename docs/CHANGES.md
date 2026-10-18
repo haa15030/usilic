@@ -26312,6 +26312,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - graphical_display.cpp: drawSizeOverlay()の表示を「80x40  16pt」に。adjustFontSize()(cmd + "=" 等)の後にも
      1.5秒出す。
    - 確認: macOS・Windows(クロス)のビルドのみ。make install、usilic-win64.zip(23:07)を作り直した。
+912. **-gの窓の字の大きさの既定を16ptから20ptにし、-z ptで指定できるようにする**
+   (2026-10-18、直接のユーザー依頼"文字サイズの小さい明朝体は見栄えが悪いので-g起動時のデフォルトフォントサイズを
+   暫定20pt（20pxとの違いは？）にしてほしい（起動オプションで設定可）。")
+   - main.cpp: tryEnterGuiPhase()(端末に重ねない-g、usilic.app・Windows等)の既定をkDefaultGuiPointSize(20)に。
+     優先順位は -Hの子(親と同じ) > -z > 前回の大きさ(history) > 20。端末に重ねる-g・^Ogは今まで通り端末の大きさ。
+   - -z pt(4〜200)を足した(gStartFontPointSize)。usilicrcに節は無いので-Zは無い。-hの表示にも足した。-pは
+     PAGERの内部用(usilic -p <pid>)なので使わなかった。
+   - src/HELP_.txt(未コミット): 起動オプションの書式と一覧に-z ptを足した。
+   - 確認: macOS・Windows(クロス)のビルドのみ。make install、usilic-win64.zip(23:17)を作り直した。
 896. **-H・初回起動のHELPの窓もHELP.epubを開き、平文のHELPの上の^HもHELP.epubへ移る**
    (2026-10-18、直接のユーザー報告「^Hとやっても~/.local/lib/usilic/HELP.epubを読まないんだが。」)
    - 新しく起動したusilic -cの^HはHELP.epubを開いた(擬似端末で確認)。ところが-H・初回起動の窓

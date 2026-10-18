@@ -1723,6 +1723,11 @@ struct GuiFrame {
   int fg[3] = {0, 0, 0}, bg[3] = {0, 0, 0};
 };
 GuiFrame gGuiFrame;
+// -z pt(2026-10-18、直接のユーザー依頼"文字サイズの小さい明朝体は見栄えが悪いので-g起動時のデフォルトフォントサイズを
+// 暫定20pt...にしてほしい（起動オプションで設定可）"): -gの窓(端末に重ねない起動)の字の大きさ。0は指定無し(前回の
+// 大きさ、無ければkDefaultGuiPointSize)。端末に重ねる-g・^Ogは今まで通り端末の字の大きさ。
+int gStartFontPointSize = 0;
+constexpr int kDefaultGuiPointSize = 20;
 
 // 親側: 今のGUIのウィンドウのUSILIC_GUI_FRAMEの値(GuiFrameと同じ並び、カンマ区切り)。
 std::string guiFrameText(fm::GraphicalDisplay &gui) {
@@ -4279,7 +4284,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
       std::filesystem::is_regular_file(savedGui.terminalFontPath))
     fontPath = savedGui.terminalFontPath;
   int rows = display.rows(), columns = display.columns();
-  int fontPointSize = 16;  // GraphicalDisplay::create()'s own default
+  int fontPointSize = kDefaultGuiPointSize;  // gStartFontPointSize参照
   if (appearance) fontPointSize = appearance->fontPointSize;  // 端末の文字の大きさ(^Og、2026-10-12)
   if (!appearance) {
     if (savedGui.rows > 0 && savedGui.columns > 0) {
@@ -4289,6 +4294,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
       columns = std::max(savedGui.columns, 80);
     }
     if (savedGui.fontPointSize > 0) fontPointSize = savedGui.fontPointSize;
+    if (gStartFontPointSize > 0) fontPointSize = gStartFontPointSize;  // -z
     if (gGuiFrame.valid) {  // 親と同じ大きさ(gGuiFrame参照)
       rows = gGuiFrame.rows;
       columns = gGuiFrame.columns;
@@ -4941,6 +4947,15 @@ int main(int argc, char **argv) {
     else if (std::strcmp(argv[i], "-g") == 0) forceGui = true;
     else if (std::strcmp(argv[i], "-H") == 0) openHelpChild = true;
     else if (std::strcmp(argv[i], "-K") == 0) openKeyAtStart = true;
+    else if (std::strcmp(argv[i], "-z") == 0) {  // gStartFontPointSize参照
+      int size = i + 1 < argc ? std::atoi(argv[i + 1]) : 0;
+      if (size < 4 || size > 200) {
+        std::cerr << "usilic: -z requires a font size in points (4-200, e.g. -z 20).\n";
+        return 1;
+      }
+      gStartFontPointSize = size;
+      i++;
+    }
     else if (std::strcmp(argv[i], "-h") == 0) {
       // 2026-09-15追加、直接のユーザー依頼("新たな仕様として...
       // ③-hオプションで「usilic [<file] [file] [directory]」を表示")
@@ -4963,6 +4978,7 @@ int main(int argc, char **argv) {
                    "  -s usec ...   scroll SPEED per level (1-10)\n"
                    "  -d dot ...    flick DRAG thresholds per level (1-10)\n"
                    "  -f file       FONT file for -g\n"
+                   "  -z pt         font size for -g (default: last size, or 20)\n"
                    "  -w wait       macro WAIT (x 10 msec)\n"
                    "  -b MB         BUFFER size (1-100)\n"
                    "  -l lines      history LINE count\n"
