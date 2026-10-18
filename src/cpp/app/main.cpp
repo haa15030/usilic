@@ -1728,7 +1728,7 @@ GuiFrame gGuiFrame;
 // 大きさ、無ければkDefaultGuiPointSize。端末に重ねる-gは端末の字の大きさ)。端末に重ねる-g・^Ogでも-zがあればその大きさ
 // (端末と同じ行数・桁数の窓、同日の追記)。
 int gStartFontPointSize = 0;
-constexpr int kDefaultGuiPointSize = 20;
+constexpr int kDefaultGuiPointSize = 18;
 
 // 親側: 今のGUIのウィンドウのUSILIC_GUI_FRAMEの値(GuiFrameと同じ並び、カンマ区切り)。
 std::string guiFrameText(fm::GraphicalDisplay &gui) {
@@ -4980,7 +4980,7 @@ int main(int argc, char **argv) {
                    "  -s usec ...   scroll SPEED per level (1-10)\n"
                    "  -d dot ...    flick DRAG thresholds per level (1-10)\n"
                    "  -f file       FONT file for -g\n"
-                   "  -z pt         font size for -g (default: last size, or 20)\n"
+                   "  -z pt         font size for -g (default: last size, or 18)\n"
                    "  -w wait       macro WAIT (x 10 msec)\n"
                    "  -b MB         BUFFER size (1-100)\n"
                    "  -l lines      history LINE count\n"

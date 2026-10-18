@@ -26331,6 +26331,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (位置だけ端末に合わせ、窓は端末より大きくなってよい)。^Og(tryEnterGuiPhase()のappearance有り)も、-zがあれば
      その字の大きさで、matchWindowSize()をせず端末の行数・桁数のまま。
    - 確認: macOS・Windows(クロス)のビルドのみ。make install、usilic-win64.zip(23:45)を作り直した。
+   - (2026-10-19追記、直接のユーザー依頼"-zの既定20を18にしてみて。")kDefaultGuiPointSizeを18に。-hの表示と
+     src/HELP_.txt(未コミット)の「最初は 20」も18に。
    - 確認: macOS・Windows(クロス)のビルドのみ。make install、usilic-win64.zip(23:17)を作り直した。
 896. **-H・初回起動のHELPの窓もHELP.epubを開き、平文のHELPの上の^HもHELP.epubへ移る**
    (2026-10-18、直接のユーザー報告「^Hとやっても~/.local/lib/usilic/HELP.epubを読まないんだが。」)
