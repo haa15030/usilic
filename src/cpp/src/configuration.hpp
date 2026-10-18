@@ -432,7 +432,7 @@ class Configuration {
   int bufferSizeLimitBytes_ = 64 * 1024 * 1024;
   mutable bool bufferLimitHit_ = false;  // noteBufferLimitHit()参照
   int historyRetentionCount_ = 0;  // 0は無制限(History自身のコンストラクタのコメント参照)
-  int waitIntervalMicros_ = 100000;  // conf_wait()の静的k_wait初期化値(100000)
+  int waitIntervalMicros_ = 10000;  // conf_wait()の静的k_wait初期化値は100000(1秒)。2026-10-18、直接のユーザー依頼で既定を1(10 msec)に
   int columnThreshold_ = 8;  // columnThreshold()自身のコメント参照
   std::vector<std::string> serifFontCandidates_;      // SERIF
   std::vector<std::string> sansSerifFontCandidates_;  // SANS-SERIF

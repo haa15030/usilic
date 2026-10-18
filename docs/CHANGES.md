@@ -26258,6 +26258,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - doc/HELP.notes: 原稿に増えた<i>SHELL</i>(対応するシェルの「SHELL 参照」)の注釈として「@SHELL」(使うシェルは
      $SHELL、bash・zsh・tcsh・csh以外はbash、WindowsはGit Bashのbash.exeかcmd.exe)を足した。
    - 確認: make help-epubで15 notes (32 refs)、no noteは無し。make install済み。
+906. **WAIT(マクロの実行間隔)の既定を100(1秒)から1(10 msec)にする**
+   (2026-10-18、直接のユーザー依頼「WAITの既定は1でよろしく。」。項目905でHELP.epubの注釈に既定値が載るようになった後)
+   - src/usilicrc・src/usilicrc.en: WAITの値を100→1。
+   - configuration.hpp: usilicrcにWAITが無い時の組み込みの値(waitIntervalMicros_)を100000→10000。
+   - doc/HELP.epub: 作り直し(WAITの注釈の既定値が1)。~/.usilic/usilicrcの値(10)は触っていない。
 896. **-H・初回起動のHELPの窓もHELP.epubを開き、平文のHELPの上の^HもHELP.epubへ移る**
    (2026-10-18、直接のユーザー報告「^Hとやっても~/.local/lib/usilic/HELP.epubを読まないんだが。」)
    - 新しく起動したusilic -cの^HはHELP.epubを開いた(擬似端末で確認)。ところが-H・初回起動の窓

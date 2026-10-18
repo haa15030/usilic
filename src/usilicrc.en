@@ -191,7 +191,7 @@ WAIT
 # value with usilic -w; usilic -W writes it here.  Editing this file with
 # EDIT (or ^Xs) applies it at once.
 
-	100
+	1
 
 COPY
 # Format: `cp' (option)
