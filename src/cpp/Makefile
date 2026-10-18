@@ -185,6 +185,9 @@ install: $(BUILD_DIR)/usilic
 	if [ -f ../../doc/HELP.ja.1 ]; then install -m 644 ../../doc/HELP.ja.1 $(LIB_DIR)/HELP.ja.1; fi
 	# 2026-10-14: usilic -e(HELPのEPUB版)の注釈の文。HELPの原稿の隣に無ければここを読む。
 	install -m 644 ../../doc/HELP.notes $(LIB_DIR)/HELP.notes
+	# 2026-10-18、直接のユーザー依頼: HELPのEPUB版(^Hで開く)。roff版から、今入れたusilicrcとHELP.notesの注釈を付けて
+	# 作る。注釈の無い斜体の名前は"usilic -e: no note:"に出る。
+	if [ -f ../../doc/HELP.ja.1 ]; then $(BUILD_DIR)/usilic -e ../../doc/HELP.ja.1 > $(LIB_DIR)/HELP.epub; fi
 	# 2026-10-04: EPUBのWebのリンクのPdf(usilicrcのURL節)。Playwrightの準備はtools/url2pdf自身のコメント参照。
 	install -m 755 tools/url2pdf $(LIB_DIR)/url2pdf
 	install -m 644 tools/url2pdf.py $(LIB_DIR)/url2pdf.py

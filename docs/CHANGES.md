@@ -26162,6 +26162,24 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - src/usilicrc・src/usilicrc.en: MACROの見出しの直後に、書式(M-n キー K-n ...)と、^Xe直後の^Xsでの保存
      (その場で効く、reloadUsilicrcKeys())、WAITで間隔、の説明を足した。
    - 確認: usilic -eでMACROの注釈ができること(項目892の18 notesに含む)。MACRO関係のテストは通る。
+895. **make installでHELP.epubを作り、usilic -eは注釈の無い斜体の名前を「no note:」に並べる**
+   (2026-10-18、直接のユーザー質問「^Hで表示されるHELPがHELP.epubじゃないのはなぜ？」と、続く依頼「notesの方に
+   対応する注釈が無い場合はその場で追記してほしいんだが、make installの前でないと難しいんじゃない？」→提案に「進めて。」)
+   - 原因: ^H(helpEpubPath())は~/.local/lib/usilic/HELP.epub等を探すが、make installはHELP.epubを入れておらず、
+     平文のHELPを開いていた。
+   - Makefile: make installの最後のHELP.notesの後で、build/usilic -e ../../doc/HELP.ja.1 > $(LIB_DIR)/HELP.epub。
+     注釈のusilicrc・HELP.notesは今入れたもの。
+   - app/main.cpp: -eは"."で始まる入力(-nのroff、doc/HELP.ja.1)をそのまま受ける。注釈の無い斜体の名前を
+     「usilic -e: no note: 名前 ...」として標準エラー出力へ出す。
+   - help_to_epub.cpp: convertMsRoffToHelpEpub()に引数unnoted。一覧に出すのは英数字・-・_だけの名前で、パス・man(1)・
+     拡張子等(<u>のアンダーラインがEPUBでは斜体になったもの)は出さない。HELP.notesの本文の無い「@名前」は
+     「注釈は要らない」の印(一覧にもリンクにもしない)。全角の英数字の名前(<i>ＥＧＲＥＰ</i>)は半角にして探す。
+   - doc/HELP.notes: 冒頭の説明を直し(help2epub.py→usilic -e、斜体、本文の無い@名前の意味)、「@usilicrc」
+     (ファイル名、注釈不要)を足した。
+   - 運用: HELPの原稿に斜体を足したら、アシスタントがusilic -eの「no note:」を見て、その場でHELP.notesに注釈
+     (要らなければ本文の無い@名前)を足し、make installする。
+   - 確認: ~/HELP.txtから19 notes (37 refs、ＥＧＲＥＰが増えた)、doc/HELP.ja.1から13 notes (21 refs)、どちらも
+     no noteは無し。make installで~/.local/lib/usilic/HELP.epubができる。^Hで開く確認はまだ。
 
 
 ## 27. その他

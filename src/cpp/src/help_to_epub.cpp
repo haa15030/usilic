@@ -427,7 +427,8 @@ class ZipWriter {
 }  // namespace
 
 std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &usilicrcText,
-                                    const std::string &notesText, std::string *summary) {
+                                    const std::string &notesText, std::string *summary,
+                                    std::vector<std::string> *unnoted) {
   std::vector<std::string> lines = splitLines(roff);
 
   // 本文の始まり(前置きの後の最初の文字の行)
@@ -554,10 +555,52 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       }
     }
   }
+  // 2026-10-18、直接のユーザー依頼(斜体に注釈が無ければ、その場でHELP.notesへ追記するため): HELP.notesの本文の無い
+  // "@名前"は「注釈は要らない」の印(アンダーラインの代わりの斜体のman(1)等)。usilicrcにコメントがあっても注釈にしない。
+  auto optedOut = [&](const std::string &item) {
+    auto w = written.find(item);
+    if (w == written.end()) return false;
+    for (const auto &l : w->second)
+      if (!strip(l).empty()) return false;
+    return true;
+  };
   auto hasNote = [&](const std::string &item) {
+    if (optedOut(item)) return false;
     auto r = rcComments.find(item);
     auto w = written.find(item);
     return (r != rcComments.end() && !r->second.empty()) || (w != written.end() && !w->second.empty());
+  };
+  std::vector<std::string> missing;  // 注釈の無い斜体の名前(unnoted参照)
+  // 全角の英数字の名前(<i>ＥＧＲＥＰ</i>)は半角にして探す。
+  auto halfWidth = [](const std::string &t) {
+    std::string r;
+    for (std::size_t k = 0; k < t.size(); k++) {
+      auto c = static_cast<unsigned char>(t[k]);
+      if (c == 0xEF && k + 2 < t.size()) {
+        auto b1 = static_cast<unsigned char>(t[k + 1]), b2 = static_cast<unsigned char>(t[k + 2]);
+        if (b1 == 0xBC && b2 >= 0x90 && b2 <= 0xBF) {  // ０-９、Ａ-Ｚ等(U+FF10..FF3F)
+          r += static_cast<char>(b2 - 0x90 + 0x30);
+          k += 2;
+          continue;
+        }
+        if (b1 == 0xBD && b2 >= 0x80 && b2 <= 0x9A) {  // ｀、ａ-ｚ(U+FF40..FF5A)
+          r += static_cast<char>(b2 - 0x80 + 0x60);
+          k += 2;
+          continue;
+        }
+      }
+      r += t[k];
+    }
+    return r;
+  };
+  // 一覧(unnoted)に出すのは名前らしい斜体(英数字・-・_だけ)。パス・man(1)・拡張子等のアンダーラインの代わりは出さない。
+  auto nameLike = [](const std::string &t) {
+    bool letter = false;
+    for (char c : t) {
+      if (std::isalpha(static_cast<unsigned char>(c))) letter = true;
+      else if (!std::isdigit(static_cast<unsigned char>(c)) && c != '-' && c != '_') return false;
+    }
+    return letter;
   };
 
   std::vector<std::string> noteOrder;                 // 設定項目(最初に参照した順)
@@ -626,7 +669,8 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       if (m == std::string::npos) break;
       std::size_t close = out.find("</i>", m + 3);
       if (close == std::string::npos) break;
-      std::string item = out.substr(m + 3, close - m - 3);
+      std::string shown = out.substr(m + 3, close - m - 3);
+      std::string item = halfWidth(shown);
       std::size_t end = close + 4;
       bool inQuote = m >= 3 && out.compare(m - 3, 3, "\xE3\x80\x8C") == 0;  // 「
       // 表記の一覧の「SHELL : 仮想端末」(名前の後に「 :」)
@@ -635,7 +679,11 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       bool legend = out.compare(after, 1, ":") == 0;
       bool inLink = out.rfind("<a ", m) != std::string::npos &&
                     (out.rfind("</a>", m) == std::string::npos || out.rfind("</a>", m) < out.rfind("<a ", m));
-      if (item.empty() || item.find('<') != std::string::npos || inQuote || legend || inLink || !hasNote(item)) {
+      bool candidate = !item.empty() && item.find('<') == std::string::npos && !inQuote && !legend && !inLink;
+      if (candidate && nameLike(item) && !hasNote(item) && !optedOut(item) &&
+          std::find(missing.begin(), missing.end(), item) == missing.end())
+        missing.push_back(item);
+      if (!candidate || !hasNote(item)) {
         linked += out.substr(pos, end - pos);
         pos = end;
         continue;
@@ -648,7 +696,7 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       std::string rid = "r" + std::to_string(++refCount);
       backrefs[nid].push_back({fname, rid});
       linked += out.substr(pos, m - pos);
-      linked += "<a id=\"" + rid + "\" href=\"notes.xhtml#" + nid + "\" epub:type=\"noteref\"><i>" + item + "</i></a>";
+      linked += "<a id=\"" + rid + "\" href=\"notes.xhtml#" + nid + "\" epub:type=\"noteref\"><i>" + shown + "</i></a>";
       pos = end;
     }
     linked += out.substr(pos);
@@ -826,6 +874,7 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
   if (summary)
     *summary = std::to_string(chapters.size()) + " chapters, " + std::to_string(paragraphCount) + " paragraphs, " +
                std::to_string(noteOrder.size()) + " notes (" + std::to_string(refCount) + " refs)";
+  if (unnoted) *unnoted = missing;
   return zip.finish();
 }
 

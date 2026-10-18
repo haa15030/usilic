@@ -5081,12 +5081,23 @@ int main(int argc, char **argv) {
         }
         return std::string();
       };
+      // 2026-10-18: -nが作ったroff(doc/HELP.ja.1、"."で始まる)もそのまま受ける(make installがHELP.epubを作るため)。
+      std::string source = buffer.str();
+      std::string roff = !source.empty() && source[0] == '.' ? source : fm::convertMarkupToMsRoffSource(source);
       std::string summary;
-      std::string epub = fm::convertMsRoffToHelpEpub(fm::convertMarkupToMsRoffSource(buffer.str()), find("usilicrc"),
-                                                     find("HELP.notes"), &summary);
+      std::vector<std::string> unnoted;
+      std::string epub =
+          fm::convertMsRoffToHelpEpub(roff, find("usilicrc"), find("HELP.notes"), &summary, &unnoted);
       std::cout.write(epub.data(), static_cast<std::streamsize>(epub.size()));
       std::cout.flush();
       std::cerr << "usilic -e: " << summary << "\n";
+      // 2026-10-18、直接のユーザー依頼: 注釈の無い斜体の名前。doc/HELP.notesに"@名前"と文を足す(要らなければ本文の
+      // 無い"@名前"だけ)。
+      if (!unnoted.empty()) {
+        std::cerr << "usilic -e: no note:";
+        for (const auto &name : unnoted) std::cerr << ' ' << name;
+        std::cerr << "\n";
+      }
       return 0;
     } else positionalArgs.push_back(argv[i]);
   }

@@ -1,6 +1,8 @@
-# src/cpp/tools/help2epub.pyがHELP.epubの巻末の注釈に使う文(docs/CHANGES.md項目812・813)。
-# 注釈は本文の「usilicrc の URL」等の設定項目ごとに1つで、中身はsrc/usilicrcのその項目の見出しの直後の
-# 「#」の行。ここに「@設定項目」(例: @URL)の行の後に文を書くと、その注釈はこちらの文になる(空行で段落)。
+# usilic -e(src/cpp/src/help_to_epub.cpp)がHELP.epubの巻末の注釈に使う文(docs/CHANGES.md項目812・813・892)。
+# 注釈は本文の斜体の名前ごとに1つで、中身はsrc/usilicrcのその項目の見出しの直後の「#」の行。ここに「@名前」
+# (例: @URL)の行の後に文を書くと、その注釈はこちらの文になる(空行で段落)。usilicrcに無い名前は、ここに書いた
+# 時だけ注釈になる。本文の無い「@名前」だけの行は、注釈の要らない斜体(アンダーラインの代わりのman(1)等)の印。
+# 注釈の無い斜体は、usilic -e(make installも)が「usilic -e: no note:」に並べる。
 # #で始まる行は読まない。
 
 @narou2epub
@@ -13,3 +15,6 @@ python3 -m venv ~/.local/lib/usilic/venv
 ~/.local/lib/usilic/venv/bin/pip install lxml ebooklib requests Pillow
 
 作った EPUB は個人で楽しむためだけに使い、他人に配布しないでください（作品の著作権は作者にあります）。
+
+# 注釈の要らない斜体(アンダーラインの代わり)
+@usilicrc

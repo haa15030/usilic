@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace fm {
 
@@ -12,7 +13,10 @@ namespace fm {
 // aside epub:type="footnote"と両方向のリンク)へのリンクにする。注釈の中身はusilicrcText(usilicrc)のその項目の
 // 見出しの直後の「#」の行、notesText(doc/HELP.notes)の"@項目"に書いてあればその文。目次(nav)はspineに入れない。
 // summaryには、章・注釈の数等の一行(標準エラー出力用)を入れる。
+// unnotedには、注釈の無い斜体の名前(最初に出てきた順、重複なし)を入れる。HELP.notesに本文の無い"@名前"が
+// あれば、注釈の要らない斜体(アンダーラインの代わりのman(1)等)として扱い、入れない。
 std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &usilicrcText,
-                                    const std::string &notesText, std::string *summary = nullptr);
+                                    const std::string &notesText, std::string *summary = nullptr,
+                                    std::vector<std::string> *unnoted = nullptr);
 
 }  // namespace fm
