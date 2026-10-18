@@ -4704,7 +4704,7 @@ void Application::syncEpubHorizontalPresentation() {
   bool verticalShown = (currentMode_ == ApplicationMode::File && epubVerticalActive()) ||
                        epubVerticalListActive();
   if (!verticalShown || promptActive()) display_.setVerticalTextHint(false);
-  // 横書きの選んでいるリンク(selectAdjacentEpubHorizontalLink())は、画面に見えている間だけ反転する
+  // 横書きの選んでいるリンク(カーソルの行のリンク)は、画面に見えている間だけ反転する
   // 2026-09-30、直接のユーザー依頼("「あとがき」ではハイライト表示のリンクがスクロールに追随するので
   // 奥付でもよろしく"): 選んでいるリンクがスクロールで画面から外れたら、見えているリンクのうち
   // 近い方(先へ送ったなら一番上、戻したなら一番下)へ選び直す。見えるリンクが無ければ外す。
@@ -4924,9 +4924,9 @@ void Application::clearTransientNotice() {
 bool Application::handleCommandImpl(Command command) {
   universalArgPending_ = false;  // ^Uの後に別のコマンドが来た(dispatchByte()の^U参照)
   clearTransientNotice();  // showTransientNotice()自身の宣言コメント参照
-  if ((command == Command::MoveDown || command == Command::MoveUp) &&
-      selectAdjacentEpubHorizontalLink(command == Command::MoveDown ? 1 : -1))
-    return true;
+  // 2026-10-18、直接のユーザー依頼("^Hの画面で^N^Pでリンクをたどれるようにしてもらったけど取り消しでいい"、
+  // 範囲は「リンク選択そのものをやめる」): 横書きのEPUBの^N/^P(↓↑)でリンクを選ぶのをやめ(以前の
+  // selectAdjacentEpubHorizontalLink()、2026-09-30・10-15)、常にふつうの1行移動にする。
   // 2026-10-17、直接のユーザー依頼("注釈から^X^Xで戻るのは紛らわしくならない？"→(a)、^X^Xは効かなくし^Gだけで
   // 戻る): 注釈の表示(epubNote_)の行はfileView_の本文の行を差し替えたもので、ジャンプマークは本文の行を指すため、
   // ^X^Xは注釈の中の思わぬ位置へ動いていた。
@@ -10027,62 +10027,6 @@ std::vector<Application::EpubHorizontalLink> Application::epubHorizontalLinks(in
     previousUnderline = !merged.empty() && merged.back().second >= endByte;
   }
   return out;
-}
-
-// 横書きのEPUBの本文で、次(delta>0)/前のリンクを選ぶ(↑↓・^N/^P)。本文全体で次/前のリンクを
-// 探して選ぶ(画面の外なら、その行を画面の中央に。本文の端では反対の端のリンクへ回り込む。2026-10-15までは
-// ここで1行スクロールし、繰り返せば先のリンクが画面に入った所で選んでいた)。2026-09-30訂正、直接のユーザー報告("↓↑でリンク位置は変わるけど画面が
-// スクロールしない"): 以前は画面の中のリンクだけを見て、尽きたら従来の動き(見えないカーソルの
-// 移動)に任せていた――選んだ時にカーソルをリンクの行へ動かしていたので、画面の端に届くまで
-// スクロールしなかった。カーソルは動かさない。本にリンクが1つも無ければfalse(従来どおり)。
-bool Application::selectAdjacentEpubHorizontalLink(int delta) {
-  if (!epubHorizontalLinksActive() || fileMode_.epubLayoutHints().lineLinks.empty()) return false;
-  int total = static_cast<int>(fileView_.lines().size());
-  int top = fileView_.topIndex();
-  int bottom = std::min(total, top + std::max(1, fileView_.height()));
-  auto before = [](const EpubHorizontalLink &a, const EpubHorizontalLink &b) {
-    return a.index < b.index || (a.index == b.index && a.start < b.start);
-  };
-  std::optional<EpubHorizontalLink> current;
-  if (epubHorizontalLink_)
-    for (const auto &link : epubHorizontalVisibleLinks())
-      if (link.index == epubHorizontalLink_->index && link.start == epubHorizontalLink_->start) current = link;
-  // カーソルの行(選んでいるリンクがあればそのリンク)から次/前を探す
-  int cursor = fileView_.cursorIndex();
-  EpubHorizontalLink here = current ? *current : EpubHorizontalLink{cursor, delta > 0 ? 1 << 30 : -1, 0, 0, 0};
-  std::optional<EpubHorizontalLink> target;
-  if (delta > 0) {
-    for (const auto &link : epubHorizontalLinks(here.index, total))
-      if (before(here, link)) {
-        target = link;
-        break;
-      }
-  } else {
-    for (const auto &link : epubHorizontalLinks(0, here.index + 1))
-      if (before(link, here)) target = link;
-  }
-  // 2026-10-15、直接のユーザー依頼("^S/^J^Sのように最後のリンクから最初のリンクへ回り込んでほしい"): 先(前)に
-  // リンクが無ければ、本文の最初(最後)のリンクへ回り込む。
-  if (!target) {
-    std::vector<EpubHorizontalLink> all = epubHorizontalLinks(0, total);
-    if (!all.empty()) target = delta > 0 ? all.front() : all.back();
-  }
-  // 2026-10-15、直接のユーザー依頼("注釈をもう一度読みたいときも^N/^Pで探せれば便利なので^S/^J^Sの検索結果と
-  // 同じく、本文全体にわたってリンクをたどれるようにしてほしい"): 以前は画面に見えているリンクだけを選び、見えて
-  // いなければ1行スクロールしていた。画面の外のリンクも選び、検索の^N/^P(jumpToGrepInPlaceMatch())と同じく
-  // その行を画面の中央にする。先(前)にリンクが無ければ、従来どおり1行スクロールする。
-  if (target) {
-    bool visible = target->index >= top && target->index < bottom;
-    epubHorizontalLink_ = target;
-    fileView_.setCursorIndex(target->index);  // 選ぶリンクはカーソルの行のもの(syncEpubHorizontalPresentation())
-    if (!visible) fileView_.centerOnCursor();
-  } else if (delta > 0) {
-    fileView_.scrollLineDown();
-  } else {
-    fileView_.scrollLineUp();
-  }
-  activeView().redraw();  // syncEpubHorizontalPresentation()が反転を付ける(画面から外れたら外す)
-  return true;
 }
 
 // リンクの行き先(EpubLayoutHints::lineLinks)へ: 本の中なら飛び(^X^Xで戻れる)、Webならクイックルック。

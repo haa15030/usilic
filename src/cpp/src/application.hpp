@@ -2693,7 +2693,6 @@ class Application {
   std::vector<EpubHorizontalLink> epubHorizontalVisibleLinks() const;
   std::vector<EpubHorizontalLink> epubHorizontalLinks(int from, int to) const;
   bool epubHorizontalLinksActive() const;
-  bool selectAdjacentEpubHorizontalLink(int delta);
   bool activateEpubHorizontalLink(const EpubHorizontalLink &link);
   bool activateSelectedEpubHorizontalLink();
   bool clickEpubHorizontalLink(int index, int column);
