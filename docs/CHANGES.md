@@ -12685,6 +12685,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      「usilicrc の SHELL 参照」も書き換え。
    - 確認: shellArgvのdoctest(旧usilicrcのSHELLを無視すること)。Windowsでの動作は未確認(実機での確認待ち)。
 
+899. **WindowsのConPTYで起動する子の標準入出力を、無効と明示する**(2026-10-18、直接のユーザー報告"git bashは
+   SHELLが起動しない。ネイティブはOK（cmd）"、項目898の確認)
+   - Git Bash(mintty)から起動したusilic.exeは標準入出力がパイプで、CreateProcessWでSTARTF_USESTDHANDLESを
+     指定しないと、子はそれを引き継いでConPTYへ出力しない(番兵が届かずwaitForHandshake()が失敗する)と見た。
+     pseudo_console_win.cpp: hStdInput/hStdOutput/hStdErrorをINVALID_HANDLE_VALUEにして、子にConPTYのものを
+     使わせる(WezTerm等と同じ対策)。
+   - 確認: make WINDOWS=1 distが通った。Windowsでの動作は未確認。
+
 ## 13. LIST(TAB補完)
 
 12. **2026-07-19: TAB補完・長い日本語行での横スクロール時のUTF-8破損を

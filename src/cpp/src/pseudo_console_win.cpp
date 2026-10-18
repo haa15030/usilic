@@ -142,6 +142,13 @@ PseudoConsole *startPseudoConsole(const std::vector<std::string> &argv, int rows
     STARTUPINFOEXW si{};
     si.StartupInfo.cb = sizeof si;
     si.lpAttributeList = attrs;
+    // 2026-10-18、直接のユーザー報告("git bashはSHELLが起動しない。ネイティブはOK（cmd）"): Git Bash(mintty)から
+    // 起動するとusilicの標準入出力はパイプで、指定しないと子はそれを引き継いでConPTYへ出力しない。標準入出力を
+    // 無効と明示すると、子はConPTYのものを使う(WezTerm等も同じ)。
+    si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    si.StartupInfo.hStdInput = INVALID_HANDLE_VALUE;
+    si.StartupInfo.hStdOutput = INVALID_HANDLE_VALUE;
+    si.StartupInfo.hStdError = INVALID_HANDLE_VALUE;
     std::wstring line;
     for (const auto &arg : argv) {
       if (!line.empty()) line += L' ';
