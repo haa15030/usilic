@@ -332,8 +332,9 @@ URL
 #         ebooklib・requests・Pillow が要ります(~/.local/lib/usilic/narou2epub
 #         のコメント参照)
 # この節が無ければ下の内容(Linux は Open が xdg-open、Copy が
-# xclip -selection clipboard、Look は無し。Pdf は url2pdf、Epub は narou2epub
-# がある時だけ)を使います。
+# xclip -selection clipboard、Look は無し。Windows は Open が explorer.exe、
+# Copy が clip.exe、Look は無し。Pdf は url2pdf、Epub は narou2epub がある時
+# だけ)を使います。
 
 #	Open	open
 #	Pdf	~/.local/lib/usilic/url2pdf

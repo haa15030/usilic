@@ -12693,6 +12693,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      使わせる(WezTerm等と同じ対策)。
    - 確認: make WINDOWS=1 distが通った。Windowsでの動作は未確認。
 
+900. **WindowsのネイティブでURLのリンクをOpenで開く(explorer.exe)、Copyはclip.exe**(2026-10-18、直接のユーザー報告
+   "^HでURLのリンクを踏むと「xdg-open: command not found」"、項目899の確認の後)
+   - Configuration::urlHandlers(): ネイティブ(_WIN32)の既定が、Linuxと同じxdg-open・xclipのままだった。WSL2・
+     MSYSと同じくOpenはexplorer.exe、Copyはclip.exe。usilicrc・usilicrc.enのURL節の説明にも足した。
+   - Application::openEpubWebLinkWithCurrentHandler(): Openがexplorer.exeの時はopenOnWindowsHost()で開く
+     (ネイティブはShellExecuteW。explorer.exeは開けても終了コードが1で「Cannot run」と出るため)。
+   - 確認: make WINDOWS=1 dist・make usilicが通った。Windowsでの動作は未確認。
+
 ## 13. LIST(TAB補完)
 
 12. **2026-07-19: TAB補完・長い日本語行での横スクロール時のUTF-8破損を

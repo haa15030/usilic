@@ -348,8 +348,9 @@ URL
 #         (runs in SHELL). lxml, ebooklib, requests and Pillow are needed (see
 #         ~/.local/lib/usilic/narou2epub's comment)
 # Without this section the lines below are used (on Linux Open is xdg-open,
-# Copy is xclip -selection clipboard, and there is no Look; Pdf only when
-# url2pdf is installed, Epub only when narou2epub is installed).
+# Copy is xclip -selection clipboard, and there is no Look; on Windows Open is
+# explorer.exe, Copy is clip.exe, and there is no Look; Pdf only when url2pdf
+# is installed, Epub only when narou2epub is installed).
 
 #	Open	open
 #	Pdf	~/.local/lib/usilic/url2pdf

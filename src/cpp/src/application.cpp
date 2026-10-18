@@ -8145,6 +8145,13 @@ bool Application::openEpubWebLinkWithCurrentHandler(const std::string &url) {
     return true;
   }
   // Open
+  // 2026-10-18: explorer.exeは開けても終了コードが1なので、Windowsの既定のアプリで開く関数に任せる
+  // (ネイティブはShellExecuteW、platform.hpp参照)。
+  if (handler.argv.size() == 1 && handler.argv[0] == "explorer.exe" && hasWindowsHost()) {
+    bool ok = openOnWindowsHost(url);
+    if (!ok) showTransientNotice(activeView(), "Cannot run: " + argv[0]);
+    return ok;
+  }
   ChildProcess::Result result = ChildProcess::run(argv);
   if (!result.ok) showTransientNotice(activeView(), "Cannot run: " + argv[0]);
   return result.ok;

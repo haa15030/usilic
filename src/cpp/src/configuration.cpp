@@ -852,6 +852,11 @@ const std::vector<Configuration::UrlHandler> &Configuration::urlHandlers() const
 #ifdef __APPLE__
     std::vector<UrlHandler> list = {
         {"Open", {"open"}}, {"Dump", {"w3m", "-dump"}}, {"Term", {"w3m"}}, {"Copy", {"pbcopy"}}, {"Look", {}}};
+#elif defined(_WIN32)
+    // 2026-10-18、直接のユーザー報告(Windowsのネイティブ、"^HでURLのリンクを踏むと「xdg-open: command not
+    // found」"): WSL2・MSYSと同じく、Windowsの既定のブラウザ・クリップボードへ。
+    std::vector<UrlHandler> list = {
+        {"Open", {"explorer.exe"}}, {"Dump", {"w3m", "-dump"}}, {"Term", {"w3m"}}, {"Copy", {"clip.exe"}}};
 #else
     std::vector<UrlHandler> list = {{"Open", {"xdg-open"}},
                                     {"Dump", {"w3m", "-dump"}},
