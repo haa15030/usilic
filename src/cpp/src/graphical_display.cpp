@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <chrono>
 #include <cstdlib>
 #include <deque>
 #include <filesystem>
@@ -924,6 +925,12 @@ struct GraphicalDisplay::Impl {
   // consumeSizeChanged()自身の宣言コメント(graphical_display.hpp)
   // 参照。
   bool sizeChanged = false;
+  // 2026-10-18、直接のユーザー依頼("-g起動でもウィンドウサイズを変えるとリアルタイムでサイズを表示してほしい。
+  // 80x40等。"): 窓の端をドラッグして大きさを変えた時、桁数x行数を窓の中央に出す(drawSizeOverlay())。
+  // sizeOverlayUntilまで出し、過ぎたらconsumeNeedsRedraw()で描き直して消す。usilic自身が窓の大きさを変えた時
+  // (programmaticSetWindowSize()、字の大きさの変更・端末に合わせる等)はprogrammaticResizeUntilまで出さない。
+  std::chrono::steady_clock::time_point sizeOverlayUntil{}, programmaticResizeUntil{};
+  bool sizeOverlayShown = false;
   // handCursorActive: 「内容自体」をドラッグする(「猫の手」スクロ
   // ールジェスチャー)ための、開いた手のカーソル(下のhandCursor)が
   // 現在表示されているかどうかを追跡する。pointingCursor: SDLの
@@ -1234,6 +1241,62 @@ void clearGlyphCache(ImplT &impl) {
   impl.glyphCache.clear();
 }
 
+// Impl::sizeOverlayUntil参照。usilic自身が窓の大きさを変える時はこれを通す(その後のリサイズで大きさを出さない)。
+template <typename ImplT>
+void programmaticSetWindowSize(ImplT &impl, int width, int height) {
+  impl.programmaticResizeUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+  SDL_SetWindowSize(impl.window, width, height);
+}
+
+template <typename ImplT>
+bool userResizing(const ImplT &impl) {
+  return std::chrono::steady_clock::now() >= impl.programmaticResizeUntil;
+}
+
+// 窓の中央に「桁数x行数」を、反転した色の枠に入れて描く(Impl::sizeOverlayUntil参照)。
+template <typename ImplT>
+void drawSizeOverlay(ImplT &impl, int columns, int rows) {
+  if (!impl.renderer || !impl.font) return;
+  std::string text = std::to_string(columns) + "x" + std::to_string(rows);
+  SDL_Surface *surface = TTF_RenderUTF8_Blended(impl.font, text.c_str(), impl.bg);
+  if (!surface) return;
+  SDL_Texture *texture = SDL_CreateTextureFromSurface(impl.renderer, surface);
+  int w = 0, h = 0;
+  SDL_GetWindowSize(impl.window, &w, &h);
+  int padX = std::max(4, impl.cellWidth), padY = std::max(2, impl.cellHeight / 4);
+  SDL_Rect box{(w - surface->w) / 2 - padX, (h - surface->h) / 2 - padY, surface->w + padX * 2, surface->h + padY * 2};
+  SDL_Rect dst{(w - surface->w) / 2, (h - surface->h) / 2, surface->w, surface->h};
+  SDL_SetRenderDrawColor(impl.renderer, impl.fg.r, impl.fg.g, impl.fg.b, 255);
+  SDL_RenderFillRect(impl.renderer, &box);
+  if (texture) {
+    SDL_RenderCopy(impl.renderer, texture, nullptr, &dst);
+    SDL_DestroyTexture(texture);
+  }
+  SDL_FreeSurface(surface);
+}
+
+// 窓の端をドラッグしている間(WindowsもmacOSも、SDL_PollEvent()が戻らない間)にも大きさを出す: SDLが
+// SDL_WINDOWEVENT_SIZE_CHANGEDを積んだその場で呼ばれるので、背景だけ塗って大きさを描く(本文はドラッグを
+// 終えてpumpEvents()に戻った後で組み直す)。
+template <typename ImplT>
+int sizeOverlayEventWatch(void *data, SDL_Event *event) {
+  auto &impl = *static_cast<ImplT *>(data);
+  if (event->type != SDL_WINDOWEVENT || event->window.event != SDL_WINDOWEVENT_SIZE_CHANGED || !impl.window ||
+      event->window.windowID != SDL_GetWindowID(impl.window) || !userResizing(impl) || impl.cellWidth <= 0 ||
+      impl.cellHeight <= 0)
+    return 1;
+  int columns = std::max(1, (event->window.data1 - ImplT::kMarginX * 2 - impl.scrollbarWidth) / impl.cellWidth);
+  int rows = std::max(1, (event->window.data2 - ImplT::kMarginY * 2) / impl.cellHeight);
+  syncHighDpiRenderScale(impl.window, impl.renderer);
+  SDL_SetRenderDrawColor(impl.renderer, impl.bg.r, impl.bg.g, impl.bg.b, 255);
+  SDL_RenderClear(impl.renderer);
+  drawSizeOverlay(impl, columns, rows);
+  SDL_RenderPresent(impl.renderer);
+  impl.sizeOverlayShown = true;
+  impl.sizeOverlayUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+  return 1;
+}
+
 }  // namespace
 
 GraphicalDisplay::GraphicalDisplay() : impl_(std::make_unique<Impl>()) {}
@@ -1415,6 +1478,7 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   display->impl_->rows = rows;
   display->impl_->columns = columns;
   display->impl_->grid.assign(static_cast<std::size_t>(rows) * columns, Cell{});
+  SDL_AddEventWatch(sizeOverlayEventWatch<Impl>, display->impl_.get());  // Impl::sizeOverlayUntil参照
   SDL_StartTextInput();
   // ここでは意図的に表示/前面化しない(以前のバージョンは、まさに
   // この箇所でSDL_CreateWindow(SDL_WINDOW_SHOWN, ...)の直後に
@@ -1425,6 +1489,7 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
 }
 
 GraphicalDisplay::~GraphicalDisplay() {
+  SDL_DelEventWatch(sizeOverlayEventWatch<Impl>, impl_.get());  // create()のSDL_AddEventWatch()と対
   // create()自身のSDL_StartTextInput()呼び出しに対応する(input methodで
   // 入力されたマルチバイトUTF-8を含む、SDL_TEXTINPUTイベントがそもそも
   // 届くために必要――pumpEvents()自身のコメント参照)。ウィンドウ/
@@ -2197,6 +2262,7 @@ void GraphicalDisplay::flush() {
   }
 
   renderCursor();
+  if (impl_->sizeOverlayShown) drawSizeOverlay(*impl_, impl_->columns, impl_->rows);  // Impl::sizeOverlayUntil参照
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
     // 上のグリッドダンプと同じ環境変数: 実際にレンダリングされた
     // ピクセルも(スクリーンキャプチャではなく、レンダラー自身から
@@ -2375,7 +2441,7 @@ void GraphicalDisplay::setSize(int rows, int columns) {
   impl_->columns = columns;
   impl_->grid.assign(static_cast<std::size_t>(rows) * columns, Cell{});
   if (impl_->window)
-    SDL_SetWindowSize(impl_->window, impl_->cellWidth * columns + Impl::kMarginX * 2 + impl_->scrollbarWidth,
+    programmaticSetWindowSize(*impl_, impl_->cellWidth * columns + Impl::kMarginX * 2 + impl_->scrollbarWidth,
                        impl_->cellHeight * rows + Impl::kMarginY * 2);
 }
 
@@ -2554,7 +2620,7 @@ void GraphicalDisplay::adjustFontSize(int deltaPoints) {
   // rows/columnsからちょうど導かれているため、handleWindowResized()
   // は「同じ」rows/columnsを再計算し、それ自身の「何もすることが
   // 無い」早期returnを取る――フィードバックループにはならない。
-  SDL_SetWindowSize(impl_->window, cellWidth * impl_->columns + Impl::kMarginX * 2 + impl_->scrollbarWidth,
+  programmaticSetWindowSize(*impl_, cellWidth * impl_->columns + Impl::kMarginX * 2 + impl_->scrollbarWidth,
                      cellHeight * impl_->rows + Impl::kMarginY * 2);
   SDL_SetWindowMinimumSize(impl_->window, cellWidth * 10 + Impl::kMarginX * 2 + impl_->scrollbarWidth,
                             cellHeight * 4 + Impl::kMarginY * 2);
@@ -2645,7 +2711,7 @@ bool GraphicalDisplay::setFont(FontKind kind, const std::string &path) {
     impl_->scrollbarWidth = cellHeight;  // Impl::scrollbarWidth自身のコメント参照
   }
   clearGlyphCache(*impl_);
-  SDL_SetWindowSize(impl_->window, impl_->cellWidth * impl_->columns + Impl::kMarginX * 2 + impl_->scrollbarWidth,
+  programmaticSetWindowSize(*impl_, impl_->cellWidth * impl_->columns + Impl::kMarginX * 2 + impl_->scrollbarWidth,
                     impl_->cellHeight * impl_->rows + Impl::kMarginY * 2);
   SDL_SetWindowMinimumSize(impl_->window, impl_->cellWidth * 10 + Impl::kMarginX * 2 + impl_->scrollbarWidth,
                            impl_->cellHeight * 4 + Impl::kMarginY * 2);
@@ -3112,6 +3178,11 @@ bool GraphicalDisplay::pumpEvents() {
           impl_->needsRedraw = true;
         } else if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
           handleWindowResized(event.window.data1, event.window.data2);
+          if (userResizing(*impl_)) {  // Impl::sizeOverlayUntil参照
+            impl_->sizeOverlayShown = true;
+            impl_->sizeOverlayUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+            impl_->needsRedraw = true;
+          }
         }
         break;
       case SDL_MOUSEBUTTONDOWN: {
@@ -3423,6 +3494,10 @@ bool GraphicalDisplay::pumpEvents() {
 }
 
 bool GraphicalDisplay::consumeNeedsRedraw() {
+  if (impl_->sizeOverlayShown && std::chrono::steady_clock::now() >= impl_->sizeOverlayUntil) {
+    impl_->sizeOverlayShown = false;  // 大きさの表示を消す(Impl::sizeOverlayUntil参照)
+    impl_->needsRedraw = true;
+  }
   bool value = impl_->needsRedraw;
   impl_->needsRedraw = false;
   return value;
@@ -3670,7 +3745,7 @@ void GraphicalDisplay::setWindowSize(int width, int height) {
   WindowBorders borders = realOrEstimatedWindowBorders(impl_->window);
   width -= (borders.left + borders.right);
   height -= (borders.top + borders.bottom);
-  if (width > 0 && height > 0) SDL_SetWindowSize(impl_->window, width, height);
+  if (width > 0 && height > 0) programmaticSetWindowSize(*impl_, width, height);
 }
 
 // SDLウィンドウの外枠サイズと、このクラス自身のcellWidth/cellHeight
@@ -3915,7 +3990,7 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   // 下で切れていた。同日、"モードラインが今度は上がり気味"(切り下げになると、モードラインの下に余白+最大rows/2
   // ピクセルの隙間): どちらの場合もウィンドウの高さを行の合計にぴったり合わせる(端末とは最大rows/2ピクセル違う)。
   height = Impl::kMarginY * 2 + impl_->rows * cellHeight;
-  SDL_SetWindowSize(impl_->window, width, height);
+  programmaticSetWindowSize(*impl_, width, height);
 }
 
 void GraphicalDisplay::setVisible(bool visible) {

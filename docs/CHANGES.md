@@ -26285,6 +26285,28 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      両方)で保存する。usilicrcを読み直した時(EDIT・^Xs)に足した分を捨てるのは今まで通り。
    - src/usilicrc・usilicrc.en: LINE-HEIGHTの説明に「次の起動にも引き継ぐ」を足した。HELP.epubを作り直した。
    - 確認: macOS・Windows(クロス)のビルドのみ。make install、usilic-win64.zip(21:22)を作り直した。
+909. **HELP.epubで、「キー：説明」等の一覧の項目を全部等幅(ゴシック)にする**
+   (2026-10-18、直接のユーザー報告"^Oy：全行選択、^On：全行解除が明朝体。他にも無いか探して。=kq.png")
+   - 原因: usilic -eは段落ごとに、行頭の空白・2つ以上続く空白・タブがあれば等幅(p.pre)にし、無ければ本文の明朝体の
+     ままだった。一覧の中でキーを桁そろえの空白なしで書いた行(^Oy・^On)だけ明朝体になっていた。
+   - help_to_epub.cpp: (1) ぶら下げの字下げ(1行目が浅い)で「：」「 : 」「）: 」のある段落は一覧の項目として等幅に。
+     (2) 同じ字下げで続く「：」「 : 」のある段落の並びは、どれかが等幅なら全部等幅に。
+   - 他に明朝体だった一覧(合わせて49行): mode-lineの(1)〜(5)、usilic(1)・mode-line、URLのOpen〜Epub、\b・\B・
+     [a-z]・{n,m}・\.・\?・\(・¥( ... ¥)、Boot options・Startup file、^J^Ou〜^J^Od、-c〜-hの起動オプション、
+     cmd + "="等、narou2epubの-m。「例: -f /Library/Fonts/MS-Gothic.ttf」は例の文なので明朝体のまま。
+   - src/HELP_.txt(未コミット): ^J^Owの行の余分な㊿(</indent>、字下げが0になっていた)を削り、URLの「Domp」を
+     「Dump」に直した。~/HELP_.txtにも同じ誤りがある(ユーザーへ伝えた)。
+   - 確認: make help-epubで15 notes (42 refs)。ぶら下げで等幅でない段落は「例: -f ...」だけ。
+910. **-gで窓の端をドラッグして大きさを変える間、窓の中央に「桁数x行数」を出す**
+   (2026-10-18、直接のユーザー依頼"-g起動でもウィンドウサイズを変えるとリアルタイムでサイズを表示してほしい。80x40等。")
+   - graphical_display.cpp: create()でSDL_AddEventWatch(sizeOverlayEventWatch)。窓の端をドラッグしている間は
+     Windows・macOSともpumpEvents()に戻らないので、SDLがSDL_WINDOWEVENT_SIZE_CHANGEDを積んだその場で背景を塗り、
+     その大きさの「桁数x行数」を反転色の枠で中央に描いて表示する(本文はドラッグを終えてから組み直す)。
+   - pumpEvents()のSDL_WINDOWEVENT_RESIZEDの後も1.5秒、flush()の最後に同じ表示を重ね、過ぎたら
+     consumeNeedsRedraw()で描き直して消す。
+   - usilic自身が窓の大きさを変える時(字の大きさの変更・端末に合わせる等、SDL_SetWindowSize()の5か所)は
+     programmaticSetWindowSize()を通し、その後0.5秒は出さない。
+   - 確認: macOS・Windows(クロス)のビルドのみ。make install、usilic-win64.zip(22:24)を作り直した。
 896. **-H・初回起動のHELPの窓もHELP.epubを開き、平文のHELPの上の^HもHELP.epubへ移る**
    (2026-10-18、直接のユーザー報告「^Hとやっても~/.local/lib/usilic/HELP.epubを読まないんだが。」)
    - 新しく起動したusilic -cの^HはHELP.epubを開いた(擬似端末で確認)。ところが-H・初回起動の窓
