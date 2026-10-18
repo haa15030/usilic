@@ -10802,6 +10802,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      設計)。`make usilic`クリーンビルド確認済み。qlmanage自体の
      対話的な動作は引き続き実機での確認待ち。
 
+901. **usilicrcの節名をEGREP→GREP、CP→COPY、MV→MOVE、RM→DELETEに改める**(2026-10-18、直接のユーザー依頼"項目名の
+   変更はユーザー数が多いOSに合わせたいので下記でよろしく。EGREP->GREP、CP->COPY、MV->MOVE、RM->DELETE"。
+   きっかけは節名がモード名と同じで紛らわしいという話、項目898と同じ)
+   - configuration.cpp: directiveKeywords()の"CP"・"MV"・"RM"を"COPY"・"MOVE"・"DELETE"に(添字はそのまま)。
+     canonicalKeyword()で以前のCP・MV・RMを新しい名前に読み替える。GREPは内部では元から正式な名前で、EGREP
+     (2026-09-27に正式にした名前)は以前の名前として読む。
+   - src/usilicrc・src/usilicrc.en: 見出しと冒頭の節名の一覧を新しい名前に(一覧に残っていたSHELLも削除)。
+     HELP(src/HELP_.txt)は「そのままでいい」とのことで変えていない。
+   - 確認: 新しい名前の節と、以前の名前を使う既存のテストがどちらも通った。make WINDOWS=1 distも通った。
+
 ## 12. SHELL
 
 5. **Ubuntu実機での`tcb .`セグフォ、SHELLモード初期化まわりの表示バグ数件**

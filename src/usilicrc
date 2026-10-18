@@ -4,8 +4,8 @@
 # 行頭が以下の見出しの行が節の始まりで、節の中身の行はタブ(または空白)で
 # 始めます。それ以外の文字で始まる行はエラーになります。
 #
-# ARCHIVE, FILTER, LAUNCH, EGREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
-# LINE, WAIT, CP, MV, RM, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT,
+# ARCHIVE, FILTER, LAUNCH, GREP, PROGRAM, EDITOR, BUFFER, CODE, LINE,
+# WAIT, COPY, MOVE, DELETE, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT,
 # LINE-HEIGHT, URL, KEY, MACRO
 #
 # 英語のコメント付きの同じ内容のファイルが usilicrc.en です。
@@ -79,7 +79,7 @@ LAUNCH
 	.info	info	-f
 	.info.gz info	-f
 
-EGREP
+GREP
 # 書式: 文字列
 #
 # EGREP と CUT(正規表現)の ^R の一覧の先頭に、この順で載せておく検索文字列
@@ -188,7 +188,7 @@ WAIT
 
 	100
 
-CP
+COPY
 # 書式: cp  (option)
 #
 # CP のコマンド。(既定: cp -vR)
@@ -209,7 +209,7 @@ CP
 
 #	cp -vRi
 
-MV
+MOVE
 # 書式: mv  (option)
 #
 # MV のコマンド。(既定: mv -v)
@@ -217,7 +217,7 @@ MV
 
 #	mv -vi
 
-RM
+DELETE
 # 書式: rm  (option)
 #
 # RM のコマンド。(既定: rm -vr)

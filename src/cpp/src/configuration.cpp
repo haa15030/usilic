@@ -46,7 +46,8 @@ const std::vector<std::string> &directiveKeywords() {
       // 2026-10-16: "FILTER"・"LAUNCH"は以前の"FILE"・"EXEC"(canonicalKeyword()参照)。
       "ARCHIVE", "FILTER", "LAUNCH", "EDITOR", "SHELL", "GREP", "PROGRAM", "BUFFER", "CODE",
       // "LINE"は2026-10-02にHISTORYから改名(.steering/20261002-help-key-usilicrc-reorg/)。
-      "LINE",    "WAIT", "SCROLL", "LS",     "KEY",   "CP",   "MV",      "RM",
+      // "COPY"・"MOVE"・"DELETE"は2026-10-18に"CP"・"MV"・"RM"から改名(canonicalKeyword()参照)。
+      "LINE",    "WAIT", "SCROLL", "LS",     "KEY",   "COPY", "MOVE",    "DELETE",
       // 2026-09-12追加、直接のユーザー依頼(columnThreshold()自身の
       // コメント参照): このC++移植自身の新設ディレクティブなので
       // legacy str.cのusilicrc[]には対応物が無い――既存の並びの
@@ -69,10 +70,16 @@ const std::vector<std::string> &directiveKeywords() {
 // 節名の別名を正式な名前(directiveKeywords()の名前)にする。
 // 2026-09-27、直接のユーザー依頼("usilicrcのGREP（←「EGREP」に変更よろしく）"): 節名はEGREPが正式。以前の
 // usilicrcのGREPも同じ節として受け付ける(内部の添字は元のGREPのまま)。
+// 2026-10-18、直接のユーザー依頼("項目名の変更はユーザー数が多いOSに合わせたいので下記でよろしく。EGREP->GREP、
+// CP->COPY、MV->MOVE、RM->DELETE"、モード名と同じで紛らわしいため): 正式な名前はGREPに戻し、EGREPは以前の名前
+// として読む。CP・MV・RMも以前の名前として読む。
 // 2026-10-16、直接のユーザー依頼(FILE・EXECは"FILEがモード名と同じで紛らわしいのとEXECは同じ機能を果たす、より
 // 適切な項目名って何かない？"への案に"FILTER、LAUNCHでよろしく"): FILE→FILTER、EXEC→LAUNCH。以前の名前も読む。
 std::string canonicalKeyword(const std::string &keyword) {
   if (keyword == "EGREP") return "GREP";
+  if (keyword == "CP") return "COPY";
+  if (keyword == "MV") return "MOVE";
+  if (keyword == "RM") return "DELETE";
   if (keyword == "FILE") return "FILTER";
   if (keyword == "EXEC") return "LAUNCH";
   return keyword;
@@ -699,7 +706,7 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
       }
       case 14:
       case 15:
-      case 16: {  // CP / MV / RM
+      case 16: {  // COPY / MOVE / DELETE(以前のCP / MV / RM)
         ConfiguredRole role = (index == 14) ? ConfiguredRole::Cp : (index == 15) ? ConfiguredRole::Mv : ConfiguredRole::Rm;
         std::vector<std::string> last;
         while (auto data = nextDataLine(lines, i)) {

@@ -5,8 +5,8 @@
 # section; the lines inside a section begin with a tab (or spaces).  Any
 # other line is an error.
 #
-# ARCHIVE, FILTER, LAUNCH, EGREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
-# LINE, WAIT, CP, MV, RM, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT,
+# ARCHIVE, FILTER, LAUNCH, GREP, PROGRAM, EDITOR, BUFFER, CODE, LINE,
+# WAIT, COPY, MOVE, DELETE, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT,
 # LINE-HEIGHT, URL, KEY, MACRO
 #
 # usilicrc is the same file with Japanese comments.
@@ -80,7 +80,7 @@ LAUNCH
 	.info	info	-f
 	.info.gz info	-f
 
-EGREP
+GREP
 # Format: `string'
 #
 # Search strings listed first, in this order, in the ^R list of EGREP and
@@ -193,7 +193,7 @@ WAIT
 
 	100
 
-CP
+COPY
 # Format: `cp' (option)
 #
 # Command of CP.  (default: cp -vR)
@@ -215,7 +215,7 @@ CP
 
 #	cp -vRi
 
-MV
+MOVE
 # Format: `mv' (option)
 #
 # Command of MV.  (default: mv -v)
@@ -223,7 +223,7 @@ MV
 
 #	mv -vi
 
-RM
+DELETE
 # Format: `rm' (option)
 #
 # Command of RM.  (default: rm -vr)

@@ -358,6 +358,16 @@ TEST_CASE("CP/MV/RM directives override the default command, only in file-manage
   CHECK(pagerConfig.commandFor(ConfiguredRole::Cp).argv == before);  // unaffected outside file-manager mode
 }
 
+// 2026-10-18: 節名はCOPY/MOVE/DELETE・GREPが正式。以前のCP/MV/RM・EGREPも同じ節として読む(上のテスト)。
+TEST_CASE("COPY/MOVE/DELETE and GREP are the section names (CP/MV/RM and EGREP still read)") {
+  Configuration config;
+  REQUIRE(config.loadRcText("COPY\n cp -R\nMOVE\n mv -f\nDELETE\n rm -r\nGREP\n a.c\n", true));
+  CHECK(config.errors().empty());
+  CHECK(config.commandFor(ConfiguredRole::Cp).argv == std::vector<std::string>{"cp", "-R"});
+  CHECK(config.commandFor(ConfiguredRole::Mv).argv == std::vector<std::string>{"mv", "-f"});
+  CHECK(config.commandFor(ConfiguredRole::Rm).argv == std::vector<std::string>{"rm", "-r"});
+}
+
 TEST_CASE("KEY: legacy-format lines (no F-n/K-n head, or an F-n with no keys) are ignored without error") {
   Configuration config;
   std::string rc =
