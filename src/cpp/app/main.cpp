@@ -1724,8 +1724,9 @@ struct GuiFrame {
 };
 GuiFrame gGuiFrame;
 // -z pt(2026-10-18、直接のユーザー依頼"文字サイズの小さい明朝体は見栄えが悪いので-g起動時のデフォルトフォントサイズを
-// 暫定20pt...にしてほしい（起動オプションで設定可）"): -gの窓(端末に重ねない起動)の字の大きさ。0は指定無し(前回の
-// 大きさ、無ければkDefaultGuiPointSize)。端末に重ねる-g・^Ogは今まで通り端末の字の大きさ。
+// 暫定20pt...にしてほしい（起動オプションで設定可）"): -gの窓の字の大きさ。0は指定無し(端末に重ねない起動は前回の
+// 大きさ、無ければkDefaultGuiPointSize。端末に重ねる-gは端末の字の大きさ)。端末に重ねる-gでも-zがあればその大きさ
+// (窓は端末と同じ大きさ、同日の追記)。^Ogは今まで通り端末の字の大きさ。
 int gStartFontPointSize = 0;
 constexpr int kDefaultGuiPointSize = 20;
 
@@ -4947,16 +4948,14 @@ int main(int argc, char **argv) {
     else if (std::strcmp(argv[i], "-g") == 0) forceGui = true;
     else if (std::strcmp(argv[i], "-H") == 0) openHelpChild = true;
     else if (std::strcmp(argv[i], "-K") == 0) openKeyAtStart = true;
-    else if (std::strncmp(argv[i], "-z", 2) == 0) {  // gStartFontPointSize参照
-      // -z 20と、続けて書いた-z20(2026-10-18、直接のユーザー報告"usilic -g -z20 -> cannot open .../-z20")の両方。
-      const char *text = argv[i][2] ? argv[i] + 2 : (i + 1 < argc ? argv[++i] : "");
-      bool digits = *text && std::all_of(text, text + std::strlen(text), [](unsigned char c) { return std::isdigit(c); });
-      int size = digits ? std::atoi(text) : 0;
+    else if (std::strcmp(argv[i], "-z") == 0) {  // gStartFontPointSize参照
+      int size = i + 1 < argc ? std::atoi(argv[i + 1]) : 0;
       if (size < 4 || size > 200) {
         std::cerr << "usilic: -z requires a font size in points (4-200, e.g. -z 20).\n";
         return 1;
       }
       gStartFontPointSize = size;
+      i++;
     }
     else if (std::strcmp(argv[i], "-h") == 0) {
       // 2026-09-15追加、直接のユーザー依頼("新たな仕様として...
@@ -5821,7 +5820,8 @@ int main(int argc, char **argv) {
     }
     launchGui = fontPath.empty() ? nullptr
                                   : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath,
-                                                                  appearance->fontPointSize);
+                                                                  gStartFontPointSize > 0 ? gStartFontPointSize
+                                                                                          : appearance->fontPointSize);
     if (launchGui) {
       if (appearance->hasColors) launchGui->setColors(appearance->foreground, appearance->background);
       // Overlay this window exactly where the calling terminal's own
@@ -5858,7 +5858,11 @@ int main(int argc, char **argv) {
       // real terminal profiles in a way no font-metric heuristic
       // reliably captured -- see matchWindowSize()'s own comment).
       launchGui->setWindowPosition(bounds->x, bounds->y);
-      launchGui->matchWindowSize(bounds->width, bounds->height);
+      // 2026-10-18、直接のユーザー報告("basic（11pt）で`-g -z 20`したけど11のまま"): -zがあれば、字はその大きさ
+      // のまま窓だけ端末と同じ大きさにする(行数・桁数がその字の大きさで収まる数に変わる)。matchWindowSize()は
+      // 字の送りを端末に合わせてしまうので使わない。
+      if (gStartFontPointSize > 0) launchGui->setWindowSize(bounds->width, bounds->height);
+      else launchGui->matchWindowSize(bounds->width, bounds->height);
       launchGui->open();
       display.setBackend(*launchGui);
       clearLaunchingTerminal();  // see its own comment -- covered by the GUI window now, so this never flashes
