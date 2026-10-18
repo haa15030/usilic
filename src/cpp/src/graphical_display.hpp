@@ -342,6 +342,9 @@ class GraphicalDisplay : public Display {
   std::pair<int, double> adjustLineHeight(int deltaPixels);
   // usilicrcを読み直した後(setLineHeightRatios()の後)に呼ぶ: ^[[ / ^[]で足した分を捨て、今の向きの高さを当て直す。
   void reapplyLineHeight();
+  // ^[[ / ^[]で足したドット数(横書き・縦書き)。起動時(create()より前)に前回の値を戻し、終わりに保存する(2026-10-18)。
+  static void setLineHeightExtras(int horizontal, int vertical);
+  static std::pair<int, int> lineHeightExtras();
   // 縦書きの画面を見せている間はtrue(メインのループが毎回渡す)。行の高さが変われば、窓の大きさはそのままで行数が
   // 変わり、consumeSizeChanged()がtrueになる。
   void setVerticalLineSpacing(bool vertical);

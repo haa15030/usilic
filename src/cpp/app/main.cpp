@@ -4508,6 +4508,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
     prefs.rows = gui->horizontalRows();  // 縦書きの画面で終えても横書きの行数(2026-10-16)
     if (appearance && !gTerminalFontPath.empty()) prefs.terminalFontPath = gTerminalFontPath;  // ^Ogで重ねた時
     prefs.columns = gui->columns();
+    std::tie(prefs.lineHeightExtraHorizontal, prefs.lineHeightExtraVertical) = fm::GraphicalDisplay::lineHeightExtras();
     fm::GraphicalDisplay::Color fg = gui->foregroundColor();
     fm::GraphicalDisplay::Color bg = gui->backgroundColor();
     prefs.hasColors = true;
@@ -5605,6 +5606,8 @@ int main(int argc, char **argv) {
     fm::History::GuiPreferences prefs = history.guiPreferences();
     prefs.fontPath = rcFontPath;
     history.setGuiPreferences(prefs);
+    // ^[[ / ^[]で足した行の高さを前回から引き継ぐ(2026-10-18、History::GuiPreferences参照)。
+    fm::GraphicalDisplay::setLineHeightExtras(prefs.lineHeightExtraHorizontal, prefs.lineHeightExtraVertical);
   }
 
   // History's own saved charset already defers to the environment
@@ -6099,6 +6102,7 @@ int main(int argc, char **argv) {
       prefs.fontPointSize = launchGui->fontPointSize();
       prefs.rows = launchGui->horizontalRows();
       prefs.columns = launchGui->columns();
+      std::tie(prefs.lineHeightExtraHorizontal, prefs.lineHeightExtraVertical) = fm::GraphicalDisplay::lineHeightExtras();
       fm::GraphicalDisplay::Color fg = launchGui->foregroundColor(), bg = launchGui->backgroundColor();
       prefs.hasColors = true;
       prefs.fgR = fg.r; prefs.fgG = fg.g; prefs.fgB = fg.b;

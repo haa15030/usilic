@@ -312,8 +312,8 @@ LINE-HEIGHT
 # section the font's own line height is used.
 # Editing this file with EDIT (or ^Xs) applies it at once.  In the -g window,
 # ^[[ / ^[] make the line height of the current direction (horizontal or
-# vertical) 1 dot taller / shorter (not written here; reading this file again
-# goes back to the values here).
+# vertical) 1 dot taller / shorter (not written here; the change carries over to
+# the next launch, and reading this file again goes back to the values here).
 
 	1.2  1.0
 

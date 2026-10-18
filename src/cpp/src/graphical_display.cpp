@@ -2454,6 +2454,15 @@ std::pair<int, double> GraphicalDisplay::adjustLineHeight(int deltaPixels) {
   return {impl_->cellHeight, static_cast<double>(impl_->cellHeight) / std::max(1, impl_->currentFontPointSize)};
 }
 
+void GraphicalDisplay::setLineHeightExtras(int horizontal, int vertical) {
+  fm::lineHeightExtraPixels(false) = horizontal;
+  fm::lineHeightExtraPixels(true) = vertical;
+}
+
+std::pair<int, int> GraphicalDisplay::lineHeightExtras() {
+  return {fm::lineHeightExtraPixels(false), fm::lineHeightExtraPixels(true)};
+}
+
 void GraphicalDisplay::reapplyLineHeight() {
   lineHeightExtraPixels(false) = 0;
   lineHeightExtraPixels(true) = 0;

@@ -283,6 +283,9 @@ class History {
     // したときもそれらの設定で起動できない？"): 最後に端末に重ねて-gを使った時の端末のフォントのファイル。
     // usilic.app等、重ねる端末の無い起動で、usilicrcのFONTが無い時に使う。空 == 未設定。
     std::string terminalFontPath;
+    // 2026-10-18、直接のユーザー報告("^[[/^[]が次の起動で引き継がれない"): ^[[ / ^[]で足した行の高さのドット数
+    // (横書き・縦書き、GraphicalDisplay::adjustLineHeight())。
+    int lineHeightExtraHorizontal = 0, lineHeightExtraVertical = 0;
   };
   GuiPreferences guiPreferences() const;
   void setGuiPreferences(const GuiPreferences &preferences);

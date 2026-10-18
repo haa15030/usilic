@@ -591,6 +591,11 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     if (toks.size() > 15) guiPreferences_.terminalFontPath = decodeField(toks[15]);
     // epubSansSerif_(2026-10-17)――同じ理由でさらに末尾に。無ければ明朝体。
     epubSansSerif_ = toks.size() > 16 && std::atoi(toks[16].c_str()) != 0;
+    // ^[[ / ^[]で足した行の高さ(2026-10-18)――同じ理由でさらに末尾に。無ければ0。
+    if (toks.size() > 18) {
+      guiPreferences_.lineHeightExtraHorizontal = std::atoi(toks[17].c_str());
+      guiPreferences_.lineHeightExtraVertical = std::atoi(toks[18].c_str());
+    }
   }
 
   complete_ = (i < lines.size() && !lines[i].empty() && lines[i][0] == kSubEof);
@@ -673,7 +678,8 @@ std::string History::serialize(const std::string &programName, const std::string
          std::to_string(guiPreferences_.bgR) + " " + std::to_string(guiPreferences_.bgG) + " " +
          std::to_string(guiPreferences_.bgB) + " " + encodeField(guiPreferences_.fontPath) + " " +
          std::to_string(modeLineVisible_ ? 1 : 0) + " " + encodeField(guiPreferences_.terminalFontPath) + " " +
-         std::to_string(epubSansSerif_ ? 1 : 0) + "\n";
+         std::to_string(epubSansSerif_ ? 1 : 0) + " " + std::to_string(guiPreferences_.lineHeightExtraHorizontal) + " " +
+         std::to_string(guiPreferences_.lineHeightExtraVertical) + "\n";
   out += std::string(1, kSubEof) + "\n";
   return out;
 }

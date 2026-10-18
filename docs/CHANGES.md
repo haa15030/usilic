@@ -26274,6 +26274,17 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 報告の画面(=jo.png)のタイトルのビルドは2026-10-16 07:04で、項目857〜869(80桁・historyの保存・-gはSPEED)より
      前のもの。窓が狭い(80桁未満に見える)のは項目857〜859の件。
    - 確認: macOS・Windows(クロス)のビルドのみ。make install、usilic-win64.zip(20:59)を作り直した。
+908. **-gの^[[ / ^[]で変えた行の高さを、次の起動に引き継ぐ**
+   (2026-10-18、直接のユーザー報告"`^[[`/`^[]`が次の起動で引き継がれない。")
+   - それまでは、^[[ / ^[]で足したドット数(graphical_display.cppのlineHeightExtraPixels())はその起動の間だけで、
+     usilicrcのLINE-HEIGHTの説明にも「ここには書き込まず」とだけあった。
+   - history.hpp/cpp: GuiPreferencesにlineHeightExtraHorizontal・lineHeightExtraVertical。historyのUSILICの行の末尾
+     (epubSansSerif_の後)に足した(古いhistoryでは0)。
+   - graphical_display.hpp/cpp: GraphicalDisplay::setLineHeightExtras()・lineHeightExtras()(static)。
+   - main.cpp: 起動時(historyを読んだ後)に前回の値を戻し、-gの終わりの保存(tryEnterGuiPhase()と端末に重ねる起動の
+     両方)で保存する。usilicrcを読み直した時(EDIT・^Xs)に足した分を捨てるのは今まで通り。
+   - src/usilicrc・usilicrc.en: LINE-HEIGHTの説明に「次の起動にも引き継ぐ」を足した。HELP.epubを作り直した。
+   - 確認: macOS・Windows(クロス)のビルドのみ。make install、usilic-win64.zip(21:22)を作り直した。
 896. **-H・初回起動のHELPの窓もHELP.epubを開き、平文のHELPの上の^HもHELP.epubへ移る**
    (2026-10-18、直接のユーザー報告「^Hとやっても~/.local/lib/usilic/HELP.epubを読まないんだが。」)
    - 新しく起動したusilic -cの^HはHELP.epubを開いた(擬似端末で確認)。ところが-H・初回起動の窓
