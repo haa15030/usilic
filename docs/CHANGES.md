@@ -2184,9 +2184,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 確認: PTYで、fileから^Kしたモードラインの右端が「…/a.txt」になること。
 
 902. **^HのHELP.epubのモード名を「HELP」にする**(2026-10-18、直接のユーザー報告"モード名が「HELP」じゃない")
-   - openEpubQuietly(): HELP.epub(helpEpubPath())なら、モード名の欄を"EPUB"ではなく"HELP"に。章の一覧(^G)の
-     モードラインの名前も同じく"HELP"。
-   - 確認: PTYで^H→本文のモードラインの右端が「HELP」、^G→章の一覧が「HELP 01/44 TOP」。
+   - openEpubQuietly(): HELP.epub(helpEpubPath())なら、モード名(モードラインの一番左、ほかの本では本のパス)を
+     "HELP"に。章の一覧(^G)のモード名も"EPUB"ではなく"HELP"。
+   - 同日の訂正(直接のユーザー指摘"「モード名」とはmode-lineの一番左側。右端は「戻り値」。^Gで戻る先はEPUB仕様の
+     １つでもあるnav.xhtmlなのでEPUBのままでいい"): 最初は右端の戻り値を"HELP"にしてしまっていた。戻り値は"EPUB"に
+     戻し、一番左を"HELP"にした。
+   - 確認: PTYで^H→本文が「HELP 002/791 0% 120353 EPUB」、^G→章の一覧が「HELP 01/44 TOP」。
 
 ## 3. FGREP / EGREP
 
