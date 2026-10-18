@@ -1725,8 +1725,8 @@ struct GuiFrame {
 GuiFrame gGuiFrame;
 // -z pt(2026-10-18、直接のユーザー依頼"文字サイズの小さい明朝体は見栄えが悪いので-g起動時のデフォルトフォントサイズを
 // 暫定20pt...にしてほしい（起動オプションで設定可）"): -gの窓の字の大きさ。0は指定無し(端末に重ねない起動は前回の
-// 大きさ、無ければkDefaultGuiPointSize。端末に重ねる-gは端末の字の大きさ)。端末に重ねる-gでも-zがあればその大きさ
-// (窓は端末と同じ大きさ、同日の追記)。^Ogは今まで通り端末の字の大きさ。
+// 大きさ、無ければkDefaultGuiPointSize。端末に重ねる-gは端末の字の大きさ)。端末に重ねる-g・^Ogでも-zがあればその大きさ
+// (端末と同じ行数・桁数の窓、同日の追記)。
 int gStartFontPointSize = 0;
 constexpr int kDefaultGuiPointSize = 20;
 
@@ -4287,6 +4287,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   int rows = display.rows(), columns = display.columns();
   int fontPointSize = kDefaultGuiPointSize;  // gStartFontPointSize参照
   if (appearance) fontPointSize = appearance->fontPointSize;  // 端末の文字の大きさ(^Og、2026-10-12)
+  if (appearance && gStartFontPointSize > 0) fontPointSize = gStartFontPointSize;  // ^Ogでも-z(gStartFontPointSize参照)
   if (!appearance) {
     if (savedGui.rows > 0 && savedGui.columns > 0) {
       rows = savedGui.rows;
@@ -4329,7 +4330,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   // 「実はすでにGUI」の経路と同じく、端末のウィンドウにぴったり重ねる(色・フォントは上の`appearance`)。
   if (bounds) {
     gui->setWindowPosition(bounds->x, bounds->y);
-    gui->matchWindowSize(bounds->width, bounds->height);
+    if (gStartFontPointSize <= 0) gui->matchWindowSize(bounds->width, bounds->height);  // -zなら端末の行数・桁数のまま
   }
   gui->open();
   // 2026-10-13、直接のユーザー報告("表紙のページで^Ogすると表紙画像のGUI画面が下になる"、=je/=jf): ^Ogでは端末が
@@ -5858,11 +5859,11 @@ int main(int argc, char **argv) {
       // real terminal profiles in a way no font-metric heuristic
       // reliably captured -- see matchWindowSize()'s own comment).
       launchGui->setWindowPosition(bounds->x, bounds->y);
-      // 2026-10-18、直接のユーザー報告("basic（11pt）で`-g -z 20`したけど11のまま"): -zがあれば、字はその大きさ
-      // のまま窓だけ端末と同じ大きさにする(行数・桁数がその字の大きさで収まる数に変わる)。matchWindowSize()は
-      // 字の送りを端末に合わせてしまうので使わない。
-      if (gStartFontPointSize > 0) launchGui->setWindowSize(bounds->width, bounds->height);
-      else launchGui->matchWindowSize(bounds->width, bounds->height);
+      // 2026-10-18、直接のユーザー報告("basic（11pt）で`-g -z 20`したけど11のまま")と続く依頼("80x24になる方が
+      // いい。-gが正式オプションとなったので重ね合わせはどうでもいいかなと"): -zがあれば、その字の大きさで端末と
+      // 同じ行数・桁数の窓にする(位置だけ端末に合わせ、端末より大きくなってもよい)。matchWindowSize()は字の送りを
+      // 端末に合わせてしまうので使わない。
+      if (gStartFontPointSize <= 0) launchGui->matchWindowSize(bounds->width, bounds->height);
       launchGui->open();
       display.setBackend(*launchGui);
       clearLaunchingTerminal();  // see its own comment -- covered by the GUI window now, so this never flashes
