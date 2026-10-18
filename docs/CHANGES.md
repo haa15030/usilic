@@ -26320,6 +26320,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - -z pt(4〜200)を足した(gStartFontPointSize)。usilicrcに節は無いので-Zは無い。-hの表示にも足した。-pは
      PAGERの内部用(usilic -p <pid>)なので使わなかった。
    - src/HELP_.txt(未コミット): 起動オプションの書式と一覧に-z ptを足した。
+   - (同日追記、直接のユーザー報告"usilic -g -z20 -> cannot open /Users/haa15030/-z20")続けて書いた-z20も受け付ける。
+     それまでは"-z"ちょうどだけを見ていたので、-z20はファイル名として開こうとしていた。
    - 確認: macOS・Windows(クロス)のビルドのみ。make install、usilic-win64.zip(23:17)を作り直した。
 896. **-H・初回起動のHELPの窓もHELP.epubを開き、平文のHELPの上の^HもHELP.epubへ移る**
    (2026-10-18、直接のユーザー報告「^Hとやっても~/.local/lib/usilic/HELP.epubを読まないんだが。」)

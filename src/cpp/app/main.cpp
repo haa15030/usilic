@@ -4947,14 +4947,16 @@ int main(int argc, char **argv) {
     else if (std::strcmp(argv[i], "-g") == 0) forceGui = true;
     else if (std::strcmp(argv[i], "-H") == 0) openHelpChild = true;
     else if (std::strcmp(argv[i], "-K") == 0) openKeyAtStart = true;
-    else if (std::strcmp(argv[i], "-z") == 0) {  // gStartFontPointSize参照
-      int size = i + 1 < argc ? std::atoi(argv[i + 1]) : 0;
+    else if (std::strncmp(argv[i], "-z", 2) == 0) {  // gStartFontPointSize参照
+      // -z 20と、続けて書いた-z20(2026-10-18、直接のユーザー報告"usilic -g -z20 -> cannot open .../-z20")の両方。
+      const char *text = argv[i][2] ? argv[i] + 2 : (i + 1 < argc ? argv[++i] : "");
+      bool digits = *text && std::all_of(text, text + std::strlen(text), [](unsigned char c) { return std::isdigit(c); });
+      int size = digits ? std::atoi(text) : 0;
       if (size < 4 || size > 200) {
         std::cerr << "usilic: -z requires a font size in points (4-200, e.g. -z 20).\n";
         return 1;
       }
       gStartFontPointSize = size;
-      i++;
     }
     else if (std::strcmp(argv[i], "-h") == 0) {
       // 2026-09-15追加、直接のユーザー依頼("新たな仕様として...
