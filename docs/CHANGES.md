@@ -26307,6 +26307,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - usilic自身が窓の大きさを変える時(字の大きさの変更・端末に合わせる等、SDL_SetWindowSize()の5か所)は
      programmaticSetWindowSize()を通し、その後0.5秒は出さない。
    - 確認: macOS・Windows(クロス)のビルドのみ。make install、usilic-win64.zip(22:24)を作り直した。
+911. **-gの大きさの表示に字の大きさも並べ、字の大きさを変えた時にも出す**
+   (2026-10-18、直接のユーザー依頼"フォントサイズの表示もよろしく。"、項目910の後)
+   - graphical_display.cpp: drawSizeOverlay()の表示を「80x40  16pt」に。adjustFontSize()(cmd + "=" 等)の後にも
+     1.5秒出す。
+   - 確認: macOS・Windows(クロス)のビルドのみ。make install、usilic-win64.zip(23:07)を作り直した。
 896. **-H・初回起動のHELPの窓もHELP.epubを開き、平文のHELPの上の^HもHELP.epubへ移る**
    (2026-10-18、直接のユーザー報告「^Hとやっても~/.local/lib/usilic/HELP.epubを読まないんだが。」)
    - 新しく起動したusilic -cの^HはHELP.epubを開いた(擬似端末で確認)。ところが-H・初回起動の窓

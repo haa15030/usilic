@@ -1253,11 +1253,14 @@ bool userResizing(const ImplT &impl) {
   return std::chrono::steady_clock::now() >= impl.programmaticResizeUntil;
 }
 
-// 窓の中央に「桁数x行数」を、反転した色の枠に入れて描く(Impl::sizeOverlayUntil参照)。
+// 窓の中央に「桁数x行数 字の大きさpt」を、反転した色の枠に入れて描く(Impl::sizeOverlayUntil参照)。
+// 2026-10-18、直接のユーザー依頼("フォントサイズの表示もよろしく。"): 字の大きさも並べ、字の大きさを変えた時
+// (adjustFontSize())にも出す。
 template <typename ImplT>
 void drawSizeOverlay(ImplT &impl, int columns, int rows) {
   if (!impl.renderer || !impl.font) return;
-  std::string text = std::to_string(columns) + "x" + std::to_string(rows);
+  std::string text = std::to_string(columns) + "x" + std::to_string(rows) + "  " +
+                     std::to_string(impl.currentFontPointSize) + "pt";
   SDL_Surface *surface = TTF_RenderUTF8_Blended(impl.font, text.c_str(), impl.bg);
   if (!surface) return;
   SDL_Texture *texture = SDL_CreateTextureFromSurface(impl.renderer, surface);
@@ -2625,6 +2628,8 @@ void GraphicalDisplay::adjustFontSize(int deltaPoints) {
   SDL_SetWindowMinimumSize(impl_->window, cellWidth * 10 + Impl::kMarginX * 2 + impl_->scrollbarWidth,
                             cellHeight * 4 + Impl::kMarginY * 2);
   impl_->needsRedraw = true;
+  impl_->sizeOverlayShown = true;  // 字の大きさを出す(drawSizeOverlay()参照)
+  impl_->sizeOverlayUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
 }
 
 namespace {
