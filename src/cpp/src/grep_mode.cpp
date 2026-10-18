@@ -18,12 +18,32 @@ namespace {
 // への記録やNo String表示に使う`pattern_`自体は(タブがそのまま
 // 反転表示のグリフとして見える方が「何を探したか」が伝わりやすい
 // ため)変換前のまま――変換は実際の照合にだけ使う一時コピーに施す。
-std::string convertTabsForSearch(const std::string &pattern) {
-  std::string converted = pattern;
-  std::size_t pos = 0;
-  while ((pos = converted.find('\t', pos)) != std::string::npos) {
-    converted.replace(pos, 1, "\xE2\x81\xA0");
-    pos += 3;
+// 2026-10-18、直接のユーザー報告(HELPの"^O^J^S^Q^I$^Mがそのとおりにならない"): 行の側ではU+2060の後ろに
+// 桁をそろえる空白が続くので、正規表現(EGREP・GREP)では「U+2060と続く空白」に一致させる(^I$が行末のタブに
+// 一致するように)。^I+のような繰り返しも1つのタブとして効くよう、括弧でまとめる。固定文字列はU+2060だけ。
+std::string convertTabsForSearch(const std::string &pattern, GrepSyntax syntax) {
+  const std::string replacement = (syntax == GrepSyntax::Regex)   ? "(\xE2\x81\xA0 *)"
+                                  : (syntax == GrepSyntax::Basic) ? "\\(\xE2\x81\xA0 *\\)"
+                                                                  : "\xE2\x81\xA0";
+  // [^\t]のような角括弧の中は1文字の集まりなので、U+2060だけにする。
+  std::string converted;
+  bool inBracket = false;
+  for (std::size_t i = 0; i < pattern.size(); i++) {
+    char c = pattern[i];
+    if (c == '\t') {
+      converted += inBracket ? std::string("\xE2\x81\xA0") : replacement;
+      continue;
+    }
+    converted += c;
+    if (c == '\\' && !inBracket && i + 1 < pattern.size()) {
+      converted += pattern[++i];
+    } else if (c == '[' && !inBracket) {
+      inBracket = true;
+      if (i + 1 < pattern.size() && pattern[i + 1] == '^') converted += pattern[++i];
+      if (i + 1 < pattern.size() && pattern[i + 1] == ']') converted += pattern[++i];  // 先頭の]は文字
+    } else if (c == ']' && inBracket) {
+      inBracket = false;
+    }
   }
   return converted;
 }
@@ -59,7 +79,7 @@ GrepMode::GrepMode(ContentView &view, const Configuration &configuration)
 bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::string &pattern,
                        GrepSyntax syntax) {
   if (pattern.empty()) return false;
-  const std::string searchPattern = convertTabsForSearch(pattern);
+  const std::string searchPattern = convertTabsForSearch(pattern, syntax);
 
   // 2026-09-05追加(直接のユーザー依頼、"新たにGREP（grep）を新設"):
   // GrepSyntax::Basic(プレーンなgrep)を含む3択――application.cpp自身の
@@ -254,7 +274,7 @@ void GrepMode::showMatches() {
 bool GrepMode::searchInProcess(const std::vector<std::string> &sourceLines, const std::string &pattern) {
   if (pattern.empty()) return false;
   // convertTabsForSearch()自身のコメント参照(search()と同じ理由)。
-  const std::string searchPattern = convertTabsForSearch(pattern);
+  const std::string searchPattern = convertTabsForSearch(pattern, GrepSyntax::Fixed);
 
   matches_.clear();
   for (int i = 0; i < static_cast<int>(sourceLines.size()); i++) {

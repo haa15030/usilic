@@ -20,12 +20,32 @@ namespace {
 // スペースへ変換するようになったことに合わせ、CUTのパターン側の生の
 // タブバイト(^Q^Iで打ち込まれたもの)も同じU+2060へ変換してから照合
 // する。pattern_(履歴/表示用)は変換前のまま。
-std::string convertTabsForSearch(const std::string &pattern) {
-  std::string converted = pattern;
-  std::size_t pos = 0;
-  while ((pos = converted.find('\t', pos)) != std::string::npos) {
-    converted.replace(pos, 1, "\xE2\x81\xA0");
-    pos += 3;
+// 2026-10-18、直接のユーザー報告(HELPの"^O^J^S^Q^I$^Mがそのとおりにならない"): 行の側ではU+2060の後ろに
+// 桁をそろえる空白が続くので、正規表現(EGREP・GREP)では「U+2060と続く空白」に一致させる(^I$が行末のタブに
+// 一致するように)。^I+のような繰り返しも1つのタブとして効くよう、括弧でまとめる。固定文字列はU+2060だけ。
+std::string convertTabsForSearch(const std::string &pattern, GrepSyntax syntax) {
+  const std::string replacement = (syntax == GrepSyntax::Regex)   ? "(\xE2\x81\xA0 *)"
+                                  : (syntax == GrepSyntax::Basic) ? "\\(\xE2\x81\xA0 *\\)"
+                                                                  : "\xE2\x81\xA0";
+  // [^\t]のような角括弧の中は1文字の集まりなので、U+2060だけにする。
+  std::string converted;
+  bool inBracket = false;
+  for (std::size_t i = 0; i < pattern.size(); i++) {
+    char c = pattern[i];
+    if (c == '\t') {
+      converted += inBracket ? std::string("\xE2\x81\xA0") : replacement;
+      continue;
+    }
+    converted += c;
+    if (c == '\\' && !inBracket && i + 1 < pattern.size()) {
+      converted += pattern[++i];
+    } else if (c == '[' && !inBracket) {
+      inBracket = true;
+      if (i + 1 < pattern.size() && pattern[i + 1] == '^') converted += pattern[++i];
+      if (i + 1 < pattern.size() && pattern[i + 1] == ']') converted += pattern[++i];  // 先頭の]は文字
+    } else if (c == ']' && inBracket) {
+      inBracket = false;
+    }
   }
   return converted;
 }
@@ -83,7 +103,7 @@ bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::strin
                      GrepSyntax syntax) {
   labelHighlightEndMarker_ = std::exchange(nextLabelHighlightEndMarker_, std::string());
   if (pattern.empty()) return false;
-  const std::string searchPattern = convertTabsForSearch(pattern);
+  const std::string searchPattern = convertTabsForSearch(pattern, syntax);
 
   ProgramCommand cmd = configuration_.commandFor(cutSyntaxRole(syntax));
   if (cmd.argv.empty()) return false;
