@@ -5751,8 +5751,9 @@ bool Application::handleCommandImpl(Command command) {
       // 2026-10-13、直接のユーザー依頼("既定のHELP閲覧を平文に変更"): ^H・^J^Hは平文のHELP(openPlainHelp())。
       // 2026-10-14、直接のユーザー依頼("PART（旧CUT）はHELPに絡ませなくていい…マニュアルは通読できないと逆に
       // 不便"): HELPの目次(CUT)と、目次と平文を切り替える^Oh(K-87)は廃止した。
+      // 2026-10-18: HELP.epubがあれば、平文のHELPを見ている時(-Hの窓等)も^HでHELP.epubへ(下のhelpEpubPath())。
       if (currentMode_ == ApplicationMode::File && !plainHelpPath_.empty() &&
-          fileMode_.currentFile() == plainHelpPath_) {
+          fileMode_.currentFile() == plainHelpPath_ && !helpEpubPath()) {
         showTransientNotice(activeView(), "Already in HELP");
         return true;
       }
@@ -20966,8 +20967,11 @@ void Application::launchHelpChildren() {
   // (2026-10-15、直接のユーザー報告"子プロセスではないusilic.exeが複数起動")。
   return;
 #endif
+  // 2026-10-18、直接のユーザー報告("^Hとやっても~/.local/lib/usilic/HELP.epubを読まない"): HELP.epubがあれば、
+  // 子の窓でも^Hと同じくそちらを開く(Command::StartHelp参照)。
+  std::string helpFile = helpEpubPath().value_or(helpLoadedPath_);
   std::string quoted = "'";
-  for (char c : helpLoadedPath_) quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
+  for (char c : helpFile) quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
   setExternalWindowSlot(1);
   runExternalUsilicPager("usilic " + quoted + "'");
   // "^Kのウィンドウも追加"(中身はFileManagerのKEY): HELPの子に続けて、-KでKEYを開いた子も起動する。
@@ -21056,8 +21060,11 @@ void Application::forwardHelpRequest(const std::string &request) {
   if (sendToChannel(::getpid(), "help", "H " + request + "\n")) return;
   // HELPの子がいない(閉じられた): -H・最初の起動と同じHELPの子を開き直し、起動したらその行へ飛ばす。
   if (helpLoadedPath_.empty()) return;
+  // 2026-10-18、直接のユーザー報告("^Hとやっても~/.local/lib/usilic/HELP.epubを読まない"): HELP.epubがあれば、
+  // 子の窓でも^Hと同じくそちらを開く(Command::StartHelp参照)。
+  std::string helpFile = helpEpubPath().value_or(helpLoadedPath_);
   std::string quoted = "'";
-  for (char c : helpLoadedPath_) quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
+  for (char c : helpFile) quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
   setExternalWindowSlot(1);
   externalExtraEnv_ = "USILIC_HELP_JUMP=" + request;  // 数字・':'・16進だけなのでクォートは要らない
   runExternalUsilicPager("usilic " + quoted + "'");

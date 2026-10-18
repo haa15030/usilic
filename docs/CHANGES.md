@@ -26180,6 +26180,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (要らなければ本文の無い@名前)を足し、make installする。
    - 確認: ~/HELP.txtから19 notes (37 refs、ＥＧＲＥＰが増えた)、doc/HELP.ja.1から13 notes (21 refs)、どちらも
      no noteは無し。make installで~/.local/lib/usilic/HELP.epubができる。^Hで開く確認はまだ。
+896. **-H・初回起動のHELPの窓もHELP.epubを開き、平文のHELPの上の^HもHELP.epubへ移る**
+   (2026-10-18、直接のユーザー報告「^Hとやっても~/.local/lib/usilic/HELP.epubを読まないんだが。」)
+   - 新しく起動したusilic -cの^HはHELP.epubを開いた(擬似端末で確認)。ところが-H・初回起動の窓
+     (launchHelpChildren())は子のusilicに平文のHELPのパスを渡していて、その窓の^Hは「Already in HELP」で止まっていた。
+   - application.cpp: launchHelpChildren()はhelpEpubPath()があればそれを子に渡す。Command::StartHelpの
+     「Already in HELP」は、HELP.epubが無い時だけ。
+   - 確認: make usilic・make installが通ること。-Hの窓での確認はまだ。
 
 
 ## 27. その他
