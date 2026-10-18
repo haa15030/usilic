@@ -523,14 +523,17 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
 
   // usilicrcの設定項目(行頭が英大文字の見出し)ごとの、見出しの直後に続く「#」の行(注釈の中身)。
   std::map<std::string, std::vector<std::string>> rcComments;
+  // 2026-10-18、直接のユーザー依頼(注釈に設定値も): コメントの後ろ、次の見出しまでの行(既定値。#で無効にした例も
+  // そのまま)。KEYは割り当て表が長く、KEYモードで見られるので入れない。
+  std::map<std::string, std::vector<std::string>> rcDefaults;
   {
-    std::string item;
+    std::string item, section;
     for (const auto &l : splitLines(usilicrcText)) {
       std::size_t n = 0;
       while (n < l.size() && (isUpper(l[n]) || (n > 0 && l[n] == '-'))) n++;
       bool heading = n > 0 && strip(l.substr(n)).empty();
       if (heading) {
-        item = strip(l);
+        item = section = strip(l);
         rcComments[item].clear();
       } else if (!item.empty() && !l.empty() && l[0] == '#') {
         std::string c = l.substr(1);
@@ -538,7 +541,13 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
         rcComments[item].push_back(c);
       } else {
         item.clear();
+        if (!section.empty() && section != "KEY") rcDefaults[section].push_back(l);
       }
+    }
+    for (auto &kv : rcDefaults) {
+      auto &v = kv.second;
+      while (!v.empty() && strip(v.front()).empty()) v.erase(v.begin());
+      while (!v.empty() && strip(v.back()).empty()) v.pop_back();
     }
   }
   // HELP.notes: "@設定項目"(例 "@URL")の行の後に注釈の文を書くと、usilicrcのコメントの代わりにそれを使う。
@@ -770,6 +779,14 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
         std::string t = inlineText(l);
         inner += "<p class=\"rc\">" + (t.empty() ? std::string(kNbsp) : t) + "</p>\n";
       }
+      const auto &def = rcDefaults[item];
+      if (!def.empty()) {
+        inner += "<p class=\"dh\">\xE6\x97\xA2\xE5\xAE\x9A\xE5\x80\xA4</p>\n";  // 既定値
+        for (const auto &l : def) {
+          std::string t = inlineText(l);
+          inner += "<p class=\"rc\">" + (t.empty() ? std::string(kNbsp) : t) + "</p>\n";
+        }
+      }
     }
     // usilicrcに無い名前(narou2epub等、HELP.notesの文だけ)は、見出しに「usilicrc の」を付けない。
     std::string title = rcComments.count(item) ? " <i>usilicrc</i> \xE3\x81\xAE <b>" + escapeHtml(item) + "</b>"
@@ -790,6 +807,7 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       "h3 { font-size: 115%; font-family: sans-serif; margin: 1em 0 0.3em; padding-left: 2em; }\n"
       "p { margin: 0; }\n"
       "p.nh { margin-top: 1.2em; }\n"
+      "p.dh { margin-top: 0.5em; padding-left: 1em; font-family: sans-serif; }\n"
       "aside { margin: 0 0 1em; }\n"
       "p.rc { font-family: \"Osaka-Mono\", \"MS Gothic\", \"Noto Sans Mono CJK JP\", monospace; padding-left: 1em; }\n"
       "p.pre { font-family: \"Osaka-Mono\", \"MS Gothic\", \"Noto Sans Mono CJK JP\", monospace; }\n";

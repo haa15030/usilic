@@ -18,3 +18,7 @@ python3 -m venv ~/.local/lib/usilic/venv
 
 # 注釈の要らない斜体(アンダーラインの代わり)
 @usilicrc
+
+@SHELL
+SHELL で動かすシェルは、環境変数 $SHELL のシェルです。$SHELL が bash・zsh・tcsh・csh 以外（未設定も）の時は bash を使います。
+Windows では、Git Bash（MSYSTEM のある環境）から起動した時はその bash.exe、それ以外は cmd.exe（%ComSpec%）を使います。

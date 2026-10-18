@@ -26246,6 +26246,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (要らなければ本文の無い@名前)を足し、make installする。
    - 確認: ~/HELP.txtから19 notes (37 refs、ＥＧＲＥＰが増えた)、doc/HELP.ja.1から13 notes (21 refs)、どちらも
      no noteは無し。make installで~/.local/lib/usilic/HELP.epubができる。^Hで開く確認はまだ。
+905. **HELP.epubのusilicrcの注釈に、コメントの後ろの既定値も載せる(KEYを除く)。SHELLの注釈を足す**
+   (2026-10-18、直接のユーザー質問「HELPの注釈だが、設定値を入れたらどうなる？　KEYは入らない？」→提案に「進めて。」)
+   - それまでの注釈は、usilicrcの見出しの直後に続く「#」の行だけで、空行・設定値の行で打ち切っていた。
+   - help_to_epub.cpp: convertMsRoffToHelpEpub()で、コメントの後ろから次の見出しまでの行(前後の空行は除く)を
+     rcDefaultsに集め、注釈のコメントの後に「既定値」の小見出しを付けて等幅で載せる。URL・COPY・FONT等の、#で
+     無効にした例(組み込みの既定と同じもの)も#付きのまま載せる。KEYは割り当て表が113行あり、KEYモードで見られる
+     ので載せない(KEYのコメントは、原稿に<i>KEY</i>があれば注釈になる。今の原稿のKEYはすべて太字のモード名)。
+     載せるのはリポジトリのsrc/usilicrc(配布時)の値で、~/.usilic/usilicrcで変えた値ではない。HELP.notesの文に
+     差し替えた注釈には載せない。
+   - doc/HELP.notes: 原稿に増えた<i>SHELL</i>(対応するシェルの「SHELL 参照」)の注釈として「@SHELL」(使うシェルは
+     $SHELL、bash・zsh・tcsh・csh以外はbash、WindowsはGit Bashのbash.exeかcmd.exe)を足した。
+   - 確認: make help-epubで15 notes (32 refs)、no noteは無し。make install済み。
 896. **-H・初回起動のHELPの窓もHELP.epubを開き、平文のHELPの上の^HもHELP.epubへ移る**
    (2026-10-18、直接のユーザー報告「^Hとやっても~/.local/lib/usilic/HELP.epubを読まないんだが。」)
    - 新しく起動したusilic -cの^HはHELP.epubを開いた(擬似端末で確認)。ところが-H・初回起動の窓
