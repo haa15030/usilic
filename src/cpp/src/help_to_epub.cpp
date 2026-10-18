@@ -720,7 +720,39 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
     std::snprintf(fname, sizeof fname, "ch%02zu.xhtml", n + 1);
     std::string body;
     int sub = 0;
-    for (const auto &b : chapters[n].blocks) {
+    // 2026-10-18、直接のユーザー報告("^Oy：全行選択、^On：全行解除が明朝体。他にも無いか探して。=kq.png"): 等幅
+    // (pre)かどうかは段落ごとに見ていたので、「キー：説明」の一覧の中でもキーを桁そろえの空白なしで書いた行
+    // (^Oy等)だけ明朝体になっていた。同じ字下げで続く「：」(か「 : 」)のある段落の並びは、どれかが等幅なら全部等幅にする。
+    const auto &cb = chapters[n].blocks;
+    std::vector<bool> pre(cb.size(), false);
+    // ぶら下げの字下げ(1行目が浅い)の「名前：説明」「名前 : 説明」の段落も、一覧の項目として等幅にする
+    // (並び全部が空白なしで始まる^J^Ou等・(1)〜(5)・-c等の一覧も、他の一覧と同じ書体に)。
+    auto listItem = [](const Block &b) {
+      return b.first < b.indent &&
+             (b.raw.find(kColon) != std::string::npos || b.raw.find(" : ") != std::string::npos ||
+              b.raw.find("\xEF\xBC\x89: ") != std::string::npos);  // 「）: 」(-s usec ...（-S）: 等)
+    };
+    for (std::size_t k = 0; k < cb.size(); k++)
+      pre[k] = cb[k].kind == Block::Paragraph && (looksPreformatted(cb[k].raw) || listItem(cb[k]));
+    for (std::size_t k = 0; k < cb.size();) {
+      auto keyLine = [&](std::size_t j) {
+        return cb[j].kind == Block::Paragraph &&
+               (cb[j].raw.find(kColon) != std::string::npos || cb[j].raw.find(" : ") != std::string::npos) &&
+               cb[j].indent == cb[k].indent && cb[j].first == cb[k].first;
+      };
+      if (!keyLine(k)) {
+        k++;
+        continue;
+      }
+      std::size_t end = k;
+      bool any = false;
+      for (; end < cb.size() && keyLine(end); end++) any = any || pre[end];
+      if (any && end - k > 1)
+        for (std::size_t j = k; j < end; j++) pre[j] = true;
+      k = end;
+    }
+    for (std::size_t bi = 0; bi < cb.size(); bi++) {
+      const auto &b = cb[bi];
       if (b.kind == Block::Space) {
         // 空行(HELPの「#」の行、.sp)は、余白(margin)ではなく空の行にする(usilicのEPUB表示は余白を読まない)
         body += "<p class=\"blank\"><br/></p>\n";
@@ -735,7 +767,7 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       paragraphCount++;
       std::string cls = "i" + std::to_string(b.indent) + "t" + std::to_string(b.first);
       classes[{b.indent, b.first}] = cls;
-      if (looksPreformatted(b.raw)) cls += " pre";
+      if (pre[bi]) cls += " pre";
       std::string h = linkRefs(b.html, fname);
       body += "<p class=\"" + cls + "\">" + (stripNbspAndSpace(h).empty() ? std::string(kNbsp) : h) + "</p>\n";
     }
