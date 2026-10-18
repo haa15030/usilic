@@ -26187,6 +26187,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - application.cpp: launchHelpChildren()はhelpEpubPath()があればそれを子に渡す。Command::StartHelpの
      「Already in HELP」は、HELP.epubが無い時だけ。
    - 確認: make usilic・make installが通ること。-Hの窓での確認はまだ。
+897. **HELP.epubは開発の手順(make help-epub)でdoc/HELP.epubに作り、make installはそれを入れるだけにする**
+   (2026-10-18、直接のユーザー指摘「doc/って開発中のディレクトリなのでそこからHELPを作成は明らかにおかしい。」、
+   提案に「2.はそれで進めて。」。項目895のmake installでの作成をやめる)
+   - Makefile: make help-epub(HELP_TXT ?= ~/HELP.txt)で、build/usilic -e $(HELP_TXT) > doc/HELP.epub。注釈には
+     リポジトリのsrc/usilicrcとdoc/HELP.notesを使う。make installはdoc/HELP.epubがあればコピーする。
+   - app/main.cpp: -eは$USILIC_EPUB_RC・$USILIC_EPUB_NOTESがあればそのファイルを読む(インストール済みの古い写しを
+     読まないように)。
+   - 運用: 「HELP.epubを作り直して」で、アシスタントがmake help-epubを実行し、「no note:」があればHELP.notesに
+     足して作り直してから、make installする。
+   - 同じ時の確認: 初めての起動で~/.usilic/を作ってusilicrcだけコピーするのは、既にusilicrc_file.cppの
+     ensureUser()がそうなっている(ユーザーの「初めての起動では~/.usilic/を作成してusilicrcのみコピー」のとおり)。
+   - 確認: ~/HELP.txtから19 notes (37 refs)、no noteは無し。make installで~/.local/lib/usilic/HELP.epubへ入る。
 
 
 ## 27. その他

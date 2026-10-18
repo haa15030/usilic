@@ -145,7 +145,7 @@ INSTALL_NAME = usilic
 INSTALL_DIR  = $(PREFIX)/bin
 LIB_DIR      = $(PREFIX)/lib/usilic
 
-.PHONY: test usilic install clean app
+.PHONY: test usilic install clean app help-epub
 
 test: $(BUILD_DIR)/run_tests
 	$(BUILD_DIR)/run_tests
@@ -168,6 +168,13 @@ usilic: $(BUILD_DIR)/usilic
 # (英語版)は今のところこのポート自身のランタイムからは参照されない
 # (GitHub上のリポジトリ説明用の資料として残すのみ)ので、意図的に
 # インストールしない。
+# 2026-10-18、直接のユーザー依頼("doc/って開発中のディレクトリなのでそこからHELPを作成は明らかにおかしい"):
+# HELPのEPUB版は開発の手順で作ってdoc/HELP.epubに置き、make installはそれを入れるだけ。原稿(HELP_TXT)と、
+# 注釈に使うリポジトリのusilicrc・doc/HELP.notesから作る。注釈の無い斜体の名前は"usilic -e: no note:"に出る。
+HELP_TXT ?= $(HOME)/HELP.txt
+help-epub: $(BUILD_DIR)/usilic
+	USILIC_EPUB_RC=../usilicrc USILIC_EPUB_NOTES=../../doc/HELP.notes $(BUILD_DIR)/usilic -e $(HELP_TXT) > ../../doc/HELP.epub
+
 install: $(BUILD_DIR)/usilic
 	install -d $(INSTALL_DIR)
 	install -m 755 $(BUILD_DIR)/usilic $(INSTALL_DIR)/$(INSTALL_NAME)
@@ -185,9 +192,8 @@ install: $(BUILD_DIR)/usilic
 	if [ -f ../../doc/HELP.ja.1 ]; then install -m 644 ../../doc/HELP.ja.1 $(LIB_DIR)/HELP.ja.1; fi
 	# 2026-10-14: usilic -e(HELPのEPUB版)の注釈の文。HELPの原稿の隣に無ければここを読む。
 	install -m 644 ../../doc/HELP.notes $(LIB_DIR)/HELP.notes
-	# 2026-10-18、直接のユーザー依頼: HELPのEPUB版(^Hで開く)。roff版から、今入れたusilicrcとHELP.notesの注釈を付けて
-	# 作る。注釈の無い斜体の名前は"usilic -e: no note:"に出る。
-	if [ -f ../../doc/HELP.ja.1 ]; then $(BUILD_DIR)/usilic -e ../../doc/HELP.ja.1 > $(LIB_DIR)/HELP.epub; fi
+	# 2026-10-18: HELPのEPUB版(^Hで開く、make help-epubで作る)。
+	if [ -f ../../doc/HELP.epub ]; then install -m 644 ../../doc/HELP.epub $(LIB_DIR)/HELP.epub; fi
 	# 2026-10-04: EPUBのWebのリンクのPdf(usilicrcのURL節)。Playwrightの準備はtools/url2pdf自身のコメント参照。
 	install -m 755 tools/url2pdf $(LIB_DIR)/url2pdf
 	install -m 644 tools/url2pdf.py $(LIB_DIR)/url2pdf.py

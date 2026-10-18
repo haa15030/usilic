@@ -5071,7 +5071,15 @@ int main(int argc, char **argv) {
       dirs.push_back("/usr/local/lib/usilic");
       std::string markupDir = std::filesystem::path(markupPath).parent_path().string();
       dirs.push_back(markupDir.empty() ? "." : markupDir);
+      // 2026-10-18: 開発中にdoc/HELP.epubを作る時(make help-epub)は、リポジトリのusilicrcとHELP.notesを
+      // $USILIC_EPUB_RC・$USILIC_EPUB_NOTESで渡す(インストール済みの古い写しを読まないように)。
       auto find = [&](const std::string &name) {
+        if (const char *given = std::getenv(name == "usilicrc" ? "USILIC_EPUB_RC" : "USILIC_EPUB_NOTES")) {
+          std::ifstream file(given, std::ios::binary);
+          std::ostringstream text;
+          if (file) text << file.rdbuf();
+          return text.str();
+        }
         for (const auto &dir : dirs) {
           std::ifstream file(dir + "/" + name, std::ios::binary);
           if (!file) continue;
