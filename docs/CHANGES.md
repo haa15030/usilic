@@ -12671,6 +12671,20 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **検証**: PipeBuffer/Shellのdoctestを追加。実バイナリにstdinから
      色付きの行を流し、端末へ`ESC[33;49m`等が送られることをPTYで確認。
 
+898. **usilicrcのSHELLを廃止し、SHELLモードはusilicを起動したシェルで立ち上げる**
+   (2026-10-18、直接のユーザー依頼「いっそSHELLは廃止でいいかな。usilicを立ち上げたシェルでSHELLも立ち上げる。
+   SHELLのシェルを変更したければ元を変更してusilicを起動すればいい。」、Windowsは「2がbならbで。」(Git Bashから
+   起動した時はGit Bashのbash)。きっかけは設定項目名のSHELL/CP/MV/RMがモード名と同じで紛らわしいという話)
+   - Configuration::shellArgv(): 環境変数SHELLがbash/zsh/tcsh/cshならそれ、それ以外(fish等)はbash。違うシェルに
+     したければ`SHELL=zsh usilic`で起動する(EDITORと同じ)。
+   - Windows: 環境変数MSYSTEMがあればGit Bashからの起動とみなし、EXEPATH\bin\bash.exe、無ければPATHのbash.exe
+     (System32・WindowsApps、つまりWSLのものは除く)。それ以外はcmd.exe(%ComSpec%)。これまでusilicrcのSHELLに
+     フルパスを書くのがGit Bashを使う唯一の方法だった。
+   - 前からのusilicrcにSHELLの節が残っていてもエラーにせず読み飛ばす(キーワードの表は位置で引いているので残す)。
+     src/usilicrc・src/usilicrc.enからSHELLの節を削除。HELPの原稿(src/HELP_.txt・src/HELP_en_.txt)の
+     「usilicrc の SHELL 参照」も書き換え。
+   - 確認: shellArgvのdoctest(旧usilicrcのSHELLを無視すること)。Windowsでの動作は未確認(実機での確認待ち)。
+
 ## 13. LIST(TAB補完)
 
 12. **2026-07-19: TAB補完・長い日本語行での横スクロール時のUTF-8破損を

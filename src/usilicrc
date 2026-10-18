@@ -167,22 +167,6 @@ CODE
 # ^A(TAGS)  ^G(BEL)  \b  \t  \n  \f  \r  ^N(SO)  ^O(SI)  ^Z(EOF)  ^[(ESC)  ^_(info)
    1         7        8   9  10  12  13  14      15      26       27       31
 
-SHELL
-# 書式: shell
-#
-# SHELL モードで起動するシェル。環境変数 SHELL が bash、zsh、tcsh、csh の
-# どれかならそちらが使われ、ここの設定はそれ以外(fish 等)の時だけ使われ
-# ます。ここにも設定が無ければ bash を使います。SHELL モードが対応している
-# のは bash、zsh、tcsh、csh です。
-#
-# Windows では環境変数 SHELL は見ず、ここにドライブ名か \ ・ / の付いた
-# パス(例: "C:\Program Files\Git\bin\bash.exe"、空白を含むなら " で
-# 囲む)を書いた時だけそれを使います。それ以外(この bash のままの時も)は
-# cmd.exe(%ComSpec%)です。
-
-	bash
-#	tcsh
-
 LINE
 # 書式: 行数
 #

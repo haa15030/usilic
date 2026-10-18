@@ -193,13 +193,12 @@ TEST_CASE("ARCHIVE directive: a search text matching no built-in entry is silent
   CHECK_FALSE(config.programForSuffix("thing.foo").has_value());
 }
 
-TEST_CASE("EDITOR/SHELL directives build the full launch argv") {
+TEST_CASE("EDITOR directive builds the full launch argv") {
   ::unsetenv("EDITOR");
   Configuration config;
-  REQUIRE(config.loadRcText("EDITOR\n vi\nSHELL\n bash\n", true));
+  REQUIRE(config.loadRcText("EDITOR\n vi\n", true));
   CHECK(config.editorArgv("/tmp/file.txt", 42) ==
         std::vector<std::string>{"vi", "+42", "/tmp/file.txt"});
-  CHECK(config.shellArgv("") == std::vector<std::string>{"bash"});
 }
 
 // 2026-10-08: 環境変数EDITORがあれば、usilicrcのEDITORより優先する。
@@ -213,14 +212,17 @@ TEST_CASE("editorArgv: $EDITOR overrides usilicrc's EDITOR") {
 }
 
 // Configuration::shellArgv()自身の宣言コメント参照(2026-09-25)。
-TEST_CASE("shellArgv: $SHELL if it is bash/zsh/tcsh/csh, else usilicrc's SHELL, else bash") {
+// 2026-10-18: usilicrcのSHELLは廃止。前からのusilicrcに残っていてもエラーにせず、読み飛ばす。
+TEST_CASE("shellArgv: $SHELL if it is bash/zsh/tcsh/csh, else bash (usilicrc's SHELL is ignored)") {
   Configuration config;
   CHECK(config.shellArgv("/bin/zsh") == std::vector<std::string>{"/bin/zsh"});
   CHECK(config.shellArgv("/usr/local/bin/fish") == std::vector<std::string>{"bash"});
   CHECK(config.shellArgv("") == std::vector<std::string>{"bash"});
-  REQUIRE(config.loadRcText("SHELL\n\t/bin/tcsh\n", true));
+  REQUIRE(config.loadRcText("SHELL\n\t/bin/tcsh\nEDITOR\n vi\n", true));
   CHECK(config.shellArgv("/bin/bash") == std::vector<std::string>{"/bin/bash"});
-  CHECK(config.shellArgv("/usr/local/bin/fish") == std::vector<std::string>{"/bin/tcsh"});
+  CHECK(config.shellArgv("/usr/local/bin/fish") == std::vector<std::string>{"bash"});
+  ::unsetenv("EDITOR");
+  CHECK(config.editorArgv("/tmp/f", 1) == std::vector<std::string>{"vi", "+1", "/tmp/f"});
 }
 
 TEST_CASE("CODE directive: only byte values under 32 are accepted, clamped to 2 digits each") {

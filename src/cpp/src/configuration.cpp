@@ -577,12 +577,9 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         break;
       }
       case 4: {  // SHELL
-        std::vector<std::string> last;
-        while (auto data = nextDataLine(lines, i)) {
-          auto tokens = tokenize(*data);
-          if (!tokens.empty()) last = tokens;
+        // 2026-10-18廃止(shellArgv()参照)。前からのusilicrcがそのまま読めるよう、キーワードは残して中身は読み飛ばす。
+        while (nextDataLine(lines, i)) {
         }
-        if (!last.empty()) shellProgram_ = last;
         break;
       }
       case 5: {  // GREP
@@ -934,11 +931,27 @@ std::vector<std::string> Configuration::editorArgv(const std::string &path, int 
 
 std::vector<std::string> Configuration::shellArgv(const std::string &envShell) const {
 #ifdef _WIN32
-  // 2026-10-16(Windowsのネイティブ、ConPTY): 環境変数SHELL(Git Bashから起動するとMSYSの/usr/bin/bash)は見ない。
-  // usilicrcのSHELLは、ドライブ名か\・/の付いたパスで書いた時だけ使う(既定の「bash」のままだとPATHで
-  // C:\Windows\System32\bash.exe、つまりWSLが見つかってしまうため)。それ以外はcmd.exe(%ComSpec%)。
+  // 2026-10-16(Windowsのネイティブ、ConPTY): 環境変数SHELL(Git Bashから起動するとMSYSの/usr/bin/bash)は
+  // Windowsからはそのまま実行できないので見ない。
+  // 2026-10-18、直接のユーザー依頼(usilicrcのSHELLを廃止、"usilicを立ち上げたシェルでSHELLも立ち上げる"):
+  // Git Bashから起動した時(環境変数MSYSTEMがある)は、Gitのインストール先(EXEPATH)のbin\bash.exe、それが無ければ
+  // PATHのbash.exe(System32・WindowsAppsのもの、つまりWSLは除く)。それ以外はcmd.exe(%ComSpec%)。
   (void)envShell;
-  if (!shellProgram_.empty() && shellProgram_[0].find_first_of(":/\\") != std::string::npos) return shellProgram_;
+  if (const char *msystem = std::getenv("MSYSTEM"); msystem && *msystem) {
+    std::vector<std::string> candidates;
+    if (const char *exepath = std::getenv("EXEPATH"); exepath && *exepath)
+      candidates.push_back(std::string(exepath) + "\\bin\\bash.exe");
+    const char *winPath = std::getenv("PATH");
+    std::stringstream winDirs(winPath ? winPath : "");
+    for (std::string dir; std::getline(winDirs, dir, ';');) {
+      std::string lower = dir;
+      for (char &c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      if (!dir.empty() && lower.find("system32") == std::string::npos && lower.find("windowsapps") == std::string::npos)
+        candidates.push_back(dir + "\\bash.exe");
+    }
+    for (const auto &candidate : candidates)
+      if (::access(candidate.c_str(), 0) == 0) return {candidate};
+  }
   if (const char *comspec = std::getenv("ComSpec"); comspec && *comspec) return {comspec};
   return {"cmd.exe"};
 #endif
@@ -947,7 +960,6 @@ std::vector<std::string> Configuration::shellArgv(const std::string &envShell) c
     return base == "bash" || base == "zsh" || base == "tcsh" || base == "csh";
   };
   if (!envShell.empty() && supported(envShell)) return {envShell};
-  if (!shellProgram_.empty()) return shellProgram_;
   return {"bash"};
 }
 

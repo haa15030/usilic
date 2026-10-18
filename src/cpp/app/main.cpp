@@ -5616,7 +5616,7 @@ int main(int argc, char **argv) {
 
   fm::ShellOptions shellOptions;
   // Configuration::shellArgv()自身の宣言コメント参照(2026-09-25): $SHELLが
-  // 対応するシェルでなければusilicrcのSHELL、それも無ければbash。
+  // 対応するシェルでなければbash(2026-10-18、usilicrcのSHELLは廃止)。
   {
     const char *shellEnv = std::getenv("SHELL");
     shellOptions.argv = configuration.shellArgv(shellEnv ? shellEnv : "");

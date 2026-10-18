@@ -236,8 +236,10 @@ class Configuration {
   // のSHELLは「環境変数SHELLがbashでもtcshでもない時に必要」)に沿って:
   //   1. envShell(呼び出し側が渡す$SHELL)がShell自身の対応するシェル
   //      (bash/zsh/tcsh/csh、Shell::startupScript()参照)ならそれ。
-  //   2. そうでなければusilicrcのSHELL。
-  //   3. どちらも無ければbash。
+  //   2. そうでなければbash。
+  // 2026-10-18、usilicrcのSHELLは廃止(直接のユーザー依頼、"usilicを立ち上げたシェルでSHELLも立ち上げる。
+  // 変更したければ元を変更してusilicを起動すればいい"。`SHELL=zsh usilic`のように起動すればよい)。Windowsは
+  // configuration.cpp自身のコメント参照。
   // Configurationは自分ではgetenv()を呼ばない(setEnvironmentCharset()と
   // 同じ原則)ので、$SHELLは呼び出し側が渡す。-iは付けない(Shellはpty上で
   // 起動するので、シェル自身が対話的と判断する)。
@@ -413,7 +415,6 @@ class Configuration {
   std::vector<SuffixEntry> builtinArchiveEntries_;  // ARCHIVE[]の既定値、別名検索のため別に保持
 
   std::vector<std::string> editorProgram_ = {"pico"};  // EDITOR(2026-10-02、既定をpicoに。それまでは空)
-  std::vector<std::string> shellProgram_;
 
   std::map<ConfiguredRole, ProgramCommand> roleCommands_;
 
