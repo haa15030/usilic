@@ -1507,7 +1507,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
                         : (cutOrigin_ == CutOrigin::Man)    ? "MAN"
                         : (cutOrigin_ == CutOrigin::Locate) ? "LOCATE"
                         : (cutOrigin_ == CutOrigin::Du)     ? "DU"
-                        : (cutOrigin_ == CutOrigin::Epub)   ? "EPUB"
+                        : (cutOrigin_ == CutOrigin::Epub)   ? (fileMode_.currentFile() == helpEpubPath() ? "HELP" : "EPUB")
                                                              : "PART";
     if (cutOrigin_ == CutOrigin::Epub && !cutMode_.parentPattern()) {  // openEpub()参照
       ContentView::ModeLineFields fields{name, std::to_string(contentByteCount(fileView_)), /*fillTrailingToEdge=*/true,
@@ -8526,7 +8526,9 @@ bool Application::openEpubQuietly(const std::string &path) {
   bool firstTime = !history_.positionFor(PositionCategory::File, path);
   if (!fileMode_.loadFile(path, [this]() { return keyInterruptRequested(); })) return false;
   fileMode_.annotations().clear();
-  fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, path, "EPUB");
+  // 2026-10-18、直接のユーザー報告(^HのHELP.epub、"モード名が「HELP」じゃない"): HELP.epubならモード名はHELP。
+  fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, path,
+                                               path == helpEpubPath() ? "HELP" : "EPUB");
   std::vector<StyledLine> sourceLines;
   sourceLines.reserve(fileView_.lines().size());
   for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
