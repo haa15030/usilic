@@ -293,7 +293,7 @@ std::optional<KeyInput::SpecialKey> KeyInput::readEscapeSequence() {
     return std::nullopt;
   }
   // ^[+矢印を素早く押した時(とOptionをMetaにした端末のOption+矢印): "\x1b\x1b[A"等がひと続きに届く。
-  // Shift+矢印と同じものとして返す(2026-10-04、EPUBの章送り、Application::jumpEpubChapterByArrow()参照)。
+  // Shift+矢印と同じものとして返す(2026-10-04、EPUBの章送り用だったが2026-10-19に章送りは廃止、今は何もしない)。
   // 以前はESC ESCとして^[^[(EXIT)になっていた。
   if (matched < 0 && (esc == "\x1b\x1b[" || esc == "\x1b\x1bO")) {
     int c = readByte();

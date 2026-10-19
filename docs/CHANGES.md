@@ -29399,6 +29399,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - src/usilicrc・~/.usilic/usilicrc(リポジトリ外)のPROGRAMにemacsを足した。
    - 確認: 擬似端末で、`^Jtemacs -nw ^M`の後の行数が5のままでメッセージが出ること、^JsでSHELLが再起動されemacsが
      終わることを確かめた。make install済み。
+916. **2026-10-19: EPUBの^[+矢印(とShift+矢印)の章送りを廃止**
+   - **経緯**: 直接のユーザー依頼"冒頭章へ飛ぶキーアサイン`^[↑`/`^[↓`（`^[←`/`^[→`）は縦横で矢印の向きが変わる
+     紛らわしさと、すでに`;`/`:`キーがあるので廃止でいい。"
+   - **実装**: application.cpp: jumpEpubChapterByArrow()・jumpEpubChapter()(それだけが使っていた)を消し、
+     dispatchByte()のShift+矢印の分岐も消した。dispatchLeaderByte()の^[+矢印は何もしない。key_input.cppの
+     "\x1b\x1b["→Shift+矢印の読み取りは残す(^[^[(EXIT)にならないように)。
+   - src/HELP_.txt(未コミット): EPUBの^[←・^[→の行と、HELPの段落の^[↑/^[↓・shiftの説明を消した。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。

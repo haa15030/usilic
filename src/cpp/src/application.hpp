@@ -2711,8 +2711,6 @@ class Application {
   bool epubChapterBreaks_ = false;
   bool toggleEpubChapterBreaks();
   std::vector<int> epubHorizontalChapterStarts() const;
-  bool jumpEpubChapter(int delta);
-  bool jumpEpubChapterByArrow(KeyInput::SpecialKey arrow);
   // Webのリンクの対処(Configuration::urlHandlers()の何番目か、^Owで巡回、起動中だけ覚える)。
   std::size_t urlHandlerIndex_ = 0;
   bool cycleUrlHandler();

@@ -2925,21 +2925,6 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // カーソルは移動するが奥付ページに変わった後はさっきの画面との間で行き来ループ"――横書きの
   // ←は「上へ」なので範囲の前へ出て縦書きへ戻り、次の←でまた入っていた。右から左へ読む
   // 本なのでKindle等と同じく←で先へ)。
-  // 2026-10-03追加、直接のユーザー依頼("ページ送りすると章の冒頭で止まるとは限らないのがストレスなので、ここは
-  // ひとつ章送り機能を新設してほしい。縦書きでは暫定shift+←→、横書きはshift+↑↓"): EPUBの本文の章送り
-  // (jumpEpubChapter())。2026-10-04に^[+矢印へ変更(dispatchLeaderByte()のescPending_参照)、Shift+矢印は
-  // 別名として残す。
-  if (special) {
-    std::optional<KeyInput::SpecialKey> arrow;
-    switch (*special) {
-      case KeyInput::SpecialKey::ShiftUp: arrow = KeyInput::SpecialKey::Up; break;
-      case KeyInput::SpecialKey::ShiftDown: arrow = KeyInput::SpecialKey::Down; break;
-      case KeyInput::SpecialKey::ShiftLeft: arrow = KeyInput::SpecialKey::Left; break;
-      case KeyInput::SpecialKey::ShiftRight: arrow = KeyInput::SpecialKey::Right; break;
-      default: break;
-    }
-    if (arrow) return jumpEpubChapterByArrow(*arrow);
-  }
   if (special && ((currentMode_ == ApplicationMode::File && (epubVerticalActive() || epubHorizontalSection_)) ||
                   epubVerticalListActive())) {
     // 縦書き(handleEpubVerticalCommand()参照)は右から左へ読むので、←で先へ、→で戻る
@@ -3361,9 +3346,9 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
   }
   if (escPending_) {
     escPending_ = false;
-    // ^[+矢印: EPUBの章送り(2026-10-04、直接のユーザー依頼"章送りキーだがshift+だと設定が必要なので^[に
-    // 変更して"、jumpEpubChapterByArrow()参照)。
-    if (special) return jumpEpubChapterByArrow(*special);
+    // ^[+矢印はEPUBの章送りだったが、2026-10-19に廃止(直接のユーザー依頼"縦横で矢印の向きが変わる紛らわしさと、
+    // すでに`;`/`:`キーがあるので廃止でいい")。何もしない。
+    if (special) return false;
     // "^[N"/"^[gg"(goto-line)自身の入口――上のgotoLineDigitsPending_/
     // gotoLineGPending_のコメント参照。数字が直接続けば(^[N)そのまま
     // gotoLineDigitsPending_へ、'g'が続けば(^[gg、Emacs自身のM-g g)
@@ -9265,111 +9250,6 @@ std::vector<int> Application::epubHorizontalChapterStarts() const {
     starts.push_back(i);
   }
   return starts;
-}
-
-// ^[+矢印(とShift+矢印)の章送り: EPUBの本文の時だけ。縦書きは←が先(右から左へ読む)/→が前、横書きは↓が先/↑が前。
-bool Application::jumpEpubChapterByArrow(KeyInput::SpecialKey arrow) {
-  if (currentMode_ != ApplicationMode::File || !isEpubFile(fileMode_.currentFile())) return false;
-  bool vertical = epubBookVertical();  // 縦書きの本の横書きの範囲(奥付等)でも←で先へ(jumpEpubChapter()参照)
-  if (arrow == (vertical ? KeyInput::SpecialKey::Left : KeyInput::SpecialKey::Down)) return jumpEpubChapter(+1);
-  if (arrow == (vertical ? KeyInput::SpecialKey::Right : KeyInput::SpecialKey::Up)) return jumpEpubChapter(-1);
-  return false;
-}
-
-// 章送り(dispatchByte()のShift+矢印、2026-10-03): delta>0で次の章の頭、<0で今の章の頭(既に頭にいれば前の
-// 章の頭)へ。縦書きは区切り(epubVerticalBoundaries_、章の頭・扉の後・画像ページだけの章)を右端に置き、
-// 横書きは章の頭の行を画面の上端に置く。行き先が無ければfalse(何もしない)。
-bool Application::jumpEpubChapter(int delta) {
-  auto pick = [delta](const std::vector<int> &starts, int here) -> std::optional<int> {
-    if (delta > 0) {
-      for (int s : starts)
-        if (s > here) return s;
-      return std::nullopt;
-    }
-    int current = 0;
-    for (int s : starts)
-      if (s <= here) current = s;
-    if (current < here) return current;
-    int previous = -1;
-    for (int s : starts)
-      if (s < current) previous = s;
-    if (previous < 0 && current > 0) previous = 0;
-    if (previous < 0) return std::nullopt;
-    return previous;
-  };
-  // 縦書きの章の頭(区切り)を右端に置く。扉のページなら書名の列へ(showEpubVerticalRaw()と同じ)。
-  auto showVerticalChapterHead = [this](int head) {
-    int total = static_cast<int>(epubVerticalCols_.size());
-    int cursor = head;
-    while (cursor + 1 < total && epubVerticalCols_[cursor].titlePage && epubVerticalCols_[cursor].padding) cursor++;
-    setEpubVerticalView(head, cursor);
-    epubVerticalView_.redraw();
-    epubVerticalView_.syncVisibleCursor();
-  };
-  auto verticalStarts = [this]() {
-    std::vector<int> starts;
-    for (int b : epubVerticalBoundaries_)
-      if (b < static_cast<int>(epubVerticalCols_.size())) starts.push_back(b);
-    return starts;
-  };
-  // 2026-10-06、直接のユーザー報告("奥付からも抜けられない"): 縦書きの本の横書きの範囲(奥付等)では、
-  // 前へは範囲の直前の章の頭、先へは範囲の後の縦書きの章の頭(無ければ何もしない)へ、縦書きに戻って入る
-  // (leaveEpubHorizontalIfOutside()と同じ戻り方)。
-  if (currentMode_ == ApplicationMode::File && epubBookVertical() && epubHorizontalSection_) {
-    std::pair<int, int> range = *epubHorizontalSection_;
-    int raw = delta < 0 ? range.first - 1 : -1;
-    if (delta > 0) {
-      for (const auto &column : epubVerticalCols_)
-        if (!column.padding && column.rawLineNumber > range.second) {
-          raw = column.rawLineNumber;
-          break;
-        }
-      if (raw < 0) return false;
-    }
-    epubHorizontalSection_.reset();
-    syncEpubHorizontalPresentation();
-    rebuildEpubVertical(raw);
-    if (epubHorizontalSection_) return true;
-    int col = 0;
-    for (std::size_t c = 0; c < epubVerticalCols_.size(); c++)
-      if (!epubVerticalCols_[c].padding && epubVerticalCols_[c].rawLineNumber <= raw) col = static_cast<int>(c);
-    int head = 0;
-    for (int b : verticalStarts())
-      if (b <= col) head = b;
-    showVerticalChapterHead(head);
-    return true;
-  }
-  if (epubVerticalActive()) {
-    int total = static_cast<int>(epubVerticalCols_.size());
-    // 先へは列カーソルより後の区切り(2026-10-06、直接のユーザー報告"最後の章から^[←しても奥付へ行かない"):
-    // 最後の章は画面1枚に満たないと、画面の右端(epubVerticalFirst_)が章の頭より手前で止まるので、右端で
-    // 比べると毎回同じ最後の章の頭が行き先になっていた。
-    int here = delta > 0 ? std::max(epubVerticalFirst_, epubVerticalCursor_) : epubVerticalFirst_;
-    auto target = pick(verticalStarts(), here);
-    // 横書きの範囲(奥付等)は縦書きの列に無いので区切りにも無い。次の章の頭より手前(最後の章なら本の
-    // 末尾まで)に横書きの範囲があれば、その頭へ入る(j・スクロールのenterEpubHorizontalAtEdge()と同じ)。
-    if (delta > 0 && here >= 0 && here < total) {
-      int hereRaw = epubVerticalCols_[here].rawLineNumber;
-      int targetRaw = target ? epubVerticalCols_[*target].rawLineNumber : std::numeric_limits<int>::max();
-      for (const auto &range : fileMode_.epubLayoutHints().horizontal)
-        if (range.first > hereRaw && range.first < targetRaw) {
-          enterEpubHorizontal(range, range.first);
-          activeView().redraw();
-          activeView().syncVisibleCursor();
-          return true;
-        }
-    }
-    if (!target) return false;
-    showVerticalChapterHead(*target);
-    return true;
-  }
-  auto target = pick(epubHorizontalChapterStarts(), fileView_.topIndex());
-  if (!target) return false;
-  fileView_.setCursorIndex(*target);
-  fileView_.setTopIndex(*target);
-  fileView_.redraw();
-  fileView_.syncVisibleCursor();
-  return true;
 }
 
 // ^O^E(epubChapterBreaks_参照): 章区切り/連続を切り替え、今読んでいる所のまま組み直す。
