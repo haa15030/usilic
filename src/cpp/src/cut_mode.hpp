@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -109,7 +110,13 @@ class CutMode {
   void dropLeadingFiller();
   // 次のsplit()/pushSplit()の一覧だけ、行の反転表示をラベルの中の`marker`の手前までにする(2026-10-11、-KのKEYの
   // 「：」、ContentView::Line::highlightEndColumn参照)。その次の分割では呼び直さない限り行末までに戻る。
-  void setLabelHighlightEndMarker(const std::string &marker) { nextLabelHighlightEndMarker_ = marker; }
+  // 2026-10-19、直接のユーザー依頼("キーアサインではない行はハイライト表示しない"): `highlightable`があれば、それが
+  // falseを返すラベルの行(KEYの見出しの行等)は反転表示しない。
+  void setLabelHighlightEndMarker(const std::string &marker,
+                                  std::function<bool(const std::string &)> highlightable = {}) {
+    nextLabelHighlightEndMarker_ = marker;
+    nextLabelHighlightable_ = std::move(highlightable);
+  }
   // 2026-10-01追加: 区間の並びが変わる(split()・goBack())たびに増える番号。Applicationが区間ごとの
   // 中身のカーソル位置(cutSegmentViews_)を、同じ並びの間だけ使うためのもの。
   int generation() const { return generation_; }
@@ -176,6 +183,8 @@ class CutMode {
   std::string pattern_;
   std::string labelHighlightEndMarker_;      // setLabelHighlightEndMarker()参照(今の一覧のもの)
   std::string nextLabelHighlightEndMarker_;  // 同(次の分割のもの)
+  std::function<bool(const std::string &)> labelHighlightable_;      // setLabelHighlightEndMarker()参照
+  std::function<bool(const std::string &)> nextLabelHighlightable_;  // 同(次の分割のもの)
   ContentView::Line labelViewLine(const CutSegment &seg) const;
   std::vector<StyledLine> sourceLines_;
   std::vector<CutSegment> segments_;

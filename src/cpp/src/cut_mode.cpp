@@ -102,6 +102,7 @@ ConfiguredRole cutSyntaxRole(GrepSyntax syntax) {
 bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::string &pattern,
                      GrepSyntax syntax) {
   labelHighlightEndMarker_ = std::exchange(nextLabelHighlightEndMarker_, std::string());
+  labelHighlightable_ = std::exchange(nextLabelHighlightable_, nullptr);
   if (pattern.empty()) return false;
   const std::string searchPattern = convertTabsForSearch(pattern, syntax);
 
@@ -202,6 +203,7 @@ ContentView::Line CutMode::labelViewLine(const CutSegment &seg) const {
     std::size_t at = seg.label.find(labelHighlightEndMarker_);
     if (at != std::string::npos) line.highlightEndColumn = static_cast<int>(at);
   }
+  if (labelHighlightable_ && !labelHighlightable_(seg.label)) line.highlightEndColumn = 0;
   return line;
 }
 

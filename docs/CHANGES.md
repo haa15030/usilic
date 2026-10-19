@@ -29510,6 +29510,19 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      英訳して。"
    - **実装**: src/usilicrc.enのGREPの17行のコメントを英語に(正規表現と桁はそのまま)。doc/HELP.en.epubも作り直した。
    - 確認: make help-epub-en・make installが通ること。テストは実行していない。
+928. **2026-10-19: KEYの一覧で、キーアサインではない行(節の見出し)は反転表示せず、^Mでも何もしない**
+   - **経緯**: 直接のユーザー報告と依頼("^Kとやったとき、2行目の「INFO」で^MしたのにINFOへ行かないのなぜ？…キーアサイン
+     ではない行はハイライト表示しない、ってできる？")。「INFO」「CP/MV」「Guide」等の見出しの行も「：」を含むので
+     KEYの一覧に入り、キーの行と同じく「：」の手前まで反転していた。しかもkeyBytesFromHelpLabel()は「INFO」をI・N・F・O
+     の4つのキーとして読み、^Mでそれを前の画面へ送っていた。
+   - **実装**: isKeyAssignmentLabel()を新設(「^x」の後ろ以外に、大文字で始まる英単語か空白があれば見出し、ほかは
+     keyBytesFromHelpLabel()が読めればキー)。CutMode::setLabelHighlightEndMarker()に、反転するラベルかを決める関数を
+     渡せるようにし(falseの行はhighlightEndColumn=0)、startKey()と幅が変わった時の分割し直しで渡す。
+     executeSelectedKeyLine()は見出しの行ではキーを送らない。src/HELP_.txt・HELP_en_.txtの「：」の行に当てはめ、
+     見出し(案内・HELP・…・Guide・Viewing files・Command line等)だけが外れ、キーの行(^Xrjc・^JN・^@/^␣・; :等)は
+     全部残ることを確かめた。
+   - 確認: make usilic・make installが通ること。PTYで^Kの後、INFOの見出しの行は反転せず、^Iの行は反転すること。
+     テストは実行していない。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。

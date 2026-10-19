@@ -3930,6 +3930,28 @@ KeyBindings::Context Application::keyBindingContext() const {
 // 対象外なので、溜めているキーがあれば先にそのまま渡してから処理する。
 namespace {
 std::vector<int> keyBytesFromHelpLabel(std::string label);  // 下の定義参照
+// KEYの行のラベルがキーアサイン(^Mで実行できるキーの表記)か(Application::startKey()参照)。節の見出し(「INFO」
+// 「CP/MV」「Guide」「Viewing files」等)はkeyBytesFromHelpLabel()では字のキーの並びとして読めてしまうので、
+// 「^x」の後ろ以外に大文字で始まる英単語(大文字の後に英字)か、間に空白があれば見出しとみなす(キーの表記の
+// 複数の字は^Xrjc・^JN等の小文字か「^x」の後の1字だけ、空白は「␣」で書く)。
+bool isKeyAssignmentLabel(const std::string &label) {
+  std::string text = label.substr(0, label.find("\xEF\xBC\x9A"));  // 「：」の前
+  for (std::size_t p; (p = text.find("\xE2\x81\xA0")) != std::string::npos;) text.erase(p, 3);
+  std::size_t first = text.find_first_not_of(" \t"), last = text.find_last_not_of(" \t");
+  if (first == std::string::npos) return false;
+  text = text.substr(first, last - first + 1);
+  for (std::size_t i = 0; i < text.size(); i++) {
+    if (text[i] == '^') {
+      i++;  // 「^x」のxは見ない
+      continue;
+    }
+    if (text[i] == ' ' || text[i] == '\t') return false;
+    if (std::isupper(static_cast<unsigned char>(text[i])) && i + 1 < text.size() &&
+        std::isalpha(static_cast<unsigned char>(text[i + 1])))
+      return false;
+  }
+  return !keyBytesFromHelpLabel(label).empty();
+}
 }  // namespace
 
 // 2026-10-12、直接のユーザー依頼("ページャー起動時はHELP.txt記載のタブコードで始まるキー以外は無効にしてほしい
@@ -19409,7 +19431,9 @@ bool Application::startKey() {
   cutOrigin_ = CutOrigin::Key;
   // KEYは反転表示を「：」の手前まで(2026-10-11、-Kから、同日"親の^Kも-Kと同じくキーアサインのみのハイライト
   // 表示"で全てのKEYへ、CutMode::setLabelHighlightEndMarker()参照)。
-  cutMode_.setLabelHighlightEndMarker("\xEF\xBC\x9A");
+  // 2026-10-19、直接のユーザー依頼(英語のHELPのKEYで「INFO」の見出しの行を^Mしても何も起きず、"キーアサインではない
+  // 行はハイライト表示しない、ってできる？"): ^Mで実行できない(キーの表記が読めない)行は反転しない。
+  cutMode_.setLabelHighlightEndMarker("\xEF\xBC\x9A", isKeyAssignmentLabel);
   // 2026-10-08、直接のユーザー依頼("ページャー起動の時だけはKEYで検索する文字列を「：」ではなく「行頭^I」...
   // Pagerでは「行頭^I」、FileManagerでは「：」で検索後の文字列でKEYを構成"): ページャーとして起動した時は、
   // 行頭がタブの行で切る(HELPの原稿にはまだ行頭のタブが無いので、今は一覧が空になる)。
@@ -19518,6 +19542,8 @@ bool Application::executeSelectedKeyLine() {
   saveKeyCursor();
   const CutSegment *segment = cutMode_.selectedSegment();
   if (!segment) return false;
+  // 見出しの行(isKeyAssignmentLabel()参照、反転表示もしない)は、字をキーとして送らない。
+  if (!isKeyAssignmentLabel(segment->label)) return false;
   std::vector<int> bytes = keyBytesFromHelpLabel(segment->label);
   if (bytes.empty()) return false;
   // 2026-10-11、直接のユーザー依頼("-K画面から親へキーを渡す"、"全てのキーを渡し、親側で判定"): 親のいる-KのKEYは、
@@ -20364,7 +20390,7 @@ void Application::handleResize() {
     }
     int savedIndex = cutView_.cursorIndex();
     bool wasContent = (currentMode_ == ApplicationMode::CutContent);
-    if (cutOrigin_ == CutOrigin::Key) cutMode_.setLabelHighlightEndMarker("\xEF\xBC\x9A");
+    if (cutOrigin_ == CutOrigin::Key) cutMode_.setLabelHighlightEndMarker("\xEF\xBC\x9A", isKeyAssignmentLabel);
     if (cutMode_.split(freshSource, cutMode_.pattern(), cutSyntax_)) {
       if (cutOrigin_ == CutOrigin::Key) cutMode_.dropLeadingFiller();
       int last = static_cast<int>(cutMode_.segments().size()) - 1;
