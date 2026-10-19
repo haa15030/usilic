@@ -29380,6 +29380,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (translateCursorAfterReflow())。loadTransformedPagerFile()で開いたかはpagerTransformed_で覚える(HELP.txtは
      pagerProgram_が空のため)。標準入力・^O^M等の名前の無いストリームは今まで通り対象外。
    - 確認: make usilic・make installが通ること。動かしての確認はまだ。
+914. **2026-10-19: HELP.epubのnav.xhtmlに「^J^A では閲覧履歴…」の行が章として入る件(src/HELP_.txtの直し)**
+   - **経緯**: 直接のユーザー報告"HELP.epubで「一覧が表示されます（.epub は ^J^E の一覧へ）。」行にはタブコードが
+     無いのにがnav.xhtmlに入る。"
+   - **原因**: src/HELP_.txt(未コミット)のその行は末尾に㊿があるのに、行頭の⑩が無かった。~/HELP.txtでは
+     <indent10>の無い字下げ0の行になり、convertMsRoffToHelpEpub()は字下げ0の行(「名称」「概要」等、タブの無い
+     章の見出し)を章とみなすので、nav.xhtmlに入った。
+   - **直し**: src/HELP_.txtのその行の頭に⑩を足した(変換のプログラムは変えていない)。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。
