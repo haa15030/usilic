@@ -501,5 +501,4 @@ MACRO
 	M-3	[	K-35 K-4			# .^P		選択して上へ
 	M-4	]	K-35 K-3			# .^N		選択して下へ
 	M-5	e	K-67				# ^[e		EDIT
-	M-6	h	K-105				# ^J^Oh		KEYから平文のHELPの当該位置へ(KEYの外では平文のHELP)
 	--

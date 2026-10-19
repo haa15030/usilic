@@ -29425,6 +29425,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      してからopenEpub()で開き直し、章の一覧の戻り先(cutReturnMode_)を戻す。
    - 確認: 擬似端末で、開いている.epubを`usilic -e`で書き直してから^Lすると新しい内容が出ることを確かめた。
      make install済み。
+919. **2026-10-19: ^I(INFO)のHELPの行を廃止し、KEYの`h`(MACRO)をやめて^J^Ohだけに**
+   - **経緯**: 直接のユーザー依頼"^IのHELPを廃棄。KEYで`h`をマクロではなく`^J^Oh`へ移動。"
+   - **実装**: executeShowUsilicBanner()から「HELP」の行(と選べる印)を、openSelectedBannerEntry()から
+     その行の^M(reloadHelpText()+openPlainHelp())を消した。src/usilicrc・~/.usilic/usilicrc(リポジトリ外)の
+     MACROのM-6(h→K-105)を消した。KEYから平文のHELPの当該位置へは^J^Oh(K-105)。
+   - src/HELP_.txt(未コミット): -Hの説明の「h は HELP の子の該当行へ」を「^J^Oh は…」にした。
+   - 確認: make usilic・make installが通ること。動かしての確認はまだ。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。

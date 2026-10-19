@@ -12426,15 +12426,7 @@ bool Application::executeShowUsilicBanner() {
   openable.push_back(true);   // 「Startup file」――usilicrc、常に実在する
   openable.push_back(true);   // 「ERROR」――下でtouchされる、それ自身のコメント参照
   openable.push_back(true);   // 「SHELL」――下でtouchされる、それ自身のコメント参照
-  // 2026-09-14追加、直接のユーザー依頼("usilic内での発動は^Tで行う"):
-  // 「TUTORIAL」――helpPath_自身のコメント参照(インストール先
-  // $PREFIX/lib/usilic/TUTORIAL、~/.usilic/ではない)。Startup file/
-  // ERROR/SHELLとは異なり実体はTUTORIAL自身が固定で持つ(このセッション
-  // 中に何かが起きて初めて存在する類のファイルではない)ので、touch()は
-  // 不要――未インストール環境(TUTORIAL自体が無い)ではopenSelectedBannerEntry()
-  // 自身のCUT再生がfileMode_.loadFile()の失敗経由で黙ってno-opになる、
-  // ERROR/SHELLがまだ空の時と同じ扱い。
-  openable.push_back(true);
+  // 「HELP」(旧「TUTORIAL」)の行は2026-10-19に廃止(直接のユーザー依頼"^IのHELPを廃棄")。
   for (std::size_t i = 0; i < (allocatedWorkFiles_.empty() ? std::size_t{1} : allocatedWorkFiles_.size()); i++)
     openable.push_back(!allocatedWorkFiles_.empty());
   for (std::size_t i = 0; i < allocatedArcDirs_.size(); i++) openable.push_back(true);
@@ -12459,7 +12451,6 @@ bool Application::executeShowUsilicBanner() {
   banner << field("Startup file") << startupFilePath() << "\n";
   banner << field("ERROR") << errorLogPath_ << "\n";
   banner << field("SHELL") << logFilePath_ << "\n";
-  banner << field("HELP") << helpPath_ << "\n";
   banner << field("WORK");
   for (std::size_t i = 0; i < allocatedWorkFiles_.size(); i++) {
     if (i) banner << continuationIndent;
@@ -12677,7 +12668,6 @@ bool Application::openSelectedBannerEntry() {
   // なloadFile())とは異なり、CUT-by-fileそのものを再生する必要がある
   // ――openTutorial()自身のコメント参照(2026-09-20、^T単独キーとの
   // 共有のため括り出した)。
-  if (endsWith(helpPath_)) return reloadHelpText() && openPlainHelp();  // 既定は平文(Command::StartHelp参照)
   for (const std::string &fixedPath : {startupFilePath(), errorLogPath_, logFilePath_}) {
     if (!endsWith(fixedPath)) continue;
     // 2026-08-27修正、実際の報告("^T→「/tmp/.usilic.NNNNN/shell」
