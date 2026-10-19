@@ -1,4 +1,4 @@
-.TH USILIC 1 "2026\[u002D]10\[u002D]10" "usilic 1.5b" "ユー\f[JPM]ザ\f[R]ーコマン\f[JPM]ド\f[R]"
+.TH USILIC 1 "2026\[u002D]10\[u002D]14" "usilic 1.5b" "ユー\f[JPM]ザ\f[R]ーコマン\f[JPM]ド\f[R]"
 .\" usilic -n: -m(usilic自身の表示)と同じ見た目にするための前置き
 .nr PO 0
 .po 0
@@ -40,7 +40,7 @@ usilic [-c|-g] [-f font] [-u usec ...] [-i pixel ...]
 説明
 .br
 .in 4n
-usilicは、標準入力およ\f[JPM]び\f[R]通常ファイルを引数として起動した場合は\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャー、\f[JPM]デ\f[R]ィレクトリ引数\f[JPM]で\f[R]はファイルマネー\f[JPM]ジ\f[R]ャーとして機能します。起動後は、^I（\fBSHELL\fR \f[JPM]で\f[R]は ^J^I）\f[JPM]で\f[R]表示される \fBINFO\fR 画面の「Boot options」\f[JPM]で\f[R]引数を確認\f[JPM]で\f[R]きます。動作中、ファイルおよ\f[JPM]び\f[R]\f[JPM]デ\f[R]ィレクトリへのアクセス履歴は次回起動時も継続して使用可能\f[JPM]で\f[R]す。なお、本マニュアル\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]を \fBHELP\fR \f[JPM]で\f[R]閲覧している場合は、; / : キー\f[JPM]で\f[R]それ\f[JPM]ぞ\f[R]れ一つ上 / 下の章に移動します。具体的なキーアサインは後述 \fBMACRO\fR の章を参照してく\f[JPM]だ\f[R]さい。
+usilicは、標準入力およ\f[JPM]び\f[R]通常ファイルを引数として起動した場合は\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャー、\f[JPM]デ\f[R]ィレクトリ引数\f[JPM]で\f[R]はファイルマネー\f[JPM]ジ\f[R]ャーとして機能します。起動後は、^I（\fBSHELL\fR \f[JPM]で\f[R]は ^J^I）\f[JPM]で\f[R]表示される \fBINFO\fR 画面の「Boot options」\f[JPM]で\f[R]引数を確認\f[JPM]で\f[R]きます。一番最初の起動\f[JPM]で\f[R]は後述 \fBHELP\fR と \fBKEY\fR のウィン\f[JPM]ド\f[R]ウ\f[JPM]が\f[R]開きます。次回以降の起動\f[JPM]で\f[R]も -H \f[JPM]で\f[R]表示されるの\f[JPM]で\f[R]、主な機能と用法を参照しな\f[JPM]が\f[R]ら操作してみてく\f[JPM]だ\f[R]さい。マウス\f[JPM]が\f[R]使える端末なら、画面\f[JPM]ド\f[R]ラッ\f[JPM]グ\f[R]およ\f[JPM]び\f[R]ホイールによるスクロール\f[JPM]が\f[R]使えます。さらに左右のカーソルキー\f[JPM]で\f[R]自動スクロール\f[JPM]が\f[R]始まり、それ以後は上下のカーソルキー\f[JPM]で\f[R]速度調整\f[JPM]が\f[R]可能\f[JPM]で\f[R]す。動作中、ファイルおよ\f[JPM]び\f[R]\f[JPM]デ\f[R]ィレクトリへのアクセス履歴は次回起動時も継続して使用可能\f[JPM]で\f[R]す。なお、本マニュアル\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]を \fBHELP\fR \f[JPM]で\f[R]閲覧している場合は、; / : （\fBMACRO\fR）キー\f[JPM]で\f[R]それ\f[JPM]ぞ\f[R]れ 上 / 下 の章に移動します。具体的なキーアサインは後述 \fBMACRO\fR の章を参照してく\f[JPM]だ\f[R]さい。
 .br
 .sp
 本文中\f[JPM]で\f[R]使用している主な表記は以下の通り\f[JPM]で\f[R]す。
@@ -199,7 +199,7 @@ mode-line : ステータス表示（画面最下行）
 .in 12n
 .in 27n
 .ti 12n
-Boot options : 起動オ\f[JPM]プ\f[R]ション（外部起動した \fIusilic(1)\fR \f[JPM]で\f[R]は「親の PID: 起動オ\f[JPM]プ\f[R]ション」）
+Boot options : 起動オ\f[JPM]プ\f[R]ション（外部起動した \fIusilic(1)\fR \f[JPM]で\f[R]は末尾に「(親の PID)」）
 .in 0
 .in 12n
 .in 27n
@@ -290,11 +290,11 @@ Startup file : 設定ファイル
 .in 4n
 .in 19n
 .ti 4n
-          ^Oh：\fBCUT\fR/平文を切り換え
+          ^Oh：\fBPART\fR/平文を切り換え
 .in 0
 .sp
 .in 8n
-通常ファイル $PREFIX/lib/usilic/HELP（\fI~/.local/lib/usilic/\fRHELP 等）を章\f[JPM]ご\f[R]とに \fBCUT\fR した目次の冒頭章から始まります。\fBHELP\fR \f[JPM]で\f[R]は ^Cf"^I"^M（タ\f[JPM]ブ\f[R]コー\f[JPM]ド\f[R]\f[JPM]で\f[R] \fBCUT\fR） \f[JPM]で\f[R]す\f[JPM]が\f[R]、検索文字を " : "（全角コロン）にするとキーアサイン一覧となります（\fBKEY\fR はその画面を流用）。
+通常ファイル $PREFIX/lib/usilic/HELP（\fI~/.local/lib/usilic/\fRHELP 等）を章\f[JPM]ご\f[R]とに \fBPART\fR した目次の冒頭章から始まります。\fBHELP\fR \f[JPM]で\f[R]は ^Jp"^Q^I"^M（タ\f[JPM]ブ\f[R]コー\f[JPM]ド\f[R]\f[JPM]で\f[R] \fBPART\fR） \f[JPM]で\f[R]す\f[JPM]が\f[R]、検索文字を " : "（全角コロン）にするとキーアサイン一覧となります（\fBKEY\fR はその画面を流用）。
 .in 0
 .sp
 .in 4n
@@ -319,7 +319,7 @@ Startup file : 設定ファイル
 .in 0
 .sp
 .in 8n
-ハイライト行\f[JPM]で\f[R] ^M を押すと表示の機能\f[JPM]が\f[R]実行されます。h キー\f[JPM]で\f[R]は「^H : HELP を表示」行を ^M した場合とは違い、平文の HELP の当該位置へ\f[JPM]ジ\f[R]ャン\f[JPM]プ\f[R]します。平文表示なの\f[JPM]で\f[R]目次一覧はありません（"^Cb^Q^I"^M \f[JPM]で\f[R]一覧化は可能）。
+ハイライト行（反転表示はキーの部分、「 : 」の手前ま\f[JPM]で\f[R]）\f[JPM]で\f[R] ^M を押すと表示の機能\f[JPM]が\f[R]実行されます。h キー\f[JPM]で\f[R]は「^H : HELP を表示」行を ^M した場合とは違い、平文の HELP の当該位置へ\f[JPM]ジ\f[R]ャン\f[JPM]プ\f[R]します。平文表示なの\f[JPM]で\f[R]目次一覧はありません（"^Jp^Q^I"^M \f[JPM]で\f[R]一覧化は可能）。
 .in 0
 .sp
 .in 19n
@@ -364,7 +364,7 @@ file 引数（"usilic file"^M）または引数無しの標準入力経由（"us
 .in 0
 .sp
 .in 8n
-\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャー\f[JPM]で\f[R]機能する主なキーは以下の通り\f[JPM]で\f[R]す（ファイルマネー\f[JPM]ジ\f[R]ャー\f[JPM]で\f[R] file を表示している時も同\f[JPM]じ\f[R]）。
+\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャー\f[JPM]で\f[R]機能する主なキーは以下の通り\f[JPM]で\f[R]す（ファイルマネー\f[JPM]ジ\f[R]ャー\f[JPM]で\f[R] file を表示している時も同\f[JPM]じ\f[R]）。\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャーとして起動した時は、この \fBHELP\fR \f[JPM]で\f[R]行頭\f[JPM]が\f[R]タ\f[JPM]ブ\f[R]の行に載っているキー（以下のほか、検索・\fBEPUB\fR・\fBCOPY\fR 等の各章のもの）と ^M 以外は使えません。
 .in 0
 .sp
 .in 19n
@@ -485,17 +485,21 @@ file 引数（"usilic file"^M）または引数無しの標準入力経由（"us
 .in 0
 .in 19n
 .ti 0n
-\*[usilic-tab]	      ^Os：mode-line の表示/非表示
+\*[usilic-tab]	      ^Of：mode-line の表示/非表示
+.in 0
+.in 19n
+.ti 0n
+\*[usilic-tab]	      ^Od：ホイールの回転とスクロールの向きを逆にする（ト\f[JPM]グ\f[R]ル）
 .in 0
 \*[usilic-tab]	        q：\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャーを終了
 .in 0
 .sp
 .in 8n
-^X^X \f[JPM]で\f[R]戻る先（マーク）は、^␣ \f[JPM]で\f[R]置くほか、^[< / ^[>、\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]送り、^S による検索の開始、スクロール\f[JPM]バ\f[R]ーのクリック、リンク\f[JPM]で\f[R]移動する前の行にも自動\f[JPM]で\f[R]置かれ、最大 16 個ま\f[JPM]で\f[R]記録されます。^X^X は最新のマークと現在行を入れ替え、^U^␣ は押すた\f[JPM]び\f[R]に新しいマークから順に遡って移動します。\fB(ls)\fR 等の選択のある一覧\f[JPM]で\f[R]は、^␣ は従来\f[JPM]ど\f[R]おり選択になります。
+^X^X \f[JPM]で\f[R]戻る先（マーク）は、^␣ \f[JPM]で\f[R]置くほか、^[< / ^[>、\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]送り、^S による検索の開始、スクロール\f[JPM]バ\f[R]ーのクリック、リンク\f[JPM]で\f[R]移動する前の行、に自動\f[JPM]で\f[R]置かれ、最大 16 個ま\f[JPM]で\f[R]記録されます。^X^X は最新のマークと現在行を入れ替え、^U^␣ は押すた\f[JPM]び\f[R]に新しいマークから順に遡って移動します。\fB(ls)\fR 等の選択のある一覧\f[JPM]で\f[R]は、^␣ は従来\f[JPM]ど\f[R]おり選択になります。
 .in 0
 .sp
 .in 8n
-^U の回数は ^N/^P、j/k、\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]送り、n/p、^Xe 等の移動・繰り返しのコマン\f[JPM]ド\f[R]に効きます。^Xz は ^U の回数も含めて直前のコマン\f[JPM]ド\f[R]を繰り返します。レ\f[JPM]ジ\f[R]スタ（a 等の１文字）と\f[JPM]ブ\f[R]ックマークは、file の行（縦書きの本\f[JPM]で\f[R]も同\f[JPM]じ\f[R]行）と \fB(ls)\fR の\f[JPM]デ\f[R]ィレクトリを記録します。レ\f[JPM]ジ\f[R]スタは起動している間\f[JPM]だ\f[R]け、\f[JPM]ブ\f[R]ックマークは \fI~/.usilic/\fRbookmarks に残ります。^Xrm \f[JPM]で\f[R]は名前（初期値はファイル名）を尋ね、^Xrb の一覧\f[JPM]で\f[R]は ^N/^P \f[JPM]で\f[R]選ん\f[JPM]で\f[R] ^M \f[JPM]で\f[R]移動します。名前の頭に - を付けて ^M すると、その\f[JPM]ブ\f[R]ックマークを削除します。
+^U の回数は ^N/^P、j/k、\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]送り、n/p、^Xe 等の移動・繰り返しのコマン\f[JPM]ド\f[R]に効きます。^Xz は ^U の回数も含めて直前のコマン\f[JPM]ド\f[R]を繰り返します。レ\f[JPM]ジ\f[R]スタ（a 等の１文字）と\f[JPM]ブ\f[R]ックマークは、file の行（縦書きの本\f[JPM]で\f[R]も同\f[JPM]じ\f[R]行）と \fB(ls)\fR の\f[JPM]デ\f[R]ィレクトリを記録します。レ\f[JPM]ジ\f[R]スタは起動している間\f[JPM]だ\f[R]け、\f[JPM]ブ\f[R]ックマークは \fI~/.usilic/bookmarks\fR に残ります。^Xrm \f[JPM]で\f[R]は名前（初期値はファイル名）を尋ね、^Xrb の一覧\f[JPM]で\f[R]は ^N/^P \f[JPM]で\f[R]選ん\f[JPM]で\f[R] ^M \f[JPM]で\f[R]移動します。名前の頭に - を付けて ^M すると、その\f[JPM]ブ\f[R]ックマークを削除します。
 .in 0
 .sp
 .in 19n
@@ -504,13 +508,13 @@ file 引数（"usilic file"^M）または引数無しの標準入力経由（"us
 .in 0
 .sp
 .in 8n
-標準入力も引数も無い起動\f[JPM]で\f[R]は、前回終了時、例え\f[JPM]ば\f[R] \fIusilic.1\fR を閲覧していた場合、mode-line は下記のようになります。
+標準入力も引数も無い起動\f[JPM]で\f[R]は、前回終了時、例え\f[JPM]ば\f[R] \fIHELP.ja.1\fR を閲覧していた場合、mode-line は下記のようになります。
 .in 0
 .sp
 .in 12n
-\fIusilic.1\fR \fI01/66\fR \fI43%\fR \fI2000\fR \fI(groff)\fR \fI/Users/usilic/.usilic/\fR
+\fIHELP.ja.1\fR \fI01/66\fR \fI43%\fR \fI2000\fR \fI(groff)\fR \fI/Users/usilic/.local/lib/usilic/\fR
 .br
-(1)      (2)   (3) (4)  (5)     (6)
+(1)       (2)   (3) (4)  (5)     (6)
 .br
 .sp
 .in 12n
@@ -539,23 +543,23 @@ file 引数（"usilic file"^M）または引数無しの標準入力経由（"us
 (5) : \f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム名
 .in 0
 .in 12n
-.in 0n
+.in 18n
 .ti 12n
 (6) : 以前のモー\f[JPM]ド\f[R]
 .in 0
 .sp
 .in 8n
-以前のモー\f[JPM]ド\f[R]名は mode-line(6) に表示され、^G \f[JPM]で\f[R]そこへ移動します。
+以前のモー\f[JPM]ド\f[R]名は、上記 mode-line(6) に表示され、^G \f[JPM]で\f[R]そこへ移動します。
 .in 0
 .sp
 .in 12n
-\fI/Users/usilic/.usilic/\fR \fI01/66\fR \fI43%\fR \fI2000\fR \fI(ls)\fR \fIusilic-1.5b\fR
+\fI/Users/usilic/.local/lib/usilic/\fR \fI01/66\fR \fI43%\fR \fI2000\fR \fI(ls)\fR \fIusilic-1.5b\fR
 .br
-(1)                    (2)   (3) (4)  (5)  (6)
+(1)                              (2)   (3) (4)  (5)  (6)
 .in 0
 .sp
 .in 8n
-(1) の末尾\f[JPM]が\f[R]「/」かつ (6) \f[JPM]が\f[R]非反転表示の「\fBusilic-1.5b\fR」の場合（以下 \fB(ls)\fR）、^G の連打\f[JPM]で\f[R]以前の\f[JPM]デ\f[R]ィレクトリと行き来します。外部起動した \fIusilic(1)\fR（後述 \fBUSILIC\fR の ^Ou）\f[JPM]で\f[R]は、(6) \f[JPM]が\f[R]「親の PID:\fBUSILIC\fR」になります。\fB(ls)\fR \f[JPM]で\f[R]行頭\f[JPM]が\f[R]「d」（「drwxr-xr-x ...」等）かつ行末\f[JPM]が\f[R]「/」\f[JPM]で\f[R]終わっている行は\f[JPM]デ\f[R]ィレクトリ\f[JPM]で\f[R]す。^M を押すとそこへ移動し、「\fI./\fR」を選択 または ^Xd"."^M（後述 \fBDIR\fR）とすると、カレント\f[JPM]デ\f[R]ィレクトリ表示内容\f[JPM]が\f[R]更新されます。\f[JPM]デ\f[R]ィレクトリの移動には、下記のキーも使用\f[JPM]で\f[R]きます。
+(1) の末尾\f[JPM]が\f[R]「/」かつ (6) \f[JPM]が\f[R]非反転表示の「\fBusilic-1.5b\fR」の場合（以下 \fB(ls)\fR）、^G の連打\f[JPM]で\f[R]以前の\f[JPM]デ\f[R]ィレクトリと行き来します。外部起動した \fIusilic(1)\fR（後述 \fBUSILIC\fR の ^Ou）\f[JPM]で\f[R]は、(6) は非反転表示の「\fBUSILIC\fR」になります。\fB(ls)\fR \f[JPM]で\f[R]行頭\f[JPM]が\f[R]「d」（「drwxr-xr-x ...」等）かつ行末\f[JPM]が\f[R]「/」\f[JPM]で\f[R]終わっている行は\f[JPM]デ\f[R]ィレクトリ\f[JPM]で\f[R]す。^M を押すとそこへ移動し、「\fI./\fR」を選択 または ^Xd"."^M（後述 \fBDIR\fR）とすると、カレント\f[JPM]デ\f[R]ィレクトリ表示内容\f[JPM]が\f[R]更新されます。\f[JPM]デ\f[R]ィレクトリの移動には、下記のキーも使用\f[JPM]で\f[R]きます。
 .in 0
 .sp
 .in 10n
@@ -592,43 +596,43 @@ file 引数（"usilic file"^M）または引数無しの標準入力経由（"us
 たとえ\f[JPM]ば\f[R]
 .in 0
 .sp
-.in 19n
-\fI/Users/usilic/.usilic/data/\fR
+.in 23n
+\fI/Users/usilic/.local/lib/usilic/\fR
 .in 0
 .sp
-.in 15n
+.in 19n
 \f[JPM]で\f[R]の ^J2 は下記へ、
 .in 0
 .sp
-.in 19n
+.in 23n
 \fI/Users/usilic/\fR
 .in 0
 .sp
-.in 15n
+.in 19n
 ^J2の代わりに ^J^B とした時は親\f[JPM]デ\f[R]ィレクトリ
 .in 0
 .sp
-.in 19n
-\fI/Users/usilic/.usilic/\fR
+.in 23n
+\fI/Users/usilic/.local/lib/\fR
 .in 0
 .sp
-.in 15n
+.in 19n
 へ移動し、画面最下行 mode-line 上\f[JPM]で\f[R]の入力の場合、文字列の先頭\f[JPM]が\f[R]スラッシュの時は、対応する\f[JPM]デ\f[R]ィレクトリへ移ります。たとえ\f[JPM]ば\f[R] ^Xf"\fI~/.usilic/usilicrc\fR"^M（後述 \fBFILE\fR）\f[JPM]で\f[R] \fIusilicrc\fR を参照後 ^X^F とタイ\f[JPM]プ\f[R]した後、
 .in 0
 .sp
-.in 19n
+.in 23n
 \fI/Users/usilic/.usilic/usilicrc\fR
 .in 0
 .sp
-.in 15n
+.in 19n
 のカーソル行\f[JPM]で\f[R] ^J2 とすると
 .in 0
 .sp
-.in 19n
+.in 23n
 \fI/Users/usilic/\fR
 .in 0
 .sp
-.in 15n
+.in 19n
 へ移動します。
 .in 0
 .sp
@@ -638,7 +642,7 @@ file 引数（"usilic file"^M）または引数無しの標準入力経由（"us
      ^M：ファイル内容を表示
 .in 0
 .in 19n
-行頭\f[JPM]が\f[R]「-」（「-rxwr-xr-x ...」等）の行は file（通常ファイル）\f[JPM]で\f[R]す。^M \f[JPM]で\f[R]ファイルの内容\f[JPM]が\f[R]画面に表示され、file の suffix \f[JPM]が\f[R] \fIusilicrc\fR の FILE に設定されている場合、指定 program の出力を表示します（.gz ファイルを "gzip -dc" \f[JPM]で\f[R]表示等）。EXEC に設定されている suffix の場合は、\fIusilic(1)\fR 画面を一旦抜けた上\f[JPM]で\f[R] 指定 program を実行します（.info ファイルを "info -f"\f[JPM]で\f[R]実行等）。ファイルサイ\f[JPM]ズ\f[R]\f[JPM]が\f[R] \fIusilicrc\fR の BUFFER \f[JPM]で\f[R]指定した値を超えた場合は、^O^M と同\f[JPM]じ\f[R]く画面に出る分\f[JPM]だ\f[R]け読み込む方法\f[JPM]で\f[R]開き、「Not enough buffer」のメッセー\f[JPM]ジ\f[R]\f[JPM]が\f[R]表示されます（い\f[JPM]ず\f[R]れかのキー\f[JPM]で\f[R]消えます）。\fIusilicrc\fR の CODE 設定\f[JPM]で\f[R]\f[JPM]バ\f[R]イナリと判定された file は、最初に見つかった制御コー\f[JPM]ド\f[R]と \fIfile(1)\fR によるファイルの種類を表示します。た\f[JPM]だ\f[R]し macOS \f[JPM]で\f[R]は、画像・PDF、およ\f[JPM]び\f[R]クイックルック\f[JPM]が\f[R]扱える種類（\fI.numbers\fR \fI.docx\fR 等、後述）の file は、\fIfile(1)\fR 表示の代わりにクイックルック\f[JPM]で\f[R]開きます\f[JPM]が\f[R]、動画（.mp4 .mov .mkv 等）は、クイックルック\f[JPM]で\f[R]はなく IINA（無けれ\f[JPM]ば\f[R] VLC、\f[JPM]ど\f[R]ちらも無けれ\f[JPM]ば\f[R]既定のア\f[JPM]プ\f[R]リ）\f[JPM]で\f[R]開きます。.[] \f[JPM]で\f[R]選ん\f[JPM]だ\f[R]動画\f[JPM]が\f[R]あれ\f[JPM]ば\f[R]、まとめて渡したのち順次再生し（␣ \f[JPM]で\f[R]も同\f[JPM]じ\f[R]）、\fIusilicrc\fR の EXEC に設定\f[JPM]が\f[R]あれ\f[JPM]ば\f[R]そちらを優先します（WSL2 \f[JPM]で\f[R]は Windows の既定のア\f[JPM]プ\f[R]リ\f[JPM]で\f[R]対処）。GUI \f[JPM]で\f[R]は、画像ファイル（\fI.jpg\fR \fI.jpeg\fR \fI.png\fR \fI.gif\fR \fI.bmp\fR、GIF は最初のコマのみ）は \fIusilic(1)\fR 画面に表示します（画面の幅と高さに収まるよう縮小し、小さい画像は拡大しません）。表示中に ^L を押すと読み直すの\f[JPM]で\f[R]、画像を書き出し直した時の確認に使えます（開き直した時も読み直します）。
+行頭\f[JPM]が\f[R]「-」（「-rxwr-xr-x ...」等）の行は file（通常ファイル）\f[JPM]で\f[R]す。^M \f[JPM]で\f[R]ファイルの内容\f[JPM]が\f[R]画面に表示され、file の suffix \f[JPM]が\f[R] \fIusilicrc\fR の FILE に設定されている場合、指定 program の出力を表示します（.gz ファイルを "gzip -dc" \f[JPM]で\f[R]表示等）。EXEC に設定されている suffix の場合は、\fIusilic(1)\fR 画面を一旦抜けた上\f[JPM]で\f[R] 指定 program を実行します（.info ファイルを "info -f"\f[JPM]で\f[R]実行等）。ファイルサイ\f[JPM]ズ\f[R]\f[JPM]が\f[R] \fIusilicrc\fR の BUFFER \f[JPM]で\f[R]指定した値を超えた場合は「Not enough buffer」のメッセー\f[JPM]ジ\f[R]\f[JPM]が\f[R]表示され、^O^M と同\f[JPM]じ\f[R]く画面に出る分\f[JPM]だ\f[R]け読み込む方法\f[JPM]で\f[R]開きます（い\f[JPM]ず\f[R]れかのキー\f[JPM]で\f[R]消去）。\fIusilicrc\fR の CODE 設定\f[JPM]で\f[R]\f[JPM]バ\f[R]イナリと判定された file は、最初に見つかった制御コー\f[JPM]ド\f[R]と \fIfile(1)\fR によるファイルの種類を表示します。た\f[JPM]だ\f[R]し macOS \f[JPM]で\f[R]は、画像・PDF、およ\f[JPM]び\f[R]クイックルック\f[JPM]が\f[R]扱える種類（\fI.numbers\fR \fI.docx\fR 等、後述）の file は、\fIfile(1)\fR 表示の代わりにクイックルック\f[JPM]で\f[R]開きます\f[JPM]が\f[R]、動画（.mp4 .mov .mkv 等）は、クイックルック\f[JPM]で\f[R]はなく IINA（無けれ\f[JPM]ば\f[R] VLC、\f[JPM]ど\f[R]ちらも無けれ\f[JPM]ば\f[R]既定のア\f[JPM]プ\f[R]リ）\f[JPM]で\f[R]開きます。.[] \f[JPM]で\f[R]選ん\f[JPM]だ\f[R]動画\f[JPM]が\f[R]あれ\f[JPM]ば\f[R]、まとめて渡したのち順次再生し（␣ \f[JPM]で\f[R]も同\f[JPM]じ\f[R]）、\fIusilicrc\fR の EXEC に設定\f[JPM]が\f[R]あれ\f[JPM]ば\f[R]そちらを優先します（WSL2 \f[JPM]で\f[R]は Windows の既定ア\f[JPM]プ\f[R]リ\f[JPM]で\f[R]対処）。GUI \f[JPM]で\f[R]は、画像ファイル（\fI.jpg\fR \fI.jpeg\fR \fI.png\fR \fI.gif\fR \fI.bmp\fR、GIF は最初のコマのみ）は \fIusilic(1)\fR 画面に表示します（画面の幅と高さに収まるよう縮小し、小さい画像は拡大しません）。表示中に ^L を押すと読み直すの\f[JPM]で\f[R]、画像を書き出し直した時の確認に使えます（開き直した時も読み直します）。
 .in 0
 .sp
 .in 10n
@@ -674,7 +678,7 @@ file 引数（"usilic file"^M）または引数無しの標準入力経由（"us
 .in 10n
 .in 19n
 .ti 10n
-    ^Oo：\fIls(1)\fR の表示形式切替
+    ^Oo：\fIls(1)\fR の表示形式切換
 .in 0
 .in 10n
 .in 19n
@@ -688,7 +692,7 @@ file 引数（"usilic file"^M）または引数無しの標準入力経由（"us
 .in 0
 .sp
 .in 12n
-^Oo は \fIls(1)\fR 出力形式の切り換えキー\f[JPM]で\f[R]す\f[JPM]が\f[R]、ファイル名の長さ\f[JPM]が\f[R] 16 \f[JPM]バ\f[R]イト未満になると、自動的にファイル名表示のみ形式に固定されます。\fIls(1)\fR 出力の表示順は、^Ol のた\f[JPM]び\f[R]に、日付（Date）⇒ サイ\f[JPM]ズ\f[R]（Size）⇒ 種類（Kind）⇒ 名称（Name）に切り替わり、^O^L \f[JPM]で\f[R]逆順にソートします。
+^Oo は \fIls(1)\fR 出力形式の切り換えキー\f[JPM]で\f[R]す\f[JPM]が\f[R]、ファイル名の長さ\f[JPM]が\f[R] 16 \f[JPM]バ\f[R]イト未満になると、自動的にファイル名表示のみ形式に固定されます。\fIls(1)\fR 出力の表示順は、^Ol のた\f[JPM]び\f[R]に、日付（Date）⇒　サイ\f[JPM]ズ\f[R]（Size）⇒　種類（Kind）⇒　名称（Name）に切り替わり、^O^L \f[JPM]で\f[R]逆順にソートします。
 .in 0
 .sp
 .in 8n
@@ -736,7 +740,7 @@ file 引数（"usilic file"^M）または引数無しの標準入力経由（"us
 .in 0
 .sp
 .in 12n
-\fB(ls)\fR \f[JPM]で\f[R]は、行を選択すると、アン\f[JPM]ダ\f[R]ーライン\f[JPM]が\f[R]付加されてファイル操作/閲覧/展開の対象となります（選択\f[JPM]が\f[R]無い時の閲覧/実行はカーソル行\f[JPM]が\f[R]対象）。\f[JPM]デ\f[R]ィレクトリを選択\f[JPM]で\f[R]きるのは一度に一つ\f[JPM]だ\f[R]け\f[JPM]で\f[R]、二つ目を選\f[JPM]ぼ\f[R]うとすると「Cannot select multiple directories」と表示されます。同\f[JPM]じ\f[R]操作は \fBLOCATE\fR、\fBDU\fR、\fBFILE\fR、\fBDIR\fR、\fBUSILIC\fR の一覧\f[JPM]で\f[R]も使えます。\fBCP\fR/\fBMV\fR/\fBARC\fR \f[JPM]が\f[R]終わると、複写先/移動先/展開先の \fB(ls)\fR \f[JPM]で\f[R]は処理後のファイルにアン\f[JPM]ダ\f[R]ーライン\f[JPM]が\f[R]付いています（一時的な選択）。これは通常の選択と同\f[JPM]じ\f[R]く ^Jp 等の対象になります。一時的な選択は ^L \f[JPM]で\f[R]消え、. や ^On \f[JPM]で\f[R]も外せます。
+\fB(ls)\fR \f[JPM]で\f[R]は、行を選択すると、アン\f[JPM]ダ\f[R]ーライン\f[JPM]が\f[R]付加されてファイル操作/閲覧/展開の対象となります（選択\f[JPM]が\f[R]無い時の閲覧/実行はカーソル行\f[JPM]が\f[R]対象）。\f[JPM]デ\f[R]ィレクトリを選択\f[JPM]で\f[R]きるのは一度に一つ\f[JPM]だ\f[R]け\f[JPM]で\f[R]、二つ目を選\f[JPM]ぼ\f[R]うとすると「Cannot select multiple directories」と表示されます。同\f[JPM]じ\f[R]操作は \fBLOCATE\fR、\fBDU\fR、\fBFILE\fR、\fBDIR\fR、\fBUSILIC\fR の一覧\f[JPM]で\f[R]も使えます。\fBCP\fR/\fBMV\fR/\fBARC\fR \f[JPM]が\f[R]終わると、複写先/移動先/展開先の \fB(ls)\fR \f[JPM]で\f[R]は処理後のファイルにアン\f[JPM]ダ\f[R]ーライン\f[JPM]が\f[R]付いています（一時的な選択）。これは通常の選択と同\f[JPM]じ\f[R]く ^Jt 等の対象になります。一時的な選択は ^L \f[JPM]で\f[R]消え、. や ^On \f[JPM]で\f[R]も外せます。
 .in 0
 .sp
 .in 4n
@@ -777,21 +781,19 @@ file 引数（"usilic file"^M）または引数無しの標準入力経由（"us
 .in 4n
 .in 19n
 .ti 4n
-\fBPROGRAM\fR      ：\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム実行\*[usilic-tab]
+\fBTOOL\fR         ：\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム実行\*[usilic-tab]
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-          ^Jp：\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム名を入力
+.ti 0n
+\*[usilic-tab]	      ^Jt：\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム名を入力
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-         ^J^P：閲覧履歴一覧から選択
+.ti 0n
+\*[usilic-tab]	     ^J^T：閲覧履歴一覧から選択
 .in 0
 .sp
 .in 10n
-^Jp の\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トにはカーソル行（選択\f[JPM]が\f[R]あれ\f[JPM]ば\f[R]その全部）の file 名\f[JPM]が\f[R]入った状態\f[JPM]で\f[R]表示されるの\f[JPM]で\f[R]、その前に\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム名を入力して ^M \f[JPM]で\f[R]実行します。\fIusilicrc\fR の PROGRAM に載っている\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムは \fIusilic(1)\fR の画面を一旦抜けてそのまま実行し、終了後に元の画面へ戻ります。一覧に載っていない\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムは \fBSHELL\fR \f[JPM]で\f[R]実行されます。エ\f[JPM]デ\f[R]ィター等端末設定\f[JPM]が\f[R]変わってしまうア\f[JPM]プ\f[R]リを \fBSHELL\fR \f[JPM]で\f[R]起動した場合は ^Js \f[JPM]で\f[R] \fBSHELL\fR を再起動してく\f[JPM]だ\f[R]さい。なお "usilic"\f[JPM]で\f[R]始まる場合は、PROGRAM に載っていなくても \fBSHELL\fR \f[JPM]で\f[R]の実行\f[JPM]で\f[R]はなく、外部\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャーとして別の \fIusilic(1)\fR を起動します（下記 \fBUSILIC\fR の ^Ou と同\f[JPM]じ\f[R]扱い\f[JPM]で\f[R]、履歴には「(usilic)」付き\f[JPM]で\f[R]残ります）。^J^P の時は、今ま\f[JPM]で\f[R] \fBPROGRAM\fR およ\f[JPM]び\f[R] \fBSHELL\fR \f[JPM]で\f[R]実行した\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムのソート済みの一覧\f[JPM]が\f[R]表示され、さらに ^R \f[JPM]で\f[R]実行順の履歴\f[JPM]が\f[R]表示されます。
+^Jt の\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トにはカーソル行（選択\f[JPM]が\f[R]あれ\f[JPM]ば\f[R]その全部）の file 名\f[JPM]が\f[R]入った状態\f[JPM]で\f[R]表示されるの\f[JPM]で\f[R]、その前に\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム名を入力して ^M \f[JPM]で\f[R]実行します。\fIusilicrc\fR の PROGRAM に載っている\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムは \fIusilic(1)\fR の画面を一旦抜けてそのまま実行し、終了後に元の画面へ戻ります。一覧に載っていない\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムは \fBSHELL\fR \f[JPM]で\f[R]実行されます。エ\f[JPM]デ\f[R]ィター等端末設定\f[JPM]が\f[R]変わってしまうア\f[JPM]プ\f[R]リを \fBSHELL\fR \f[JPM]で\f[R]起動した場合は ^Js \f[JPM]で\f[R] \fBSHELL\fR を再起動してく\f[JPM]だ\f[R]さい。なお "usilic"\f[JPM]で\f[R]始まる場合は、PROGRAM に載っていなくても \fBSHELL\fR \f[JPM]で\f[R]の実行\f[JPM]で\f[R]はなく、外部\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャーとして別の \fIusilic(1)\fR を起動します（下記 \fBUSILIC\fR の ^Ou と同\f[JPM]じ\f[R]扱い\f[JPM]で\f[R]、履歴には「(usilic)」付き\f[JPM]で\f[R]残ります）。^J^T の時は、今ま\f[JPM]で\f[R] \fBTOOL\fR およ\f[JPM]び\f[R] \fBSHELL\fR \f[JPM]で\f[R]実行した\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムのソート済みの一覧\f[JPM]が\f[R]表示され、さらに ^R \f[JPM]で\f[R]実行順の履歴\f[JPM]が\f[R]表示されます。
 .in 0
 .sp
 .in 4n
@@ -807,16 +809,16 @@ file 引数（"usilic file"^M）または引数無しの標準入力経由（"us
 .in 4n
 .in 19n
 .ti 4n
-          ^Tn：次の起動\f[JPM]デ\f[R]ィレクトリへ（外部起動した \fB(ls)\fR）
+          ^Tn：次のウィン\f[JPM]ド\f[R]ウを前面へ（元と外部起動した \fIusilic(1)\fR）
 .in 0
 .in 4n
 .in 19n
 .ti 4n
-          ^Tp：前の起動\f[JPM]デ\f[R]ィレクトリへ（外部起動した \fB(ls)\fR）
+          ^Tp：前のウィン\f[JPM]ド\f[R]ウを前面へ（同上）
 .in 0
 .sp
 .in 10n
-^Ou \f[JPM]で\f[R]は、アン\f[JPM]ダ\f[R]ーラインのファイル群（選択\f[JPM]が\f[R]無けれ\f[JPM]ば\f[R]カーソル行）を、外部\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャーとして起動した別の \fIusilic(1)\fR \f[JPM]で\f[R]表示します。GUI \f[JPM]で\f[R]は別のウィン\f[JPM]ド\f[R]ウ\f[JPM]で\f[R]開くの\f[JPM]で\f[R]、ファイルを参照しな\f[JPM]が\f[R]ら元のウィン\f[JPM]ド\f[R]ウ\f[JPM]で\f[R]操作\f[JPM]で\f[R]きます。macOS の CUI \f[JPM]で\f[R]はターミナル（Terminal.app、iTerm2 から起動した場合は iTerm2）の新しいウィン\f[JPM]ド\f[R]ウ\f[JPM]で\f[R]開くの\f[JPM]で\f[R]、同\f[JPM]じ\f[R]ように元のウィン\f[JPM]ド\f[R]ウ\f[JPM]で\f[R]操作\f[JPM]で\f[R]きます（初回はそのア\f[JPM]プ\f[R]リの操作の許可を求められます）。Linux の CUI \f[JPM]で\f[R]も、画面（X11・Wayland）\f[JPM]が\f[R]あれ\f[JPM]ば\f[R]今のターミナル（GNOME Terminal・Konsole・xterm 等、分からなけれ\f[JPM]ば\f[R]見つかったもの）の新しいウィン\f[JPM]ド\f[R]ウ\f[JPM]で\f[R]開きます。それ以外の CUI（SSH 接続先等）\f[JPM]で\f[R]は、外部\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャーを終了すると元の画面へ戻ります。複数のファイルは n / p キー\f[JPM]で\f[R]前後へ移動します。選択に\f[JPM]デ\f[R]ィレクトリ\f[JPM]が\f[R]含まれる場合は、それらの一覧をその場限り\f[JPM]で\f[R]開き（履歴は読み書きせ\f[JPM]ず\f[R]、元の \fIusilic(1)\fR もそのまま動き続けます）、複数の\f[JPM]デ\f[R]ィレクトリは ^Tn / ^Tp \f[JPM]で\f[R]前後へ移動します。ファイルと\f[JPM]デ\f[R]ィレクトリ\f[JPM]が\f[R]混\f[JPM]ざ\f[R]っている場合は、ファイルの外部\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャーと\f[JPM]デ\f[R]ィレクトリの \fB(ls)\fR を別々のウィン\f[JPM]ド\f[R]ウ\f[JPM]で\f[R]開きます（SSH 接続先等\f[JPM]で\f[R]は\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャーの終了後に \fB(ls)\fR を開きます）。こうして起動した \fIusilic(1)\fR は、右下の「usilic v1.5b」の代わりに「親の PID:\fBUSILIC\fR」を表示し、\fBINFO\fR の Boot options も「親の PID: 起動オ\f[JPM]プ\f[R]ション」となります（元の \fIusilic(1)\fR と見分けるため。この子の \fIusilic(1)\fR の操作は履歴に残らないの\f[JPM]で\f[R]、子の履歴の一覧はほ\f[JPM]ぼ\f[R]空\f[JPM]で\f[R]す）。元の \fIusilic(1)\fR \f[JPM]が\f[R]終了すると、外部起動したものはす\f[JPM]べ\f[R]て終了します。元の \fIusilic(1)\fR の \fBUSILIC\fR と ^X^F・^X^D の履歴には、外部起動したファイル・\f[JPM]デ\f[R]ィレクトリ\f[JPM]が\f[R]「(usilic)」付き\f[JPM]で\f[R]残るの\f[JPM]で\f[R]、後\f[JPM]で\f[R]開き直せます（後述 \fBUSILIC\fR。^J^J や ^G \f[JPM]で\f[R]戻る先、\fBCP\fR・\fBMV\fR の行き先の ^W には使われません）。\fBLOCATE\fR 等の一覧\f[JPM]で\f[R]も、選択（無けれ\f[JPM]ば\f[R]ハイライト行）を同様に表示します。
+^Ou \f[JPM]で\f[R]は、アン\f[JPM]ダ\f[R]ーラインのファイル群（選択\f[JPM]が\f[R]無けれ\f[JPM]ば\f[R]カーソル行）を、外部\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャーとして起動した \fIusilic(1)\fR ウィン\f[JPM]ド\f[R]ウ\f[JPM]で\f[R]表示します。Linux の CUI \f[JPM]で\f[R]も、画面（X11・Wayland）\f[JPM]が\f[R]あれ\f[JPM]ば\f[R]今のターミナル（GNOME Terminal・Konsole・xterm 等、分からなけれ\f[JPM]ば\f[R]見つかったもの）の新しいウィン\f[JPM]ド\f[R]ウ\f[JPM]で\f[R]開きます。それ以外の CUI（SSH 接続先等）\f[JPM]で\f[R]は、外部\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャーを終了すると元の画面へ戻ります。複数のファイル・\f[JPM]デ\f[R]ィレクトリは、１つ\f[JPM]ず\f[R]つ別々のウィン\f[JPM]ド\f[R]ウ\f[JPM]で\f[R]開きます（SSH 接続先等\f[JPM]で\f[R]は１つ終了する\f[JPM]ご\f[R]とに次を開きます）。\f[JPM]デ\f[R]ィレクトリはその場限りの \fB(ls)\fR \f[JPM]で\f[R]開きます（履歴は読み書きせ\f[JPM]ず\f[R]、元の \fIusilic(1)\fR もそのまま動き続けます）。^Tn / ^Tp は、元の \fIusilic(1)\fR と外部起動したウィン\f[JPM]ド\f[R]ウを順に前面へ出します（\f[JPM]ど\f[R]のウィン\f[JPM]ド\f[R]ウから\f[JPM]で\f[R]も使えます）。こうして起動した \fIusilic(1)\fR は、右下の「\fBusilic-1.5b\fR」の代わりに「\fBUSILIC\fR」を表示し、\fBINFO\fR の Boot options の末尾に「(親の PID)」\f[JPM]が\f[R]付きます（元の \fIusilic(1)\fR と見分けるため。この子の \fIusilic(1)\fR の操作は履歴に残らないの\f[JPM]で\f[R]、子の履歴の一覧はほ\f[JPM]ぼ\f[R]空\f[JPM]で\f[R]す）。元の \fIusilic(1)\fR \f[JPM]が\f[R]終了すると、外部起動したものはす\f[JPM]べ\f[R]て終了します（個別に q・^X^C 等\f[JPM]で\f[R]終了することも\f[JPM]で\f[R]きます。-H の \fBHELP\fR・\fBKEY\fR の子を除く）。元の \fIusilic(1)\fR の \fBUSILIC\fR と ^X^F・^X^D の履歴には、外部起動したファイル・\f[JPM]デ\f[R]ィレクトリ\f[JPM]が\f[R]「(usilic)」付き\f[JPM]で\f[R]残るの\f[JPM]で\f[R]、後\f[JPM]で\f[R]開き直せます（後述 \fBUSILIC\fR。^J^J や ^G \f[JPM]で\f[R]戻る先、\fBCP\fR・\fBMV\fR の行き先の ^W には使われません）。\fBLOCATE\fR 等の一覧\f[JPM]で\f[R]も、選択（無けれ\f[JPM]ば\f[R]ハイライト行）を同様に表示します。
 .in 0
 .sp
 .in 4n
@@ -848,84 +850,89 @@ file 引数（"usilic file"^M）または引数無しの標準入力経由（"us
 .ti 4n
 \fBEPUB\fR         ：Epub ファイル閲覧\*[usilic-tab]
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-          ^Oe：内容一覧
+.ti 0n
+\*[usilic-tab]	      ^Oe：内容一覧
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-         ^O^E：スクロールモー\f[JPM]ド\f[R]切替
+.ti 0n
+\*[usilic-tab]	      ^Os：スクロールモー\f[JPM]ド\f[R]切換
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-          ^Je：ファイル名を入力
+.ti 0n
+\*[usilic-tab]	     ^O^C：範囲指定して記録（縦書き）
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-         ^J^E：閲覧履歴一覧から選択
+.ti 0n
+\*[usilic-tab]	     ^O^E：記録の一覧
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-         ^J^F：フォント一覧から選択
+.ti 0n
+\*[usilic-tab]	      ^Je：ファイル名を入力
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-          ^[←：次の章へ（横書き\f[JPM]で\f[R]は^[↓）
+.ti 0n
+\*[usilic-tab]	     ^J^E：閲覧履歴一覧から選択
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-          ^[→：今の章の冒頭へ、冒頭にいれ\f[JPM]ば\f[R]前の章へ（横書き\f[JPM]で\f[R]は^[↑）
+.ti 0n
+\*[usilic-tab]	     ^J^F：フォント一覧から選択
+.in 0
+.in 19n
+.ti 0n
+\*[usilic-tab]	      ^[←：次の章へ（横書き\f[JPM]で\f[R]は^[↓）
+.in 0
+.in 19n
+.ti 0n
+\*[usilic-tab]	      ^[→：今の章の冒頭へ、冒頭にいれ\f[JPM]ば\f[R]前の章へ（横書き\f[JPM]で\f[R]は^[↑）
 .in 0
 .sp
 .in 10n
-GUI の場合、\fB(ls)\fR \f[JPM]で\f[R] .epub の suffix を持つファイルを ^M \f[JPM]で\f[R]選\f[JPM]ぶ\f[R]と同ファイルに同梱の CSS 設定に従い成形された文章による画面を表示します（た\f[JPM]だ\f[R]し CUI \f[JPM]で\f[R]は限られた制約内\f[JPM]で\f[R]しか表示\f[JPM]で\f[R]きません）。^Oe \f[JPM]で\f[R]は \fBARC\fR と同\f[JPM]じ\f[R]く内容一覧から項目を選択しての閲覧\f[JPM]が\f[R]可能\f[JPM]で\f[R]す（成形はされません）。\fBFILE\fR の履歴一覧には、それ\f[JPM]ぞ\f[R]れ (epub)、(unzip) \f[JPM]が\f[R]ファイル名の後ろに付加されます。^O^M \f[JPM]で\f[R]は一覧のみ\f[JPM]で\f[R]選択不能\f[JPM]で\f[R]ある点は \fBARC\fR と同\f[JPM]じ\f[R]\f[JPM]で\f[R]す\f[JPM]が\f[R]、\fIusilicrc\fR の ARCHIVE に .epub を設定しても \fBARC\fR \f[JPM]で\f[R]は開けません。^Je の\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]で\f[R]は、カレント\f[JPM]デ\f[R]ィレクトリにある .epub ファイルのみ受け付けます（^I \f[JPM]で\f[R]補完してみてく\f[JPM]だ\f[R]さい）。^J^E の一覧にも .epub 以外のファイルは表示されません。^O^E はスクロールを連続およ\f[JPM]び\f[R]章毎（画面には単一の章のみ表示）\f[JPM]で\f[R]切り換えを行い、^[←^[→（または^[↑^[↓）\f[JPM]で\f[R]は章の冒頭へ飛\f[JPM]び\f[R]ます。^J^F \f[JPM]で\f[R]は fc-list \f[JPM]で\f[R]見つかった、FONT（等幅）およ\f[JPM]び\f[R] SANS-SERIF / SERIF（日本語の入ったもの）の一覧を表示します（今のフォントは下線表示）。^M または左クリック\f[JPM]で\f[R]選\f[JPM]ぶ\f[R]とその場\f[JPM]で\f[R]切り替わり、\fIusilicrc\fR の FONT 設定に書き込みます。縦書きは右から左へ読むの\f[JPM]で\f[R]、← \f[JPM]が\f[R]先、→ \f[JPM]が\f[R]戻る向き\f[JPM]で\f[R]す（連続・章毎い\f[JPM]ず\f[R]れ\f[JPM]で\f[R]も使えます）。^[ の代わりに shift なら矢印キーとの同時押し\f[JPM]が\f[R]可能\f[JPM]で\f[R]す\f[JPM]が\f[R]、端末によっては設定\f[JPM]が\f[R]必要\f[JPM]で\f[R]す。本文中のリンクへは ^M（またはクリック）\f[JPM]で\f[R]飛\f[JPM]び\f[R]、^X^X \f[JPM]で\f[R]元の位置へ戻ります。Web のリンク（http 等）は \fIusilicrc\fR の URL 設定に従って処理し、^Ow を押すた\f[JPM]び\f[R]に下記のモー\f[JPM]ド\f[R]に切り換えて名称を mode-line に表示します（い\f[JPM]ず\f[R]れかのキー\f[JPM]で\f[R]消えます）。既定は「Open」\f[JPM]で\f[R]、処理\f[JPM]が\f[R]終わると既定に戻ります。
+\fB(ls)\fR \f[JPM]で\f[R] .epub の suffix を持つファイルを ^M \f[JPM]で\f[R]選\f[JPM]ぶ\f[R]と同ファイルに同梱の CSS 設定に従い成形された文章による画面を表示します。CUI \f[JPM]で\f[R]は限られた制約内\f[JPM]で\f[R]しか表示\f[JPM]で\f[R]きません。^Oe \f[JPM]で\f[R]は \fBARC\fR と同\f[JPM]じ\f[R]く内容一覧から項目を選択しての閲覧\f[JPM]が\f[R]可能\f[JPM]で\f[R]す（成形はされません）。\fBFILE\fR の履歴一覧には、それ\f[JPM]ぞ\f[R]れ (epub)、(unzip) \f[JPM]が\f[R]ファイル名の後ろに付加されます。^O^M \f[JPM]で\f[R]は一覧のみ\f[JPM]で\f[R]選択不能\f[JPM]で\f[R]ある点は \fBARC\fR と同\f[JPM]じ\f[R]\f[JPM]で\f[R]す。た\f[JPM]だ\f[R]し \fIusilicrc\fR の ARCHIVE に .epub を設定してあっても \fBARC\fR \f[JPM]で\f[R]は開けません。^Je の\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]で\f[R]は、カレント\f[JPM]デ\f[R]ィレクトリにある .epub ファイルのみ受け付けます（^I \f[JPM]で\f[R]補完してみてく\f[JPM]だ\f[R]さい）。た\f[JPM]だ\f[R]し「小説家になろう」の作品番号（N1234AB 等、ノクターンノ\f[JPM]ベ\f[R]ル\f[JPM]ズ\f[R]等の 18 禁の姉妹サイトの作品も）・「カクヨム」の作品 ID（数字\f[JPM]だ\f[R]け）や作品の URL（https://kakuyomu.jp/works/作品ID）を入れると narou2epub \f[JPM]で\f[R] \fBEPUB\fR にして開き（後述 \fIusilicrc\fR の URL の Epub \f[JPM]が\f[R]必要）、http(s) の URL を入れると本文中の Web リンクと同\f[JPM]じ\f[R]く ^Ow の今のモー\f[JPM]ド\f[R]\f[JPM]で\f[R]処理します。^J^E の一覧にも .epub 以外のファイルは表示されません。^Ow の今のモー\f[JPM]ド\f[R]\f[JPM]が\f[R] Epub ならサー\f[JPM]バ\f[R]ーの本棚の一覧を表示し、選ん\f[JPM]だ\f[R]本を \fI~/\fR.local/usilic-web/texts/ へ\f[JPM]ダ\f[R]ウンロー\f[JPM]ド\f[R]してから開きます（localhost \f[JPM]で\f[R]既にそこにあれ\f[JPM]ば\f[R]そのまま）。それ以外のモー\f[JPM]ド\f[R]\f[JPM]で\f[R]は\f[JPM]ブ\f[R]ラウ\f[JPM]ザ\f[R]等\f[JPM]で\f[R]開きます。^Os はスクロールを連続およ\f[JPM]び\f[R]章毎（画面には単一の章のみ表示）\f[JPM]で\f[R]切り換えを行い、^[← ^[→（または ^[↑ ^[↓）\f[JPM]で\f[R]は章の冒頭へ飛\f[JPM]び\f[R]ます。^J^F \f[JPM]で\f[R]は fc-list \f[JPM]で\f[R]見つかった、FONT（等幅）およ\f[JPM]び\f[R] SANS-SERIF / SERIF（日本語の入ったもの）の一覧を表示します（今のフォントは下線表示）。端末から起動した場合は FONT の先頭に「端末のフォント」\f[JPM]が\f[R]あり、選\f[JPM]ぶ\f[R]と \fIusilicrc\fR の FONT を空にして端末のフォントに戻します。^M または左クリック\f[JPM]で\f[R]選\f[JPM]ぶ\f[R]とその場\f[JPM]で\f[R]切り替わり、\fIusilicrc\fR の FONT 設定に書き込みます。縦書きは右から左へ読むの\f[JPM]で\f[R]、←　\f[JPM]が\f[R]先、→　\f[JPM]が\f[R]戻る向き\f[JPM]で\f[R]す（連続・章毎い\f[JPM]ず\f[R]れ\f[JPM]で\f[R]も使えます）。^[ の代わりに shift なら矢印キーとの同時押し\f[JPM]が\f[R]可能\f[JPM]で\f[R]す\f[JPM]が\f[R]、端末によっては設定\f[JPM]が\f[R]必要\f[JPM]で\f[R]す。本文中のリンクへは ^M（またはクリック）\f[JPM]で\f[R]飛\f[JPM]び\f[R]、^X^X \f[JPM]で\f[R]元の位置へ戻ります。縦書きの本文\f[JPM]で\f[R] ^O^C を押すと \fBCOPY\fR となり（mode-line に \fBCOPY\fR と表示）、マウス\f[JPM]で\f[R]\f[JPM]ド\f[R]ラッ\f[JPM]グ\f[R]した範囲\f[JPM]が\f[R]ハイライト表示され、\f[JPM]ボ\f[R]タンを離すと Record?(y/n) と尋ねます。y \f[JPM]で\f[R]その文字列と位置を \fI~/.usilic/\fRepub-marks.txt へ記録し（usilic-web の記録と同\f[JPM]じ\f[R]「本.epub:章の\f[JPM]パ\f[R]ス:位置: 文字列」の形式）、それ以外のキー\f[JPM]で\f[R]は記録せ\f[JPM]ず\f[R]に範囲を残します（^G \f[JPM]で\f[R] \fBCOPY\fR を終了）。^O^E \f[JPM]で\f[R]は今の本の記録を ^O^S と同\f[JPM]じ\f[R]一覧\f[JPM]で\f[R]表示し、^M \f[JPM]で\f[R]選ん\f[JPM]だ\f[R]記録の位置へ飛\f[JPM]び\f[R]ます。Web のリンク（http 等）は \fIusilicrc\fR の URL 設定に従って処理し、^Ow を押すた\f[JPM]び\f[R]に下記のモー\f[JPM]ド\f[R]に切り換えて名称を mode-line に表示します（い\f[JPM]ず\f[R]れかのキー\f[JPM]で\f[R]消えます）。既定は「Open」\f[JPM]で\f[R]、処理\f[JPM]が\f[R]終わると既定に戻ります。
 .br
 .sp
 .in 14n
-.in 22n
+.in 21n
 .ti 14n
 Open : 既定の\f[JPM]ブ\f[R]ラウ\f[JPM]ザ\f[R]\f[JPM]で\f[R]開く
 .in 0
 .in 14n
-.in 22n
+.in 21n
 .ti 14n
 Pdf  : \f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]全体を縦長の１\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]の PDF にして \fI~/Downloads\fR へ保存し、クイックルック\f[JPM]で\f[R]開く（要 Playwright、後述 URL 参照）
 .in 0
 .in 14n
-.in 22n
+.in 21n
 .ti 14n
 Domp : w3m -dump の出力を usilic の画面\f[JPM]で\f[R]読む（^G \f[JPM]で\f[R]本へ戻る）
 .in 0
 .in 14n
-.in 22n
+.in 21n
 .ti 14n
 Term : 端末の\f[JPM]ブ\f[R]ラウ\f[JPM]ザ\f[R]（w3m）\f[JPM]で\f[R]開く
 .in 0
 .in 14n
-.in 22n
+.in 21n
 .ti 14n
 Copy : URL をクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]へコ\f[JPM]ピ\f[R]ー
 .in 0
 .in 14n
-.in 22n
+.in 21n
 .ti 14n
 Look : クイックルック\f[JPM]で\f[R]開く（macOS のみ）
 .in 0
-.sp
+.in 14n
+.in 21n
+.ti 14n
+Epub : 「小説家になろう」・「カクヨム」の作品のリンクなら、narou2epub（後述）\f[JPM]で\f[R]読ん\f[JPM]で\f[R]いる本と同\f[JPM]じ\f[R]\f[JPM]デ\f[R]ィレクトリに \fBEPUB\fR を作って開く（\fBSHELL\fR \f[JPM]で\f[R]動くの\f[JPM]で\f[R]経過\f[JPM]が\f[R]見え、^G \f[JPM]で\f[R]戻れます）
+.in 0
 .in 19n
 .ti 0n
 モー\f[JPM]ド\f[R]           ： \fB(ls)\fR 以外\f[JPM]で\f[R]も起動可能\*[usilic-tab]
 .in 0
 .sp
 .in 4n
-\fIusilic(1)\fR は新しいモー\f[JPM]ド\f[R]を起動する前に、現在の mode-line をスタックに積ん\f[JPM]だ\f[R]うえ\f[JPM]で\f[R]表示を更新します（^G キー\f[JPM]で\f[R]は最後に積まれた表示に戻ります）。これらのスタックの内容は \fB(ls)\fR \f[JPM]で\f[R]\f[JPM]デ\f[R]ィレクトリを指定するか、または ^J2 等\f[JPM]で\f[R]\f[JPM]デ\f[R]ィレクトリを移動するとクリアされ、mode-line(6) の位置に「usilic v1.5b」のラ\f[JPM]ベ\f[R]ルを表示します。\fBLOCATE\fR、\fBDU\fR 等の一覧表示画面\f[JPM]で\f[R]\f[JPM]デ\f[R]ィレクトリを選\f[JPM]ぶ\f[R]と \fB(ls)\fR 画面になります\f[JPM]が\f[R]、そこ\f[JPM]で\f[R]さらに\f[JPM]デ\f[R]ィレクトリを選ん\f[JPM]だ\f[R]時も上記スタック\f[JPM]が\f[R]クリアされます。\fBLOCATE\fR 中の ^J^L のように、モー\f[JPM]ド\f[R]内\f[JPM]で\f[R]同\f[JPM]じ\f[R]実行キーを押した場合は、途中の履歴を捨てて（^G の戻り先は最初にモー\f[JPM]ド\f[R]を立ち上\f[JPM]げ\f[R]た場所のまま）改めてモー\f[JPM]ド\f[R]を起動します。
+\fIusilic(1)\fR は新しいモー\f[JPM]ド\f[R]を起動する前に、現在の mode-line をスタックに積ん\f[JPM]だ\f[R]うえ\f[JPM]で\f[R]表示を更新します（^G キー\f[JPM]で\f[R]は最後に積まれた表示に戻ります）。これらのスタックの内容は \fB(ls)\fR \f[JPM]で\f[R]\f[JPM]デ\f[R]ィレクトリを指定したり、^J2 等\f[JPM]で\f[R]\f[JPM]デ\f[R]ィレクトリを移動するとクリアされ、mode-line(6) の位置に「\fBusilic-1.5b\fR」のラ\f[JPM]ベ\f[R]ルを表示します。\fBLOCATE\fR、\fBDU\fR 等の一覧表示画面\f[JPM]で\f[R]\f[JPM]デ\f[R]ィレクトリを選\f[JPM]ぶ\f[R]と \fB(ls)\fR 画面になります\f[JPM]が\f[R]、そこ\f[JPM]で\f[R]さらに\f[JPM]デ\f[R]ィレクトリを選ん\f[JPM]だ\f[R]時も上記スタック\f[JPM]が\f[R]クリアされます。\fBLOCATE\fR 中の ^J^L のように、モー\f[JPM]ド\f[R]内\f[JPM]で\f[R]同\f[JPM]じ\f[R]実行キーを押した場合は、途中の履歴を捨てて（^G の戻り先は最初にモー\f[JPM]ド\f[R]を立ち上\f[JPM]げ\f[R]た場所のまま）改めてモー\f[JPM]ド\f[R]を起動します。
 .in 0
 .sp
 .in 4n
@@ -940,54 +947,60 @@ Look : クイックルック\f[JPM]で\f[R]開く（macOS のみ）
 .in 0
 .sp
 .in 10n
-\fBFILE\fR、\fBDIR\fR、\fBMAN\fR、\fBLOCATE\fR、\fBFGREP\fR、\fBEGREP\fR、\fBCUT\fR、\fBSHELL\fR の各\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]で\f[R] ^R キーを押した場合は、入力順に保存された文字列\f[JPM]で\f[R] \fBHISTORY\fR リストを表示します（最新\f[JPM]が\f[R]最下行）。カーソル行\f[JPM]で\f[R] ^M を押すかそのまま文字を入力すると、その文字列\f[JPM]が\f[R]\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トに入ります。\fBPROGRAM\fR およ\f[JPM]び\f[R] \fBSHELL\fR から入力された文字列は \fBPROGRAM\fR リストに保存され、^R \f[JPM]で\f[R]実行履歴一覧\f[JPM]が\f[R]表示されます。一覧の画面\f[JPM]で\f[R]再度 ^R を押すと、ソート後に重複を除いた一覧と、入力順の \fBHISTORY\fR リストとを切り替えます。\fBEGREP\fR と \fBCUT\fR \f[JPM]で\f[R]は、最初の ^R \f[JPM]で\f[R] \fIusilicrc\fR の \fBEGREP\fR に書かれた正規表現の実例を先頭に並\f[JPM]べ\f[R]た一覧（カーソルは最後に使った正規表現の行）表示します。履歴は \fI~/.usilic/history\fR に保存され、次回の起動後も使えます。種類\f[JPM]ご\f[R]とに残す行数は \fIusilicrc\fR の LINE \f[JPM]で\f[R]指定します（\f[JPM]デ\f[R]フォルトは無制限）。
+\fBFILE\fR、\fBDIR\fR、\fBMAN\fR、\fBLOCATE\fR、\fBFGREP\fR、\fBEGREP\fR、\fBPART\fR、\fBSHELL\fR の各\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]で\f[R] ^R キーを押した場合は、入力順に保存された文字列\f[JPM]で\f[R] \fBHISTORY\fR リストを表示します（最新\f[JPM]が\f[R]最下行）。カーソル行\f[JPM]で\f[R] ^M を押すかそのまま文字を入力すると、その文字列\f[JPM]が\f[R]\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トに入ります。\fBTOOL\fR およ\f[JPM]び\f[R] \fBSHELL\fR から入力された文字列は \fBTOOL\fR リストに保存され、^R \f[JPM]で\f[R]実行履歴一覧\f[JPM]が\f[R]表示されます。一覧の画面\f[JPM]で\f[R]再度 ^R を押すと、ソート後に重複を除いた一覧と、入力順の \fBHISTORY\fR リストとを切り換えます。\fBEGREP\fR と \fBPART\fR \f[JPM]で\f[R]は、最初の ^R \f[JPM]で\f[R] \fIusilicrc\fR の \fBEGREP\fR に書かれた正規表現の実例を先頭に並\f[JPM]べ\f[R]た一覧（カーソルは最後に使った正規表現の行）表示します。履歴は \fI~/.usilic/history\fR に保存され、次回の起動後も使えます。種類\f[JPM]ご\f[R]とに残す行数は \fIusilicrc\fR の LINE \f[JPM]で\f[R]指定します（\f[JPM]デ\f[R]フォルトは無制限）。
 .in 0
 .sp
 .in 4n
 .in 19n
 .ti 4n
-\fBFGREP\fR/\fBEGREP\fR  ：文字列検索
+F/\fBEGREP\fR      ：文字列検索
 .in 0
 .in 4n
 .in 19n
 .ti 4n
              ：文字列検索\*[usilic-tab]
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-           ^S：逐次検索
+.ti 0n
+\*[usilic-tab]	       ^S：逐次検索
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-         ^J^S：拡張正規表現\f[JPM]で\f[R]検索
+.ti 0n
+\*[usilic-tab]	     ^J^S：拡張正規表現\f[JPM]で\f[R]検索
+.in 0
+.in 19n
+.ti 0n
+\*[usilic-tab]	     ^O^S：一致した行の一覧（文字\f[JPM]ど\f[R]おり）
+.in 0
+.in 19n
+.ti 0n
+\*[usilic-tab]	   ^O^J^S：一致した行の一覧（拡張正規表現）
 .in 0
 .sp
 .in 10n
-検索\f[JPM]で\f[R]マッチした文字列はハイライト表示され、^N/^P \f[JPM]で\f[R] 次/前 のマッチ文字列へ移動します。逐次検索\f[JPM]で\f[R]は文字\f[JPM]が\f[R]入力されるた\f[JPM]び\f[R]にリテラルな（文字\f[JPM]ど\f[R]おりの）検索\f[JPM]が\f[R]行われ、^M \f[JPM]で\f[R]確定します。マッチしない時は「No String」と表示されます。\fBEGREP\fR は grep -E \f[JPM]で\f[R]検索します（macOS の BSD grep と Linux の GNU grep の両方\f[JPM]で\f[R]同\f[JPM]じ\f[R]意味になるもの\f[JPM]だ\f[R]けを挙\f[JPM]げ\f[R]ます）。主なメタ文字（特殊文字）は次のとおり\f[JPM]で\f[R]す。
+^S の逐次検索\f[JPM]で\f[R]は grep -F \f[JPM]で\f[R]検索します（\fBFGREP\fR）。文字\f[JPM]が\f[R]入力されるた\f[JPM]び\f[R]にリテラルな（文字\f[JPM]ど\f[R]おりの）検索\f[JPM]が\f[R]行われ、^M \f[JPM]で\f[R]確定します。マッチしない時は「No String」と表示されます。^J^S \f[JPM]で\f[R]は\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]で\f[R]入力した拡張正規表現の文字列を ^M \f[JPM]で\f[R]確定したのち grep -E \f[JPM]で\f[R]検索します。検索\f[JPM]で\f[R]マッチした文字列はハイライト表示され、^N/^P \f[JPM]で\f[R] 次/前 のマッチ文字列へ移動します。^O^S / ^O^J^S は、今の画面\f[JPM]で\f[R]一致した行を一覧にし、^M \f[JPM]で\f[R]選ん\f[JPM]だ\f[R]行へ飛\f[JPM]び\f[R]ます（Emacs の occur）。飛ん\f[JPM]だ\f[R]先\f[JPM]で\f[R]は ^S と同\f[JPM]じ\f[R]く一致した文字列\f[JPM]が\f[R]強調され、; / : \f[JPM]で\f[R]前/次の項目へ移ります。縦書き \fBEPUB\fR の本文から\f[JPM]で\f[R]は、一覧も縦書きになります。^G \f[JPM]で\f[R]一覧、元の画面の順に戻ります。拡張正規表現については、macOS の BSD grep と Linux の GNU grep の両方\f[JPM]で\f[R]同\f[JPM]じ\f[R]意味になる主なメタ文字（特殊文字）の実例を、^J^S \f[JPM]で\f[R]表示される一覧に登録しました。内容は次のとおり\f[JPM]で\f[R]す。
 .br
 .sp
 .in 10n
 位置・境界
 .in 0
 .in 14n
-.in 20n
+.in 19n
 .ti 14n
  ^ : 行の先頭（例: ^A は行頭のAにマッチ）
 .in 0
 .in 14n
-.in 20n
+.in 19n
 .ti 14n
  $ : 行の末尾（例: Z$ は行末のZにマッチ）
 .in 0
 .in 14n
-.in 20n
+.in 19n
 .ti 14n
 \eb : 単語の境界（例: \ebcat\eb は「cat」単独にマッチし、「concatenate」にはマッチしない）
 .in 0
 .in 14n
-.in 20n
+.in 19n
 .ti 14n
 \eB : 単語の境界以外
 .in 0
@@ -996,52 +1009,52 @@ Look : クイックルック\f[JPM]で\f[R]開く（macOS のみ）
 任意の文字・文字の集合（文字クラス）
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
     . : 改行を除く任意の1文字
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
   [ ] : 括弧内のい\f[JPM]ず\f[R]れか1文字（例: [abc] は a, b, c の\f[JPM]ど\f[R]れか1文字）
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
  [^ ] : 括弧内の文字以外の1文字（例: [^0-9] は数字以外の1文字）
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
 [a-z] : 範囲指定（例: [a-z] は小文字アルファ\f[JPM]ベ\f[R]ット、[0-9] は数字）
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
    \ed : 任意の数字（[0-9] と同\f[JPM]じ\f[R]）
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
    \eD : 数字以外の任意の文字（[^0-9] と同\f[JPM]じ\f[R]）
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
    \ew : 英数字とアン\f[JPM]ダ\f[R]ースコア（[a-zA-Z0-9_] とほ\f[JPM]ぼ\f[R]同\f[JPM]じ\f[R]）
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
    \eW : 英数字とアン\f[JPM]ダ\f[R]ースコア以外
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
    \es : 任意の空白文字（ス\f[JPM]ペ\f[R]ース、タ\f[JPM]ブ\f[R]、改行な\f[JPM]ど\f[R]）
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
    \eS : 空白文字以外の任意の文字
 .in 0
@@ -1050,32 +1063,32 @@ Look : クイックルック\f[JPM]で\f[R]開く（macOS のみ）
 繰り返しの回数を表す（量指定子）
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
     * : 0回以上の繰り返し（なくても良いし、いくつあっても良い）
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
     + : 1回以上の繰り返し（最低1回は必要）
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
     ? : 0回または1回\f[JPM]だ\f[R]け存在（あってもなくても良い）
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
   {n} : ちょう\f[JPM]ど\f[R]n回の繰り返し（例: \ed{4}）は数字4桁
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
  {n,} : n回以上の繰り返し
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
 {n,m} : n回以上、m回以下の繰り返し
 .in 0
@@ -1084,12 +1097,12 @@ Look : クイックルック\f[JPM]で\f[R]開く（macOS のみ）
 \f[JPM]グ\f[R]ルー\f[JPM]プ\f[R]化と条件分岐（OR）
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
     | : OR（または）（例: cat|dog は「cat」または「dog」）
 .in 0
 .in 14n
-.in 23n
+.in 22n
 .ti 14n
   ( ) : \f[JPM]グ\f[R]ルー\f[JPM]プ\f[R]化。文字列を1つの単位としてまとめ、後から再利用（キャ\f[JPM]プ\f[R]チャ）\f[JPM]で\f[R]きるようにする
 .in 0
@@ -1098,17 +1111,17 @@ Look : クイックルック\f[JPM]で\f[R]開く（macOS のみ）
 エスケー\f[JPM]プ\f[R]処理（\e）について
 .in 0
 .in 14n
-.in 20n
+.in 19n
 .ti 14n
 \e. : \f[JPM]ド\f[R]ット文字そのものを検索
 .in 0
 .in 14n
-.in 20n
+.in 19n
 .ti 14n
 \e? : 質問マークそのものを探したい
 .in 0
 .in 14n
-.in 20n
+.in 19n
 .ti 14n
 \e( : 丸括弧そのものを検索
 .in 0
@@ -1124,22 +1137,22 @@ grep -E には、最短一致 (*? +?)、非キャ\f[JPM]プ\f[R]チャ\f[JPM]グ
 基本正規表現（素の grep）\f[JPM]で\f[R]は、一部のメタ文字を \e（\f[JPM]バ\f[R]ックスラッシュ）付き\f[JPM]で\f[R]書く必要\f[JPM]が\f[R]あります。\fIusilic(1)\fR の検索\f[JPM]で\f[R]は使いません\f[JPM]が\f[R]、他のツール\f[JPM]で\f[R]出会った時のために挙\f[JPM]げ\f[R]ておきます。
 .in 0
 .in 18n
-.in 31n
+.in 30n
 .ti 18n
        ¥+ : 1回以上の繰り返し
 .in 0
 .in 18n
-.in 31n
+.in 30n
 .ti 18n
        ¥? : 存在するかしないか
 .in 0
 .in 18n
-.in 31n
+.in 30n
 .ti 18n
 ¥( ... ¥) : 複数の文字を一つにまとめる
 .in 0
 .in 18n
-.in 31n
+.in 30n
 .ti 18n
   ¥{n,m¥} : n回からm回の繰り返し
 .in 0
@@ -1147,21 +1160,21 @@ grep -E には、最短一致 (*? +?)、非キャ\f[JPM]プ\f[R]チャ\f[JPM]グ
 .in 4n
 .in 19n
 .ti 4n
-\fBCUT\fR          ：\f[JPM]バ\f[R]ッファ/ファイル分割\*[usilic-tab]
+\fBPART\fR         ：\f[JPM]バ\f[R]ッファ分割\*[usilic-tab]
 .in 0
 .in 4n
 .in 19n
 .ti 4n
-          ^Cb：指定文字列\f[JPM]で\f[R]\f[JPM]バ\f[R]ッファを分割
+          ^Jp：指定文字列\f[JPM]で\f[R]\f[JPM]バ\f[R]ッファを分割
 .in 0
 .in 4n
 .in 19n
 .ti 4n
-          ^Cf：指定文字列\f[JPM]で\f[R]ファイルを分割
+         ^J^P：分割した履歴の一覧から選択
 .in 0
 .sp
 .in 8n
-検索文字列を入力すると、表示中の\f[JPM]バ\f[R]ッファに対して拡張正規表現（\fBEGREP\fR と同\f[JPM]じ\f[R] grep -E）による検索を行い、マッチした文字列を含む行\f[JPM]で\f[R]\f[JPM]バ\f[R]ッファ内容を分割したうえ\f[JPM]で\f[R]、当該行の目次一覧を作成します。目次一覧の mode-line には「(egrep)」\f[JPM]が\f[R]表示され、^M \f[JPM]で\f[R]選ん\f[JPM]だ\f[R]部分を表示している時の mode-line には「\fBCUT\fR: 検索文字列」\f[JPM]が\f[R]表示されます。^Cf \f[JPM]で\f[R]はファイル名を入力し、そのファイル自身を分割します。後述 \fBFILE\fR のアクセス履歴一覧\f[JPM]で\f[R]は「ファイル名 "文字列"」\f[JPM]で\f[R]表示され、そこから選\f[JPM]ぶ\f[R]と同\f[JPM]じ\f[R]分割をやり直します。\fBHELP\fR 自身もこの仕組み\f[JPM]で\f[R]行末のタ\f[JPM]ブ\f[R]コー\f[JPM]ド\f[R]\f[JPM]で\f[R]分割して表示しています。目次一覧の画面\f[JPM]で\f[R]も ^S / ^J^S \f[JPM]で\f[R]見出しを検索\f[JPM]で\f[R]きます。
+検索文字列を入力すると、表示中の\f[JPM]バ\f[R]ッファに対して拡張正規表現（\fBEGREP\fR と同\f[JPM]じ\f[R] grep -E）による検索を行い、マッチした文字列を含む行\f[JPM]で\f[R]\f[JPM]バ\f[R]ッファ内容を分割したうえ\f[JPM]で\f[R]、当該行の目次一覧を作成します。目次一覧の mode-line には「(egrep)」\f[JPM]が\f[R]表示され、^M \f[JPM]で\f[R]選ん\f[JPM]だ\f[R]部分を表示している時の mode-line には「\fBPART\fR: 検索文字列」\f[JPM]が\f[R]表示されます。\fBFILE\fR \f[JPM]で\f[R]表示中のファイルを分割した場合、戻り先はそのファイルとなり、\fBFILE\fR のアクセス履歴にはファイル名と「ファイル名 "文字列"」の両方\f[JPM]が\f[R]載ります。後者を選\f[JPM]ぶ\f[R]と同\f[JPM]じ\f[R]分割をやり直して目次一覧の最上行（前回見ていた位置\f[JPM]が\f[R]あれ\f[JPM]ば\f[R]そこ）を表示し、^G \f[JPM]で\f[R]目次一覧、ファイル、\fB(ls)\fR の順に戻ります。^J^P \f[JPM]で\f[R]は、\fBFILE\fR の履歴のうち「ファイル名 "文字列"」\f[JPM]だ\f[R]けの一覧\f[JPM]が\f[R]表示されます。\fBHELP\fR 自身もこの仕組み\f[JPM]で\f[R]行末のタ\f[JPM]ブ\f[R]コー\f[JPM]ド\f[R]\f[JPM]で\f[R]分割して表示しています。目次一覧の画面\f[JPM]で\f[R]も ^S / ^J^S \f[JPM]で\f[R]見出しを検索\f[JPM]で\f[R]きます。
 .in 0
 .sp
 .in 4n
@@ -1221,7 +1234,7 @@ mode-line の\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]で\f[R]、例え\f[J
 .in 0
 .sp
 .in 8n
-入力文字列\f[JPM]が\f[R]既存の\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]にマッチした場合、\fIman(1)\fRにより当該マニュアルを表示します。^J^M \f[JPM]で\f[R]は履歴一覧から選択するか、または新たに入力された文字列に該当するマニュアル\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]を表示します。入力文字列\f[JPM]が\f[R]既存の\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]にマッチした場合、\fIman(1)\fR により当該マニュアルを表示します。^J^M \f[JPM]で\f[R]は履歴一覧から選択するか、または新たに入力された文字列に該当するマニュアル\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]を表示します。
+入力文字列\f[JPM]が\f[R]既存の\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]にマッチした場合、\fIman(1)\fRにより当該マニュアルを表示します。^J^M \f[JPM]で\f[R]は履歴一覧から選択するか、または新たに入力された文字列に該当するマニュアル\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]を表示します。
 .in 0
 .sp
 .in 4n
@@ -1241,7 +1254,7 @@ mode-line の\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]で\f[R]、例え\f[J
 .in 0
 .sp
 .in 8n
-mode-line 行\f[JPM]で\f[R]入力、または今ま\f[JPM]で\f[R]にアクセスしたリストから選択したファイルを表示します。\fBFILE\fR のファイルリスト\f[JPM]で\f[R]は、使用した\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム\f[JPM]が\f[R]あれ\f[JPM]ば\f[R]、file 名に「(\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム名)」を付加して、また \fBCUT\fR \f[JPM]で\f[R]使用された文字列は\f[JPM]ダ\f[R]\f[JPM]ブ\f[R]ルクォート（"）\f[JPM]で\f[R]括って表示します。た\f[JPM]だ\f[R]し File-selector \f[JPM]で\f[R] ^O^M または ^[^M \f[JPM]で\f[R]選択したファイルは ^J^J キーや \fBFILE\fR リスト\f[JPM]で\f[R]は表示されません。
+mode-line 行\f[JPM]で\f[R]入力、または今ま\f[JPM]で\f[R]にアクセスしたリストから選択したファイルを表示します。\fBFILE\fR のファイルリスト\f[JPM]で\f[R]は、使用した\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム\f[JPM]が\f[R]あれ\f[JPM]ば\f[R]、file 名に「(\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム名)」を付加して、また \fBPART\fR \f[JPM]で\f[R]使用された文字列は\f[JPM]ダ\f[R]\f[JPM]ブ\f[R]ルクォート（"）\f[JPM]で\f[R]括って表示します。た\f[JPM]だ\f[R]し \fB(ls)\fR \f[JPM]で\f[R] ^O^M または ^[^M \f[JPM]で\f[R]選択したファイルは ^J^J キーや \fBFILE\fR リスト\f[JPM]で\f[R]は表示されません。
 .in 0
 .sp
 .in 4n
@@ -1269,29 +1282,25 @@ mode-line 行\f[JPM]で\f[R]入力、または今ま\f[JPM]で\f[R]にアクセ�
 .ti 4n
 \fBUSILIC\fR       ：アクセス履歴の一覧\*[usilic-tab]
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-          ^[u：目次
+.ti 0n
+\*[usilic-tab]	      ^[u：目次
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-         ^J^U：種類\f[JPM]ご\f[R]との一覧
+.ti 0n
+\*[usilic-tab]	     ^J^U：種類\f[JPM]ご\f[R]との一覧
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-          ^Ju：時系列の一覧
+.ti 0n
+\*[usilic-tab]	      ^Ju：時系列の一覧
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-         ^X^W：\f[JPM]バ\f[R]ッファを作業ファイル（WORK）へ保存
+.ti 0n
+\*[usilic-tab]	     ^X^W：\f[JPM]バ\f[R]ッファを作業ファイル（WORK）へ保存
 .in 0
 .sp
 .in 8n
-今ま\f[JPM]で\f[R]にアクセスした file、\f[JPM]デ\f[R]ィレクトリ、マニュアル\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]の履歴を一覧表示します。^[u の目次には \fBMAN\fR、\fBDIR\fR、\fBFILE\fR、\fBPROGRAM\fR、WORK、\fBUSILIC\fR の見出し\f[JPM]が\f[R]並\f[JPM]び\f[R]、^M \f[JPM]で\f[R]それ\f[JPM]ぞ\f[R]れの一覧を開きます。\fBPROGRAM\fR の項目\f[JPM]で\f[R] ^M を押すと、その文字列\f[JPM]が\f[R] \fBPROGRAM\fR の\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トに入ります。WORK は ^X^W \f[JPM]で\f[R]保存した作業ファイルの一覧\f[JPM]で\f[R]す。\fBUSILIC\fR は ^Ou（または ^Jp の usilic）\f[JPM]で\f[R]外部起動したファイル・\f[JPM]デ\f[R]ィレクトリの一覧\f[JPM]で\f[R]、項目名の後ろに「(usilic)」\f[JPM]が\f[R]付きます（\fBFILE\fR、\fBDIR\fR の一覧や時系列の一覧にも同\f[JPM]じ\f[R]く付いて並\f[JPM]び\f[R]ます）。「(usilic)」付きの項目\f[JPM]で\f[R] ^M を押すと（^X^F・^X^D の一覧\f[JPM]で\f[R]も同\f[JPM]じ\f[R]）、ファイルは外部\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャー、\f[JPM]デ\f[R]ィレクトリは外部の \fB(ls)\fR として開き直します（複数選ん\f[JPM]で\f[R] ^Ou \f[JPM]で\f[R]まとめて開くことも\f[JPM]で\f[R]きます）。^J^U は種類を問わ\f[JPM]ず\f[R]ソートした一覧、^Ju はアクセスした順（最新\f[JPM]が\f[R]最下行）の一覧\f[JPM]で\f[R]す。一覧\f[JPM]で\f[R]は \fB(ls)\fR と同\f[JPM]じ\f[R]くファイル操作（.[]、^Ou、^Oc 等）\f[JPM]が\f[R]使えます。
+今ま\f[JPM]で\f[R]にアクセスした file、\f[JPM]デ\f[R]ィレクトリ、マニュアル\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]の履歴を一覧表示します。^[u の目次には \fBMAN\fR、\fBDIR\fR、\fBFILE\fR、\fBTOOL\fR、WORK、\fBUSILIC\fR の見出し\f[JPM]が\f[R]並\f[JPM]び\f[R]、^M \f[JPM]で\f[R]それ\f[JPM]ぞ\f[R]れの一覧を開きます。\fBTOOL\fR の項目\f[JPM]で\f[R] ^M を押すと、その文字列\f[JPM]が\f[R] \fBTOOL\fR の\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トに入ります。WORK は ^X^W \f[JPM]で\f[R]保存した作業ファイルの一覧\f[JPM]で\f[R]す。\fBUSILIC\fR は ^Ou（または ^Jp の usilic）\f[JPM]で\f[R]外部起動したファイル・\f[JPM]デ\f[R]ィレクトリの一覧\f[JPM]で\f[R]、項目名の後ろに「(usilic)」\f[JPM]が\f[R]付きます（\fBFILE\fR、\fBDIR\fR の一覧や時系列の一覧にも同\f[JPM]じ\f[R]く付いて並\f[JPM]び\f[R]ます）。「(usilic)」付きの項目\f[JPM]で\f[R] ^M を押すと（^X^F・^X^D の一覧\f[JPM]で\f[R]も同\f[JPM]じ\f[R]）、ファイルは外部\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャー、\f[JPM]デ\f[R]ィレクトリは外部の \fB(ls)\fR として開き直します（複数選ん\f[JPM]で\f[R] ^Ou \f[JPM]で\f[R]まとめて開くことも\f[JPM]で\f[R]きます）。^J^U は種類を問わ\f[JPM]ず\f[R]ソートした一覧、^Ju はアクセスした順（最新\f[JPM]が\f[R]最下行）の一覧\f[JPM]で\f[R]す。一覧\f[JPM]で\f[R]は \fB(ls)\fR と同\f[JPM]じ\f[R]くファイル操作（.[]、^Ou、^Oc 等）\f[JPM]が\f[R]使えます。
 .in 0
 .sp
 .in 4n
@@ -1299,65 +1308,56 @@ mode-line 行\f[JPM]で\f[R]入力、または今ま\f[JPM]で\f[R]にアクセ�
 .ti 4n
 \fBMACRO\fR        ：キー\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]マクロ設定\*[usilic-tab]
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-          ^X(：キー\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]マクロの記録開始
+.ti 0n
+\*[usilic-tab]	      ^X(：キー\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]マクロの記録開始
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-          ^X)：キー\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]マクロの記録終了
+.ti 0n
+\*[usilic-tab]	      ^X)：キー\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]マクロの記録終了
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-          ^Xe：記録したマクロを実行
+.ti 0n
+\*[usilic-tab]	      ^Xe：記録したマクロを実行
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-          ^Xs：記録したマクロを保存
+.ti 0n
+\*[usilic-tab]	      ^Xs：記録したマクロを保存
 .in 0
 .sp
 .in 8n
 ^X( から ^X）ま\f[JPM]で\f[R]に押したキーを記録し（その間 mode-line のモー\f[JPM]ド\f[R]名は \fBMACRO\fR）、^Xe \f[JPM]で\f[R]繰り返します。実行の間隔は \fIusilicrc\fR の WAIT \f[JPM]で\f[R]指定\f[JPM]で\f[R]きます。^Xe の直後の ^Xs \f[JPM]で\f[R]は、記録したキーを \fIusilicrc\fR の \fBMACRO\fR の「--」の行へ保存し、\fBMACRO\fR の設定一覧を表示して実行キー（１文字）を尋ねます。キーを押すと「M-N キー K-n ...」として設定し、次の行に「--」を入れます（有効になるのは次回の起動から）。^Xe の直後\f[JPM]で\f[R]なけれ\f[JPM]ば\f[R]既存設定の編集モー\f[JPM]ド\f[R]となります。; : [ ] l e h は設定済み\f[JPM]で\f[R]内容は以下の通り\f[JPM]で\f[R]す。
 .in 0
 .sp
-.in 4n
 .in 19n
-.ti 4n
-            ;：^G^P^M  前の項目を開く
+.ti 0n
+\*[usilic-tab]	        ;：^G^P^M  前の項目を開く
+.in 0
+.in 19n
+.ti 0n
+\*[usilic-tab]	        :：^G^N^M  次の項目を開く
 .in 0
 .in 4n
 .in 19n
 .ti 4n
-            :：^G^N^M  次の項目を開く
+              [：.^P     選択して上へ
 .in 0
 .in 4n
 .in 19n
 .ti 4n
-            [：.^P     選択して上へ
+              ]：.^N     選択して下へ
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-            ]：.^N     選択して下へ
+.ti 0n
+\*[usilic-tab]	        l：^[l     \fBSHELL\fRのロ\f[JPM]グ\f[R]
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-            l：^[l     \fBSHELL\fRのロ\f[JPM]グ\f[R]
+.ti 0n
+\*[usilic-tab]	        e：^[e     \fBEDIT\fR
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-            e：^[e     \fBEDIT\fR
-.in 0
-.in 4n
-.in 19n
-.ti 4n
-            h：^Oh     平文の\fBHELP\fR（\fBKEY\fR\f[JPM]で\f[R]は現在行へ）
+.ti 0n
+\*[usilic-tab]	        h：^Oh     平文の\fBHELP\fR（\fBKEY\fR\f[JPM]で\f[R]は現在行へ）
 .in 0
 .sp
 .in 4n
@@ -1365,39 +1365,33 @@ mode-line 行\f[JPM]で\f[R]入力、または今ま\f[JPM]で\f[R]にアクセ�
 .ti 4n
 \fBCOPY\fR         ：文字列コ\f[JPM]ピ\f[R]ー\*[usilic-tab]
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-         ^O^C：モー\f[JPM]ド\f[R]を開始
+.ti 0n
+\*[usilic-tab]	     ^O^C：モー\f[JPM]ド\f[R]を開始
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-        ^@/^␣：範囲指定開始/終了ト\f[JPM]グ\f[R]ル
+.ti 0n
+\*[usilic-tab]	    ^@/^␣：範囲指定開始/終了ト\f[JPM]グ\f[R]ル
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-          ^X␣：矩形範囲指定開始/終了ト\f[JPM]グ\f[R]ル
+.ti 0n
+\*[usilic-tab]	      ^X␣：矩形範囲指定開始/終了ト\f[JPM]グ\f[R]ル
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-          ^[w：指定範囲をクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]へコ\f[JPM]ピ\f[R]ー
+.ti 0n
+\*[usilic-tab]	      ^[w：指定範囲をクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]へコ\f[JPM]ピ\f[R]ー
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-          ^[p：指定範囲をコ\f[JPM]ピ\f[R]ーして \fBPROGRAM\fR の\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トへ入れる
+.ti 0n
+\*[usilic-tab]	      ^[t：指定範囲をコ\f[JPM]ピ\f[R]ーして \fBTOOL\fR の\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トへ入れる
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-         ^O^Y：\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トの入力中にクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]の内容を挿入
+.ti 0n
+\*[usilic-tab]	      O^Y：\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トの入力中にクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]の内容を挿入
 .in 0
 .sp
 .in 8n
-mode-line 以外の画面の文字列をクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]へコ\f[JPM]ピ\f[R]ーします。^O^C の後、^N/^P/^F/^B/^A/^E（または矢印キー）\f[JPM]で\f[R]カーソルを移動し、^@ \f[JPM]で\f[R]範囲指定を開始した後は、カーソル移動後のハイライト表示\f[JPM]が\f[R]コ\f[JPM]ピ\f[R]ー対象エリアとなります。一旦 ^@ \f[JPM]で\f[R]範囲指定を解除したあとも、再度 ^@ により複数のエリア\f[JPM]が\f[R]作成され、同様の切り替えは ^X␣（矩形範囲指定）\f[JPM]で\f[R]も機能します。^[N（N は数字）\f[JPM]で\f[R] N 行目へ移動し、^G \f[JPM]で\f[R] \fBCOPY\fR を中止します。^[p も同\f[JPM]じ\f[R]く全エリアをクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]へコ\f[JPM]ピ\f[R]ーします\f[JPM]が\f[R]、そのまま \fBCOPY\fR を終了して \fBPROGRAM\fR の\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト（^Jp）を開き、コ\f[JPM]ピ\f[R]ーした内容を\f[JPM]ペ\f[R]ーストしたうえ\f[JPM]で\f[R]\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム名の入力待ちとなります。画面上のファイル名や URL 等を\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムへ渡せる形へ編集し直せ\f[JPM]ば\f[R]そのまま ^M \f[JPM]で\f[R]実行\f[JPM]で\f[R]きます。矩形\f[JPM]で\f[R]はないエリア\f[JPM]が\f[R]複数ある場合は、改行（ハイライト表示のJ）の代わりに半角ス\f[JPM]ペ\f[R]ースを挟ん\f[JPM]で\f[R]つな\f[JPM]げ\f[R]ます。作成された全エリアは ^[w \f[JPM]で\f[R]クリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]へコ\f[JPM]ピ\f[R]ーされ、^O^Y \f[JPM]で\f[R]\f[JPM]ペ\f[R]ースト可能\f[JPM]で\f[R]す。なお、macOS \f[JPM]で\f[R]はシステムのクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]にもコ\f[JPM]ピ\f[R]ーされるの\f[JPM]で\f[R]、他のア\f[JPM]プ\f[R]リへも\f[JPM]ペ\f[R]ースト\f[JPM]で\f[R]きます\f[JPM]が\f[R]、「ユニ\f[JPM]バ\f[R]ーサルクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]」\f[JPM]が\f[R]有効な場合は、同\f[JPM]じ\f[R] Apple アカウントの他の機器へも反映されてしまいます。予期せぬ文字列\f[JPM]が\f[R]\f[JPM]ペ\f[R]ーストされる事態を回避したけれ\f[JPM]ば\f[R]、「システム設定」⇒「一般」⇒「AirDropとHandoff」\f[JPM]で\f[R]「Handoff」を無効にしてく\f[JPM]だ\f[R]さい。
+mode-line 以外の画面の文字列をクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]へコ\f[JPM]ピ\f[R]ーします。^O^C の後、^N/^P/^F/^B/^A/^E（または矢印キー）\f[JPM]で\f[R]カーソルを移動し、^@ \f[JPM]で\f[R]範囲指定を開始した後は、カーソル移動後のハイライト表示\f[JPM]が\f[R]コ\f[JPM]ピ\f[R]ー対象エリアとなります。一旦 ^@ \f[JPM]で\f[R]範囲指定を解除したあとも、再度 ^@ により複数のエリア\f[JPM]が\f[R]作成され、同様の切り換えは ^X␣（矩形範囲指定）\f[JPM]で\f[R]も機能します。^[N（N は数字）\f[JPM]で\f[R] N 行目へ移動し、^G \f[JPM]で\f[R] \fBCOPY\fR を中止します。^[t も同\f[JPM]じ\f[R]く全エリアをクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]へコ\f[JPM]ピ\f[R]ーします\f[JPM]が\f[R]、そのまま \fBCOPY\fR を終了して \fBTOOL\fR の\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト（^Jt）を開き、コ\f[JPM]ピ\f[R]ーした内容を\f[JPM]ペ\f[R]ーストしたうえ\f[JPM]で\f[R]\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム名の入力待ちとなります。画面上のファイル名や URL 等を\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムへ渡せる形へ編集し直せ\f[JPM]ば\f[R]そのまま ^M \f[JPM]で\f[R]実行\f[JPM]で\f[R]きます。矩形\f[JPM]で\f[R]はないエリア\f[JPM]が\f[R]複数ある場合は、改行（ハイライト表示のJ）の代わりに半角ス\f[JPM]ペ\f[R]ースを挟ん\f[JPM]で\f[R]つな\f[JPM]げ\f[R]ます。作成された全エリアは ^[w \f[JPM]で\f[R]クリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]へコ\f[JPM]ピ\f[R]ーされ、^O^Y \f[JPM]で\f[R]\f[JPM]ペ\f[R]ースト可能\f[JPM]で\f[R]す。なお、macOS \f[JPM]で\f[R]はシステムのクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]にもコ\f[JPM]ピ\f[R]ーされるの\f[JPM]で\f[R]、他のア\f[JPM]プ\f[R]リへも\f[JPM]ペ\f[R]ースト\f[JPM]で\f[R]きます\f[JPM]が\f[R]、「ユニ\f[JPM]バ\f[R]ーサルクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]」\f[JPM]が\f[R]有効な場合は、同\f[JPM]じ\f[R] Apple アカウントの他の機器へも反映されてしまいます。予期せぬ文字列\f[JPM]が\f[R]\f[JPM]ペ\f[R]ーストされる事態を回避したけれ\f[JPM]ば\f[R]、「システム設定」⇒　「一般」⇒　「AirDropとHandoff」\f[JPM]で\f[R]「Handoff」を無効にしてく\f[JPM]だ\f[R]さい。
 .in 0
 .sp
 .in 4n
@@ -1405,10 +1399,9 @@ mode-line 以外の画面の文字列をクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]�
 .ti 4n
 \fBEDIT\fR         ：ファイル編集\*[usilic-tab]
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-          ^[e：環境変数 $EDITOR \f[JPM]で\f[R]編集
+.ti 0n
+\*[usilic-tab]	      ^[e：環境変数 $EDITOR \f[JPM]で\f[R]編集
 .in 0
 .sp
 .in 8n
@@ -1472,21 +1465,21 @@ mode-line 以外の画面の文字列をクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]�
 .in 0
 .sp
 .in 8n
-^J. \f[JPM]で\f[R] \fBSHELL\fR \f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トのカレント\f[JPM]デ\f[R]ィレクトリを \fB(ls)\fR の位置に設定します（^J, \f[JPM]で\f[R]は "ls -l" を実行）。^J^W \f[JPM]で\f[R]は\f[JPM]バ\f[R]ッファの内容を \fI~/.usilic/data/\fR（または WORK）に保存し、"cat ファイル名" を\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トに挿入します。\fBSHELL\fR の中からは ^O/ \f[JPM]で\f[R]出力の検索、^O^F/^O^B \f[JPM]で\f[R]\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]送り/戻し、^O^L \f[JPM]で\f[R]再表示、^J^I \f[JPM]で\f[R] \fBINFO\fR を使えます。^G \f[JPM]で\f[R]元のモー\f[JPM]ド\f[R]へ戻ります。異常動作およ\f[JPM]び\f[R]\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム実行中により\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]が\f[R]戻っていない場合、\fBCP\fR や \fBPROGRAM\fR 等 \fBSHELL\fR \f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トを使用する機能およ\f[JPM]び\f[R] \fBEXIT\fR を実行しようとすると、\fBSHELL\fR 画面に切り替わります。\fBSHELL\fR \f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]で\f[R]\f[JPM]パ\f[R]イ\f[JPM]プ\f[R]（"ls | usilic"^M）または file 引数（"usilic file"^M）\f[JPM]で\f[R] \fIusilic(1)\fR を起動した場合は、それ\f[JPM]ぞ\f[R]れファイル名「(stdin)」、「file」\f[JPM]で\f[R]内容を今の \fIusilic(1)\fR に表示し、directory 引数（"usilic directory"^M）\f[JPM]で\f[R]はその\f[JPM]デ\f[R]ィレクトリの \fB(ls)\fR になります。また "man bash"^M 等の出力は、一時的な PAGER 環境変数により \fIusilic(1)\fR への\f[JPM]パ\f[R]イ\f[JPM]プ\f[R]入力へ切り替わるため「(stdin)」\f[JPM]で\f[R]表示されます。この機能\f[JPM]で\f[R]は、モー\f[JPM]ド\f[R]切り替え\f[JPM]で\f[R]使用する \fIsocket(2)\fR の認証に shell の\f[JPM]プ\f[R]ロセス ID を使用しているの\f[JPM]で\f[R]、\fBSHELL\fR \f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]で\f[R] \fIsu(1)\fR 等を実行した場合、その\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トからはモー\f[JPM]ド\f[R]\f[JPM]が\f[R]切り替わりません(補足の章の \fIsocket(2)\fR 参照)。\fIusilic(1)\fR の \fBSHELL\fR は \fBCP\fR/\fBMV\fR/\fBRM\fR 等のファイル操作を行うために用意した仮想端末なの\f[JPM]で\f[R]最小限の機能しかなく、エ\f[JPM]デ\f[R]ィタや\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャ等、端末設定を操作する\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムは正常に動作しません。た\f[JPM]だ\f[R]し\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム名\f[JPM]が\f[R] program リストに載っている場合は、\fBPROGRAM\fR に画面を切り替えて実行されます。そう\f[JPM]で\f[R]ない\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムを意図せ\f[JPM]ず\f[R]起動してしまった時は、キー入力\f[JPM]で\f[R]終了可能なら終了を、それ以外のケース\f[JPM]で\f[R]は ^Js により \fBSHELL\fR を再起動してく\f[JPM]だ\f[R]さい。対応している shell は bash、zsh、tcsh、csh \f[JPM]で\f[R]す（\fIusilicrc\fR の \fBSHELL\fR 参照)。
+^J. \f[JPM]で\f[R] \fBSHELL\fR \f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トのカレント\f[JPM]デ\f[R]ィレクトリを \fB(ls)\fR の位置に設定します（^J, \f[JPM]で\f[R]は "ls -l" を実行）。^J^W \f[JPM]で\f[R]は\f[JPM]バ\f[R]ッファの内容を \fI~/.usilic/data/\fR（または WORK）に保存し、"cat ファイル名" を\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トに挿入します。\fBSHELL\fR の中からは ^O/ \f[JPM]で\f[R]出力の検索、^O^F/^O^B \f[JPM]で\f[R]\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]送り/戻し、^O^L \f[JPM]で\f[R]再表示、^J^I \f[JPM]で\f[R] \fBINFO\fR を使えます。^G \f[JPM]で\f[R]元のモー\f[JPM]ド\f[R]へ戻ります。異常動作およ\f[JPM]び\f[R]\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム実行中により\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]が\f[R]戻っていない場合、\fBCP\fR や \fBTOOL\fR 等 \fBSHELL\fR \f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トを使用する機能およ\f[JPM]び\f[R] \fBEXIT\fR を実行しようとすると、\fBSHELL\fR 画面に切り替わります。\fBSHELL\fR \f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]で\f[R]\f[JPM]パ\f[R]イ\f[JPM]プ\f[R]（"ls | usilic"^M）または file 引数（"usilic file"^M）\f[JPM]で\f[R] \fIusilic(1)\fR を起動した場合は、それ\f[JPM]ぞ\f[R]れファイル名「(stdin)」、「file」\f[JPM]で\f[R]内容を今の \fIusilic(1)\fR に表示し、directory 引数（"usilic directory"^M）\f[JPM]で\f[R]はdirectory の \fB(ls)\fR になります。また "man bash"^M 等の出力は、一時的な PAGER 環境変数により \fIusilic(1)\fR への\f[JPM]パ\f[R]イ\f[JPM]プ\f[R]入力へ切り替わるため「(stdin)」\f[JPM]で\f[R]表示されます。この機能\f[JPM]で\f[R]は、モー\f[JPM]ド\f[R]切り換え\f[JPM]で\f[R]使用する \fIsocket(2)\fR の認証に shell の\f[JPM]プ\f[R]ロセス ID を使用しているの\f[JPM]で\f[R]、\fBSHELL\fR \f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]で\f[R] \fIsu(1)\fR 等を実行した場合、その\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トからはモー\f[JPM]ド\f[R]\f[JPM]が\f[R]切り替わりません（補足の章の \fIsocket(2)\fR 参照）。\fIusilic(1)\fR の \fBSHELL\fR は \fBCP\fR/\fBMV\fR/\fBRM\fR 等のファイル操作を行うために用意した仮想端末なの\f[JPM]で\f[R]最小限の機能しかなく、エ\f[JPM]デ\f[R]ィタや\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャ等、端末設定を操作する\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムは正常に動作しません。た\f[JPM]だ\f[R]し\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム名\f[JPM]が\f[R] \fIusilicrc\fR の PROGRAM リストに載っている場合は、\fBTOOL\fR に画面を切り換えて実行されます。そう\f[JPM]で\f[R]ない\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムを意図せ\f[JPM]ず\f[R]起動してしまった時は、キー入力\f[JPM]で\f[R]終了可能なら終了を、それ以外のケース\f[JPM]で\f[R]は ^Js により \fBSHELL\fR を再起動してく\f[JPM]だ\f[R]さい。対応している shell は bash、zsh、tcsh、csh \f[JPM]で\f[R]す（\fIusilicrc\fR の \fBSHELL\fR 参照)。
 .in 0
 .sp
 .in 8n
 補完
 .in 0
 .in 12n
-\fBSHELL\fR \f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トの直後に ^I を押すと実行可能なファイルリストを表示します。これは環境変数 $PATH \f[JPM]が\f[R]示す\f[JPM]デ\f[R]ィレクトリ下に配置された実行可能ファイル一覧\f[JPM]で\f[R]す。\f[JPM]ど\f[R]れかを選択するか、または入力された文字列にマッチする名称の\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム\f[JPM]が\f[R] $PATH 上に存在する場合はカーソル位置に挿入され、複数の候補\f[JPM]が\f[R]あれ\f[JPM]ば\f[R]\f[JPM]ビ\f[R]ー\f[JPM]プ\f[R]音\f[JPM]で\f[R]通知します。さらに ^I \f[JPM]で\f[R]今度はそれらのリスト\f[JPM]が\f[R]表示され、同\f[JPM]じ\f[R]手順により\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムの絞り込み\f[JPM]が\f[R]可能\f[JPM]で\f[R]す。そうして確定した\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム名に続き ␣ のあとの ^I \f[JPM]で\f[R]はカレント\f[JPM]デ\f[R]ィレクトリの内容一覧\f[JPM]が\f[R]表示されるの\f[JPM]で\f[R]引数の特定にも同\f[JPM]じ\f[R]手順を使用\f[JPM]で\f[R]き、^Jp（\fBPROGRAM\fR）およ\f[JPM]び\f[R] ^Jm（\fBMAN\fR）の\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]で\f[R]も ^I による実行ファイル名補完は機能します。\fBFILE\fR およ\f[JPM]び\f[R] \fBDIR\fR \f[JPM]で\f[R]は、$PATH 上の実行ファイル検索は行いません。カレント\f[JPM]デ\f[R]ィレクトリ内の file およ\f[JPM]び\f[R]\f[JPM]デ\f[R]ィレクトリ\f[JPM]だ\f[R]け\f[JPM]が\f[R]補完の対象になります。
+\fBSHELL\fR \f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トの直後に ^I を押すと実行可能なファイルリストを表示します。これは環境変数 $PATH \f[JPM]が\f[R]示す\f[JPM]デ\f[R]ィレクトリ下に配置された実行可能ファイル一覧\f[JPM]で\f[R]す。\f[JPM]ど\f[R]れかを選択するか、または入力された文字列にマッチする名称の\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム\f[JPM]が\f[R] $PATH 上に存在する場合はカーソル位置に挿入され、複数の候補\f[JPM]が\f[R]あれ\f[JPM]ば\f[R]\f[JPM]ビ\f[R]ー\f[JPM]プ\f[R]音\f[JPM]で\f[R]通知します。さらに ^I \f[JPM]で\f[R]今度はそれらのリスト\f[JPM]が\f[R]表示され、同\f[JPM]じ\f[R]手順により\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムの絞り込み\f[JPM]が\f[R]可能\f[JPM]で\f[R]す。そうして確定した\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラム名に続き ␣ のあとの ^I \f[JPM]で\f[R]はカレント\f[JPM]デ\f[R]ィレクトリの内容一覧\f[JPM]が\f[R]表示されるの\f[JPM]で\f[R]引数の特定にも同\f[JPM]じ\f[R]手順を使用\f[JPM]で\f[R]き、^Jt（\fBTOOL\fR）およ\f[JPM]び\f[R] ^Jm（\fBMAN\fR）の\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]で\f[R]も ^I による実行ファイル名補完は機能します。\fBFILE\fR およ\f[JPM]び\f[R] \fBDIR\fR \f[JPM]で\f[R]は、$PATH 上の実行ファイル検索は行いません。カレント\f[JPM]デ\f[R]ィレクトリ内の file およ\f[JPM]び\f[R]\f[JPM]デ\f[R]ィレクトリ\f[JPM]だ\f[R]け\f[JPM]が\f[R]補完の対象になります。
 .in 0
 .sp
 コマン\f[JPM]ド\f[R]行       ： 主に\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]で\f[R]使用\*[usilic-tab]
 .br
 .sp
 .in 8n
-下記のキーは、行頭\f[JPM]が\f[R]「usilic v1.5b:」（一時的な PS1 環境変数）の\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]で\f[R]しか使用\f[JPM]で\f[R]きません。
+下記のキーは、行頭\f[JPM]が\f[R]「\fBusilic-1.5b\fR:」（一時的な PS1 環境変数）の\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]で\f[R]しか使用\f[JPM]で\f[R]きません。
 .in 0
 .in 10n
 .in 19n
@@ -1568,257 +1561,26 @@ mode-line 以外の画面の文字列をクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]�
 .ti 4n
 \fBEXIT\fR         ：usilic を終了\*[usilic-tab]
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-         ^X^C：終了
+.ti 0n
+\*[usilic-tab]	     ^X^C：終了
 .in 0
-.in 4n
 .in 19n
-.ti 4n
-         ^[^[：終了 
+.ti 0n
+\*[usilic-tab]	     ^[^[：終了 
 .in 0
 .sp
 .in 8n
-mode-line に「ＥＸＩＴ (y/n)?」を表示し、"y"^M \f[JPM]で\f[R] \fIusilic(1)\fR を終了します。\fIusilic(1)\fR を\f[JPM]デ\f[R]ィレクトリ引数\f[JPM]で\f[R]起動した場合、各モー\f[JPM]ド\f[R]を実行する際、前回終了時のカーソル位置等の情報を \fI~/.usilic/history\fR から読み取って同\f[JPM]じ\f[R]状態を復元します。モー\f[JPM]ド\f[R]終了時も次回実行のために同ファイルへ状態\f[JPM]が\f[R]保存され、\fIusilic(1)\fR 自体を起動する際も、標準入力も引数も無い起動\f[JPM]で\f[R]は、前回終了時の状態を復元します。それらの全履歴は単一の file \fI~/.usilic/history\fR を介してやり取りするため、複数の \fIusilic(1)\fR を同\f[JPM]じ\f[R]引数\f[JPM]で\f[R]起動する場合、今稼働中の \fIusilic(1)\fR を \fIkill(1)\fR した上\f[JPM]で\f[R]起動し直します。\fBSHELL\fR busy の状態\f[JPM]で\f[R] \fBSHELL\fR 画面に切り替わった時は、\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムを終了させてから ^X^C または ^[^[ キー\f[JPM]で\f[R] \fBEXIT\fR を再実行して下さい。
+mode-line に「EXIT (y/n)?」を表示し、"y"^M \f[JPM]で\f[R] \fIusilic(1)\fR を終了します。\fIusilic(1)\fR を\f[JPM]デ\f[R]ィレクトリ引数\f[JPM]で\f[R]起動した場合、各モー\f[JPM]ド\f[R]を実行する際、前回終了時のカーソル位置等の情報を \fI~/.usilic/history\fR から読み取って同\f[JPM]じ\f[R]状態を復元します。モー\f[JPM]ド\f[R]終了時も次回実行のために同ファイルへ状態\f[JPM]が\f[R]保存され、\fIusilic(1)\fR 自体を起動する際も、標準入力も引数も無い起動\f[JPM]で\f[R]は、前回終了時の状態を復元します。それらの全履歴は単一のファイル \fI~/.usilic/history\fR を介してやり取りするため、複数の \fIusilic(1)\fR を同\f[JPM]じ\f[R]引数\f[JPM]で\f[R]起動する場合、今稼働中の \fIusilic(1)\fR を \fIkill(1)\fR した上\f[JPM]で\f[R]起動し直します。「SHELL busy」の状態\f[JPM]で\f[R] \fBSHELL\fR 画面に切り替わった時は、\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムを終了させてから ^X^C または ^[^[ キー\f[JPM]で\f[R] \fBEXIT\fR を再実行して下さい。
 .in 0
 .sp
 設定\*[usilic-tab]
 .br
 .in 4n
-\fIusilic(1)\fR は起動時に \fI~/.usilic/usilicrc\fR を読み込ん\f[JPM]で\f[R]環境設定を行います。同ファイル\f[JPM]が\f[R]存在しなけれ\f[JPM]ば\f[R]、\fI~/.local/lib/usilic/\fR から \fIusilicrc\fR を \fI~/.usilic/\fR へコ\f[JPM]ピ\f[R]ーしたうえ\f[JPM]で\f[R]内容を読み込みます。
-.br
-.sp
-以下は \fIusilicrc\fR \f[JPM]で\f[R]定義されている内容\f[JPM]で\f[R]す。
-.in 0
-.sp
-.in 4n
-ARCHIVE\*[usilic-tab]
+\fIusilicrc\fR
 .in 0
 .in 8n
-書式 : suffix0   suffix1
-.br
-用例 : .tar.gz   .tgz
-.br
-.sp
-suffix0 を持つアーカイ\f[JPM]ブ\f[R]ファイルの内容を、下記の suffix1 の設定\f[JPM]で\f[R]表示。
-.br
-.sp
-suffix1   program  （option)
-.br
-\&.tar      tar       tvf
-.br
-\&.tgz      gzip      -dc | tar tvf -
-.br
-\&.tar.bz2  bzip2     -dc | tar tvf -
-.br
-\&.lzh      lha
-.br
-\&.zip      unzip     -l
-.br
-\&.rpm      rpm       -qplv
-.br
-\&.deb      ar        tv
-.in 0
-.sp
-.in 4n
-FILE\*[usilic-tab]
-.in 0
-.in 8n
-書式 : suffix program（option)
-.br
-用例 : .gz    gzip    -dc
-.br
-.sp
-program を実行して suffix を持つファイルの内容を平文表示。
-.in 0
-.sp
-.in 4n
-PROGRAM\*[usilic-tab]
-.in 0
-.in 8n
-書式 : suffix program（option)
-.br
-用例 : .html  lynx
-.br
-.sp
-suffix を持つファイル引数\f[JPM]で\f[R] program を実行。
-.in 0
-.sp
-.in 4n
-EDITOR\*[usilic-tab]
-.in 0
-.in 8n
-書式 : editor
-.br
-用例 : vi
-.br
-.sp
-\fBEDIT\fR \f[JPM]で\f[R]起動されるエ\f[JPM]デ\f[R]ィター。
-.in 0
-.sp
-.in 4n
-BUFFER\*[usilic-tab]
-.in 0
-.in 8n
-書式 : size
-.br
-用例 : 2
-.br
-.sp
-file に割り当てる\f[JPM]バ\f[R]ッファ size（MB）。
-.in 0
-.sp
-.in 4n
-CODE\*[usilic-tab]
-.in 0
-.in 8n
-書式 : code0 code1
-.br
-用例 : 1     8     ...
-.br
-.sp
-ここ\f[JPM]で\f[R]の設定以外の 0x20 未満の機能キャラクタ\f[JPM]が\f[R]、上記の suffix を持たない file に含まれていて、ファイルの漢字コー\f[JPM]ド\f[R]（Note の章の 漢字コー\f[JPM]ド\f[R] 参照）\f[JPM]が\f[R] jis \f[JPM]で\f[R]ない場合には、\f[JPM]バ\f[R]イナリファイルとみなして \fIfile(1)\fR を実行し、該当コー\f[JPM]ド\f[R]とファイルタイ\f[JPM]プ\f[R]を表示。
-.in 0
-.sp
-.in 4n
-SHELL\*[usilic-tab]
-.in 0
-.in 8n
-書式 : shell
-.br
-用例 : tcsh
-.br
-.sp
-shell \f[JPM]で\f[R] \fBSHELL\fR を起動。（"\fBSHELL\fR" 環境変数に使用されている値\f[JPM]が\f[R] "bash" およ\f[JPM]び\f[R] "tcsh" 以外の場合は、この設定（bash(1) または tcsh(1) を指定可能）\f[JPM]が\f[R]必要）
-.in 0
-.sp
-.in 4n
-LINE\*[usilic-tab]
-.in 0
-.in 8n
-書式 : line
-.br
-用例 : 500
-.br
-.sp
-アクセス履歴の種類\f[JPM]ご\f[R]とに保存する最大 line（0 は無制限）。line を超えると、一番古い行から削除。usilic -l \f[JPM]で\f[R]試し、usilic -L \f[JPM]で\f[R]書き込めます（旧 \fBHISTORY\fR)。
-.in 0
-.sp
-.in 4n
-WAIT\*[usilic-tab]
-.in 0
-.in 8n
-書式 : wait
-.br
-用例 : 10
-.br
-.sp
-組み込みまたはキー\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]マクロキーを wait（10 msec）間隔\f[JPM]で\f[R]実行。
-.in 0
-.sp
-.in 4n
-CP\*[usilic-tab]
-.in 0
-.in 8n
-書式 : cp（option）
-.br
-用例 : cp -rvi
-.br
-.sp
-\fBCP\fR の \fIcp(1)\fR 起動オ\f[JPM]プ\f[R]ション。（\f[JPM]デ\f[R]フォルト: cp -rvf）
-.in 0
-.sp
-.in 4n
-MV\*[usilic-tab]
-.in 0
-.in 8n
-書式 : mv（option）
-.br
-用例 : mv -vi
-.br
-.sp
-\fBMV\fR の \fImv(1)\fR 起動オ\f[JPM]プ\f[R]ション。（\f[JPM]デ\f[R]フォルト: mv -vf）
-.in 0
-.sp
-.in 4n
-RM\*[usilic-tab]
-.in 0
-.in 8n
-書式 : rm（option）
-.br
-用例 : rm -rvi
-.br
-.sp
-\fBRM\fR の \fIrm(1)\fR 起動オ\f[JPM]プ\f[R]ション。（\f[JPM]デ\f[R]フォルト: rm -rvf）
-.in 0
-.sp
-.in 4n
-DRAG\*[usilic-tab]
-.in 0
-.in 8n
-書式 : dot1  dot2 ...
-.br
-用例 : 1 2 4 8 16 30 40 50 60 70
-.br
-.sp
-\f[JPM]ド\f[R]ラッ\f[JPM]グ\f[R]を離した時に慣性スクロールの何段目\f[JPM]で\f[R]動き出すかを決める距離（\f[JPM]ド\f[R]ット）。usilic -d \f[JPM]で\f[R]試し、usilic -D \f[JPM]で\f[R]書き込めます。
-.in 0
-.sp
-.in 4n
-SPEED\*[usilic-tab]
-.in 0
-.in 8n
-書式 : usec1  usec2 ...
-.br
-用例 : 90000 20000 10000 5000 3000 2000 1000 500 200 100
-.br
-.sp
-慣性スクロールの 10 段階の速度（1 行進む\f[JPM]ご\f[R]との待ち時間、マイクロ秒）。usilic -s \f[JPM]で\f[R]試し、usilic -S \f[JPM]で\f[R]書き込めます。
-.in 0
-.sp
-.in 4n
-ARROW\*[usilic-tab]
-.in 0
-.in 8n
-書式 : usec1  usec2 ...
-.br
-用例 : 200000 100000 25000 10000 5000 2000 1000 500 200 100 50 20
-.br
-慣性スクロールの段\f[JPM]ご\f[R]との速度（書式は SPEED と同\f[JPM]じ\f[R]、10 個より多くてもよい）。横書きの画面の矢印キーと、縦書きの \fBEPUB\fR の左右の両方に使います。マウスの\f[JPM]ド\f[R]ラッ\f[JPM]グ\f[R]\f[JPM]で\f[R]始めた慣性は 2 つ速い方へ\f[JPM]ず\f[R]らした段（用例なら 25000）から始まり、その後の矢印キー\f[JPM]で\f[R]の加減速\f[JPM]で\f[R]は全部の段を使えます。この設定\f[JPM]が\f[R]無けれ\f[JPM]ば\f[R] SPEED の値\f[JPM]で\f[R]す。usilic -s のような試すオ\f[JPM]プ\f[R]ションは無いの\f[JPM]で\f[R]、\fIusilicrc\fR の値を直して調整します。
-.in 0
-.sp
-.in 4n
-URL\*[usilic-tab]
-.in 0
-.in 8n
-書式 : 名前 program（option）
-.br
-用例 : Dump lynx -dump
-.br
-.sp
-\fBEPUB\fR の本文にある Web リンクを踏ん\f[JPM]だ\f[R]時の対処（前述 [\fBEPUB\fR] 参照）。書いた順に ^Ow \f[JPM]で\f[R]巡回し、最初の行\f[JPM]が\f[R]既定。名前は Open、Pdf、Dump、Term、Copy、Lookのい\f[JPM]ず\f[R]れか\f[JPM]で\f[R]、program に URL を渡して起動します（Copy は標準入力へ渡し、Look は program 不要）。この設定\f[JPM]が\f[R]無い場合は、Open（macOS は open、Linux は xdg-open）、Pdf（url2pdf \f[JPM]が\f[R]ある時のみ）、Dump（w3m -dump）、Term（w3m）、Copy（macOS は pbcopy、Linux は xclip -selection clipboard）、Look（macOS のみ）の順。Pdf の url2pdf（\fI~/.local/lib/usilic/url2pdf\fR、make install \f[JPM]で\f[R]導入）は、画面無しの Chromium を Playwright \f[JPM]で\f[R]動かします。事前に次の準備\f[JPM]が\f[R]必要\f[JPM]で\f[R]、さらに Linux \f[JPM]で\f[R]は playwright install-deps（要 sudo）と日本語フォント\f[JPM]が\f[R]必要\f[JPM]で\f[R]す。
-.in 0
-.in 12n
-python3 -m venv \fI~/.local/lib/usilic/venv\fR
-.br
-\fI~/.local/lib/usilic/venv/bin/pip\fR install playwright
-.br
-\fI~/.local/lib/usilic/venv/bin/python\fR -m playwright install chromium
-.in 0
-.sp
-.in 4n
-KEY\*[usilic-tab]
-.in 0
-.in 8n
-\fBKEY\fR \f[JPM]で\f[R]表示されるキーのカスタマイ\f[JPM]ズ\f[R]。
-.in 0
-.sp
-.in 4n
-MACRO\*[usilic-tab]
-.in 0
-.in 8n
-\fBMACRO\fR \f[JPM]で\f[R]設定したキーシーケンスを保存。
+\fIusilic(1)\fR は起動時に \fI~/.usilic/usilicrc\fR を読み込ん\f[JPM]で\f[R]環境設定を行います。同ファイル\f[JPM]が\f[R]存在しなけれ\f[JPM]ば\f[R]、\fI~/.local/lib/usilic/\fR から \fIusilicrc\fR を \fI~/.usilic/\fR へコ\f[JPM]ピ\f[R]ーしたうえ\f[JPM]で\f[R]内容を読み込みます。設定項目と内容については当ファイルのコメントを参照してく\f[JPM]だ\f[R]さい。
 .in 0
 .sp
 起動オ\f[JPM]プ\f[R]ション\*[usilic-tab]
@@ -1850,6 +1612,15 @@ usilic [file] [< file ...] [directory]
 .in 0
 .in 9n
 macOS \f[JPM]で\f[R]、Finder から usilic.app を開いた時（端末\f[JPM]が\f[R]無い時）は、指定\f[JPM]が\f[R]無くても GUI \f[JPM]で\f[R]起動します。-c と -g は同時に指定\f[JPM]で\f[R]きません。
+.in 0
+.sp
+.in 4n
+.in 12n
+.ti 4n
+-H : \fBHELP\fR を子の \fIusilic(1)\fR \f[JPM]で\f[R]開いて起動
+.in 0
+.in 9n
+起動後に ^Jt"usilic \fI~/.local/lib/usilic/<b>HELP</b>.ja.1\fR"^M を実行した状態になります（LANG \f[JPM]が\f[R] ja_JP.UTF-8 以外\f[JPM]で\f[R]は \fBHELP\fR.1、\fBHELP\fR 自体も最初から英語）。親は通常\f[JPM]ど\f[R]おりカレント\f[JPM]デ\f[R]ィレクトリの \fB(ls)\fR か前回終了時の画面から、子は \fBHELP\fR を平文の\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャー（モー\f[JPM]ド\f[R]ラインは \fI(groff)\fR）\f[JPM]で\f[R]、もう一つの子は \fBKEY\fR（「：」を含む行\f[JPM]だ\f[R]けの一覧、反転表示は「：」の手前ま\f[JPM]で\f[R]、^M のキーは親の画面\f[JPM]で\f[R]実行、h は \fBHELP\fR の子の該当行へ。\fBHELP\fR の子を閉\f[JPM]じ\f[R]ていれ\f[JPM]ば\f[R]開き直す）\f[JPM]で\f[R]表示し、子を参照しな\f[JPM]が\f[R]ら親を操作\f[JPM]で\f[R]きます。子のウィン\f[JPM]ド\f[R]ウは親の右隣に、\fBHELP\fR は上端を揃え、\fBKEY\fR はその下に開きます（画面の右端\f[JPM]で\f[R]は親の左隣、下端\f[JPM]で\f[R]は \fBKEY\fR を \fBHELP\fR の上に）。最後に親\f[JPM]が\f[R]前面になります。-g の子は親と同\f[JPM]じ\f[R]大きさ・フォント・配色\f[JPM]で\f[R]開き、Terminal.app の子は親と同\f[JPM]じ\f[R]\f[JPM]プ\f[R]ロファイル\f[JPM]で\f[R]開きます。子は自身\f[JPM]で\f[R]は終了\f[JPM]で\f[R]き\f[JPM]ず\f[R]（q・^X^C・^[^[、-g のウィン\f[JPM]ド\f[R]ウを閉\f[JPM]じ\f[R]る操作）、親の終了と一緒に終わります。\fI~/.usilic/history\fR \f[JPM]が\f[R]空の最初の起動\f[JPM]で\f[R]も同\f[JPM]じ\f[R]\f[JPM]で\f[R]す。
 .in 0
 .sp
 .in 4n
@@ -1939,7 +1710,7 @@ cmd + "0" : 文字の大きさを元に戻す
 .in 12n
 .in 25n
 .ti 12n
-cmd + "k" : 配色の切り替え（黒地に灰、黒地に緑、黒地に琥珀、白地に黒）
+cmd + "k" : 配色の切り換え（黒地に灰、黒地に緑、黒地に琥珀、白地に黒）
 .in 0
 .sp
 .in 12n
@@ -1970,6 +1741,30 @@ CUI \f[JPM]で\f[R]も、マウス操作をア\f[JPM]プ\f[R]リへ伝えられ�
 補足\*[usilic-tab]
 .in 0
 .in 4n
+\fIusilicrc\fR
+.in 0
+.in 8n
+ARROW
+.in 0
+.in 12n
+慣性スクロールの速度設定 ARROW の値は、横書き画面の上下矢印キーおよ\f[JPM]び\f[R]縦書き \fBEPUB\fR の左右キー両方に作用します（スクロール始動はそれ\f[JPM]ぞ\f[R]れ左右およ\f[JPM]び\f[R]上下キー）。画面スクロールを\f[JPM]ド\f[R]ット単位\f[JPM]で\f[R]制御\f[JPM]で\f[R]きる GUI とは違い、CUI \f[JPM]で\f[R]は行単位スクロールのためマウスによる画面\f[JPM]ド\f[R]ラッ\f[JPM]グ\f[R]速度をそのまま慣性スクロールに繋\f[JPM]げ\f[R]てしまうと、閲覧に適した低速スクロール\f[JPM]が\f[R]実現\f[JPM]で\f[R]きません。そこ\f[JPM]で\f[R]マウス操作による慣性スクロールは二段階速い方へ\f[JPM]ず\f[R]らした値（用例なら 25000）から始め、低速側は矢印キーによる調整\f[JPM]で\f[R]対処しています。usilic -s のような試すオ\f[JPM]プ\f[R]ションは無いの\f[JPM]で\f[R]、\fIusilicrc\fR の値を直して調整してく\f[JPM]だ\f[R]さい。
+.in 0
+.sp
+.in 8n
+URL
+.in 0
+.in 12n
+\fBEPUB\fR の本文にある Web リンクを踏ん\f[JPM]だ\f[R]時の対処（前述 [\fBEPUB\fR] 参照）。書いた順に ^Ow \f[JPM]で\f[R]巡回し、最初の行\f[JPM]が\f[R]既定。名前は Open、Pdf、Dump、Term、Copy、Look、Epub のい\f[JPM]ず\f[R]れか\f[JPM]で\f[R]、program に URL を渡して起動します（Copy は標準入力へ渡し、Look は program 不要）。この設定\f[JPM]が\f[R]無い場合は、Open（macOS は open、Linux は xdg-open）、Pdf（url2pdf \f[JPM]が\f[R]ある時のみ）、Dump（w3m -dump）、Term（w3m）、Copy（macOS は pbcopy、Linux は xclip -selection clipboard）、Look（macOS のみ）、Epub（narou2epub \f[JPM]が\f[R]ある時のみ）の順。Pdf の url2pdf（\fI~/.local/lib/usilic/url2pdf\fR、make install \f[JPM]で\f[R]導入）は、画面無しの Chromium を Playwright \f[JPM]で\f[R]動かします。事前に次の準備\f[JPM]が\f[R]必要\f[JPM]で\f[R]、さらに Linux \f[JPM]で\f[R]は playwright install-deps（要 sudo）と日本語フォント\f[JPM]が\f[R]必要\f[JPM]で\f[R]す。
+.in 0
+.in 16n
+python3 -m venv \fI~/.local/lib/usilic/venv\fR
+.br
+\fI~/.local/lib/usilic/venv/bin/pip\fR install playwright
+.br
+\fI~/.local/lib/usilic/venv/bin/python\fR -m playwright install chromium
+.in 0
+.sp
+.in 4n
 環境\*[usilic-tab]
 .in 0
 .in 8n
@@ -1980,7 +1775,7 @@ usilic は最初に起動する際 \fI~/.usilic/\fR およ\f[JPM]び\f[R] \fI/tm
 漢字コー\f[JPM]ド\f[R]\*[usilic-tab]
 .in 0
 .in 8n
-sjis（shift-jis）または 7bit-jis の漢字コー\f[JPM]ド\f[R]を含むファイルは、内容を\f[JPM]バ\f[R]ッファに読み込ん\f[JPM]だ\f[R]後 euc（内部コー\f[JPM]ド\f[R]）に変換します。それに伴い、mode-line(4)（表示サイ\f[JPM]ズ\f[R]）\f[JPM]が\f[R]実際のファイルサイ\f[JPM]ズ\f[R]とは異なって表示される事\f[JPM]が\f[R]あります。\f[JPM]バ\f[R]ッファ内（内部コー\f[JPM]ド\f[R]変換前）の漢字コー\f[JPM]ド\f[R]の判別は、\f[JPM]バ\f[R]ッファの先頭から行い jis については、コー\f[JPM]ド\f[R]を検出した時点\f[JPM]で\f[R]終了します\f[JPM]が\f[R] euc およ\f[JPM]び\f[R] sjis \f[JPM]で\f[R]は、\f[JPM]バ\f[R]ッファの末尾ま\f[JPM]で\f[R]チェックした後、多く含まれている方のコー\f[JPM]ド\f[R]\f[JPM]で\f[R]判別します。^O^M \f[JPM]で\f[R]ファイル表示した場合や \fIusilic(1)\fR を\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]ャー\f[JPM]で\f[R]起動した時は、入力行毎に、判別およ\f[JPM]び\f[R]コー\f[JPM]ド\f[R]変換を行います\f[JPM]が\f[R]、行内に１\f[JPM]バ\f[R]イト半角カナ\f[JPM]が\f[R]多用されている場合や、quote 系フォーマット\f[JPM]で\f[R]継続行を含むファイル\f[JPM]で\f[R]は、正常に判別\f[JPM]で\f[R]きない場合\f[JPM]が\f[R]あります。^[M \f[JPM]で\f[R]\f[JPM]ベ\f[R]タ表示した場合、内部コー\f[JPM]ド\f[R]の変換も行わないの\f[JPM]で\f[R]例え\f[JPM]ば\f[R] ^X^W \f[JPM]で\f[R] \fI~/.usilic/data/\fR へ保存した\f[JPM]バ\f[R]ッファの内容に、元のファイルの漢字コー\f[JPM]ド\f[R]を反映させたい場合（例え\f[JPM]ば\f[R] sjis コー\f[JPM]ド\f[R]を含む差分ファイルな\f[JPM]ど\f[R]）に使用\f[JPM]で\f[R]きます。
+ファイルの内容は UTF-8 \f[JPM]で\f[R]表示します（環境変数 \fBUSILIC\fRCHARSET \f[JPM]で\f[R] euc・sjis・jis・ascii にも変えられます）。UTF-8 として正しい行はそのまま表示し、sjis（shift-jis）・euc・7bit-jis（ISO-2022-JP）の漢字コー\f[JPM]ド\f[R]を含む行は UTF-8 に変換します（sjis と jis は一旦 euc を経由）。判別は行\f[JPM]ご\f[R]とに行い、jis はエスケー\f[JPM]プ\f[R]シーケンスを見つけた時点\f[JPM]で\f[R]決まり、sjis と euc はその行の末尾ま\f[JPM]で\f[R]調\f[JPM]べ\f[R]て多く含まれている方を選\f[JPM]び\f[R]ます。そのため１\f[JPM]バ\f[R]イト半角カナ\f[JPM]が\f[R]多用されている行等\f[JPM]で\f[R]は、正常に判別\f[JPM]で\f[R]きない場合\f[JPM]が\f[R]あります。\fBUSILIC\fRCHARSET \f[JPM]が\f[R] ascii の時は変換しません。^[M（\f[JPM]ベ\f[R]タ表示）\f[JPM]で\f[R]も画面の表示\f[JPM]で\f[R]はこの変換を行います\f[JPM]が\f[R]、^[M \f[JPM]で\f[R]開いたファイルを ^X^W \f[JPM]で\f[R]保存すると、変換前の元のファイル内容を、画面の幅\f[JPM]で\f[R]の折り返しも無く、漢字コー\f[JPM]ド\f[R]もそのままなの\f[JPM]で\f[R] sjis コー\f[JPM]ド\f[R]を含む差分ファイル等を、元の漢字コー\f[JPM]ド\f[R]のまま残したい時に使えます（^M 等\f[JPM]で\f[R]開いた時の ^X^W は、変換後の UTF-8 画面の文字列を保存します）。
 .br
 .sp
 .in 4n
@@ -2004,14 +1799,14 @@ sjis（shift-jis）または 7bit-jis の漢字コー\f[JPM]ド\f[R]を含むフ
 \f[JPM]バ\f[R]ックスラッシュ（\e）の入力\*[usilic-tab]
 .in 0
 .in 8n
-\fBEGREP\fR、\fBCUT\fR の正規表現等\f[JPM]で\f[R]使う \e（\f[JPM]バ\f[R]ックスラッシュ）は、macOS の JIS キー\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]（日本語配列）\f[JPM]で\f[R]は option を押しな\f[JPM]が\f[R]ら ¥ キーを押すと入力\f[JPM]で\f[R]きます。常に \e を入力したい場合は、「システム設定」⇒「キー\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]」⇒「入力ソース」⇒「日本語 - ローマ字入力」の「"¥"キー\f[JPM]で\f[R]入力する文字」を「\e（\f[JPM]バ\f[R]ックスラッシュ）」に変えると、¥ キー単独\f[JPM]で\f[R] \e になります（option を押しな\f[JPM]が\f[R]ら ¥ キー\f[JPM]で\f[R] ¥）。US キー\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]\f[JPM]で\f[R]は、enter の上（または左）にある \e キー\f[JPM]で\f[R]そのまま入力\f[JPM]で\f[R]きます。
+\fBEGREP\fR、\fBPART\fR の正規表現等\f[JPM]で\f[R]使う \e（\f[JPM]バ\f[R]ックスラッシュ）は、macOS の JIS キー\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]（日本語配列）\f[JPM]で\f[R]は option を押しな\f[JPM]が\f[R]ら ¥ キーを押すと入力\f[JPM]で\f[R]きます。常に \e を入力したい場合は、「システム設定」⇒「キー\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]」⇒「入力ソース」⇒「日本語 - ローマ字入力」の「"¥"キー\f[JPM]で\f[R]入力する文字」を「\e（\f[JPM]バ\f[R]ックスラッシュ）」に変えると、¥ キー単独\f[JPM]で\f[R] \e になります（option を押しな\f[JPM]が\f[R]ら ¥ キー\f[JPM]で\f[R] ¥）。US キー\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]\f[JPM]で\f[R]は、enter の上（または左）にある \e キー\f[JPM]で\f[R]そのまま入力\f[JPM]で\f[R]きます。
 .in 0
 .sp
 .in 4n
 Web \f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]の PDF 化
 .in 0
 .in 8n
-\fI~/.local/lib/usilic/\fR（make install \f[JPM]で\f[R]導入）にある下記の２つのスクリ\f[JPM]プ\f[R]ト\f[JPM]で\f[R]、Web \f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]を\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]全体の高さの縦長の１\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]の PDF に\f[JPM]で\f[R]きます（文字は選択可能）。画面無しの Chromium を Playwright \f[JPM]で\f[R]動かすの\f[JPM]で\f[R]、前述の\fIusilicrc\fR の URL にある準備\f[JPM]が\f[R]必要\f[JPM]で\f[R]、urls2pdf \f[JPM]で\f[R]はさらに pypdf も必要\f[JPM]で\f[R]す。
+\fI~/.local/lib/usilic/\fR（make install \f[JPM]で\f[R]導入）にある下記の２つのスクリ\f[JPM]プ\f[R]ト\f[JPM]で\f[R]、Web \f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]を\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]全体の高さの縦長の１\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]の PDF に\f[JPM]で\f[R]きます（文字は選択可能）。画面無しの Chromium を Playwright \f[JPM]で\f[R]動かすの\f[JPM]で\f[R]、前述の \fIusilicrc\fR の URL にある準備\f[JPM]が\f[R]必要\f[JPM]で\f[R]、urls2pdf \f[JPM]で\f[R]はさらに pypdf も必要\f[JPM]で\f[R]す。
 .in 0
 .sp
 .in 12n
@@ -2083,23 +1878,38 @@ urls2pdf [option] URL
          -h : 使い方を表示
 .in 0
 .sp
+.in 4n
+「小説家になろう」・「カクヨム」の \fBEPUB\fR 化
+.in 0
+.in 8n
+narou2epub Nコー\f[JPM]ド\f[R]|カクヨムの作品ID|作品の URL ... [-o directory]
+.in 0
+.in 12n
+「小説家になろう」の作品（ノクターンノ\f[JPM]ベ\f[R]ル\f[JPM]ズ\f[R]等の novel18.syosetu.com の作品も、年齢確認を通って取得）や「カクヨム」の作品を縦書きの \fBEPUB\fR3 にして directory（省略時は \fI~/.usilic/data/\fR、^J^Od \f[JPM]で\f[R]開けます）へ「題名_Nコー\f[JPM]ド\f[R]（作品ID）_日付.epub」\f[JPM]で\f[R]保存し、その\f[JPM]パ\f[R]スを出力します（途中経過は標準エラー出力、取得の間に２〜７秒待つの\f[JPM]で\f[R]話数に応\f[JPM]じ\f[R]て時間\f[JPM]が\f[R]かかります）。連載・短編の\f[JPM]ど\f[R]ちら\f[JPM]で\f[R]も使え、表紙・タイトル・あらす\f[JPM]じ\f[R]・各話の前書き／本文／後書き・挿絵\f[JPM]が\f[R]入ります（カクヨムはキャッチコ\f[JPM]ピ\f[R]ーと紹介文をあらす\f[JPM]じ\f[R]に、各話は本文のみ）。\fBSHELL\fR（^Jt"\fI~/.local/lib/usilic/narou2epub\fR n1234ab"^M 等）の中\f[JPM]で\f[R]実行すると、作り終えた \fBEPUB\fR をそのまま \fBEPUB\fR の画面\f[JPM]で\f[R]開きます。\fBEPUB\fR の Web リンクの Epub（前述 [\fBEPUB\fR] 参照）もこれを使います。NarouToEpub3（Apache License 2.0、\fI~/.local/lib/usilic/narou2epub-assets/LICENSE\fR）を改変したもの\f[JPM]で\f[R]、事前に次の準備\f[JPM]が\f[R]必要\f[JPM]で\f[R]す。作った \fBEPUB\fR は個人\f[JPM]で\f[R]楽しむため\f[JPM]だ\f[R]けに使い、他人に配布しない\f[JPM]で\f[R]く\f[JPM]だ\f[R]さい（作品の著作権は作者にあります）。
+.in 0
+.in 12n
+python3 -m venv \fI~/.local/lib/usilic/venv\fR
+.br
+\fI~/.local/lib/usilic/venv/bin/pip\fR install lxml ebooklib requests Pillow
+.in 0
+.sp
 .in 12n
 例え\f[JPM]ば\f[R]
 .in 0
 .sp
 .in 16n
-\fI~/.local/lib/usilic/\fRurls2pdf -l https://example.com/guide/
+\fI~/.local/lib/usilic/urls2pdf\fR -l https://example.com/guide/
 .in 0
 .sp
 .in 12n
-\f[JPM]で\f[R]取るリンクを確かめ、多す\f[JPM]ぎ\f[R]る時は -m \f[JPM]で\f[R]絞り、足りない時は -a や -x を付けてから -l を外して実行します。^Jp や \fBSHELL\fR からも使えます。PDF の１\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]の大きさには上限（約 200 インチ）\f[JPM]が\f[R]あり、それより長い\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]は複数の\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]に分かれます。
+\f[JPM]で\f[R]取るリンクを確かめ、多す\f[JPM]ぎ\f[R]る時は -m \f[JPM]で\f[R]絞り、足りない時は -a や -x を付けてから -l を外して実行します。^Jt や \fBSHELL\fR からも使えます。PDF の１\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]の大きさには上限（約 200 インチ）\f[JPM]が\f[R]あり、それより長い\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]は複数の\f[JPM]ペ\f[R]ー\f[JPM]ジ\f[R]に分かれます。
 .in 0
 .sp
 .in 4n
 必要なソフトウェア\*[usilic-tab]
 .in 0
 .in 8n
-\fIusilic(1)\fR は \fIgroff(1)\fR（\fBHELP\fR・\fBMAN\fR の整形）、\fImg(1)\fR、\fIinfo(1)\fR、\fI7zz(1)\fR（\fBARC\fR の \fI.7z\fR ）、\fIw3m(1)\fR（\fBEPUB\fR の Web のリンクの Dump/Term）等の外部\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムを使います。最初の起動時、これらのうち見つからないもの\f[JPM]が\f[R]あれ\f[JPM]ば\f[R] \fBSHELL\fR に切り替わり、\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トにインストール用のコマン\f[JPM]ド\f[R]（macOS \f[JPM]で\f[R]は「brew install ...」、Ubuntu \f[JPM]で\f[R]は「sudo apt install -y ...」）を置いて ^M を待ちます（実行するか\f[JPM]ど\f[R]うかはお任せします。この案内は一度\f[JPM]だ\f[R]け\f[JPM]で\f[R]す）。macOS \f[JPM]で\f[R] Homebrew（brew）\f[JPM]が\f[R]無い場合は、代わりに Homebrew 自体のインストールコマン\f[JPM]ド\f[R]（https://brew.sh にあるもの）を置きます。^M \f[JPM]で\f[R]実行すると、\f[JPM]パ\f[R]スワー\f[JPM]ド\f[R]の入力や確認を求められた後に Homebrew \f[JPM]が\f[R]インストールされ、\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]が\f[R]戻ると続けて「brew install ...」\f[JPM]が\f[R]置かれます。手動\f[JPM]で\f[R]入れる場合は、ターミナル\f[JPM]で\f[R] https://brew.sh のコマン\f[JPM]ド\f[R]を実行した後、表示される案内に従って brew に PATH を通してく\f[JPM]だ\f[R]さい（Apple Silicon \f[JPM]で\f[R]は「eval "$(/opt/homebrew/bin/brew shellenv)"」を \fI~/.zprofile\fR へ追記）。Homebrew や usilic 自身の\f[JPM]ビ\f[R]ル\f[JPM]ド\f[R]（make）には Xcode の Command Line Tools（コン\f[JPM]パ\f[R]イラや git 等）\f[JPM]が\f[R]必要\f[JPM]で\f[R]す。Homebrew のインストーラは無けれ\f[JPM]ば\f[R]自動\f[JPM]で\f[R]入れます\f[JPM]が\f[R]、先に入れておく場合はターミナル\f[JPM]で\f[R]「xcode-select --install」を実行してく\f[JPM]だ\f[R]さい（App Store の Xcode 本体は不要\f[JPM]で\f[R]す）。Command Line Tools \f[JPM]が\f[R]入っているかは "xcode-select -p"^M \f[JPM]で\f[R]\f[JPM]パ\f[R]ス\f[JPM]が\f[R]表示されるか\f[JPM]で\f[R]確かめられます。macOS をアッ\f[JPM]プ\f[R]\f[JPM]デ\f[R]ートした後に brew や make \f[JPM]が\f[R]「invalid active developer path」等\f[JPM]で\f[R]失敗する場合も、"xcode-select --install"^M \f[JPM]で\f[R]入れ直してく\f[JPM]だ\f[R]さい。Windows \f[JPM]で\f[R]は WSL2（Windows の中の Ubuntu）\f[JPM]で\f[R]動きます。\f[JPM]ビ\f[R]ル\f[JPM]ド\f[R]の手順は Linux と同\f[JPM]じ\f[R]\f[JPM]で\f[R]、-g のウィン\f[JPM]ド\f[R]ウは WSLg \f[JPM]で\f[R] Windows の\f[JPM]デ\f[R]スクトッ\f[JPM]プ\f[R]に出ます（日本語の表示には fonts-noto-cjk \f[JPM]が\f[R]必要\f[JPM]で\f[R]、無けれ\f[JPM]ば\f[R]最初の起動時の案内に加わります）。WSL2 \f[JPM]で\f[R]は、動画や \fBEPUB\fR の Web のリンク（Open）は Windows の既定のア\f[JPM]プ\f[R]リ\f[JPM]で\f[R]開き、\fBCOPY\fR の内容は Windows のクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]へ入ります。Git Bash \f[JPM]で\f[R]は、MSYS2 \f[JPM]で\f[R]\f[JPM]ビ\f[R]ル\f[JPM]ド\f[R]した \fIusilic(1)\fR \f[JPM]が\f[R]動きます（-g と \fBLOCATE\fR は使えません）。外\f[JPM]で\f[R]開く・クリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]は WSL2 と同\f[JPM]じ\f[R]く Windows 側へつな\f[JPM]が\f[R]ります。\f[JPM]ビ\f[R]ル\f[JPM]ド\f[R]の手順はソースの docs/BUILD.md を参照してく\f[JPM]だ\f[R]さい。
+\fIusilic(1)\fR は \fIgroff(1)\fR（\fBHELP\fR・\fBMAN\fR の成形）、\fImg(1)\fR、\fIinfo(1)\fR、\fI7zz(1)\fR（\fBARC\fR の \fI.7z\fR ）、\fIw3m(1)\fR（\fBEPUB\fR の Web のリンクの Dump/Term）等の外部\f[JPM]プ\f[R]ロ\f[JPM]グ\f[R]ラムを使います。最初の起動時、これらのうち見つからないもの\f[JPM]が\f[R]あれ\f[JPM]ば\f[R] \fBSHELL\fR に切り替わり、\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]トにインストール用のコマン\f[JPM]ド\f[R]（macOS \f[JPM]で\f[R]は「brew install ...」、Ubuntu \f[JPM]で\f[R]は「sudo apt install -y ...」）を置いて ^M を待ちます（実行するか\f[JPM]ど\f[R]うかはお任せします。この案内は一度\f[JPM]だ\f[R]け\f[JPM]で\f[R]す）。macOS \f[JPM]で\f[R] Homebrew（brew）\f[JPM]が\f[R]無い場合は、代わりに Homebrew 自体のインストールコマン\f[JPM]ド\f[R]（https://brew.sh にあるもの）を置きます。^M \f[JPM]で\f[R]実行すると、\f[JPM]パ\f[R]スワー\f[JPM]ド\f[R]の入力や確認を求められた後に Homebrew \f[JPM]が\f[R]インストールされ、\f[JPM]プ\f[R]ロン\f[JPM]プ\f[R]ト\f[JPM]が\f[R]戻ると続けて「brew install ...」\f[JPM]が\f[R]置かれます。手動\f[JPM]で\f[R]入れる場合は、ターミナル\f[JPM]で\f[R] https://brew.sh のコマン\f[JPM]ド\f[R]を実行した後、表示される案内に従って brew に PATH を通してく\f[JPM]だ\f[R]さい（Apple Silicon \f[JPM]で\f[R]は「eval "$(/opt/homebrew/bin/brew shellenv)"」を \fI~/.zprofile\fR へ追記）。Homebrew や usilic 自身の\f[JPM]ビ\f[R]ル\f[JPM]ド\f[R]（make）には Xcode の Command Line Tools（コン\f[JPM]パ\f[R]イラや git 等）\f[JPM]が\f[R]必要\f[JPM]で\f[R]す。Homebrew のインストーラは無けれ\f[JPM]ば\f[R]自動\f[JPM]で\f[R]入れます\f[JPM]が\f[R]、先に入れておく場合はターミナル\f[JPM]で\f[R]「xcode-select --install」を実行してく\f[JPM]だ\f[R]さい（App Store の Xcode 本体は不要\f[JPM]で\f[R]す）。Command Line Tools \f[JPM]が\f[R]入っているかは "xcode-select -p"^M \f[JPM]で\f[R]\f[JPM]パ\f[R]ス\f[JPM]が\f[R]表示されるか\f[JPM]で\f[R]確かめられます。macOS をアッ\f[JPM]プ\f[R]\f[JPM]デ\f[R]ートした後に brew や make \f[JPM]が\f[R]「invalid active developer path」等\f[JPM]で\f[R]失敗する場合も、"xcode-select --install"^M \f[JPM]で\f[R]入れ直してく\f[JPM]だ\f[R]さい。Windows \f[JPM]で\f[R]は WSL2（Windows の中の Ubuntu）\f[JPM]で\f[R]動きます。\f[JPM]ビ\f[R]ル\f[JPM]ド\f[R]の手順は Linux と同\f[JPM]じ\f[R]\f[JPM]で\f[R]、-g のウィン\f[JPM]ド\f[R]ウは WSLg \f[JPM]で\f[R] Windows の\f[JPM]デ\f[R]スクトッ\f[JPM]プ\f[R]に出ます（日本語の表示には fonts-noto-cjk \f[JPM]が\f[R]必要\f[JPM]で\f[R]、無けれ\f[JPM]ば\f[R]最初の起動時の案内に加わります）。WSL2 \f[JPM]で\f[R]は、動画や \fBEPUB\fR の Web のリンク（Open）は Windows の既定のア\f[JPM]プ\f[R]リ\f[JPM]で\f[R]開き、\fBCOPY\fR の内容は Windows のクリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]へ入ります。Git Bash \f[JPM]で\f[R]は、MSYS2 \f[JPM]で\f[R]\f[JPM]ビ\f[R]ル\f[JPM]ド\f[R]した \fIusilic(1)\fR \f[JPM]が\f[R]動きます（-g と \fBLOCATE\fR は使えません）。外\f[JPM]で\f[R]開く・クリッ\f[JPM]プ\f[R]\f[JPM]ボ\f[R]ー\f[JPM]ド\f[R]は WSL2 と同\f[JPM]じ\f[R]く Windows 側へつな\f[JPM]が\f[R]ります。\f[JPM]ビ\f[R]ル\f[JPM]ド\f[R]の手順はソースの docs/BUILD.md を参照してく\f[JPM]だ\f[R]さい。
 .in 0
 .sp
 著者\*[usilic-tab]
