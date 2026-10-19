@@ -29432,6 +29432,19 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      MACROのM-6(h→K-105)を消した。KEYから平文のHELPの当該位置へは^J^Oh(K-105)。
    - src/HELP_.txt(未コミット): -Hの説明の「h は HELP の子の該当行へ」を「^J^Oh は…」にした。
    - 確認: make usilic・make installが通ること。動かしての確認はまだ。
+   - **(同日追記)** 下の項目920で、K-105のキーは^J^Ohから素のhになった(MACROのM-6が要らないのは同じ)。
+920. **2026-10-19: K-105(KEYから平文のHELPの当該位置へ)のキーを^J^Ohからhへ**
+   - **経緯**: 直接のユーザー依頼"^IのHELPを廃棄したので^J^Ohも用済み。空いた位置にhを入れてほしい。"(項目919の
+     続き)。
+   - **実装**: key_bindings.cppのK-105の既定を"h"に、dispatchByte()の表に'h'→Command::KeyJumpToHelpを足し、
+     ^J^Oの'h'を消した。src/usilicrc・~/.usilic/usilicrc(リポジトリ外)のKEY節のK-105を`h`にした
+     (~/.usilic/usilicrcは`F-4 h`のままだと^J^Ohに戻るため)。
+   - src/HELP_.txt(未コミット): KEYの章の「^Oh：平文 HELP の当該位置へ」(^Ohは2026-10-14に廃止済みだった)を
+     「h」に、-Hの説明を「h は HELP の子の該当行へ」に戻し、USILICの目次の「HELP：平文のHELP」の行と、
+     直接開くキーの「^J^Oh：HELP の平文表示」の行を消した。
+   - 確認: 擬似端末で、(ls)のhで平文のHELP、KEYのhでHELPの該当行へ行くことを確かめた。make install済み。
+   - あわせて、項目918の続きとして.gz((ls)から^M、FILTERのgzip -dcを通したもの)も^Lで読み直されることを
+     擬似端末で確かめた(変更無し、reload()がloadFile()でFILTERを通し直す)。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。

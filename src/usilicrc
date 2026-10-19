@@ -486,7 +486,7 @@ KEY
 	K-111	F-2 t       # ^Ot     EPUB: 明朝体・ゴシック体の切り換え(-g)
 	K-103	F-1 C-a     # ^J^A    ARC: 一覧(アーカイブだけのFILE履歴)
 	K-104	F-1 C-f     # ^J^F    -g: フォント一覧(FONT・SANS-SERIF・SERIF)
-	K-105	F-4 h       # ^J^Oh   KEYから平文のHELPの当該位置へ(KEYの外では平文のHELP)
+	K-105	h           # h       KEYから平文のHELPの当該位置へ(KEYの外では平文のHELP)
 
 MACRO
 # キーボードマクロ。

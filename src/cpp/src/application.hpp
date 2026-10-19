@@ -323,7 +323,7 @@ enum class Command {
   StartHelp,
   // 2026-10-02追加、直接のユーザー依頼(.steering/20261002-help-key-usilicrc-reorg/):
   //   StartKey(^K、^J^K): KEYモード。HELPを「：」でCUTした一覧(冒頭の「--」は除く)。startKey()参照。
-  //   KeyJumpToHelp(^J^Oh、2026-10-08): KEYの中では選んでいる行の、平文のHELPの同じ行へ。外では平文のHELP。
+  //   KeyJumpToHelp(h、2026-10-08、2026-10-19に^J^Ohから): KEYの中では選んでいる行の、平文のHELPの同じ行へ。外では平文のHELP。
   //   OpenUserUsilicrc(^J^Ou): ~/.usilic/usilicrc。
   //   SaveMacro(^Xs、2026-10-03に^X^Sから): usilicrcの読み直し、記録したマクロの保存とマクロの一覧。saveMacroToUsilicrc()参照。
   StartKey,

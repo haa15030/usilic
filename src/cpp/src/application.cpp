@@ -2653,6 +2653,8 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::MarkByRegex;
     case '*':  // (ls)で同じ拡張子を選ぶ(Emacsのdiredの* .、2026-10-09)
       return Command::MarkByExtension;
+    case 'h':  // KEYから平文のHELPの当該位置へ(K-105、2026-10-19に^J^Ohから、Command::KeyJumpToHelp参照)
+      return Command::KeyJumpToHelp;
     case 0x80:  // ^Space(M_mark)――KeyInputはリテラルなNUL/Ctrl-Spaceを0x80として報告する、そのクラスコメント参照
     case '.':   // 2026-08-23: 同じプレーンなトグル、移動は無い――ToggleMark自身のコメント参照
       return Command::ToggleMark;
@@ -3595,8 +3597,6 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::ShowShellLog);
       case 'u':  // ^J ^O u : ~/.usilic/usilicrc(2026-10-02、Command::OpenUserUsilicrc参照)
         return handleCommand(Command::OpenUserUsilicrc);
-      case 'h':  // ^J ^O h : KEYから平文のHELPの当該位置へ(K-105、2026-10-08復活、Command::KeyJumpToHelp参照)
-        return handleCommand(Command::KeyJumpToHelp);
       case 'd':  // ^J ^O d : ~/.usilic/data/(K-96、2026-09-27)
         return handleCommand(Command::OpenDataDirectory);
       case 'w':  // ^J ^O w : WORK(K-97、2026-09-27)
@@ -5515,7 +5515,8 @@ bool Application::handleCommandImpl(Command command) {
     case Command::StartKey:
       return startKey();
     case Command::KeyJumpToHelp:
-      // ^J^Oh(K-105、2026-10-08復活、直接のユーザー依頼"KEYからは、トグルのはずの^Ohで常時平文、がどうも
+      // h(K-105、2026-10-19に^J^Ohから。直接のユーザー依頼"^IのHELPを廃棄したので^J^Ohも用済み。空いた位置にhを
+      // 入れてほしい")。以下は^J^Ohだった時のもの: (2026-10-08復活、直接のユーザー依頼"KEYからは、トグルのはずの^Ohで常時平文、がどうも
       // 違和感なので^J^Ohを復活させてhのマクロにあてたい"): KEYの中では選んでいる行の平文のHELPの同じ行へ、
       // KEYの外では平文のHELP。(^Ohの目次と平文の切り替えは2026-10-14に廃止、Command::StartHelp参照。)
       if (currentMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Key) return jumpFromKeyToHelp();
