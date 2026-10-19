@@ -29455,6 +29455,19 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      n/p等でアーカイブへ移った時は従来どおり中身そのまま(未対応)。
    - 確認: 擬似端末で、`usilic g.txt.gz`で展開した内容((gzip))が出て、書き直した後の^Lで更新されること、
      `usilic t.tar.gz`で(tar)の一覧が出ることを確かめた。make install済み。
+922. **2026-10-19: 既定のusilicrcのMACROに、コメントを2行にわたって書いたM-6(l)を入れる**
+   - **経緯**: 直接のユーザー依頼"6番目のマクロ`l`を~/.local/lib/usilic/usilicrc`のように複数行に渡るコメントで
+     設定してみた。この形式でも受け付けるようにして。"。ユーザーがインストール先のusilicrcに書いたのは、M-6の行の
+     下に、空白とタブだけで字下げした「# INFO の shell をプロンプトで PART」の行を続けたもの。
+   - **調べたこと**: Configurationの読み込み(MACRO節はtrimCommentAndLeadingWs()でコメントだけの行を飛ばす)、
+     ^Xsの一覧(usilicrc::macroLines()、M-nと「--」以外の行は読まない)とも、この形のままで受け付けていた。擬似端末で、
+     その usilicrc で l が^J^Os^Jp^usilic-1.5b:^M(INFOのSHELLの出力をプロンプトでPART)になり、^Xsの一覧にも
+     出ることを確かめた。プログラムは変えていない。
+   - **直し**: インストール先(~/.local/lib/usilic/usilicrc)はmake installでsrc/usilicrcに上書きされるので、
+     src/usilicrcのMACROにその2行を入れた(M-1〜M-5の区切りはsrc/usilicrcのタブのまま)。src/usilicrc.enにも
+     英語のコメントで入れ、項目919・920で直し忘れていたusilicrc.enのM-6(h)を消し、K-105を`h`にした。
+   - ~/.usilic/usilicrcは、インストール先の方が新しいので、次の起動で(バックアップを取って)既定の内容になる
+     (usilicrc::updateUserIfOlder()、FONT等の節だけは引き継ぐ)。今そこにあるM-7(l)も、この時M-6(l)に置き換わる。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。

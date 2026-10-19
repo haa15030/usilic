@@ -501,4 +501,6 @@ MACRO
 	M-3	[	K-35 K-4			# .^P		選択して上へ
 	M-4	]	K-35 K-3			# .^N		選択して下へ
 	M-5	e	K-67				# ^[e		EDIT
+	M-6	l	K-86 K-53 "^usilic-1.5b:" K-28	# ^J^Os^Jp^usilic-1.5b:^M
+	     	     	  		  	# INFO の shell をプロンプトで PART
 	--

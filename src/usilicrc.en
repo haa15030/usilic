@@ -502,7 +502,7 @@ KEY
 	K-111	F-2 t       # ^Ot     EPUB: switch between serif (Mincho) and sans-serif (Gothic) (-g)
 	K-103	F-1 C-a     # ^J^A    ARC: list (archives in the FILE history)
 	K-104	F-1 C-f     # ^J^F    -g: font list (FONT, SANS-SERIF, SERIF)
-	K-105	F-4 h       # ^J^Oh   From KEY to plain HELP at that line (plain HELP outside KEY)
+	K-105	h           # h       From KEY to plain HELP at that line (plain HELP outside KEY)
 
 MACRO
 # Keyboard macros.
@@ -517,5 +517,6 @@ MACRO
 	M-3	[	K-35 K-4			# .^P		Select and move up
 	M-4	]	K-35 K-3			# .^N		Select and move down
 	M-5	e	K-67				# ^[e		EDIT
-	M-6	h	K-105				# ^J^Oh		From KEY to plain HELP at that line (plain HELP outside KEY)
+	M-6	l	K-86 K-53 "^usilic-1.5b:" K-28	# ^J^Os^Jp^usilic-1.5b:^M
+	     	     	  		  	# PART of the SHELL output in INFO by prompt
 	--
