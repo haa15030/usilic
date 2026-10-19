@@ -389,120 +389,120 @@ KEY
 # Giving the same keys to two functions, or keys that begin other keys, is
 # a usilicrc error, and the later one is unassigned.
 #
-	F-0	C-x         # ^X
-	F-1	C-j         # ^J
-	F-2	C-o         # ^O
-	F-3	C-c         # ^C
-	F-4	C-j C-o     # ^J^O
+    F-0   C-x     # ^X
+    F-1   C-j     # ^J
+    F-2   C-o     # ^O
+    F-3   C-c     # ^C
+    F-4   C-j C-o # ^J^O
 
-	K-1	j           # j       Scroll one line down
-	K-2	k           # k       Scroll one line up
-	K-3	C-n         # ^N      Move cursor one line down
-	K-4	C-p         # ^P      Move cursor one line up
-	K-5	SPC         # ␣       Page down / Quick Look
-	K-6	C-v         # ^V      Page down
-	K-7	C-f         # ^F      Page down
-	K-8	b           # b       Page up
-	K-9	C-b         # ^B      Page up
-	K-10	ESC v       # ^[v     Page up
-	K-11	ESC <       # ^[<     Go to top
-	K-12	ESC >       # ^[>     Go to bottom
-	K-13	ESC N       # ^[N     Go to N-th line
-	K-14	F-0 F-0     # ^X^X    Swap with line before big move
-	K-15	n           # n       Next file (pager)
-	K-16	p           # p       Previous file (pager)
-	K-17	x           # x       First file (pager)
-	K-18	f           # f       Last file (pager)
-	K-19	q           # q       Quit (pager)
-	K-20	C-g         # ^G      Return to previous mode
-	K-21	C-l         # ^L      Redraw
-	K-22	C-z         # ^Z      Suspend
-	K-23	F-2 f       # ^Of     Show/hide mode-line
-	K-24	F-1 C-c     # ^J^C    Go to current directory
-	K-25	C-]         # ^]      Go to the current directory (same as ^J^C)
-	K-26	F-1 C-b     # ^J^B    Go to parent directory
-	K-27	F-1 N       # ^JN     Go to N-th directory
-	K-28	C-m         # ^M      Open / show
-	K-29	F-2 C-m     # ^O^M    Read per line
-	K-30	ESC C-m     # ^[^M    Read as is
-	K-31	F-1 F-1     # ^J^J    Go to previous file
-	K-32	F-2 o       # ^Oo     Switch ls format
-	K-33	F-2 l       # ^Ol     Cycle ls sort key
-	K-34	F-2 C-l     # ^O^L    Redraw (from SHELL) / reverse ls sort order
-	K-35	.           # .       Toggle selection
-	K-36	C-SPC       # ^SPC    Toggle selection
-	K-37	F-2 y       # ^Oy     Select all
-	K-38	F-2 n       # ^On     Clear all
-	K-40	F-2 c       # ^Oc     CP
-	K-41	F-2 m       # ^Om     MV
-	K-42	F-2 r       # ^Or     RM
-	K-43	F-1 t       # ^Jt     TOOL: input name
-	K-44	F-1 C-t     # ^J^T    TOOL: select from list
-	K-45	F-2 u       # ^Ou     List of selected files (USILIC)
-	K-46	F-2 a       # ^Oa     ARC: extract
-	K-47	F-1 e       # ^Je     EPUB: input
-	K-48	F-1 C-e     # ^J^E    EPUB: list
-	K-49	F-2 e       # ^Oe     ARC: contents of .epub
-	K-50	C-r         # ^R      History list
-	K-51	C-s         # ^S      Incremental search
-	K-52	F-1 C-s     # ^J^S    EGREP
-	K-53	F-1 p       # ^Jp     PART: buffer
-	K-106	F-1 C-p     # ^J^P    PART: list (file "string" history)
-	K-55	F-1 d       # ^Jd     DU: run du
-	K-56	F-1 C-d     # ^J^D    DU: back to result
-	K-57	F-1 l       # ^Jl     LOCATE: build database
-	K-58	F-1 C-l     # ^J^L    LOCATE
-	K-59	F-1 m       # ^Jm     MAN: input page
-	K-60	F-1 C-m     # ^J^M    MAN: select from list
-	K-61	F-0 f       # ^Xf     FILE: input name
-	K-62	F-0 C-f     # ^X^F    FILE: select from list
-	K-63	F-0 d       # ^Xd     DIR: input name
-	K-64	F-0 C-d     # ^X^D    DIR: select from list
-	K-65	F-2 C-c     # ^O^C    COPY
-	K-66	F-2 C-y     # ^O^Y    Paste
-	K-67	ESC e       # ^[e     EDIT (e is a MACRO)
-	K-68	ESC s       # ^[s     Go to SHELL
-	K-69	F-1 s       # ^Js     Restart SHELL
-	K-70	ESC l       # ^[l     SHELL log
-	K-71	F-1 .       # ^J.     SHELL: cd to current directory
-	K-72	F-1 ,       # ^J,     SHELL: ls -l
-	K-73	F-1 w       # ^Jw     SHELL: insert access name
-	K-74	F-1 C-w     # ^J^W    SHELL: insert buffer content
-	K-75	F-2 /       # ^O/     Search (from SHELL)
-	K-76	F-2 C-f     # ^O^F    Page down (from SHELL)
-	K-77	F-2 C-b     # ^O^B    Page up (from SHELL)
-	K-78	ESC u       # ^[u     USILIC: contents
-	K-79	F-1 C-u     # ^J^U    USILIC: list by kind
-	K-80	F-1 u       # ^Ju     USILIC: chronological
-	K-81	F-0 C-w     # ^X^W    Save buffer to work file
-	K-82	C-i         # ^I      INFO
-	K-83	F-1 C-i     # ^J^I    INFO (from SHELL)
-	K-84	F-4 u       # ^J^Ou   ~/.usilic/usilicrc
-	K-85	F-4 e       # ^J^Oe   ERROR
-	K-86	F-4 s       # ^J^Os   SHELL log
-	K-88	F-4 d       # ^J^Od   ~/.usilic/data/
-	K-89	F-4 w       # ^J^Ow   WORK
-	K-90	C-h         # ^H      HELP
-	K-91	F-1 C-h     # ^J^H    HELP
-	K-92	F-2 j       # ^Oj     Switch HELP language
-	K-107	F-2 d       # ^Od     Reverse the wheel direction
-	K-93	C-k         # ^K      KEY
-	K-94	F-1 C-k     # ^J^K    KEY (from a prompt)
-	K-95	F-0 (       # ^X(     Begin macro
-	K-96	F-0 )       # ^X)     End macro
-	K-97	F-0 e       # ^Xe     Execute macro
-	K-98	F-0 s       # ^Xs     Reload usilicrc, save/list macros
-	K-99	F-0 C-c     # ^X^C    EXIT
-	K-100	ESC ESC     # ^[^[    EXIT
-	K-101	F-2 s       # ^Os     EPUB: chapter breaks / continuous scroll
-	K-102	F-2 w       # ^Ow     EPUB: cycle the web link action (URL)
-	K-108	F-2 C-e     # ^O^E    EPUB: list of records (ranges selected and recorded in vertical COPY)
-	K-109	ESC [       # ^[[     -g: line height 1 dot taller
-	K-110	ESC ]       # ^[]     -g: line height 1 dot shorter
-	K-111	F-2 t       # ^Ot     EPUB: switch between serif (Mincho) and sans-serif (Gothic) (-g)
-	K-103	F-1 C-a     # ^J^A    ARC: list (archives in the FILE history)
-	K-104	F-1 C-f     # ^J^F    -g: font list (FONT, SANS-SERIF, SERIF)
-	K-105	h           # h       From KEY to plain HELP at that line (plain HELP outside KEY)
+    K-1   j       # j     Scroll one line down
+    K-2   k       # k     Scroll one line up
+    K-3   C-n     # ^N    Move cursor one line down
+    K-4   C-p     # ^P    Move cursor one line up
+    K-5   SPC     # ␣     Page down / Quick Look
+    K-6   C-v     # ^V    Page down
+    K-7   C-f     # ^F    Page down
+    K-8   b       # b     Page up
+    K-9   C-b     # ^B    Page up
+    K-10  ESC v   # ^[v   Page up
+    K-11  ESC <   # ^[<   Go to top
+    K-12  ESC >   # ^[>   Go to bottom
+    K-13  ESC N   # ^[N   Go to N-th line
+    K-14  F-0 F-0 # ^X^X  Swap with line before big move
+    K-15  n       # n     Next file (pager)
+    K-16  p       # p     Previous file (pager)
+    K-17  x       # x     First file (pager)
+    K-18  f       # f     Last file (pager)
+    K-19  q       # q     Quit (pager)
+    K-20  C-g     # ^G    Return to previous mode
+    K-21  C-l     # ^L    Redraw
+    K-22  C-z     # ^Z    Suspend
+    K-23  F-2 f   # ^Of   Show/hide mode-line
+    K-24  F-1 C-c # ^J^C  Go to current directory
+    K-25  C-]     # ^]    Go to the current directory (same as ^J^C)
+    K-26  F-1 C-b # ^J^B  Go to parent directory
+    K-27  F-1 N   # ^JN   Go to N-th directory
+    K-28  C-m     # ^M    Open / show
+    K-29  F-2 C-m # ^O^M  Read per line
+    K-30  ESC C-m # ^[^M  Read as is
+    K-31  F-1 F-1 # ^J^J  Go to previous file
+    K-32  F-2 o   # ^Oo   Switch ls format
+    K-33  F-2 l   # ^Ol   Cycle ls sort key
+    K-34  F-2 C-l # ^O^L  Redraw (from SHELL) / reverse ls sort order
+    K-35  .       # .     Toggle selection
+    K-36  C-SPC   # ^SPC  Toggle selection
+    K-37  F-2 y   # ^Oy   Select all
+    K-38  F-2 n   # ^On   Clear all
+    K-40  F-2 c   # ^Oc   CP
+    K-41  F-2 m   # ^Om   MV
+    K-42  F-2 r   # ^Or   RM
+    K-43  F-1 t   # ^Jt   TOOL: input name
+    K-44  F-1 C-t # ^J^T  TOOL: select from list
+    K-45  F-2 u   # ^Ou   List of selected files (USILIC)
+    K-46  F-2 a   # ^Oa   ARC: extract
+    K-47  F-1 e   # ^Je   EPUB: input
+    K-48  F-1 C-e # ^J^E  EPUB: list
+    K-49  F-2 e   # ^Oe   ARC: contents of .epub
+    K-50  C-r     # ^R    History list
+    K-51  C-s     # ^S    Incremental search
+    K-52  F-1 C-s # ^J^S  EGREP
+    K-53  F-1 p   # ^Jp   PART: buffer
+    K-106 F-1 C-p # ^J^P  PART: list (file "string" history)
+    K-55  F-1 d   # ^Jd   DU: run du
+    K-56  F-1 C-d # ^J^D  DU: back to result
+    K-57  F-1 l   # ^Jl   LOCATE: build database
+    K-58  F-1 C-l # ^J^L  LOCATE
+    K-59  F-1 m   # ^Jm   MAN: input page
+    K-60  F-1 C-m # ^J^M  MAN: select from list
+    K-61  F-0 f   # ^Xf   FILE: input name
+    K-62  F-0 C-f # ^X^F  FILE: select from list
+    K-63  F-0 d   # ^Xd   DIR: input name
+    K-64  F-0 C-d # ^X^D  DIR: select from list
+    K-65  F-2 C-c # ^O^C  COPY
+    K-66  F-2 C-y # ^O^Y  Paste
+    K-67  ESC e   # ^[e   EDIT (e is a MACRO)
+    K-68  ESC s   # ^[s   Go to SHELL
+    K-69  F-1 s   # ^Js   Restart SHELL
+    K-70  ESC l   # ^[l   SHELL log
+    K-71  F-1 .   # ^J.   SHELL: cd to current directory
+    K-72  F-1 ,   # ^J,   SHELL: ls -l
+    K-73  F-1 w   # ^Jw   SHELL: insert access name
+    K-74  F-1 C-w # ^J^W  SHELL: insert buffer content
+    K-75  F-2 /   # ^O/   Search (from SHELL)
+    K-76  F-2 C-f # ^O^F  Page down (from SHELL)
+    K-77  F-2 C-b # ^O^B  Page up (from SHELL)
+    K-78  ESC u   # ^[u   USILIC: contents
+    K-79  F-1 C-u # ^J^U  USILIC: list by kind
+    K-80  F-1 u   # ^Ju   USILIC: chronological
+    K-81  F-0 C-w # ^X^W  Save buffer to work file
+    K-82  C-i     # ^I    INFO
+    K-83  F-1 C-i # ^J^I  INFO (from SHELL)
+    K-84  F-4 u   # ^J^Ou ~/.usilic/usilicrc
+    K-85  F-4 e   # ^J^Oe ERROR
+    K-86  F-4 s   # ^J^Os SHELL log
+    K-88  F-4 d   # ^J^Od ~/.usilic/data/
+    K-89  F-4 w   # ^J^Ow WORK
+    K-90  C-h     # ^H    HELP
+    K-91  F-1 C-h # ^J^H  HELP
+    K-92  F-2 j   # ^Oj   Switch HELP language
+    K-107 F-2 d   # ^Od   Reverse the wheel direction
+    K-93  C-k     # ^K    KEY
+    K-94  F-1 C-k # ^J^K  KEY (from a prompt)
+    K-95  F-0 (   # ^X(   Begin macro
+    K-96  F-0 )   # ^X)   End macro
+    K-97  F-0 e   # ^Xe   Execute macro
+    K-98  F-0 s   # ^Xs   Reload usilicrc, save/list macros
+    K-99  F-0 C-c # ^X^C  EXIT
+    K-100 ESC ESC # ^[^[  EXIT
+    K-101 F-2 s   # ^Os   EPUB: chapter breaks / continuous scroll
+    K-102 F-2 w   # ^Ow   EPUB: cycle the web link action (URL)
+    K-108 F-2 C-e # ^O^E  EPUB: list of records (made by vertical COPY)
+    K-109 ESC [   # ^[[   -g: line height 1 dot taller
+    K-110 ESC ]   # ^[]   -g: line height 1 dot shorter
+    K-111 F-2 t   # ^Ot   EPUB: serif/sans-serif switch (-g)
+    K-103 F-1 C-a # ^J^A  ARC: list (archives in the FILE history)
+    K-104 F-1 C-f # ^J^F  -g: font list (FONT, SANS-SERIF, SERIF)
+    K-105 h       # h     From KEY to that line of plain HELP (else plain HELP)
 
 MACRO
 # Keyboard macros.

@@ -29557,6 +29557,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      HELP.en.epub・HELP.1(英語のroff、usilic -n)を作り直した(KEYの一覧は日英とも174行にそろった)。
      src/HELP_.txtの-cの段落は~/HELP_.txtと同じく3行に分け、src/HELP_en_.txtも同じく3行に。
    - 確認: make install・PTYで^Kの後^Ojで日英のKEYが同じ174行になること。テストは実行していない。
+933. **2026-10-19: 既定のusilicrcのKEYを、字下げ4桁・空白で詰めた桁そろえにして80桁に収める**
+   - **経緯**: 直接のユーザー依頼"KEY画面で気になる点があるとすればやはり行からハミ出したコメント。「キーの書き方：」の
+     解説文では「F-n」が全角１文字分の字下げ位置にある。全体をそれに合わせたうえで、キーアサインは長くて「F-? C-?」
+     なのでもう少し詰めてもいい。コメントが80に収まるまで。"(HELP.epubのKEYの注釈に既定値を入れた項目932の後)。
+   - **実装**: src/usilicrc・usilicrc.enのKEYのF-n・K-nの行を「    K-n   キー    # 表記  説明」(番号5桁・キー7桁・
+     表記5桁、間は空白1つ、タブ無し)に。英語の長い説明3つ(K-108・K-111・K-105)を短くし、日英とも79桁以内。
+     configuration.cppのKEYの読み込みは、番号とキーの間の空白を1文字しか除いていなかったので、全部除く。
+     tests/test_key_bindings.cppのMACROの数の期待値12(以前から失敗)を、今の既定のM-1〜M-6の6に。
+     HELP.epub・HELP.en.epubを作り直した。
+   - 確認: make usilic・make installが通ること。テストは"src/usilicrc and src/usilicrc.en"の1件だけ実行して通過。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。

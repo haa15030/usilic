@@ -371,120 +371,120 @@ KEY
 # 割り当てたり、あるキーが別のキーの頭になっていたりすると、usilicrc の
 # エラーとして後の方が割り当て無しになります。
 #
-	F-0	C-x         # ^X
-	F-1	C-j         # ^J
-	F-2	C-o         # ^O
-	F-3	C-c         # ^C
-	F-4	C-j C-o     # ^J^O
+    F-0   C-x     # ^X
+    F-1   C-j     # ^J
+    F-2   C-o     # ^O
+    F-3   C-c     # ^C
+    F-4   C-j C-o # ^J^O
 
-	K-1	j           # j       画面を1行下へ
-	K-2	k           # k       画面を1行上へ
-	K-3	C-n         # ^N      カーソルを1行下へ
-	K-4	C-p         # ^P      カーソルを1行上へ
-	K-5	SPC         # ␣       ページ送り/クイックルック
-	K-6	C-v         # ^V      ページ送り
-	K-7	C-f         # ^F      ページ送り
-	K-8	b           # b       ページ戻し
-	K-9	C-b         # ^B      ページ戻し
-	K-10	ESC v       # ^[v     ページ戻し
-	K-11	ESC <       # ^[<     先頭へ
-	K-12	ESC >       # ^[>     末尾へ
-	K-13	ESC N       # ^[N     N行目へ
-	K-14	F-0 F-0     # ^X^X    大きく移動する前の行と行き来
-	K-15	n           # n       次のfile(pager)
-	K-16	p           # p       前のfile(pager)
-	K-17	x           # x       最初のfile(pager)
-	K-18	f           # f       最後のfile(pager)
-	K-19	q           # q       pagerの終了
-	K-20	C-g         # ^G      前のモードへ戻る
-	K-21	C-l         # ^L      再表示
-	K-22	C-z         # ^Z      サスペンド
-	K-23	F-2 f       # ^Of     mode-line の表示/非表示
-	K-24	F-1 C-c     # ^J^C    カレントディレクトリへ
-	K-25	C-]         # ^]      カレントディレクトリへ(^J^Cと同じ)
-	K-26	F-1 C-b     # ^J^B    親ディレクトリへ
-	K-27	F-1 N       # ^JN     N番目のディレクトリへ
-	K-28	C-m         # ^M      開く/表示
-	K-29	F-2 C-m     # ^O^M    1行ずつ読む
-	K-30	ESC C-m     # ^[^M    そのまま読む
-	K-31	F-1 F-1     # ^J^J    以前のfileへ
-	K-32	F-2 o       # ^Oo     ls の表示形式
-	K-33	F-2 l       # ^Ol     ls のソートキー巡回
-	K-34	F-2 C-l     # ^O^L    再表示(SHELL内から)/ls のソート順を逆順に
-	K-35	.           # .       選択/非選択
-	K-36	C-SPC       # ^SPC    選択/非選択
-	K-37	F-2 y       # ^Oy     全選択
-	K-38	F-2 n       # ^On     全解除
-	K-40	F-2 c       # ^Oc     CP
-	K-41	F-2 m       # ^Om     MV
-	K-42	F-2 r       # ^Or     RM
-	K-43	F-1 t       # ^Jt     TOOL: 入力
-	K-44	F-1 C-t     # ^J^T    TOOL: 一覧
-	K-45	F-2 u       # ^Ou     選択したfileの一覧(USILIC)
-	K-46	F-2 a       # ^Oa     ARC: 展開
-	K-47	F-1 e       # ^Je     EPUB: 入力
-	K-48	F-1 C-e     # ^J^E    EPUB: 一覧
-	K-49	F-2 e       # ^Oe     ARC: .epubの中身
-	K-50	C-r         # ^R      履歴一覧
-	K-51	C-s         # ^S      逐次検索
-	K-52	F-1 C-s     # ^J^S    EGREP
-	K-53	F-1 p       # ^Jp     PART: バッファ
-	K-106	F-1 C-p     # ^J^P    PART: 一覧(file "文字列"の履歴)
-	K-55	F-1 d       # ^Jd     DU: 集計
-	K-56	F-1 C-d     # ^J^D    DU: 結果へ戻る
-	K-57	F-1 l       # ^Jl     LOCATE: データベース作成
-	K-58	F-1 C-l     # ^J^L    LOCATE
-	K-59	F-1 m       # ^Jm     MAN: 入力
-	K-60	F-1 C-m     # ^J^M    MAN: 一覧
-	K-61	F-0 f       # ^Xf     FILE: 入力
-	K-62	F-0 C-f     # ^X^F    FILE: 一覧
-	K-63	F-0 d       # ^Xd     DIR: 入力
-	K-64	F-0 C-d     # ^X^D    DIR: 一覧
-	K-65	F-2 C-c     # ^O^C    COPY
-	K-66	F-2 C-y     # ^O^Y    ペースト
-	K-67	ESC e       # ^[e     EDIT(eはMACRO)
-	K-68	ESC s       # ^[s     SHELLへ
-	K-69	F-1 s       # ^Js     SHELLを再起動
-	K-70	ESC l       # ^[l     SHELLのログ
-	K-71	F-1 .       # ^J.     SHELL: カレントディレクトリへcd
-	K-72	F-1 ,       # ^J,     SHELL: ls -l
-	K-73	F-1 w       # ^Jw     SHELL: アクセス名
-	K-74	F-1 C-w     # ^J^W    SHELL: バッファの内容
-	K-75	F-2 /       # ^O/     検索(SHELL内から)
-	K-76	F-2 C-f     # ^O^F    ページ送り(SHELL内から)
-	K-77	F-2 C-b     # ^O^B    ページ戻し(SHELL内から)
-	K-78	ESC u       # ^[u     USILIC: 目次
-	K-79	F-1 C-u     # ^J^U    USILIC: 種類ごとの一覧
-	K-80	F-1 u       # ^Ju     USILIC: 時系列
-	K-81	F-0 C-w     # ^X^W    バッファを作業fileへ保存
-	K-82	C-i         # ^I      INFO
-	K-83	F-1 C-i     # ^J^I    INFO(SHELL内から)
-	K-84	F-4 u       # ^J^Ou   ~/.usilic/usilicrc
-	K-85	F-4 e       # ^J^Oe   ERROR
-	K-86	F-4 s       # ^J^Os   SHELLのログ
-	K-88	F-4 d       # ^J^Od   ~/.usilic/data/
-	K-89	F-4 w       # ^J^Ow   WORK
-	K-90	C-h         # ^H      HELP
-	K-91	F-1 C-h     # ^J^H    プロンプトからHELP
-	K-92	F-2 j       # ^Oj     HELP の言語切替
-	K-107	F-2 d       # ^Od     ホイールの向きの切り替え
-	K-93	C-k         # ^K      KEY
-	K-94	F-1 C-k     # ^J^K    プロンプトからKEY
-	K-95	F-0 (       # ^X(     マクロの記録開始
-	K-96	F-0 )       # ^X)     マクロの記録終了
-	K-97	F-0 e       # ^Xe     マクロの実行
-	K-98	F-0 s       # ^Xs     usilicrcの読み直し・マクロの保存と一覧
-	K-99	F-0 C-c     # ^X^C    EXIT
-	K-100	ESC ESC     # ^[^[    EXIT
-	K-101	F-2 s       # ^Os     EPUB: 章区切り/連続スクロール
-	K-102	F-2 w       # ^Ow     EPUB: Webのリンクの対処を巡回(URL)
-	K-108	F-2 C-e     # ^O^E    EPUB: 記録の一覧(縦書きのCOPYで範囲指定して記録)
-	K-109	ESC [       # ^[[     -g: 行の高さを1ドット広げる
-	K-110	ESC ]       # ^[]     -g: 行の高さを1ドット狭める
-	K-111	F-2 t       # ^Ot     EPUB: 明朝体・ゴシック体の切り換え(-g)
-	K-103	F-1 C-a     # ^J^A    ARC: 一覧(アーカイブだけのFILE履歴)
-	K-104	F-1 C-f     # ^J^F    -g: フォント一覧(FONT・SANS-SERIF・SERIF)
-	K-105	h           # h       KEYから平文のHELPの当該位置へ(KEYの外では平文のHELP)
+    K-1   j       # j     画面を1行下へ
+    K-2   k       # k     画面を1行上へ
+    K-3   C-n     # ^N    カーソルを1行下へ
+    K-4   C-p     # ^P    カーソルを1行上へ
+    K-5   SPC     # ␣     ページ送り/クイックルック
+    K-6   C-v     # ^V    ページ送り
+    K-7   C-f     # ^F    ページ送り
+    K-8   b       # b     ページ戻し
+    K-9   C-b     # ^B    ページ戻し
+    K-10  ESC v   # ^[v   ページ戻し
+    K-11  ESC <   # ^[<   先頭へ
+    K-12  ESC >   # ^[>   末尾へ
+    K-13  ESC N   # ^[N   N行目へ
+    K-14  F-0 F-0 # ^X^X  大きく移動する前の行と行き来
+    K-15  n       # n     次のfile(pager)
+    K-16  p       # p     前のfile(pager)
+    K-17  x       # x     最初のfile(pager)
+    K-18  f       # f     最後のfile(pager)
+    K-19  q       # q     pagerの終了
+    K-20  C-g     # ^G    前のモードへ戻る
+    K-21  C-l     # ^L    再表示
+    K-22  C-z     # ^Z    サスペンド
+    K-23  F-2 f   # ^Of   mode-line の表示/非表示
+    K-24  F-1 C-c # ^J^C  カレントディレクトリへ
+    K-25  C-]     # ^]    カレントディレクトリへ(^J^Cと同じ)
+    K-26  F-1 C-b # ^J^B  親ディレクトリへ
+    K-27  F-1 N   # ^JN   N番目のディレクトリへ
+    K-28  C-m     # ^M    開く/表示
+    K-29  F-2 C-m # ^O^M  1行ずつ読む
+    K-30  ESC C-m # ^[^M  そのまま読む
+    K-31  F-1 F-1 # ^J^J  以前のfileへ
+    K-32  F-2 o   # ^Oo   ls の表示形式
+    K-33  F-2 l   # ^Ol   ls のソートキー巡回
+    K-34  F-2 C-l # ^O^L  再表示(SHELL内から)/ls のソート順を逆順に
+    K-35  .       # .     選択/非選択
+    K-36  C-SPC   # ^SPC  選択/非選択
+    K-37  F-2 y   # ^Oy   全選択
+    K-38  F-2 n   # ^On   全解除
+    K-40  F-2 c   # ^Oc   CP
+    K-41  F-2 m   # ^Om   MV
+    K-42  F-2 r   # ^Or   RM
+    K-43  F-1 t   # ^Jt   TOOL: 入力
+    K-44  F-1 C-t # ^J^T  TOOL: 一覧
+    K-45  F-2 u   # ^Ou   選択したfileの一覧(USILIC)
+    K-46  F-2 a   # ^Oa   ARC: 展開
+    K-47  F-1 e   # ^Je   EPUB: 入力
+    K-48  F-1 C-e # ^J^E  EPUB: 一覧
+    K-49  F-2 e   # ^Oe   ARC: .epubの中身
+    K-50  C-r     # ^R    履歴一覧
+    K-51  C-s     # ^S    逐次検索
+    K-52  F-1 C-s # ^J^S  EGREP
+    K-53  F-1 p   # ^Jp   PART: バッファ
+    K-106 F-1 C-p # ^J^P  PART: 一覧(file "文字列"の履歴)
+    K-55  F-1 d   # ^Jd   DU: 集計
+    K-56  F-1 C-d # ^J^D  DU: 結果へ戻る
+    K-57  F-1 l   # ^Jl   LOCATE: データベース作成
+    K-58  F-1 C-l # ^J^L  LOCATE
+    K-59  F-1 m   # ^Jm   MAN: 入力
+    K-60  F-1 C-m # ^J^M  MAN: 一覧
+    K-61  F-0 f   # ^Xf   FILE: 入力
+    K-62  F-0 C-f # ^X^F  FILE: 一覧
+    K-63  F-0 d   # ^Xd   DIR: 入力
+    K-64  F-0 C-d # ^X^D  DIR: 一覧
+    K-65  F-2 C-c # ^O^C  COPY
+    K-66  F-2 C-y # ^O^Y  ペースト
+    K-67  ESC e   # ^[e   EDIT(eはMACRO)
+    K-68  ESC s   # ^[s   SHELLへ
+    K-69  F-1 s   # ^Js   SHELLを再起動
+    K-70  ESC l   # ^[l   SHELLのログ
+    K-71  F-1 .   # ^J.   SHELL: カレントディレクトリへcd
+    K-72  F-1 ,   # ^J,   SHELL: ls -l
+    K-73  F-1 w   # ^Jw   SHELL: アクセス名
+    K-74  F-1 C-w # ^J^W  SHELL: バッファの内容
+    K-75  F-2 /   # ^O/   検索(SHELL内から)
+    K-76  F-2 C-f # ^O^F  ページ送り(SHELL内から)
+    K-77  F-2 C-b # ^O^B  ページ戻し(SHELL内から)
+    K-78  ESC u   # ^[u   USILIC: 目次
+    K-79  F-1 C-u # ^J^U  USILIC: 種類ごとの一覧
+    K-80  F-1 u   # ^Ju   USILIC: 時系列
+    K-81  F-0 C-w # ^X^W  バッファを作業fileへ保存
+    K-82  C-i     # ^I    INFO
+    K-83  F-1 C-i # ^J^I  INFO(SHELL内から)
+    K-84  F-4 u   # ^J^Ou ~/.usilic/usilicrc
+    K-85  F-4 e   # ^J^Oe ERROR
+    K-86  F-4 s   # ^J^Os SHELLのログ
+    K-88  F-4 d   # ^J^Od ~/.usilic/data/
+    K-89  F-4 w   # ^J^Ow WORK
+    K-90  C-h     # ^H    HELP
+    K-91  F-1 C-h # ^J^H  プロンプトからHELP
+    K-92  F-2 j   # ^Oj   HELP の言語切替
+    K-107 F-2 d   # ^Od   ホイールの向きの切り替え
+    K-93  C-k     # ^K    KEY
+    K-94  F-1 C-k # ^J^K  プロンプトからKEY
+    K-95  F-0 (   # ^X(   マクロの記録開始
+    K-96  F-0 )   # ^X)   マクロの記録終了
+    K-97  F-0 e   # ^Xe   マクロの実行
+    K-98  F-0 s   # ^Xs   usilicrcの読み直し・マクロの保存と一覧
+    K-99  F-0 C-c # ^X^C  EXIT
+    K-100 ESC ESC # ^[^[  EXIT
+    K-101 F-2 s   # ^Os   EPUB: 章区切り/連続スクロール
+    K-102 F-2 w   # ^Ow   EPUB: Webのリンクの対処を巡回(URL)
+    K-108 F-2 C-e # ^O^E  EPUB: 記録の一覧(縦書きのCOPYで範囲指定して記録)
+    K-109 ESC [   # ^[[   -g: 行の高さを1ドット広げる
+    K-110 ESC ]   # ^[]   -g: 行の高さを1ドット狭める
+    K-111 F-2 t   # ^Ot   EPUB: 明朝体・ゴシック体の切り換え(-g)
+    K-103 F-1 C-a # ^J^A  ARC: 一覧(アーカイブだけのFILE履歴)
+    K-104 F-1 C-f # ^J^F  -g: フォント一覧(FONT・SANS-SERIF・SERIF)
+    K-105 h       # h     KEYから平文のHELPの当該位置へ(KEYの外では平文のHELP)
 
 MACRO
 # キーボードマクロ。

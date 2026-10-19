@@ -147,7 +147,7 @@ TEST_CASE("src/usilicrc and src/usilicrc.en: read without errors, their KEY sect
     REQUIRE(config.loadRcText(text, true));
     CHECK(config.errors().empty());
     // 2026-10-02: MACRO節(M-1〜)があるので置き換え表自体は空ではない。KEY節が既定と同じことは下で確かめる。
-    CHECK(config.macros().size() == 12);
+    CHECK(config.macros().size() == 6);  // 2026-10-19: 既定のMACROはM-1〜M-6(; : [ ] e l)
     CHECK(config.keyEntrySpecs().size() == KeyBindings::defaultEntries().size());
     for (const auto &entry : KeyBindings::defaultEntries()) {
       CAPTURE(entry.number);

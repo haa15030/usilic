@@ -677,7 +677,9 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
           std::string line = *trimmed;
           std::size_t sp = line.find_first_of(" \t");
           std::string head = line.substr(0, sp);
-          std::string spec = (sp == std::string::npos) ? "" : line.substr(sp + 1);
+          // 2026-10-19: 番号とキーの間は空白でそろえてもよい(既定のusilicrcのKEYは空白で桁をそろえる)。
+          std::size_t from = (sp == std::string::npos) ? std::string::npos : line.find_first_not_of(" \t", sp);
+          std::string spec = (from == std::string::npos) ? "" : line.substr(from);
           while (!spec.empty() && (spec.back() == ' ' || spec.back() == '\t')) spec.pop_back();
           if (head.size() >= 3 && (head[0] == 'F' || head[0] == 'K') && head[1] == '-' &&
               head.find_first_not_of("0123456789", 2) == std::string::npos) {
