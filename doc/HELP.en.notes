@@ -1,0 +1,21 @@
+# The English counterpart of doc/HELP.notes, used by usilic -e for the notes at the end of HELP.en.epub
+# (make help-epub-en). The format is the same as doc/HELP.notes; the usilicrc comments come from src/usilicrc.en.
+# Lines starting with # are not read.
+
+@narou2epub
+A program that makes works of "Shosetsuka ni Naro" (Nocturne Novels etc. too), Kakuyomu and Aozora Bunko into vertical EPUB3 (~/.local/lib/usilic/narou2epub, installed by make install).
+narou2epub N-code|Kakuyomu work ID|work URL|Aozora Bunko library card URL ... [-o directory]
+Saves it in directory (~/.usilic/data/ if omitted) as "title_N-code(work ID)_date.epub" and prints its path. Run inside SHELL, it opens the finished EPUB as it is.
+
+It needs the following preparation.
+python3 -m venv ~/.local/lib/usilic/venv
+~/.local/lib/usilic/venv/bin/pip install lxml ebooklib requests Pillow
+
+Use the EPUBs you make only for your own enjoyment and do not distribute them (the copyright of each work belongs to its author).
+
+# Italics that need no note (in place of underlines)
+@usilicrc
+
+@SHELL
+The shell run in SHELL is the one in the environment variable $SHELL. When $SHELL is not bash, zsh, tcsh or csh (or is unset), bash is used.
+On Windows, bash.exe is used when started from Git Bash (an environment with MSYSTEM), otherwise cmd.exe (%ComSpec%).

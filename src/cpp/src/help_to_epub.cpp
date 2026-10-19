@@ -306,10 +306,10 @@ struct Chapter {
   std::string file;
 };
 
-std::string xhtml(const std::string &title, const std::string &body) {
+std::string xhtml(const std::string &title, const std::string &body, const std::string &lang) {
   return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE html>\n"
-         "<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\" xml:lang=\"ja\" "
-         "lang=\"ja\">\n<head><meta charset=\"UTF-8\"/><title>" +
+         "<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\" xml:lang=\"" +
+         lang + "\" lang=\"" + lang + "\">\n<head><meta charset=\"UTF-8\"/><title>" +
          escapeHtml(title) +
          "</title><link rel=\"stylesheet\" type=\"text/css\" href=\"../Style/style.css\"/></head>\n<body>\n" + body +
          "</body>\n</html>\n";
@@ -430,6 +430,17 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
                                     const std::string &notesText, std::string *summary,
                                     std::vector<std::string> *unnoted) {
   std::vector<std::string> lines = splitLines(roff);
+  // 2026-10-19、直接のユーザー依頼(英語のHELP、HELP.en.epub): usilic -nが英語の原稿の.THに付ける"User Commands"
+  // (convertMarkupToMsRoffSource()参照)があれば英語。言語の指定と、注釈・目次・既定値の見出しを英語にする。
+  bool english = false;
+  for (const auto &l : lines)
+    if (l.compare(0, 4, ".TH ") == 0) {
+      english = l.find("\"User Commands\"") != std::string::npos;
+      break;
+    }
+  const std::string lang = english ? "en" : "ja";
+  const std::string notesTitle = english ? "Notes" : "\xE6\xB3\xA8\xE9\x87\x88";  // 注釈
+  const std::string tocTitle = english ? "Contents" : "\xE7\x9B\xAE\xE6\xAC\xA1";  // 目次
 
   // 本文の始まり(前置きの後の最初の文字の行)
   std::size_t start = 0;
@@ -771,7 +782,7 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       std::string h = linkRefs(b.html, fname);
       body += "<p class=\"" + cls + "\">" + (stripNbspAndSpace(h).empty() ? std::string(kNbsp) : h) + "</p>\n";
     }
-    files.push_back({std::string("Text/") + fname, xhtml(chapters[n].title, body)});
+    files.push_back({std::string("Text/") + fname, xhtml(chapters[n].title, body, lang)});
   }
 
   // 巻末の注釈。注釈の頭に、参照した所へ戻るリンク(複数なら↩1 ↩2…)。中身はusilicrcのその項目の
@@ -813,7 +824,8 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       }
       const auto &def = rcDefaults[item];
       if (!def.empty()) {
-        inner += "<p class=\"dh\">\xE6\x97\xA2\xE5\xAE\x9A\xE5\x80\xA4</p>\n";  // 既定値
+        inner += std::string("<p class=\"dh\">") + (english ? "Default" : "\xE6\x97\xA2\xE5\xAE\x9A\xE5\x80\xA4") +
+                 "</p>\n";  // 既定値
         for (const auto &l : def) {
           std::string t = inlineText(l);
           inner += "<p class=\"rc\">" + (t.empty() ? std::string(kNbsp) : t) + "</p>\n";
@@ -821,15 +833,15 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       }
     }
     // usilicrcに無い名前(narou2epub等、HELP.notesの文だけ)は、見出しに「usilicrc の」を付けない。
-    std::string title = rcComments.count(item) ? " <i>usilicrc</i> \xE3\x81\xAE <b>" + escapeHtml(item) + "</b>"
-                                               : " <b>" + escapeHtml(item) + "</b>";
+    std::string title = !rcComments.count(item) ? " <b>" + escapeHtml(item) + "</b>"
+                        : english              ? " <b>" + escapeHtml(item) + "</b> in <i>usilicrc</i>"
+                                               : " <i>usilicrc</i> \xE3\x81\xAE <b>" + escapeHtml(item) + "</b>";
     asides += "<aside id=\"" + nid + "\" epub:type=\"footnote\">\n<p class=\"nh\">" + back + title + "</p>\n" + inner +
               "</aside>\n";
   }
   if (!asides.empty()) {
-    chapters.push_back({"\xE6\xB3\xA8\xE9\x87\x88", {}, {}, "notes"});  // 注釈
-    files.push_back({"Text/notes.xhtml", xhtml("\xE6\xB3\xA8\xE9\x87\x88",
-                                               "<h2 id=\"top\">\xE6\xB3\xA8\xE9\x87\x88</h2>\n" + asides)});
+    chapters.push_back({notesTitle, {}, {}, "notes"});
+    files.push_back({"Text/notes.xhtml", xhtml(notesTitle, "<h2 id=\"top\">" + notesTitle + "</h2>\n" + asides, lang)});
   }
 
   std::string css =
@@ -866,9 +878,10 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
     }
     navItems += item + "</li>\n";
   }
-  files.push_back({"Text/nav.xhtml", xhtml("\xE7\x9B\xAE\xE6\xAC\xA1",  // 目次
-                                           "<nav epub:type=\"toc\" id=\"toc\">\n<h2>\xE7\x9B\xAE\xE6\xAC\xA1</h2>\n<ol>\n" +
-                                               navItems + "</ol>\n</nav>\n")});
+  files.push_back({"Text/nav.xhtml", xhtml(tocTitle,
+                                           "<nav epub:type=\"toc\" id=\"toc\">\n<h2>" + tocTitle + "</h2>\n<ol>\n" +
+                                               navItems + "</ol>\n</nav>\n",
+                                           lang)});
 
   // .TH USILIC 1 "日付" "版" ...
   std::string date, version = "usilic";
@@ -901,12 +914,12 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
   }
   std::string opf =
       "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-      "<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"id\" xml:lang=\"ja\">\n"
+      "<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"id\" xml:lang=\"" + lang + "\">\n"
       "<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n"
       "<dc:identifier id=\"id\">urn:uuid:b9e22b63-e1df-51a5-aced-609cf3c8f37c</dc:identifier>\n"
       "<dc:title>usilic HELP</dc:title>\n"
       "<dc:creator>\xE8\xAA\x8C\xE7\x92\x83\xE7\xA9\xBA\xE3\x83\xA6\xE3\x82\xA6</dc:creator>\n"  // 誌璃空ユウ
-      "<dc:language>ja</dc:language>\n"
+      "<dc:language>" + lang + "</dc:language>\n"
       "<dc:description>" + escapeHtml(version + " " + date) + "(usilic -e)</dc:description>\n"
       "<meta property=\"dcterms:modified\">" + modified + "</meta>\n"
       "</metadata>\n<manifest>\n" + manifest + "\n</manifest>\n"

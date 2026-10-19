@@ -29487,6 +29487,17 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      上下)をこれに替えた。src/usilicrc・usilicrc.enのDRAGのコメントに「端末では使わない」と足し、
      src/HELP_.txt(未コミット)の-cの説明を「DRAGは使わない、速さはARROW」に直した(SPEEDはARROWが無い時に使う)。
    - 確認: make usilic・make installが通ること。テストは実行していない。
+925. **2026-10-19: 英語のHELPもEPUBにする(HELP.en.epub、usilic -eの英語の原稿への対応)**
+   - **経緯**: 直接のユーザーの問いと提案"HELP_enはどうなってるの？　^Ojで英語モードで^Hしてみると.epubでないうえにだいぶ
+     古い内容みたい。...HELP_.txtの英訳版HELP_en_.txtを作ってくれたらHELP_en.txtも作れるけど？"。英語では
+     helpEpubPath()が探すHELP.en.epubが無く、2026-10-10に作ったHELP.1(英語のroff)を平文で出していた。
+   - **実装**: src/HELP_en_.txt(未コミット、アシスタント用)を今のsrc/HELP_.txtの英訳として作り直した(845行、行ごとの
+     記号と全角の表記は日本語と同じ位置)。help_to_epub.cppは、.THの"User Commands"(usilic -nが英語の原稿に付ける)
+     で英語と判定し、xml:lang・dc:languageをen、注釈・目次・既定値の見出しをNotes・Contents・Default、注釈の見出しを
+     「X in usilicrc」にする。Makefileにhelp-epub-en(~/HELP_en.txt→doc/HELP.en.epub、注釈はusilicrc.enと新設の
+     doc/HELP.en.notes)を足し、make installはdoc/HELP.en.epubがあれば入れる。
+   - 確認: make usilic・make installが通ること。日本語のHELP.epubは作り直しても注釈のDRAGの1行以外変わらないこと。
+     古い~/HELP_en.txtからはlang="en"のEPUBになること(新しい原稿は未確認)。テストは実行していない。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。

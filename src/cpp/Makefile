@@ -145,7 +145,7 @@ INSTALL_NAME = usilic
 INSTALL_DIR  = $(PREFIX)/bin
 LIB_DIR      = $(PREFIX)/lib/usilic
 
-.PHONY: test usilic install clean app help-epub
+.PHONY: test usilic install clean app help-epub help-epub-en
 
 test: $(BUILD_DIR)/run_tests
 	$(BUILD_DIR)/run_tests
@@ -174,6 +174,11 @@ usilic: $(BUILD_DIR)/usilic
 HELP_TXT ?= $(HOME)/HELP.txt
 help-epub: $(BUILD_DIR)/usilic
 	USILIC_EPUB_RC=../usilicrc USILIC_EPUB_NOTES=../../doc/HELP.notes $(BUILD_DIR)/usilic -e $(HELP_TXT) > ../../doc/HELP.epub
+# 2026-10-19、直接のユーザー依頼(^Ojで英語にした^HのHELPが古い平文だった): 英語版HELP.en.epub(^Ojの後の^H)。原稿は
+# src/HELP_en_.txtからユーザーのスクリプトで作る~/HELP_en.txt、注釈はusilicrc.enのコメントとdoc/HELP.en.notes。
+HELP_EN_TXT ?= $(HOME)/HELP_en.txt
+help-epub-en: $(BUILD_DIR)/usilic
+	USILIC_EPUB_RC=../usilicrc.en USILIC_EPUB_NOTES=../../doc/HELP.en.notes $(BUILD_DIR)/usilic -e $(HELP_EN_TXT) > ../../doc/HELP.en.epub
 
 install: $(BUILD_DIR)/usilic
 	install -d $(INSTALL_DIR)
@@ -194,6 +199,7 @@ install: $(BUILD_DIR)/usilic
 	install -m 644 ../../doc/HELP.notes $(LIB_DIR)/HELP.notes
 	# 2026-10-18: HELPのEPUB版(^Hで開く、make help-epubで作る)。
 	if [ -f ../../doc/HELP.epub ]; then install -m 644 ../../doc/HELP.epub $(LIB_DIR)/HELP.epub; fi
+	if [ -f ../../doc/HELP.en.epub ]; then install -m 644 ../../doc/HELP.en.epub $(LIB_DIR)/HELP.en.epub; fi
 	# 2026-10-04: EPUBのWebのリンクのPdf(usilicrcのURL節)。Playwrightの準備はtools/url2pdf自身のコメント参照。
 	install -m 755 tools/url2pdf $(LIB_DIR)/url2pdf
 	install -m 644 tools/url2pdf.py $(LIB_DIR)/url2pdf.py
