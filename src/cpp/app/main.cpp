@@ -362,18 +362,10 @@ std::string resolveGuiFontPath(std::optional<TerminalAppearance> appearance = st
     resolved = fm::resolveLinuxFontPath(appearance->fontName);
     if (!resolved.empty()) return resolved;
   }
-  // 2026-10-20、直接のユーザー依頼(miniの^J^Fで出るipagを-gの既定に): 入っていればIPAゴシック(和文も等幅)を先に。
-  const char *home = std::getenv("HOME");
-  for (const char *name : {"ipag.ttc", "ipag.ttf"}) {
-    for (const std::string &dir :
-         {std::string(home ? home : "") + "/Library/Fonts/", std::string("/Library/Fonts/"),
-          std::string("/usr/share/fonts/opentype/ipafont-gothic/"), std::string("/usr/share/fonts/truetype/ipafont-gothic/")}) {
-      std::string path = dir + name;
-      std::ifstream probe(path, std::ios::binary);
-      if (probe.good()) return path;
-    }
-  }
   static const char *const candidates[] = {
+      // 2026-10-20、直接のユーザー判断("mpiのSFNSMonoが既定でいい"、字間は^[{ / ^[}で詰められるので): SF Monoを先に
+      // (同日にいったんIPAゴシックを先にしたのをやめた)。
+      "/System/Library/Fonts/SFNSMono.ttf",
       "/System/Library/Fonts/Menlo.ttc",
       "/System/Library/Fonts/Monaco.ttf",
       "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
@@ -2372,7 +2364,10 @@ std::vector<fm::FontListEntry> buildFontList(const fm::GraphicalDisplay &gui) {
   struct Face {
     std::string path, name;
   };
-  auto query = [](const std::string &pattern) {
+  // hidden: ファミリー名が「.」で始まるもの(macOSがアプリ向けに隠しているシステムフォント)も、先頭の「.」を除いて
+  // 出す。FONT(等幅)だけ(2026-10-20、直接のユーザー報告"miniの^J^F一覧のFONT項目にSFNSMonoが出ない"、
+  // SFNSMono.ttfのファミリー名は「.SF NS Mono」)。
+  auto query = [](const std::string &pattern, bool hidden = false) {
     std::vector<Face> faces;
     fm::ChildProcess::Result result =
         fm::ChildProcess::run({"fc-list", "-f", "%{index}\t%{file}\t%{family[0]}\t%{style[0]}\n", pattern});
@@ -2383,7 +2378,12 @@ std::vector<fm::FontListEntry> buildFontList(const fm::GraphicalDisplay &gui) {
       std::vector<std::string> fields;
       std::istringstream fieldStream(line);
       for (std::string field; std::getline(fieldStream, field, '\t');) fields.push_back(field);
-      if (fields.size() < 3 || fields[0] != "0" || fields[2].empty() || fields[2][0] == '.') continue;
+      if (fields.size() < 3 || fields[0] != "0" || fields[2].empty()) continue;
+      if (fields[2][0] == '.') {
+        // 「.LastResort」「.Times LT MM」等の使えないものも等幅として出てくるので、名前に「Mono」のあるものだけ。
+        if (!hidden || fields[2].find("Mono") == std::string::npos) continue;
+        fields[2].erase(0, 1);
+      }
       if (!seen.insert(fields[1]).second) continue;
       std::string name = fields[2] + (fields.size() > 3 && !fields[3].empty() ? " " + fields[3] : "");
       faces.push_back({fields[1], name});
@@ -2396,7 +2396,7 @@ std::vector<fm::FontListEntry> buildFontList(const fm::GraphicalDisplay &gui) {
       if (name.find(word) != std::string::npos) return true;
     return false;
   };
-  std::vector<Face> mono = query(":spacing=mono"), japanese = query(":lang=ja"), sans, serif;
+  std::vector<Face> mono = query(":spacing=mono", true), japanese = query(":lang=ja"), sans, serif;
   // 2026-10-06追加、直接のユーザー依頼("wsl版にメイリオが入るようにして"): WSLのfc-listにはWindows側のフォントが
   // 出ないので、/mnt/c/Windows/Fontsをfc-scanで調べて足す(等幅は%{spacing}が100、または和文の等幅でよくある
   // 90(dual、MSゴシック等)。日本語は%{lang}にja)。

@@ -31840,3 +31840,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      縮めずにマスからはみ出させて描く(fitGlyphRect()のallowWidthOverflow)。半角の字の幅の半分〜字の大きさ分広くまで。
      ~/.usilic/historyのGUIの行の末尾に2つ足して次の起動に引き継ぐ。窓の大きさを保存する時の桁数は横書きのマスの
      幅で(horizontalColumns())。usilicrc・usilicrc.enのKEYにK-112・K-113を足す(src/HELP_.txt・HELP_en_.txtにも説明)。
+936. **2026-10-20: -gの既定のフォントをSF Mono(SFNSMono.ttf)にし、^J^FのFONTの一覧にもSF Monoを出す**
+   - **経緯**: 直接のユーザー判断"mpiのSFNSMonoが既定でいい。miniの^J^F一覧のFONT項目にSFNSMonoが出ないのはなぜ？"
+     (字間を^[{ / ^[}で詰められるようにした項目935の後)。SFNSMono.ttfのファミリー名は「.SF NS Mono」で、
+     buildFontList()はmacOSがアプリ向けに隠している「.」で始まるファミリーを除いていたため一覧に出なかった
+     (mpiで出ていたのは、端末のフォントとして今使っているフォントは一覧に無くても足すため)。
+   - **実装**: resolveGuiFontPath()の既定の候補の先頭を/System/Library/Fonts/SFNSMono.ttfに(項目934のIPAゴシック
+     を先に探すのはやめた)。buildFontList()のFONT(等幅)は、「.」で始まるファミリーも名前に「Mono」があれば先頭の
+     「.」を除いて出す(「.LastResort」「.Times LT MM」等の使えないものは出さない)。
