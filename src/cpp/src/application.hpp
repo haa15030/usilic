@@ -3693,6 +3693,7 @@ private:
   // を分割する――executeCut()自身の新設の分岐参照。
   enum class CutOrigin { File, Directory, Log, Man, Locate, Du, Epub, Key };  // Epub: openEpub()参照、Key: startKey()参照
   CutOrigin cutOrigin_ = CutOrigin::File;
+  bool epubTocFromBody_ = false;  // EPUBの章の一覧へ本文から来た(returnToEpubToc())。openSelectedSegment()参照
 
   bool recordingMacro_ = false;
   // ^X^S(saveMacroToUsilicrc()参照): 直前に^Xeでマクロを実行した(^X^S以外のキーで下ろす)、

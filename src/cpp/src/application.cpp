@@ -7957,7 +7957,17 @@ bool Application::openSelectedSegment() {
   if (cutOrigin_ == CutOrigin::Key) return executeSelectedKeyLine();  // KEYの^M(startKey()参照)
   const CutSegment *segment = cutMode_.selectedSegment();
   if (!segment) return false;
-  if (cutOrigin_ == CutOrigin::Epub) return openEpubSegmentImage(*segment) || openEpubTocEntry(*segment);
+  if (cutOrigin_ == CutOrigin::Epub) {
+    // 2026-10-19、直接のユーザー報告("-c起動のKbt.epubでは本文で`;`/`:`とやると章が変わるのはいいとして、imageの章で
+    // quicklookから戻るとnav.xhtmlの目次になる。本文からの実行なので本文へ戻ってほしい。"): `;`/`:`はMACROの
+    // ^G^P^M/^G^N^Mなので、画像だけの章ではこの^Mがクイックルックを開いて一覧に残っていた。本文から来た一覧
+    // (epubTocFromBody_)なら、クイックルックの後にその章の本文へ戻る。
+    if (openEpubSegmentImage(*segment)) {
+      if (epubTocFromBody_) openEpubTocEntry(*segment);
+      return true;
+    }
+    return openEpubTocEntry(*segment);
+  }
   saveCutFilePosition();  // 中身を見たまま終了しても一覧の位置が残るように
 
   std::vector<StyledLine> content = cutMode_.segmentContent(*segment);
@@ -8523,6 +8533,7 @@ bool Application::openEpubQuietly(const std::string &path) {
   sourceLines.reserve(fileView_.lines().size());
   for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
   cutOrigin_ = CutOrigin::Epub;
+  epubTocFromBody_ = false;
   cutPositionKey_.clear();
   cutSyntax_ = GrepSyntax::Fixed;
   cutReturnMode_ = ApplicationMode::Directory;
@@ -8627,6 +8638,7 @@ bool Application::returnToEpubToc() {
     if (segments[i].startLine <= cursor) selected = static_cast<int>(i);
   cutView_.setCursorIndex(selected);
   currentMode_ = ApplicationMode::Cut;
+  epubTocFromBody_ = true;
   if (epubTocVerticalActive()) refreshEpubTocVertical();
   activeView().redraw();
   activeView().syncVisibleCursor();

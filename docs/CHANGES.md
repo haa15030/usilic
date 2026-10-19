@@ -29406,6 +29406,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      dispatchByte()のShift+矢印の分岐も消した。dispatchLeaderByte()の^[+矢印は何もしない。key_input.cppの
      "\x1b\x1b["→Shift+矢印の読み取りは残す(^[^[(EXIT)にならないように)。
    - src/HELP_.txt(未コミット): EPUBの^[←・^[→の行と、HELPの段落の^[↑/^[↓・shiftの説明を消した。
+917. **2026-10-19: EPUBの本文で`;`/`:`が画像だけの章に当たった時、クイックルックの後は本文へ戻る**
+   - **経緯**: 直接のユーザー報告"-c起動のKbt.epubでは本文で`;`/`:`とやると章が変わるのはいいとして、imageの章で
+     quicklookから戻るとnav.xhtmlの目次になる。本文からの実行なので本文へ戻ってほしい。"
+   - **原因**: `;`/`:`はusilicrcのMACRO(^G^P^M/^G^N^M)。章の一覧の^Mは、画像だけの章ならクイックルックを開く
+     だけ(openEpubSegmentImage()、項目の2026-09-28の提案)で、一覧に残っていた。
+   - **実装**: epubTocFromBody_(returnToEpubToc()でtrue、openEpub()でfalse)を足し、openSelectedSegment()は
+     本文から来た一覧なら、クイックルックの後にopenEpubTocEntry()でその章の本文へ戻る。手で^Gして一覧から
+     画像の章を^Mした時も同じ(本文から来た一覧のため)。EPUBを開いた最初の一覧では今まで通り一覧に残る。
+   - 確認: make usilic・make installが通ること。動かしての確認はまだ。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。
