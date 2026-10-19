@@ -29415,6 +29415,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      本文から来た一覧なら、クイックルックの後にopenEpubTocEntry()でその章の本文へ戻る。手で^Gして一覧から
      画像の章を^Mした時も同じ(本文から来た一覧のため)。EPUBを開いた最初の一覧では今まで通り一覧に残る。
    - 確認: make usilic・make installが通ること。動かしての確認はまだ。
+918. **2026-10-19: EPUBの本文でも^Lで読み直す(位置はそのまま)**
+   - **経緯**: 直接のユーザー報告"(ls)から~/HELP.epubを開き、~/HELP_.txtを変更後、成形した~/HELP.txtに対して
+     `usilic -e HELP.txt > HELP.epub^M`としたのち^L^L^Lとやれば元の位置だが変更が更新されてない。続けて^J^Jなら
+     更新。"。項目913の^Lの読み直しはEPUBを除いていた(^J^Jで更新されたのは、本文のcurrentFile()が履歴の.epubと
+     同じものとして飛ばされず、開き直していたため)。^J^JでHELP.txt~と行き来する案は、~が無ければ読み直すだけで
+     よいとのことで、^Lの読み直しで足りるため入れていない。
+   - **実装**: Command::Redrawで、EPUBの本文(fileReturnMode_ == Cut、cutOrigin_ == Epub)なら、saveFilePosition()
+     してからopenEpub()で開き直し、章の一覧の戻り先(cutReturnMode_)を戻す。
+   - 確認: 擬似端末で、開いている.epubを`usilic -e`で書き直してから^Lすると新しい内容が出ることを確かめた。
+     make install済み。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。

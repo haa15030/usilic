@@ -5782,6 +5782,14 @@ bool Application::handleCommandImpl(Command command) {
       // 2026-10-08: 通常のファイルも読み直す(FileMode::reload()参照。2026-10-19から書き換えられていなくても)。
       else if (currentMode_ == ApplicationMode::File && !isEpubFile(fileMode_.currentFile()))
         fileMode_.reload();
+      // 2026-10-19、直接のユーザー報告(HELP.epubを見ながら`usilic -e HELP.txt > HELP.epub`の後、"^L^L^Lとやれば元の
+      // 位置だが変更が更新されてない。続けて^J^Jなら更新"): EPUBは位置を記録して開き直す(^Gの戻り先はそのまま)。
+      else if (currentMode_ == ApplicationMode::File && fileReturnMode_ == ApplicationMode::Cut &&
+               cutOrigin_ == CutOrigin::Epub) {
+        saveFilePosition();
+        ApplicationMode cutReturn = cutReturnMode_;
+        if (openEpub(fileMode_.currentFile())) cutReturnMode_ = cutReturn;
+      }
       // 2026-09-08追加、直接のユーザー要望("^Lで消去"、DirectoryMode::
       // setTransientMarkedNames()自身のコメント参照)――CP/MV/ARC完了後
       // の一時マーキングを^Lで消す。CP/MV/RM着手前の複数選択
