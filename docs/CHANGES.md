@@ -31848,3 +31848,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: resolveGuiFontPath()の既定の候補の先頭を/System/Library/Fonts/SFNSMono.ttfに(項目934のIPAゴシック
      を先に探すのはやめた)。buildFontList()のFONT(等幅)は、「.」で始まるファミリーも名前に「Mono」があれば先頭の
      「.」を除いて出す(「.LastResort」「.Times LT MM」等の使えないものは出さない)。
+937. **2026-10-20: Finderからのusilic.app起動(制御端末の無い-g)は、白地に黒字で開く**
+   - **経緯**: 直接のユーザー依頼"同じく.app起動ではウィンドウ色を背景白、文字色黒でよろしく。"。それまでは最後に
+     端末に重ねて-gを使った時の色(~/.usilic/historyのGUIの色)で開いていた。
+   - **実装**: app/main.cppのtryEnterGuiPhase()で、端末の色が無く(appearance無し)、/dev/ttyを開けない(hasControllingTerminal())
+     時は白地に黒字。端末から起動した-gや、親の窓の色を受け継ぐ子の窓(-H/-K)は今までどおり。Windowsのネイティブも今までどおり。
