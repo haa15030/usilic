@@ -125,6 +125,7 @@ std::string cmdPromptText(const std::string &text) {
   }
   return out;
 }
+#endif
 
 // CSIの引数(ESC [ と終わりの1字を除いた所)を;で分けて数にする。無い・空の所は0。
 std::vector<int> csiParameters(const std::string &sequence) {
@@ -148,6 +149,7 @@ std::vector<int> csiParameters(const std::string &sequence) {
   return params;
 }
 
+#ifdef _WIN32
 int csiParameter(const std::vector<int> &params, std::size_t index, int fallback) {
   return index < params.size() && params[index] > 0 ? params[index] : fallback;
 }
@@ -611,6 +613,7 @@ void Shell::processOutputBytes(const std::string &bytes) {
 void Shell::processOutputByte(unsigned char c) {
   const std::string &mark = options_.promptMark;
   if (consumeEscapeByte(c)) return;
+  if (alternateScreen_) return;  // 全画面の子の出力(consumeEscapeByte()の同日のコメント参照)
 #ifdef _WIN32
   if (c == '\n' && vtRow_ < consoleRows_) vtRow_++;
 #endif
@@ -702,7 +705,21 @@ bool Shell::consumeEscapeByte(unsigned char c) {
         // 捨てずに本文へ渡す。ただしプロンプト検出の途中(inPromptTail_/
         // markerMatchBuffer_)には混ぜない――そちらはプロンプト文字列
         // そのものの照合用。
-        if (c == 'm' && !inPromptTail_ && markerMatchBuffer_.empty()) appendEscapeSequence(escapeSequence_);
+        if (c == 'm' && !inPromptTail_ && markerMatchBuffer_.empty() && !alternateScreen_)
+          appendEscapeSequence(escapeSequence_);
+        // 2026-10-19、直接のユーザー報告("通常ファイルで`^Jtemacs -nw ^M`とやると読み込みが止まらなくなり、行数、
+        // バイト数が暴走。"): PROGRAMに無いemacs等の全画面のプログラムはSHELLで動き、1024行×1024桁の画面を
+        // 描き続ける。全画面への切り替え(ESC[?1049h・?1047h・?47h)から戻す(…l)までの出力は本文に取り込まず、
+        // 切り替えた時にfullScreenCallback_でメッセージを出させる(子には何もしない)。
+        if ((c == 'h' || c == 'l') && escapeSequence_.size() > 3 && escapeSequence_[2] == '?') {
+          for (int mode : csiParameters(escapeSequence_)) {
+            if (mode != 1049 && mode != 1047 && mode != 47) continue;
+            bool entering = c == 'h';
+            if (entering && !alternateScreen_ && fullScreenCallback_) fullScreenCallback_();
+            alternateScreen_ = entering;
+            break;
+          }
+        }
 #ifdef _WIN32
         if (console_ && c != 'm') {
           std::string sequence;
@@ -1962,6 +1979,8 @@ void Shell::setHistoryRecorder(std::function<void(const std::string &)> recorder
 }
 
 void Shell::setBusy(bool busy) { busy_ = busy; }
+
+void Shell::setFullScreenCallback(std::function<void()> callback) { fullScreenCallback_ = std::move(callback); }
 // foregroundJobRunning()自身の宣言コメント(shell.hpp)参照。
 bool Shell::foregroundJobRunning() const {
 #ifdef _WIN32  // .steering/20261015-windows-native-gui/

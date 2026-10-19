@@ -932,6 +932,10 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // 経緯参照)。
   shell_.setHistoryRecorder(
       [this](const std::string &line) { history_.pushRecent(RingCategory::ShellCommand, line); });
+  // 2026-10-19、直接のユーザー依頼(emacs -nw等の全画面のプログラムをSHELLで動かした時、Shell::consumeEscapeByte()の
+  // 同日のコメント参照): 出力を取り込むのをやめた所で、PROGRAMへの登録と^Jsを案内する。
+  shell_.setFullScreenCallback(
+      [this] { showTransientNotice(shell_.scrollback(), "Add it to PROGRAM in usilicrc (^Js restarts SHELL)"); });
   // 2026-08-17修正: このフック(Shell::submitLine()自身のディスパッチ、
   // input_shell()のdo_prog()への引き渡しから移植)は存在していたが、
   // 一度も結線されていなかった――上でsetHistoryRecorder()について

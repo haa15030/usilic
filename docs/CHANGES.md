@@ -29387,6 +29387,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      <indent10>の無い字下げ0の行になり、convertMsRoffToHelpEpub()は字下げ0の行(「名称」「概要」等、タブの無い
      章の見出し)を章とみなすので、nav.xhtmlに入った。
    - **直し**: src/HELP_.txtのその行の頭に⑩を足した(変換のプログラムは変えていない)。
+915. **2026-10-19: SHELLで全画面のプログラムが動いた時、出力を取り込まずにメッセージを出す。PROGRAMにemacs**
+   - **経緯**: 直接のユーザー報告"通常ファイルで`^Jtemacs -nw ^M`とやると読み込みが止まらなくなり、行数、バイト数が
+     暴走。"。PROGRAMにemacsが無いのでSHELLで実行され、SHELLの擬似端末(1024行×1024桁)の大きさで描いた画面が
+     本文に流れ込んでいた。相談の上、ユーザー"「Full-screen program: 」だと何のことがわかりにくいのでそれだけ削除。
+     PROGRAMへの追記もよろしく。"
+   - **実装**: shell.cpp: consumeEscapeByte()で、ESC[?1049h・?1047h・?47h(全画面への切り替え)から…lまでは
+     alternateScreen_にし、processOutputByte()はその間の出力を捨てる。切り替えた時にfullScreenCallback_を呼び、
+     Applicationが"Add it to PROGRAM in usilicrc (^Js restarts SHELL)"を出す。子には何もしない(SHELLのキーは
+     子へそのまま送られないので、抜けるのは^Js)。csiParameters()をWindows専用の所から出した。
+   - src/usilicrc・~/.usilic/usilicrc(リポジトリ外)のPROGRAMにemacsを足した。
+   - 確認: 擬似端末で、`^Jtemacs -nw ^M`の後の行数が5のままでメッセージが出ること、^JsでSHELLが再起動されemacsが
+     終わることを確かめた。make install済み。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。

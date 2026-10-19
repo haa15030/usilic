@@ -126,6 +126,7 @@ PROGRAM
 	jed
 	mg
 	vi
+	emacs
 	less
 	man
 	info

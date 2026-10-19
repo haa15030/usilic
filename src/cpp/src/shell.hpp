@@ -363,6 +363,8 @@ class Shell {
   void setProgramLauncher(
       std::function<bool(const std::string &programToken, const std::string &fullLine)> launcher);
   void setHistoryRecorder(std::function<void(const std::string &line)> recorder);
+  // 2026-10-19: 子が全画面へ切り替えた(ESC[?1049h等)時に呼ばれる。consumeEscapeByte()参照。
+  void setFullScreenCallback(std::function<void()> callback);
   // 引き渡された対話的PROGRAMがまだ実行中かどうか――呼び出し元が
   // 駆動する(Shellは一度引き渡した後は自力で知る方法が無い)。
   // trueの間、他のモードにアクションを拒否させるために使われる。
@@ -610,6 +612,8 @@ class Shell {
   std::function<void(const std::string &)> directoryChangedCallback_;
   std::function<bool(const std::string &, const std::string &)> programLauncher_;
   std::function<void(const std::string &)> historyRecorder_;
+  std::function<void()> fullScreenCallback_;
+  bool alternateScreen_ = false;  // 子が全画面(ESC[?1049h等)の間。その出力は取り込まない
   std::function<std::vector<std::string>(const std::string &)> completionProvider_;
   // 2026-09-18追加、TabOutcome自身の宣言コメント参照。
   std::function<std::vector<std::string>(const std::string &)> programCompletionProvider_;
