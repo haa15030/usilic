@@ -2467,6 +2467,7 @@ class Application {
   // 手を付けない)――一覧の端でのless自身の":n"/":p"
   // ("No next/previous file")に合わせている、循環はしない。
   bool navigateToPagerFile(int newIndex);
+  bool loadPagerFile(const std::string &path);  // 引数のファイルをページャーで開く(FILTERの拡張子は通す)
   // (startListBrowser(): 2026-09-20削除、application.cpp自身の削除
   // コメント参照。)
   // ToggleHistoryView自身のコメント参照。

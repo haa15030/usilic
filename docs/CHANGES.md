@@ -29445,6 +29445,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 確認: 擬似端末で、(ls)のhで平文のHELP、KEYのhでHELPの該当行へ行くことを確かめた。make install済み。
    - あわせて、項目918の続きとして.gz((ls)から^M、FILTERのgzip -dcを通したもの)も^Lで読み直されることを
      擬似端末で確かめた(変更無し、reload()がloadFile()でFILTERを通し直す)。
+921. **2026-10-19: 引数で開いたFILTERの拡張子のファイル(.gz等)も、FILTERを通してページャーで開く**
+   - **経緯**: 直接のユーザー依頼"引数で開いた.gzもFILTERを通すようにして、ARCHIVEにある拡張子ファイルも^O^Mと
+     同じリストを表示してほしい。これって未実装だっけ？"。`usilic g.txt.gz`は圧縮された中身がそのまま出ていた。
+   - **実装**: Application::loadPagerFile()を足し、startPagerFileList()とnavigateToPagerFile()(n/p/x/f)から使う。
+     FILTERの拡張子(ARCHIVE・EXECではないもの)はFileMode::loadTransformedPagerFile()(loadAndTransformContent()が
+     FILTERを通す、^Lはそれで組み直す)、他は従来どおりloadStream()。
+   - ARCHIVEの拡張子は2026-10-02から実装済み(引数が1つなら^O^Mと同じstartArchivePagerLoadAsync())。複数の引数の
+     n/p等でアーカイブへ移った時は従来どおり中身そのまま(未対応)。
+   - 確認: 擬似端末で、`usilic g.txt.gz`で展開した内容((gzip))が出て、書き直した後の^Lで更新されること、
+     `usilic t.tar.gz`で(tar)の一覧が出ることを確かめた。make install済み。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。

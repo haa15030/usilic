@@ -2472,8 +2472,6 @@ bool Application::startPagerFileList(const std::vector<std::string> &paths) {
       return startArchivePagerLoadAsync(path, directory);
     }
   }
-  int fd = ::open(paths.front().c_str(), O_RDONLY);
-  if (fd < 0) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;  // fileMode_.hasActiveStream()の間は未使用(その時Backはno-op、
                                                   // それ自身のhandleCommand()分岐参照)、一貫性のため残してある
@@ -2490,7 +2488,7 @@ bool Application::startPagerFileList(const std::vector<std::string> &paths) {
   // 出た分の先読みは、以後Application::pollPagerExitNotice()自身の
   // 「topIndex_が動いた」判定が引き続きrows*2で行うので、ここを
   // rowsに縮めても後続のスクロールの先読み量自体は変わらない。
-  fileMode_.loadStream(fd, /*ownsFd=*/true, paths.front(), display_.rows());
+  if (!loadPagerFile(paths.front())) return false;
   pagerFileList_ = paths;
   pagerFileIndex_ = 0;
   // start()自身のDirectoryMode::enterDirectory()(それ自身が再描画
@@ -2528,6 +2526,20 @@ bool Application::startPagerStdin() {
   return ok;
 }
 
+// 2026-10-19、直接のユーザー依頼("引数で開いた.gzもFILTERを通すようにして"): FILTERの拡張子(.gz→gzip -dc等、
+// ARCHIVE・EXECではないもの)は、(ls)の^Mと同じくFILTERを通した内容をページャーで開く(loadTransformedPagerFile()、
+// ^Lはそれで組み直す)。他はloadStream()で少しずつ読む(初期予算は画面1枚分、startPagerFileList()の2026-09-06参照)。
+bool Application::loadPagerFile(const std::string &path) {
+  ArchiveKind kind = ArchiveKind::None;
+  auto filter = configuration_.programForSuffix(path, &kind);
+  if (filter && kind == ArchiveKind::None && !filter->argv.empty() && !configuration_.isExec(path))
+    return fileMode_.loadTransformedPagerFile(path, display_.rows(), "");
+  int fd = ::open(path.c_str(), O_RDONLY);
+  if (fd < 0) return false;
+  fileMode_.loadStream(fd, /*ownsFd=*/true, path, display_.rows());
+  return true;
+}
+
 bool Application::navigateToPagerFile(int newIndex) {
   if (currentMode_ != ApplicationMode::File) return false;
   if (newIndex < 0 || newIndex >= static_cast<int>(pagerFileList_.size())) return false;
@@ -2536,11 +2548,7 @@ bool Application::navigateToPagerFile(int newIndex) {
   // Backのステップ、等)が行うのと同じ「ファイルを離れる」際の記帳
   // ――FileMode::saveCursorPosition()自身のコメント参照。
   saveFilePosition();
-  int fd = ::open(pagerFileList_[newIndex].c_str(), O_RDONLY);
-  if (fd < 0) return false;
-  // startPagerFileList()自身の同日の同種の修正のコメント参照――
-  // ここも初期予算はrows*2ではなくrowsにする。
-  fileMode_.loadStream(fd, /*ownsFd=*/true, pagerFileList_[newIndex], display_.rows());
+  if (!loadPagerFile(pagerFileList_[newIndex])) return false;
   pagerFileIndex_ = newIndex;
   // 2026-08-25のバグ修正: ContentView自身のmove/scrollメソッド
   // (内部で自分自身をredraw()する)とは異なり、FileMode::
