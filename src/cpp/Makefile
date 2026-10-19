@@ -171,14 +171,17 @@ usilic: $(BUILD_DIR)/usilic
 # 2026-10-18、直接のユーザー依頼("doc/って開発中のディレクトリなのでそこからHELPを作成は明らかにおかしい"):
 # HELPのEPUB版は開発の手順で作ってdoc/HELP.epubに置き、make installはそれを入れるだけ。原稿(HELP_TXT)と、
 # 注釈に使うリポジトリのusilicrc・doc/HELP.notesから作る。注釈の無い斜体の名前は"usilic -e: no note:"に出る。
+# 表紙はusilic.appのアイコンを256ピクセルに縮めたもの(packaging/usilic_icon_256.png、2026-10-20)。
 HELP_TXT ?= $(HOME)/HELP.txt
 help-epub: $(BUILD_DIR)/usilic
-	USILIC_EPUB_RC=../usilicrc USILIC_EPUB_NOTES=../../doc/HELP.notes $(BUILD_DIR)/usilic -e $(HELP_TXT) > ../../doc/HELP.epub
+	USILIC_EPUB_RC=../usilicrc USILIC_EPUB_NOTES=../../doc/HELP.notes USILIC_EPUB_COVER=packaging/usilic_icon_256.png \
+	  $(BUILD_DIR)/usilic -e $(HELP_TXT) > ../../doc/HELP.epub
 # 2026-10-19、直接のユーザー依頼(^Ojで英語にした^HのHELPが古い平文だった): 英語版HELP.en.epub(^Ojの後の^H)。原稿は
 # src/HELP_en_.txtからユーザーのスクリプトで作る~/HELP_en.txt、注釈はusilicrc.enのコメントとdoc/HELP.en.notes。
 HELP_EN_TXT ?= $(HOME)/HELP_en.txt
 help-epub-en: $(BUILD_DIR)/usilic
-	USILIC_EPUB_RC=../usilicrc.en USILIC_EPUB_NOTES=../../doc/HELP.en.notes $(BUILD_DIR)/usilic -e $(HELP_EN_TXT) > ../../doc/HELP.en.epub
+	USILIC_EPUB_RC=../usilicrc.en USILIC_EPUB_NOTES=../../doc/HELP.en.notes USILIC_EPUB_COVER=packaging/usilic_icon_256.png \
+	  $(BUILD_DIR)/usilic -e $(HELP_EN_TXT) > ../../doc/HELP.en.epub
 
 install: $(BUILD_DIR)/usilic
 	install -d $(INSTALL_DIR)

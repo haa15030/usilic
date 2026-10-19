@@ -52,15 +52,15 @@ TEST_CASE("epubToHelpMarkup: EPUB3 -- title/creator header, spine order, ruby, n
   auto out = fm::epubToHelpMarkup(readerFor(files));
   REQUIRE(out);
   CHECK(*out ==
-        "<b>本の名前</b>\n"
+        "<b>表紙</b> <serif>[image: title.jpg]</serif>\t\n"  // 空の見出し+画像だけの段落は1行にまとめる
+        "\n"
+        "<serif><big><b>本の名前</b></big></serif>\n"  // 最初のページが表紙なら書名・著者名はその後(2026-10-20)
         "著者\n"
         "\n"
-        "<b>表紙</b> [image: title.jpg]\t\n"  // 空の見出し+画像だけの段落は1行にまとめる
+        "<serif><big>　燈の章</big></serif>\t\n"  // 目次が指す段落そのものが章の行
+        "<serif>　<rb>燈</rb><rt>《ひ》</rt>色の場&<b>太字</b></serif>\n"  // 和文の間の改行は詰める
         "\n"
-        "　燈の章\t\n"  // 目次が指す段落そのものが章の行
-        "　燈《ひ》色の場&<b>太字</b>\n"  // 和文の間の改行は詰める
-        "\n"
-        "次の行\n"
+        "<serif>次の行</serif>\n"
         "\n");
 }
 

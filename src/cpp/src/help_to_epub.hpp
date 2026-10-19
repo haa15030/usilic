@@ -17,6 +17,7 @@ namespace fm {
 // あれば、注釈の要らない斜体(アンダーラインの代わりのman(1)等)として扱い、入れない。
 std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &usilicrcText,
                                     const std::string &notesText, std::string *summary = nullptr,
-                                    std::vector<std::string> *unnoted = nullptr);
+                                    std::vector<std::string> *unnoted = nullptr, const std::string &coverPng = {});
+// coverPng(2026-10-20): 表紙の画像(PNGのバイト列、usilic.appのアイコン)。空でなければ最初のページを表紙にする。
 
 }  // namespace fm

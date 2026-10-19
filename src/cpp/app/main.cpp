@@ -5149,8 +5149,16 @@ int main(int argc, char **argv) {
       std::string roff = !source.empty() && source[0] == '.' ? source : fm::convertMarkupToMsRoffSource(source);
       std::string summary;
       std::vector<std::string> unnoted;
-      std::string epub =
-          fm::convertMsRoffToHelpEpub(roff, find("usilicrc"), find("HELP.notes"), &summary, &unnoted);
+      // 2026-10-20: 表紙の画像(usilic.appのアイコン、make help-epubが$USILIC_EPUB_COVERで渡す)。無ければ表紙無し。
+      std::string cover;
+      if (const char *given = std::getenv("USILIC_EPUB_COVER")) {
+        std::ifstream file(given, std::ios::binary);
+        std::ostringstream bytes;
+        if (file) bytes << file.rdbuf();
+        cover = bytes.str();
+      }
+      std::string epub = fm::convertMsRoffToHelpEpub(roff, find("usilicrc"), find("HELP.notes"), &summary, &unnoted,
+                                                     cover);
       std::cout.write(epub.data(), static_cast<std::streamsize>(epub.size()));
       std::cout.flush();
       std::cerr << "usilic -e: " << summary << "\n";

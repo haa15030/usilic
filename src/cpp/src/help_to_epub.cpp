@@ -428,7 +428,7 @@ class ZipWriter {
 
 std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &usilicrcText,
                                     const std::string &notesText, std::string *summary,
-                                    std::vector<std::string> *unnoted) {
+                                    std::vector<std::string> *unnoted, const std::string &coverPng) {
   std::vector<std::string> lines = splitLines(roff);
   // 2026-10-19、直接のユーザー依頼(英語のHELP、HELP.en.epub): usilic -nが英語の原稿の.THに付ける"User Commands"
   // (convertMarkupToMsRoffSource()参照)があれば英語。言語の指定と、注釈・目次・既定値の見出しを英語にする。
@@ -867,7 +867,17 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
     std::snprintf(buf, sizeof buf, "ch%02zu", n + 1);
     return std::string(buf);
   };
+  // 2026-10-20、直接のユーザー依頼("本のタイトルは「HELP」、その前の「表紙」をusilic.appのアイコン画像に"):
+  // 表紙のページ(画像だけ、目次の名前は「表紙」)。usilicのEPUB表示は、最初のページが画像だけなら書名の前に出す。
   std::string navItems;
+  if (!coverPng.empty()) {
+    files.push_back({"Images/usilic.png", coverPng});
+    files.push_back({"Text/cover.xhtml",
+                     xhtml(english ? "Cover" : "\xE8\xA1\xA8\xE7\xB4\x99",
+                           "<h2 id=\"cover\"></h2>\n<p><img alt=\"usilic\" src=\"../Images/usilic.png\"/></p>\n", lang)});
+    navItems += std::string("<li><a href=\"cover.xhtml\">") + (english ? "Cover" : "\xE8\xA1\xA8\xE7\xB4\x99") +  // 表紙
+                "</a></li>\n";
+  }
   for (std::size_t n = 0; n < chapters.size(); n++) {
     std::string item = "<li><a href=\"" + chapterFile(chapters[n], n) + ".xhtml#top\">" + escapeHtml(chapters[n].title) + "</a>";
     if (!chapters[n].subs.empty()) {
@@ -908,6 +918,11 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       "<item id=\"nav\" href=\"Text/nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>\n"
       "<item id=\"css\" href=\"Style/style.css\" media-type=\"text/css\"/>";
   std::string spine;  // navは入れない(目次のページは出さない)
+  if (!coverPng.empty()) {
+    manifest += "\n<item id=\"cover-image\" href=\"Images/usilic.png\" media-type=\"image/png\" properties=\"cover-image\"/>"
+                "\n<item id=\"cover\" href=\"Text/cover.xhtml\" media-type=\"application/xhtml+xml\"/>";
+    spine += "<itemref idref=\"cover\"/>\n";
+  }
   for (std::size_t n = 0; n < chapters.size(); n++) {
     std::string f = chapterFile(chapters[n], n);
     manifest += "\n<item id=\"" + f + "\" href=\"Text/" + f + ".xhtml\" media-type=\"application/xhtml+xml\"/>";
@@ -918,7 +933,7 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       "<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"id\" xml:lang=\"" + lang + "\">\n"
       "<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\n"
       "<dc:identifier id=\"id\">urn:uuid:b9e22b63-e1df-51a5-aced-609cf3c8f37c</dc:identifier>\n"
-      "<dc:title>usilic HELP</dc:title>\n"
+      "<dc:title>HELP</dc:title>\n"
       "<dc:creator>\xE8\xAA\x8C\xE7\x92\x83\xE7\xA9\xBA\xE3\x83\xA6\xE3\x82\xA6</dc:creator>\n"  // 誌璃空ユウ
       "<dc:language>" + lang + "</dc:language>\n"
       "<dc:description>" + escapeHtml(version + " " + date) + "(usilic -e)</dc:description>\n"

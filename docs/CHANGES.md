@@ -31853,3 +31853,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      端末に重ねて-gを使った時の色(~/.usilic/historyのGUIの色)で開いていた。
    - **実装**: app/main.cppのtryEnterGuiPhase()で、端末の色が無く(appearance無し)、/dev/ttyを開けない(hasControllingTerminal())
      時は白地に黒字。端末から起動した-gや、親の窓の色を受け継ぐ子の窓(-H/-K)は今までどおり。Windowsのネイティブも今までどおり。
+938. **2026-10-20: EPUBの最初のページが画像だけ(表紙)なら書名・著者名より前に出す。HELP.epubの書名を「HELP」にし、表紙をusilic.appのアイコンに**
+   - **経緯**: 直接のユーザー依頼"=ks.pngの最上部、本のタイトルは「HELP」、その前の「表紙」をusilic.appのアイコン画像に
+     してみて。"。usilicのEPUB表示は本の情報の書名・著者名を必ず先頭に出し、本の最初のページ(多くの本では表紙)は
+     その後に出していたので、表示側の順序を変えるかを確かめ、直接のユーザー判断"全EPUBで表紙を先頭にして。"。
+   - **実装**: epub_to_help_markup.cppのepubToHelpMarkup()で、spineの最初のページの本文に字が無く画像(<img>・SVGの
+     <image>)だけなら、そのページを変換した後に書名・著者名を出す(縦書きの本の書名の箱(centered)もその行から)。
+     help_to_epub.cppのconvertMsRoffToHelpEpub()に表紙の画像(coverPng)を足し、Images/usilic.png(cover-image)と
+     Text/cover.xhtml(目次の名前は「表紙」/"Cover")をspineの先頭に。dc:titleは"usilic HELP"から"HELP"に。
+     make help-epub/help-epub-enがpackaging/usilic_icon_256.png(1024ピクセルのアイコンを256に縮めたもの)を
+     $USILIC_EPUB_COVERで渡す。doc/HELP.epub・HELP.en.epubを作り直した。tests/test_epub_to_help_markup.cppの
+     表紙の本の期待値を新しい順序に(この期待値は明朝体・ルビの書式が入る前のままで、以前から合っていなかった)。
