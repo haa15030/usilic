@@ -1450,9 +1450,8 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
 // GraphicalDisplay::renderScrolled()'s own convention). On release,
 // the same recent-motion-window release-speed calculation
 // runGuiPhase() uses (see its own kReleaseWindow) picks a
-// fm::kScrollSpeedLevels level via fm::levelForReleaseDistance()
-// (passing cellHeightPixels=1, since a "pixel" there is already a row
-// here), then hands off into runCoastLoop() to keep going at that
+// fm::kScrollSpeedLevels level via fm::levelForTerminalReleaseDistance()
+// (its own fixed row-based table, not DRAG's dot thresholds), then hands off into runCoastLoop() to keep going at that
 // speed -- exactly the mouse-drag equivalent of what Left/Right
 // does via peekArrow(). A release with no meaningful motion (a
 // plain click) isn't a drag at all: it's handled exactly like GUI
@@ -1566,7 +1565,7 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
       int releaseDistance = 0;
       for (auto &sample : recentMotion)
         if (sample.first >= cutoff) releaseDistance += sample.second;
-      int level = resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, 1));
+      int level = resolveCoastLevel(fm::levelForTerminalReleaseDistance(releaseDistance));
       if (level == 0 || !app.epubVerticalDragActive()) return TerminalCoastResult{};
       return runCoastLoop(app, display, keyInput, level, releaseDistance > 0 ? 1 : -1, /*fromDrag=*/true);
     }
@@ -1637,7 +1636,7 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
     int releaseDistance = 0;
     for (auto &sample : recentMotion)
       if (sample.first >= cutoff) releaseDistance += sample.second;
-    int level = resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, 1));
+    int level = resolveCoastLevel(fm::levelForTerminalReleaseDistance(releaseDistance));
     if (level == 0) {
       clearHoverAndRedraw(view);
       return TerminalCoastResult{};

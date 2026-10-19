@@ -99,6 +99,9 @@ int dragArrowSpeedOffset();
 // releaseBiasがfalseなら、下の式の一律の2段のずらし(kReleaseLevelBias)をしない。-gはドラッグがドット単位で
 // 慣性と滑らかにつながるので、ずらさずに最も遅い段から始める(2026-10-10の「-gではズラし無し」と同じ趣旨)。
 int levelForReleaseDistance(int pixels, int cellHeightPixels, bool releaseBias = true);
+// 2026-10-19、直接のユーザー依頼"CUIのドラッグはDRAGと別の値にして。": 端末(CUI)のドラッグ用。動きの量は
+// ドットではなく行(縦書きのEPUBの左右は列)なので、DRAG(ドット)の値は使わず、この関数の中の固定の表と比べる。
+int levelForTerminalReleaseDistance(int cells);
 
 // 上のapplyScrollSpeedOverride()の「距離」側の対応物――意図的に
 // 別の関数/CLIフラグにしてある(2026-08-21、「-i」、「-u」自身の

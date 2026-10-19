@@ -29477,6 +29477,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - src/HELP_.txt(未コミット、2026-10-19からアシスタント用。ユーザー用は~/HELP_.txt): EPUBの^[←・^[→の
      2行(項目916で廃止したキー)を消した。
    - 確認: make usilic・make installが通ること。テストは実行していない。
+924. **2026-10-19: 端末(CUI)のドラッグの慣性の段を、DRAGではなく行数の固定の表で決める**
+   - **経緯**: CUIでもDRAGの値を使っていると分かり(直接のユーザーの問い"CUIでもDRAG使うの？　初耳なんだが。")、
+     直接のユーザー依頼"CUIのドラッグはDRAGと別の値にして。"。項目384(-i)・385(既定値の埋め込み)で、上書きの
+     閾値がある時はcellHeightPixelsを見なくなり、cellHeightPixels=1で呼んでいたCUIでは行数をDRAGのドット数と
+     比べていた(意図したものではない)。
+   - **実装**: drag_scroll_speed.cppにlevelForTerminalReleaseDistance()を新設(離す直前の0.15秒に動いた行数が
+     1 2 3 5 8 12 16 20 25 30以上で段1〜10)。app/main.cppのrunTerminalMouseDrag()の2か所(縦書きEPUBの左右、
+     上下)をこれに替えた。src/usilicrc・usilicrc.enのDRAGのコメントに「端末では使わない」と足し、
+     src/HELP_.txt(未コミット)の-cの説明を「DRAGは使わない、速さはARROW」に直した(SPEEDはARROWが無い時に使う)。
+   - 確認: make usilic・make installが通ること。テストは実行していない。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。

@@ -205,6 +205,18 @@ int levelForReleaseDistance(int pixels, int cellHeightPixels, bool releaseBias) 
   return std::min(level + (releaseBias ? kReleaseLevelBias : 0), maxLevel);  // releaseBiasは宣言のコメント参照
 }
 
+int levelForTerminalReleaseDistance(int cells) {
+  // 離す直前のkReleaseWindow(0.15秒)に動いた行数が、それぞれいくつ以上なら段1、段2 ...か。
+  static const int kThresholds[] = {1, 2, 3, 5, 8, 12, 16, 20, 25, 30};
+  int magnitude = std::abs(cells);
+  int level = 0;
+  for (int threshold : kThresholds) {
+    if (magnitude < threshold) break;
+    level++;
+  }
+  return level;
+}
+
 ScrollStep scaledForRow(const ScrollStep &pixelStep, int dotsPerRow) {
   int factor = std::max(dotsPerRow, 1);
   return {pixelStep.busyLoop, pixelStep.microseconds * factor, pixelStep.busyIterations * factor};
