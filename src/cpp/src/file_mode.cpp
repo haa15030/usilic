@@ -877,14 +877,35 @@ bool FileMode::loadFile(const std::string &path, const std::function<bool()> &sh
   return loadFileImpl(path, shouldAbort);
 }
 
-bool FileMode::reloadIfChanged() {
-  if (currentFile_.empty() || pagerMode_ || streamPipe_) return false;
+bool FileMode::reload() {
+  if (currentFile_.empty()) return false;
   std::error_code ec;
   if (!std::filesystem::is_regular_file(currentFile_, ec)) return false;
-  auto time = std::filesystem::last_write_time(currentFile_, ec);
-  if (ec) return false;
-  auto size = std::filesystem::file_size(currentFile_, ec);
-  if (ec || (time == loadedWriteTime_ && size == loadedSize_)) return false;
+  // 2026-10-19: 引数で開いたページャー(^J^Jで開き直せない)も、同じ開き方で最初から読み直し、カーソルの生の行へ戻す。
+  if (pagerMode_ && streamOwnsFd_) {
+    std::string path = currentFile_, label = pagerLabel_;
+    bool returnsToShell = pagerReturnsToShell_, returnsToDirectory = pagerReturnsToDirectory_,
+         returnsToProgram = pagerReturnsToProgram_;
+    std::string listingDirectory = pagerListingDirectory_;
+    int oldCursor = view_.cursorIndex();
+    std::optional<int> oldRawLine = rawLineNumberAt(oldCursor);
+    if (pagerTransformed_) {
+      if (!loadTransformedPagerFile(path, view_.height(), label)) return false;
+    } else {
+      int fd = ::open(path.c_str(), O_RDONLY);
+      if (fd < 0) return false;
+      loadStream(fd, /*ownsFd=*/true, path, view_.height(), noWrapMode_);
+      pagerLabel_ = label;
+    }
+    pagerReturnsToShell_ = returnsToShell;
+    pagerReturnsToDirectory_ = returnsToDirectory;
+    pagerReturnsToProgram_ = returnsToProgram;
+    pagerListingDirectory_ = listingDirectory;
+    ensureLoadedThrough(oldCursor + view_.height(), /*bypassPacing=*/true);
+    view_.setCursorIndex(translateCursorAfterReflow(oldCursor, oldRawLine));
+    return true;
+  }
+  if (pagerMode_ || streamPipe_) return false;
   saveCursorPosition();
   skipNextRecentPush();
   std::string path = currentFile_;
@@ -980,6 +1001,7 @@ bool FileMode::loadTransformedPagerFile(const std::string &path, int initialLine
   loadStream(fd, /*ownsFd=*/true, path, initialLineBudget);
   pagerProgram_ = program;
   pagerLabel_ = label;
+  pagerTransformed_ = true;
   // 2026-10-11、直接のユーザー依頼(HELPの子のモードラインを「HELP」「0001/1102 TOP」「76773」「(groff)」「USILIC」に):
   // 組んだ内容は既に全部メモリにあるので、少しずつ読まずに最後まで読み込み(バイト数・行数は全体)、位置は通常の
   // FILEと同じ形にする(loadStream()の5桁固定の形は^O^M・標準入力の少しずつ読むページャーのもの)。
@@ -1048,11 +1070,6 @@ bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()>
   // 2026-09-16追加、loadFileRaw()自身の宣言コメント参照。
   view_.setLines(rawControlCodesMode_ && shouldAbort ? readAndWrapChunked(path, shouldAbort) : readAndWrap(path, shouldAbort));
   currentFile_ = path;
-  {
-    std::error_code ec;
-    loadedWriteTime_ = std::filesystem::last_write_time(path, ec);
-    loadedSize_ = std::filesystem::file_size(path, ec);
-  }
   // 新しい読み込みは古い検索を無効にする――AnnotationStack自身のコメント参照
   annotations_.clear();
   // K-46(^X^F、「FILE: Select file name」)自身のデータソース――
@@ -1377,6 +1394,7 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   pagerReturnsToProgram_ = false;    // 同上。tryPollProgramHandoff()はこの呼び出しの後にこれを切り替える
   pagerProgram_.clear();             // 同上。loadTransformedPagerFile()がこの呼び出しの後に設定する
   pagerLabel_.clear();               // 同上
+  pagerTransformed_ = false;         // 同上
   pagerListingDirectory_.clear();  // 同上。Application::openSelectedEntryNoWrap()のARCHIVE分岐/tryPollProgramHandoff()がこの呼び出しの後にこれを設定する(2026-09-17追加分)
   // 2026-08-25(直接のユーザー依頼: "SHELL同様、行数を5桁とバイト
   // 数表示をよろしく")――他の全てのFileモードのエントリが使う

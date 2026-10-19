@@ -29370,6 +29370,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      以外)で違っていれば、カーソルの位置を保存してから同じ読み方(折り返し無し・制御文字そのまま・通常)で読み直す
      (FILE履歴には積まない)。ページャー(標準入力・引数)やストリームで開いたものは対象外。疑似端末で、開いた後に
      書き換えたファイルが^Lで1/1→1/5になるのを確認。
+   - (2026-10-19追記、直接のユーザー依頼"通常ファイルの^Lでは読み込みも実行（画像ファイルでの^Lと同じ）。ページャー
+     機能では^J^Jが使えないことへの対処。"、項目913)
+913. **2026-10-19: 通常のファイルの^Lは、書き換えられていなくても読み直す。引数で開いたページャーも読み直す**
+   - **経緯**: 上の項目681の追記の依頼。引数で開いたファイル(ページャー)は^J^Jで開き直せないので、^Lで読み直したい。
+   - **実装**: FileMode::reloadIfChanged()をreload()に改名し、更新時刻と大きさの比較(loadedWriteTime_・loadedSize_)を
+     やめた。ページャー(pagerMode_)で名前のあるファイル(streamOwnsFd_)は、同じ開き方(loadTransformedPagerFile()で
+     組み直したものはそれ、他はloadStream())で最初から読み直し、戻り先・ラベルを戻してから、カーソルを元の生の行へ
+     (translateCursorAfterReflow())。loadTransformedPagerFile()で開いたかはpagerTransformed_で覚える(HELP.txtは
+     pagerProgram_が空のため)。標準入力・^O^M等の名前の無いストリームは今まで通り対象外。
+   - 確認: make usilic・make installが通ること。動かしての確認はまだ。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。

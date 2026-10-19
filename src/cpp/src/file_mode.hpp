@@ -244,7 +244,10 @@ class FileMode {
   // 2026-10-08、直接のユーザー依頼("通常ファイル上での^Lでは日時の更新を表示にも反映して欲しい"): 今のファイルが
   // 読み込んだ後に書き換えられていれば(更新時刻か大きさが違えば)、同じ読み方でカーソルの位置を保って読み直す。
   // 読み直したらtrue。ページャー(標準入力・引数)やストリームで開いたものは対象外。
-  bool reloadIfChanged();
+  // 2026-10-19、直接のユーザー依頼("通常ファイルの^Lでは読み込みも実行（画像ファイルでの^Lと同じ）。ページャー機能
+  // では^J^Jが使えないことへの対処。"): 書き換えられていなくても読み直す(reloadIfChanged()から改名)。引数で開いた
+  // ページャーも、同じ開き方で読み直す(標準入力・^O^M等の名前の無いストリームは対象外のまま)。
+  bool reload();
   // 2026-10-01追加、直接のユーザー報告("^Cf^I^Mで file をカットする場合、FILE履歴には file "^I"が
   // 入るだけのはずなのに file が必ず入る...file "^I"とfileが延々FILE履歴リストに積み上がる"):
   // 次の1回のloadFile()では、FILE履歴(RingCategory::RecentFile)にパスを積まない。ファイルCUT
@@ -649,8 +652,6 @@ class FileMode {
   EpubImageRows epubImageRows_;  // setEpubImageRows()参照
   std::function<void()> beforeLoad_;  // setBeforeLoad()参照
   std::string currentFile_;
-  std::filesystem::file_time_type loadedWriteTime_{};  // reloadIfChanged()参照
-  std::uintmax_t loadedSize_ = 0;
   bool skipNextRecentPush_ = false;  // skipNextRecentPush()参照
   bool skipRecentPushNow_ = false;   // 今のloadFile()の間だけのskipNextRecentPush_
   AnnotationStack<FileAnnotationKind> annotations_;
@@ -668,6 +669,7 @@ class FileMode {
   // reflow()はcurrentFile_を開き直さず、組み直したものを読む。loadStream()が毎回消す。
   std::string pagerProgram_;
   std::string pagerLabel_;
+  bool pagerTransformed_ = false;  // loadTransformedPagerFile()で開いた(reload()は同じく組み直して開く)
   std::string contentProgramOverride_;  // setContentProgram()参照  // loadTransformedPagerFile()の`label`(モードラインの名前、空ならパス)。loadStream()が消す
   std::string pagerListingDirectory_;     // setPagerListingDirectory()自身の宣言コメント参照
   int streamFd_ = -1;
