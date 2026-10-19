@@ -362,6 +362,17 @@ std::string resolveGuiFontPath(std::optional<TerminalAppearance> appearance = st
     resolved = fm::resolveLinuxFontPath(appearance->fontName);
     if (!resolved.empty()) return resolved;
   }
+  // 2026-10-20、直接のユーザー依頼(miniの^J^Fで出るipagを-gの既定に): 入っていればIPAゴシック(和文も等幅)を先に。
+  const char *home = std::getenv("HOME");
+  for (const char *name : {"ipag.ttc", "ipag.ttf"}) {
+    for (const std::string &dir :
+         {std::string(home ? home : "") + "/Library/Fonts/", std::string("/Library/Fonts/"),
+          std::string("/usr/share/fonts/opentype/ipafont-gothic/"), std::string("/usr/share/fonts/truetype/ipafont-gothic/")}) {
+      std::string path = dir + name;
+      std::ifstream probe(path, std::ios::binary);
+      if (probe.good()) return path;
+    }
+  }
   static const char *const candidates[] = {
       "/System/Library/Fonts/Menlo.ttc",
       "/System/Library/Fonts/Monaco.ttf",

@@ -31822,3 +31822,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      src/webをジャンクションで置く、php -S 127.0.0.1:80、shell:startupで自動起動、80番が使えない時)を足した。
    - 確認: Macでphp -S 127.0.0.1:8099 -t <src/webをusilic-webとして置いたディレクトリ>にし、本棚の一覧・
      file.php/sample.epub/META-INF/container.xml(PATH_INFO)・/usilic-web/が200になること。Windowsでは未確認。
+934. **2026-10-20: -gの既定のフォントを、入っていればIPAゴシック(ipag.ttc/ipag.ttf)にする**
+   - **経緯**: 直接のユーザー依頼"-g起動後、mini環境で^J^Fで出てくるipag(ipag.ttc)がmpiでは出て来ない。これを
+     -gの既定にしてほしいんだが。"。mpiではipagが~/Downloadsに置かれているだけでフォントとして入っておらず
+     (miniは~/Library/Fonts/ipag.ttf)、fc-listに出ないので^J^Fの一覧にも出なかった。
+   - **実装**: app/main.cppのresolveGuiFontPath()で、Menlo等の既定の候補より先に、~/Library/Fonts・/Library/Fonts・
+     /usr/share/fonts/{opentype,truetype}/ipafont-gothicのipag.ttc・ipag.ttfを探す。USILICFONT・-f(記憶された
+     フォント)・起動した端末のフォントの方が優先なのは従来どおり。
