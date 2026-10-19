@@ -43,10 +43,10 @@ const std::vector<std::string> &directiveKeywords() {
   // 無い――ディレクティブはusilicrc内でどの順序でも現れてよい――
   // が、str.cとの照合を容易にするために保持されている)。
   static const std::vector<std::string> kKeywords = {
-      // 2026-10-16: "FILTER"・"LAUNCH"は以前の"FILE"・"EXEC"(canonicalKeyword()参照)。
+      // 2026-10-16: "FILTER"・"LAUNCH"は以前の"FILE"・"EXEC"。
       "ARCHIVE", "FILTER", "LAUNCH", "EDITOR", "SHELL", "GREP", "PROGRAM", "BUFFER", "CODE",
       // "LINE"は2026-10-02にHISTORYから改名(.steering/20261002-help-key-usilicrc-reorg/)。
-      // "COPY"・"MOVE"・"DELETE"は2026-10-18に"CP"・"MV"・"RM"から改名(canonicalKeyword()参照)。
+      // "COPY"・"MOVE"・"DELETE"は2026-10-18に"CP"・"MV"・"RM"から改名。
       "LINE",    "WAIT", "SCROLL", "LS",     "KEY",   "COPY", "MOVE",    "DELETE",
       // 2026-09-12追加、直接のユーザー依頼(columnThreshold()自身の
       // コメント参照): このC++移植自身の新設ディレクティブなので
@@ -67,27 +67,11 @@ const std::vector<std::string> &directiveKeywords() {
   return kKeywords;
 }
 
-// 節名の別名を正式な名前(directiveKeywords()の名前)にする。
-// 2026-09-27、直接のユーザー依頼("usilicrcのGREP（←「EGREP」に変更よろしく）"): 節名はEGREPが正式。以前の
-// usilicrcのGREPも同じ節として受け付ける(内部の添字は元のGREPのまま)。
-// 2026-10-18、直接のユーザー依頼("項目名の変更はユーザー数が多いOSに合わせたいので下記でよろしく。EGREP->GREP、
-// CP->COPY、MV->MOVE、RM->DELETE"、モード名と同じで紛らわしいため): 正式な名前はGREPに戻し、EGREPは以前の名前
-// として読む。CP・MV・RMも以前の名前として読む。
-// 2026-10-16、直接のユーザー依頼(FILE・EXECは"FILEがモード名と同じで紛らわしいのとEXECは同じ機能を果たす、より
-// 適切な項目名って何かない？"への案に"FILTER、LAUNCHでよろしく"): FILE→FILTER、EXEC→LAUNCH。以前の名前も読む。
-std::string canonicalKeyword(const std::string &keyword) {
-  if (keyword == "EGREP") return "GREP";
-  if (keyword == "CP") return "COPY";
-  if (keyword == "MV") return "MOVE";
-  if (keyword == "RM") return "DELETE";
-  if (keyword == "FILE") return "FILTER";
-  if (keyword == "EXEC") return "LAUNCH";
-  return keyword;
-}
-
+// 2026-10-19、直接のユーザー依頼("FILE、CP等、古い設定値でも動く仕様は必要ないので削除して"): 以前の節名
+// (EGREP→GREP、CP・MV・RM→COPY・MOVE・DELETE、FILE・EXEC→FILTER・LAUNCH)の読み替え(canonicalKeyword())はやめた。
 bool isDirectiveKeyword(const std::string &token) {
   const auto &keywords = directiveKeywords();
-  return std::find(keywords.begin(), keywords.end(), canonicalKeyword(token)) != keywords.end();
+  return std::find(keywords.begin(), keywords.end(), token) != keywords.end();
 }
 
 std::vector<std::string> splitLines(const std::string &text) {
@@ -524,7 +508,7 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
     while (i < lines.size() && isContinuationLine(lines[i])) i++;
     if (i >= lines.size()) break;
 
-    std::string keyword = canonicalKeyword(firstToken(lines[i]));  // 別名(canonicalKeyword()参照)
+    std::string keyword = firstToken(lines[i]);
     auto it = std::find(keywords.begin(), keywords.end(), keyword);
     if (it == keywords.end()) {
       errors_.push_back("unrecognized directive: " + lines[i]);

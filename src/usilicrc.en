@@ -48,7 +48,7 @@ FILTER
 # Format: `suffix' `program' (option)
 #
 # The `program' displays the content of a file with the `suffix' as
-# plain text.  (The former section name FILE is also accepted.)
+# plain text.
 
 	.gz	gzip	-dc
 	.bz2	bzip2	-dc
@@ -61,7 +61,6 @@ LAUNCH
 # Format: `suffix' `program' (option)
 #
 # The `program' is launched with a file that has the `suffix'.
-# (The former section name EXEC is also accepted.)
 #
 # macOS note: a bare app name (e.g. IINA) is not a command on $PATH, so
 # it cannot be launched.  Use `open' (the .mp4 examples below).  `open -a'
@@ -84,8 +83,8 @@ GREP
 # Format: `string'
 #
 # Search strings listed first, in this order, in the ^R list of EGREP and
-# CUT (regular expression); ^R again shows the history.  The old section
-# name GREP is also accepted.  (Enclose a string containing a space in "".)
+# PART (regular expression); ^R again shows the history.
+# (Enclose a string containing a space in "".)
 #
 # HELP's EGREP chapter examples, in the same order as its regular-
 # expression list -- each one matches some text in HELP itself.

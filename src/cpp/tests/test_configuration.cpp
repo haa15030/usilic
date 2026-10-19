@@ -111,9 +111,9 @@ TEST_CASE("programForSuffix: prefers the longest matching suffix") {
 TEST_CASE("FILE/EXEC directives: quoted and bare tokens, and EXEC sets isExec") {
   Configuration config;
   std::string rc =
-      "FILE\n"
+      "FILTER\n"
       " '.pdf' 'xpdf' '-remote'\n"
-      "EXEC\n"
+      "LAUNCH\n"
       " .html firefox\n";
   REQUIRE(config.loadRcText(rc, true));
 
@@ -142,9 +142,9 @@ TEST_CASE("FILE/EXEC directives: TAB-separated fields (usilicrc's real, actual f
           "identically to space-separated ones") {
   Configuration config;
   std::string rc =
-      "FILE\n"
+      "FILTER\n"
       "\t.pdf\txpdf\t-remote\n"
-      "EXEC\n"
+      "LAUNCH\n"
       "\t.mp4\topen\t-a\tIINA\n";
   REQUIRE(config.loadRcText(rc, true));
 
@@ -160,7 +160,7 @@ TEST_CASE("FILE/EXEC directives: TAB-separated fields (usilicrc's real, actual f
 
 TEST_CASE("a usilicrc suffix entry wins over a built-in one of equal length") {
   Configuration config;
-  REQUIRE(config.loadRcText("FILE\n .zip myunzipper -v\n", true));
+  REQUIRE(config.loadRcText("FILTER\n .zip myunzipper -v\n", true));
   auto zip = config.programForSuffix("archive.zip");
   REQUIRE(zip.has_value());
   CHECK(zip->argv == std::vector<std::string>{"myunzipper", "-v"});
@@ -348,18 +348,18 @@ TEST_CASE("GREP directive: parsed as a no-op for backward-compat with existing u
 
 TEST_CASE("CP/MV/RM directives override the default command, only in file-manager mode") {
   Configuration config;
-  REQUIRE(config.loadRcText("CP\n cp -vRi --reflink=auto\n", true));
+  REQUIRE(config.loadRcText("COPY\n cp -vRi --reflink=auto\n", true));
   CHECK(config.commandFor(ConfiguredRole::Cp).argv ==
         std::vector<std::string>{"cp", "-vRi", "--reflink=auto"});
 
   Configuration pagerConfig;
   auto before = pagerConfig.commandFor(ConfiguredRole::Cp).argv;
-  REQUIRE(pagerConfig.loadRcText("CP\n cp --something-else\n", /*fileManagerMode=*/false));
+  REQUIRE(pagerConfig.loadRcText("COPY\n cp --something-else\n", /*fileManagerMode=*/false));
   CHECK(pagerConfig.commandFor(ConfiguredRole::Cp).argv == before);  // unaffected outside file-manager mode
 }
 
-// 2026-10-18: 節名はCOPY/MOVE/DELETE・GREPが正式。以前のCP/MV/RM・EGREPも同じ節として読む(上のテスト)。
-TEST_CASE("COPY/MOVE/DELETE and GREP are the section names (CP/MV/RM and EGREP still read)") {
+// 2026-10-18: 節名はCOPY/MOVE/DELETE・GREP(以前のCP/MV/RM・EGREPは2026-10-19から読まない)。
+TEST_CASE("COPY/MOVE/DELETE and GREP are the section names") {
   Configuration config;
   REQUIRE(config.loadRcText("COPY\n cp -R\nMOVE\n mv -f\nDELETE\n rm -r\nGREP\n a.c\n", true));
   CHECK(config.errors().empty());
@@ -388,12 +388,12 @@ TEST_CASE("comments and blank lines are ignored between and within sections") {
   std::string rc =
       "# a leading comment\n"
       "\n"
-      "FILE\n"
+      "FILTER\n"
       "# comment inside the section\n"
       "\n"
       " .txt cat   # trailing comment\n"
       "\n"
-      "EXEC\n"
+      "LAUNCH\n"
       " .sh sh\n";
   REQUIRE(config.loadRcText(rc, true));
   auto txt = config.programForSuffix("readme.txt");
@@ -492,18 +492,16 @@ TEST_CASE("built-in archive aliases: .tar.gz/.taz/.tar.z/.jar/.tbz2/.txz/.tzst w
   }
   CHECK(kindOf("a.jar") == fm::ArchiveKind::Zip);
   // .tar.gzは.gz(FILEのgzip -dc)より長い一致なのでアーカイブ扱い。
-  REQUIRE(config.loadRcText("FILE\n\t.gz\tgzip\t-dc\n", true));
+  REQUIRE(config.loadRcText("FILTER\n\t.gz\tgzip\t-dc\n", true));
   CHECK(kindOf("a.tar.gz") == fm::ArchiveKind::Tar);
   CHECK(kindOf("a.gz") == fm::ArchiveKind::None);
 }
 
-// 2026-10-16(canonicalKeyword()参照): 節名はFILTER・LAUNCHが正式で、以前のFILE・EXECも同じ節として読む。
-TEST_CASE("Configuration: FILTER/LAUNCH and the former FILE/EXEC names") {
-  for (const char *names : {"FILTER\nLAUNCH", "FILE\nEXEC"}) {
-    std::string filter = std::string(names).substr(0, std::string(names).find('\n'));
-    std::string launch = std::string(names).substr(std::string(names).find('\n') + 1);
-    fm::Configuration config;
-    REQUIRE(config.loadRcText(filter + "\n\t.gz\tgzip\t-dc\n\n" + launch + "\n\t.xcf\topen\t-a\tGIMP\n", true));
-    CHECK(config.errors().empty());
-  }
+// 2026-10-16: 節名はFILTER・LAUNCH(以前のFILE・EXECは2026-10-19から読まない)。
+TEST_CASE("Configuration: FILTER/LAUNCH section names (the former FILE/EXEC are errors)") {
+  fm::Configuration config;
+  REQUIRE(config.loadRcText("FILTER\n\t.gz\tgzip\t-dc\n\nLAUNCH\n\t.xcf\topen\t-a\tGIMP\n", true));
+  CHECK(config.errors().empty());
+  fm::Configuration old;
+  CHECK_FALSE(old.loadRcText("FILTER\n\t.gz\tgzip\t-dc\n", true));
 }

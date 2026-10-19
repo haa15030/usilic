@@ -29468,6 +29468,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      英語のコメントで入れ、項目919・920で直し忘れていたusilicrc.enのM-6(h)を消し、K-105を`h`にした。
    - ~/.usilic/usilicrcは、インストール先の方が新しいので、次の起動で(バックアップを取って)既定の内容になる
      (usilicrc::updateUserIfOlder()、FONT等の節だけは引き継ぐ)。今そこにあるM-7(l)も、この時M-6(l)に置き換わる。
+923. **2026-10-19: usilicrcの以前の節名(EGREP・CP・MV・RM・FILE・EXEC)を読まない**
+   - **経緯**: 直接のユーザー依頼"FILE、CP等、古い設定値でも動く仕様は必要ないので削除して。"
+   - **実装**: configuration.cppのcanonicalKeyword()(EGREP→GREP、CP・MV・RM→COPY・MOVE・DELETE、FILE・EXEC→
+     FILTER・LAUNCH)を消した。以前の名前の節は"unrecognized directive"になる。src/usilicrc・usilicrc.enの
+     「以前の節名 … も使えます」を消し、GREPのコメントの「CUT(正規表現)」を「PART(正規表現)」にした
+     (HELP.epubのGREPの注釈で、節名をGREP自身と書いていた誤りも消える)。テストのusilicrcの文字列も新しい名前に。
+   - src/HELP_.txt(未コミット、2026-10-19からアシスタント用。ユーザー用は~/HELP_.txt): EPUBの^[←・^[→の
+     2行(項目916で廃止したキー)を消した。
+   - 確認: make usilic・make installが通ること。テストは実行していない。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。

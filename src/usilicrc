@@ -47,7 +47,6 @@ FILTER
 # 書式: suffix  program  (option)
 #
 # suffix を持つ file の内容を、program を実行して平文で表示します。
-# (以前の節名 FILE も使えます。)
 
 	.gz	gzip	-dc
 	.bz2	bzip2	-dc
@@ -60,7 +59,6 @@ LAUNCH
 # 書式: suffix  program  (option)
 #
 # suffix を持つ file を引数にして program を起動します。
-# (以前の節名 EXEC も使えます。)
 #
 # macOS の注意: アプリ名だけ(例: IINA)は $PATH 上のコマンドではないので
 # 起動できません。open を使います(下の .mp4 の例)。open -a の直後には
@@ -82,8 +80,8 @@ LAUNCH
 GREP
 # 書式: 文字列
 #
-# EGREP と CUT(正規表現)の ^R の一覧の先頭に、この順で載せておく検索文字列
-# (もう一度 ^R で履歴)。以前の節名 GREP も使えます。
+# EGREP と PART(正規表現)の ^R の一覧の先頭に、この順で載せておく検索文字列
+# (もう一度 ^R で履歴)。
 # (空白を含む文字列は "" で囲みます。)
 #
 # HELP の EGREP の章の正規表現一覧と同じ順に、HELP 自身の本文に

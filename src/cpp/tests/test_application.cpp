@@ -156,7 +156,7 @@ struct Fixture {
     // confirmation): ChildProcess::run() attaches no real terminal, so
     // `-i` would hang waiting on stdin -- same override
     // test_cp_mv_rm_mode.cpp's own tests already use.
-    configuration.loadRcText("PROGRAM\n echo\nRM\n rm -vr\n", true);
+    configuration.loadRcText("PROGRAM\n echo\nDELETE\n rm -vr\n", true);
 
     // A real archive (built via the actual `tar` CLI, matching
     // ArchiveMode's own test precedent) for the ARC-related tests.
@@ -5731,7 +5731,7 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a File result sets name=the raw pat
 // directly instead of always falling into plain FileMode viewing.
 TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a result for an EXEC-mapped suffix runs EXEC, staying in "
                            "Locate mode (not File mode)") {
-  configuration.loadRcText("EXEC\n .marker sh -c 'echo EXECRAN >> \"$0\"'\n", true);
+  configuration.loadRcText("LAUNCH\n .marker sh -c 'echo EXECRAN >> \"$0\"'\n", true);
   fs::path target = root / "target.marker";
   { std::ofstream(target) << "original\n"; }
   fs::path fakeLocate = root / "fake_locate.sh";
@@ -10296,7 +10296,7 @@ TEST_CASE_FIXTURE(Fixture, "CP: a destination typed without a trailing slash sti
 // feature existed.
 TEST_CASE_FIXTURE(Fixture, "CP: a failed copy leaves the view on the (unchanged) source directory") {
   REQUIRE(app.start(path()));
-  configuration.loadRcText("CP\n false\n", true);  // always fails, regardless of arguments
+  configuration.loadRcText("COPY\n false\n", true);  // always fails, regardless of arguments
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
@@ -12430,7 +12430,7 @@ TEST_CASE_FIXTURE(Fixture, "EDIT: refused outside Directory/File mode") {
 // -- EXEC (suffix-mapped external viewer, Enter on a matching file) --
 
 TEST_CASE_FIXTURE(Fixture, "EXEC: Enter on a suffix-mapped file runs the external program, staying in Directory mode") {
-  configuration.loadRcText("EXEC\n .marker sh -c 'echo EXECRAN >> \"$0\"'\n", true);
+  configuration.loadRcText("LAUNCH\n .marker sh -c 'echo EXECRAN >> \"$0\"'\n", true);
   { std::ofstream(root / "target.marker") << "original\n"; }
   REQUIRE(app.start(path()));
   int idx = indexOf("target.marker");
@@ -12446,7 +12446,7 @@ TEST_CASE_FIXTURE(Fixture, "EXEC: Enter on a suffix-mapped file runs the externa
 }
 
 TEST_CASE_FIXTURE(Fixture, "EXEC: a suffix NOT configured as EXEC still opens normally as a plain file") {
-  configuration.loadRcText("EXEC\n .marker sh -c 'echo EXECRAN >> \"$0\"'\n", true);
+  configuration.loadRcText("LAUNCH\n .marker sh -c 'echo EXECRAN >> \"$0\"'\n", true);
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -15655,7 +15655,7 @@ TEST_CASE_FIXTURE(Fixture, "^J^Ow opens the WORK group of the USILIC table of co
 // 同日、"EGREPの一覧を復活して欲しい": usilicrcのEGREP節(旧GREP)の実例が
 // ^Rの一覧の先頭に、その並びのまま出る。
 TEST_CASE_FIXTURE(Fixture, "EGREP: ^R opens the EGREP list with usilicrc's examples first, in order") {
-  REQUIRE(configuration.loadRcText("EGREP\n \"z b\"\n a.c\n", true));
+  REQUIRE(configuration.loadRcText("GREP\n \"z b\"\n a.c\n", true));
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartEgrep));
   REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
@@ -15718,7 +15718,7 @@ TEST_CASE_FIXTURE(Fixture, "^Ou: the marked files are opened in an external usil
 
 // 同日、"EGREP一覧のカーソル位置が保存されない": 最後に使った正規表現の行。
 TEST_CASE_FIXTURE(Fixture, "EGREP: the EGREP list opens on the most recently used pattern") {
-  REQUIRE(configuration.loadRcText("EGREP\n p1\n p2\n p3\n", true));
+  REQUIRE(configuration.loadRcText("GREP\n p1\n p2\n p3\n", true));
   history.pushRecent(RingCategory::RecentEgrepPattern, "p2");
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartEgrep));

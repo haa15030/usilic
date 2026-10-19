@@ -96,7 +96,7 @@ TEST_CASE_FIXTURE(Fixture, "remove: deletes real files") {
   // out of scope for run() (vs. runInteractive()). Use a
   // non-interactive RM override so this test exercises remove()'s
   // own mechanics instead.
-  REQUIRE(configuration.loadRcText("RM\n rm -vr\n", true));
+  REQUIRE(configuration.loadRcText("DELETE\n rm -vr\n", true));
 
   std::string a = writeFile("c.txt", "x");
   std::string b = writeFile("d.txt", "y");
@@ -139,7 +139,7 @@ TEST_CASE_FIXTURE(Fixture, "moveToInteractive: moves a real file via runInteract
 }
 
 TEST_CASE_FIXTURE(Fixture, "removeInteractive: deletes real files via runInteractive(), same effect as remove") {
-  REQUIRE(configuration.loadRcText("RM\n rm -vr\n", true));  // avoid -i, see remove()'s own test comment
+  REQUIRE(configuration.loadRcText("DELETE\n rm -vr\n", true));  // avoid -i, see remove()'s own test comment
 
   std::string a = writeFile("ci.txt", "x");
   std::string b = writeFile("di.txt", "y");
