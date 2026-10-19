@@ -3161,6 +3161,15 @@ class Application {
   bool executePathInput(const std::string &path);
   bool executeEdit();
   bool startKey();  // Command::StartKey参照
+  // Command::ToggleHelpLanguage参照: ^Ojの前に見ていたHELP・KEYと位置、^Ojの後にそれを切り替えた言語で開き直す。
+  struct HelpLanguageView {
+    enum Kind { None, Key, EpubToc, EpubBody, Plain } kind = None;
+    int index = 0;           // KEYの行、EPUBの章
+    double fraction = 0;     // EPUBの章の中、平文の全体の中の位置の割合
+    ApplicationMode returnMode = ApplicationMode::Directory;  // ^Gの戻り先
+  };
+  HelpLanguageView currentHelpLanguageView();
+  void reopenHelpInOtherLanguage(const HelpLanguageView &view);
   bool viewedThroughProgram(const std::string &path) const;  // executeEdit()参照
   // 2026-10-11、直接のユーザー依頼: ページャー起動のKEYは、HELP画面用に組んだ本文から行頭がタブの行だけ、-Kの
   // KEYは「：」を含む行だけを読み込んだ一覧にする(KEYを開く前の画面へのキーの発動・hは無し、-Kでは^Gも無し)。

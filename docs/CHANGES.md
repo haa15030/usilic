@@ -29530,6 +29530,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: ^J^Kを例外(isShellSafeKey)に加え、SHELLのままKEYを開く。
    - 確認: make usilic・make installが通ること。PTYで、SHELLに"echo abc"と入れて^J^K、KEYの^Aの行で^M、Xと^Mで
      "Xecho abc"が実行されること(SHELL/prompt onlyは出ない)。テストは実行していない。
+930. **2026-10-19: HELP・KEYを見ている時の^Ojで、その場で日本語/英語を切り替える**
+   - **経緯**: 直接のユーザー依頼"旧（Legacy）ではそうだったんだが、HELP or KEY画面で^Ojを押すとその場で英文に切り替わる。
+     これをやって。" ^Ojは^Hで開くHELPの言語(helpPath_)を替えるだけで、今の画面はそのままだった。
+   - **実装**: Command::ToggleHelpLanguageで、切り替える前にcurrentHelpLanguageView()で今の画面(KEY・HELPのEPUBの
+     本文/章の一覧・平文のHELP)と位置を控え、切り替えた後にreopenHelpInOtherLanguage()で開き直す。KEYは同じ行
+     (startKey()をkeyCursorIndex_で)、EPUBは同じ章の中の同じ割合の行(章の一覧なら同じ章)、平文は全体の中の同じ割合。
+     ^Gの戻り先は切り替える前のまま。切り替えた先の言語にHELPのEPUBが無ければ平文で開く。前の言語の位置も
+     saveFilePosition()で残す。
+   - 確認: make usilic・make installが通ること。PTYで、KEYの11行目で^Ojすると英語のKEYの11行目、もう一度で日本語、
+     ^HのHELP.epubの本文で^Ojすると英語の同じ章、^Gで英語の章の一覧になること。テストは実行していない。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。

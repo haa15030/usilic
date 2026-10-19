@@ -5537,6 +5537,10 @@ bool Application::handleCommandImpl(Command command) {
       return true;
     }
     case Command::ToggleHelpLanguage: {
+      // 2026-10-19、直接のユーザー依頼("旧（Legacy）ではそうだったんだが、HELP or KEY画面で^Ojを押すとその場で英文に
+      // 切り替わる。これをやって。"): 切り替える前に、今HELP(EPUB・平文)かKEYを見ているかを控え、切り替えた後に
+      // 同じ所を開き直す(reopenHelpInOtherLanguage())。
+      HelpLanguageView view = currentHelpLanguageView();
       // HELP.enが無ければ切り替えない(読めないファイルへ切り替わって^Hが効かなくなるのを避ける)。
       std::string previous = helpPath_;
       helpPath_ = (helpPath_ == helpBasePath_) ? helpBasePath_ + ".en" : helpBasePath_;
@@ -5544,6 +5548,7 @@ bool Application::handleCommandImpl(Command command) {
         helpPath_ = previous;
         return false;
       }
+      reopenHelpInOtherLanguage(view);
       return true;
     }
     case Command::StartKey:
@@ -19667,6 +19672,86 @@ bool Application::jumpFromKeyToHelp() {
     return true;
   }
   return openPlainHelp(content.front().rawLineNumber);
+}
+
+// Command::ToggleHelpLanguage参照: 今見ているのがHELP(EPUBの本文・章の一覧、平文)かKEYかと、その位置。HELPの日英の
+// 原稿は行が1対1なので、EPUBは章の番号と章の中の割合、KEYは行の番号、平文は全体の中の割合で同じ所とみなす。
+Application::HelpLanguageView Application::currentHelpLanguageView() {
+  HelpLanguageView view;
+  bool inCut = currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent;
+  if (inCut && cutOrigin_ == CutOrigin::Key) {
+    view.kind = HelpLanguageView::Key;
+    view.index = cutView_.cursorIndex();
+    return view;
+  }
+  std::optional<std::string> epub = helpEpubPath();
+  if (epub && (currentMode_ == ApplicationMode::File || currentMode_ == ApplicationMode::Cut) &&
+      cutOrigin_ == CutOrigin::Epub && fileMode_.currentFile() == *epub) {
+    view.kind = currentMode_ == ApplicationMode::Cut ? HelpLanguageView::EpubToc : HelpLanguageView::EpubBody;
+    view.returnMode = cutReturnMode_;
+    if (view.kind == HelpLanguageView::EpubToc) {
+      view.index = cutView_.cursorIndex();
+      return view;
+    }
+    int cursor = fileView_.cursorIndex();
+    const auto &segments = cutMode_.segments();
+    for (std::size_t i = 0; i < segments.size(); i++)
+      if (cursor >= segments[i].startLine && cursor < segments[i].endLine) {
+        view.index = static_cast<int>(i);
+        int length = std::max(1, segments[i].endLine - segments[i].startLine);
+        view.fraction = static_cast<double>(cursor - segments[i].startLine) / length;
+      }
+    return view;
+  }
+  if (currentMode_ == ApplicationMode::File && !plainHelpPath_.empty() && fileMode_.currentFile() == plainHelpPath_) {
+    view.kind = HelpLanguageView::Plain;
+    view.returnMode = fileReturnMode_;
+    int total = std::max(1, static_cast<int>(fileView_.lines().size()));
+    view.fraction = static_cast<double>(fileView_.cursorIndex()) / total;
+  }
+  return view;
+}
+
+void Application::reopenHelpInOtherLanguage(const HelpLanguageView &view) {
+  if (view.kind == HelpLanguageView::None) return;
+  if (view.kind != HelpLanguageView::Key) saveFilePosition();  // 切り替える前の言語のHELPの位置も残す
+  if (view.kind == HelpLanguageView::Key) {
+    keyCursorIndex_ = view.index;
+    startKey();
+    return;
+  }
+  // 平文の行を割合の位置へ(EPUBの章の中も)。
+  auto moveTo = [this](int line) {
+    int last = static_cast<int>(fileView_.lines().size()) - 1;
+    if (last < 0) return;
+    fileView_.setCursorIndex(std::clamp(line, 0, last));
+    fileView_.centerOnCursor();
+  };
+  std::optional<std::string> epub = helpEpubPath();
+  if (view.kind == HelpLanguageView::Plain || !epub) {  // 切り替えた先の言語にHELPのEPUBが無ければ平文
+    if (!openPlainHelp()) return;
+    fileReturnMode_ = view.returnMode;
+    moveTo(static_cast<int>(view.fraction * static_cast<double>(fileView_.lines().size())));
+    activeView().redraw();
+    return;
+  }
+  if (!openEpub(*epub)) return;
+  cutReturnMode_ = view.returnMode;  // ^Gの戻り先は切り替える前のまま
+  const auto &segments = cutMode_.segments();
+  if (segments.empty()) return;
+  int index = std::clamp(view.index, 0, static_cast<int>(segments.size()) - 1);
+  if (view.kind == HelpLanguageView::EpubToc) {
+    currentMode_ = ApplicationMode::Cut;
+    cutView_.setCursorIndex(index);
+    cutView_.centerOnCursor();
+  } else {
+    const CutSegment &segment = segments[static_cast<std::size_t>(index)];
+    currentMode_ = ApplicationMode::File;
+    fileReturnMode_ = ApplicationMode::Cut;
+    moveTo(segment.startLine + static_cast<int>(view.fraction * (segment.endLine - segment.startLine)));
+  }
+  activeView().redraw();
+  activeView().syncVisibleCursor();
 }
 
 // HELPのEPUB版(Command::StartHelp参照): helpPath_の隣(無ければ/usr/local/lib/usilic/)の"<HELPの名前>.epub"。
