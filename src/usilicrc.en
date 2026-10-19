@@ -512,11 +512,11 @@ MACRO
 # Keys recorded with ^X( ... ^X) are added at the "--" line by ^Xs right
 # after ^Xe, and saved as M-n under the key (one letter) you are asked for
 # (effective at once).  WAIT sets the interval between the keys.
-	M-1	;	K-20 K-4 K-28			# ^G^P^M	Open previous entry
-	M-2	:	K-20 K-3 K-28			# ^G^N^M	Open next entry
-	M-3	[	K-35 K-4			# .^P		Select and move up
-	M-4	]	K-35 K-3			# .^N		Select and move down
-	M-5	e	K-67				# ^[e		EDIT
-	M-6	l	K-86 K-53 "^usilic-1.5b:" K-28	# ^J^Os^Jp^usilic-1.5b:^M
-	     	     	  		  	# PART of the SHELL output in INFO by prompt
+	M-1  ;	K-20 K-4 K-28			# ^G^P^M	Open previous
+	M-2  :	K-20 K-3 K-28			# ^G^N^M	Open next
+	M-3  [	K-35 K-4			# .^P		Select, go up
+	M-4  ]	K-35 K-3			# .^N		Select, go down
+	M-5  e	K-67				# ^[e		EDIT
+	M-6  l	K-86 K-53 "^usilic-1.5b:" K-28	# ^J^Os^Jp^usilic-1.5b:^M
+	     	     	  		  	# PART SHELL in INFO by prompts
 	--

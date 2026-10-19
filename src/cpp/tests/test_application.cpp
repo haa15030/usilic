@@ -15841,7 +15841,7 @@ TEST_CASE_FIXTURE(Fixture, "^X^S: the MACRO list shows \"key notation\" rows; ed
   std::ifstream in(root / ".usilic" / "usilicrc");
   std::stringstream buffer;
   buffer << in.rdbuf();
-  CHECK(buffer.str().find("\tM-2\tn\tK-20 K-3 K-28\t\t# ^G^N^M\t次の項目を開く\n") != std::string::npos);
+  CHECK(buffer.str().find("\tM-2  n\tK-20 K-3 K-28\t\t# ^G^N^M\t次の項目を開く\n") != std::string::npos);
   CHECK(buffer.str().find("\tM-1\t;\tK-20 K-4 K-28") != std::string::npos);
 }
 
@@ -15869,7 +15869,7 @@ TEST_CASE_FIXTURE(Fixture, "^X^S: a key already used by another macro is refused
   std::ifstream in(root / ".usilic" / "usilicrc");
   std::stringstream buffer;
   buffer << in.rdbuf();
-  CHECK(buffer.str().find("\tM-2\tl\tK-70\t\t# ^[l\n\t--\n") != std::string::npos);
+  CHECK(buffer.str().find("\tM-2  l\tK-70\t\t# ^[l\n\t--\n") != std::string::npos);
 }
 
 // 2026-10-03追加(項目587の取り消し): SHELLの^Wは、^J^W・^Jwが最後にコマンド行へ入れたコマンドを出し直す

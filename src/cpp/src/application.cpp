@@ -20242,7 +20242,9 @@ bool Application::executeMacroEdit(const std::string &text) {
                                                : macroItemsFromNotation(notation);
   if (!items || items->empty()) return stay("Invalid keys");
   int written = number ? number : usilicrc::nextMacroNumber(rcText);
-  std::string line = "\tM-" + std::to_string(written) + "\t" + key + "\t" + *items + "\t\t# " + macroNotation(*items);
+  // 2026-10-19、直接のユーザー報告("MACRO、コメントが80文字に収まるよう、タブコードを半角スペース×2に変えたはず"):
+  // M-nとキーの間は半角の空白2つ(既定のusilicrcのMACROと同じ)。
+  std::string line = "\tM-" + std::to_string(written) + "  " + key + "\t" + *items + "\t\t# " + macroNotation(*items);
   if (!description.empty()) line += "\t" + description;
   bool ok = number ? usilicrc::setMacroLine(home, number, line) : usilicrc::setMacroMarker(home, {line, "\t--"});
   if (!ok) return stay("Cannot write usilicrc");
