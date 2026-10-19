@@ -3430,6 +3430,14 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       case ']':
         lineHeightAdjustRequest_--;
         return true;
+      // 2026-10-20、直接のユーザー依頼("字間の調整はできる？ ^[{/^[}とか"): 同じく字間を1ドット広げる(^[{)・
+      // 狭める(^[})。
+      case '{':
+        letterSpacingAdjustRequest_++;
+        return true;
+      case '}':
+        letterSpacingAdjustRequest_--;
+        return true;
       // (ESC i: 2026-09-10追加、2026-09-19削除) ESC iは
       // Command::StartIncrementalGrepの元々の専用キーだったが、直接の
       // ユーザー依頼("^[iでインクリメンタルサーチを廃止して、^Sで
@@ -8212,6 +8220,7 @@ bool Application::takeFontListRequest() {
 }
 
 int Application::takeLineHeightAdjustRequest() { return std::exchange(lineHeightAdjustRequest_, 0); }
+int Application::takeLetterSpacingAdjustRequest() { return std::exchange(letterSpacingAdjustRequest_, 0); }
 
 std::optional<std::pair<double, double>> Application::takeLineHeightReloadRequest() {
   if (!std::exchange(lineHeightReloadRequested_, false)) return std::nullopt;

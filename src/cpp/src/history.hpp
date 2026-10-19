@@ -286,6 +286,8 @@ class History {
     // 2026-10-18、直接のユーザー報告("^[[/^[]が次の起動で引き継がれない"): ^[[ / ^[]で足した行の高さのドット数
     // (横書き・縦書き、GraphicalDisplay::adjustLineHeight())。
     int lineHeightExtraHorizontal = 0, lineHeightExtraVertical = 0;
+    // 2026-10-20: ^[{ / ^[}で足した字間のドット数(横書き・縦書き、GraphicalDisplay::adjustLetterSpacing())。
+    int letterSpacingExtraHorizontal = 0, letterSpacingExtraVertical = 0;
   };
   GuiPreferences guiPreferences() const;
   void setGuiPreferences(const GuiPreferences &preferences);

@@ -31829,3 +31829,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: app/main.cppのresolveGuiFontPath()で、Menlo等の既定の候補より先に、~/Library/Fonts・/Library/Fonts・
      /usr/share/fonts/{opentype,truetype}/ipafont-gothicのipag.ttc・ipag.ttfを探す。USILICFONT・-f(記憶された
      フォント)・起動した端末のフォントの方が優先なのは従来どおり。
+935. **2026-10-20: -gで^[{ / ^[}(K-112/K-113)により字間を1ドットずつ増減する**
+   - **経緯**: 直接のユーザー依頼"なぜipagを既定にしたいかというと、横書きの字間（行間ではなく）が狭いから。
+     =kr.pngはSFNSMono、=ks.pngがipag。…他のは字間が間延びしてて見栄えが悪く…字間の調整はできる？ `^[{`/`^[}`
+     とか。"(項目934の後)。マスの幅は半角の「M」の幅と和文の「国」の幅の半分の大きい方で、SF Mono・Menlo等は
+     半角が字の大きさの約0.6倍の幅なので、和文(2マス)の字間が広がっていた(ipagは半角がちょうど0.5倍)。
+   - **実装**: graphical_display.cppに、フォントから求めたマスの幅(Impl::naturalCellWidth)に足すドット数
+     (letterSpacingExtraPixels()、横書き・縦書き別、行の高さの^[[ / ^[]と同じ形)を持たせ、create()・
+     adjustFontSize()・setFont()・向きの切り替え(reapplyLineHeightKeepingExtra())で当てる。狭めた時は、半角の字を
+     縮めずにマスからはみ出させて描く(fitGlyphRect()のallowWidthOverflow)。半角の字の幅の半分〜字の大きさ分広くまで。
+     ~/.usilic/historyのGUIの行の末尾に2つ足して次の起動に引き継ぐ。窓の大きさを保存する時の桁数は横書きのマスの
+     幅で(horizontalColumns())。usilicrc・usilicrc.enのKEYにK-112・K-113を足す(src/HELP_.txt・HELP_en_.txtにも説明)。

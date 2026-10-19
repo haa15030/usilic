@@ -351,6 +351,14 @@ class GraphicalDisplay : public Display {
   // 横書きの行の高さでの行数(縦書きの画面ではrows()が縦書きの字の送りの行数なので、窓の大きさを保存する時は
   // こちら、2026-10-16)。
   int horizontalRows() const;
+  // ^[{ / ^[}(2026-10-20): 今の向き(横書き・縦書き)の半角1字のマスの幅(字間)を`deltaPixels`ドット変え、その場で
+  // 組み直す(窓の大きさはそのままで桁数が変わる)。字の大きさ・フォントを変えても残る。新しい幅と足したドット数を返す。
+  std::pair<int, int> adjustLetterSpacing(int deltaPixels);
+  // ^[{ / ^[}で足したドット数(横書き・縦書き)。起動時(create()より前)に前回の値を戻し、終わりに保存する。
+  static void setLetterSpacingExtras(int horizontal, int vertical);
+  static std::pair<int, int> letterSpacingExtras();
+  // 横書きのマスの幅での桁数(horizontalRows()と同じく、窓の大きさを保存する時用)。
+  int horizontalColumns() const;
 
   struct MouseClick {
     int row;

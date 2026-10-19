@@ -142,6 +142,8 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {109, "ESC ["},    // ^[[   -g: 行の高さを1ドット広げる(2026-10-17)
       {110, "ESC ]"},    // ^[]   -g: 行の高さを1ドット狭める(2026-10-17)
       {111, "F-2 t"},    // ^Ot   EPUB: 明朝体・ゴシック体の切り換え(2026-10-17、~/.usilic/historyに残す)
+      {112, "ESC {"},    // ^[{   -g: 字間を1ドット広げる(2026-10-20)
+      {113, "ESC }"},    // ^[}   -g: 字間を1ドット狭める(2026-10-20)
   };
   return entries;
 }

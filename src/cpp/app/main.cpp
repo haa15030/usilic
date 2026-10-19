@@ -1829,6 +1829,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     if (app.consumeGuiModeToggleRequest()) return leavePhase(true);  // ^Og(Command::ToggleGuiMode参照)
     if (app.takeFontListRequest()) app.showNotice("Font list: -g only");  // ^J^F(buildFontList()参照)
     if (app.takeLineHeightAdjustRequest()) app.showNotice("LINE-HEIGHT: -g only");  // ^[[ / ^[]
+    if (app.takeLetterSpacingAdjustRequest()) app.showNotice("LETTER-SPACING: -g only");  // ^[{ / ^[}
     // 端末の画面には行の高さが無いが、^Ogで-gへ切り替えた時に読み直した値で開くよう、倍率だけは入れておく。
     if (auto ratios = app.takeLineHeightReloadRequest())
       fm::GraphicalDisplay::setLineHeightRatios(ratios->first, ratios->second);
@@ -2669,6 +2670,13 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       std::snprintf(ratioText, sizeof ratioText, "%.2f", ratio);
       app.showNotice(std::string(app.verticalLayoutShown() ? "LINE-HEIGHT (vertical): " : "LINE-HEIGHT: ") +
                      std::to_string(pixels) + " dots (" + ratioText + ")");
+    }
+    // ^[{ / ^[}(2026-10-20、Application::takeLetterSpacingAdjustRequest()参照): 今の向きの字間をドット単位で。
+    if (int delta = app.takeLetterSpacingAdjustRequest()) {
+      auto [width, extra] = gui.adjustLetterSpacing(delta);
+      app.showNotice(std::string(app.verticalLayoutShown() ? "LETTER-SPACING (vertical): " : "LETTER-SPACING: ") +
+                     (extra > 0 ? "+" : "") + std::to_string(extra) + " dots (" + std::to_string(width) +
+                     " dots per column)");
     }
     // usilicrcを読み直した(EDITでusilicrcを直した・^Xs)なら、LINE-HEIGHTをその場で当て直す。
     if (auto ratios = app.takeLineHeightReloadRequest()) {
@@ -4525,8 +4533,10 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
     prefs.fontPointSize = gui->fontPointSize();
     prefs.rows = gui->horizontalRows();  // 縦書きの画面で終えても横書きの行数(2026-10-16)
     if (appearance && !gTerminalFontPath.empty()) prefs.terminalFontPath = gTerminalFontPath;  // ^Ogで重ねた時
-    prefs.columns = gui->columns();
+    prefs.columns = gui->horizontalColumns();
     std::tie(prefs.lineHeightExtraHorizontal, prefs.lineHeightExtraVertical) = fm::GraphicalDisplay::lineHeightExtras();
+    std::tie(prefs.letterSpacingExtraHorizontal, prefs.letterSpacingExtraVertical) =
+        fm::GraphicalDisplay::letterSpacingExtras();
     fm::GraphicalDisplay::Color fg = gui->foregroundColor();
     fm::GraphicalDisplay::Color bg = gui->backgroundColor();
     prefs.hasColors = true;
@@ -5636,6 +5646,7 @@ int main(int argc, char **argv) {
     history.setGuiPreferences(prefs);
     // ^[[ / ^[]で足した行の高さを前回から引き継ぐ(2026-10-18、History::GuiPreferences参照)。
     fm::GraphicalDisplay::setLineHeightExtras(prefs.lineHeightExtraHorizontal, prefs.lineHeightExtraVertical);
+    fm::GraphicalDisplay::setLetterSpacingExtras(prefs.letterSpacingExtraHorizontal, prefs.letterSpacingExtraVertical);
   }
 
   // History's own saved charset already defers to the environment
@@ -6134,8 +6145,10 @@ int main(int argc, char **argv) {
       fm::History::GuiPreferences prefs = history.guiPreferences();
       prefs.fontPointSize = launchGui->fontPointSize();
       prefs.rows = launchGui->horizontalRows();
-      prefs.columns = launchGui->columns();
+      prefs.columns = launchGui->horizontalColumns();
       std::tie(prefs.lineHeightExtraHorizontal, prefs.lineHeightExtraVertical) = fm::GraphicalDisplay::lineHeightExtras();
+      std::tie(prefs.letterSpacingExtraHorizontal, prefs.letterSpacingExtraVertical) =
+          fm::GraphicalDisplay::letterSpacingExtras();
       fm::GraphicalDisplay::Color fg = launchGui->foregroundColor(), bg = launchGui->backgroundColor();
       prefs.hasColors = true;
       prefs.fgR = fg.r; prefs.fgG = fg.g; prefs.fgB = fg.b;

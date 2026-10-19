@@ -48,6 +48,10 @@ std::pair<int, double> GraphicalDisplay::adjustLineHeight(int deltaPixels) { ret
 void GraphicalDisplay::reapplyLineHeight() {}
 void GraphicalDisplay::reapplyLineHeightKeepingExtra() {}
 int GraphicalDisplay::horizontalRows() const { return {}; }
+std::pair<int, int> GraphicalDisplay::adjustLetterSpacing(int deltaPixels) { return {}; }
+void GraphicalDisplay::setLetterSpacingExtras(int horizontal, int vertical) {}
+std::pair<int, int> GraphicalDisplay::letterSpacingExtras() { return {}; }
+int GraphicalDisplay::horizontalColumns() const { return {}; }
 bool GraphicalDisplay::consumeSizeChanged() { return {}; }
 void GraphicalDisplay::adjustFontSize(int deltaPoints) {}
 bool GraphicalDisplay::setFont(FontKind kind, const std::string &path) { return {}; }
