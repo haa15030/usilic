@@ -29540,6 +29540,23 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      saveFilePosition()で残す。
    - 確認: make usilic・make installが通ること。PTYで、KEYの11行目で^Ojすると英語のKEYの11行目、もう一度で日本語、
      ^HのHELP.epubの本文で^Ojすると英語の同じ章、^Gで英語の章の一覧になること。テストは実行していない。
+931. **2026-10-19: usilicrcのMACROは、M-nとキーの間を半角の空白2つにして80桁に収める(^Xsで書く行も)**
+   - **経緯**: 直接のユーザー報告"MACRO、コメントが80文字に収まるよう、タブコードを半角スペース×2に変えたはずだが
+     そうなってない"。ユーザーが~/.local/lib/usilic/usilicrcでそう書き換えた時(項目922)、アシスタントはM-6の2行
+     だけをsrc/usilicrcへ移し、M-1〜M-5はタブのままにしていた(M-6もタブに)。
+   - **実装**: src/usilicrc・usilicrc.enのMACROの行を「\tM-n  キー\t...」に。^Xsの保存(Application::saveMacroFromList
+     相当の行の組み立て)も同じ形で書く(テストの期待値も)。それでもM-6の続きのコメントの行が83桁(英語は最大92桁)
+     だったので、「# INFOのshellをプロンプトでPART」と語の間の空白を詰め、英語の説明も短くして、日英とも79桁以内。
+   - 確認: make usilic・make installが通ること。テストは実行していない。
+932. **2026-10-19: HELP.epubのKEYの注釈にも設定値(既定の割り当て表)を入れる**
+   - **経緯**: 直接のユーザー依頼"KEYの注釈だけ設定値がないのはやはり違和感なので（入れなくていい、と一度は決めたけど）
+     入るなら試しに入れてみて"。
+   - **実装**: help_to_epub.cppのrcDefaultsからKEYを除いていたのをやめた。HELP.epub・HELP.en.epubのKEYの注釈の
+     「既定値」(Default)にF-0〜とK-1〜の表が入る。
+   - あわせて、~/HELP.txt・~/HELP_en.txt(ユーザーのスクリプトで作ったもの)からdoc/HELP.epub・HELP.ja.1・
+     HELP.en.epub・HELP.1(英語のroff、usilic -n)を作り直した(KEYの一覧は日英とも174行にそろった)。
+     src/HELP_.txtの-cの段落は~/HELP_.txtと同じく3行に分け、src/HELP_en_.txtも同じく3行に。
+   - 確認: make install・PTYで^Kの後^Ojで日英のKEYが同じ174行になること。テストは実行していない。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。

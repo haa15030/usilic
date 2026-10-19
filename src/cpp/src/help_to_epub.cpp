@@ -535,7 +535,8 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
   // usilicrcの設定項目(行頭が英大文字の見出し)ごとの、見出しの直後に続く「#」の行(注釈の中身)。
   std::map<std::string, std::vector<std::string>> rcComments;
   // 2026-10-18、直接のユーザー依頼(注釈に設定値も): コメントの後ろ、次の見出しまでの行(既定値。#で無効にした例も
-  // そのまま)。KEYは割り当て表が長く、KEYモードで見られるので入れない。
+  // そのまま)。2026-10-19、直接のユーザー依頼("KEYの注釈だけ設定値がないのはやはり違和感なので…入るなら試しに
+  // 入れてみて"): 以前は割り当て表が長いのでKEYだけ入れなかったが、KEYも入れる。
   std::map<std::string, std::vector<std::string>> rcDefaults;
   {
     std::string item, section;
@@ -552,7 +553,7 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
         rcComments[item].push_back(c);
       } else {
         item.clear();
-        if (!section.empty() && section != "KEY") rcDefaults[section].push_back(l);
+        if (!section.empty()) rcDefaults[section].push_back(l);
       }
     }
     for (auto &kv : rcDefaults) {
