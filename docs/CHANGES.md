@@ -31864,3 +31864,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      make help-epub/help-epub-enがpackaging/usilic_icon_256.png(1024ピクセルのアイコンを256に縮めたもの)を
      $USILIC_EPUB_COVERで渡す。doc/HELP.epub・HELP.en.epubを作り直した。tests/test_epub_to_help_markup.cppの
      表紙の本の期待値を新しい順序に(この期待値は明朝体・ルビの書式が入る前のままで、以前から合っていなかった)。
+939. **2026-10-20: make appのたびに、作ったusilic.appを/Applicationsへコピーする**
+   - **経緯**: 直接のユーザー依頼"make appのたびに/Applicationsへコピーするようにして。"。make appはsrc/cpp/build/usilic.app
+     を作るだけで、/Applications/usilic.app(10/16の古いバイナリ)は更新されず、.app起動で変更が反映されなかった。
+   - **実装**: src/cpp/Makefileのappで、macOSならAPP_INSTALL_DIR(既定は/Applications)のusilic.appを消して
+     build/usilic.appをコピーする。`make app APP_INSTALL_DIR=`で置き換えない。

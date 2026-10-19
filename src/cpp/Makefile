@@ -252,7 +252,15 @@ endif
 # left unguarded rather than wrapped in another ifeq.
 APP_BUNDLE = $(BUILD_DIR)/usilic.app
 
+# 2026-10-20、直接のユーザー依頼("make appのたびに/Applicationsへコピーするようにして"): 作った.appを
+# APP_INSTALL_DIR(既定は/Applications)の.appと置き換える(古い.appを開いて変更が反映されていない、を防ぐ)。
+# macOSだけ。置き換えたくない時は`make app APP_INSTALL_DIR=`。
+APP_INSTALL_DIR ?= /Applications
+
 app: $(APP_BUNDLE)
+ifeq ($(shell uname), Darwin)
+	if [ -n "$(APP_INSTALL_DIR)" ]; then rm -rf "$(APP_INSTALL_DIR)/usilic.app" && cp -R $(APP_BUNDLE) "$(APP_INSTALL_DIR)/"; fi
+endif
 
 $(APP_BUNDLE): $(BUILD_DIR)/usilic packaging/Info.plist packaging/usilic.icns
 	mkdir -p $(APP_BUNDLE)/Contents/MacOS
