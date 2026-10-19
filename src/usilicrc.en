@@ -93,31 +93,31 @@ GREP
 # (?:...) or look-around, so those have no example.
 #
 
-	"^  [0-9]+\."            # ^     : 章の見出し(1. 2. ...)
-	）$                       # $     : 全角の閉じ括弧で終わる行
-	\bls\b                   # \b    : 単独の ls
-	usilic\B                 # \B    : usilicrc の usilic
+	"^  [0-9]+\."            # ^     : chapter headings (1. 2. ...)
+	）$                       # $     : lines ending with a full-width closing parenthesis
+	\bls\b                   # \b    : ls as a word by itself
+	usilic\B                 # \B    : the usilic of usilicrc
 	m.n                      # .     : man
-	\^[JOX][a-z]             # [ ]   : ^Jp ^Ou ^Xd など
-	"\^[^JOX ]"              # [^ ]  : ^M ^[ ^K など
-	[a-z]+\(1\)              # [a-z] : usilic(1) man(1) など
-	[0-9]\.[0-9]\.           # \d    : 節番号 2.2. など
-	[0-9]+[^0-9][0-9]+       # \D    : 01/66 1.5 0x20 など
+	\^[JOX][a-z]             # [ ]   : ^Jp ^Ou ^Xd etc.
+	"\^[^JOX ]"              # [^ ]  : ^M ^[ ^K etc.
+	[a-z]+\(1\)              # [a-z] : usilic(1) man(1) etc.
+	[0-9]\.[0-9]\.           # \d    : section numbers such as 2.2.
+	[0-9]+[^0-9][0-9]+       # \D    : 01/66 1.5 0x20 etc.
 	\w+rc\b                  # \w    : usilicrc
 	\^\W                     # \W    : ^[ ^@
 	\^J\s                    # \s    : ^J b
-	~/\S+                    # \S    : ~/.usilic/history など
-	-[a-z]*v[a-z]*           # *     : -rvi -vf など
-	[0-9]+%                  # +     : 48% など
+	~/\S+                    # \S    : ~/.usilic/history etc.
+	-[a-z]*v[a-z]*           # *     : -rvi -vf etc.
+	[0-9]+%                  # +     : 48% etc.
 	\.tar(\.gz)?             # ?     : .tar .tar.gz
-	[0-9]{4}                 # {n}   : 1918 2000 など
+	[0-9]{4}                 # {n}   : 1918 2000 etc.
 	"^[^	].*	"              # \t    : HELP chapter headings (no leading tab, contains a tab)
-	[0-9]{2,}                # {n,}  : 2桁以上の数
-	\b[a-z]{2,3}\(1\)        # {n,m} : ls(1) man(1) vi(1) など
+	[0-9]{2,}                # {n,}  : numbers of 2 or more digits
+	\b[a-z]{2,3}\(1\)        # {n,m} : ls(1) man(1) vi(1) etc.
 	CP|MV|RM                 # |     : CP MV RM
-	\.(gz|bz2|xz|zst)        # ( )   : 圧縮形式の suffix
+	\.(gz|bz2|xz|zst)        # ( )   : suffixes of compression formats
 	~/\.usilic/              # \.    : ~/.usilic/
-	\(\?                     # \?    : (?: (?= など
+	\(\?                     # \?    : (?: (?= etc.
 
 PROGRAM
 # Format: `program' (option)

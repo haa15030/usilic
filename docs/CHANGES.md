@@ -29504,6 +29504,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      スタックの節)。MACROの「; : [ ] l e h」を「; : [ ] e l」に(hは項目920でやめた)。COPYの「O^Y」を「^O^Y」に。
      青空文庫を入れる前のnarou2epubの古い見出しと段落(3行)を削除。narou2epubの節の後ろにあったurls2pdfの用例を
      urls2pdfの節(オプションの表の後)へ移した。行ごとの記号は日本語と英語で一致(842行)。
+927. **2026-10-19: usilicrc.enのGREPの例の行のコメントを英訳**
+   - **経緯**: HELP.en.epubのGREPの注釈(既定値)に日本語が残っていた(usilicrc.enは設定値をusilicrcと同じにしてあり、
+     例の行の「# ^ : 章の見出し」等のコメントも日本語のままだった)。直接のユーザー依頼"usilicrc.enのGREPのコメントも
+     英訳して。"
+   - **実装**: src/usilicrc.enのGREPの17行のコメントを英語に(正規表現と桁はそのまま)。doc/HELP.en.epubも作り直した。
+   - 確認: make help-epub-en・make installが通ること。テストは実行していない。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。
