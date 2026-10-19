@@ -4329,8 +4329,12 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     // 許容されている程度の軽微な副作用)を及ぼさないための、実害の無い
     // 余分な保護として残してある。
     bool isShellSafeGrep = (leaderOPending_ || leaderJPending_) && byte == kControlS;
+    // 2026-10-19、直接のユーザー報告("SHELLのプロンプト上で^J^KとしたのちKEY画面の^Aを選んでも同じエラー"): ^J^K
+    // (KEY)も同じ理屈。事前の切り替えでKEYの戻り先がSHELLの前のモードになり、KEYで選んだ^A等(SHELL・プロンプト
+    // 専用)が"SHELL/prompt only"になっていた。SHELLのままKEYを開けば、^Mで選んだキーはSHELLへ渡る。
+    bool isShellSafeKey = leaderJPending_ && byte == 0x0b;
     bool isShellSafeNavigation = (escPending_ && (byte == '<' || byte == '>' || byte == 'v')) ||
-                                 isShellSafeGoToFileSelector || isShellSafeGrep;
+                                 isShellSafeGoToFileSelector || isShellSafeGrep || isShellSafeKey;
     if (shellLeaderPending && !isShellSafeNavigation) {
       // シーケンスを完了させる――ディスパッチする「前に」、ユーザーが
       // まず^Gを押したかのように、まさに正確に、SHELLがそこから入場

@@ -29523,6 +29523,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      全部残ることを確かめた。
    - 確認: make usilic・make installが通ること。PTYで^Kの後、INFOの見出しの行は反転せず、^Iの行は反転すること。
      テストは実行していない。
+929. **2026-10-19: SHELLで^J^KとしたKEYの^A等(SHELL・プロンプト専用のキー)がSHELLへ渡らない**
+   - **経緯**: 直接のユーザー報告"SHELLのプロンプト上で^J^KとしたのちKEY画面の^Aを選んでも同じエラー(SHELL/prompt only)
+     となるのはマズいかも"。feedShellByte()は^J等で始まるキーを、実行する前にSHELLに入る前のモードへ切り替えて
+     いた(^J^C・^J^S等は例外)。^J^Kもそうなっていたので、KEYの戻り先(cutReturnMode_)が(ls)等になっていた。
+   - **実装**: ^J^Kを例外(isShellSafeKey)に加え、SHELLのままKEYを開く。
+   - 確認: make usilic・make installが通ること。PTYで、SHELLに"echo abc"と入れて^J^K、KEYの^Aの行で^M、Xと^Mで
+     "Xecho abc"が実行されること(SHELL/prompt onlyは出ない)。テストは実行していない。
 682. **2026-10-08: 環境変数EDITORを、usilicrcのEDITORより優先する**
    - **経緯**: 直接のユーザー依頼("`EDITOR=vi usilic^M`で起動時はusilicrcのEDITORよりも優先で")。
    - **実装**: Configuration::editorArgv()で、環境変数EDITORがあれば(空白で区切って)usilicrcのEDITORの代わりに使う。
