@@ -5015,6 +5015,14 @@ int main(int argc, char **argv) {
       if ((":" + path + ":").find(std::string(":") + dir + ":") == std::string::npos) path += std::string(":") + dir;
     ::setenv("PATH", path.c_str(), 1);
   }
+  // 2026-10-20、直接のユーザー報告(.usilicを消して.appから起動すると"英語モードで始まる"): FinderからはLANGも無く、
+  // HELP等が英語で始まっていた(下のsetHelpEnglish()はLANGがja_JPのUTF-8の時だけ日本語)。LANGが無ければ、macOSの
+  // 優先する言語(AppleLanguagesの先頭)が日本語の時にja_JP.UTF-8にする(子のシェルにも受け継がれる)。
+  if (!std::getenv("LANG")) {
+    fm::ChildProcess::Result languages = fm::ChildProcess::run({"/usr/bin/defaults", "read", "-g", "AppleLanguages"});
+    std::size_t start = languages.ok ? languages.output.find_first_not_of("( \n\t\"") : std::string::npos;
+    if (start != std::string::npos && languages.output.compare(start, 2, "ja") == 0) ::setenv("LANG", "ja_JP.UTF-8", 1);
+  }
 #endif
   checkInvalidTerminalMarker();
   if (tryHandoffToParentShell(argc, argv)) return 0;
