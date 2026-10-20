@@ -20863,14 +20863,15 @@ bool Application::openDroppedPaths(const std::vector<std::string> &paths) {
   return opened;
 }
 
-// shellBannerView_参照。今のfileView_(最初の起動で親が開いたHELP)の先頭の画像の行と、その後の字のある行
-// (書名・著者)から次の空行までを写す。先頭が画像でなければ(-cでは画像は字の行)、または画面の半分を超えるなら
-// 出さない。
+// shellBannerView_参照。今のfileView_(最初の起動で親が開いたHELP)の先頭の画像の行(前の見出しの行を含む)と、
+// その後の字のある行(書名・著者)から次の空行までを写す。先頭が画像でなければ(-cでは画像は字の行)、またはSHELLの内容が4行より
+// 少なくなるなら出さない。
 void Application::startShellBanner() {
   if (currentMode_ != ApplicationMode::File) return;
   const auto &lines = fileView_.lines();
   std::vector<ContentView::Line> banner;
   bool sawImage = false, sawText = false;
+  int textBeforeImage = 0;
   for (const auto &line : lines) {
     banner.push_back(line);
     if (!line.imageKey.empty()) {
@@ -20881,11 +20882,17 @@ void Application::startShellBanner() {
       if (sawText) break;  // 書名・著者の後の空行(区切りとして含める)
       continue;
     }
-    if (!sawImage) return;
+    // 画像の前の字の行(目次名の「表紙」等、画像と同じ行の字は画像の帯の前の行になる、FileModeの画像だけの行)は
+    // 2行まで含める(2026-10-20、直接のユーザー報告"画像が出なくて全体がスクロール"、以前はここで出さずに戻っていた)。
+    if (!sawImage) {
+      if (++textBeforeImage > 2) return;
+      continue;
+    }
     sawText = true;
   }
   int rows = static_cast<int>(banner.size());
-  if (!sawText || rows > display_.rows() / 2) return;
+  // SHELLの内容に4行、プロンプトとモードラインに2行が残れば出す(大きな表紙の画像の帯は画面の高さまでになる)。
+  if (!sawText || rows > display_.rows() - 6) return;
   shellBannerView_.setLines(std::move(banner));
   shellBannerView_.setViewport(0, rows);
   shellBannerView_.setTopIndex(0);
