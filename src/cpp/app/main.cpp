@@ -2715,6 +2715,12 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     if (app.takeFontListRequest()) app.showFontList(buildFontList(gui));  // ^J^F(buildFontList()参照)
     if (app.takeRaiseRequest()) gui.raise();  // 子が開いたら親が前へ(Application::requestParentRaise())
     if (auto choice = app.takeFontChoice()) applyFontChoice(app, gui, choice->first, choice->second);
+    // 最初の起動のインストールを入れ終えた(Application::takeFirstStartInstallDone()): 入ったIPAゴシックへ替えてから
+    // HELPへ戻る(usilicrcのFONTには書かない。次からはresolveGuiFontPath()がipagを選ぶ)。
+    if (app.takeFirstStartInstallDone()) {
+      if (std::string ipag = ipaGothicFontPath(); !ipag.empty()) gui.setFont(fm::GraphicalDisplay::FontKind::Base, ipag);
+      app.finishFirstStartInstall();
+    }
     // ^[[ / ^[](2026-10-17、Application::takeLineHeightAdjustRequest()参照): 今の向きの行の高さをドット単位で。
     if (int delta = app.takeLineHeightAdjustRequest()) {
       auto [pixels, ratio] = gui.adjustLineHeight(delta);

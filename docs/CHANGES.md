@@ -32036,3 +32036,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: startShellBanner()は画像の帯だけを写す。画像の前の見出しの行(2行まで)は空行にして行数を残す
      (HELPへ戻った時に画像が同じ位置になる)。画像の帯の後は写さない。
 
+963. **2026-10-20: 最初の起動でIPAゴシックを入れ終えたら、HELPを出す前にフォントをipagにする**
+   - **経緯**: 直接のユーザー依頼"ipaフォントを入れ終わったらHELPを出すまえにこっそりipaにして"。
+   - **実装**: pollShellOfferFollowUp()で表紙(項目959)を出している時に全部入れ終えたら、すぐにはHELPへ戻らず
+     firstStartInstallDone_を立てる。main.cppのrunGuiPhase()の実行ループがtakeFirstStartInstallDone()で受け取り、
+     ipaGothicFontPath()があればgui.setFont(Base)してから、Application::finishFirstStartInstall()(表紙を外して
+     returnFromShell())。usilicrcのFONTには書かない(次の起動からはresolveGuiFontPath()がipagを選ぶ)。

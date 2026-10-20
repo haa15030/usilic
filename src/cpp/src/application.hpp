@@ -1969,6 +1969,11 @@ class Application {
   // 切り替えるため、GraphicalDisplay::setVerticalLineSpacing()参照)。
   bool verticalLayoutShown() const;
   std::optional<std::pair<std::string, std::string>> takeFontChoice();
+  // 最初の起動のインストールを全部入れ終えた(pollShellOfferFollowUp())。main.cppの実行ループが受け取り、入った
+  // IPAゴシックへフォントを替えてから(HELPを出す前に、2026-10-20、直接のユーザー依頼"ipaフォントを入れ終わったら
+  // HELPを出すまえにこっそりipaにして")finishFirstStartInstall()でHELPへ戻る。
+  bool takeFirstStartInstallDone() { return std::exchange(firstStartInstallDone_, false); }
+  void finishFirstStartInstall();
   void showNotice(const std::string &text);
   // ^[[ / ^[](K-109/K-110、2026-10-17): -gの今の向き(横書き・縦書き)の行の高さを1ドットずつ変える要求。
   // main.cppが受け取ってGraphicalDisplay::adjustLineHeight()へ渡す(返すのは足すドット数の合計、無ければ0)。
@@ -3396,6 +3401,7 @@ private:
   bool shellBannerActive_ = false;
   void startShellBanner();
   void stopShellBanner();
+  bool firstStartInstallDone_ = false;
   // feedCopyByte()自身のコメント参照: ApplicationMode::Copyの間だけ
   // 有効な、"^[w"/"^[p"(confirmMark()、2026-09-07に'p'追加)用の
   // 1バイト先読み状態。resolveCommand()側のescPending_とは意図的に

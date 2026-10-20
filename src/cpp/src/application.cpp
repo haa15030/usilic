@@ -20900,6 +20900,11 @@ void Application::startShellBanner() {
   });
 }
 
+void Application::finishFirstStartInstall() {
+  stopShellBanner();
+  if (currentMode_ == ApplicationMode::Shell) returnFromShell();
+}
+
 void Application::stopShellBanner() {
   if (!shellBannerActive_) return;
   shellBannerActive_ = false;
@@ -20935,9 +20940,12 @@ void Application::pollShellOfferFollowUp() {
     shellOffer_.reset();
     // 最初の起動の表紙(startShellBanner())を外し、全部入れ終えたらHELPへ戻る(SHELLの^Gと同じ)。
     if (shellBannerActive_) {
+      if (next.empty()) {
+        firstStartInstallDone_ = true;  // main.cppがフォントを替えてからfinishFirstStartInstall()
+        return;
+      }
       stopShellBanner();
-      if (next.empty() && currentMode_ == ApplicationMode::Shell) returnFromShell();
-      else if (currentMode_ == ApplicationMode::Shell) activeView().redraw();
+      if (currentMode_ == ApplicationMode::Shell) activeView().redraw();
     }
     return;
   }
