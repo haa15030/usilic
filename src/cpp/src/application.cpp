@@ -3986,6 +3986,11 @@ const std::vector<std::vector<int>> &Application::pagerAllowedKeys() {
     pagerAllowedKeys_.push_back({kCarriageReturn});
     pagerAllowedKeys_.push_back({0x0b});
     pagerAllowedKeys_.push_back({kLeaderO, 'g'});
+    // 2026-10-20、直接のユーザー依頼("-gで起動したPagerではフォント表示幅関連のキーアサインが無効なので使えるように
+    // して"): 行間(^[[ / ^[])・字間(^[{ / ^[})・フォントの一覧(^J^F)・明朝体/ゴシック体(^Ot)も。
+    for (int c : {'[', ']', '{', '}'}) pagerAllowedKeys_.push_back({kEscape, c});
+    pagerAllowedKeys_.push_back({kLeaderJ, 0x06});
+    pagerAllowedKeys_.push_back({kLeaderO, 't'});
   }
   return pagerAllowedKeys_;
 }
