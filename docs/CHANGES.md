@@ -32114,3 +32114,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      表(^Ojの後)に^[[ ^[] ^[{ ^[} ^Otを、EPUBの節の表(^J^Fの後)に^Owを足し、^Otの本文の説明(3文)を字間の段落の後に
      足した(日英とも同じ行)。^[l(SHELLの表に「l：^[l」)・^SPC(「^␣」)・^J,・^O/(表にある)・h(KEYの本文)は漏れでは
      なかった。
+
+972. **2026-10-20: 自分の実行ファイルのディレクトリをPATHに足す(.appから^T^H・^T^Kの子が起動しなかった)**
+   - **経緯**: 直接のユーザー報告"^T^H、^T^Kが利かない"。子のHELP・KEY(launchExternalUsilic())は"usilic"という名前で
+     sh -cから起動するが、Finderから起動した.appのPATHには~/.local/binが無く(項目953で足したのはHomebrewの場所だけ)、
+     見つからずに何も起きなかったとみられる。-cの擬似端末(SSH_TTYを付けて新しい端末の窓を使わない形)では、^T^Hで
+     HELP.epubの子がその場で開くのを確かめた。
+   - **実装**: main()の最初(Windows以外)で、resolveOwnExecutablePath()のディレクトリ(.appならContents/MacOS)がPATHに
+     無ければ後ろに足す(SHELLで打つusilicにも効く、Linuxのデスクトップのアイコンからの起動も同じ)。

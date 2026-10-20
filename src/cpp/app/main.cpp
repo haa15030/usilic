@@ -5064,6 +5064,18 @@ int main(int argc, char **argv) {
     if (start != std::string::npos && languages.output.compare(start, 2, "ja") == 0) ::setenv("LANG", "ja_JP.UTF-8", 1);
   }
 #endif
+#ifndef _WIN32
+  // 2026-10-20、直接のユーザー報告("^T^H、^T^Kが利かない"): 子のHELP・KEY(Application::launchExternalUsilic())は
+  // "usilic"という名前で起動するが、Finderから起動した.app(デスクトップのアイコンからも)のPATHには~/.local/binが無く、
+  // 見つからずに何も起きなかった。自分の実行ファイルのディレクトリ(.appならContents/MacOS)がPATHに無ければ後ろに足す
+  // (SHELLで打つusilicにも効く)。
+  if (std::string self = resolveOwnExecutablePath(); !self.empty()) {
+    std::string dir = std::filesystem::path(self).parent_path().string();
+    std::string path = std::getenv("PATH") ? std::getenv("PATH") : "";
+    if ((":" + path + ":").find(":" + dir + ":") == std::string::npos)
+      ::setenv("PATH", (path.empty() ? dir : path + ":" + dir).c_str(), 1);
+  }
+#endif
   checkInvalidTerminalMarker();
   if (tryHandoffToParentShell(argc, argv)) return 0;
   loadScrollDebugLevelFromEnvironment();
