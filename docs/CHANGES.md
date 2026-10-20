@@ -31905,3 +31905,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      なので最初の起動でもHELPのみでいい。"(-HをHELPの子だけにした項目943の後)。
    - **実装**: Application::launchHelpChildren()からKEYの子(usilic -K)の起動を除き、項目943のwithKeyもやめた。-K自体は
      残す。src/HELP_.txt・HELP_en_.txt(未コミット)の最初の起動・-Hの説明からKEYの子を除いた。
+946. **2026-10-20: Windows版のzip(make -f windows.mk dist)に英語のHELP.en.epubも入れる**
+   - **経緯**: 直接のユーザー依頼(build-win/usilic-win64.zipを作り直した時、HELP.en.epubが入らないと伝えたのに
+     "入れるようにしてほしい")。^Ojで英語にした後の^Hは、HELPと同じフォルダのHELP.en.epubを開く(Application::
+     helpEpubPath()、HELP.en本体が無くてもhelpPath_は"HELP.en"になる)。
+   - **実装**: windows.mkにWIN_HELP_EN_EPUB(既定は~/.local/lib/usilic/HELP.en.epub)を足し、distでlib/usilic/へ入れる。

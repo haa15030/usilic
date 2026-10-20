@@ -54,6 +54,8 @@ $(OBJ_DIR)/usilic_res.o: packaging/windows/usilic.rc packaging/windows/usilic.ma
 STRIP ?= $(WIN_TRIPLE)-strip
 # HELPのEPUB版(usilic -eで作ったもの)があれば一緒に入れる。
 WIN_HELP_EPUB ?= $(HOME)/.local/lib/usilic/HELP.epub
+# 英語版(^Ojの後の^H、2026-10-20、直接のユーザー依頼"入れるようにしてほしい")。
+WIN_HELP_EN_EPUB ?= $(HOME)/.local/lib/usilic/HELP.en.epub
 
 # 配る形: build-win/usilic/にusilic.exe(strip済み)・SDLのDLL・HELP等、それをbuild-win/usilic-win64.zipに。
 dist: $(BUILD_DIR)/usilic.exe
@@ -64,6 +66,7 @@ dist: $(BUILD_DIR)/usilic.exe
 	$(STRIP) -o $(BUILD_DIR)/usilic/SDL2_ttf.dll $(WIN_SDL_DIR)/bin/SDL2_ttf.dll
 	cp ../usilicrc ../usilicrc.en ../../doc/HELP ../../doc/HELP.notes $(BUILD_DIR)/usilic/lib/usilic/
 	if [ -f $(WIN_HELP_EPUB) ]; then cp $(WIN_HELP_EPUB) $(BUILD_DIR)/usilic/lib/usilic/; fi
+	if [ -f $(WIN_HELP_EN_EPUB) ]; then cp $(WIN_HELP_EN_EPUB) $(BUILD_DIR)/usilic/lib/usilic/; fi
 	cd $(BUILD_DIR) && zip -qr usilic-win64.zip usilic
 
 clean:
