@@ -347,8 +347,12 @@ std::string gTerminalFontPath;
 
 // 2026-10-20、直接のユーザー依頼(-gの既定はipagを優先、最初の起動の案内にfont-ipafontも): 入っているIPAゴシック
 // (ipag.ttc・ipag.ttf、和文も等幅)のファイル。よくある場所に無ければfc-listで探す。無ければ空。
+// 見つかった時だけ覚える(2026-10-20、直接のユーザー報告"何度やっても=kz.pngの繰り返し": 無いことを覚えていたので、
+// 案内のbrew installで入れた後も、offerGroffInstallOnce()の確かめ直しがまだ無いとしてfont-ipafontを置き直していた)。
 std::string ipaGothicFontPath() {
-  static const std::string found = [] {
+  static std::string cached;
+  if (!cached.empty()) return cached;
+  cached = [] {
     const char *home = std::getenv("HOME");
     for (const char *name : {"ipag.ttc", "ipag.ttf"}) {
       for (const std::string &dir :
@@ -365,7 +369,7 @@ std::string ipaGothicFontPath() {
     std::ifstream probe(path, std::ios::binary);
     return !path.empty() && probe.good() ? path : std::string();
   }();
-  return found;
+  return cached;
 }
 
 std::string resolveGuiFontPath(std::optional<TerminalAppearance> appearance = std::nullopt,

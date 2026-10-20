@@ -31996,3 +31996,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      offerShellCommand()(ensureShellActive())が失敗し、黙って消えていたとみられる(印は案内の前に書いていた)。
    - **実装**: Application::scheduleShellOffer()で覚え、pollChildChannel()(実行ループの度、最初の起動の親のHELPの
      後)でofferShellCommand()する。案内済みの印(install-offered)は、入力欄に置けた時に書く(onOffered)。
+
+958. **2026-10-20: font-ipafontを入れた後も案内が置き直されるのを直す**
+   - **経緯**: 直接のユーザー報告"何度やっても=kz.pngの繰り返し"(brew install font-ipafontで~/Library/Fonts/ipag.ttfが
+     入った後も、プロンプトに同じ行が置かれる)。
+   - **原因と実装**: ipaGothicFontPath()(項目956)が「無い」という結果もstaticに覚えていたので、offerGroffInstallOnce()
+     の確かめ直し(installCommand、プロンプトが戻るたび)がまだ無いとみなしていた。見つかった時だけ覚える。
