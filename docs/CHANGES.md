@@ -31922,3 +31922,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ^Oj(Command::ToggleHelpLanguage)は、英語の平文のHELP(HELP.en)もgroffも無いWindowsで切り替わらなかったので、
      読めなくても切り替える先のHELP.en.epubがあれば切り替える(項目946でHELP.en.epubを入れただけでは^Ojの後の^Hが
      英語にならなかった)。WindowsではMANでusilicを見ている時の^Ojでそのページも読み直す。
+948. **2026-10-20: Windowsのネイティブでは、初回起動のパッケージのインストールの案内(sudo apt install …)をしない**
+   - **経緯**: 直接のユーザー報告"Windowsには不要では？ =kv.png"。Windows版の初回起動で、Linux向けの
+     `sudo apt install -y groff mg info p7zip-full w3m unzip fonts-noto-cjk`がSHELL(cmd)へ送られ、"Sudoが無効"に
+     なっていた。offerGroffInstallOnce()のパッケージの表で、_WIN32がLinuxの枝に入っていた。
+   - **実装**: app/main.cppのofferGroffInstallOnce()で、_WIN32なら何もせず戻る(MANは項目947の組んでおいた平文)。

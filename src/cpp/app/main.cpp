@@ -2254,6 +2254,13 @@ std::string findExecutable(const std::string &name) { return findExecutableIn(na
 // ~/.usilic/install-offered(以前のgroff-offeredで既にgroffを提示済みの
 // 環境でも、mg/infoの分は1回出す)。
 void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
+#ifdef _WIN32
+  // 2026-10-20、直接のユーザー報告("Windowsには不要では？"、=kv.png、初回起動でcmdへ`sudo apt install …`が送られて
+  // いた): Windowsのネイティブにはaptもgroff等も無く(MANは組んでおいた平文、ManMode::runAndWrap()参照)、案内しない。
+  (void)app;
+  (void)usilicDir;
+  return;
+#endif
   // 2026-10-05、直接のユーザー報告(WSLで"w3mが無い。apt installリストに入ってなかった？"): 印のファイルが
   // あるだけで二度と案内しなかったので、後から対象に足したもの(w3m・unzip・fonts-noto-cjk)が、既に案内
   // 済みの環境では一度も案内されなかった。印のファイルには案内したパッケージ名を1行ずつ書き、まだ案内して
