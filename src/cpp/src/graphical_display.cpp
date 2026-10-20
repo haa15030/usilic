@@ -377,8 +377,16 @@ struct LargeGlyphPlacement {
 LargeGlyphPlacement placeLargeGlyph(const std::vector<int> &kinds, int index) {
   int n = static_cast<int>(kinds.size());
   int s = index, e = index;
-  while (s > 0 && kinds[s - 1] == 2) s--;
-  while (e < n && kinds[e] == 2) e++;
+  // 2026-10-20、直接のユーザー報告(英語版のHELPの"「Guide manual」の文字が小さい"、=lc.png): 大きい字と大きい字の
+  // 間の1桁の空白(英語の見出しの単語の区切り)も塊の一部にする。以前は単語ごとの塊で、行の頭の「Guide：manual,」は
+  // 前に空白が無く後ろも1桁だけなので、送りを縮めて描き(字が小さく見え)、後ろの空白も詰めていた。
+  auto inside = [&](int i) {
+    if (i < 0 || i >= n) return false;
+    if (kinds[i] == 2) return true;
+    return kinds[i] == 0 && i > 0 && i + 1 < n && kinds[i - 1] == 2 && kinds[i + 1] == 2;
+  };
+  while (inside(s - 1)) s--;
+  while (inside(e)) e++;
   int before = 0, after = 0;
   for (int i = s - 1; i >= 0 && kinds[i] == 0; i--) before++;
   for (int i = e; i < n && kinds[i] == 0; i++) after++;
