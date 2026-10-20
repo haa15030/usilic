@@ -282,6 +282,9 @@ ifeq ($(shell uname), Darwin)
 	# trust level the bare binary already had.
 	codesign --force --deep -s - $(APP_BUNDLE)
 endif
+	# 2026-10-20、直接のユーザー報告("タイムスタンプが2026年9月21日 23:29のままなんだが。miniでの話。"): 中のファイルを
+	# 上書きしても.appのフォルダ自体の日時は変わらない(Finderはこの日時を出す)ので、作り直したら更新する。
+	touch $(APP_BUNDLE)
 
 $(BUILD_DIR)/run_tests: $(SRCS) $(TESTS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(TEST_DIR) -I$(SRC_DIR) $(SRCS) $(TESTS) -o $@ $(LDLIBS)

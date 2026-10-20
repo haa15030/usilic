@@ -31877,3 +31877,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: graphical_display.cppにImpl::overflowNarrowedCells(row)(狭めたマスで、モードラインの行ではない)を足し、
      renderCell()・カーソルの描き直し・renderTextRun()のfitGlyphRect()のはみ出しをこれで決める。renderTextRun()は
      yがモードラインの位置((rows-1)*cellHeight)かどうかで見る(スクロール中の本文の行のyは半端なため)。
+941. **2026-10-20: make appで作り直したbuild/usilic.appの日時を更新する**
+   - **経緯**: 直接のユーザー報告"タイムスタンプが2026年9月21日 23:29のままなんだが。miniでの話。"(make appでbuild/に
+     置かれないように見えた)。make appは中のファイルを毎回上書きしていたが、既にある.appのフォルダ自体の日時は
+     変わらず(Finderはこれを出す)、mpiでも9/25のままだった。フォルダが古いままなので、make appは毎回作り直してもいた。
+   - **実装**: src/cpp/Makefileの$(APP_BUNDLE)の最後でtouchする。
