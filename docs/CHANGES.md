@@ -32059,3 +32059,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: startShellBanner()で、画像の帯の下(HELPでは書名の行)に太字で「usilic が使うプログラムを
      インストールしています。終わると HELP が開きます。」(英語のHELPなら"Installing the programs usilic uses. HELP
      opens when it finishes.")。refreshShellBanner()は字の行をそのまま残す。
+
+966. **2026-10-20: 起動時のインストールは^Mを待たずに自動で実行し、brewの確認(y/n)も省く。README.mdに書いた**
+   - **経緯**: w3mのインストール中に"Do you want to proceed with the installation? [y/n]"と聞かれた(Homebrew 7は
+     ask modeが既定)。直接のユーザー依頼"必要なアプリが入る旨READMEあたりに書いておけばあとは自動で入るほうがいい"。
+   - **実装**: pollShellOfferFollowUp()は、置いた行をプロンプトが出たらShell::submitLine()で実行する(確かめ直しで
+     置き直した行も)。offerGroffInstallOnce()のbrew installにHOMEBREW_NO_ASK=1(-yを知らない古いbrewでも環境変数なら
+     無視されるだけ)、Homebrew自体のインストーラーにNONINTERACTIVE=1(sudoのパスワードは聞かれる)。リポジトリ直下に
+     README.md(ビルド・インストールと、最初の起動で自動で入るもの)を新設。src/HELP_.txt・HELP_en_.txt(未コミット)の
+     「必要なソフトウェア」の^M待ちの説明を直した。

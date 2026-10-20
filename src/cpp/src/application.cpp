@@ -20980,7 +20980,15 @@ void Application::pollShellOfferFollowUp() {
   int generation = shell_.promptGeneration();
   if (generation == shellOffer_->generation) return;
   shellOffer_->generation = generation;
-  if (shell_.commandLine().text() == shellOffer_->offered) return;
+  // 2026-10-20、直接のユーザー依頼("必要なアプリが入る旨READMEあたりに書いておけばあとは自動で入るほうがいい"):
+  // 置いた行は^Mを待たずに、プロンプトが出たら実行する(以前は置くだけで、実行するかはユーザーが決めていた)。
+  if (shell_.commandLine().text() == shellOffer_->offered) {
+    if (!shell_.busy()) {
+      shell_.submitLine();
+      if (currentMode_ == ApplicationMode::Shell) shell_.redrawPromptRow();
+    }
+    return;
+  }
   std::string next = shellOffer_->followUp();
   if (next.empty() || shellOffer_->retries <= 0) {
     shellOffer_.reset();
@@ -20998,6 +21006,7 @@ void Application::pollShellOfferFollowUp() {
   shellOffer_->retries--;
   shellOffer_->offered = next;
   shell_.commandLine().setText(next);
+  shell_.submitLine();  // プロンプトが出たところなので、そのまま実行する(上と同じ)
   if (currentMode_ == ApplicationMode::Shell) shell_.redrawPromptRow();
 }
 

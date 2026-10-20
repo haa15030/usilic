@@ -2372,13 +2372,18 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
     // 2026-10-05、直接のユーザー依頼("brewが無い場合の案内も入れて欲しい。Xcodeも必要"): brewが
     // 無ければ、Homebrew公式のインストールコマンド(https://brew.sh、足りなければXcodeのCommand Line
     // Toolsも入れる)を置く。終わってプロンプトが戻れば、下のfollowUpで今度はbrew installを置く。
+    // 2026-10-20、直接のユーザー依頼("あとは自動で入るほうがいい"、案内は^Mを待たずに実行する): Homebrewの
+    // インストーラーはNONINTERACTIVE=1で「Press RETURN」の確認を省く(sudoのパスワードは聞かれる)。brew installは
+    // HOMEBREW_NO_ASK=1で"Do you want to proceed with the installation? [y/n]"を省く(-yを知らない古いbrewでも、
+    // 環境変数なら無視されるだけ)。
     if (brew.empty())
-      return "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+      return "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
              "  # Homebrew未インストール(Xcode Command Line Toolsも必要なら入る)。終わると次は brew install" +
              packages;
     // 2026-10-20、直接のユーザー依頼("リストの真っ先にipafontを持ってきて"): font-ipafontは先に別のbrew installで
     // (入りしだい-gのフォントをIPAゴシックに替える、runGuiPhase())。;でつなぎ、失敗しても残りは続ける。
-    std::string program = brew == findExecutableOnPathOnly("brew") ? std::string("brew") : brew;
+    std::string program =
+        "HOMEBREW_NO_ASK=1 " + (brew == findExecutableOnPathOnly("brew") ? std::string("brew") : brew);
     const std::string font = " font-ipafont";
     if (std::size_t at = packages.find(font); at != std::string::npos && packages != font) {
       packages.erase(at, font.size());
