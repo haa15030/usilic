@@ -2378,18 +2378,18 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
   };
   std::string command = installCommand();
   if (command.empty()) return;
-  {
-    std::ofstream out(marker);
-    for (const auto &package : offered) out << package << "\n";
-    for (const auto &package : toOffer) out << package << "\n";
-  }
   // 2026-09-27追加、直接のユーザー提案("brew install groffは2回必要なので、
   // 処理が終わり、プロンプトが戻ったらインストール済みかどうか確認後、
   // 未インストールのアプリのみ再度brew実行"): 実行後にまだ足りないものが
   // あれば、その分だけのコマンドを再び入力欄に置く(最大2回。実行はやはり
   // ユーザーのreturnで)。
   // brewから入れる場合は、Homebrew自体のインストールの後にbrew installが続くので1回多く。
-  app.offerShellCommand(command, installCommand, /*retries=*/3);
+  // 案内済みの印は、実際に入力欄に置けた時に書く(Application::scheduleShellOffer()参照、2026-10-20)。
+  app.scheduleShellOffer(command, installCommand, /*retries=*/3, [marker, offered, toOffer] {
+    std::ofstream out(marker);
+    for (const auto &package : offered) out << package << "\n";
+    for (const auto &package : toOffer) out << package << "\n";
+  });
 }
 
 bool stopBackgroundQuickLook();  // 自身のコメント参照

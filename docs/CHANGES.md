@@ -31988,3 +31988,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      フォント・-f・USILICFONTが無ければ、SFNSMono等の候補より先にこれを使う(項目934と同じ、項目936でやめたもの)。
      offerGroffInstallOnce()のmacOSは、IPAゴシックが無ければfont-ipafontも案内する(caskだが同名のformulaが無いので
      brew installにformulaと並べて書ける)。src/HELP_.txt・HELP_en_.txt(未コミット)の「必要なソフトウェア」に一文。
+
+957. **2026-10-20: 起動時のインストールの案内は、実行ループに入ってから出す(.appで出なかった)**
+   - **経緯**: 直接のユーザー報告"brew install font-ipafontが現れない"、"build/usilic.appをクリック、HELPモードで
+     立ち上げ"(前回の続きのHELP.epubで再開)。~/.usilic/install-offeredにはfont-ipafontが書かれていたので、
+     offerGroffInstallOnce()は通っていた。-cの擬似端末では同じ履歴でもSHELLに出たので、.appのGUIができる前の
+     offerShellCommand()(ensureShellActive())が失敗し、黙って消えていたとみられる(印は案内の前に書いていた)。
+   - **実装**: Application::scheduleShellOffer()で覚え、pollChildChannel()(実行ループの度、最初の起動の親のHELPの
+     後)でofferShellCommand()する。案内済みの印(install-offered)は、入力欄に置けた時に書く(onOffered)。

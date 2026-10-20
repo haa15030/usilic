@@ -21052,6 +21052,14 @@ void Application::pollChildChannel() {
     handleCommand(Command::StartHelp);  // ^Hと同じ(HELP.epubがあればそれ)
     display_.flush();
   }
+  if (pendingShellOffer_) {
+    PendingShellOffer offer = std::move(*pendingShellOffer_);
+    pendingShellOffer_.reset();
+    if (offerShellCommand(offer.commandLine, std::move(offer.followUp), offer.retries) && offer.onOffered)
+      offer.onOffered();
+    activeView().redraw();
+    display_.flush();
+  }
   if (helpChildrenPending_ || keyChildPending_) {
     if (std::exchange(helpChildrenPending_, false)) launchHelpChild();
     if (std::exchange(keyChildPending_, false)) launchKeyChild();

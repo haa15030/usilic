@@ -2150,6 +2150,21 @@ class Application {
   // 置く(最大`retries`回)。pollShellOfferFollowUp()参照。
   bool offerShellCommand(const std::string &commandLine, std::function<std::string()> followUp = nullptr,
                          int retries = 2);
+  // 2026-10-20、直接のユーザー報告("brew install font-ipafontが現れない"、build/usilic.appをクリック、前回の続きの
+  // HELPで立ち上がった): .appではGUIができる前のSHELLの起動に失敗し、案内が黙って消えていた。起動時の案内は
+  // 実行ループに入ってから(pollChildChannel()、最初の起動の親のHELPの後)出す。出せたら`onOffered`を呼ぶ
+  // (offerGroffInstallOnce()は、そこで案内済みの印を書く)。
+  void scheduleShellOffer(const std::string &commandLine, std::function<std::string()> followUp, int retries,
+                          std::function<void()> onOffered) {
+    pendingShellOffer_ = PendingShellOffer{commandLine, std::move(followUp), retries, std::move(onOffered)};
+  }
+  struct PendingShellOffer {
+    std::string commandLine;
+    std::function<std::string()> followUp;
+    int retries = 2;
+    std::function<void()> onOffered;
+  };
+  std::optional<PendingShellOffer> pendingShellOffer_;
   void pollShellOfferFollowUp();
   // 2026-09-25追加: GUIウィンドウへドロップされた/Finderから「この
   // アプリケーションで開く」で渡されたパスを開く(GraphicalDisplay::
