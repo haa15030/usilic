@@ -32052,3 +32052,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      入ったらgui.setFont(Base)し、Application::refreshShellBanner()で表紙の画像の帯の行数を今の字の大きさで出し直す
      (FileModeへ渡していた行数の計算をApplication::epubImageBandRows()に切り出した)。入れ終えた時は、まだ替えて
      いなければ替える(項目963)。
+
+965. **2026-10-20: 最初の起動のSHELLの表紙の下に、インストール中の案内を1行出す**
+   - **経緯**: mpi(Intel・macOS 15、HomebrewのTier 3でbottleが無い)では、w3mの依存のlibunistring等をソースから
+     組み立てる間、出力が止まって見えた(=la.png、止まっていたのではなかった)。直接のユーザー依頼"案内は出して"。
+   - **実装**: startShellBanner()で、画像の帯の下(HELPでは書名の行)に太字で「usilic が使うプログラムを
+     インストールしています。終わると HELP が開きます。」(英語のHELPなら"Installing the programs usilic uses. HELP
+     opens when it finishes.")。refreshShellBanner()は字の行をそのまま残す。

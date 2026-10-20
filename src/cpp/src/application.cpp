@@ -20867,6 +20867,13 @@ void Application::startShellBanner() {
     if (line.text.find_first_not_of(' ') != std::string::npos && ++textBeforeImage > 2) return;
     banner.push_back(ContentView::Line{});
   }
+  // 2026-10-20、直接のユーザー依頼(brewがソースから組み立てる間は出力が止まって見えるので"案内は出して"): 画像の下
+  // (HELPでは書名の行)に1行。
+  ContentView::Line notice;
+  notice.text = helpPath_ != helpBasePath_ ? "Installing the programs usilic uses. HELP opens when it finishes."
+                                           : "usilic が使うプログラムをインストールしています。終わると HELP が開きます。";
+  notice.attributes.push_back({0, static_cast<int>(notice.text.size()), Display::Attribute::Bold});
+  banner.push_back(std::move(notice));
   int rows = static_cast<int>(banner.size());
   // SHELLの内容に4行、プロンプトとモードラインに2行が残れば出す(大きな表紙の画像の帯は画面の高さまでになる)。
   if (!sawImage || rows > display_.rows() - 6) return;
