@@ -1843,14 +1843,9 @@ class Application {
   bool guiToggleReturnsToTerminal_ = false;
   // -H・最初の起動の子(HELPとKEY)を、次のpollChildChannel()(実行ループの最初)で起動する(main.cppから、GUIの
   // 準備ができてから起動して親のウィンドウを渡すため)。
-  // withKey: KEYの子も(最初の起動。-HはHELPの子だけ、2026-10-20)。
-  void scheduleHelpChildren(bool withKey) {
-    helpChildrenPending_ = true;
-    helpChildrenWithKey_ = withKey;
-  }
-  void launchHelpChildren(bool withKey);
+  void scheduleHelpChildren() { helpChildrenPending_ = true; }  // HELPの子だけ(2026-10-20、KEYの子はやめた)
+  void launchHelpChildren();
   bool helpChildrenPending_ = false;
-  bool helpChildrenWithKey_ = true;
   bool takeRaiseRequest() { return std::exchange(raiseRequested_, false); }
   bool raiseRequested_ = false;
   void executeRemoteKeys(const std::vector<int> &bytes, bool commandLineKey);

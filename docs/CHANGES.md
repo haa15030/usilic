@@ -31900,3 +31900,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: app/main.cppのtryEnterGuiPhase()で、appearance無し(.app起動・Windowsのネイティブ等)の時は、保存した
      色(~/.usilic/historyのGUIの色)があればそれ、無ければ(最初の起動)白地に黒字。項目937の/dev/ttyでの判定
      (hasControllingTerminal())はやめた。
+945. **2026-10-20: 最初の起動でもKEYの子の窓は開かず、HELPの子だけにする**
+   - **経緯**: 直接のユーザー依頼"-gの既定フォントサイズが18ptになったためウィンドウを横に並べてもKEY画面が入らない。
+     なので最初の起動でもHELPのみでいい。"(-HをHELPの子だけにした項目943の後)。
+   - **実装**: Application::launchHelpChildren()からKEYの子(usilic -K)の起動を除き、項目943のwithKeyもやめた。-K自体は
+     残す。src/HELP_.txt・HELP_en_.txt(未コミット)の最初の起動・-Hの説明からKEYの子を除いた。

@@ -20947,7 +20947,7 @@ void Application::closeChildChannel() {
   channelBuffer_.clear();
 }
 
-void Application::launchHelpChildren(bool withKey) {
+void Application::launchHelpChildren() {
   if (helpLoadedPath_.empty()) return;
 #ifdef _WIN32
   // Windowsのネイティブ(.steering/20261015-windows-native-gui/)には親子のusilicのつながり(FIFO)がまだ無く、
@@ -20962,12 +20962,9 @@ void Application::launchHelpChildren(bool withKey) {
   for (char c : helpFile) quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
   setExternalWindowSlot(1);
   runExternalUsilicPager("usilic " + quoted + "'");
-  // "^Kのウィンドウも追加"(中身はFileManagerのKEY): HELPの子に続けて、-KでKEYを開いた子も起動する。
-  // 2026-10-20、直接のユーザー依頼("-HはHELPの子プロセスのみに変更でいい"): KEYの子は最初の起動の時だけ。
-  if (withKey) {
-    setExternalWindowSlot(2);
-    runExternalUsilicPager("usilic -K");
-  }
+  // (2026-10-11〜10-20: HELPの子に続けて、-KでKEYを開いた子も起動していた。2026-10-20、直接のユーザー依頼
+  // "-HはHELPの子プロセスのみに変更でいい"・"-gの既定フォントサイズが18ptになったためウィンドウを横に並べても
+  // KEY画面が入らない。なので最初の起動でもHELPのみでいい"で、-H・最初の起動ともHELPの子だけにした。-Kは残す。)
   setExternalWindowSlot(0);
 }
 
@@ -20975,7 +20972,7 @@ void Application::pollChildChannel() {
   if (!exitingChildren_.empty()) reapExitingChildren();
   if (helpChildrenPending_) {
     helpChildrenPending_ = false;
-    launchHelpChildren(helpChildrenWithKey_);
+    launchHelpChildren();
     display_.flush();
   }
   if (channelFd_ < 0) return;
