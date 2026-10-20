@@ -2916,6 +2916,9 @@ class Application {
   int epubGrepFirst_ = 0;
   bool epubGrepVerticalActive() const;
   bool epubVerticalListActive() const;  // 今の画面が縦書きの章の一覧か検索結果の一覧
+  // 今の画面がEPUB(本文・章の一覧)か。EPUBの明朝体はCSSの指定どおり、それ以外の画面は^Otで和文を全部明朝体にする
+  // (Display::setSerifEverywhereProvider()、2026-10-20)。
+  bool epubContentShown() const;
   ContentView &epubListSource();
   const ContentView &epubListSource() const;
   int &epubListFirst();

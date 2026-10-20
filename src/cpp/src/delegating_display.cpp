@@ -10,6 +10,7 @@ void DelegatingDisplay::setBackend(Display &backend) {
   backend_ = &backend;
   if (imageProvider_) backend_->setImageProvider(imageProvider_);  // 新しい裏の画面にも(setImageProvider()参照)
   backend_->setSerifSuppressed(serifSuppressed_);  // 端末から-gへ移った時も(setSerifSuppressed()参照)
+  if (serifEverywhereProvider_) backend_->setSerifEverywhereProvider(serifEverywhereProvider_);
 }
 Display &DelegatingDisplay::backend() const { return *backend_; }
 
@@ -59,6 +60,10 @@ void DelegatingDisplay::setVerticalTextHint(bool vertical) { backend_->setVertic
 void DelegatingDisplay::setSerifSuppressed(bool suppressed) {
   serifSuppressed_ = suppressed;
   backend_->setSerifSuppressed(suppressed);
+}
+void DelegatingDisplay::setSerifEverywhereProvider(std::function<bool()> provider) {
+  serifEverywhereProvider_ = provider;
+  backend_->setSerifEverywhereProvider(std::move(provider));
 }
 void DelegatingDisplay::beginContentEdgeCapture() { backend_->beginContentEdgeCapture(); }
 bool DelegatingDisplay::drawsRuby() const { return backend_->drawsRuby(); }

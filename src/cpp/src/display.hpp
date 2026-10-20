@@ -384,6 +384,10 @@ class Display {
   // 2026-10-17(EPUBの明朝・ゴシックの切り換え、Command::ToggleEpubTypeface): trueなら明朝体(Attribute::Serif)の
   // 字もゴシック体(ふだんのフォント)で描く。-gだけが効き、端末は何もしない(フォントを選べない)。
   virtual void setSerifSuppressed(bool) {}
+  // 2026-10-20、直接のユーザー判断(^OtはEPUB以外の画面にも、"2.でいい"): trueを返す間は、明朝体の指定(Attribute::Serif)の
+  // 無い字も、全角の字(和文)は明朝体で描く(Application::epubContentShown()でない画面、setSerifSuppressed()が優先)。
+  // -gだけが効き、端末は何もしない。
+  virtual void setSerifEverywhereProvider(std::function<bool()>) {}
   // ルビ(Attribute::RubyBase参照)を親字に添えて描けるか(-gだけ)。
   virtual bool drawsRuby() const { return false; }
   // 次に書く字(親字の最初の字)に読みを添える。spanは親字の幅(横書きは桁、verticalなら

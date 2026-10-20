@@ -900,6 +900,9 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     epubHorizontalSection_.reset();
     fileView_.setShownIndexRange(std::nullopt);
   });
+  // ^Ot(Command::ToggleEpubTypeface)の明朝体を、EPUB以外の画面では和文の全部に(epubContentShown()参照、2026-10-20、
+  // 直接のユーザー判断"2.でいい")。ゴシック体にしている間はsetSerifSuppressed()が止める。
+  display_.setSerifEverywhereProvider([this] { return !epubContentShown(); });
   fileMode_.setEpubImageRows([this](const std::string &path, const std::string &name, int width) {
     return epubImageBandRows(path + "\n" + name, width);
   });
@@ -5557,7 +5560,8 @@ bool Application::handleCommandImpl(Command command) {
       history_.setEpubSansSerif(sansSerif);
       display_.setSerifSuppressed(sansSerif);
       activeView().redraw();
-      showTransientNotice(activeView(), std::string(sansSerif ? "EPUB: sans-serif" : "EPUB: serif") +
+      // 2026-10-20: EPUB以外の画面では和文の全部(Display::setSerifEverywhereProvider())。
+      showTransientNotice(activeView(), std::string(sansSerif ? "Sans-serif" : "Serif") +
                                             (display_.isGraphical() ? "" : " (-g only)"));
       return true;
     }
@@ -20848,6 +20852,12 @@ bool Application::openDroppedPaths(const std::vector<std::string> &paths) {
   activeView().redraw();
   showBufferLimitNoticeIfHit();
   return opened;
+}
+
+bool Application::epubContentShown() const {
+  if (epubVerticalActive() || epubVerticalListActive()) return true;
+  if (currentMode_ == ApplicationMode::File) return isEpubFile(fileMode_.currentFile());
+  return currentMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Epub;
 }
 
 // shellBannerView_参照。今のfileView_(最初の起動で親が開いたHELP)の先頭の画像の行を、HELPと同じ位置に写す

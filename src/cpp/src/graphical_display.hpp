@@ -336,6 +336,7 @@ class GraphicalDisplay : public Display {
   // から求めた高さのまま。create()より前に呼ぶ。
   static void setLineHeightRatios(double horizontal, double vertical);
   void setSerifSuppressed(bool suppressed) override;  // Display::setSerifSuppressed()参照
+  void setSerifEverywhereProvider(std::function<bool()> provider) override;  // Display::setSerifEverywhereProvider()参照
   // ^[[ / ^[](2026-10-17): 今の向き(横書き・縦書き)の行の高さを`deltaPixels`ドット変え、その場で組み直す
   // (setVerticalLineSpacing()と同じく行数が変わる)。LINE-HEIGHT・フォントから求めた高さに足す分として持つので、
   // 字の大きさを変えても残る。新しい高さ(ドット)と字の大きさに対する倍率を返す。

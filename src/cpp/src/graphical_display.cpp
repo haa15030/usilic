@@ -795,6 +795,9 @@ struct GraphicalDisplay::Impl {
   bool standoutActive = false, boldActive = false, underlineActive = false, italicActive = false,
        highlightActive = false, highlightCurrentActive = false, serifActive = false;
   bool serifSuppressed = false;  // GraphicalDisplay::setSerifSuppressed()参照
+  // Display::setSerifEverywhereProvider()参照。serifEverywhereはflush()・renderScrolled()の初めにproviderから。
+  std::function<bool()> serifEverywhereProvider;
+  bool serifEverywhere = false;
   bool largeActive = false, smallActive = false;  // Display::Attribute::Large/Small参照
   // 明朝体(Display::Attribute::Serif参照)。最初に明朝の字を描く時にloadSerifFont()で
   // 読み込む(見つからなければserifFontMissingを立て、以後はふだんのフォントで描く)。
@@ -1930,7 +1933,8 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // 明朝体。2026-10-11、直接のユーザー報告("ヒラギノ明朝 ProN W3って縦書きはいいんだが横書きだとフォントの大きさが
   // おかしい"、スクリーンショット=iu: M・O・U・D・W・m等だけ小さい): 明朝体の欧文は字ごとに幅が違うので、幅の広い字が
   // 半角1マスに収まらず縮めて描かれていた。半角(1マス幅)の字は明朝体にせず基本の等幅フォントで描く(縦書きは2マス幅)。
-  if (TTF_Font *serif = cell.serif && isWide ? serifFontFor(*impl_, codepoint) : nullptr) renderFont = serif;
+  if (TTF_Font *serif = (cell.serif || impl_->serifEverywhere) && isWide ? serifFontFor(*impl_, codepoint) : nullptr)
+    renderFont = serif;
   renderFont = verticalFormFontFor(*impl_, renderFont, codepoint);  // 縦書き用の字が無いフォント(それ自身のコメント参照)
   renderFont = symbolFontFor(*impl_, renderFont, codepoint);  // どのフォントにも無い記号(それ自身のコメント参照)
   // 2026-08-11: TTF_HINTING_LIGHT(項目263)もフォント依存だと判明した
@@ -2232,7 +2236,8 @@ void GraphicalDisplay::renderCursor() {
   // 明朝体。2026-10-11、直接のユーザー報告("ヒラギノ明朝 ProN W3って縦書きはいいんだが横書きだとフォントの大きさが
   // おかしい"、スクリーンショット=iu: M・O・U・D・W・m等だけ小さい): 明朝体の欧文は字ごとに幅が違うので、幅の広い字が
   // 半角1マスに収まらず縮めて描かれていた。半角(1マス幅)の字は明朝体にせず基本の等幅フォントで描く(縦書きは2マス幅)。
-  if (TTF_Font *serif = cell.serif && isWide ? serifFontFor(*impl_, codepoint) : nullptr) renderFont = serif;
+  if (TTF_Font *serif = (cell.serif || impl_->serifEverywhere) && isWide ? serifFontFor(*impl_, codepoint) : nullptr)
+    renderFont = serif;
   renderFont = verticalFormFontFor(*impl_, renderFont, codepoint);  // 縦書き用の字が無いフォント(それ自身のコメント参照)
   renderFont = symbolFontFor(*impl_, renderFont, codepoint);  // どのフォントにも無い記号(それ自身のコメント参照)
   // renderCell()と同じ半角用ヒンティングの調整――それ自身のコメント
@@ -2253,6 +2258,7 @@ void GraphicalDisplay::renderCursor() {
 
 void GraphicalDisplay::flush() {
   if (!impl_->outputEnabled || impl_->edgeCapturing) return;
+  impl_->serifEverywhere = impl_->serifEverywhereProvider && impl_->serifEverywhereProvider();
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
     FILE *f = std::fopen(dbg, "a");
     if (f) {
@@ -2549,6 +2555,11 @@ void GraphicalDisplay::handleWindowResized(int newPixelWidth, int newPixelHeight
   impl_->grid.assign(static_cast<std::size_t>(newRows) * newColumns, Cell{});
   impl_->sizeChanged = true;
   impl_->needsRedraw = true;  // リサイズしたばかりのグリッドは完全に空白から始まる――全画面再描画を強制する
+}
+
+void GraphicalDisplay::setSerifEverywhereProvider(std::function<bool()> provider) {
+  impl_->serifEverywhereProvider = std::move(provider);
+  impl_->needsRedraw = true;
 }
 
 void GraphicalDisplay::setSerifSuppressed(bool suppressed) {
@@ -4371,7 +4382,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
       if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
         renderFont = impl_->fallbackFont;
-      if (TTF_Font *serif = wantSerif && isWide ? serifFontFor(*impl_, codepoint) : nullptr)
+      if (TTF_Font *serif = (wantSerif || impl_->serifEverywhere) && isWide ? serifFontFor(*impl_, codepoint) : nullptr)
         renderFont = serif;  // 明朝体(半角はrenderCell()と同じく等幅フォント、2026-10-11)
       renderFont = verticalFormFontFor(*impl_, renderFont, codepoint);
       // renderCell()自身のもの(`if (cell.bold) style |= TTF_STYLE_BOLD;`
@@ -4797,6 +4808,7 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
 void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                                        const std::vector<Display::ModeLineSegment> &modeLineSegments) {
   if (!impl_->outputEnabled) return;
+  impl_->serifEverywhere = impl_->serifEverywhereProvider && impl_->serifEverywhereProvider();
   SDL_SetRenderDrawColor(impl_->renderer, impl_->bg.r, impl_->bg.g, impl_->bg.b, 255);
   SDL_RenderClear(impl_->renderer);
 

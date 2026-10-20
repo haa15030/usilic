@@ -32093,3 +32093,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: graphical_display.cppにsymbolFontFor()(verticalFormFontFor()と同じ作り)。選んだフォントにも開いている他の
      フォントにも無いU+2000以上の字は、Menlo・Apple Symbols・DejaVu Sans(Mono)・Segoe UI Symbolのうち「↩」を持つ最初の
      ものを、今の字の大きさで開いてその字だけに使う。renderCell()・スクロール中の描画・ルビの3か所で通す。
+
+970. **2026-10-20: ^OtをEPUB以外の画面にも効かせ、明朝体の間は和文を全部明朝体で描く**
+   - **経緯**: 直接のユーザー報告("^Otで日本語にならない"、MAN)。^Ot(K-111、項目の2026-10-17)はEPUBのCSSで明朝体の字
+     (Attribute::Serif)をゴシック体にするかだけで、指定の無いMAN・ふつうのファイル等は常にゴシック体だった(ユーザーは
+     実装済みと思っていた)。EPUBと同じ状態にする案に"2.でいい"、半角はそのまま("明朝体になるのは和文だけ？")、usilicrcの
+     FONTは"現状でよろしく"。
+   - **実装**: Display::setSerifEverywhereProvider()(DelegatingDisplayは覚えて裏の画面へも渡す)。GraphicalDisplayは
+     flush()・renderScrolled()の初めにproviderを聞き、真ならAttribute::Serifの無い全角の字も明朝体で描く(半角は等幅の
+     フォントのまま、項目の2026-10-11と同じ)。ApplicationはepubContentShown()(EPUBの本文・縦書きの一覧・章の一覧)でない
+     画面で真にする。ゴシック体の間はsetSerifSuppressed()が止める。^Otの通知は"Serif"/"Sans-serif"に、usilicrc・
+     usilicrc.enのK-111の説明も直した。既定(historyに無ければ明朝体)なので、EPUB以外の画面もモードラインを含めて和文は
+     明朝体で始まる。

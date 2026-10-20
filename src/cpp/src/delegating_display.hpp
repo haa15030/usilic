@@ -93,6 +93,7 @@ class DelegatingDisplay : public Display {
   void leaveForSuspend() override;
   void setVerticalTextHint(bool vertical) override;
   void setSerifSuppressed(bool suppressed) override;
+  void setSerifEverywhereProvider(std::function<bool()> provider) override;
   void beginContentEdgeCapture() override;
   bool drawsRuby() const override;
   void setPendingRuby(const std::string &reading, int span, bool vertical) override;
@@ -107,6 +108,7 @@ class DelegatingDisplay : public Display {
 
  private:
   bool serifSuppressed_ = false;  // setSerifSuppressed()参照
+  std::function<bool()> serifEverywhereProvider_;  // setSerifEverywhereProvider()参照
   Display *backend_;
   ImageProvider imageProvider_;  // setImageProvider()(裏の画面を切り替えても渡し直す、setBackend()参照)
 };

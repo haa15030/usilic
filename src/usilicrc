@@ -483,7 +483,7 @@ KEY
     K-110 ESC ]   # ^[]   -g: 行の高さを1ドット狭める
     K-112 ESC {   # ^[{   -g: 字間を1ドット広げる
     K-113 ESC }   # ^[}   -g: 字間を1ドット狭める
-    K-111 F-2 t   # ^Ot   EPUB: 明朝体・ゴシック体の切り換え(-g)
+    K-111 F-2 t   # ^Ot   明朝体・ゴシック体の切り換え(-g、EPUB以外は和文)
     K-103 F-1 C-a # ^J^A  ARC: 一覧(アーカイブだけのFILE履歴)
     K-104 F-1 C-f # ^J^F  -g: フォント一覧(FONT・SANS-SERIF・SERIF)
     K-105 h       # h     KEYから平文のHELPの当該位置へ(KEYの外では平文のHELP)
