@@ -1663,6 +1663,9 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       if (!fields.trailing3.empty()) fields.trailing3 = directoryMode_.currentDirectory();
       else fields.trailing2 = directoryMode_.currentDirectory();
     }
+    // 2026-10-20、直接のユーザー依頼("HELPの注釈ではPARTと同じく表示範囲が限られているのでモードラインのバイト数も
+    // 範囲内(今は全体)の値にして"、=ky.png): 注釈を見ている間(epubNote_)は、本のファイルの大きさではなく注釈の行の分。
+    if (epubNoteActive()) fields.trailing = std::to_string(contentByteCount(fileView_));
     return fields;
   });
 

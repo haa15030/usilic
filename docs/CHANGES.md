@@ -31965,3 +31965,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      Finderからの起動ではPATHが/usr/bin:/bin:/usr/sbin:/sbinだけで、Homebrewのfc-listが見つからなかった。
    - **実装**: main()の最初(macOS)で、PATHに/opt/homebrew/bin・/usr/local/binが無ければ後ろに足す。fc-list以外
      (groff・7z・mg等、子のシェルのコマンドも)も同じく見つかる。
+
+954. **2026-10-20: HELP(EPUB)の注釈を見ている間、モードラインのバイト数は注釈の分**
+   - **経緯**: 直接のユーザー依頼"HELPの注釈ではPARTと同じく表示範囲が限られているのでモードラインのバイト数も
+     範囲内(今は全体)の値にして"(=ky.png、usilicrcのKEYの注釈で194782=HELP.epub全体の大きさだった)。
+   - **実装**: fileView_のモードラインの上書き(Application::Application())で、epubNoteActive()の間はtrailingを
+     contentByteCount(fileView_)(差し替えた注釈の行の分)にする。HELP以外のEPUBの注釈も同じ。
