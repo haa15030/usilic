@@ -3,15 +3,24 @@
 
 #include <windows.h>
 
+#include <cerrno>
+
 int kill(long long pid, int sig) {
   HANDLE h = OpenProcess(sig == 0 ? PROCESS_QUERY_LIMITED_INFORMATION : PROCESS_TERMINATE |
                                                                           PROCESS_QUERY_LIMITED_INFORMATION,
                          FALSE, static_cast<DWORD>(pid));
-  if (!h) return -1;
+  // 無い・終わったプロセスはerrno=ESRCH(main.cppのtransientParentGone()が見る、2026-10-20)。
+  if (!h) {
+    if (GetLastError() == ERROR_INVALID_PARAMETER) errno = ESRCH;
+    return -1;
+  }
   int result = 0;
   if (sig == 0) {
     DWORD code = 0;
-    if (!GetExitCodeProcess(h, &code) || code != STILL_ACTIVE) result = -1;
+    if (!GetExitCodeProcess(h, &code) || code != STILL_ACTIVE) {
+      result = -1;
+      errno = ESRCH;
+    }
   } else if (!TerminateProcess(h, 1)) {
     result = -1;
   }

@@ -31947,3 +31947,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ^H・^Kで呼ぶ(^Tn/^Tpと同じく固定のキー)。子のHELP・KEYの窓を自身で終われなくしていたsetEndsWithParentOnly()と、
      -gの窓を閉じる操作を無視していたのをやめた。Windowsのネイティブでは子を開かず"Not available on Windows"
      (最初の起動の親のHELPは開く)。src/HELP_.txt・HELP_en_.txt(未コミット)の最初の起動・^Tの表・-H・-Kの説明を直した。
+
+952. **2026-10-20: ページャーで^T^H/^T^Kを通す、WindowsでもHELP/KEYの子を開く、Windowsのアイコンを.appと同じに**
+   - **経緯**: 直接のユーザー依頼"足して"(ページャーで通すキーに^T^H/^T^K)・"Windowsでは利かない？"(=kx.png、
+     "Not available on Windows")・"画面下のusilicアイコンを.appと同じにしたい"。
+   - **実装**: pagerAllowedKeys()に^T^H・^T^Kを直接足した(HELPを作り直さなくても使える)。Windowsのネイティブでは
+     launchWindowsUsilicChild()が、usilic.exe自身(windowsExecutablePath())を-gとUSILIC_TRANSIENT・
+     USILIC_WINDOW_SLOT・USILIC_GUI_FRAME・USILICFONT付きでChildProcess::runDetached()する(shを通さない)。
+     親の終わりは子のtransientParentGone()で知るので、posix_compat_win.cppのkill()が、無い・終わったプロセスで
+     errno=ESRCHにするようにした。アイコンは、packaging/usilic_icon_1024.pngを16〜256のPNGにしてまとめた
+     packaging/windows/usilic.icoを、usilic.rcの最初のアイコン(1 ICON)に入れた(SDL2はexeの最初のアイコンを窓の
+     アイコンにする)。
+   - **制約**: FIFOが無いため、Windowsでは、KEYの子の^M(親でキーを実行)とHELPの子への行の受け渡しは使えない。

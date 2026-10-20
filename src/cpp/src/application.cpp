@@ -4008,6 +4008,9 @@ const std::vector<std::vector<int>> &Application::pagerAllowedKeys() {
     for (int c : {'[', ']', '{', '}'}) pagerAllowedKeys_.push_back({kEscape, c});
     pagerAllowedKeys_.push_back({kLeaderJ, 0x06});
     pagerAllowedKeys_.push_back({kLeaderO, 't'});
+    // 同日、直接のユーザー依頼(HELPを作り直さなくても): HELP/KEYの子(^T^H / ^T^K、launchHelpChild()参照)も。
+    pagerAllowedKeys_.push_back({0x14, 0x08});
+    pagerAllowedKeys_.push_back({0x14, 0x0b});
   }
   return pagerAllowedKeys_;
 }
@@ -20974,18 +20977,47 @@ void Application::closeChildChannel() {
   channelBuffer_.clear();
 }
 
+#ifdef _WIN32
+// 2026-10-20、直接のユーザー報告("Windowsでは利かない？"、=kx.png): Windowsのネイティブ(.steering/
+// 20261015-windows-native-gui/)には親子のusilicのつながり(FIFO)が無いので、HELP・KEYの子は、このusilic.exeを
+// USILIC_TRANSIENT(このusilicのPID)付きで直接起動するだけ(sh・runExternalUsilicPager()を通さない)。子は親が
+// いなくなれば終わる(main.cppのtransientParentGone()、kill()はposix_compat_win.cpp)。KEYの子の^M(親でキーを
+// 実行)・HELPの子への行の受け渡しは、FIFOが要るので使えない。
+void Application::launchWindowsUsilicChild(const std::vector<std::string> &args) {
+  std::string exe = windowsExecutablePath();
+  if (exe.empty()) return;
+  std::vector<std::pair<std::string, std::string>> env = {
+      {"USILIC_TRANSIENT", std::to_string(parentPid_ > 0 ? parentPid_ : static_cast<long>(::getpid()))},
+      {"USILIC_WINDOW_SLOT", std::to_string(externalWindowSlot_)}};
+  if (guiFrameProvider_) env.push_back({"USILIC_GUI_FRAME", guiFrameProvider_()});
+  if (guiFontProvider_) env.push_back({"USILICFONT", guiFontProvider_()});
+  std::vector<std::pair<std::string, std::optional<std::string>>> saved;
+  for (const auto &[name, value] : env) {
+    const char *old = std::getenv(name.c_str());
+    saved.push_back({name, old ? std::optional<std::string>(old) : std::nullopt});
+    if (!value.empty()) ::setenv(name.c_str(), value.c_str(), 1);
+  }
+  std::vector<std::string> argv = {exe, "-g"};
+  argv.insert(argv.end(), args.begin(), args.end());
+  ChildProcess::runDetached(argv);  // 子は起動時の環境を受け継ぐので、起動したら戻す
+  for (const auto &[name, value] : saved) {
+    if (value) ::setenv(name.c_str(), value->c_str(), 1);
+    else ::unsetenv(name.c_str());
+  }
+}
+#endif
+
 bool Application::launchHelpChild() {
   if (helpLoadedPath_.empty()) return false;
-#ifdef _WIN32
-  // Windowsのネイティブ(.steering/20261015-windows-native-gui/)には親子のusilicのつながり(FIFO)がまだ無く、
-  // 子が親と関係の無いusilic.exeとして立ち上がるだけなので、-H・^T^HのHELP・KEYの窓は開かない
-  // (2026-10-15、直接のユーザー報告"子プロセスではないusilic.exeが複数起動")。
-  showTransientNotice(activeView(), "Not available on Windows");
-  return false;
-#endif
   // 2026-10-18、直接のユーザー報告("^Hとやっても~/.local/lib/usilic/HELP.epubを読まない"): HELP.epubがあれば、
   // 子の窓でも^Hと同じくそちらを開く(Command::StartHelp参照)。
   std::string helpFile = helpEpubPath().value_or(helpLoadedPath_);
+#ifdef _WIN32
+  setExternalWindowSlot(1);
+  launchWindowsUsilicChild({helpFile});
+  setExternalWindowSlot(0);
+  return true;
+#endif
   std::string quoted = "'";
   for (char c : helpFile) quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
   setExternalWindowSlot(1);
@@ -20999,8 +21031,10 @@ bool Application::launchHelpChild() {
 // 起動でHELPの子に続けて必ず開いていたのを、-K・^T^Kの時だけに。
 bool Application::launchKeyChild() {
 #ifdef _WIN32
-  showTransientNotice(activeView(), "Not available on Windows");  // launchHelpChild()と同じ
-  return false;
+  setExternalWindowSlot(2);
+  launchWindowsUsilicChild({"-K"});  // launchWindowsUsilicChild()参照
+  setExternalWindowSlot(0);
+  return true;
 #endif
   setExternalWindowSlot(2);
   runExternalUsilicPager("usilic -K");

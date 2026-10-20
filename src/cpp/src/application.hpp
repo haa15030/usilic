@@ -1852,6 +1852,9 @@ class Application {
   void scheduleHelpInParent() { helpInParentPending_ = true; }
   bool launchHelpChild();  // ^T^H・-H
   bool launchKeyChild();   // ^T^K・-K
+#ifdef _WIN32
+  void launchWindowsUsilicChild(const std::vector<std::string> &args);  // launchHelpChild()・launchKeyChild()の中身
+#endif
   bool helpChildrenPending_ = false;
   bool keyChildPending_ = false;
   bool helpInParentPending_ = false;

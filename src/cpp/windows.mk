@@ -47,7 +47,7 @@ $(OBJ_DIR)/%.o: %.cpp
 # 入っていなかった)。
 -include $(OBJS:.o=.d)
 
-$(OBJ_DIR)/usilic_res.o: packaging/windows/usilic.rc packaging/windows/usilic.manifest
+$(OBJ_DIR)/usilic_res.o: packaging/windows/usilic.rc packaging/windows/usilic.manifest packaging/windows/usilic.ico
 	@mkdir -p $(dir $@)
 	$(WINDRES) -I packaging/windows $< -o $@
 

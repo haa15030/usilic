@@ -1,3 +1,7 @@
-// usilic.exeの資源(windows.mk): マニフェスト(UTF-8のactiveCodePage・DPI)。
+// usilic.exeの資源(windows.mk): マニフェスト(UTF-8のactiveCodePage・DPI)、アイコン。
 #include <winuser.h>
 CREATE_PROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "usilic.manifest"
+// 2026-10-20、直接のユーザー依頼("画面下のusilicアイコンを.appと同じにしたい"): .appのアイコン
+// (packaging/usilic_icon_1024.png)を16〜256の大きさのPNGにしてまとめたもの。SDL2はexeの最初のアイコンを
+// 窓のアイコン(タスクバー・タイトルバー)にする。
+1 ICON "usilic.ico"
