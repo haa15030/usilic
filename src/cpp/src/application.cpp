@@ -882,11 +882,18 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       if (std::filesystem::is_regular_file(page, ec)) return page;
     return std::string();
 #endif
-    std::vector<std::string> candidates = {std::filesystem::path(helpBasePath_).parent_path().string() + "/HELP.1"};
-    if (!installLibDirectory_.empty()) candidates.push_back(installLibDirectory_ + "HELP.1");
-    candidates.push_back("/usr/local/lib/usilic/HELP.1");
-    for (const auto &candidate : candidates)
-      if (std::filesystem::is_regular_file(candidate, ec)) return std::filesystem::absolute(candidate, ec).string();
+    // 2026-10-20、直接のユーザー報告("^Jmで表示されるmanページが英語から日本語に切り替わらない。^Ojで切り替わった記憶は
+    // ある"): 日本語(^Ojで英語にしていない)ならHELP.ja.1(HELPの組みに使うroff版)を先に。macOSのman(mandoc)は日本語の
+    // roffを組めないので、ManMode::runAndWrap()が".ja.1"はusilicrcのGROFFで組む。無ければ英語のHELP.1。
+    std::vector<std::string> names = {"HELP.1"};
+    if (helpPath_ == helpBasePath_) names.insert(names.begin(), "HELP.ja.1");
+    for (const auto &page : names) {
+      std::vector<std::string> candidates = {std::filesystem::path(helpBasePath_).parent_path().string() + "/" + page};
+      if (!installLibDirectory_.empty()) candidates.push_back(installLibDirectory_ + page);
+      candidates.push_back("/usr/local/lib/usilic/" + page);
+      for (const auto &candidate : candidates)
+        if (std::filesystem::is_regular_file(candidate, ec)) return std::filesystem::absolute(candidate, ec).string();
+    }
     return {};
   });
   fileMode_.setBeforeLoad([this]() {
@@ -5569,10 +5576,9 @@ bool Application::handleCommandImpl(Command command) {
         return false;
       }
       reopenHelpInOtherLanguage(view);
-#ifdef _WIN32
-      // MANのusilicのページ(組んでおいた平文、ManMode::runAndWrap()参照)も、その場で切り替えた言語に。
+      // MANのusilicのページ(Windowsは組んでおいた平文、他はHELP.ja.1/HELP.1、ManMode::runAndWrap()参照)も、その場で
+      // 切り替えた言語に(2026-10-20、Windows以外も)。
       if (currentMode_ == ApplicationMode::Man && manMode_.currentPage() == "usilic") manMode_.loadPage("usilic");
-#endif
       return true;
     }
     case Command::StartKey:

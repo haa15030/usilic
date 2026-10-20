@@ -32068,3 +32068,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      無視されるだけ)、Homebrew自体のインストーラーにNONINTERACTIVE=1(sudoのパスワードは聞かれる)。リポジトリ直下に
      README.md(ビルド・インストールと、最初の起動で自動で入るもの)を新設。src/HELP_.txt・HELP_en_.txt(未コミット)の
      「必要なソフトウェア」の^M待ちの説明を直した。
+
+967. **2026-10-20: MANのusilicのページを^Ojの言語に合わせる(日本語はHELP.ja.1をgroffで組む)**
+   - **経緯**: 直接のユーザー報告("^Jmで表示されるmanページが英語から日本語に切り替わらない。^Ojで切り替わった記憶は
+     あるので最近NGっぽい"、macOS・Ubuntu)。項目667(10/06、"HELP.1(英語版の方)を出して欲しい")から、Windows以外では
+     言語に関係なく英語のHELP.1を出していた(当時は日本語のroff版HELP.ja.1が無かった)。macOSのman(mandoc)は日本語の
+     HELP.ja.1を組めない(行が途中で切れる)ことも確かめた。
+   - **実装**: setPageResolver()のWindows以外は、日本語(helpPath_ == helpBasePath_)ならHELP.ja.1を先に探す。
+     ManMode::runAndWrap()は、".ja.1"をmanではなくusilicrcのGROFF(groff -mandoc -Kutf8 -Tutf8)に-rLL=幅nで渡す。
+     ^Oj(Command::ToggleHelpLanguage)は、MANでusilicのページを見ていればどの環境でも読み直す(以前は_WIN32だけ)。
+     -cの擬似端末で、^Jm usilicが「名称」で開き、^Ojで「NAME」になるのを確かめた。

@@ -45,6 +45,17 @@ std::optional<std::vector<ContentView::Line>> ManMode::runAndWrap(const std::str
 
   std::vector<std::string> argv = command.argv;
   argv.push_back(resolved.empty() ? name : resolved);
+  // 日本語のusilicのページ(HELP.ja.1、Application::Application()のsetPageResolver()参照、2026-10-20): macOSのman
+  // (mandoc)は日本語のroffを組めない(行が途中で切れる)ので、manではなくusilicrcのGROFFで今の幅に組む。
+  const std::string jaSuffix = ".ja.1";
+  if (resolved.size() > jaSuffix.size() && resolved.compare(resolved.size() - jaSuffix.size(), jaSuffix.size(), jaSuffix) == 0) {
+    ProgramCommand groff = configuration_.commandFor(ConfiguredRole::Groff);
+    if (!groff.argv.empty()) {
+      argv = groff.argv;
+      argv.push_back("-rLL=" + std::to_string(std::max(width_, 20)) + "n");
+      argv.push_back(resolved);
+    }
+  }
 
   // 2026-09-06追加、直接のユーザー報告("MANも①③(`man ls|usilic -c`/
   // SHELLプロンプトの`man ls^M`)と同じ症状"、実機PTYで実際に検証): この
