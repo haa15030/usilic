@@ -345,6 +345,29 @@ struct TerminalWindowBounds {
 // 端末(Terminal.app/iTerm2)のプロファイルのフォントのファイル(分からなければ空)。^J^Fの一覧の先頭に出す。
 std::string gTerminalFontPath;
 
+// 2026-10-20、直接のユーザー依頼(-gの既定はipagを優先、最初の起動の案内にfont-ipafontも): 入っているIPAゴシック
+// (ipag.ttc・ipag.ttf、和文も等幅)のファイル。よくある場所に無ければfc-listで探す。無ければ空。
+std::string ipaGothicFontPath() {
+  static const std::string found = [] {
+    const char *home = std::getenv("HOME");
+    for (const char *name : {"ipag.ttc", "ipag.ttf"}) {
+      for (const std::string &dir :
+           {std::string(home ? home : "") + "/Library/Fonts/", std::string("/Library/Fonts/"),
+            std::string("/usr/share/fonts/opentype/ipafont-gothic/"),
+            std::string("/usr/share/fonts/truetype/ipafont-gothic/")}) {
+        std::string path = dir + name;
+        std::ifstream probe(path, std::ios::binary);
+        if (probe.good()) return path;
+      }
+    }
+    fm::ChildProcess::Result result = fm::ChildProcess::run({"fc-list", "-f", "%{file}\n", ":family=IPAGothic"});
+    std::string path = result.ok ? result.output.substr(0, result.output.find('\n')) : "";
+    std::ifstream probe(path, std::ios::binary);
+    return !path.empty() && probe.good() ? path : std::string();
+  }();
+  return found;
+}
+
 std::string resolveGuiFontPath(std::optional<TerminalAppearance> appearance = std::nullopt,
                                 const std::string &explicitFontPath = {}) {
   if (const char *env = std::getenv("USILICFONT")) return env;
@@ -362,6 +385,10 @@ std::string resolveGuiFontPath(std::optional<TerminalAppearance> appearance = st
     resolved = fm::resolveLinuxFontPath(appearance->fontName);
     if (!resolved.empty()) return resolved;
   }
+  // 2026-10-20、直接のユーザー依頼("1080pのminiで見るとSFNSMonoは日本語の字間の広さが強調されて見える"): IPAゴシック
+  // (半角がちょうど全角の半分で詰まって見える)が入っていれば、SF Monoより先に(brew install --cask font-ipafont、
+  // offerGroffInstallOnce()が最初の起動で案内する)。
+  if (std::string ipag = ipaGothicFontPath(); !ipag.empty()) return ipag;
   static const char *const candidates[] = {
       // 2026-10-20、直接のユーザー判断("mpiのSFNSMonoが既定でいい"、字間は^[{ / ^[}で詰められるので): SF Monoを先に
       // (同日にいったんIPAゴシックを先にしたのをやめた)。
@@ -2309,6 +2336,11 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
         if (std::filesystem::exists(font, fontEc)) haveCjkFont = true;
       if (!haveCjkFont) missing.push_back("fonts-noto-cjk");
     }
+#endif
+#ifdef __APPLE__
+    // 2026-10-20、直接のユーザー依頼: -gの既定のフォントのIPAゴシック(ipaGothicFontPath())も。font-ipafontはcaskだが、
+    // 同じ名前のformulaが無いので、brew installにformulaと並べて書ける。
+    if (ipaGothicFontPath().empty()) missing.push_back("font-ipafont");
 #endif
     return missing;
   };

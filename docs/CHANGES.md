@@ -31978,3 +31978,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: main.cppのbuildFontList()で、:spacing=monoに:spacing=dual:lang=jaの分を足して名前順に並べ直す
      (WSLのfc-scanの分が既に90も等幅としているのと同じ)。日本語の無いdual(点字等)は出さない。mpiでは
      BIZ UDGothic・BIZ UDMincho・ＭＳ ゴシック・ＭＳ 明朝・Osakaが増える(明朝の等幅もFONTに出る)。
+
+956. **2026-10-20: -gの既定のフォントはIPAゴシックが入っていればそれを優先、最初の起動の案内にfont-ipafontも**
+   - **経緯**: 直接のユーザー報告"1080pのminiで見ると良くない。理由は日本語字間の広さが強調されて見えるから...
+     SFNSMonoではすでにbold文字がほぼ隙間無しなので狭くできない"、"IPAはbrew installのようにSHELLで拾ってこれる？"
+     (brew install --cask font-ipafont)に続き、"1と2の両方で"(案内にfont-ipafont、既定のフォントはipag優先)。
+   - **実装**: main.cppにipaGothicFontPath()(ipag.ttc・ipag.ttfを~/Library/Fonts・/Library/Fonts・Ubuntuの
+     ipafont-gothicで探し、無ければfc-list :family=IPAGothic、結果は覚える)。resolveGuiFontPath()は、端末の
+     フォント・-f・USILICFONTが無ければ、SFNSMono等の候補より先にこれを使う(項目934と同じ、項目936でやめたもの)。
+     offerGroffInstallOnce()のmacOSは、IPAゴシックが無ければfont-ipafontも案内する(caskだが同名のformulaが無いので
+     brew installにformulaと並べて書ける)。src/HELP_.txt・HELP_en_.txt(未コミット)の「必要なソフトウェア」に一文。
