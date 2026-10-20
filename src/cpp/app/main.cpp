@@ -4319,6 +4319,11 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
       // 2026-10-16、直接のユーザー依頼(Windowsの-g、=jo.png"横幅が80未満ならもう少し広くていいかも"): 前回
       // 狭めた窓のままだと一覧の名前やモードラインが詰まるので、起動時は少なくとも80桁にする。
       columns = std::max(savedGui.columns, 80);
+    } else {
+      // 2026-10-20、直接のユーザー依頼("既定のウィンドウサイズを80x40にして"): 保存した大きさが無い(最初の起動)
+      // 時は、端末の大きさ(.app起動・Windowsでは決め打ちの値)ではなく80桁x40行。
+      rows = 40;
+      columns = 80;
     }
     if (savedGui.fontPointSize > 0) fontPointSize = savedGui.fontPointSize;
     if (gStartFontPointSize > 0) fontPointSize = gStartFontPointSize;  // -z

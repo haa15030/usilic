@@ -31933,3 +31933,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (installLibDirectory_)で見つかっている(=kw.pngのモードラインのHELP.epubのパス)。
    - **実装**: Applicationのページの差し替え先(Windows)で、helpBasePath_の場所・HELPを読んだ場所(helpLoadedPath_)・
      installLibDirectory_の順に探す(Macのman usilicのHELP.1と同じ順)。
+950. **2026-10-20: 端末に重ねない-gの既定の窓の大きさを80桁x40行にする**
+   - **経緯**: 直接のユーザー依頼"既定のウィンドウサイズを80x40にして。"。保存した大きさが無い(最初の起動)時は、
+     端末の大きさ(.app起動・Windowsのネイティブでは決め打ちの値)で開いていた。
+   - **実装**: app/main.cppのtryEnterGuiPhase()で、appearance無しで保存した行数・桁数が無ければ80桁x40行。次回からは
+     終わりに保存した大きさ(今までどおり)。
