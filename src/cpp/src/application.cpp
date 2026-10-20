@@ -894,26 +894,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     fileView_.setShownIndexRange(std::nullopt);
   });
   fileMode_.setEpubImageRows([this](const std::string &path, const std::string &name, int width) {
-    int cw = display_.cellPixelWidth(), ch = display_.cellPixelHeight();
-    if (cw <= 0 || ch <= 0 || width <= 0) return 0;
-    std::string key = path + "\n" + name;
-    auto it = epubImageSizes_.find(key);
-    if (it == epubImageSizes_.end()) {
-      std::pair<int, int> size{0, 0};
-      if (auto bytes = epubImageBytes(key)) {
-        int w = 0, h = 0, channels = 0;
-        if (stbi_info_from_memory(reinterpret_cast<const unsigned char *>(bytes->data()), static_cast<int>(bytes->size()),
-                                  &w, &h, &channels))
-          size = {w, h};
-      }
-      it = epubImageSizes_.emplace(key, size).first;
-    }
-    auto [w, h] = it->second;
-    if (w <= 0 || h <= 0) return 0;
-    // 画面の幅に合わせて縮める(小さい画像は拡大しない)。高さは本文の行の数まで。
-    double shownHeight = std::min(static_cast<double>(h), static_cast<double>(h) * width * cw / w);
-    int rows = static_cast<int>(std::ceil(shownHeight / ch));
-    return std::clamp(rows, 1, std::max(1, fileView_.height()));
+    return epubImageBandRows(path + "\n" + name, width);
   });
   // K-65(^I): Shell自身のコマンドラインのための、実際のファイル
   // システムに裏打ちされた補完、Shellが最後に自己申告したディレク
@@ -20900,9 +20881,67 @@ void Application::startShellBanner() {
   });
 }
 
+// 画像(key = パス + "\n" + 名前)の帯の行数(FileMode::setEpubImageRows()に渡すもの)。画面の幅`width`桁に合わせて
+// 縮め(小さい画像は拡大しない)、高さは本文の行の数まで。0なら画像として出せない。最初の起動のSHELLの表紙
+// (refreshShellBanner())も、フォントを替えた後の行数をこれで出し直す。
+int Application::epubImageBandRows(const std::string &key, int width) {
+  int cw = display_.cellPixelWidth(), ch = display_.cellPixelHeight();
+  if (cw <= 0 || ch <= 0 || width <= 0) return 0;
+  auto it = epubImageSizes_.find(key);
+  if (it == epubImageSizes_.end()) {
+    std::pair<int, int> size{0, 0};
+    if (auto bytes = epubImageBytes(key)) {
+      int w = 0, h = 0, channels = 0;
+      if (stbi_info_from_memory(reinterpret_cast<const unsigned char *>(bytes->data()), static_cast<int>(bytes->size()),
+                                &w, &h, &channels))
+        size = {w, h};
+    }
+    it = epubImageSizes_.emplace(key, size).first;
+  }
+  auto [w, h] = it->second;
+  if (w <= 0 || h <= 0) return 0;
+  // 画面の幅に合わせて縮める(小さい画像は拡大しない)。高さは本文の行の数まで。
+  double shownHeight = std::min(static_cast<double>(h), static_cast<double>(h) * width * cw / w);
+  int rows = static_cast<int>(std::ceil(shownHeight / ch));
+  return std::clamp(rows, 1, std::max(1, fileView_.height()));
+}
+
 void Application::finishFirstStartInstall() {
   stopShellBanner();
   if (currentMode_ == ApplicationMode::Shell) returnFromShell();
+}
+
+// 最初の起動のSHELLの表紙を、今の字の大きさで描き直す(インストールの途中でIPAゴシックに替えた時、main.cpp)。
+// 写した画像の帯の行数(フォントを替える前の行の高さで数えたもの)をepubImageBandRows()で出し直す。
+void Application::refreshShellBanner() {
+  if (!shellBannerActive_) return;
+  std::vector<ContentView::Line> banner;
+  for (const auto &line : shellBannerView_.lines()) {
+    if (line.imageKey.empty()) {
+      banner.push_back(line);
+      continue;
+    }
+    if (line.imageRow != 0) continue;
+    int rows = epubImageBandRows(line.imageKey, display_.columns());
+    for (int k = 0; k < rows; k++) {
+      ContentView::Line image = line;
+      image.imageRow = k;
+      image.imageRows = rows;
+      banner.push_back(std::move(image));
+    }
+  }
+  int rows = static_cast<int>(banner.size());
+  if (rows > display_.rows() - 6) {
+    stopShellBanner();
+  } else {
+    shellBannerView_.setLines(std::move(banner));
+    shellBannerView_.setViewport(0, rows);
+    shell_.setTopReserve(rows);
+  }
+  if (currentMode_ == ApplicationMode::Shell) {
+    shell_.scrollback().redraw();
+    shell_.redrawPromptRow();
+  }
 }
 
 void Application::stopShellBanner() {

@@ -32042,3 +32042,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      firstStartInstallDone_を立てる。main.cppのrunGuiPhase()の実行ループがtakeFirstStartInstallDone()で受け取り、
      ipaGothicFontPath()があればgui.setFont(Base)してから、Application::finishFirstStartInstall()(表紙を外して
      returnFromShell())。usilicrcのFONTには書かない(次の起動からはresolveGuiFontPath()がipagを選ぶ)。
+
+964. **2026-10-20: 最初の起動のインストールはfont-ipafontを先に入れ、入りしだいその場でフォントを替える**
+   - **経緯**: 直接のユーザー依頼"プログラムが複数ある場合、順番としてリストの真っ先にipafontを持ってきてインストールが
+     済みしだいその場でフォント変更後、他のインストールを継続してほしい"(項目963では全部入れ終えてから替えていた)。
+   - **実装**: offerGroffInstallOnce()のmacOSのコマンドは、font-ipafontが他と一緒なら「brew install font-ipafont;
+     brew install 残り」にする(;なので失敗しても残りは続く)。runGuiPhase()は、表紙を出している間
+     (Application::shellBannerShowing())1秒ごとにipaGothicFontFile()(よくある場所だけ、fc-listを使わない)を見て、
+     入ったらgui.setFont(Base)し、Application::refreshShellBanner()で表紙の画像の帯の行数を今の字の大きさで出し直す
+     (FileModeへ渡していた行数の計算をApplication::epubImageBandRows()に切り出した)。入れ終えた時は、まだ替えて
+     いなければ替える(項目963)。

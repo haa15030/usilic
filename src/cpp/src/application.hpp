@@ -1974,6 +1974,10 @@ class Application {
   // HELPを出すまえにこっそりipaにして")finishFirstStartInstall()でHELPへ戻る。
   bool takeFirstStartInstallDone() { return std::exchange(firstStartInstallDone_, false); }
   void finishFirstStartInstall();
+  // 最初の起動のSHELLの表紙を出している間か(インストールの途中でIPAゴシックが入ったら、main.cppがその場でフォントを
+  // 替えてrefreshShellBanner()する、2026-10-20)。
+  bool shellBannerShowing() const { return shellBannerActive_; }
+  void refreshShellBanner();
   void showNotice(const std::string &text);
   // ^[[ / ^[](K-109/K-110、2026-10-17): -gの今の向き(横書き・縦書き)の行の高さを1ドットずつ変える要求。
   // main.cppが受け取ってGraphicalDisplay::adjustLineHeight()へ渡す(返すのは足すドット数の合計、無ければ0)。
@@ -3401,6 +3405,7 @@ private:
   bool shellBannerActive_ = false;
   void startShellBanner();
   void stopShellBanner();
+  int epubImageBandRows(const std::string &key, int width);
   bool firstStartInstallDone_ = false;
   // feedCopyByte()自身のコメント参照: ApplicationMode::Copyの間だけ
   // 有効な、"^[w"/"^[p"(confirmMark()、2026-09-07に'p'追加)用の

@@ -349,21 +349,27 @@ std::string gTerminalFontPath;
 // (ipag.ttc・ipag.ttf、和文も等幅)のファイル。よくある場所に無ければfc-listで探す。無ければ空。
 // 見つかった時だけ覚える(2026-10-20、直接のユーザー報告"何度やっても=kz.pngの繰り返し": 無いことを覚えていたので、
 // 案内のbrew installで入れた後も、offerGroffInstallOnce()の確かめ直しがまだ無いとしてfont-ipafontを置き直していた)。
+// よくある場所だけを見る(fc-listを使わない、インストールの途中で繰り返し確かめる用、runGuiPhase())。
+std::string ipaGothicFontFile() {
+  const char *home = std::getenv("HOME");
+  for (const char *name : {"ipag.ttc", "ipag.ttf"}) {
+    for (const std::string &dir :
+         {std::string(home ? home : "") + "/Library/Fonts/", std::string("/Library/Fonts/"),
+          std::string("/usr/share/fonts/opentype/ipafont-gothic/"),
+          std::string("/usr/share/fonts/truetype/ipafont-gothic/")}) {
+      std::string path = dir + name;
+      std::ifstream probe(path, std::ios::binary);
+      if (probe.good()) return path;
+    }
+  }
+  return {};
+}
+
 std::string ipaGothicFontPath() {
   static std::string cached;
   if (!cached.empty()) return cached;
   cached = [] {
-    const char *home = std::getenv("HOME");
-    for (const char *name : {"ipag.ttc", "ipag.ttf"}) {
-      for (const std::string &dir :
-           {std::string(home ? home : "") + "/Library/Fonts/", std::string("/Library/Fonts/"),
-            std::string("/usr/share/fonts/opentype/ipafont-gothic/"),
-            std::string("/usr/share/fonts/truetype/ipafont-gothic/")}) {
-        std::string path = dir + name;
-        std::ifstream probe(path, std::ios::binary);
-        if (probe.good()) return path;
-      }
-    }
+    if (std::string file = ipaGothicFontFile(); !file.empty()) return file;
     fm::ChildProcess::Result result = fm::ChildProcess::run({"fc-list", "-f", "%{file}\n", ":family=IPAGothic"});
     std::string path = result.ok ? result.output.substr(0, result.output.find('\n')) : "";
     std::ifstream probe(path, std::ios::binary);
@@ -2370,8 +2376,15 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
       return "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
              "  # Homebrew未インストール(Xcode Command Line Toolsも必要なら入る)。終わると次は brew install" +
              packages;
-    if (brew == findExecutableOnPathOnly("brew")) return "brew install" + packages;
-    return brew + " install" + packages;
+    // 2026-10-20、直接のユーザー依頼("リストの真っ先にipafontを持ってきて"): font-ipafontは先に別のbrew installで
+    // (入りしだい-gのフォントをIPAゴシックに替える、runGuiPhase())。;でつなぎ、失敗しても残りは続ける。
+    std::string program = brew == findExecutableOnPathOnly("brew") ? std::string("brew") : brew;
+    const std::string font = " font-ipafont";
+    if (std::size_t at = packages.find(font); at != std::string::npos && packages != font) {
+      packages.erase(at, font.size());
+      return program + " install" + font + "; " + program + " install" + packages;
+    }
+    return program + " install" + packages;
 #elif defined(__MSYS__) || defined(__CYGWIN__)
     // MSYS2の端末ならpacman。Git Bashにはパッケージ管理が無いので案内しない(空を返す)。
     if (findExecutable("pacman").empty()) return "";
@@ -2718,8 +2731,24 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // 最初の起動のインストールを入れ終えた(Application::takeFirstStartInstallDone()): 入ったIPAゴシックへ替えてから
     // HELPへ戻る(usilicrcのFONTには書かない。次からはresolveGuiFontPath()がipagを選ぶ)。
     if (app.takeFirstStartInstallDone()) {
-      if (std::string ipag = ipaGothicFontPath(); !ipag.empty()) gui.setFont(fm::GraphicalDisplay::FontKind::Base, ipag);
+      if (std::string ipag = ipaGothicFontPath();
+          !ipag.empty() && gui.currentFontPath(fm::GraphicalDisplay::FontKind::Base) != ipag)
+        gui.setFont(fm::GraphicalDisplay::FontKind::Base, ipag);
       app.finishFirstStartInstall();
+    }
+    // 2026-10-20、直接のユーザー依頼("リストの真っ先にipafontを持ってきてインストールが済みしだいその場でフォント
+    // 変更後、他のインストールを継続"): 表紙を出している間(最初の起動のインストール)は1秒ごとにIPAゴシックを探し、
+    // 入ったらその場でフォントを替えて表紙を描き直す(残りのbrew installはそのまま続く)。
+    if (app.shellBannerShowing()) {
+      static auto lastProbe = std::chrono::steady_clock::time_point{};
+      auto now = std::chrono::steady_clock::now();
+      if (now - lastProbe >= std::chrono::seconds(1)) {
+        lastProbe = now;
+        if (std::string ipag = ipaGothicFontFile();
+            !ipag.empty() && gui.currentFontPath(fm::GraphicalDisplay::FontKind::Base) != ipag &&
+            gui.setFont(fm::GraphicalDisplay::FontKind::Base, ipag))
+          app.refreshShellBanner();
+      }
     }
     // ^[[ / ^[](2026-10-17、Application::takeLineHeightAdjustRequest()参照): 今の向きの行の高さをドット単位で。
     if (int delta = app.takeLineHeightAdjustRequest()) {
