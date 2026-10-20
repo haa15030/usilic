@@ -31869,3 +31869,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      を作るだけで、/Applications/usilic.app(10/16の古いバイナリ)は更新されず、.app起動で変更が反映されなかった。
    - **実装**: src/cpp/Makefileのappで、macOSならAPP_INSTALL_DIR(既定は/Applications)のusilic.appを消して
      build/usilic.appをコピーする。`make app APP_INSTALL_DIR=`で置き換えない。
+940. **2026-10-20: ^[}で字間を狭めた時、モードラインの字は縮めて描く(スクロール中の本文ははみ出させる方に揃える)**
+   - **経緯**: 直接のユーザー報告・依頼"慣性スクロール中のモードラインだが、文字が小さめに表示されているので本来バグ
+     だがそれ故に「％」が数字と被らずに済んでいる=kt.png。ところがスクロールを止めると本来の大きさになる結果被る
+     =ku.png。モードラインだけはバグモードでよろしく。"。項目935で狭めたマスでは字を縮めずにはみ出させるように
+     したが、スクロール中の描画(renderTextRun())には入れ忘れていて、そちらでは字がマスの幅に縮んでいた。
+   - **実装**: graphical_display.cppにImpl::overflowNarrowedCells(row)(狭めたマスで、モードラインの行ではない)を足し、
+     renderCell()・カーソルの描き直し・renderTextRun()のfitGlyphRect()のはみ出しをこれで決める。renderTextRun()は
+     yがモードラインの位置((rows-1)*cellHeight)かどうかで見る(スクロール中の本文の行のyは半端なため)。

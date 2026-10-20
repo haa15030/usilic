@@ -803,6 +803,9 @@ struct GraphicalDisplay::Impl {
   // 字を縮めずにマスからはみ出させて描く(narrowedCells())。
   int naturalCellWidth = 0;
   bool narrowedCells() const { return naturalCellWidth > 0 && cellWidth < naturalCellWidth; }
+  // 2026-10-20、直接のユーザー依頼("モードラインだけはバグモードでよろしく"、=kt.png・=ku.png): モードラインの行は
+  // 狭めたマスでも字をマスの幅に縮める(はみ出させると「16%」の「%」が数字に被る)。
+  bool overflowNarrowedCells(int row) const { return narrowedCells() && !(modeLineVisible && row == rows - 1); }
   // 今開いているフォントのファイル(GraphicalDisplay::currentFontPath()参照)。
   std::string fontPath, fallbackFontPath, serifFontPath;
   // setContentOffsetX()参照。
@@ -1998,7 +2001,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
     // 自身のコメント参照。
     int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
     SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h,
-                                cell.italic || cell.bold || impl_->narrowedCells());
+                                cell.italic || cell.bold || impl_->overflowNarrowedCells(row));
     if (cell.size > 0) {
       // 大きい字はマス目から外す(placeLargeGlyph())
       LargeGlyphPlacement place = impl_->largeGlyphPlacementAt(row, col);
@@ -2195,7 +2198,7 @@ void GraphicalDisplay::renderCursor() {
   if (texture) {
     int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
     SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h,
-                                cell.italic || cell.bold || impl_->narrowedCells());
+                                cell.italic || cell.bold || impl_->overflowNarrowedCells(row));
     dst = scaleGlyphRect(dst, cell.size, box.x, box.y, maxW, impl_->cellHeight);
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
   }
@@ -4354,8 +4357,12 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
         // スクロールが始まると復活する"): c678ffbでrenderCell()側だけ
         // cell.italic || cell.boldへ広げ、ドラッグ/コースト中の描画経路
         // (renderScrolled()→ここ)は斜体のみのまま取り残されていた。
+        // ^[{ / ^[}で狭めたマスも、止まっている時(renderCell())と同じくはみ出させる(モードラインを除く)。
+        // スクロール中の本文の行のyは半端なので、モードラインの位置(renderScrolled()のmodeLineY)かどうかで見る。
+        int textRow = y == (impl_->rows - 1) * impl_->cellHeight ? impl_->rows - 1 : 0;
         SDL_Rect dst = fitGlyphRect(Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y,
-                                     width * impl_->cellWidth, impl_->cellHeight, w, h, wantItalic || wantBold);
+                                     width * impl_->cellWidth, impl_->cellHeight, w, h,
+                                     wantItalic || wantBold || impl_->overflowNarrowedCells(textRow));
         if (wantSize > 0 && x >= 0 && x < static_cast<int>(kinds.size())) {
           LargeGlyphPlacement place = placeLargeGlyph(kinds, x);
           dst = scaleGlyphRect(dst, wantSize, Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y,
