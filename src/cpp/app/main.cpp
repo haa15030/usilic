@@ -2404,6 +2404,16 @@ std::vector<fm::FontListEntry> buildFontList(const fm::GraphicalDisplay &gui) {
     return false;
   };
   std::vector<Face> mono = query(":spacing=mono", true), japanese = query(":lang=ja"), sans, serif;
+  // 2026-10-20、直接のユーザー報告("miniの^J^Fで等倍フォント一覧にipag.ttcが出ない"): fontconfigは和文の等幅
+  // (IPAゴシック・MSゴシック・BIZ UDゴシック・Osaka等幅等、全角が半角の2倍)を:spacing=monoではなくdual(90)とする。
+  // 日本語の入ったdualも等幅に(点字等の日本語の無いdualは出さない)。
+  {
+    std::set<std::string> seen;
+    for (const auto &face : mono) seen.insert(face.path);
+    for (const auto &face : query(":spacing=dual:lang=ja"))
+      if (seen.insert(face.path).second) mono.push_back(face);
+    std::sort(mono.begin(), mono.end(), [](const Face &a, const Face &b) { return a.name < b.name; });
+  }
   // 2026-10-06追加、直接のユーザー依頼("wsl版にメイリオが入るようにして"): WSLのfc-listにはWindows側のフォントが
   // 出ないので、/mnt/c/Windows/Fontsをfc-scanで調べて足す(等幅は%{spacing}が100、または和文の等幅でよくある
   // 90(dual、MSゴシック等)。日本語は%{lang}にja)。

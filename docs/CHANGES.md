@@ -31971,3 +31971,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      範囲内(今は全体)の値にして"(=ky.png、usilicrcのKEYの注釈で194782=HELP.epub全体の大きさだった)。
    - **実装**: fileView_のモードラインの上書き(Application::Application())で、epubNoteActive()の間はtrailingを
      contentByteCount(fileView_)(差し替えた注釈の行の分)にする。HELP以外のEPUBの注釈も同じ。
+
+955. **2026-10-20: ^J^Fの一覧のFONT(等幅)に、和文の等幅(fontconfigのdual)も出す**
+   - **経緯**: 直接のユーザー報告"miniの^J^Fで等倍フォント一覧にipag.ttcが出ない"。fontconfigは全角が半角の2倍の
+     和文の等幅(IPAゴシック・MSゴシック・BIZ UDゴシック・Osaka等幅等)を:spacing=mono(100)ではなくdual(90)とする。
+   - **実装**: main.cppのbuildFontList()で、:spacing=monoに:spacing=dual:lang=jaの分を足して名前順に並べ直す
+     (WSLのfc-scanの分が既に90も等幅としているのと同じ)。日本語の無いdual(点字等)は出さない。mpiでは
+     BIZ UDGothic・BIZ UDMincho・ＭＳ ゴシック・ＭＳ 明朝・Osakaが増える(明朝の等幅もFONTに出る)。
