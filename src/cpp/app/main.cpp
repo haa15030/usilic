@@ -4276,18 +4276,6 @@ bool runEditorInLaunchingTerminal(const std::vector<std::string> &argv, fm::Grap
 // before) and the "実はすでにGUI" launch-time attempt (main(), called
 // once before ever entering runTerminalPhase() -- see its own call
 // site comment for why THAT one insists on a match first).
-// 制御端末があるか(/dev/ttyを開けるか)。Finderからの.app起動等(LaunchServices経由)では無い。
-bool hasControllingTerminal() {
-#ifdef _WIN32
-  return true;  // Windowsのネイティブは今までどおり(保存した色)
-#else
-  int fd = ::open("/dev/tty", O_RDONLY | O_NOCTTY);
-  if (fd < 0) return false;
-  ::close(fd);
-  return true;
-#endif
-}
-
 bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::TerminalDisplay &terminalDisplay,
                       fm::History &history, std::optional<TerminalAppearance> appearance = std::nullopt,
                       std::optional<TerminalWindowBounds> bounds = std::nullopt) {
@@ -4352,13 +4340,13 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
                                                static_cast<unsigned char>(gGuiFrame.bg[1]),
                                                static_cast<unsigned char>(gGuiFrame.bg[2])});
   else if (appearance && appearance->hasColors) gui->setColors(appearance->foreground, appearance->background);
-  // 2026-10-20、直接のユーザー依頼(".app起動ではウィンドウ色を背景白、文字色黒でよろしく"): 制御端末の無い起動
-  // (Finderからusilic.appを開いた等)は、最後に端末に重ねた時の色ではなく白地に黒。
-  else if (!appearance && !hasControllingTerminal())
-    gui->setColors(fm::GraphicalDisplay::Color{0, 0, 0}, fm::GraphicalDisplay::Color{255, 255, 255});
   else if (!appearance && savedGui.hasColors)
     gui->setColors(fm::GraphicalDisplay::Color{savedGui.fgR, savedGui.fgG, savedGui.fgB},
                     fm::GraphicalDisplay::Color{savedGui.bgR, savedGui.bgG, savedGui.bgB});
+  // 2026-10-20、直接のユーザー依頼("macOS、Windows共に最初の起動のみ背景白文字黒、次回以降は前回保存で"): 重ねる
+  // 端末が無く、保存した色もまだ無い(最初の起動)時は白地に黒。次回からは終わりに保存した色(上)。
+  else if (!appearance)
+    gui->setColors(fm::GraphicalDisplay::Color{0, 0, 0}, fm::GraphicalDisplay::Color{255, 255, 255});
 
   // 2026-10-12、直接のユーザー報告("[^Ogで]GUIは出たけどプロファイルが継承されてない"): ^Ogでは、起動時の
   // 「実はすでにGUI」の経路と同じく、端末のウィンドウにぴったり重ねる(色・フォントは上の`appearance`)。

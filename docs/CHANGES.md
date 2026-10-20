@@ -31894,3 +31894,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      HELPとKEYの2つの子の窓を開いていた。
    - **実装**: Application::scheduleHelpChildren()・launchHelpChildren()にwithKeyを足し、main.cppは-Hの時falseで
      呼ぶ。src/HELP_.txt・HELP_en_.txt(未コミット)の-Hの説明も直した。
+944. **2026-10-20: 重ねる端末の無い-gは、最初の起動だけ白地に黒字、次回からは前回保存した色(macOS・Windows)**
+   - **経緯**: 直接のユーザー依頼"macOS、Windows共に最初の起動のみ背景白文字黒、次回以降は前回保存で。"(項目937で
+     .app起動を常に白地に黒字にした後、何を既定にするかを確かめた返事)。
+   - **実装**: app/main.cppのtryEnterGuiPhase()で、appearance無し(.app起動・Windowsのネイティブ等)の時は、保存した
+     色(~/.usilic/historyのGUIの色)があればそれ、無ければ(最初の起動)白地に黒字。項目937の/dev/ttyでの判定
+     (hasControllingTerminal())はやめた。
