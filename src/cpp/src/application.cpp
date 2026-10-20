@@ -870,9 +870,16 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
 #ifdef _WIN32
     // 2026-10-20(ManMode::runAndWrap()参照): Windowsのネイティブは、HELPと同じ場所の組んでおいた平文。^Ojの言語
     // (helpPath_がHELP.enなら英語)で選ぶ。
-    std::string page = std::filesystem::path(helpBasePath_).parent_path().string() +
-                       (helpPath_ == helpBasePath_ ? "/HELP.ja.man" : "/HELP.man");
-    return std::filesystem::is_regular_file(page, ec) ? page : std::string();
+    // 2026-10-20、直接のユーザー報告("No manual entry"、=kw.png): helpBasePath_の場所だけでは見つからなかった
+    // ので、HELPを読んだ場所・実行ファイルから見たlib/usilic/(installLibDirectory_)も(Macのman usilicと同じ順)。
+    std::string manName = helpPath_ == helpBasePath_ ? "HELP.ja.man" : "HELP.man";
+    std::vector<std::string> pages = {std::filesystem::path(helpBasePath_).parent_path().string() + "/" + manName};
+    if (!helpLoadedPath_.empty())
+      pages.push_back(std::filesystem::path(helpLoadedPath_).parent_path().string() + "/" + manName);
+    if (!installLibDirectory_.empty()) pages.push_back(installLibDirectory_ + manName);
+    for (const auto &page : pages)
+      if (std::filesystem::is_regular_file(page, ec)) return page;
+    return std::string();
 #endif
     std::vector<std::string> candidates = {std::filesystem::path(helpBasePath_).parent_path().string() + "/HELP.1"};
     if (!installLibDirectory_.empty()) candidates.push_back(installLibDirectory_ + "HELP.1");

@@ -31927,3 +31927,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      `sudo apt install -y groff mg info p7zip-full w3m unzip fonts-noto-cjk`がSHELL(cmd)へ送られ、"Sudoが無効"に
      なっていた。offerGroffInstallOnce()のパッケージの表で、_WIN32がLinuxの枝に入っていた。
    - **実装**: app/main.cppのofferGroffInstallOnce()で、_WIN32なら何もせず戻る(MANは項目947の組んでおいた平文)。
+949. **2026-10-20: Windows版のMANのusilicが"No manual entry"になる(組んでおいた平文を探す場所の不足)**
+   - **経緯**: 直接のユーザー報告"No manual entry =kw.png"(項目947の後、Windows実機)。MANのusilicのページ(HELP.man・
+     HELP.ja.man)を、helpBasePath_の場所だけで探していた。Windows版のHELPは、実行ファイルから見たlib/usilic/
+     (installLibDirectory_)で見つかっている(=kw.pngのモードラインのHELP.epubのパス)。
+   - **実装**: Applicationのページの差し替え先(Windows)で、helpBasePath_の場所・HELPを読んだ場所(helpLoadedPath_)・
+     installLibDirectory_の順に探す(Macのman usilicのHELP.1と同じ順)。
