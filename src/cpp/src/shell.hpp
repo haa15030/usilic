@@ -394,6 +394,9 @@ class Shell {
   // ビューポート/LineEditorのフィールド幅へ伝播する。
   // input_shell()のinitケースにあるvt_mode('W')の処理からの移植。
   void onResize(int rows, int columns, bool redraw = true);
+  // 2026-10-20、直接のユーザー提案(最初の起動のbrew installの間、SHELLの上にHELPの表紙を残す、
+  // Application::startShellBanner()): 上の`rows`行を空け、その下だけをSHELLの内容(scrollback_)にする。0で元に戻す。
+  void setTopReserve(int rows);
 
   // K-27(^Oa): displayWidth()(入力エコー/プロンプト再描画の幅
   // 計算、CLAUDE.md内のadd_buff()自身の履歴参照)とcommandLine_
@@ -601,6 +604,7 @@ class Shell {
   void appendEscapeSequence(const std::string &sequence);
 
   int viewportRows_ = 0, columns_ = 0;
+  int topReserve_ = 0;  // setTopReserve()
   std::string promptPlain_;  // 現在のプロンプトテキスト、埋め込みエスケープコード無し(幅計算用)
   std::string promptDecorated_;  // 同じテキストに太字のエスケープコードを付けたもの――redrawPromptRow()参照
 

@@ -32002,3 +32002,17 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      入った後も、プロンプトに同じ行が置かれる)。
    - **原因と実装**: ipaGothicFontPath()(項目956)が「無い」という結果もstaticに覚えていたので、offerGroffInstallOnce()
      の確かめ直し(installCommand、プロンプトが戻るたび)がまだ無いとみなしていた。見つかった時だけ覚える。
+
+959. **2026-10-20: 最初の起動のインストールの間、SHELLの上にHELPの表紙を止めて出し、入れ終えたらHELPへ戻る**
+   - **経緯**: 直接のユーザー提案"最初のbrew installが始まるとSHELL画面に切り替わって何の説明もないまま進行するので
+     初期化中であることが少しでも伝われば、と。処理が終わりしだいHELPへ移行だが表紙画像は変わらないのでユーザーは
+     初期化処理が終わったのだと判断しやすいのでは"("HELPの表紙画像の下、「HELP 誌璃空ユウ」(を含む)から下の画面
+     領域だけでスクロール"、"今は初期化だけだが、使えそうならSHELL画面のみ好きな位置からスクロール、にしてもいいかも")。
+   - **実装**: pollChildChannel()で、最初の起動の親のHELP(scheduleHelpInParent())に続けてインストールの案内
+     (scheduleShellOffer()、項目957)を出す時、Application::startShellBanner()がfileView_の先頭の画像の行と、その後の
+     書名・著者の行から次の空行までをshellBannerView_へ写す。Shell::setTopReserve()でSHELLの内容(scrollback_)の
+     viewportをその下からにし、ContentView::setAfterRedraw()(redraw()の最後に呼ぶもの)でscrollback_を描く度に
+     shellBannerView_.renderContentRows()を描く(画像の一覧はrenderContentRows()ごとに置き換わるので、後から描く)。
+     pollShellOfferFollowUp()で全部入れ終えたら(followUpが空)stopShellBanner()してreturnFromShell()(HELPへ)。
+   - **制約**: 先頭が画像の行でなければ(-cでは画像は「[image: …]」の字の行)、または画面の半分を超えるなら出さない。
+     GUIのドラッグ・慣性のスクロール(renderScrolled()、画面の上から描く)の間は表紙に重なり、止まった後の描き直しで戻る。

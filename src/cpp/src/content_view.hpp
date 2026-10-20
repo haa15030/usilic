@@ -752,6 +752,9 @@ class ContentView {
 
   // -- 描画 --
   void redraw();
+  // 2026-10-20、直接のユーザー提案(最初の起動のbrew installの間、SHELLの上にHELPの表紙を残す): redraw()の最後
+  // (flushの前)に呼ぶもの。setViewport()で空けた行に、別のものを描く(Application::startShellBanner()参照)。
+  void setAfterRedraw(std::function<void()> hook) { afterRedraw_ = std::move(hook); }
   // redraw()のうち本文の行だけを描く(モードライン・flush()無し)。2026-09-30追加:
   // Application::captureEpubVerticalEdges()が、画面の外の列を裏に描くのに使う。
   // 戻り値は1行でも描いたか。
@@ -1526,6 +1529,7 @@ class ContentView {
   bool markedRowUsesUnderline_ = false;
 
   int row0_ = 0, height_ = 0;
+  std::function<void()> afterRedraw_;  // setAfterRedraw()
   ModeLineFieldsProvider modeLineFieldsProvider_;
   bool useFixedWidthPosition_ = false;
   bool countLivePromptAsLine_ = false;  // setCountLivePromptAsLine()自身の宣言コメント参照

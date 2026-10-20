@@ -264,7 +264,7 @@ Shell::Shell(Display &display, const ShellOptions &options)
   // し、(反復2とは異なり)内容が成長するにつれて何かを再同期する
   // 必要が全く無い。再同期「すべき」ものがもう何も残っていない
   // ため。
-  scrollback_.setViewport(0, std::max(1, viewportRows_ - 2));
+  scrollback_.setViewport(topReserve_, std::max(1, viewportRows_ - 2 - topReserve_));
   scrollback_.setModeLineRow(viewportRows_ - 1);
   scrollback_.setBottomAnchored(true);
   updateCommandLineField();
@@ -1996,7 +1996,8 @@ bool Shell::busy() const { return busy_ || foregroundJobRunning(); }
 void Shell::onResize(int rows, int columns, bool redraw) {
   viewportRows_ = rows;
   columns_ = columns;
-  scrollback_.setViewport(0, std::max(1, rows - 2));  // コンストラクタ自身のコメント参照
+  topReserve_ = std::min(topReserve_, std::max(0, rows - 3));  // 内容が少なくとも1行残るように
+  scrollback_.setViewport(topReserve_, std::max(1, rows - 2 - topReserve_));  // コンストラクタ自身のコメント参照
   scrollback_.setModeLineRow(rows - 1);
   // flushNewScrollbackLines()自身の2026-09-06訂正と同じ理屈――
   // awaitingRealPrompt_中にウィンドウがリサイズされても、列0・全幅
@@ -2021,6 +2022,11 @@ void Shell::onResize(int rows, int columns, bool redraw) {
   if (!redraw) return;
   scrollback_.redraw();
   redrawPromptRow();
+}
+
+void Shell::setTopReserve(int rows) {
+  topReserve_ = std::max(0, std::min(rows, viewportRows_ - 3));
+  scrollback_.setViewport(topReserve_, std::max(1, viewportRows_ - 2 - topReserve_));
 }
 
 void Shell::setEncoding(Charset::Encoding encoding) {

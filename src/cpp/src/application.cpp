@@ -825,6 +825,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       copyView_(display),
       epubVerticalView_(display),
       epubTocVerticalView_(display),
+      shellBannerView_(display),
       promptEditor_(display, encoding),
       directoryMode_(directoryView_, modeStack_, history, configuration),
       fileMode_(fileView_, history, configuration, encoding, width),
@@ -20862,6 +20863,47 @@ bool Application::openDroppedPaths(const std::vector<std::string> &paths) {
   return opened;
 }
 
+// shellBannerView_参照。今のfileView_(最初の起動で親が開いたHELP)の先頭の画像の行と、その後の字のある行
+// (書名・著者)から次の空行までを写す。先頭が画像でなければ(-cでは画像は字の行)、または画面の半分を超えるなら
+// 出さない。
+void Application::startShellBanner() {
+  if (currentMode_ != ApplicationMode::File) return;
+  const auto &lines = fileView_.lines();
+  std::vector<ContentView::Line> banner;
+  bool sawImage = false, sawText = false;
+  for (const auto &line : lines) {
+    banner.push_back(line);
+    if (!line.imageKey.empty()) {
+      sawImage = true;
+      continue;
+    }
+    if (line.text.find_first_not_of(' ') == std::string::npos) {
+      if (sawText) break;  // 書名・著者の後の空行(区切りとして含める)
+      continue;
+    }
+    if (!sawImage) return;
+    sawText = true;
+  }
+  int rows = static_cast<int>(banner.size());
+  if (!sawText || rows > display_.rows() / 2) return;
+  shellBannerView_.setLines(std::move(banner));
+  shellBannerView_.setViewport(0, rows);
+  shellBannerView_.setTopIndex(0);
+  shellBannerView_.setCursorRowAlsoHighlighted(false);
+  shellBannerActive_ = true;
+  shell_.setTopReserve(rows);
+  shell_.scrollback().setAfterRedraw([this] {
+    if (shellBannerActive_ && currentMode_ == ApplicationMode::Shell) shellBannerView_.renderContentRows();
+  });
+}
+
+void Application::stopShellBanner() {
+  if (!shellBannerActive_) return;
+  shellBannerActive_ = false;
+  shell_.scrollback().setAfterRedraw(nullptr);
+  shell_.setTopReserve(0);
+}
+
 bool Application::offerShellCommand(const std::string &commandLine, std::function<std::string()> followUp,
                                     int retries) {
   if (!ensureShellActive()) return false;
@@ -20888,6 +20930,12 @@ void Application::pollShellOfferFollowUp() {
   std::string next = shellOffer_->followUp();
   if (next.empty() || shellOffer_->retries <= 0) {
     shellOffer_.reset();
+    // 最初の起動の表紙(startShellBanner())を外し、全部入れ終えたらHELPへ戻る(SHELLの^Gと同じ)。
+    if (shellBannerActive_) {
+      stopShellBanner();
+      if (next.empty() && currentMode_ == ApplicationMode::Shell) returnFromShell();
+      else if (currentMode_ == ApplicationMode::Shell) activeView().redraw();
+    }
     return;
   }
   shellOffer_->retries--;
@@ -21047,14 +21095,17 @@ bool Application::launchKeyChild() {
 
 void Application::pollChildChannel() {
   if (!exitingChildren_.empty()) reapExitingChildren();
+  bool helpOpenedInParent = false;
   if (helpInParentPending_) {
     helpInParentPending_ = false;
+    helpOpenedInParent = true;
     handleCommand(Command::StartHelp);  // ^Hと同じ(HELP.epubがあればそれ)
     display_.flush();
   }
   if (pendingShellOffer_) {
     PendingShellOffer offer = std::move(*pendingShellOffer_);
     pendingShellOffer_.reset();
+    if (helpOpenedInParent) startShellBanner();  // 最初の起動: 今開いたHELPの表紙をSHELLの上に
     if (offerShellCommand(offer.commandLine, std::move(offer.followUp), offer.retries) && offer.onOffered)
       offer.onOffered();
     activeView().redraw();

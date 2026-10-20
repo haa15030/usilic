@@ -2639,6 +2639,7 @@ void ContentView::redraw() {
   }
   renderModeLine();
   renderScrollIndicatorOverlay();
+  if (afterRedraw_) afterRedraw_();
   if (cursorHighlightEnabled_) syncVisibleCursor();
   display_.flush();
 }
