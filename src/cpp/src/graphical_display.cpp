@@ -802,6 +802,9 @@ struct GraphicalDisplay::Impl {
   bool serifFontMissing = false;
   // 縦書き用の字(U+FE10〜FE19・FE30〜FE4F)を持つフォント(verticalFormFontFor()参照)。開いた時の大きさも覚える。
   TTF_Font *verticalFormsFont = nullptr;
+  // どのフォントにも無い記号(注釈の戻りの「↩」等)のための最後のフォント(symbolFontFor()参照)。開いた時の大きさも。
+  TTF_Font *symbolFont = nullptr;
+  int symbolFontPointSize = 0;
   int verticalFormsFontPointSize = 0;
   // 縦書きの画面の行の高さを使っているか(setVerticalLineSpacing())と、フォントから求めた(倍率を当てる前の)
   // 行の高さ(倍率もUSILICLINEHEIGHTも無い時の値)。
@@ -1118,6 +1121,39 @@ TTF_Font *verticalFormFontFor(ImplT &impl, TTF_Font *chosen, unsigned int codepo
     }
   }
   return glyphProvidedByFont(impl.verticalFormsFont, codepoint) ? impl.verticalFormsFont : chosen;
+}
+
+// 2026-10-20、直接のユーザー報告("-gでは注釈からの戻り矢印(「usilicrc の KEY」の左側)が豆腐になる"): HELP.epubの注釈の
+// 戻りの「↩」(U+21A9)はIPAゴシック・ヒラギノ等に無い。選んだフォント(chosen)にも開いている他のフォントにも無い字は、
+// 記号を多く持つフォント(Menlo・Apple Symbols・DejaVu Sans・Segoe UI Symbol等)をその字だけに使う。どれにも無ければchosen。
+template <typename ImplT>
+TTF_Font *symbolFontFor(ImplT &impl, TTF_Font *chosen, unsigned int codepoint) {
+  if (codepoint < 0x2000 || glyphProvidedByFont(chosen, codepoint)) return chosen;
+  for (TTF_Font *other : {impl.font, impl.fallbackFont, impl.serifFont})
+    if (glyphProvidedByFont(other, codepoint)) return other;
+  if (impl.symbolFontPointSize != impl.currentFontPointSize) {
+    if (impl.symbolFont) TTF_CloseFont(impl.symbolFont);
+    impl.symbolFont = nullptr;
+    impl.symbolFontPointSize = impl.currentFontPointSize;
+    static const char *const candidates[] = {
+        "/System/Library/Fonts/Menlo.ttc",
+        "/System/Library/Fonts/Apple Symbols.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        "C:/Windows/Fonts/seguisym.ttf",
+        "/mnt/c/Windows/Fonts/seguisym.ttf",
+    };
+    for (const char *path : candidates) {
+      TTF_Font *opened = TTF_OpenFont(path, std::max(impl.currentFontPointSize, 1));
+      if (!opened) continue;
+      if (glyphProvidedByFont(opened, 0x21A9)) {
+        impl.symbolFont = opened;
+        break;
+      }
+      TTF_CloseFont(opened);
+    }
+  }
+  return glyphProvidedByFont(impl.symbolFont, codepoint) ? impl.symbolFont : chosen;
 }
 
 template <typename ImplT>
@@ -1575,6 +1611,7 @@ GraphicalDisplay::~GraphicalDisplay() {
   }
   if (impl_->serifFont) TTF_CloseFont(impl_->serifFont);
   if (impl_->verticalFormsFont) TTF_CloseFont(impl_->verticalFormsFont);
+  if (impl_->symbolFont) TTF_CloseFont(impl_->symbolFont);
   if (impl_->fallbackFont) TTF_CloseFont(impl_->fallbackFont);
   if (impl_->font) TTF_CloseFont(impl_->font);
   TTF_Quit();
@@ -1895,6 +1932,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // 半角1マスに収まらず縮めて描かれていた。半角(1マス幅)の字は明朝体にせず基本の等幅フォントで描く(縦書きは2マス幅)。
   if (TTF_Font *serif = cell.serif && isWide ? serifFontFor(*impl_, codepoint) : nullptr) renderFont = serif;
   renderFont = verticalFormFontFor(*impl_, renderFont, codepoint);  // 縦書き用の字が無いフォント(それ自身のコメント参照)
+  renderFont = symbolFontFor(*impl_, renderFont, codepoint);  // どのフォントにも無い記号(それ自身のコメント参照)
   // 2026-08-11: TTF_HINTING_LIGHT(項目263)もフォント依存だと判明した
   // ――実際の報告により、デフォルトプロファイルの「MS Gothic」の組み
   // 合わせでは完全に直る(fontTools経由で確認済み: msgothic.ttcのgasp
@@ -2196,6 +2234,7 @@ void GraphicalDisplay::renderCursor() {
   // 半角1マスに収まらず縮めて描かれていた。半角(1マス幅)の字は明朝体にせず基本の等幅フォントで描く(縦書きは2マス幅)。
   if (TTF_Font *serif = cell.serif && isWide ? serifFontFor(*impl_, codepoint) : nullptr) renderFont = serif;
   renderFont = verticalFormFontFor(*impl_, renderFont, codepoint);  // 縦書き用の字が無いフォント(それ自身のコメント参照)
+  renderFont = symbolFontFor(*impl_, renderFont, codepoint);  // どのフォントにも無い記号(それ自身のコメント参照)
   // renderCell()と同じ半角用ヒンティングの調整――それ自身のコメント
   // 参照。(TTF_SetFontStyle()/TTF_SetFontHinting()自体は、下で呼ばれる
   // cachedGlyphTexture()の中へ移動した――それ自身のコメント参照。)
@@ -2888,7 +2927,7 @@ void GraphicalDisplay::drawRubyText(int x, int y, const std::string &ruby, int s
     TTF_Font *font = impl_->font;
     if (glyphProvidedByFont(impl_->fallbackFont, codepoint)) font = impl_->fallbackFont;
     if (TTF_Font *serifFont = serif ? serifFontFor(*impl_, codepoint) : nullptr) font = serifFont;
-    return font;
+    return symbolFontFor(*impl_, font, codepoint);
   };
   if (vertical) {
     std::vector<std::string> chars;
