@@ -4959,6 +4959,17 @@ int main(int argc, char **argv) {
   // HOMEをUSERPROFILEで(~・~/.usilic/のため)。argvはSDL2mainがUTF-8にしてくれる。
   fm::prepareWindowsEnvironment();
 #endif
+#ifdef __APPLE__
+  // 2026-10-20、直接のユーザー報告(".appのアイコンをクリックして起動したのち^J^Fすると「No fonts (fc-list)」"):
+  // Finderからの起動ではPATHが/usr/bin:/bin:/usr/sbin:/sbinだけで、Homebrewのfc-list・groff等が見つからない。
+  // 無ければHomebrewの既定の場所を後ろに足す(子のシェル・コマンドにも受け継がれる)。
+  {
+    std::string path = std::getenv("PATH") ? std::getenv("PATH") : "/usr/bin:/bin:/usr/sbin:/sbin";
+    for (const char *dir : {"/opt/homebrew/bin", "/usr/local/bin"})
+      if ((":" + path + ":").find(std::string(":") + dir + ":") == std::string::npos) path += std::string(":") + dir;
+    ::setenv("PATH", path.c_str(), 1);
+  }
+#endif
   checkInvalidTerminalMarker();
   if (tryHandoffToParentShell(argc, argv)) return 0;
   loadScrollDebugLevelFromEnvironment();

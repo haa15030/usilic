@@ -31959,3 +31959,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      packaging/windows/usilic.icoを、usilic.rcの最初のアイコン(1 ICON)に入れた(SDL2はexeの最初のアイコンを窓の
      アイコンにする)。
    - **制約**: FIFOが無いため、Windowsでは、KEYの子の^M(親でキーを実行)とHELPの子への行の受け渡しは使えない。
+
+953. **2026-10-20: Finderから起動した.appでも、PATHにHomebrewの場所を足す**
+   - **経緯**: 直接のユーザー報告".appのアイコンをクリックして起動したのち^J^Fすると「No fonts (fc-list)」"。
+     Finderからの起動ではPATHが/usr/bin:/bin:/usr/sbin:/sbinだけで、Homebrewのfc-listが見つからなかった。
+   - **実装**: main()の最初(macOS)で、PATHに/opt/homebrew/bin・/usr/local/binが無ければ後ろに足す。fc-list以外
+     (groff・7z・mg等、子のシェルのコマンドも)も同じく見つかる。
