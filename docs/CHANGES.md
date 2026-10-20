@@ -31889,3 +31889,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (字の大きさの⌘+ / ⌘-は窓の側で直接扱うので効いていた)。
    - **実装**: pagerAllowedKeys()の常に通すキー(^M・^K・^Og)に、ESC [・ESC ]・ESC {・ESC }・^J^F・^Otを足す
      (^Ogと同じく既定の割り当てのキー)。
+943. **2026-10-20: -Hで開く子の窓をHELPだけにする(KEYの子は最初の起動の時だけ)**
+   - **経緯**: 直接のユーザー依頼"-HはHELPの子プロセスのみに変更でいい。"。それまでは-Hでも最初の起動と同じく
+     HELPとKEYの2つの子の窓を開いていた。
+   - **実装**: Application::scheduleHelpChildren()・launchHelpChildren()にwithKeyを足し、main.cppは-Hの時falseで
+     呼ぶ。src/HELP_.txt・HELP_en_.txt(未コミット)の-Hの説明も直した。

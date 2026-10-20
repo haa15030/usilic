@@ -20947,7 +20947,7 @@ void Application::closeChildChannel() {
   channelBuffer_.clear();
 }
 
-void Application::launchHelpChildren() {
+void Application::launchHelpChildren(bool withKey) {
   if (helpLoadedPath_.empty()) return;
 #ifdef _WIN32
   // Windowsのネイティブ(.steering/20261015-windows-native-gui/)には親子のusilicのつながり(FIFO)がまだ無く、
@@ -20963,8 +20963,11 @@ void Application::launchHelpChildren() {
   setExternalWindowSlot(1);
   runExternalUsilicPager("usilic " + quoted + "'");
   // "^Kのウィンドウも追加"(中身はFileManagerのKEY): HELPの子に続けて、-KでKEYを開いた子も起動する。
-  setExternalWindowSlot(2);
-  runExternalUsilicPager("usilic -K");
+  // 2026-10-20、直接のユーザー依頼("-HはHELPの子プロセスのみに変更でいい"): KEYの子は最初の起動の時だけ。
+  if (withKey) {
+    setExternalWindowSlot(2);
+    runExternalUsilicPager("usilic -K");
+  }
   setExternalWindowSlot(0);
 }
 
@@ -20972,7 +20975,7 @@ void Application::pollChildChannel() {
   if (!exitingChildren_.empty()) reapExitingChildren();
   if (helpChildrenPending_) {
     helpChildrenPending_ = false;
-    launchHelpChildren();
+    launchHelpChildren(helpChildrenWithKey_);
     display_.flush();
   }
   if (channelFd_ < 0) return;

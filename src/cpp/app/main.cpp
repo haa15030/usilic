@@ -6131,7 +6131,7 @@ int main(int argc, char **argv) {
     // 同日、"^Kのウィンドウも追加"(-KのKEYの子も)、"-gでは端末の大きさ・配色を受け継ぐのは親だけ"(ここではまだ
     // GUIができておらず親のウィンドウを子へ渡せなかった): 起動は実行ループの最初で(Application::launchHelpChildren())。
     if ((openHelpChild || (consultHistoryOnStart && historyText.empty())) && !app.helpLoadedPath_.empty())
-      app.scheduleHelpChildren();
+      app.scheduleHelpChildren(!openHelpChild);  // -HはHELPの子だけ(2026-10-20)
     // -K(上の子のKEYのウィンドウ): HELPの「：」を含む行だけのKEY(キーの発動・h・^G無し、keyListOnly()参照)を開く。
     if (openKeyAtStart) {
       app.setPagerLaunch(false);
