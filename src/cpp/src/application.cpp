@@ -2842,6 +2842,9 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     leaderTPending_ = false;
     clearTransientNotice();
     if (!special && (byte == 'n' || byte == 'p')) return cycleExternalWindows(byte == 'n' ? 1 : -1, ::getpid());
+    // 2026-10-20、直接のユーザー提案("稼働中^T^H/^T^Kで子のHELP/KEYを出す"): 子の窓でHELP・KEYを開く(-H・-Kと同じ)。
+    if (!special && byte == 0x08) return launchHelpChild();
+    if (!special && byte == 0x0b) return launchKeyChild();
     return byte == 0x07 && !special;
   }
   if (!special && byte == 0x14 && !leaderPending && !universalArgPending_) {
@@ -20971,13 +20974,14 @@ void Application::closeChildChannel() {
   channelBuffer_.clear();
 }
 
-void Application::launchHelpChildren() {
-  if (helpLoadedPath_.empty()) return;
+bool Application::launchHelpChild() {
+  if (helpLoadedPath_.empty()) return false;
 #ifdef _WIN32
   // Windowsのネイティブ(.steering/20261015-windows-native-gui/)には親子のusilicのつながり(FIFO)がまだ無く、
-  // 子が親と関係の無いusilic.exeとして立ち上がるだけなので、最初の起動・-HのHELP・KEYの窓は開かない
+  // 子が親と関係の無いusilic.exeとして立ち上がるだけなので、-H・^T^HのHELP・KEYの窓は開かない
   // (2026-10-15、直接のユーザー報告"子プロセスではないusilic.exeが複数起動")。
-  return;
+  showTransientNotice(activeView(), "Not available on Windows");
+  return false;
 #endif
   // 2026-10-18、直接のユーザー報告("^Hとやっても~/.local/lib/usilic/HELP.epubを読まない"): HELP.epubがあれば、
   // 子の窓でも^Hと同じくそちらを開く(Command::StartHelp参照)。
@@ -20986,17 +20990,34 @@ void Application::launchHelpChildren() {
   for (char c : helpFile) quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
   setExternalWindowSlot(1);
   runExternalUsilicPager("usilic " + quoted + "'");
-  // (2026-10-11〜10-20: HELPの子に続けて、-KでKEYを開いた子も起動していた。2026-10-20、直接のユーザー依頼
-  // "-HはHELPの子プロセスのみに変更でいい"・"-gの既定フォントサイズが18ptになったためウィンドウを横に並べても
-  // KEY画面が入らない。なので最初の起動でもHELPのみでいい"で、-H・最初の起動ともHELPの子だけにした。-Kは残す。)
   setExternalWindowSlot(0);
+  return true;
+}
+
+// "^Kのウィンドウ"(中身はFileManagerのKEY、2026-10-11): 子のusilicを-K(子の側ではKEYの窓自身になる)で開く。
+// 2026-10-20、直接のユーザー提案("次回以降は-H/-K起動または稼働中^T^H/^T^Kで子のHELP/KEYを出す"): 以前は-H・最初の
+// 起動でHELPの子に続けて必ず開いていたのを、-K・^T^Kの時だけに。
+bool Application::launchKeyChild() {
+#ifdef _WIN32
+  showTransientNotice(activeView(), "Not available on Windows");  // launchHelpChild()と同じ
+  return false;
+#endif
+  setExternalWindowSlot(2);
+  runExternalUsilicPager("usilic -K");
+  setExternalWindowSlot(0);
+  return true;
 }
 
 void Application::pollChildChannel() {
   if (!exitingChildren_.empty()) reapExitingChildren();
-  if (helpChildrenPending_) {
-    helpChildrenPending_ = false;
-    launchHelpChildren();
+  if (helpInParentPending_) {
+    helpInParentPending_ = false;
+    handleCommand(Command::StartHelp);  // ^Hと同じ(HELP.epubがあればそれ)
+    display_.flush();
+  }
+  if (helpChildrenPending_ || keyChildPending_) {
+    if (std::exchange(helpChildrenPending_, false)) launchHelpChild();
+    if (std::exchange(keyChildPending_, false)) launchKeyChild();
     display_.flush();
   }
   if (channelFd_ < 0) return;

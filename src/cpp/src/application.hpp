@@ -1843,9 +1843,18 @@ class Application {
   bool guiToggleReturnsToTerminal_ = false;
   // -H・最初の起動の子(HELPとKEY)を、次のpollChildChannel()(実行ループの最初)で起動する(main.cppから、GUIの
   // 準備ができてから起動して親のウィンドウを渡すため)。
-  void scheduleHelpChildren() { helpChildrenPending_ = true; }  // HELPの子だけ(2026-10-20、KEYの子はやめた)
-  void launchHelpChildren();
+  // 2026-10-20: -HでHELPの子、-KでKEYの子(ふつうの起動の-K、子のKEYの窓自身の-Kは別)。^T^H・^T^Kと同じ。
+  void scheduleHelpChildren(bool help, bool key) {
+    helpChildrenPending_ = helpChildrenPending_ || help;
+    keyChildPending_ = keyChildPending_ || key;
+  }
+  // 最初の起動(~/.usilic/historyが空): 子ではなく、親自身がHELPを開く(2026-10-20)。GUIができてから。
+  void scheduleHelpInParent() { helpInParentPending_ = true; }
+  bool launchHelpChild();  // ^T^H・-H
+  bool launchKeyChild();   // ^T^K・-K
   bool helpChildrenPending_ = false;
+  bool keyChildPending_ = false;
+  bool helpInParentPending_ = false;
   bool takeRaiseRequest() { return std::exchange(raiseRequested_, false); }
   bool raiseRequested_ = false;
   void executeRemoteKeys(const std::vector<int> &bytes, bool commandLineKey);

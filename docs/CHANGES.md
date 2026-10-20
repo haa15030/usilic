@@ -31938,3 +31938,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      端末の大きさ(.app起動・Windowsのネイティブでは決め打ちの値)で開いていた。
    - **実装**: app/main.cppのtryEnterGuiPhase()で、appearance無しで保存した行数・桁数が無ければ80桁x40行。次回からは
      終わりに保存した大きさ(今までどおり)。
+951. **2026-10-20: 最初の起動は親自身がHELPで起動、-H/-K・^T^H/^T^KでHELP/KEYの子、どの子も自身で終了できる**
+   - **経緯**: 直接のユーザー提案"最初の起動では子のHELPを出さずに親がHELPで起動。次回以降は-H/-K起動または稼働中
+     ^T^H/^T^Kで子のHELP/KEYを出す、すべての子は自身を終了可、では？"(最初の起動・-HをHELPの子だけにした項目945の後)。
+   - **実装**: main.cppは、最初の起動(~/.usilic/historyが空)ではApplication::scheduleHelpInParent()(実行ループの最初で
+     ^Hと同じCommand::StartHelp)。-HはHELPの子、-Kは子のKEYの窓自身(USILIC_TRANSIENTのある子)でなければKEYの子を
+     scheduleHelpChildren(help, key)で開く。launchHelpChildren()をlaunchHelpChild()・launchKeyChild()に分け、^Tの後の
+     ^H・^Kで呼ぶ(^Tn/^Tpと同じく固定のキー)。子のHELP・KEYの窓を自身で終われなくしていたsetEndsWithParentOnly()と、
+     -gの窓を閉じる操作を無視していたのをやめた。Windowsのネイティブでは子を開かず"Not available on Windows"
+     (最初の起動の親のHELPは開く)。src/HELP_.txt・HELP_en_.txt(未コミット)の最初の起動・^Tの表・-H・-Kの説明を直した。

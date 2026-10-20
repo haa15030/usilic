@@ -2663,10 +2663,9 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       app.requestImmediateExit();
       return;
     }
-    // the window's own close button was clicked -- 外部起動の子は閉じない(親と一緒に終わる、2026-10-11、直接の
-    // ユーザー依頼"子はどれも自身では終われないようにして")。
-    // 2026-10-12: -H/-KのHELP・KEYの子だけ(Application::endsWithParentOnly_参照)。
-    if (!gui.pumpEvents() && !(gTransientParentPid > 0 && gWindowSlot > 0)) return;
+    // the window's own close button was clicked。(2026-10-11〜10-20: -H/-KのHELP・KEYの子は閉じなかった。
+    // 2026-10-20、直接のユーザー提案"すべての子は自身を終了可"で、どの子も閉じられるように。)
+    if (!gui.pumpEvents()) return;
     if (app.takeFontListRequest()) app.showFontList(buildFontList(gui));  // ^J^F(buildFontList()参照)
     if (app.takeRaiseRequest()) gui.raise();  // 子が開いたら親が前へ(Application::requestParentRaise())
     if (auto choice = app.takeFontChoice()) applyFontChoice(app, gui, choice->first, choice->second);
@@ -5730,7 +5729,8 @@ int main(int argc, char **argv) {
   } childChannelGuard{app};
   if (gTransientParentPid > 0) {
     app.setParentPid(gTransientParentPid);
-    app.setEndsWithParentOnly(gWindowSlot > 0);  // -H・最初の起動のHELP(1)・KEY(2)の子だけ
+    // (2026-10-12〜10-20: -H・最初の起動のHELP・KEYの子は自身では終わらなかった(setEndsWithParentOnly())。
+    // 2026-10-20、直接のユーザー提案"すべての子は自身を終了可"でやめた。)
     // 2026-10-12: HELPの子以外も自分の受け渡しのFIFO("w.<PID>")を持つ(親の^Tn/^Tpの"A"を受ける)。
     // openChildChannel()は登録のファイルを消すので、登録はその後(中身にFIFOの名前を書く)。
     app.openChildChannel(gTransientParentPid, gWindowSlot == 1 ? std::string("help") : "w." + std::to_string(::getpid()));
@@ -6130,10 +6130,16 @@ int main(int argc, char **argv) {
     // groffが無ければ平文のHELP)を渡す。子の側はroffをgroffで平文に組む(startPagerFileList()参照)。
     // 同日、"^Kのウィンドウも追加"(-KのKEYの子も)、"-gでは端末の大きさ・配色を受け継ぐのは親だけ"(ここではまだ
     // GUIができておらず親のウィンドウを子へ渡せなかった): 起動は実行ループの最初で(Application::launchHelpChildren())。
-    if ((openHelpChild || (consultHistoryOnStart && historyText.empty())) && !app.helpLoadedPath_.empty())
-      app.scheduleHelpChildren();
-    // -K(上の子のKEYのウィンドウ): HELPの「：」を含む行だけのKEY(キーの発動・h・^G無し、keyListOnly()参照)を開く。
-    if (openKeyAtStart) {
+    // 2026-10-20、直接のユーザー提案("最初の起動では子のHELPを出さずに親がHELPで起動。次回以降は-H/-K起動または
+    // 稼働中^T^H/^T^Kで子のHELP/KEYを出す、すべての子は自身を終了可"): 最初の起動は親自身がHELPを開き、-Hは
+    // HELPの子、-Kは(子のKEYの窓自身でなければ)KEYの子を開く。
+    bool firstStart = consultHistoryOnStart && historyText.empty();
+    if (firstStart && !app.helpLoadedPath_.empty()) app.scheduleHelpInParent();
+    bool keyChild = openKeyAtStart && gTransientParentPid <= 0;
+    if ((openHelpChild && !app.helpLoadedPath_.empty()) || keyChild)
+      app.scheduleHelpChildren(openHelpChild && !app.helpLoadedPath_.empty(), keyChild);
+    // -K(子のKEYのウィンドウ自身): HELPの「：」を含む行だけのKEY(キーの発動・h・^G無し、keyListOnly()参照)を開く。
+    if (openKeyAtStart && !keyChild) {
       app.setPagerLaunch(false);
       app.setKeyColonListLaunch(true);
       app.handleCommand(fm::Command::StartKey);
