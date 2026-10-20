@@ -1802,6 +1802,10 @@ class Application {
   void closeChildChannel();
   void pollChildChannel();
   void setParentPid(long pid) { parentPid_ = pid; }
+  // このusilic自身の実行ファイル(main.cppのresolveOwnExecutablePath())。外部起動の子(launchExternalUsilic())は
+  // "usilic"の名前ではなくこれで起動する(2026-10-20、.appのPATHでは/usr/local/bin/usilicの旧版が先に見つかった)。
+  void setSelfExecutablePath(std::string path) { selfExecutablePath_ = std::move(path); }
+  std::string selfExecutablePath_;
   void registerAsChild();    // .cpp側のコメント参照
   void terminateChildren();  // 同上
   std::string childPidFile_;  // registerAsChild()のファイル

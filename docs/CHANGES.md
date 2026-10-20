@@ -32122,3 +32122,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      HELP.epubの子がその場で開くのを確かめた。
    - **実装**: main()の最初(Windows以外)で、resolveOwnExecutablePath()のディレクトリ(.appならContents/MacOS)がPATHに
      無ければ後ろに足す(SHELLで打つusilicにも効く、Linuxのデスクトップのアイコンからの起動も同じ)。
+
+973. **2026-10-20: 外部起動の子のusilicは自分の実行ファイルの絶対パスで起動する(.appで子が旧版になっていた)**
+   - **経緯**: 直接のユーザー報告"-c/-gはOK。.appだけが出ない"(項目972の後も)。.appと同じ環境(FinderのPATH+Homebrewの場所
+     +Contents/MacOS)で子を起動してみると、"usilic"は/usr/local/bin/usilic(レガシーのC版)になり"Invalid option -g"で
+     終わっていた(項目953で/usr/local/binを足し、項目972のContents/MacOSはその後ろだった)。
+   - **実装**: Application::setSelfExecutablePath()(main.cppがresolveOwnExecutablePath()を渡す)。launchExternalUsilic()は
+     "usilic"の代わりにその絶対パス(シェル用にクォート)で起動する(^T^H・^T^K・-H・-K・^Ou・^Jtのusilic等の全部)。
+     項目972のPATHは、自分のディレクトリを後ろではなく先頭に足す(SHELLで打つusilicも今のものに)。

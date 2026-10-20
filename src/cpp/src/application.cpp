@@ -18538,7 +18538,7 @@ void Application::launchExternalUsilic(const std::string &directory, const std::
                     (externalExtraEnv_.empty() ? "" : " " + externalExtraEnv_) +
                     (frameText.empty() ? "" : " USILIC_GUI_FRAME=" + frameText) +
                     (fontPath.empty() ? "" : " USILICFONT=" + shellQuoteArg(fontPath)) +
-                    " usilic" +
+                    " " + (selfExecutablePath_.empty() ? std::string("usilic") : shellQuoteArg(selfExecutablePath_)) +
                     std::string(hasUiFlag ? "" : (graphical ? " -g" : " -c")) + args;
   std::string toRun = "unset USILIC USILIC_HANDOFF; " + cdWrap(directory, run);
   // -cから-gの子(^Tの子、2026-10-12)は、端末の新しいウィンドウではなく背後で起動する(自分のウィンドウを開く)。

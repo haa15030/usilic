@@ -5065,15 +5065,15 @@ int main(int argc, char **argv) {
   }
 #endif
 #ifndef _WIN32
-  // 2026-10-20、直接のユーザー報告("^T^H、^T^Kが利かない"): 子のHELP・KEY(Application::launchExternalUsilic())は
-  // "usilic"という名前で起動するが、Finderから起動した.app(デスクトップのアイコンからも)のPATHには~/.local/binが無く、
-  // 見つからずに何も起きなかった。自分の実行ファイルのディレクトリ(.appならContents/MacOS)がPATHに無ければ後ろに足す
-  // (SHELLで打つusilicにも効く)。
+  // 2026-10-20、直接のユーザー報告("^T^H、^T^Kが利かない"、".appだけが出ない"): Finderから起動した.app(デスクトップの
+  // アイコンからも)のPATHには~/.local/binが無く、"usilic"は/usr/local/binの旧版(C版、-gを知らない)になっていた。
+  // 自分の実行ファイルのディレクトリ(.appならContents/MacOS)がPATHに無ければ先頭に足す(SHELLで打つusilicも今のものに。
+  // 外部起動の子はApplication::setSelfExecutablePath()の絶対パスで起動する)。
   if (std::string self = resolveOwnExecutablePath(); !self.empty()) {
     std::string dir = std::filesystem::path(self).parent_path().string();
     std::string path = std::getenv("PATH") ? std::getenv("PATH") : "";
     if ((":" + path + ":").find(":" + dir + ":") == std::string::npos)
-      ::setenv("PATH", (path.empty() ? dir : path + ":" + dir).c_str(), 1);
+      ::setenv("PATH", (path.empty() ? dir : dir + ":" + path).c_str(), 1);
   }
 #endif
   checkInvalidTerminalMarker();
@@ -5875,6 +5875,7 @@ int main(int argc, char **argv) {
   // HELP(Application::helpPath_、~/.local/lib/usilic/HELP、無ければ/usr/local/lib/usilic/HELP)を読む。
   // ^HはこれをタブでCUTし、^Kは「：」でCUTする(KEY)。
   app.setInstallLibDirectory(installLibDir);
+  app.setSelfExecutablePath(resolveOwnExecutablePath());  // 外部起動の子もこれで(Application::setSelfExecutablePath())
   app.setPagerLaunch(!consultHistoryOnStart);  // KEYの検索文字列(Application::startKey()参照)
   if (const char *overridePath = std::getenv("USILICHELP")) {
     std::string text = readFileIfExists(overridePath);
