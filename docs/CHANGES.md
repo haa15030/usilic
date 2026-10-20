@@ -31910,3 +31910,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      "入れるようにしてほしい")。^Ojで英語にした後の^Hは、HELPと同じフォルダのHELP.en.epubを開く(Application::
      helpEpubPath()、HELP.en本体が無くてもhelpPath_は"HELP.en"になる)。
    - **実装**: windows.mkにWIN_HELP_EN_EPUB(既定は~/.local/lib/usilic/HELP.en.epub)を足し、distでlib/usilic/へ入れる。
+947. **2026-10-20: Windows版のMANはusilicのページだけ(組んでおいた平文)、^Ojで英語/日本語を切り替え、^J^Mの一覧もusilicだけ**
+   - **経緯**: Windowsでは^Jm(MAN)が動くか、という質問に、Windowsにはmanが無いのでページは開けないはずと答えた
+     ところ、直接のユーザー依頼"WSLは入っているんだが、Win版のMANはusilicのみでいいかも。造りは嘘っぽ（タブコードと
+     同じく見た目だけ）でいい。有効なのは^Ojで英語・日本語トグルのみ、^J^Mで出てくるのもusilicのみ、ほかのはすべて
+     manページが無い。これでやってみて。"。
+   - **実装**: windows.mkのdistで、doc/HELP.1(英語)・HELP.ja.1(日本語)をgroffで78桁に組み、lib/usilic/HELP.man・
+     HELP.ja.manとして入れる。ManMode::runAndWrap()は、Windowsのネイティブではmanを呼ばず、ページの差し替え先
+     (setPageResolver())のファイルを読む。Applicationの差し替え先は、Windowsではusilicだけ、^Ojの言語(helpPath_)で
+     HELP.ja.man/HELP.manを返す(他の名前は"No manual entry")。^J^M(MANの履歴の一覧)はWindowsでは"usilic"だけ。
+     ^Oj(Command::ToggleHelpLanguage)は、英語の平文のHELP(HELP.en)もgroffも無いWindowsで切り替わらなかったので、
+     読めなくても切り替える先のHELP.en.epubがあれば切り替える(項目946でHELP.en.epubを入れただけでは^Ojの後の^Hが
+     英語にならなかった)。WindowsではMANでusilicを見ている時の^Ojでそのページも読み直す。

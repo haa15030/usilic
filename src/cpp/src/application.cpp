@@ -867,6 +867,13 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   manMode_.setPageResolver([this](const std::string &name) -> std::string {
     if (name != "usilic") return {};
     std::error_code ec;
+#ifdef _WIN32
+    // 2026-10-20(ManMode::runAndWrap()参照): Windowsのネイティブは、HELPと同じ場所の組んでおいた平文。^Ojの言語
+    // (helpPath_がHELP.enなら英語)で選ぶ。
+    std::string page = std::filesystem::path(helpBasePath_).parent_path().string() +
+                       (helpPath_ == helpBasePath_ ? "/HELP.ja.man" : "/HELP.man");
+    return std::filesystem::is_regular_file(page, ec) ? page : std::string();
+#endif
     std::vector<std::string> candidates = {std::filesystem::path(helpBasePath_).parent_path().string() + "/HELP.1"};
     if (!installLibDirectory_.empty()) candidates.push_back(installLibDirectory_ + "HELP.1");
     candidates.push_back("/usr/local/lib/usilic/HELP.1");
@@ -5557,11 +5564,17 @@ bool Application::handleCommandImpl(Command command) {
       // HELP.enが無ければ切り替えない(読めないファイルへ切り替わって^Hが効かなくなるのを避ける)。
       std::string previous = helpPath_;
       helpPath_ = (helpPath_ == helpBasePath_) ? helpBasePath_ + ".en" : helpBasePath_;
-      if (!reloadHelpText()) {
+      // 2026-10-20: Windowsのネイティブには英語の平文のHELP(HELP.en)もgroffも無いので、読めなくても切り替える先の
+      // HELP.en.epubがあれば切り替える(KEY等の平文のHELPは元の言語のまま)。
+      if (!reloadHelpText() && !helpEpubPath()) {
         helpPath_ = previous;
         return false;
       }
       reopenHelpInOtherLanguage(view);
+#ifdef _WIN32
+      // MANのusilicのページ(組んでおいた平文、ManMode::runAndWrap()参照)も、その場で切り替えた言語に。
+      if (currentMode_ == ApplicationMode::Man && manMode_.currentPage() == "usilic") manMode_.loadPage("usilic");
+#endif
       return true;
     }
     case Command::StartKey:
@@ -16139,6 +16152,10 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
     items.erase(std::remove_if(items.begin(), items.end(),
                                 [](const std::string &item) { return !parseCutFileHistoryEntry(item); }),
                 items.end());
+#ifdef _WIN32
+  // 2026-10-20(ManMode::runAndWrap()参照): Windowsのネイティブで見られるMANのページはusilicだけ。
+  if (category == RingCategory::RecentManPage) items = {"usilic"};
+#endif
   listBrowserMode_.show(items, fileHistoryBadges(configuration_, category, items),
                         egrepList ? egrepListDisplayTexts(items) : recentFileDisplayTexts(category, items));
   currentMode_ = ApplicationMode::ListBrowser;

@@ -1,6 +1,8 @@
 #include "man_mode.hpp"
 
 #include <cstdlib>
+#include <fstream>
+#include <sstream>
 
 #include "posix_compat.hpp"
 
@@ -24,11 +26,24 @@ ManMode::ManMode(ContentView &view, History &history, const Configuration &confi
 }
 
 std::optional<std::vector<ContentView::Line>> ManMode::runAndWrap(const std::string &name) const {
+  std::string resolved = pageResolver_ ? pageResolver_(name) : std::string();  // setPageResolver()参照
+#ifdef _WIN32
+  // 2026-10-20、直接のユーザー依頼("Win版のMANはusilicのみでいいかも。造りは嘘っぽ（タブコードと同じく見た目だけ）
+  // でいい"): Windowsのネイティブにはmanもgroffも無いので、usilicのページだけを、make -f windows.mk distがgroffで
+  // 組んでおいた平文(HELP.man・HELP.ja.man、resolvedがそのパス)から見せる。他のページは無い。
+  if (resolved.empty()) return std::nullopt;
+  std::ifstream page(resolved, std::ios::binary);
+  if (!page) return std::nullopt;
+  std::ostringstream pageText;
+  pageText << page.rdbuf();
+  ChildProcess::Result result;
+  result.ok = true;
+  result.output = pageText.str();
+#else
   ProgramCommand command = configuration_.commandFor(ConfiguredRole::Man);
   if (command.argv.empty()) return std::nullopt;
 
   std::vector<std::string> argv = command.argv;
-  std::string resolved = pageResolver_ ? pageResolver_(name) : std::string();  // setPageResolver()参照
   argv.push_back(resolved.empty() ? name : resolved);
 
   // 2026-09-06追加、直接のユーザー報告("MANも①③(`man ls|usilic -c`/
@@ -60,6 +75,7 @@ std::optional<std::vector<ContentView::Line>> ManMode::runAndWrap(const std::str
   } else {
     ::unsetenv("MANWIDTH");
   }
+#endif
   if (!result.ok) return std::nullopt;
 
   PipeBuffer pipe(encoding_, width_, 16L * 1024 * 1024);
