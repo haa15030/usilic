@@ -1764,6 +1764,12 @@ struct GuiFrame {
   bool valid = false;
   int x = 0, y = 0, width = 0, height = 0, rows = 0, columns = 0, pointSize = 0;
   int fg[3] = {0, 0, 0}, bg[3] = {0, 0, 0};
+  // 2026-10-21、直接のユーザー報告("^[[で行間を広くした後、^T^Hで開いた別ウィンドウのHELPでは全てのbold書体文字の字間が
+  // 狭くなる"): -gの親は、^[[ / ^[]・^[{ / ^[}で今足している行間・字間のドット数(横書き・縦書き)も渡す(spacing)。子は
+  // それを使い、外枠からマスの大きさを割り出さずに(matchWindowSize())、自分のマスのまま外枠だけを合わせる。-cの親(端末の
+  // 外枠)からは渡さない。
+  bool spacing = false;
+  int lineExtra[2] = {0, 0}, letterExtra[2] = {0, 0};
 };
 GuiFrame gGuiFrame;
 // -z pt(2026-10-18、直接のユーザー依頼"文字サイズの小さい明朝体は見栄えが悪いので-g起動時のデフォルトフォントサイズを
@@ -1782,6 +1788,9 @@ std::string guiFrameText(fm::GraphicalDisplay &gui) {
   out << x << ',' << y << ',' << w << ',' << h << ',' << gui.rows() << ',' << gui.columns() << ','
       << gui.fontPointSize() << ',' << int(fg.r) << ',' << int(fg.g) << ',' << int(fg.b) << ',' << int(bg.r) << ','
       << int(bg.g) << ',' << int(bg.b);
+  auto [lineH, lineV] = fm::GraphicalDisplay::lineHeightExtras();
+  auto [letterH, letterV] = fm::GraphicalDisplay::letterSpacingExtras();
+  out << ',' << lineH << ',' << lineV << ',' << letterH << ',' << letterV;  // GuiFrame::spacing
   return out.str();
 }
 bool transientParentGone() {
@@ -4474,7 +4483,9 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   // 子のHELP(1)・KEY(2): 親のウィンドウの右隣に、HELPは上端を揃え、KEYはその下(親と同じ大きさなので親の高さ分下)。
   // 親の外枠が無ければ(古い親等)、以前の48ずつのずらし。開いたら親に前へ出てもらう(Application::requestParentRaise())。
   if (gWindowSlot > 0 && gGuiFrame.valid) {
-    gui->matchWindowSize(gGuiFrame.width, gGuiFrame.height);  // 外枠も親とぴったり同じ大きさに
+    // 外枠も親とぴったり同じ大きさに(-gの親なら自分のマスのまま、GuiFrame::spacing参照)
+    if (gGuiFrame.spacing) gui->setWindowSize(gGuiFrame.width, gGuiFrame.height);
+    else gui->matchWindowSize(gGuiFrame.width, gGuiFrame.height);
     // 2026-10-11、直接のユーザー依頼("画面の右端に近い位置ではHELP・KEYを左側、下端では上の空いている側"): 親のいる
     // 画面の使える範囲で、横は親の右隣、入らなければ左隣。縦はHELPが親と上端を揃え(はみ出すなら画面の下端に)、KEYは
     // HELPの下、入らなければHELPの上(Terminal.appのopenInNewTerminalWindow()と同じ置き方)。
@@ -4504,7 +4515,8 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
     // ^Ou・^T等の子は、親(-gのウィンドウ、-cなら端末のウィンドウ)と同じ大きさで、親から1つ目は32、2つ目は64...
     // 右下へずらして置く(USILIC_CASCADE、画面からはみ出さない範囲で)。
     int w = gGuiFrame.width, h = gGuiFrame.height;
-    gui->matchWindowSize(w, h);
+    if (gGuiFrame.spacing) gui->setWindowSize(w, h);  // GuiFrame::spacing参照
+    else gui->matchWindowSize(w, h);
     int left = -100000, top = -100000, right = 100000, bottom = 100000;
     fm::GraphicalDisplay::usableBoundsContaining(gGuiFrame.x, gGuiFrame.y, left, top, right, bottom);
     int offset = (gCascade % 10 + 1) * 32;
@@ -5495,9 +5507,11 @@ int main(int argc, char **argv) {
   }
   if (const char *frame = std::getenv("USILIC_GUI_FRAME")) {
     GuiFrame f;
-    int n = std::sscanf(frame, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", &f.x, &f.y, &f.width, &f.height, &f.rows,
-                        &f.columns, &f.pointSize, &f.fg[0], &f.fg[1], &f.fg[2], &f.bg[0], &f.bg[1], &f.bg[2]);
-    f.valid = n == 13 && f.rows > 0 && f.columns > 0 && f.pointSize > 0;
+    int n = std::sscanf(frame, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", &f.x, &f.y, &f.width, &f.height,
+                        &f.rows, &f.columns, &f.pointSize, &f.fg[0], &f.fg[1], &f.fg[2], &f.bg[0], &f.bg[1], &f.bg[2],
+                        &f.lineExtra[0], &f.lineExtra[1], &f.letterExtra[0], &f.letterExtra[1]);
+    f.valid = (n == 13 || n == 17) && f.rows > 0 && f.columns > 0 && f.pointSize > 0;
+    f.spacing = f.valid && n == 17;
     gGuiFrame = f;
     ::unsetenv("USILIC_GUI_FRAME");
   }
@@ -5806,6 +5820,10 @@ int main(int argc, char **argv) {
     // usilicrcのLETTER-SPACINGに値があればそちら(^[{ / ^[}がその場で書き込むので、子のHELP・KEYも親と同じ字間、2026-10-21)。
     if (auto extras = configuration.letterSpacingExtras())
       fm::GraphicalDisplay::setLetterSpacingExtras(extras->first, extras->second);
+    if (gGuiFrame.spacing) {  // -gの親から開いた子: 親の今の行間・字間(GuiFrame::spacing)
+      fm::GraphicalDisplay::setLineHeightExtras(gGuiFrame.lineExtra[0], gGuiFrame.lineExtra[1]);
+      fm::GraphicalDisplay::setLetterSpacingExtras(gGuiFrame.letterExtra[0], gGuiFrame.letterExtra[1]);
+    }
   }
 
   // History's own saved charset already defers to the environment

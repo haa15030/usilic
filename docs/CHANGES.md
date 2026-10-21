@@ -32146,3 +32146,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      一緒に当て直す(adjustLetterSpacing(0))。起動時はhistoryの値の後に、usilicrcに値があればそちら。^[{ / ^[}は
      usilicrc::setSection()でその場で書き込む。既定のusilicrc・usilicrc.enには説明だけで値の行を置かない(今までの
      historyの値が0に戻らないように)。
+
+976. **2026-10-21: -gの親から開いた子は、親の今の行間・字間で、自分のマスのまま外枠だけを合わせる**
+   - **経緯**: 直接のユーザー報告"^[[で行間を広くした後、^T^Hで開いた別ウィンドウのHELPでは全てのbold書体文字の字間が狭くなる"。
+     子はmatchWindowSize()で親の外枠を親の行数・桁数で割ってマスの大きさを出す。その式はスクロールバーの帯を1行の高さとして
+     引くが、親は^[[の後もスクロールバーの幅を変えない(reapplyLineHeightKeepingExtra())ので、行の高さが増えた分だけ子の
+     マスの幅が狭くなり、太字が縮めて描かれていた。子の行間の足し分も、親の前回の終了時(history)の値だった。
+   - **実装**: guiFrameText()(USILIC_GUI_FRAME)の後ろに、行間・字間の足し分(横書き・縦書き)の4つを足す(GuiFrame::spacing、
+     17個。端末の外枠は今まで通り13個)。子はそれをsetLineHeightExtras()・setLetterSpacingExtras()し、外枠はmatchWindowSize()
+     ではなくsetWindowSize()で合わせる(マスの大きさはフォントから、行数・桁数は窓の大きさから)。-H・-Kの子と、^Ou・^T等の
+     ずらして置く子の両方。
