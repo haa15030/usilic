@@ -32309,3 +32309,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 直接のユーザー依頼("ページャーでももちろんMarkdownの変換を通してくれないと")。項目995の確認で、`usilic README.old.md`(ページャー)だけはMarkdownの変換を通らず、生のまま出ていた。
    - `Application::loadPagerFile()`(引数のファイルと、ページャーのn/pで移るファイルの両方)で、`.md`/`.markdown`は`loadTransformedPagerFile()`で開く(`loadAndTransformContent()`が`markdownToHelpMarkup()`する)。
    - 確認: `usilic -c legacy/README.old.md`で、表が列にそろって出ることを擬似端末で確かめた。
+
+997. **2026-10-21: make help-epub(・help-epub-en)で、作ったEPUBをその場で入れる**
+   - 直接のユーザー報告("make help-epubとやってもHELPが最新にならない")。`make help-epub`は`doc/HELP.epub`を作るだけで、usilicが読む`~/.local/lib/usilic/HELP.epub`は`make install`の時にしか更新されなかった(doc/は23:08、入っている方は22:54のままだった)。
+   - `src/cpp/Makefile`: `help-epub`・`help-epub-en`の最後で、`$(LIB_DIR)`へ`install`する。
+   - あわせて、作り直した`doc/HELP.epub`・`doc/HELP.en.epub`もコミットした。
