@@ -61,6 +61,17 @@ static int key_getch(int f_key, u_char cva[])
   return i;
 }
 
+/* key_getch()'s "playback" mode (its else-branch) doesn't touch f_key/cva,
+   so it was called through `getch` -- typedef'd as a 0-argument GETCH --
+   relying on whatever garbage was left in the argument registers to not
+   coincidentally equal 2 or 3 (key_getch's "setup" mode, which dereferences
+   cva). That's UB and was observed to crash: this wrapper matches GETCH's
+   real signature and passes a value guaranteed not to be 2 or 3. */
+static int key_getch_play(void)
+{
+  return key_getch(1, NULL);
+}
+
 static int set_km(int m, int **p_kmp, int f_M)
 { /* keyboard macro */
   static int f_me, n_km, a_km[N_macro];
@@ -539,7 +550,7 @@ int read_m(RV *rvp, int f_M, int klen, u_char *cva, char *cname, LIST **listp, S
   }
   if (cva) {
     key_getch(f_M, cva);
-    getch = (GETCH)key_getch;
+    getch = key_getch_play;
     return 0;
   }
   if (is_comm(f_M, 1) || f_M == M_exit) f_enter = 2;
