@@ -1117,7 +1117,7 @@ u_char *alloc_split(char name[], int tell, int size)/*usilic*/
   return cp;
 }
 
-u_char *alloc_buff(int *sizep, u_int fd, int f_chkbin)/*usilic*/
+u_char *alloc_buff(int *sizep, uintptr_t fd, int f_chkbin)/*usilic*/
 {
   FILE *fp;
   int size, temp, fsize, code, f_getch = 1;

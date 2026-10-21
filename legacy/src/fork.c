@@ -16,7 +16,7 @@ static char *w_arg(char arg[], char argv[])
   return wa;
 }
 
-u_char *read_buff(int *sizep, u_int fd, int f_chkbin)/*usilic*/
+u_char *read_buff(int *sizep, uintptr_t fd, int f_chkbin)/*usilic*/
 {
   int pid = 0;
   u_char *buff;
@@ -768,7 +768,8 @@ int fork_du(u_char dir[])/*usilic*/
 char *read_arc(CHILD *arc, char prev[], char name[], int *sizep)/*usilic*/
 {
   CHILD *chp = NULL, *chp2 = NULL;
-  int fd, i, pv[6], f_deb, mode, size, length, f_chkbin = 0;
+  int i, pv[6], f_deb, mode, size, length, f_chkbin = 0;
+  uintptr_t fd; /* a file descriptor, or a FILE* when f_chkbin == -1 (read_buff()) */
   FILE *fp;
   char *p, head[N_pipe];
   u_char c, *buff;
@@ -931,7 +932,7 @@ char *read_arc(CHILD *arc, char prev[], char name[], int *sizep)/*usilic*/
       return NULL;
     }
     *sizep = size;
-    fd = (u_int)fp;
+    fd = (uintptr_t)fp; /* u_int truncated the FILE* on 64-bit */
     f_chkbin = -1;
   } else {
     *sizep = 0;
