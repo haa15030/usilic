@@ -331,7 +331,8 @@ static int conf_grep(FILE *fp, char str[], LIST **lgpp, STR **sgpp)
 	while (*cp != '\042' && *cp != '\047') cp++;
       } else while (*cp != ' ' && *cp != '\t') cp++;
       *cp = '\0';
-      strcpy(str, p);
+      memmove(str, p, strlen(p) + 1); /* p may overlap str; strcpy() is UB here and
+					  aborts under macOS's fortified libc */
       size = strlen(str);
       if ((code = init_code(&size, str, 0)) == C_sjis) toeuc(str);
       else if (code == C_jis) {
