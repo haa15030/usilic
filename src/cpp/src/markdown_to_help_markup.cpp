@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "utf8.hpp"
+
 namespace fm {
 
 namespace {
@@ -299,6 +301,63 @@ std::string piecesToString(const std::vector<Piece> &pieces) {
   return out;
 }
 
+
+// 2026-10-21、直接のユーザー依頼(legacy/README.old.mdの表が"| もの | 場所 | |------|------| | 実行ファイル | …"と段落に
+// つながって表示された、=lf.png): GitHub式の表(|で始まる行が続き、2行目が|---|---|の区切りの行)。
+// 区切りの行か(|、-、:、空白だけで、-を含む)。
+bool isTableDelimiter(const std::string &trimmed) {
+  if (trimmed.empty() || trimmed[0] != '|') return false;
+  bool dash = false;
+  for (char c : trimmed) {
+    if (c == '-') dash = true;
+    else if (c != '|' && c != ':' && c != ' ' && c != '\t') return false;
+  }
+  return dash;
+}
+
+// 表の1行を列に分ける(前後の|を除く。`…`の中の|は区切りにしない)。
+std::vector<std::string> splitTableRow(const std::string &trimmed) {
+  std::vector<std::string> cells;
+  std::string cur;
+  bool code = false;
+  std::size_t i = trimmed[0] == '|' ? 1 : 0;
+  for (; i < trimmed.size(); i++) {
+    char c = trimmed[i];
+    if (c == '`') code = !code;
+    if (c == '\\' && i + 1 < trimmed.size() && trimmed[i + 1] == '|') {
+      cur += '|';
+      i++;
+      continue;
+    }
+    if (c == '|' && !code) {
+      cells.push_back(trimRight(trimLeft(cur)));
+      cur.clear();
+      continue;
+    }
+    cur += c;
+  }
+  if (!trimRight(cur).empty()) cells.push_back(trimRight(trimLeft(cur)));
+  return cells;
+}
+
+// 変換した後の文字列の、画面での幅(<b>等のタグは数えない、<lt>は'<'の1桁)。
+int markupDisplayWidth(const std::string &text) {
+  int width = 0;
+  for (std::size_t i = 0; i < text.size();) {
+    if (text[i] == '<') {
+      std::size_t close = text.find('>', i);
+      if (close != std::string::npos) {
+        if (text.compare(i, 4, "<lt>") == 0) width++;
+        i = close + 1;
+        continue;
+      }
+    }
+    int len = std::max(1, Utf8::sequence_length(static_cast<unsigned char>(text[i])));
+    width += Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data() + i), len);
+    i += static_cast<std::size_t>(len);
+  }
+  return width;
+}
 }  // namespace
 
 // Markdownのインライン記法(太字/斜体/インラインコード/リンク・画像/バックスラッシュ
@@ -420,6 +479,55 @@ std::string markdownToHelpMarkup(const std::string &source) {
     if (matchBlockquote(trimmed, &depth, &quoteBody)) {
       flushParagraph();
       out += indentOpen(depth * 2) + "<i>" + renderInline(trimRight(quoteBody)) + "</i>" + kIndentClose + '\n';
+      continue;
+    }
+    // 表(isTableDelimiter()参照): 各列を変換してから表示の幅でそろえ、列の間を空白2つに。見出しの行は太字、区切りの行は
+    // 半角の'-'(罫線の─は日本語の画面では2桁になることがある)。
+    if (!trimmed.empty() && trimmed[0] == '|' && li + 1 < lines.size() &&
+        isTableDelimiter(trimRight(trimLeft(lines[li + 1])))) {
+      flushParagraph();
+      std::vector<std::vector<std::string>> rows;
+      std::size_t end = li;
+      for (; end < lines.size(); end++) {
+        std::string t = trimRight(trimLeft(lines[end]));
+        if (t.empty() || t[0] != '|') break;
+        if (end == li + 1) continue;  // 区切りの行
+        std::vector<std::string> cells;
+        for (const auto &cell : splitTableRow(t)) cells.push_back(renderInline(cell));
+        rows.push_back(cells);
+      }
+      std::vector<int> widths;
+      for (const auto &row : rows)
+        for (std::size_t c = 0; c < row.size(); c++) {
+          if (widths.size() <= c) widths.push_back(0);
+          widths[c] = std::max(widths[c], markupDisplayWidth(row[c]));
+        }
+      auto emit = [&](const std::vector<std::string> &row, bool header) {
+        std::string line;
+        for (std::size_t c = 0; c < row.size(); c++) {
+          std::string cell = header ? "<b>" + row[c] + "</b>" : row[c];
+          line += cell;
+          if (c + 1 < row.size()) line += std::string(static_cast<std::size_t>(widths[c] - markupDisplayWidth(row[c]) + 2), ' ');
+        }
+        out += indentOpen(2) + line + kIndentClose + '\n';
+      };
+      for (std::size_t r = 0; r < rows.size(); r++) {
+        emit(rows[r], r == 0);
+        if (r == 0) {
+          // 最後の列は長い文が入って折り返すことがあるので、区切りの行は字下げを含めて80桁までに抑える(=lf.pngの後の確認で、
+          // 区切りの行だけが画面の端で折り返して見えた)。
+          std::string rule;
+          int used = 2;
+          for (std::size_t c = 0; c < widths.size(); c++) {
+            int w = widths[c];
+            if (c + 1 == widths.size()) w = std::max(std::min(w, 80 - used), c < rows[0].size() ? markupDisplayWidth(rows[0][c]) : 1);
+            rule += std::string(static_cast<std::size_t>(w), '-') + (c + 1 < widths.size() ? "  " : "");
+            used += w + 2;
+          }
+          out += indentOpen(2) + rule + kIndentClose + '\n';
+        }
+      }
+      li = end - 1;
       continue;
     }
     std::string listMarker, listBody;
