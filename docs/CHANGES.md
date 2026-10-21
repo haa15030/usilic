@@ -32314,3 +32314,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 直接のユーザー報告("make help-epubとやってもHELPが最新にならない")。`make help-epub`は`doc/HELP.epub`を作るだけで、usilicが読む`~/.local/lib/usilic/HELP.epub`は`make install`の時にしか更新されなかった(doc/は23:08、入っている方は22:54のままだった)。
    - `src/cpp/Makefile`: `help-epub`・`help-epub-en`の最後で、`$(LIB_DIR)`へ`install`する。
    - あわせて、作り直した`doc/HELP.epub`・`doc/HELP.en.epub`もコミットした。
+
+998. **2026-10-21: usilicrcの「(または ^Xs)」を、^Xs で効く理由が分かる書き方にする**
+   - 直接のユーザー依頼("`^Xs`で修正が利く理由に触れておいた方がいいかも")。WAIT・LINE-HEIGHT・LETTER-SPACINGの説明の「EDIT でこのファイルを直す(または ^Xs)と、その場で効きます」を、「EDIT で直すと保存した時に読み直すのでその場で効く(ほかのエディタで直した時は ^Xs で読み直す)」にした(usilicrc・usilicrc.en)。`^Xs`は`saveMacroToUsilicrc()`の初めで`reloadUsilicrcKeys()`する。
+   - 同じ依頼の「LETTER-SPACINGが注釈になっていない」は、原稿で斜体の付け忘れ(ユーザー側で直す)。
+   - doc/HELP.epub・doc/HELP.en.epubを作り直した。
