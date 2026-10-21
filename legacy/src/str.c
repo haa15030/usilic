@@ -20,7 +20,7 @@ char *s_S(int n_S)/*usilic*/
   return (n_S < S_nn) ? (char*)Str.S[n_S] : NULL;
 }
 
-char **s_P(u_int n_P)/*usilic*/
+char **s_P(uintptr_t n_P)/*usilic*/
 {
   static char *child[] = { /* built-in program */
     /* file manager */
@@ -805,7 +805,7 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
       fprintf(stderr, "Install %s or %s.\n", shell[0], shell[1]);
       return -1;
     }
-    strcpy(tmp, getenv("SHELL"));
+    strcpy(tmp, getenv("SHELL") ? getenv("SHELL") : "/bin/sh");
     for (i = 0, cp = NULL; i < 2; i++) 
       if (strstr(tmp, shell[i])) {
 	cp = shell[i];
@@ -874,7 +874,7 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
   if (erre) save_intr(S_erre);
   print_usilic(mess, f_usilic);
   Str.S[S_USILIC] = strdup(mess);
-  s_P((u_int)ARCHIVE);
+  s_P((uintptr_t)ARCHIVE);
   return 0;
 }
 
@@ -1253,7 +1253,7 @@ int init_config(CHILD *chp, LIST **lcpp, LIST **lgpp, STR **scpp, STR **sgpp, u_
   memset(p, ' ', n_usilicrc);
   p[n_usilicrc] = '\0';
   fp = fopen(s_S(S_usilicrc), "r");
-  /*  conf_arc(NULL, str, chp);*/
+  conf_arc(NULL, str, chp);
   for (f_shell = f_skip = 0; f_skip >= 0; ) {
     if (!f_skip)
       do {
@@ -1280,8 +1280,8 @@ int init_config(CHILD *chp, LIST **lcpp, LIST **lgpp, STR **scpp, STR **sgpp, u_
     p[f_usilicrc] = f_usilicrc + '0';
     switch(f_usilicrc) {
     case 0:
-      /*            if ((f_skip = conf_arc(fp, str, chp)) == 1)
-		    save_error("%src: %s: %s.\n", s_S(S_usilic), str, s_S(S_errm));*/
+      if ((f_skip = conf_arc(fp, str, chp)) == 1)
+	save_error("%src: %s: %s.\n", s_S(S_usilic), str, s_S(S_errm));
       break;
     case 1:
     case 2:

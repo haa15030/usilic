@@ -748,7 +748,7 @@ int ichrstr(char str0[], char c, char *str)/*usilic*/
   char *cp;
 
   if ((str && (cp = strstr(str0, str))) || (!str && (cp = strchr(str0, c))))
-    return (int)cp - (int)str0 + 1;
+    return (int)(cp - str0) + 1;
   else return 0;
 }
 
