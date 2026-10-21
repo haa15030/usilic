@@ -32156,3 +32156,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      17個。端末の外枠は今まで通り13個)。子はそれをsetLineHeightExtras()・setLetterSpacingExtras()し、外枠はmatchWindowSize()
      ではなくsetWindowSize()で合わせる(マスの大きさはフォントから、行数・桁数は窓の大きさから)。-H・-Kの子と、^Ou・^T等の
      ずらして置く子の両方。
+
+977. **2026-10-21: -gでCtrl+] ・Ctrl+\ ・Ctrl+^ ・Ctrl+_(Ctrl+/)・Ctrl+@も受け付ける**
+   - **経緯**: 直接のユーザー報告"HELPで^]が利かない"。-cの擬似端末ではHELPの^]で(ls)へ移った(^J^Cと同じ)。GraphicalDisplayの
+     SDL_KEYDOWNのCtrlの変換は英字・[・スペースだけで、Ctrl+]等は読み捨てていた。
+   - **実装**: SDLK_RIGHTBRACKET→0x1d、SDLK_BACKSLASH→0x1c、SDLK_CARET→0x1e、SDLK_UNDERSCORE・SDLK_SLASH→0x1f、SDLK_AT→0x80
+     (Ctrl+Spaceと同じ^@の決まり)。

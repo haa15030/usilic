@@ -3538,6 +3538,17 @@ bool GraphicalDisplay::pumpEvents() {
             impl_->keyQueue.push_back(KeyEvent{(sym - SDLK_a) + 1, std::nullopt});
           } else if (sym == SDLK_LEFTBRACKET) {
             impl_->keyQueue.push_back(KeyEvent{0x1b, std::nullopt});  // Ctrl+[ は ESC と同じ
+          } else if (sym == SDLK_RIGHTBRACKET || sym == SDLK_BACKSLASH || sym == SDLK_CARET || sym == SDLK_UNDERSCORE ||
+                     sym == SDLK_SLASH || sym == SDLK_AT) {
+            // 2026-10-21、直接のユーザー報告("HELPで^]が利かない"): Ctrl+]等が読み捨てられていた(-gだけ、端末では
+            // 端末がバイトにする)。端末と同じく^](0x1d、Command::GoToFileSelector)・^\(0x1c)・^^(0x1e)・^_(0x1f、
+            // Ctrl+/も)・^@(0x80、下のCtrl+Spaceと同じ)。
+            int byte = sym == SDLK_RIGHTBRACKET ? 0x1d
+                       : sym == SDLK_BACKSLASH  ? 0x1c
+                       : sym == SDLK_CARET      ? 0x1e
+                       : sym == SDLK_AT         ? 0x80
+                                                : 0x1f;
+            impl_->keyQueue.push_back(KeyEvent{byte, std::nullopt});
           } else if (sym == SDLK_SPACE) {
             // 2026-09-07追加、直接のユーザー報告(⑨のGUI限定「COPY
             // モードで^@によるハイライトが一切出ない」を切り分けた
