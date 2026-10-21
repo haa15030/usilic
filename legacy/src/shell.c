@@ -588,7 +588,13 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
 		  p = &cp[1];
 		  strcpy(buff, &cp[1]);
 		  for (cp = buff; *cp == ' ' || *cp == '\t'; cp++) ;
-		  strcpy(buff, cp);
+		  /* NOT strcpy(buff, cp) -- cp already points inside buff
+		     here (see the loop above), so source and destination
+		     overlap. macOS's _FORTIFY_SOURCE detects this and
+		     hangs/aborts inside __chk_fail_overlap() (same class
+		     of bug as the write_shell() one fixed earlier).
+		     memmove() has no such restriction. */
+		  memmove(buff, cp, strlen((char*)cp) + 1);
 		  if ((cp = strchr(buff, ' '))) *cp = '\0';
 		  if (!strcmp(buff, s_S(S_usilic))) i = -1;
 		  else i = find_prog(prog, buff);
