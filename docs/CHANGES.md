@@ -32197,3 +32197,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      HELP.man・HELP.ja.man の名前はそのまま)、doc/HELP.1→doc/HELP_en.1・doc/HELP.ja.1→doc/HELP.1(git mv)。
      src/HELP_.txt・HELP_en_.txt(未コミット)の-Hの説明の名前も直した。古い~/.local/lib/usilic/HELP.ja.1は使わない
      (残っていても害は無い)。
+
+982. **2026-10-21: HELP.epubの注釈で「既定値」の見出しの前に空行を入れる**
+   - **経緯**: 直接のユーザー依頼"注釈の「規定値」の前に改行を入れて"(=kyの「usilicrc の KEY」の注釈等)。
+   - **実装**: help_to_epub.cppの注釈で、usilicrcのコメントの後、「既定値」("Default")の見出し(class="dh")の前に空行
+     (class="rc"の&nbsp;)を1つ。HELP.epub・HELP.en.epubを作り直すと反映される。

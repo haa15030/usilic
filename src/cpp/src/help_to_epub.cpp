@@ -825,6 +825,8 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       }
       const auto &def = rcDefaults[item];
       if (!def.empty()) {
+        // 2026-10-21、直接のユーザー依頼("注釈の「既定値」の前に改行を入れて"): コメントとの間に空行を1つ。
+        inner += "<p class=\"rc\">" + std::string(kNbsp) + "</p>\n";
         inner += std::string("<p class=\"dh\">") + (english ? "Default" : "\xE6\x97\xA2\xE5\xAE\x9A\xE5\x80\xA4") +
                  "</p>\n";  // 既定値
         for (const auto &l : def) {
