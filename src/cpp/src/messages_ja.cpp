@@ -74,7 +74,7 @@ const std::vector<std::pair<std::string, std::string>> &exactMessages() {
       {"Loading archive...", "アーカイブを読み込み中..."},
       {"Making PDF...", "PDF を作成中..."},
       {"Record?(y/n)", "記録しますか？ (y/n)"},
-      {"Exit (y/n) ? ", "終了しますか？ (y/n) "},
+      {"Exit? (y/n) ", "終了しますか？ (y/n) "},
       {"Delete? (y/n) ", "削除しますか？ (y/n) "},
       {"Destination? ", "転送先？"},
       {"Key: ", "キー: "},

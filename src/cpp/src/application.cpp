@@ -16855,7 +16855,8 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     // 反転表示、画面の右端まで埋められる、タイプされたy/nの答えの
     // 余地を残すためメッセージの2、3列後から始まる。
     static const std::string kName = "EXIT";
-    const std::string message = localized("Exit (y/n) ? ");  // 日本語ならUTF-8(幅は表示の桁で数える)
+    // 2026-10-21、直接のユーザー依頼("Exit? (y/n)に変えて"): 以前は"Exit (y/n) ? "(日本語の「終了しますか？ (y/n)」と形をそろえた)。
+    const std::string message = localized("Exit? (y/n) ");  // 日本語ならUTF-8(幅は表示の桁で数える)
     display_.setAttribute(Display::Attribute::Standout);
     for (unsigned char c : kName) display_.putChar(c);
     display_.setAttribute(Display::Attribute::StandoutOff);
