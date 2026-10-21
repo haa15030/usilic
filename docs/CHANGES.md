@@ -32319,3 +32319,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 直接のユーザー依頼("`^Xs`で修正が利く理由に触れておいた方がいいかも")。WAIT・LINE-HEIGHT・LETTER-SPACINGの説明の「EDIT でこのファイルを直す(または ^Xs)と、その場で効きます」を、「EDIT で直すと保存した時に読み直すのでその場で効く(ほかのエディタで直した時は ^Xs で読み直す)」にした(usilicrc・usilicrc.en)。`^Xs`は`saveMacroToUsilicrc()`の初めで`reloadUsilicrcKeys()`する。
    - 同じ依頼の「LETTER-SPACINGが注釈になっていない」は、原稿で斜体の付け忘れ(ユーザー側で直す)。
    - doc/HELP.epub・doc/HELP.en.epubを作り直した。
+
+999. **2026-10-21: 配るusilicrcのLETTER-SPACINGに、既定値「0  0」を置く**
+   - 直接のユーザー報告("~/.usilic/usilicrcではLETTER-SPACINGに「0 0」の既定値があるのにHELPから注釈を見ると既定値が無い")。HELPの注釈の既定値は、HELPを作る時のsrc/usilicrc(配る方)の値の行から取るが、項目975で配る方には説明だけを置いていた(ユーザーの~/.usilic/usilicrcの「0  0」は^[{ / ^[}が書き込んだもの)。
+   - usilicrc・usilicrc.enのLETTER-SPACINGに「0  0」を置いた(LINE-HEIGHTの「1.2  1.0」と同じく)。^[{ / ^[}がその場で書き込むので、「前回の終了時の字間」との違いは出ない。
+   - doc/HELP.epub・doc/HELP.en.epubを作り直し、注釈に「既定値 0  0」が出ることを確かめた。

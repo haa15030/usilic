@@ -333,6 +333,8 @@ LETTER-SPACING
 # Editing this file with EDIT applies it at once, since usilic reads it again
 # when it is saved (after editing it with another editor, ^Xs reads it again).
 
+	0  0
+
 URL
 # Format: `name  program  (option)'
 #
