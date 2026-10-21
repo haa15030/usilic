@@ -74,6 +74,9 @@ u_char *fork_bin(CHILD *chp, int *sizep, int f_M, int f_chkbin)/*usilic*/
     close(pv[1]);
     close(pv[0]);
     execvp(*chp->argv, chp->argv);
+    exit(0); /* was missing: on execvp() failure this child fell through and kept
+		 running as a second, full copy of usilic (same process image, same
+		 open tty fd), racing the real process for every keystroke. */
   } 
   close(pv[1]);
   buff = read_buff(sizep, pv[0], f_chkbin);

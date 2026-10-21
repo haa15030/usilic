@@ -482,7 +482,10 @@ static int get_str(FILE *fp, u_char str[])
   if ((cp = strchr(cp, '#'))) *cp = '\0';
   if ((cp = strchr(str, '\n'))) *cp = '\0';
   for (cp = str; *cp && (*cp == ' ' || *cp == '\t'); cp++) ;
-  if (cp > str) strcpy(str, cp);
+  if (cp > str) memmove(str, cp, strlen((char *)cp) + 1); /* cp points inside str: strcpy() is
+    UB on overlapping ranges and was observed to corrupt data here (glibc/aarch64), e.g. dropping
+    the '-' out of "K-11" and turning "previous" into "reviouss" -- same bug class as the
+    overlapping strcpy() found earlier in write_shell()/input_shell(). */
   return 0;
 }
 
@@ -741,6 +744,9 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
     pipe(pv);
     if (!fork()) {
       int pv2[2];
+      pipe(pv2); /* was never called: dup2()/close() below ran on whatever
+		    garbage happened to be on the stack for pv2[], which could
+		    alias a real, already-open fd and redirect/close it. */
       if (!fork()) {
 	close(1);
 	dup2(pv2[1], 1);
