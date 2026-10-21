@@ -1389,7 +1389,11 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
       // 2026-10-06: 慣性中は進む向きの矢印(一覧の↓↑、縦書きの←→)でも(runGuiPhase()の同じ日の追加参照)。
       if (int arrow = peekArrow(keyInput, "ABCD")) {
         // 2026-10-13: EPUBの横書き(奥付等)でも←が先へ(Application::leftArrowAdvances()参照)。
-        bool forward = (columns || app.leftArrowAdvances()) ? (arrow == 'B' || arrow == 'D') : (arrow == 'C' || arrow == 'B');
+        // 2026-10-21、直接のユーザー報告("横書きの自動スクロール速度調整キーが逆(上向きスクロールなら↑で加速、が自然)"):
+        // 横書きの↑↓は字の動く向き(先へ進む時は字が上へ動くので↑)。以前は↓が先へだった。縦書き(columns)はそのまま。
+        bool forward = columns                    ? (arrow == 'B' || arrow == 'D')
+                       : app.leftArrowAdvances() ? (arrow == 'D' || arrow == 'A')
+                                                  : (arrow == 'C' || arrow == 'A');
         stepCoastByKey(level, direction, forward ? 1 : -1, fm::arrowSpeedMaxLevel());
         continue;
       }
@@ -3155,7 +3159,8 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           continue;
         }
         if (!app.epubVerticalScrollActive() && coastLevel > 0 && (upKey || downKey)) {
-          stepCoastByKey(coastLevel, coastDirection, downKey ? -1 : 1, guiSpeedMaxLevel());  // ↓で先へ(-1、coastDirection参照)
+          // ↑で先へ(-1、coastDirection参照)。2026-10-21、直接のユーザー報告(runTerminalCoast()の同じ日の直し参照): 以前は↓。
+          stepCoastByKey(coastLevel, coastDirection, upKey ? -1 : 1, guiSpeedMaxLevel());
           consecutiveEscapes = 0;
           continue;
         }

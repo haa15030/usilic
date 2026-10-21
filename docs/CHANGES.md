@@ -32130,3 +32130,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: Application::setSelfExecutablePath()(main.cppがresolveOwnExecutablePath()を渡す)。launchExternalUsilic()は
      "usilic"の代わりにその絶対パス(シェル用にクォート)で起動する(^T^H・^T^K・-H・-K・^Ou・^Jtのusilic等の全部)。
      項目972のPATHは、自分のディレクトリを後ろではなく先頭に足す(SHELLで打つusilicも今のものに)。
+
+974. **2026-10-21: 横書きの慣性スクロール中の↑↓を、字の動く向きに(↑で先へ)**
+   - **経緯**: 直接のユーザー報告"横書きの自動スクロール速度調整キーが逆(現状: 上向きスクロールなら↑で加速、が自然だが逆)"。
+     項目の2026-10-06の追加(慣性中は進む向きの矢印でも速さを変える)では、横書きは↓が先へだった。
+   - **実装**: runGuiPhase()の横書きの慣性中は↑を先へ(coastDirectionの-1)、runTerminalCoast()の横書きは↑(A)・→(C)を先へ
+     (leftArrowAdvances()ならA・D)。縦書き(columns、epubCoast)はそのまま。
