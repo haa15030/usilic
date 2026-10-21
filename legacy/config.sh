@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Working directory.
-TMP=/tmp/.usilic
+TMP=/tmp/.usilic.old
 
 # Default character set.
 CHARSET="euc"
@@ -55,9 +55,13 @@ else
     fi
 fi
 
-LIB=$USR_DIR/lib/usilic
+# The new C++ usilic owns ~/.usilic/ and ~/.local/{bin,lib}/usilic, so this
+# legacy version is installed side by side as usilic.old: ~/.local/bin/usilic.old,
+# ~/.local/lib/usilic.old/ (usilic.oldrc, HELP), its data in ~/.usilic.old/.
+USR_DIR=$HOME/.local
+LIB=$USR_DIR/lib/usilic.old
 BIN=$USR_DIR/bin
-MAN=$USR_DIR/man/man1
+MAN=$USR_DIR/share/man/man1
 
 cat >> .config <<EOF
 CC=gcc	
@@ -168,16 +172,16 @@ echo 'Installing usilic:'
 mkdir -p \$1$BIN
 mkdir -p \$1$LIB
 mkdir -p \$1$MAN
-echo "install $COPY -m 755 src/usilic \$1$BIN"
-install $COPY -m 755 src/usilic \$1$BIN
-echo "install $COPY -m 644 usilicrc \$1$LIB"
-install $COPY -m 644 usilicrc \$1$LIB
+echo "install $COPY -m 755 src/usilic \$1$BIN/usilic.old"
+install $COPY -m 755 src/usilic \$1$BIN/usilic.old
+echo "install $COPY -m 644 usilicrc \$1$LIB/usilic.oldrc"
+install $COPY -m 644 usilicrc \$1$LIB/usilic.oldrc
 echo "install $COPY -m 644 doc/HELP \$1$LIB"
 install $COPY -m 644 doc/HELP \$1$LIB
 echo "install $COPY -m 644 doc/HELP.jp \$1$LIB"
 install $COPY -m 644 doc/HELP.jp \$1$LIB
-echo "install $COPY $PERM doc/usilic.1.gz \$1$MAN"
-install $COPY $PERM doc/usilic.1.gz \$1$MAN
+echo "install $COPY $PERM doc/usilic.1.gz \$1$MAN/usilic.old.1.gz"
+install $COPY $PERM doc/usilic.1.gz \$1$MAN/usilic.old.1.gz
 EOF
 if [ -n "$JMAN" ] && [ -d "$JMAN" ]; then
 cat >> install.sh <<EOF

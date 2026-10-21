@@ -817,7 +817,7 @@ void do_prog(char *str, STR **cmdp, STR **histp)/*usilic*/
 #endif
   if (!(pid = fork())) {
     load_signal();
-    unsetenv("USILIC"); /* enable to launch `usilic' from PROGRAM-mode */
+    unsetenv("USILIC_OLD"); /* enable to launch `usilic' from PROGRAM-mode */
     execlp("sh", "sh", "-c", str, NULL);
   }
   fprintf(stdout, "\n%s: %s\n", s_S(S_usilic), str);

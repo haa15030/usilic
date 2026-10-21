@@ -250,7 +250,7 @@ int vt_init(int init)/*usilic*/
     tcsetattr(tfd, TCSANOW, &vt_termio);
     vt_mode('d');
     vt_mode(0);
-    if ((usiliccharset = getenv("USILICCHARSET")))
+    if ((usiliccharset = getenv("USILIC_OLDCHARSET")))
       vt_charset((!strcasecmp(usiliccharset, "ascii")) ? C_ascii : C_euc);
     break;
   case 2:

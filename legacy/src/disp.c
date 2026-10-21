@@ -161,7 +161,7 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
   static int nlen, f_enter, *lenp;
   static char *copy[3];
 
-  if (!vlen) vlen = strlen(getenv("USILIC")) + 2;
+  if (!vlen) vlen = strlen(getenv("USILIC_OLD")) + 2;
   switch(f_M0) {
   case -1:
     return strlen(name);
@@ -338,7 +338,7 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
   } else {
     vt_eeol();
     vt_move(vt_row(0) - 1, vt_col(0) - vlen);
-    vt_printf(" %s%s%s ", vt_geta(A_md), getenv("USILIC"), vt_geta(A_me));
+    vt_printf(" %s%s%s ", vt_geta(A_md), getenv("USILIC_OLD"), vt_geta(A_me));
   }
   vt_endstand();
   if (!f_mark && !f_arc && !f_enter && f_M != T_shell && lenp) *lenp = 0;

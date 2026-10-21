@@ -623,7 +623,7 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
     "bash",
     "tcsh",
   };
-  static char usilic[] = "usilic";
+  static char usilic[] = "usilic.old"; /* also names ~/.usilic.old/ and usilic.oldrc */
   static char jman[] = "man"; 
   static char *groff[] = {
     "groff",
@@ -713,7 +713,7 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
 			     + strlen(args) + 1);
   sprintf(Str.S[S_option+7], "%s%s", s_S(S_usilic), args);
   Str.S[S_nop] = strdup("# \t\n");
-  if (!getenv("USILICCHARSET")) setenv("USILICCHARSET", CHARSET, 1);
+  if (!getenv("USILIC_OLDCHARSET")) setenv("USILIC_OLDCHARSET", CHARSET, 1);
   if (f_usilic & (0x80|0x40)) {
     if (f_usilic & 0x80) {
       char *p;

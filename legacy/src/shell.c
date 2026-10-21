@@ -75,7 +75,7 @@ static void write_shell(void *p)
     sp->w.dir = dir;
     sp->w.version = version;
     strcpy(version, vt_geta(A_md));
-    strcat(version, getenv("USILIC"));
+    strcat(version, getenv("USILIC_OLD"));
     strcat(version, vt_geta(A_me));
     break;
   case 1:
@@ -1371,7 +1371,7 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
     }
     Shell.f.init = 0;
     inter = 1; /* ==> (11) */
-    strcpy(usilic, getenv("USILIC"));
+    strcpy(usilic, getenv("USILIC_OLD"));
     errp[0] = s_S(S_mark);
     errp[1] = usilic;
     errp[2] = ":";
@@ -1850,7 +1850,7 @@ int do_shell(u_char prev[], char str[], FILE **pinp, u_char *w, int *ppidp, LIST
 
   if (!Shell.f.alen) {
     Shell.f.alen = strlen(vt_geta(A_md)) + strlen(vt_geta(A_me));
-    Shell.f.blen = strlen(getenv("USILIC")) + 1; 
+    Shell.f.blen = strlen(getenv("USILIC_OLD")) + 1; 
     Shell.f.clen = Shell.f.alen + Shell.f.blen;
   }
   f_init = !(pid && !kill(pid, 0));
