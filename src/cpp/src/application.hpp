@@ -32,6 +32,7 @@
 #include "list_browser_mode.hpp"
 #include "locate_mode.hpp"
 #include "man_mode.hpp"
+#include "messages_ja.hpp"
 #include "mode_stack.hpp"
 #include "path_resolver.hpp"
 #include "program_mode.hpp"
@@ -2245,7 +2246,8 @@ class Application {
   // Command::ReadFileNoWrap/ReadFileRaw自身のコメント参照。
   bool openSelectedEntryNoWrap();
   bool openSelectedEntryRaw();
-  std::function<bool()> readingAbortCheck();  // 読む間の中断の確かめ+1秒で"Reading..."(2026-10-21)
+  std::function<bool()> readingAbortCheck();
+  std::string localized(const std::string &text) const;  // mode-lineのメッセージの日本語(messages_ja.cpp、2026-10-21)  // 読む間の中断の確かめ+1秒で"Reading..."(2026-10-21)
   bool openSelectedSegment();
   bool openSelectedArchiveEntry();
   // 入れ子のアーカイブサポート(docs/ideas/IDEAS.md自身の、C++移植
@@ -3247,7 +3249,10 @@ public:
   bool wheelReversed_ = false;
   // HELPの言語(2026-10-11、main.cppがLANGで決める): trueならHELP.en(roff版はHELP.1)、falseならHELP(HELP.ja.1)。
   // 起動後は^Jaで今まで通り切り替える。reloadHelpText()の前に呼ぶ。
-  void setHelpEnglish(bool english) { helpPath_ = english ? helpBasePath_ + ".en" : helpBasePath_; }
+  void setHelpEnglish(bool english) {
+    helpPath_ = english ? helpBasePath_ + ".en" : helpBasePath_;
+    setMessagesJapanese(!english);  // mode-lineのメッセージの言語も(messages_ja.cpp、2026-10-21)
+  }
   // HELP(helpPath_のファイル)を読み直す(起動時・^Ja)。読めなければfalse(helpText_はそのまま)。
   bool reloadHelpText();
   // reloadHelpText()が読んだHELPのファイルとその更新時刻(^Hが、書き換えられていれば読み直す。Command::StartHelp参照)。

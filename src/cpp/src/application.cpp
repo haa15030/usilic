@@ -36,6 +36,7 @@
 #include "help_text.hpp"
 #include "mode_line.hpp"
 #include "pipe_buffer.hpp"
+#include "messages_ja.hpp"
 #include "platform.hpp"
 #include "posix_compat.hpp"
 #include "utf8.hpp"
@@ -4944,9 +4945,13 @@ void Application::showBufferLimitNoticeIfHit() {
   if (configuration_.consumeBufferLimitHit()) showTransientNotice(activeView(), "Not enough buffer");
 }
 
+// 2026-10-21、直接のユーザー依頼("日本語モードでは「Reading...」を含め全メッセージを日本語化"): HELPが日本語の間
+// (^Ojで英語にしていない、helpPath_ == helpBasePath_)は、mode-lineのメッセージを日本語に(messages_ja.cpp)。
+std::string Application::localized(const std::string &text) const { return localizeMessage(text); }
+
 void Application::showTransientNotice(ContentView &view, const std::string &text) {
   clearTransientNotice();
-  view.setPositionTextOverride(text, /*plain=*/true);
+  view.setPositionTextOverride(localized(text), /*plain=*/true);
   transientNoticeView_ = &view;
   view.redraw();
 }
@@ -5579,10 +5584,12 @@ bool Application::handleCommandImpl(Command command) {
       // HELP.enが無ければ切り替えない(読めないファイルへ切り替わって^Hが効かなくなるのを避ける)。
       std::string previous = helpPath_;
       helpPath_ = (helpPath_ == helpBasePath_) ? helpBasePath_ + ".en" : helpBasePath_;
+      setMessagesJapanese(helpPath_ == helpBasePath_);  // メッセージの言語も(messages_ja.cpp、2026-10-21)
       // 2026-10-20: Windowsのネイティブには英語の平文のHELP(HELP.en)もgroffも無いので、読めなくても切り替える先の
       // HELP.en.epubがあれば切り替える(KEY等の平文のHELPは元の言語のまま)。
       if (!reloadHelpText() && !helpEpubPath()) {
         helpPath_ = previous;
+        setMessagesJapanese(helpPath_ == helpBasePath_);
         return false;
       }
       reopenHelpInOtherLanguage(view);
@@ -9327,7 +9334,8 @@ void Application::setEpubVerticalView(int first, int cursor, std::optional<int> 
   std::snprintf(position, sizeof(position), "%05d/%05d %3d%%", rawCurrent, std::max(rawTotal, 1),
                 rawTotal > 0 ? static_cast<int>(100L * rawCurrent / rawTotal) : 100);
   // 縦書きのCOPY(epubSelectActive()): 離した後の問い(Record?(y/n))を位置の欄に出す
-  if (epubRecordAsk_ && epubSelectActive()) epubVerticalView_.setPositionTextOverride("Record?(y/n)", /*plain=*/true);
+  if (epubRecordAsk_ && epubSelectActive())
+    epubVerticalView_.setPositionTextOverride(localized("Record?(y/n)"), /*plain=*/true);
   else epubVerticalView_.setPositionTextOverride(std::string(position));
 }
 
@@ -16847,13 +16855,19 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     // 反転表示、画面の右端まで埋められる、タイプされたy/nの答えの
     // 余地を残すためメッセージの2、3列後から始まる。
     static const std::string kName = "EXIT";
-    static const std::string kMessage = "Exit (y/n) ? ";
+    const std::string message = localized("Exit (y/n) ? ");  // 日本語ならUTF-8(幅は表示の桁で数える)
     display_.setAttribute(Display::Attribute::Standout);
     for (unsigned char c : kName) display_.putChar(c);
     display_.setAttribute(Display::Attribute::StandoutOff);
     display_.putChar(' ');
-    for (unsigned char c : kMessage) display_.putChar(c);
-    int labelWidth = static_cast<int>(kName.size()) + 1 + static_cast<int>(kMessage.size());
+    display_.write(message);
+    int messageWidth = 0;
+    for (std::size_t i = 0; i < message.size();) {
+      int len = std::max(1, Utf8::sequence_length(static_cast<unsigned char>(message[i])));
+      messageWidth += Utf8::display_width(reinterpret_cast<const unsigned char *>(message.data() + i), len);
+      i += static_cast<std::size_t>(len);
+    }
+    int labelWidth = static_cast<int>(kName.size()) + 1 + messageWidth;
 
     std::string prev = previousModeName(currentMode_);
     int editableWidth = std::max(1, display_.columns() - labelWidth);
@@ -16978,9 +16992,14 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
                           : kind == PromptKind::Bookmark    ? (bookmarkSetting_ ? "Set: " : "Jump: ")  // 2026-10-09
                           : kind == PromptKind::MarkPattern ? (markPatternIsExtension_ ? "Extension: " : "Regexp: ")
                                                             : "Destination? ";  // 2026-09-27、RMは"Delete? (y/n) "、CP/MVは"Destination? "(直接のユーザー依頼)
+    message = localized(message);  // 日本語ならUTF-8なので、幅は表示の桁で数える(2026-10-21)
     display_.moveCursor(row, labelWidth);
-    for (unsigned char c : message) display_.putChar(c);
-    labelWidth += static_cast<int>(message.size());
+    display_.write(message);
+    for (std::size_t i = 0; i < message.size();) {
+      int len = std::max(1, Utf8::sequence_length(static_cast<unsigned char>(message[i])));
+      labelWidth += Utf8::display_width(reinterpret_cast<const unsigned char *>(message.data() + i), len);
+      i += static_cast<std::size_t>(len);
+    }
   }
   // staticMessage(2026-08-13): この関数自身の宣言コメント参照
   // ――編集可能なフィールドがそうでなければ始まるであろうまさにその
@@ -16998,7 +17017,7 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   if (!staticMessage.empty()) {
     display_.moveCursor(row, labelWidth);
     display_.setAttribute(Display::Attribute::Underline);
-    for (unsigned char c : staticMessage) display_.putChar(c);
+    display_.write(localized(staticMessage));  // 日本語(localized())はUTF-8なので1バイトずつではなく文字列で
     display_.setAttribute(Display::Attribute::UnderlineOff);
     return;
   }

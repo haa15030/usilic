@@ -5,6 +5,7 @@
 #include <sstream>
 
 #include "child_process.hpp"
+#include "messages_ja.hpp"
 #include "unicode_normalize.hpp"
 
 namespace fm {
@@ -225,7 +226,7 @@ void GrepMode::showMatches() {
   // 見つからなかったパターン」が居座り続けるという概念は無く、
   // ここでもそうすべきではない。
   if (matches_.empty()) {
-    static const std::string kSuffix = "No String";
+    const std::string kSuffix = localizeMessage("No String");  // 日本語の時は日本語(messages_ja.cpp、2026-10-21)
     std::string text = pattern_ + ": " + kSuffix;
     int underlineFrom = static_cast<int>(text.size() - kSuffix.size());
     view_.setEmptyPlaceholder(
@@ -299,7 +300,7 @@ bool GrepMode::searchInProcess(const std::vector<std::string> &sourceLines, cons
 
   pattern_ = pattern;
   if (matches_.empty()) {
-    static const std::string kSuffix = "No String";
+    const std::string kSuffix = localizeMessage("No String");  // 日本語の時は日本語(messages_ja.cpp、2026-10-21)
     std::string text = pattern_ + ": " + kSuffix;
     int underlineFrom = static_cast<int>(text.size() - kSuffix.size());
     view_.setEmptyPlaceholder(

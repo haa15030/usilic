@@ -32245,3 +32245,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: 日英の各行の印・キーの並びで対応を取り(difflib)、全行を突き合わせて意味の違う行・増えた行を訳し直した。モードラインの
      例等は日本語の行をそのまま写した。英語の701行目の既定値の全角の数字も半角に直した。日英とも871行で、各行の行頭のタブ・印と
      行末の「㊿」「#」が一致することを確かめた。日本語の85行目の末尾に対応の無い「）」がある(英語には入れていない)。
+
+989. **2026-10-21: 日本語の時はmode-lineのメッセージを日本語にする(モード名・TOP/END等は英語のまま)**
+   - **経緯**: 直接のユーザー質問"日本語モードでは「Reading...」を含め全メッセージを日本語化、は可能？"に、モード名(FILE・(ls)等)と
+     TOP/ENDはHELPの説明でも使う名前なので英語のまま、の範囲を提案し"その範囲でよろしく"。
+   - **実装**: src/cpp/src/messages_ja.cpp(新設)に訳の表(まるごと一致する文と、"{}"に名前・数等が入る型)とlocalizeMessageJa()、
+     言語の設定setMessagesJapanese()とlocalizeMessage()。Application::setHelpEnglish()と^Oj(Command::ToggleHelpLanguage)で
+     言語を設定する(HELPの言語と同じ)。Application::localized()を、showTransientNotice()(通知は全部ここを通る)、
+     drawPromptLabel()の静的なメッセージ("Reading..."等)と問い("Delete? (y/n) "・"Destination? "等)、終了の確認、縦書きの
+     COPYの"Record?(y/n)"に通し、GrepModeの"No String"もlocalizeMessage()に。日本語はUTF-8なので、1バイトずつのputChar()を
+     write()に、欄の幅を表示の桁で数えるように直した。キーの入力途中の表示(C-t-等)・URLの対処の名前(Epub等)・設定の名前
+     (LINE-HEIGHT等)は英語のまま。src/HELP_.txt(未コミット)の、メッセージを英語で引いていた7か所を日本語に直した。-cの擬似
+     端末で、通知・RMとCPの問い・終了の確認・No Stringが日本語になり、^Ojの後は英語になるのを確かめた。
