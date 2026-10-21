@@ -195,9 +195,10 @@ install: $(BUILD_DIR)/usilic
 	# 2026-10-06: usilicのmanファイル(usilic -nで英語のHELPの原稿から作る、画面の幅に追随する)。usilic自身のMANの
 	# "usilic"はHELPの本文を出すので使わない、usilicの外の`man ~/.local/lib/usilic/HELP.1`用。公的なmanの
 	# ディレクトリには入れない。日本語版は同梱しない(groffが濁点付きの仮名の幅を数え違え、78桁に決め打ちになる)。
-	if [ -f ../../doc/HELP.1 ]; then install -m 644 ../../doc/HELP.1 $(LIB_DIR)/HELP.1; fi
+	# 2026-10-21: 日本語版がHELP.1、英語版がHELP_en.1(以前はHELP.ja.1・HELP.1)。
+	if [ -f ../../doc/HELP_en.1 ]; then install -m 644 ../../doc/HELP_en.1 $(LIB_DIR)/HELP_en.1; fi
 	# 2026-10-09: HELPのroff版(usilic -nで作る、日本語)。あればusilicはHELPをこれからgroffで今の幅に組む。
-	if [ -f ../../doc/HELP.ja.1 ]; then install -m 644 ../../doc/HELP.ja.1 $(LIB_DIR)/HELP.ja.1; fi
+	if [ -f ../../doc/HELP.1 ]; then install -m 644 ../../doc/HELP.1 $(LIB_DIR)/HELP.1; fi
 	# 2026-10-14: usilic -e(HELPのEPUB版)の注釈の文。HELPの原稿の隣に無ければここを読む。
 	install -m 644 ../../doc/HELP.notes $(LIB_DIR)/HELP.notes
 	# 2026-10-18: HELPのEPUB版(^Hで開く、make help-epubで作る)。

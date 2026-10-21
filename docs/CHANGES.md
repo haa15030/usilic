@@ -32187,3 +32187,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: 一番上がこの一覧から飛んだ時のもの(Grepの注釈、FileはSearchで同じ文字列、MAN・LOCATE・DUの戻り先はGrep)なら、
      積み直さずに置き換える。-cの擬似端末で、2回飛んだ後の一覧の^Gで「(ls)」の戻り値に戻るのを確かめた。マークの下線は
      -cでは出ていた(-gは未確認)。
+
+981. **2026-10-21: HELPのroff版の名前を、日本語版をHELP.1、英語版をHELP_en.1にする**
+   - **経緯**: 直接のユーザー依頼"HELP.1を日本語版(HELP.ja.1から変更)、英語版はHELP_en.1にしてほしい(HELP.1の200行目を
+     COLUMN:80に収めるため)"。
+   - **実装**: reloadHelpText()の名前(日本語のHELP→HELP.1、英語のHELP.en→HELP_en.1)、MANのusilicのページ
+     (setPageResolver()、日本語ならHELP.1、無ければ・英語ならHELP_en.1)。".ja.1"で日本語を見分けられなくなったので、
+     ManMode::runAndWrap()はusilicのページを日英ともusilicrcのGROFFで組む。Makefileのinstall、windows.mk(組んだ平文の
+     HELP.man・HELP.ja.man の名前はそのまま)、doc/HELP.1→doc/HELP_en.1・doc/HELP.ja.1→doc/HELP.1(git mv)。
+     src/HELP_.txt・HELP_en_.txt(未コミット)の-Hの説明の名前も直した。古い~/.local/lib/usilic/HELP.ja.1は使わない
+     (残っていても害は無い)。

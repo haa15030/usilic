@@ -70,8 +70,9 @@ dist: $(BUILD_DIR)/usilic.exe
 	# 2026-10-20、直接のユーザー依頼("Win版のMANはusilicのみでいいかも。造りは嘘っぽ…でいい"): Windowsにはmanも
 	# groffも無いので、MANのusilicのページ(英語HELP.1・日本語HELP.ja.1)をここでgroffで78桁に組んで入れる
 	# (ManMode::runAndWrap()が読む、^Ojで切り替え)。
-	env GROFF_NO_SGR=1 groff -mandoc -Kutf8 -Tutf8 -rLL=78n ../../doc/HELP.1 > $(BUILD_DIR)/usilic/lib/usilic/HELP.man
-	env GROFF_NO_SGR=1 groff -mandoc -Kutf8 -Tutf8 -rLL=78n ../../doc/HELP.ja.1 > $(BUILD_DIR)/usilic/lib/usilic/HELP.ja.man
+	# 2026-10-21: 日本語版がHELP.1、英語版がHELP_en.1になった(組んだ平文の名前はそのまま)。
+	env GROFF_NO_SGR=1 groff -mandoc -Kutf8 -Tutf8 -rLL=78n ../../doc/HELP_en.1 > $(BUILD_DIR)/usilic/lib/usilic/HELP.man
+	env GROFF_NO_SGR=1 groff -mandoc -Kutf8 -Tutf8 -rLL=78n ../../doc/HELP.1 > $(BUILD_DIR)/usilic/lib/usilic/HELP.ja.man
 	cd $(BUILD_DIR) && zip -qr usilic-win64.zip usilic
 
 clean:

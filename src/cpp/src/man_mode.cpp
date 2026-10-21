@@ -47,8 +47,8 @@ std::optional<std::vector<ContentView::Line>> ManMode::runAndWrap(const std::str
   argv.push_back(resolved.empty() ? name : resolved);
   // 日本語のusilicのページ(HELP.ja.1、Application::Application()のsetPageResolver()参照、2026-10-20): macOSのman
   // (mandoc)は日本語のroffを組めない(行が途中で切れる)ので、manではなくusilicrcのGROFFで今の幅に組む。
-  const std::string jaSuffix = ".ja.1";
-  if (resolved.size() > jaSuffix.size() && resolved.compare(resolved.size() - jaSuffix.size(), jaSuffix.size(), jaSuffix) == 0) {
+  // 2026-10-21: 日本語がHELP.1、英語がHELP_en.1になり(".ja.1"で見分けられなくなった)、どちらもGROFFで組む。
+  if (!resolved.empty()) {
     ProgramCommand groff = configuration_.commandFor(ConfiguredRole::Groff);
     if (!groff.argv.empty()) {
       argv = groff.argv;

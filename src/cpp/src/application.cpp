@@ -885,8 +885,9 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 2026-10-20、直接のユーザー報告("^Jmで表示されるmanページが英語から日本語に切り替わらない。^Ojで切り替わった記憶は
     // ある"): 日本語(^Ojで英語にしていない)ならHELP.ja.1(HELPの組みに使うroff版)を先に。macOSのman(mandoc)は日本語の
     // roffを組めないので、ManMode::runAndWrap()が".ja.1"はusilicrcのGROFFで組む。無ければ英語のHELP.1。
-    std::vector<std::string> names = {"HELP.1"};
-    if (helpPath_ == helpBasePath_) names.insert(names.begin(), "HELP.ja.1");
+    // 2026-10-21: 日本語はHELP.1、英語はHELP_en.1(reloadHelpText()の同じ日の改名参照)。
+    std::vector<std::string> names = {"HELP_en.1"};
+    if (helpPath_ == helpBasePath_) names.insert(names.begin(), "HELP.1");
     for (const auto &page : names) {
       std::vector<std::string> candidates = {std::filesystem::path(helpBasePath_).parent_path().string() + "/" + page};
       if (!installLibDirectory_.empty()) candidates.push_back(installLibDirectory_ + page);
@@ -19347,9 +19348,11 @@ bool Application::reloadHelpText() {
   helpRoff_.clear();
   helpRenderedWidth_ = -1;
   {
+    // 2026-10-21、直接のユーザー依頼("HELP.1を日本語版(HELP.ja.1から変更)、英語版はHELP_en.1にしてほしい"): 日本語のHELPは
+    // HELP.1、英語のHELP.enはHELP_en.1(以前はHELP.ja.1・HELP.1)。
     std::string roffName = name.size() > 3 && name.compare(name.size() - 3, 3, ".en") == 0
-                               ? name.substr(0, name.size() - 3) + ".1"
-                               : name + ".ja.1";
+                               ? name.substr(0, name.size() - 3) + "_en.1"
+                               : name + ".1";
     std::vector<std::string> candidates;
     if (in) candidates.push_back((std::filesystem::path(path).parent_path() / roffName).string());
     candidates.push_back((std::filesystem::path(helpPath_).parent_path() / roffName).string());
