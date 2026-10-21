@@ -1022,6 +1022,10 @@ void performScrollStepDelay(const fm::ScrollStep &step) {
   }
 }
 
+// ^[が続いた回数(^[^[ ^Mで即終了)。2026-10-21、直接のユーザー依頼("^[^[が予期せず入ったときは再度^[でも取り消し可能に"):
+// 3回目の^[は終了の確認を取り消す(Application::feedPromptByteInner())ので、数え直す(続けて^Mで終わらないように)。
+int nextConsecutiveEscapes(int count) { return count >= 2 ? 0 : count + 1; }
+
 // 2026-10-02追加、直接のユーザー依頼("←→で開始でいい。いずれのキーも速度減少時、最低速を超えたら
 // 逆向き最低速、以後は加速"): 慣性スクロールを始める/速さを変えるキー(←→、縦書きでは↓↑)の1回分。
 // 止まっていれば`pressed`の向きに最低速で始め、同じ向きなら1段速く、逆向きなら1段遅く、最低速から
@@ -2047,7 +2051,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       // own comment for the one remaining inherited quirk (a fast-
       // typed subsequent keystroke can occasionally ride along as a
       // second byte here).
-      consecutiveEscapes = std::min(consecutiveEscapes + 1, 2);
+      consecutiveEscapes = nextConsecutiveEscapes(consecutiveEscapes);
       app.feedByte(0x1b, std::nullopt);
       // 2026-09-07修正、直接のユーザー報告(⑬"^[^[のみ追加"、COPY
       // モードに限らず-c全体で再現): 上のコメントが言う「ride along」
@@ -2069,7 +2073,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       // しつつApplicationへそのまま渡す。
       for (unsigned char c : keyInput.lastEscapeBytes()) {
         if (c == 0x1b) {
-          consecutiveEscapes = std::min(consecutiveEscapes + 1, 2);
+          consecutiveEscapes = nextConsecutiveEscapes(consecutiveEscapes);
           app.feedByte(0x1b, std::nullopt);
           continue;
         }
@@ -3236,7 +3240,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // escPending_ back to false), and consecutiveEscapes/Enter's
         // own check just below is entirely independent of Application's
         // internal state.
-        consecutiveEscapes = std::min(consecutiveEscapes + 1, 2);
+        consecutiveEscapes = nextConsecutiveEscapes(consecutiveEscapes);
         app.feedByte(0x1b, std::nullopt);
       } else if (key->byte == 0x0d && consecutiveEscapes >= 2) {
         app.requestImmediateExit();

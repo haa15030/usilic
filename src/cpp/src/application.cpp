@@ -15244,6 +15244,14 @@ bool Application::feedPromptByteInner(int byte) {
   // ESC f/b/d/DEL(M-f/M-b/M-d/M-DEL、2026-09-26追加): グローバルな
   // ESCシーケンスには割り当てが無いので、リーダーへ回す前に横取りする。
   if (applyWordEditEscape(promptEditor_, byte)) return true;
+  // 2026-10-21、直接のユーザー依頼("^[^[が予期せず入ったときは再度^[でも取り消し可能に"): 終了の確認(^[^[ / ^X^C)は、
+  // 前置キーの途中でなければ^[でも^Gと同じく取り消す(^[f等の語の編集は入力の要らないこの欄では使わない)。
+  if (promptKind_ == PromptKind::ExitConfirm && byte == kEscape && !escPending_ && !leaderJPending_ &&
+      !leaderJOPending_ && !leaderXPending_ && !leaderXRPending_ && !leaderOPending_ &&
+      registerPending_ == RegisterAction::None) {
+    cancelPrompt();
+    return true;
+  }
   if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderXRPending_ ||
       registerPending_ != RegisterAction::None || leaderOPending_ ||
       byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape) {

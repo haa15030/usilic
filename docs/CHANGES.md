@@ -32216,3 +32216,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: startPromptHistoryRecall()のRecentManPageで、一覧に"usilic"が無ければ先頭(いちばん古い所、^J^EのURLの
      addDefaultUsilicWebUrl()と同じ)に足す(Windowsは以前からusilicだけ)。履歴の無い-cの擬似端末で、^J^Mにusilicが
      出るのを確かめた。
+
+985. **2026-10-21: 終了の確認(^[^[)は、もう一度の^[でも取り消す**
+   - **経緯**: 直接のユーザー依頼"^[^[が予期せず入ったときは再度^[でも取り消し可能に"。
+   - **実装**: feedPromptByteInner()で、ExitConfirmの欄では、前置キーの途中でなければ^[をcancelPrompt()(^Gと同じ)。
+     main.cppの^[の続いた回数(^[^[ ^Mで即終了)は、3回目の^[で0に戻す(nextConsecutiveEscapes()、取り消した後の^Mで
+     終わらないように)。-cの擬似端末で、^[^[→^[で(ls)へ戻り、続く^Mで終わらないのを確かめた。
