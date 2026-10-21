@@ -980,11 +980,17 @@ int open_pty(char str[], int f_open)/*usilic*/
   for (cp = "pqrs", np = NULL; *cp; cp++)
     for (np = "0123456789abcdef"; *np; np++) {
       sprintf(str, "/dev/pty%c%c", *cp, *np);
-      if ((tfd = open(str, O_RDWR)) >= 0) {
+      /* O_NONBLOCK: on macOS the /dev/ptyXX nodes still exist but are not
+	 usable, and a plain open() of them never returns, freezing usilic on
+	 the SHELL key. Probe without blocking (an unusable pair then fails
+	 at once, and SHELL reports it can't start) and switch the master
+	 back to blocking I/O once a usable pair is found. */
+      if ((tfd = open(str, O_RDWR | O_NONBLOCK)) >= 0) {
 	str[5] = 't';
-	if ((i = open(str, O_RDWR)) >= 0) {
+	if ((i = open(str, O_RDWR | O_NONBLOCK)) >= 0) {
 	  str[5] = 'p';
 	  close(i);
+	  fcntl(tfd, F_SETFL, fcntl(tfd, F_GETFL) & ~O_NONBLOCK);
 	  if (f_open) return tfd;
 	  else close(tfd);
 	  return 1;
