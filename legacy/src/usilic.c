@@ -133,7 +133,11 @@ static void from_shell(char *name, int pid, int f, char *mess)
       break;
     }
     sprintf(str, "%s.%s", mess, s_S(S_usilic));
-    fp = fopen(str, "w");
+    if (!(fp = fopen(str, "w"))) {
+      fprintf(stderr, "%s: %s: %s\n", s_S(S_usilic), str, strerror(errno));
+      free_S();
+      exit(1);
+    }
     fwrite(&m, 1, sizeof(u_char), fp);
     len = strlen(dir) + 1;
     fwrite(&len, 1, sizeof(int), fp);
@@ -295,7 +299,13 @@ int main(int argc, char *argv[])
     fprintf(stderr, "%s: %s: %s\n", usilic, tmp, strerror(errno));
     exit(1);
   }
-  sprintf(tmp, "%s/s.", tmp);
+  /* NOT sprintf(tmp, "%s/s.", tmp) -- output and the %s source argument
+     would be the same buffer, which is undefined behavior. In practice
+     this corrupted tmp down to just "/s." (losing the "/tmp/.usilic" prefix),
+     so from_shell() later tried to fopen() a path at the filesystem root,
+     got EACCES, and fwrite()'d into the resulting NULL FILE*. strcat has
+     no such aliasing since its 2nd argument is a literal, not tmp itself. */
+  strcat(tmp, "/s.");
   *pathname = '\0';
   if (!getenv("USILICVT") && tcgetattr(0, &otty) < 0) f.usilic |= 0x20;
   f.shell = getenv("USILIC") != NULL;
