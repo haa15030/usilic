@@ -1331,16 +1331,8 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
   static PN pn;
   static int sfd, pid, len, row0, *pv, inter;
   static struct sigaction alrm = {
-#ifdef __CYGWIN32__
-    (void(*)(int))read_shell,
-    0,
-    SA_RESTART,
-#else
-    {(__sighandler_t)read_shell,},
-    {{0,},},
-    SA_RESTART,
-    NULL,
-#endif
+    .sa_handler = (void(*)(int))read_shell,
+    .sa_flags = SA_RESTART,
   };
   static char *errp[3], nn[4] = {0,};
   int c, i, j, c1, row, col, f_cr, f_bin;
@@ -1742,16 +1734,8 @@ static int make_shell(FILE **ifpp, FILE **ofpp, int pv[], u_char prev[], int pid
 {
   int i, spid;
   static struct sigaction alrm = {
-#ifdef __CYGWIN32__
-    (void(*)(int))write_shell,
-    0,
-    SA_RESTART,
-#else
-    {(__sighandler_t)write_shell,},
-    {{0,},},
-    SA_RESTART,
-    NULL,
-#endif
+    .sa_handler = (void(*)(int))write_shell,
+    .sa_flags = SA_RESTART,
   };
   sigaction(SIGALRM, &alrm, NULL);
   for (i = 0; i < 8; i++) if (pv[i]) close(pv[i]);

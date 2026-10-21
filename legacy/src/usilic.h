@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <sys/types.h> /* u_char/u_int/u_long: glibc used to pull them in through
+			     other headers, macOS/clang does not (8f27d7d) */
 
 #include "mode.h"
 

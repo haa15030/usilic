@@ -35,6 +35,13 @@ else
         make install
         exit 0
     else
+	if [ `uname` = Darwin ]; then	# macOS (f1ca2a8)
+	    USR_DIR=/usr/local
+	    MAN=/usr/local/share/man/man1
+	    PERM='-m 644'
+	    echo '# Makefile for macOS (Darwin) version' > .config
+	    echo 'LIBS=	-lncurses'>> .config
+	else
 	if [ `uname` = CYGWIN_98-4.10 ]; then	# cygwin
 	    USR_DIR=/usr/local
 	    MAN=/usr/man/man1
@@ -43,6 +50,7 @@ else
 	else
             echo 'Not supported yet "'`uname`'".'
             exit 1
+	fi
 	fi
     fi
 fi
@@ -171,7 +179,7 @@ install $COPY -m 644 doc/HELP.jp \$1$LIB
 echo "install $COPY $PERM doc/usilic.1.gz \$1$MAN"
 install $COPY $PERM doc/usilic.1.gz \$1$MAN
 EOF
-if [ -d $JMAN ]; then
+if [ -n "$JMAN" ] && [ -d "$JMAN" ]; then
 cat >> install.sh <<EOF
 mkdir -p \$1$JMAN
 echo "install $COPY $PERM doc/usilic.1.gz \$1$JMAN"
