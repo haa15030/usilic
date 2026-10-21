@@ -593,7 +593,7 @@ int read_m(RV *rvp, int f_M, int klen, u_char *cva, char *cname, LIST **listp, S
   }
   if (c) {
     int f_stand = 1;
-    u_char *p = (rvp->pp && rvp->pp->tell != (u_int)F7) ? rvp->pp->cs : NULL;
+    u_char *p = (rvp->pp && rvp->pp->tell != (uintptr_t)F7) ? rvp->pp->cs : NULL;
     if (*iname || !p) /* filename with no attribute on the file-list after */
       f_stand = 0;    /* `Enter' (select file) */
     if (f_list && f_stand) stand_str(rvp, f_M);

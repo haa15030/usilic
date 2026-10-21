@@ -416,7 +416,7 @@ int print_line(void *ps0, PP *pp, int len, u_char *linep)/*usilic*/
   *line = '\0';
   if (!*line && pp != F2) {
     f_code = pp && pp->f.code;
-    if (!pp || (pp && pp->tell == (u_int)F7)) row = n_row = e_row = 0;
+    if (!pp || (pp && pp->tell == (uintptr_t)F7)) row = n_row = e_row = 0;
     else {
       row = pp->f.line;
       while (pp->next) pp = pp->next;

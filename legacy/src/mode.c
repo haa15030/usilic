@@ -137,7 +137,7 @@ static void init_rv(NUM *np, PN *pnp, RV *rvp, HEAP *hp, int etop)
     for (pp = hp->bp->pp; pp && !strstr(pp->cs, "../"); pp = pp->next) ;
   else pp = hp->bp->pp;
   rvp->col = init_col(np->M, pp->cs, hp->bp->size);
-  if (hp->bp->pp->tell != (u_int)F7 /* F7: "No size" etc. */
+  if (hp->bp->pp->tell != (uintptr_t)F7 /* F7: "No size" etc. */
       && rvp->pp && rvp->col >= 0) { /* reverse attr. */
     strcpy(rvp->str, &rvp->pp->cs[rvp->col]);
   } else strcpy(rvp->str, "");
