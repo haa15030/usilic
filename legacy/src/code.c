@@ -69,7 +69,7 @@ char *type_pipe(char *buff, int size, int code)/*usilic*/
     fclose(fp);
     if ((cp = strchr(cp, '\n'))) *cp = '\0';
     for (cp = &(strchr(type,':'))[1]; *cp == ' ' || *cp == '\t'; cp++);
-    strcpy(&type[5], cp);
+    memmove(&type[5], cp, strlen((char*)cp) + 1);
   } else sprintf(type, "%s `%s\047", s_S(S_errc), s_S(S_file));
   cp = type;
   free(buff);
@@ -105,7 +105,7 @@ char *type_file(char *buff, char name[], int code)/*usilic*/
     fclose(fp);
     if ((cp = strchr(cp, '\n'))) *cp = '\0';
     for (cp = &(strchr(type,':'))[1]; *cp == ' ' || *cp == '\t'; cp++);
-    strcpy(&type[5], cp);
+    memmove(&type[5], cp, strlen((char*)cp) + 1);
   } else sprintf(type, "%s `%s\047", s_S(S_errc), s_S(S_file));
   cp = type;
   if (buff) free(buff);

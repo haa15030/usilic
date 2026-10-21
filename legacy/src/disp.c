@@ -313,7 +313,7 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
     vt_move(vt_row(0) - 1, len + 1);
     while ((cp = strchr(prev, '\033')))
       if ((cp2 = strchr(cp, 'm'))) {
-	strcpy(cp, &cp2[1]);
+	memmove(cp, &cp2[1], strlen(&cp2[1]) + 1);
       } else break;
     if (argp) {
       for (i = strlen(prev), j = vt_col(0) - (len + i + 1); j > 0; i++, j--)

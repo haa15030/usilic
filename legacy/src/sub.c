@@ -421,7 +421,7 @@ void erase_dot(char name[])/*usilic*/
     if (cp > name && cp[-1] == '.') { /* skip "../" */
       cp++;
       continue;
-    } else if (cp[2]) strcpy(cp, &cp[2]); /* erase "./" */
+    } else if (cp[2]) memmove(cp, &cp[2], strlen(&cp[2]) + 1); /* erase "./" */
     else *cp = '\0';
   if ((cp = strstr(name, "../"))) {
     strcpy(tmp, cp);
@@ -429,13 +429,13 @@ void erase_dot(char name[])/*usilic*/
     while (strlen(tmp) && (cp = strstr(tmp, "../")))
       if (cp == tmp) {
 	get_par(name);
-	strcpy(tmp, &cp[3]);
+	memmove(tmp, &cp[3], strlen(&cp[3]) + 1);
       } else {
 	i = strlen(name);
 	j = cp - tmp;
 	memcpy(&name[i], tmp, j);
 	name[i + j] = '\0';
-	strcpy(tmp, cp);
+	memmove(tmp, cp, strlen(cp) + 1);
       }
   } else *tmp = '\0';
   if (strlen(tmp)) strcat(name, tmp);

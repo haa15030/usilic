@@ -870,11 +870,11 @@ static int m_cr(int m, NUM *np, HEAP *hp, LINE *lp, ARRAY *ap, RV *rvp, FLAG *fp
   case M_ldir2:
   case M_lfile:
   case M_lfile2:
-    if (*(cp = &strchr(rvp->str, '\0')[-2]) == '/' && cp[1] == '~') 
-      strcpy(rvp->str, &cp[1]);
-    else if ((cp = strchr(rvp->str, '~')) && cp != rvp->str 
+    if (*(cp = &strchr(rvp->str, '\0')[-2]) == '/' && cp[1] == '~')
+      memmove(rvp->str, &cp[1], strlen((char*)&cp[1]) + 1);
+    else if ((cp = strchr(rvp->str, '~')) && cp != rvp->str
 	     && cp[-1] == '/' && (!cp[1] || cp[1] == '/'))
-      strcpy(rvp->str, cp);
+      memmove(rvp->str, cp, strlen((char*)cp) + 1);
     if (*rvp->str != '/') {
       if (*rvp->str == '~') 
 	sprintf(ap->name, "%s%s", s_S(S_home), &rvp->str[1]);

@@ -408,7 +408,7 @@ static int input_key(int f_M, u_char mess[], u_char *cs, int col0, char *cname, 
 	    case M_ldir:
 	    case M_lfile2:
 	    case M_ldir2:
-	      if ((cp = strstr(buff, "//"))) strcpy(buff, &cp[1]);
+	      if ((cp = strstr(buff, "//"))) memmove(buff, &cp[1], strlen((char*)&cp[1]) + 1);
 	      else if (strchr(buff, '\0')[-1] == '~')
 		strcpy(buff, s_S(S_home));
 	      else if ((cp = strstr(buff, "~/"))) {
@@ -1184,7 +1184,7 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	cole -= i;
 	memcpy(yank, buff, i);
 	yank[i] = '\0';
-	strcpy(buff, &buff[i]);
+	memmove(buff, &buff[i], strlen((char*)&buff[i]) + 1);
 	shift = ((i = cole - col0 - len) > 0) ? i : 0;
 	strcpy(back, &buff[shift]);
 	col = col0;
@@ -1247,9 +1247,11 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	} else {
 	  if (shift) {
 	    if ((i = count_k(buff, col - col0 + shift - 1))) cole--;
-	    strcpy(&buff[col - col0 + shift - 1 - i]
+	    memmove(&buff[col - col0 + shift - 1 - i]
 		   , &buff[col - col0 + shift
-			  + count_k(buff, col - col0 + shift)]);
+			  + count_k(buff, col - col0 + shift)]
+		   , strlen((char*)&buff[col - col0 + shift
+			  + count_k(buff, col - col0 + shift)]) + 1);
 	    if (i && shift) shift--;
 	    if (shift) shift--;
 	    else if (i) col--;
@@ -1262,7 +1264,8 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	      cole -= i;
 	    } else {
 	      if ((i = count_k(buff, col - col0 - 1))) cole--;
-	      strcpy(&buff[col - col0 - 1 - i], &buff[col - col0]);
+	      memmove(&buff[col - col0 - 1 - i], &buff[col - col0]
+		     , strlen((char*)&buff[col - col0]) + 1);
 	      if (i) col--;
 	    }
 	    col--;
@@ -1283,7 +1286,8 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	}
 	if (shift) {
 	  if ((i = count_k(buff, col - col0 + shift + 1))) cole--;
-	  strcpy(&buff[col - col0 + shift], &buff[col - col0 + shift + 1 + i]);
+	  memmove(&buff[col - col0 + shift], &buff[col - col0 + shift + 1 + i]
+		 , strlen((char*)&buff[col - col0 + shift + 1 + i]) + 1);
 	  if (i) {
 	    shift--;
 	    col++;
@@ -1294,10 +1298,12 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	  col++;
 	} else {
 	  i = buff[col - col0] >= 0x80;
-	  strcpy(&buff[col - col0], &buff[col - col0 + 1]);
+	  memmove(&buff[col - col0], &buff[col - col0 + 1]
+		 , strlen((char*)&buff[col - col0 + 1]) + 1);
 	  if (i && count_k(buff, col - col0 + 1)) {
 	    cole--;
-	    strcpy(&buff[col - col0], &buff[col - col0 + 1]);
+	    memmove(&buff[col - col0], &buff[col - col0 + 1]
+		   , strlen((char*)&buff[col - col0 + 1]) + 1);
 	  }
 	  strcpy(back, buff);
 	}

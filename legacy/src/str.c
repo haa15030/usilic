@@ -267,7 +267,7 @@ static int conf_arc(FILE *fp, char *str, CHILD *chp)
 	if (!(p = strchr(cp, ' '))) p = strchr(cp, '\t');
 	if (!p) p = cp;
 	if ((p = strchr(p, '|')) && strchr(&p[1], '|')) {
-	  strcpy(str, cp);
+	  memmove(str, cp, strlen(cp) + 1);
 	  save_error("conf_arc(): \042%s\042: %s.\n", str, s_S(S_errm));
 	  save_stderr("conf_arc(): \042%s\042: %s.\n", str, s_S(S_errm));
 	} else save_child(chp, cp, 1, NULL);
@@ -290,7 +290,7 @@ static int conf_bin(FILE *fp, char str[], int f_child, CHILD *chp, char sh[])
       if (!p) p = cp;
       if ((p = strchr(p, '|')))
 	if (strchr(&p[1], '|')) {
-	  strcpy(str, cp);
+	  memmove(str, cp, strlen(cp) + 1);
 	  return 1;
 	}
       if (f_child < 14) save_child(chp, cp, f_child + 1, NULL);
@@ -1158,12 +1158,12 @@ static int conf_c(FILE *fp, u_char str[], int i0, int *i_mp, int n_m, int key_m0
 	  while ((p = strstr(comm, "\\c")))
 	    if (p[2] >= 'A' && p[2] <= 'Z') {
 	      *p = p[2] - 'A' + 1;
-	      strcpy(&p[1], &p[3]);
+	      memmove(&p[1], &p[3], strlen(&p[3]) + 1);
 	    }
 	  while ((p = strstr(label[i], "\\c")))
 	    if (p[2] >= 'A' && p[2] <= 'Z') {
 	      sprintf(p, "^%c", p[2]);
-	      strcpy(&p[2], &p[3]);
+	      memmove(&p[2], &p[3], strlen(&p[3]) + 1);
 	    }
 	}
       }
