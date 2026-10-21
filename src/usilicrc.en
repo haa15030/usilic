@@ -391,7 +391,8 @@ KEY
 #   F-n    prefix key F-n
 #   C-x    Ctrl+x (C-a .. C-z, C-[ C-\ C-] C-^ C-_, C-SPC)
 #   ESC    esc      SPC  space
-#   N      any digit 0-9 (last only; only for functions that use N, such
+#   N      a number (the first digit 0-9 selects the function, further digits
+#          are typed after it; last only; only for functions that use N, such
 #          as ^JN and ^[N)
 #   other  that one character (# cannot be written)
 #
