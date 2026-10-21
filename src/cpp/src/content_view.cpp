@@ -1277,7 +1277,10 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
         }
         setColor(wantFg, wantBg);
         setBold(wantBold);
-        setUnderline(wantUnderline);
+        // 2026-10-21、直接のユーザー報告("^O^J^S.o$^M^Mの画面上で^X(.^G^N^M^X)^Xe…で.oファイルだけをマークする過程では
+        // アンダーラインが表示されない"、-g): 一覧から飛んだ先は一致した行に字ごとの強調(Highlight)が付き、ここで下線を
+        // 字の属性だけで決め直していたので、マークの下線(underlineMarkedNow)が消えていた。下のStandoutと同じく両方を合わせる。
+        setUnderline(wantUnderline || underlineMarkedNow);
         setItalic(wantItalic);
         setSerif(wantSerif);
         setLarge(wantLarge);

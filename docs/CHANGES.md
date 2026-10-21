@@ -32257,3 +32257,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      write()に、欄の幅を表示の桁で数えるように直した。キーの入力途中の表示(C-t-等)・URLの対処の名前(Epub等)・設定の名前
      (LINE-HEIGHT等)は英語のまま。src/HELP_.txt(未コミット)の、メッセージを英語で引いていた7か所を日本語に直した。-cの擬似
      端末で、通知・RMとCPの問い・終了の確認・No Stringが日本語になり、^Ojの後は英語になるのを確かめた。
+
+990. **2026-10-21: 字ごとの強調がある行でも、マークの下線を消さない(検索結果から飛んだ先の(ls))**
+   - **経緯**: 直接のユーザー報告("~/git/tcb/src上で^O^J^S.o$^M^Mの画面上で^X(.^G^N^M^X)^Xe(以後はe)で.oファイルだけをマークする
+     過程ではアンダーラインが表示されない")、"-gだと出ない"。一覧から飛んだ先(highlightGrepJumpTarget())は一致した行に字ごとの
+     強調(Highlight)が付き、ContentView::renderLine()の字ごとの属性の所でsetUnderline(wantUnderline)と字の属性だけで決め直して
+     いたので、マークの下線(underlineMarkedNow)が消えていた(-cでも強調の部分は抜けていた)。
+   - **実装**: setUnderline(wantUnderline || underlineMarkedNow)(すぐ下のStandoutのmarkedNow || wantStandoutと同じ)。-cの擬似端末で、
+     飛んだ先でマークした「a.o」全体(強調の「.o」も)に下線が付くのを確かめた。
