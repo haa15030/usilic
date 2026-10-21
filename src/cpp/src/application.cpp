@@ -897,6 +897,11 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     return {};
   });
   fileMode_.setBeforeLoad([this]() {
+    // 2026-10-21、直接のユーザー報告("HELP.1を参照後、^Hののち^J^Jで元のHELP.1の位置に戻らず"、"HELPモード中でも…
+    // ^Xf"~/.usilic/usilicrc"^Mとやったあと、^HでHELPに戻った時に以前の位置へ戻らない"): ファイルの画面から別の
+    // ファイルを開く時(^HのHELP.epub・^Xf等)は位置を記録していなかった。見ているファイルの位置を読む前に記録する
+    // (注釈を見ている間は、行が注釈だけに差し替わっているので記録しない)。
+    if (currentMode_ == ApplicationMode::File && !epubNoteActive()) saveFilePosition();
     epubHorizontalSection_.reset();
     fileView_.setShownIndexRange(std::nullopt);
   });

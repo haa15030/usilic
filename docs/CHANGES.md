@@ -32169,3 +32169,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      PathInput・ArchiveDestinationでそのままsubmitPrompt()していた(項目のフォローアップ13)。
    - **実装**: 1つに決まった候補が'/'で終わる(ディレクトリ)なら補完だけにする(ファイルは今まで通り確定)。-cの擬似端末で
      ^Xd/Volu^I・^Xd/Volumes^Iが「/Volumes/」で入力待ちになるのを確かめた。
+
+979. **2026-10-21: ファイルの画面から別のファイルを開く時に、見ていたファイルの位置を記録する**
+   - **経緯**: 直接のユーザー報告("~/.local/lib/usilic/HELP.1を参照後、^Hののち^J^Jで元のHELP.1の位置に戻らず、HELPモード中でも、
+     記載に従い^Xf"~/.usilic/usilicrc"^Mとやったあと、^HでHELPに戻った時に以前の位置へ戻らない")。位置の記録
+     (saveFilePosition())は離れる経路ごとに入れてあり、^H(openEpub())・^Xf(PathInput)でファイルの画面から別のファイルを
+     開く経路には無かった。
+   - **実装**: fileMode_.setBeforeLoad()(どの経路でも読む前に呼ばれる)で、ファイルの画面を見ている時(currentMode_ == File)、
+     注釈を見ていなければ(epubNoteActive())saveFilePosition()する。-cの擬似端末で、HELP.1を88行目まで→^H→^J^Jで88行目、
+     HELPを69行目まで→^Xf usilicrc→^Hで69行目に戻るのを確かめた。
