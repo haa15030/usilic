@@ -2245,6 +2245,7 @@ class Application {
   // Command::ReadFileNoWrap/ReadFileRaw自身のコメント参照。
   bool openSelectedEntryNoWrap();
   bool openSelectedEntryRaw();
+  std::function<bool()> readingAbortCheck();  // 読む間の中断の確かめ+1秒で"Reading..."(2026-10-21)
   bool openSelectedSegment();
   bool openSelectedArchiveEntry();
   // 入れ子のアーカイブサポート(docs/ideas/IDEAS.md自身の、C++移植
@@ -3949,6 +3950,8 @@ private:
     // 2026-10-01追加、openEpub()自身のコメント参照。ArchiveLoadと同じく、drawPromptLabel()専用の
     // 静的メッセージ("Reading...")のためだけに存在する。
     EpubLoad,
+    // 2026-10-21追加、readingAbortCheck()参照。EpubLoadと同じく、ファイルを読む間の"Reading..."のモードライン("FILE")だけ。
+    FileLoad,
     // 2026-10-02追加、2026-10-03変更(startMacroList()参照): ^X^Sのマクロ一覧のプロンプト("MACRO Key:")。
     // 「キー キーの並び」を編集し、^Mでusilicrcへ書く。
     MacroEdit,

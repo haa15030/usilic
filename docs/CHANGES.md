@@ -32222,3 +32222,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: feedPromptByteInner()で、ExitConfirmの欄では、前置キーの途中でなければ^[をcancelPrompt()(^Gと同じ)。
      main.cppの^[の続いた回数(^[^[ ^Mで即終了)は、3回目の^[で0に戻す(nextConsecutiveEscapes()、取り消した後の^Mで
      終わらないように)。-cの擬似端末で、^[^[→^[で(ls)へ戻り、続く^Mで終わらないのを確かめた。
+
+986. **2026-10-21: ファイルを読むのに1秒以上かかる時は、モードラインに「FILE Reading...」を出す**
+   - **経緯**: 直接のユーザー依頼"src/debian-keyring_2015.03.04.tar.xzを^[^Mで読み込む場合(等でない場合も含め)読み込みが完了
+     するまでは「Reading...」と表示後完了したら消去、または秒数をカウントし、1,2秒経っても完了しなければ表示とか"。
+   - **実装**: Application::readingAbortCheck()は、読む間の中断の確かめ(keyInterruptRequested())に、読み始めて1秒経っても
+     終わっていなければ一度だけdrawPromptLabel(PromptKind::FileLoad(新設、"FILE")、"Reading...")してflushすることを足した
+     ものを返す。^M(openSelectedEntry()の通常のファイル)・^[^M(2か所)・openEpubQuietly()のloadFile()に渡す(EPUBは
+     openEpub()が先に"EPUB Reading..."を出して出力を止めているので、そちらでは出ない)。読み終えて描き直すと消える。
+     -cの擬似端末で、60MBのファイルの^[^Mで3秒後に「FILE Reading...」、読み終えるとふつうのモードラインに戻るのを確かめた。

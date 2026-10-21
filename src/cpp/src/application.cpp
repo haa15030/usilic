@@ -6211,7 +6211,7 @@ bool Application::openSelectedEntry() {
   }
   // BUFFERを超えるファイルは、FileMode::loadFile()自身が^O^M方式へ切り替える
   // (そちらのコメント参照)。
-  if (!fileMode_.loadFile(path, [this]() { return keyInterruptRequested(); })) return false;
+  if (!fileMode_.loadFile(path, readingAbortCheck())) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;  // それ自身の宣言コメント参照
   return true;
@@ -6386,8 +6386,7 @@ bool Application::openListEntrySpecial(bool raw) {
                            : origin == ApplicationMode::Underline ? "USILIC"
                                                                : "FILE";
   if (raw) {
-    auto shouldAbort = [this]() { return keyInterruptRequested(); };
-    if (!fileMode_.loadFileRaw(path, shouldAbort)) return false;
+    if (!fileMode_.loadFileRaw(path, readingAbortCheck())) return false;
     fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, path, originName);
   } else {
     if (!fileMode_.loadFileAsPipe(path)) return false;
@@ -6400,6 +6399,23 @@ bool Application::openListEntrySpecial(bool raw) {
   fileReturnMode_ = origin == ApplicationMode::ListBrowser ? ApplicationMode::Directory : origin;
   fileView_.redraw();
   return true;
+}
+
+// 2026-10-21、直接のユーザー依頼("src/debian-keyring_2015.03.04.tar.xzを^[^Mで読み込む場合(等でない場合も含め)読み込みが
+// 完了するまでは「Reading...」と表示後完了したら消去、または秒数をカウントし、1,2秒経っても完了しなければ表示とか"):
+// ファイルを読む間の中断の確かめ(keyInterruptRequested())に、読み始めて1秒経っても終わっていなければ一度だけ
+// モードラインに"Reading..."を出すことを足したもの。読み終えて描き直すと消える(短い読み込みでは出ない)。
+std::function<bool()> Application::readingAbortCheck() {
+  auto start = std::chrono::steady_clock::now();
+  auto shown = std::make_shared<bool>(false);
+  return [this, start, shown]() {
+    if (!*shown && display_.outputEnabled() && std::chrono::steady_clock::now() - start >= std::chrono::seconds(1)) {
+      *shown = true;
+      drawPromptLabel(PromptKind::FileLoad, /*positionText=*/"", "Reading...");
+      display_.flush();
+    }
+    return keyInterruptRequested();
+  };
 }
 
 bool Application::openSelectedEntryRaw() {
@@ -6417,8 +6433,7 @@ bool Application::openSelectedEntryRaw() {
   // 関数」そのもの――新しい仕組みは不要だった。^G以外の何かが偶然
   // 届いていた場合(考えにくいが、例えば直前の操作の取りこぼし等)は
   // 捨てずにplayRawMacro()で送り返し、通常のディスパッチへ委ねる。
-  auto shouldAbort = [this]() { return keyInterruptRequested(); };
-  if (!fileMode_.loadFileRaw(path, shouldAbort)) return false;
+  if (!fileMode_.loadFileRaw(path, readingAbortCheck())) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;
   return true;
@@ -8614,7 +8629,7 @@ bool Application::openEpubQuietly(const std::string &path) {
   epubHorizontalSection_.reset();
   syncEpubHorizontalPresentation();
   bool firstTime = !history_.positionFor(PositionCategory::File, path);
-  if (!fileMode_.loadFile(path, [this]() { return keyInterruptRequested(); })) return false;
+  if (!fileMode_.loadFile(path, readingAbortCheck())) return false;
   fileMode_.annotations().clear();
   // 2026-10-18、直接のユーザー報告(^HのHELP.epub、"モード名が「HELP」じゃない"、"「モード名」とはmode-lineの一番
   // 左側。右端は「戻り値」。^Gで戻る先は…nav.xhtmlなのでEPUBのままでいい"): HELP.epubならモード名(一番左)をHELPに。
@@ -15831,6 +15846,7 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
     case PromptKind::Du:  // promptKind_には決して代入されない、drawPromptLabel()専用のラベルマーカー――application.hpp自身の宣言コメント参照
     case PromptKind::ArchiveLoad:  // 同上――PromptKind::ArchiveLoad自身の宣言コメント参照
     case PromptKind::EpubLoad:     // 同上(openEpub()の"Reading...")
+    case PromptKind::FileLoad:     // 同上(readingAbortCheck()の"Reading...")
     case PromptKind::TabCompletionList:  // 同上――PromptKind::TabCompletionList自身の宣言コメント参照
       return false;
     case PromptKind::MacroEdit:  // ^X^Sのマクロ一覧(startMacroList()参照)
@@ -16553,6 +16569,8 @@ std::string Application::promptLabelText(PromptKind kind) const {
       return "ARC";
     case PromptKind::EpubLoad:
       return "EPUB";
+    case PromptKind::FileLoad:
+      return "FILE";
     case PromptKind::MacroEdit:
       return "MACRO";
     case PromptKind::Bookmark:
