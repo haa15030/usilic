@@ -63,6 +63,8 @@ const std::vector<std::string> &directiveKeywords() {
       "ARROW",
       // 2026-10-16追加(lineHeightRatios()参照)。
       "LINE-HEIGHT",
+      // 2026-10-21追加(letterSpacingExtras()参照)。
+      "LETTER-SPACING",
   };
   return kKeywords;
 }
@@ -748,6 +750,21 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         if (!ratios.empty()) lineHeightRatios_ = {ratios[0], ratios.size() > 1 ? ratios[1] : ratios[0]};
         break;
       }
+      case 27: {  // LETTER-SPACING(letterSpacingExtras()参照): 横書き 縦書き(ドット、縦書きを省けば横書きと同じ)
+        std::vector<int> extras;
+        while (auto data = nextDataLine(lines, i))
+          for (const auto &token : tokenize(*data)) {
+            char *end = nullptr;
+            long value = std::strtol(token.c_str(), &end, 10);
+            if (token.empty() || *end != '\0' || value < -100 || value > 100) {
+              errors_.push_back("LETTER-SPACING: not a number of dots: " + token);
+              continue;
+            }
+            extras.push_back(static_cast<int>(value));
+          }
+        if (!extras.empty()) letterSpacingExtras_ = std::make_pair(extras[0], extras.size() > 1 ? extras[1] : extras[0]);
+        break;
+      }
       case 22: {  // FONT
         while (auto data = nextDataLine(lines, i)) {
           std::string path = *data;
@@ -885,6 +902,7 @@ void Configuration::reloadKeysAndMacros(const std::string &rcText) {
   // 2026-10-17、直接のユーザー依頼("LINE-HEIGHTでは0.1単位かつ即時反映"): LINE-HEIGHTも読み直す(-gの画面へは
   // main.cppが当て直す)。節が無ければ既定(フォントの高さ)へ戻る。
   lineHeightRatios_ = fresh.lineHeightRatios_;
+  letterSpacingExtras_ = fresh.letterSpacingExtras_;  // LETTER-SPACINGも(2026-10-21)
   // 同日、直接のユーザー依頼("WAITもusilicrc編集で即時反映"): マクロの間隔(使う時に読む)も。
   waitIntervalMicros_ = fresh.waitIntervalMicros_;
 }

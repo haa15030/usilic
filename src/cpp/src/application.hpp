@@ -1991,6 +1991,8 @@ class Application {
   // usilicrcを読み直した時(reloadUsilicrcKeys())に、読み直したLINE-HEIGHT(横書き, 縦書き)を一度だけ返す。
   // main.cppがその場で当て直す。
   std::optional<std::pair<double, double>> takeLineHeightReloadRequest();
+  // usilicrcのLETTER-SPACING(Configuration::letterSpacingExtras())。takeLineHeightReloadRequest()の時にも当て直す。
+  std::optional<std::pair<int, int>> letterSpacingFromRc() const { return configuration_.letterSpacingExtras(); }
 
   // 「表示」行/列でのマウスクリック(この座標空間と現在の
   // Directoryモード限定のスコープについてはクラスコメント自身の

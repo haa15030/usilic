@@ -6,7 +6,7 @@
 #
 # ARCHIVE, FILTER, LAUNCH, GREP, PROGRAM, EDITOR, BUFFER, CODE, LINE,
 # WAIT, COPY, MOVE, DELETE, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT,
-# LINE-HEIGHT, URL, KEY, MACRO
+# LINE-HEIGHT, LETTER-SPACING, URL, KEY, MACRO
 #
 # 英語のコメント付きの同じ内容のファイルが usilicrc.en です。
 # -------------------------------------------------------------
@@ -302,6 +302,16 @@ LINE-HEIGHT
 # 読み直すとここの値に戻ります)。
 
 	1.2  1.0
+
+LETTER-SPACING
+# 書式: 横書き  縦書き
+#
+# -g の画面の字間(半角 1 字の幅)に足すドット数(負の数で狭める、日本語の字間は
+# その 2 倍)。縦書きの画面ではそちらの値に切り替わります。縦書きを省けば横書きと
+# 同じ値。-g の画面で ^[{ / ^[} を押すと、今の向きの字間を 1 ドットずつ増減して
+# その場でここへ書き込みます(子の HELP・KEY の窓も同じ字間で開きます)。
+# この節に値が無ければ、前回の終了時の字間を使います。
+# EDIT でこのファイルを直す(または ^Xs)と、その場で効きます。
 
 URL
 # 書式: 名前  program  (option)

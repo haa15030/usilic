@@ -7,7 +7,7 @@
 #
 # ARCHIVE, FILTER, LAUNCH, GREP, PROGRAM, EDITOR, BUFFER, CODE, LINE,
 # WAIT, COPY, MOVE, DELETE, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT,
-# LINE-HEIGHT, URL, KEY, MACRO
+# LINE-HEIGHT, LETTER-SPACING, URL, KEY, MACRO
 #
 # usilicrc is the same file with Japanese comments.
 # -------------------------------------------------------------
@@ -316,6 +316,18 @@ LINE-HEIGHT
 # the next launch, and reading this file again goes back to the values here).
 
 	1.2  1.0
+
+LETTER-SPACING
+# Format: `horizontal  vertical'
+#
+# Dots added to the letter spacing (the width of one half-width character) of
+# the -g window (a negative number narrows it; Japanese spacing is twice that).
+# The vertical value is used while a vertical screen is shown; without it, it is
+# the same as the horizontal one.  In the -g window, ^[{ / ^[} change the letter
+# spacing of the current direction by 1 dot and write it here at once (child
+# HELP and KEY windows open with the same spacing).
+# Without a value in this section, the spacing at the last exit is used.
+# Editing this file with EDIT (or ^Xs) applies it at once.
 
 URL
 # Format: `name  program  (option)'

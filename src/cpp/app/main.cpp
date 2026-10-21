@@ -2773,11 +2773,22 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       app.showNotice(std::string(app.verticalLayoutShown() ? "LETTER-SPACING (vertical): " : "LETTER-SPACING: ") +
                      (extra > 0 ? "+" : "") + std::to_string(extra) + " dots (" + std::to_string(width) +
                      " dots per column)");
+      // 2026-10-21、直接のユーザー依頼("字間の設定項目(リアルタイム更新)をusilicrcに追加"、^T^Hで開いたHELPが前回の
+      // 保存値のままだった): その場でusilicrcのLETTER-SPACINGへ書き込む(子は起動時にusilicrcを読む)。
+      auto [horizontal, vertical] = fm::GraphicalDisplay::letterSpacingExtras();
+      const char *home = std::getenv("HOME");
+      if (!fm::usilicrc::setSection(home ? home : "", "LETTER-SPACING",
+                                    {std::to_string(horizontal) + "  " + std::to_string(vertical)}))
+        app.showNotice("Cannot write LETTER-SPACING to usilicrc");
     }
     // usilicrcを読み直した(EDITでusilicrcを直した・^Xs)なら、LINE-HEIGHTをその場で当て直す。
     if (auto ratios = app.takeLineHeightReloadRequest()) {
       fm::GraphicalDisplay::setLineHeightRatios(ratios->first, ratios->second);
       gui.reapplyLineHeight();
+      if (auto extras = app.letterSpacingFromRc()) {  // LETTER-SPACINGも(2026-10-21)
+        fm::GraphicalDisplay::setLetterSpacingExtras(extras->first, extras->second);
+        gui.adjustLetterSpacing(0);
+      }
     }
     // See Application::awaitingLocateUpdateDb()'s own comment: this is
     // exactly the call whose ABSENCE (before this fix) let a real ^G
@@ -5792,6 +5803,9 @@ int main(int argc, char **argv) {
     // ^[[ / ^[]で足した行の高さを前回から引き継ぐ(2026-10-18、History::GuiPreferences参照)。
     fm::GraphicalDisplay::setLineHeightExtras(prefs.lineHeightExtraHorizontal, prefs.lineHeightExtraVertical);
     fm::GraphicalDisplay::setLetterSpacingExtras(prefs.letterSpacingExtraHorizontal, prefs.letterSpacingExtraVertical);
+    // usilicrcのLETTER-SPACINGに値があればそちら(^[{ / ^[}がその場で書き込むので、子のHELP・KEYも親と同じ字間、2026-10-21)。
+    if (auto extras = configuration.letterSpacingExtras())
+      fm::GraphicalDisplay::setLetterSpacingExtras(extras->first, extras->second);
   }
 
   // History's own saved charset already defers to the environment

@@ -32136,3 +32136,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      項目の2026-10-06の追加(慣性中は進む向きの矢印でも速さを変える)では、横書きは↓が先へだった。
    - **実装**: runGuiPhase()の横書きの慣性中は↑を先へ(coastDirectionの-1)、runTerminalCoast()の横書きは↑(A)・→(C)を先へ
      (leftArrowAdvances()ならA・D)。縦書き(columns、epubCoast)はそのまま。
+
+975. **2026-10-21: usilicrcにLETTER-SPACING(字間)を足し、^[{ / ^[}でその場で書き込む**
+   - **経緯**: 直接のユーザー依頼"字間の設定項目(リアルタイム更新)をusilicrcに追加(現状: HELPで字間を変更後、^T^Hで開いた
+     HELPは前回保存値のまま)"。字間の足し分(項目935)は終了時に~/.usilic/historyへ書くだけで、子は親の前回の終了時の値で
+     開いていた。
+   - **実装**: Configurationに"LETTER-SPACING"(27番、横書き 縦書きのドット数、-100〜100、縦書きを省けば横書きと同じ)と
+     letterSpacingExtras()(値が無ければnullopt)。reloadKeysAndMacros()でも読み直し、main.cppはLINE-HEIGHTの読み直しと
+     一緒に当て直す(adjustLetterSpacing(0))。起動時はhistoryの値の後に、usilicrcに値があればそちら。^[{ / ^[}は
+     usilicrc::setSection()でその場で書き込む。既定のusilicrc・usilicrc.enには説明だけで値の行を置かない(今までの
+     historyの値が0に戻らないように)。
