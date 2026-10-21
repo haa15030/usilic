@@ -1,0 +1,56 @@
+  usilic - Text Console Buffer
+  version 1.5b-1  20 Mar 2000
+  Coded by Taketo Matsubara
+
+  1.  概要
+
+  usilic は kon や kterm 等のテキスト端末で動作するファイルビューアです．
+  Linux または FreeBSD で使用できます．
+
+  2.  環境
+
+  ソースのコンパイルおよび動作テストは下記の環境で行いました．
+
+     Linux
+
+           Debian GNU/Linux 2.1
+           RedHat Linux v6.0
+
+     FreeBSD
+
+           3.2-RELEASE
+
+  3.  インストール
+
+  config.sh を適当に修正したのち，スーパーユーザで `make install' として
+  下さい．
+
+  4.  謝辞
+
+  プログラム作成にあたり，ヒントや要望，バグレポートして下さった下記の皆
+  さんに感謝します． ありがとうございました．
+
+  成田さん <narita@mt.cs.keio.ac.jp> は usilic のプログラムリストでの lv の
+  使用を承諾して下さいました．(多言語ファイルビューア lv は
+  http://www.mt.cs.keio.ac.jp/person/narita/lv/ の LV Homepage から入手
+  できます).
+
+  ホールさん <emhall@ilap.com> には，デフォルト環境で usilic の日本語マニュ
+  アルページが表示されないなど，使用上の問題点等を報告して頂きました．
+
+  高橋さん <hal@terry.nagaokaut.ac.jp> は FreeBSD での kon についての記
+  載の不備について，また桐山さん <kiri@kiri.toba-cmt.ac.jp> はキーアサイ
+  ンの難点等の指摘と port のチェックおよびアドバイスをして下さいました．
+
+  Pierstorff さん <arne.p@t-online.de> は RPM パッケージおよび巨大なアー
+  カイブ内ファイル参照に関する要望と，ソースファイルでコンパイルできない
+  箇所の指摘をして下さいました．
+
+  5.  注意
+
+  usilic はフリーソフトウェアです． COPYING に記載されている GNU 一般公有使
+  用許諾が定める条項に従って再頒布することができます．
+
+  Taketo Matsubara <moody@osk.3web.ne.jp>
+  USILIC Home page    <http://www.osk.3web.ne.jp/~moody/usilicj>
+

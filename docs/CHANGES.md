@@ -32265,3 +32265,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      いたので、マークの下線(underlineMarkedNow)が消えていた(-cでも強調の部分は抜けていた)。
    - **実装**: setUnderline(wantUnderline || underlineMarkedNow)(すぐ下のStandoutのmarkedNow || wantStandoutと同じ)。-cの擬似端末で、
      飛んだ先でマークした「a.o」全体(強調の「.o」も)に下線が付くのを確かめた。
+
+991. **2026-10-21: legacy/に、初回インポート(47e2a1f)の旧版をtcb→usilicの改名だけで置く(クラッシュの修正だけを当てる旧版の土台)**
+   - **経緯**: 直接のユーザー依頼"旧に対して新と同じ機能を実装したとしてもそれで終わる話なのでそれよりはさっきのconf_arc等を直した分を
+     旧版として同梱したい。LinuxではSHELLを動かすのにカーネルリメークが必要なのでそのための情報も提供できるかなと。新しい機能を追加する
+     ことなくクラッシュが起きなくなるだけの修正をしてほしい"、"~/.usilic/は新と被るので~/.usilic.old/からデータを読む。インストール先は
+     ~/.local/lib/usilic.old/、バイナリは~/.local/bin/usilic.old"、案A("クラッシュの修正のみ当てる")。old/(7月以降の修正・UTF-8対応・
+     ptyの現代化・コメント等を含む)とは別に置く。
+   - **実装**: 初回インポート(47e2a1f、tcb-1.5b.linux無改造)の全ファイルの中身と名前のtcb/TCB/Tcbをusilic/USILIC/Usilicに置き換えた
+     (バイナリは除く)。当時のビルドの残り(src/tcb.exe・TCB.EXE.stackdump・TAGS・perl/のdvi・aux・log)は入れない。

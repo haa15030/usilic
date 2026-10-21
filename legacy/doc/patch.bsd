@@ -1,0 +1,581 @@
+diff -ru ../usilic-1.5b.linux/config.sh ./config.sh
+--- ../usilic-1.5b.linux/config.sh	Sat Jun  3 07:00:39 2000
++++ ./config.sh	Sat Jun  3 07:01:06 2000
+@@ -7,7 +7,7 @@
+ CHARSET="euc"
+ 
+ # Command line for DU mode.
+-DU="du -ab"
++DU="du -a"
+ 
+ # CP/MV/RM mode.
+ CP="cp -vRi"
+@@ -15,22 +15,19 @@
+ RM="rm -vri"
+ 
+ echo 'Creating src/Makefile:'
+-if [ `uname` = Linux ]; then	# Linux
+-    MAN=/usr/man/man1
+-    if [ ! "$USR_DIR" = "" ]; then 
+-	JMAN=/usr/man/ja/man1
+-    else
+-	JMAN=/usr/man/ja_JP.ujis/man1
+-    fi
+-    USR_DIR=/usr
+-    PERM='-m 644'
+-    echo '# Makefile for Linux version' > .config
+-    echo 'LIBS=	-lncurses'>> .config
++if [ `uname` = Linux ]; then    # Linux
++    patch -R -p0 -s < doc/patch.bsd
++    make install
++    exit 0
+ else
+-    if [ `uname` = FreeBSD ]; then	# FreeBSD
+-        patch -p0 < doc/patch.bsd
+-        make install
+-        exit 0
++    if [ `uname` = FreeBSD ]; then      # FreeBSD
++        USR_DIR=/usr/local
++        COPY=-c
++        PERM='-m 444'
++        MAN=/usr/local/man/man1 
++	JMAN=/usr/local/man/ja/man1
++        echo '# Makefile for FreeBSD version' > .config
++        echo 'LIBS=     -ltermcap' >> .config
+     else
+         echo 'Not supported yet "'`uname`'".'
+         exit 1
+diff -ru ../usilic-1.5b.linux/doc/HELP ./doc/HELP
+--- ../usilic-1.5b.linux/doc/HELP	Sat Jun  3 07:00:36 2000
++++ ./doc/HELP	Sat Jun  3 07:01:06 2000
+@@ -7,8 +7,8 @@
+      CCttrrll+pp : Move cursor one line up
+      CCttrrll+nn : Move cursor one line down
+ 
+-  You can move the cursor to the previous or the next section by
+-  pressing `;;' or `::' key, respectively in this page. (You can use keys
++  You can move the cursor to the previous or the next section by press-
++  ing `;;' or `::' key, respectively in this page. (You can use keys
+   described in the KKEEYY window that will be displayed by CCttrrll+hh key.)
+ 
+   The following notations are used in this document.
+@@ -34,8 +34,8 @@
+         other terms are shown within parentheses ``''.
+ 
+   _T_c_b(1) can be started with either following mode. (This mode name is
+-  displayed after the string ``Startup mode:'' in the TTCCBB window by
+-  typing CCttrrll+tt.)
++  displayed after the string ``Startup mode:'' in the TTCCBB window by typ-
++  ing CCttrrll+tt.)
+ 
+      ppaaggeerr
+         _T_c_b(1) will work as a ppaaggeerr when it is started with a pipe (`ls
+@@ -149,14 +149,14 @@
+   On the mmooddee--lliinnee, if the cursor is positioned at the end of filename
+   which begins with a slash, the above key stroke will change the
+   current directory to the corresponding one in the file.  For example,
+-  typing `^^XXff/usr/lib/usilic/usilicrc EEnntteerr', and then ^^XX^^FF will display the
+-  following directory path in the mmooddee--lliinnee:
++  typing `^^XXff/usr/local/lib/usilic/usilicrc EEnntteerr', and then ^^XX^^FF will display
++  the following directory path in the mmooddee--lliinnee:
+ 
+-  _/_u_s_r_/_l_i_b_/_t_c_b_/_t_c_b_r_c.
++  _/_u_s_r_/_l_o_c_a_l_/_l_i_b_/_t_c_b_/_t_c_b_r_c.
+ 
+   By hitting ^^JJ22, the current directory changes to the following:
+ 
+-  _/_u_s_r_/_l_i_b_/.
++  _/_u_s_r_/_l_o_c_a_l_/.
+ 
+   22..22..  KKEEYY
+ 
+@@ -213,9 +213,9 @@
+ 
+      ++  repeat one or more times
+ 
+-  For example, the HHEELLPP splits the content of the file _/_u_s_r_/_l_i_b_/_t_c_b_/_H_E_L_P
+-  at the string "^  [0-9]^^HH[0-9]+\.".  The operation can be executed by
+-  typing following:
++  For example, the HHEELLPP splits the content of the file
++  _/_u_s_r_/_l_o_c_a_l_/_l_i_b_/_t_c_b_/_H_E_L_P at the string "^  [0-9]^^HH[0-9]+\.".  The oper-
++  ation can be executed by typing following:
+ 
+      `^^JJbb^  [0-9]^^QQ^^HH[0-9]+\.EEnntteerr'
+ 
+@@ -534,8 +534,8 @@
+ 
+   _T_c_b(1) will read _~_/_._t_c_b_/_t_c_b_r_c and set environment when started.  If
+   the file doesn't exist, _t_c_b(1) will read _t_c_b_r_c from
+-  _/_u_s_r_/_l_i_b_/_t_c_b_/_t_c_b_r_c.  If this file is newer than _~_/_._t_c_b_/_t_c_b_r_c, _t_c_b(1)
+-  will display the message "~~//..ttccbb//ttccbbrrcc ignored.""..
++  _/_u_s_r_/_l_o_c_a_l_/_l_i_b_/_t_c_b_/_t_c_b_r_c.  If this file is newer than _~_/_._t_c_b_/_t_c_b_r_c,
++  _t_c_b(1) will display the message "~~//..ttccbb//ttccbbrrcc ignored.""..
+ 
+   The following is the content defined in _t_c_b_r_c.
+ 
+diff -ru ../usilic-1.5b.linux/doc/HELP.jp ./doc/HELP.jp
+--- ../usilic-1.5b.linux/doc/HELP.jp	Sat Jun  3 07:00:36 2000
++++ ./doc/HELP.jp	Sat Jun  3 07:01:07 2000
+@@ -136,13 +136,14 @@
+ 
+   また画面最下行の mmooddee--lliinnee 上での入力の場合，文字列の先頭がスラッシュ
+   の時は，そのファイル名上で対応するディレクトリへ移ります．例えば
+-  `^^XXff/usr/lib/usilic/usilicrc EEnntteerr' で _t_c_b_r_c を参照後 ^^XX^^FF とタイプした後，
++  `^^XXff/usr/local/lib/usilic/usilicrc EEnntteerr' で _t_c_b_r_c を参照後 ^^XX^^FF とタイプし
++  た後，
+ 
+-  _/_u_s_r_/_l_i_b_/_t_c_b_/_t_c_b_r_c
++  _/_u_s_r_/_l_o_c_a_l_/_l_i_b_/_t_c_b_/_t_c_b_r_c
+ 
+   のカーソル行で ^^JJ22 とすると
+ 
+-  _/_u_s_r_/_l_i_b_/
++  _/_u_s_r_/_l_o_c_a_l_/
+ 
+   へ移ります．
+ 
+@@ -199,7 +200,7 @@
+ 
+      ++  1 回以上の繰り返し
+ 
+-  例えば HHEELLPP モードは _/_u_s_r_/_l_i_b_/_t_c_b_/_H_E_L_P のファイル内容を，文字列
++  例えば HHEELLPP モードは _/_u_s_r_/_l_o_c_a_l_/_l_i_b_/_t_c_b_/_H_E_L_P のファイル内容を，文字列
+   "^  [0-9]^^HH[0-9]+\." の位置で分割していますが，FFiillee--sseelleeccttoorr 上では
+ 
+      `^^JJbb^  [0-9]^^QQ^^HH[0-9]+\.EEnntteerr'
+@@ -490,9 +491,9 @@
+   33..  FFiillee
+ 
+   _t_c_b(1) は起動時に _~_/_._t_c_b_/_t_c_b_r_c を読み込んで環境設定を行います．(この
+-  ファイルがない場合は _/_u_s_r_/_l_i_b_/_t_c_b_/_t_c_b_r_c から読み込みます．また
++  ファイルがない場合は _/_u_s_r_/_l_o_c_a_l_/_l_i_b_/_t_c_b_/_t_c_b_r_c から読み込みます．また
+   _~_/_._t_c_b_/_t_c_b_r_c の方が日付が古い場合も "~~//..ttccbb//ttccbbrrcc iiggnnoorreedd.." のメッセー
+-  ジを表示して _/_u_s_r_/_l_i_b_/_t_c_b_/_t_c_b_r_c から読み込みます)
++  ジを表示して _/_u_s_r_/_l_o_c_a_l_/_l_i_b_/_t_c_b_/_t_c_b_r_c から読み込みます)
+ 
+   以下は _t_c_b_r_c で定義されている内容です．
+ 
+diff -ru ../usilic-1.5b.linux/doc/usilic.1 ./doc/usilic.1
+--- ../usilic-1.5b.linux/doc/usilic.1	Sat Jun  3 07:00:36 2000
++++ ./doc/usilic.1	Sat Jun  3 07:01:07 2000
+@@ -13,10 +13,10 @@
+ \fIUsilic\fR(1) is a file viewer that works on a text-terminal such as \fIxterm\fR(1). 
+ .SH FILE
+ .TP 3
+-\fI/usr/lib/usilic/HELP\fR
++\fI/usr/local/lib/usilic/HELP\fR
+ On-line manual file.
+ .TP 3
+-\fI/usr/lib/usilic/usilicrc\fR
++\fI/usr/local/lib/usilic/usilicrc\fR
+ Initialization file, used for setting of environment at \fIusilic\fR(1) startup.  Copy \fIusilicrc\fR to \fI~/.usilic/\fR directory and then edit it accordingly. (The directory \fI~/.usilic/\fR will be made at the first execution.)
+ .SH ENVIRONMENT
+ .TP 3
+diff -ru ../usilic-1.5b.linux/doc/usilic.man ./doc/usilic.man
+--- ../usilic-1.5b.linux/doc/usilic.man	Sat Jun  3 07:00:36 2000
++++ ./doc/usilic.man	Sat Jun  3 07:01:07 2000
+@@ -20,10 +20,10 @@
+        as _x_t_e_r_m(1).
+ 
+ FFIILLEE
+-       _/_u_s_r_/_l_i_b_/_t_c_b_/_H_E_L_P
++       _/_u_s_r_/_l_o_c_a_l_/_l_i_b_/_t_c_b_/_H_E_L_P
+           On-line manual file.
+ 
+-       _/_u_s_r_/_l_i_b_/_t_c_b_/_t_c_b_r_c
++       _/_u_s_r_/_l_o_c_a_l_/_l_i_b_/_t_c_b_/_t_c_b_r_c
+           Initialization file, used for setting of environment at
+           _t_c_b(1)  startup.   Copy  _t_c_b_r_c to _~_/_._t_c_b_/ directory and
+           then edit it accordingly. (The directory  _~_/_._t_c_b_/  will
+diff -ru ../usilic-1.5b.linux/src/disp.c ./src/disp.c
+--- ../usilic-1.5b.linux/src/disp.c	Sat Jun  3 07:00:36 2000
++++ ./src/disp.c	Sat Jun  3 07:01:07 2000
+@@ -308,6 +308,13 @@
+     vt_move(vt_row(0) - 1, vt_col(0) - vlen);
+     vt_printf(" %s%s%s ", vt_geta(A_md), getenv("USILIC"), vt_geta(A_me));
+   }
++  if (vt_mode('S')) {
++    vt_sr();
++    vt_move(0, 0); 
++    put_str(ps, f_mark);
++    disp_prev(NULL, ps, f_mark);
++    vt_move(0, 0); 
++  }
+   vt_endstand();
+   if (!f_mark && !f_arc && !f_enter && f_M != T_shell && lenp) *lenp = 0;
+   if (f_M == T_arc3 || f_M == M_exit) f_mark = 0;
+@@ -475,6 +482,12 @@
+     p.f.len = strlen(p.cs);
+     put_str(&p, 0);
+   } else strcpy(prev, str);
++  if (vt_mode('S')) {
++    vt_endstand();
++    vt_sr();
++    vt_move(0, 0); 
++    put_str(ps, f_mark);
++  }
+ }
+   
+ void disp_copy(u_char *cpp[], int nlen)/*usilic*/
+diff -ru ../usilic-1.5b.linux/src/scroll.c ./src/scroll.c
+--- ../usilic-1.5b.linux/src/scroll.c	Sat Jun  3 07:00:37 2000
++++ ./src/scroll.c	Sat Jun  3 07:01:07 2000
+@@ -229,9 +229,9 @@
+ PP *sf_row(PP *pp, int f_mark)/*usilic*/
+ {
+   if (!vt_mode('D')) return pp;
+-  if (vt_mode('H')) vt_move(vt_row(0) - 1, 0);
++  if (vt_mode('S') || vt_mode('H')) vt_move(vt_row(0) - 1, 0);
+   else vt_move(vt_row(0) - 2, 0);
+-  if (vt_mode('H')) {
++  if (vt_mode('S') || vt_mode('H')) {
+     vt_eeol();
+     put_str(pp, f_mark);
+     vt_sf();
+diff -ru ../usilic-1.5b.linux/src/shell.c ./src/shell.c
+--- ../usilic-1.5b.linux/src/shell.c	Sat Jun  3 07:00:37 2000
++++ ./src/shell.c	Sat Jun  3 07:01:07 2000
+@@ -123,7 +123,7 @@
+   int c, i, m, n, colb, f_list, ti, f_esc, st_size = 0;
+   struct stat st;
+   static PN pn;
+-  static int *pv, pos, ilen, shift, col_b;
++  static int *pv, pos, ilen, shift, col_b, pid;
+   static u_char buff[N_pipe+1], pp_str[N_pipe+1];
+   static u_char *mess, *wb, comm[N_pipe+1], *w2;
+   static struct {
+@@ -154,6 +154,7 @@
+     Shell.f.init = 1;
+     write_shell(pv);
+     Shell.f.init = 0;
++    pid = spid;
+     return 0;
+   case 1:
+   case 2:
+@@ -248,7 +255,8 @@
+       wait_comm(pv[2], &pos, NULL, 0, NULL, pp_str);
+       if ((m = -from_main(prev, str, mess, pinp, ppidp))) break;
+     }
+-    if (kill(spid, 0)) {
++    if ((i = kill(pid, 0) != 0) || kill(spid, 0)) {
++      if (i) kill(spid, SIGHUP);
+       pv = NULL;
+       m = -M_bl;
+       break;
+@@ -780,10 +788,10 @@
+     pnp->nrow++;
+     pnp->top++;
+     if (sf && vt_mode('D')) {
+-      if (vt_mode('H')) vt_move(vt_row(0) - 1, 0);
++      if (vt_mode('S') || vt_mode('H')) vt_move(vt_row(0) - 1, 0);
+       else vt_move(vt_row(0) - 2, 0);
+       vt_sf();
+-      if (vt_mode('H')) vt_move(vt_row(0) - 2, 0);
++      if (vt_mode('S') || vt_mode('H')) vt_move(vt_row(0) - 2, 0);
+       vt_eeol();
+     }
+   }
+@@ -856,6 +864,7 @@
+       cp = buff;
+       j = Shell.f.alen;
+       do {
++	if (vt_mode('S')) vt_eeol();
+ 	for (i = 0; *cp && i < vt_col(0) + j; i++, cp++) {
+ 	  if (is_euckana_1_byte(*cp)) i--;
+ 	  vt_putchar(*cp);
+@@ -1312,10 +1321,9 @@
+   static PN pn;
+   static int sfd, pid, len, row0, *pv, inter;
+   static struct sigaction alrm = {
+-    {(__sighandler_t)read_shell,},
+-    {{0,},},
++    {(__sighandler_t*)read_shell,},
+     SA_RESTART,
+-    NULL,
++    {{0,},},
+   };
+   static char *errp[3], nn[4] = {0,};
+   int c, i, j, c1, row, col, f_cr, f_bin;
+@@ -1425,7 +1434,7 @@
+       if (c1) {
+ 	c = c1;
+ 	c1 = 0;
+-      } else if ((c = fgetc(ifp)) == EOF) break;
++      } else if ((c = fgetc(ifp)) == EOF) continue;
+       else if (c == K_g) {
+ #ifdef	CHECK_SFD
+ 	write(sfd, &c, 1);
+@@ -1536,7 +1545,10 @@
+ 	    strcpy(p, prompt);
+ 	    strcpy(p2, prompt);
+ #ifndef	CHECK_SFD
+- 	    write(sfd, p2, strlen(p2));
++	    if (vt_mode('S')) {
++	      write(sfd, usilic, strlen(usilic));
++	      write(sfd, strchr(p2, ':'), strlen(strchr(p2, ':')));
++	    } else write(sfd, p2, strlen(p2));
+ #endif	CHECK_SFD
+ 	    free(p2);
+ 	    memset(prompt, 0, strlen(p));
+@@ -1701,10 +1713,9 @@
+ {
+   int i, spid;
+   static struct sigaction alrm = {
+-    {(__sighandler_t)write_shell,},
+-    {{0,},},
++    {(__sighandler_t*)write_shell,},
+     SA_RESTART,
+-    NULL,
++    {{0,},},
+   };
+ 
+   sigaction(SIGALRM, &alrm, NULL);
+@@ -1713,7 +1724,8 @@
+   pipe(&pv[2]);
+   pipe(&pv[4]);
+   pipe(&pv[6]);
+-  input_shell(0, pv, mess, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0);
++  input_shell(pid, pv, mess, NULL, NULL, NULL
++	      , NULL, NULL, NULL, NULL, NULL, 0);
+   if (!(spid = fork())) {
+     usleep(100000); /* following is preceded by pause() of parent process */
+     output_shell(ifpp, ofpp, prev, pv, pid, (f_comm) ? 2 : 1);
+diff -ru ../usilic-1.5b.linux/src/str.c ./src/str.c
+--- ../usilic-1.5b.linux/src/str.c	Sat Jun  3 07:00:37 2000
++++ ./src/str.c	Sat Jun  3 07:01:07 2000
+@@ -699,7 +699,17 @@
+   Str.S[S_usilicrc] = cp;
+   Str.S[S_code] = calloc(sizeof(char), 32);	/* S_code */
+   Str.S[S_version] = strdup(version);
+-  Str.S[S_path] = strdup(getenv("PATH"));	/* S_path */
++  if ((cp = strdup(getenv("PATH")))) {	/* S_path */
++    char *p, *p2, local[] = "/usr/local/bin";
++    if (!(p = strstr(cp, local)) 
++	|| ((p2 = strstr(cp, "/usr/bin")) && p2 < p)) {
++      p = alloca(strlen(local) + 2 + strlen(cp) + 1);
++      sprintf(p, "%s/:%s", local, cp);
++      Str.S[S_path] = strdup(p);
++      setenv("PATH", p, 1);
++    } else Str.S[S_path] = strdup(cp);
++  }
++  free(cp);
+   Str.S[S_option+7] = malloc(strlen(s_S(S_usilic)) 
+ 			     + strlen(args) + 1);
+   sprintf(Str.S[S_option+7], "%s%s", s_S(S_usilic), args);
+diff -ru ../usilic-1.5b.linux/src/tc.c ./src/tc.c
+--- ../usilic-1.5b.linux/src/tc.c	Sat Jun  3 07:00:37 2000
++++ ./src/tc.c	Sat Jun  3 07:01:07 2000
+@@ -2,8 +2,7 @@
+ #include <errno.h>
+ #include <fcntl.h>
+ #include <termios.h>
+-#include <curses.h>
+-#include <term.h>
++#include <termcap.h>
+ #include <signal.h>
+ #include <sys/ioctl.h>
+ #include <sys/time.h>
+@@ -23,7 +22,21 @@
+   char *kP, *kN;
+   char *sf, *sr;
+   char *ti, *te;
+-} Tc;
++} Tc = {
++  "cs",
++  "ho", "cm",
++  "cl", "ce",
++  "so", "se",
++  "us", "ue",
++  "md", "me",
++  "le",
++  "sc", "rc",
++  "kl", "kr",
++  "ku", "kd",
++  "kP", "kN",
++  "sf", "sr",
++  "ti", "te",
++};
+ 
+ static int outc(int c)
+ {
+@@ -220,8 +233,10 @@
+   switch(mode) {
+   case 0:
+     tputs(Tc.ti, 1, outc);
+-    if (!vt_mode('H')) vt_cs(vt_row(0) - 2, 0);
++    if (!vt_mode('S') && !vt_mode('H')) vt_cs(vt_row(0) - 2, 0);
+     break;
++  case 'S':
++    return Tc.cs == NULL;
+   case 'D':
+     return f.disp;
+   case 'd':
+@@ -285,7 +300,21 @@
+     tc_mode,
+     tc_cursor,
+   };
+-  int state;
++  char *p, buff[1024];
++  union TP {
++    struct TC s;
++    char *a[N_LB];
++  } *tp;
++  static char cap[512];
++  static char termcap[] = "/etc/termcap";
++  static char *a[] = {
++    "\033[7m",
++    "\033[m",
++    "\033[4m",
++    "\033[m",
++    "\033[1m",
++    "\033[m",
++  };
+ 
+   if ((term = getenv("TERM")) == NULL) {
+     fprintf(stderr, "%s: TERM environment variable is not set.\n", 
+@@ -293,37 +322,24 @@
+     free_S();
+     exit(1);
+   }
++  if (access(termcap, F_OK) < 0) {
++    perror(termcap);
++    free_S();
++    exit(1);
++  }
+   if (!strcmp(term, "screen")) setenv("TERM", "vt100", 1);
+-  setupterm(term, 1, &state);
+-  if (state != 1) {
++  if ((i = tgetent(buff, term)) != 1) {
+     fprintf(stderr, "%s: %s.\n", s_S(S_usilic), s_S(S_erru));
+     free_S();
+     exit(1);
++  }    
++  tp = (union TP*)&Tc;
++  p = cap;
++  for (i = j = 0; i < N_LB; i++) tp->a[i] = tgetstr(tp->a[i], &p); 
++  for (i = 5; i <= 10; i++) {
++    if (!tp->a[i]) tp->a[i] = a[i-5];
++    else if ((p = strstr(tp->a[i], "$<2/>"))) *p = '\0';
+   }
+-  Tc.cs = change_scroll_region;
+-  Tc.ho = cursor_home; 
+-  Tc.cm = cursor_address;
+-  Tc.cl = clear_screen; 
+-  Tc.ce = clr_eol;
+-  Tc.so = enter_standout_mode; 
+-  Tc.se = exit_standout_mode;
+-  Tc.us = enter_underline_mode; 
+-  Tc.ue = exit_underline_mode;
+-  Tc.md = enter_bold_mode; 
+-  Tc.me = exit_attribute_mode;
+-  Tc.le = cursor_left;
+-  Tc.sc = save_cursor; 
+-  Tc.rc = restore_cursor;
+-  Tc.kl = key_left; 
+-  Tc.kr = key_right;
+-  Tc.ku = key_up; 
+-  Tc.kd = key_down;
+-  Tc.kP = key_ppage; 
+-  Tc.kN = key_npage;
+-  Tc.sf = scroll_forward; 
+-  Tc.sr = scroll_reverse;
+-  Tc.ti = enter_ca_mode; 
+-  Tc.te = exit_ca_mode;
+   if (!Tc.cm) {
+     fprintf(stderr, "%s: %s.\n", s_S(S_usilic), s_S(S_erru));
+     free_S();
+diff -ru ../usilic-1.5b.linux/src/usilic.c ./src/usilic.c
+--- ../usilic-1.5b.linux/src/usilic.c	Sat Jun  3 07:00:37 2000
++++ ./src/usilic.c	Sat Jun  3 07:01:07 2000
+@@ -8,8 +8,7 @@
+ #include <sys/socket.h>
+ #include <sys/un.h>
+ #include <sys/wait.h>
+-#include <sys/vt.h>
+-#include <sys/kd.h>
++#include      <machine/console.h>
+ 
+ static struct {
+   int sfd;
+@@ -429,3 +428,10 @@
+   free_h(NULL);
+ }  
+ 
++void sig_child(int dummy)
++{
++  int pid;
++  union wait status;
++
++  while ((pid = wait3((int*)&status, WNOHANG, (struct rusage *)0)) > 0) ;
++}
+diff -ru ../usilic-1.5b.linux/src/usilic.h ./src/usilic.h
+--- ../usilic-1.5b.linux/src/usilic.h	Sat Jun  3 07:00:36 2000
++++ ./src/usilic.h	Sat Jun  3 07:01:07 2000
+@@ -283,7 +283,7 @@
+ #define F12		(void *)-12 /* is_inter() */
+ #define F13		(void *)-13 /* set_help() */
+ 
+-#define sig_child SIG_IGN
++void sig_child(int);
+ 
+ #define debug			save_error
+ #define is_prev(p,m)		!strncmp(p, &s_P(P_mode)[m][1] \
+diff -ru ../usilic-1.5b.linux/src/vt.c ./src/vt.c
+--- ../usilic-1.5b.linux/src/vt.c	Sat Jun  3 07:00:37 2000
++++ ./src/vt.c	Sat Jun  3 07:01:07 2000
+@@ -2,6 +2,7 @@
+ #include <errno.h>
+ #include <fcntl.h>
+ #include <termios.h>
++#include <termcap.h>
+ #include <signal.h>
+ #include <stdarg.h>
+ #include <sys/ioctl.h>
+@@ -189,14 +190,14 @@
+   vt_col(col);
+   setenv("LINES", utoa(row), 1);
+   setenv("COLUMNS", utoa(col), 1);
+-  if (!vt_mode('H')) vt_cs(vt_row(0) - 2, 0);
++  if (!vt_mode('S') && !vt_mode('H')) vt_cs(vt_row(0) - 2, 0);
+ }
+ 
+ void vt_setwin(int row, int col)/*usilic*/
+ {
+   vt_row(row);
+   vt_col(col);
+-  if (!vt_mode('H')) vt_cs(vt_row(0) - 2, 0);
++  if (!vt_mode('S') && !vt_mode('H')) vt_cs(vt_row(0) - 2, 0);
+ }
+ 
+ int vt_tfd(int i)/*usilic*/
+@@ -243,14 +244,14 @@
+       vt_charset((!strcasecmp(usiliccharset, "ascii")) ? C_ascii : C_euc);
+     break;
+   case 2:
+-    if (!vt_mode('H')) vt_cs(vt_row(0) - 2, 0);
++    if (!vt_mode('S') && !vt_mode('H')) vt_cs(vt_row(0) - 2, 0);
+   case -9:
+     tcsetattr(tfd, TCSANOW, &vt_termio);	
+     break;
+   case -1:
+     vt_seta(A_me);
+   case -2:
+-    if (!vt_mode('H')) vt_cs(vt_row(0) - 1, 0);
++    if (!vt_mode('S') && !vt_mode('H')) vt_cs(vt_row(0) - 1, 0);
+     vt_move(vt_row(0) - 1, 0);
+     vt_eeol();
+     tcsetattr(tfd, TCSANOW, &tty_termio);
+diff -ru ../usilic-1.5b.linux/usilicrc ./usilicrc
+--- ../usilic-1.5b.linux/usilicrc	Sat Jun  3 07:00:39 2000
++++ ./usilicrc	Sat Jun  3 07:01:07 2000
+@@ -127,8 +127,8 @@
+ # variable ``SHELL'' is set to neither ``bash'' nor ``tcsh'', 
+ # this setting (bash(1) or tcsh(1) can be set) is needed.)
+ 
+-	bash
+-#	tcsh
++#	bash
++	tcsh
+ 
+ HISTORY
+ # Format: `line'

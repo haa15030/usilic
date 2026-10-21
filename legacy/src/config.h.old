@@ -1,0 +1,10 @@
+#ifndef _CONFIG_H
+static char TMP[] = "/tmp/.usilic";
+static char CHARSET[] = "euc";
+static char DU[] = "du -ab";
+static char CP[] = "cp -vRi";
+static char MV[] = "mv -vi";
+static char RM[] = "rm -vri";
+static char LIB[] = "/usr/local/lib/usilic";
+#endif _CONFIG_H
+#define _CONFIG_H

@@ -1,0 +1,50 @@
+***************
+*** 34,41 ****
+          other terms are shown within parentheses ``''.
+  
+    _T_c_b(1) can be started with either following mode. (This mode name is
+-   displayed after the string ``Startup mode:'' in the TTCCBB window by typ-
+-   ing CCttrrll+tt.)
+  
+       ppaaggeerr
+          _T_c_b(1) will work as a ppaaggeerr when it is started with a pipe (`ls
+--- 34,41 ----
+          other terms are shown within parentheses ``''.
+  
+    _T_c_b(1) can be started with either following mode. (This mode name is
++   displayed after the string ``Startup mode:'' in the TTCCBB window by
++   typing CCttrrll+tt.)
+  
+       ppaaggeerr
+          _T_c_b(1) will work as a ppaaggeerr when it is started with a pipe (`ls
+***************
+*** 149,162 ****
+    On the mmooddee--lliinnee, if the cursor is positioned at the end of filename
+    which begins with a slash, the above key stroke will change the
+    current directory to the corresponding one in the file.  For example,
+-   typing `^^XXff/usr/local/lib/usilic/usilicrc EEnntteerr', and then ^^XX^^FF will display
+-   the following directory path in the mmooddee--lliinnee:
+  
+-   _/_u_s_r_/_l_o_c_a_l_/_l_i_b_/_t_c_b_/_t_c_b_r_c.
+  
+    By hitting ^^JJ22, the current directory changes to the following:
+  
+-   _/_u_s_r_/_l_o_c_a_l_/.
+  
+    22..22..  KKEEYY
+  
+--- 149,162 ----
+    On the mmooddee--lliinnee, if the cursor is positioned at the end of filename
+    which begins with a slash, the above key stroke will change the
+    current directory to the corresponding one in the file.  For example,
++   typing `^^XXff/usr/lib/usilic/usilicrc EEnntteerr', and then ^^XX^^FF will display the
++   following directory path in the mmooddee--lliinnee:
+  
++   _/_u_s_r_/_l_i_b_/_t_c_b_/_t_c_b_r_c.
+  
+    By hitting ^^JJ22, the current directory changes to the following:
+  
++   _/_u_s_r_/_l_i_b_/.
+  
+    22..22..  KKEEYY
+  
