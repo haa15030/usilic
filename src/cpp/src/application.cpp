@@ -16188,6 +16188,10 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
 #ifdef _WIN32
   // 2026-10-20(ManMode::runAndWrap()参照): Windowsのネイティブで見られるMANのページはusilicだけ。
   if (category == RingCategory::RecentManPage) items = {"usilic"};
+#else
+  // 2026-10-21、直接のユーザー依頼("MANの履歴にusilicを最初から収録"): 無ければ先頭(いちばん古い所、^J^EのURLと同じ)に。
+  if (category == RingCategory::RecentManPage && std::find(items.begin(), items.end(), "usilic") == items.end())
+    items.insert(items.begin(), "usilic");
 #endif
   listBrowserMode_.show(items, fileHistoryBadges(configuration_, category, items),
                         egrepList ? egrepListDisplayTexts(items) : recentFileDisplayTexts(category, items));

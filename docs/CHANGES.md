@@ -32210,3 +32210,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      openEpub()してからjumpHelpToKeyLine()でその行へ(fileView_の行を元の行ごとにまとめて比べるのでEPUBでも使える)。
      HELP.epubが無ければ以前どおり平文のHELP。Command::KeyJumpToHelpはKEYの外ではfalse(以前は平文のHELP)。-cの擬似端末で、
      KEYのhでHELP(EPUB)の行へ移り、(ls)のhでは何も起きないのを確かめた。
+
+984. **2026-10-21: MANの一覧(^J^M)に、無ければusilicを最初から入れる**
+   - **経緯**: 直接のユーザー依頼"MANの履歴にusilicを最初から収録"。
+   - **実装**: startPromptHistoryRecall()のRecentManPageで、一覧に"usilic"が無ければ先頭(いちばん古い所、^J^EのURLの
+     addDefaultUsilicWebUrl()と同じ)に足す(Windowsは以前からusilicだけ)。履歴の無い-cの擬似端末で、^J^Mにusilicが
+     出るのを確かめた。
