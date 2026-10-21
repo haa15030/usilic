@@ -32202,3 +32202,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼"注釈の「規定値」の前に改行を入れて"(=kyの「usilicrc の KEY」の注釈等)。
    - **実装**: help_to_epub.cppの注釈で、usilicrcのコメントの後、「既定値」("Default")の見出し(class="dh")の前に空行
      (class="rc"の&nbsp;)を1つ。HELP.epub・HELP.en.epubを作り直すと反映される。
+
+983. **2026-10-21: KEYのhはHELP.epubの該当の行へ、KEYの外のhは何もしない**
+   - **経緯**: 直接のユーザー依頼"KEYでの`h`は、平文ではなくHELP.epubへ飛んでほしい。KEY以外の`h`はHELPをPARTしていた頃の
+     名残なだけで^Hとも被るのでKEY以外での`h`は廃棄で"。
+   - **実装**: jumpFromKeyToHelp()は、親のいる-Kへ送っていた「何番目:選んだ行の文字列」を同じ窓のKEYでも作り、HELP.epubを
+     openEpub()してからjumpHelpToKeyLine()でその行へ(fileView_の行を元の行ごとにまとめて比べるのでEPUBでも使える)。
+     HELP.epubが無ければ以前どおり平文のHELP。Command::KeyJumpToHelpはKEYの外ではfalse(以前は平文のHELP)。-cの擬似端末で、
+     KEYのhでHELP(EPUB)の行へ移り、(ls)のhでは何も起きないのを確かめた。

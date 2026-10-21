@@ -5599,7 +5599,9 @@ bool Application::handleCommandImpl(Command command) {
       // 違和感なので^J^Ohを復活させてhのマクロにあてたい"): KEYの中では選んでいる行の平文のHELPの同じ行へ、
       // KEYの外では平文のHELP。(^Ohの目次と平文の切り替えは2026-10-14に廃止、Command::StartHelp参照。)
       if (currentMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Key) return jumpFromKeyToHelp();
-      return openPlainHelp();
+      // 2026-10-21、直接のユーザー依頼("KEY以外のhはHELPをPARTしていた頃の名残なだけで^Hとも被るのでKEY以外でのhは
+      // 廃棄で"): KEYの外では何もしない(以前は平文のHELP)。
+      return false;
     case Command::ToggleGuiMode:
       if (display_.isGraphical() && !guiToggleReturnsToTerminal_) {
         showTransientNotice(activeView(), "Already in GUI");
@@ -19704,7 +19706,9 @@ bool Application::jumpFromKeyToHelp() {
   // 2026-10-11、直接のユーザー依頼("-Kでhを復活し、-H画面で反映"、HELPの子がいなければ開き直す): 親のいる-Kは、
   // 選んだ行(折り返す前の1行)を、HELPの中で同じ行が何番目かと一緒に親へ送る(親がHELPの子へ回すか開き直す)。
   // 行番号ではなく文字列なのは、HELPの子とは組み方(groffの印)も幅も違い、行番号が合わないため。
-  if (keyColonListLaunch_ && parentPid_ > 0) {
+  // 2026-10-21、直接のユーザー依頼("KEYでのhは、平文ではなくHELP.epubへ飛んでほしい"): 同じ窓のKEYも同じ文字列と
+  // 番目で、HELP.epubを開いてからその行へ(jumpHelpToKeyLine()、HELP.epubが無ければ以前どおり平文のHELP)。
+  {
     std::optional<int> raw = content.front().rawLineNumber;
     std::vector<std::string> rawLines;  // wrapHelpText()の行を、折り返す前の行ごとにまとめたもの
     std::vector<std::optional<int>> rawNumbers;
@@ -19727,13 +19731,17 @@ bool Application::jumpFromKeyToHelp() {
       }
     if (key.empty()) return false;
     static const char kHex[] = "0123456789abcdef";
-    std::string message = "H " + std::to_string(nth) + ":";
+    std::string request = std::to_string(nth) + ":";
     for (unsigned char c : key) {
-      message += kHex[c >> 4];
-      message += kHex[c & 0xf];
+      request += kHex[c >> 4];
+      request += kHex[c & 0xf];
     }
-    if (!sendToChannel(parentPid_, "keys", message + "\n")) showTransientNotice(activeView(), "Parent not reachable");
-    return true;
+    if (keyColonListLaunch_ && parentPid_ > 0) {
+      if (!sendToChannel(parentPid_, "keys", "H " + request + "\n"))
+        showTransientNotice(activeView(), "Parent not reachable");
+      return true;
+    }
+    if (std::optional<std::string> epub = helpEpubPath(); epub && openEpub(*epub)) return jumpHelpToKeyLine(request);
   }
   return openPlainHelp(content.front().rawLineNumber);
 }
