@@ -32162,3 +32162,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      SDL_KEYDOWNのCtrlの変換は英字・[・スペースだけで、Ctrl+]等は読み捨てていた。
    - **実装**: SDLK_RIGHTBRACKET→0x1d、SDLK_BACKSLASH→0x1c、SDLK_CARET→0x1e、SDLK_UNDERSCORE・SDLK_SLASH→0x1f、SDLK_AT→0x80
      (Ctrl+Spaceと同じ^@の決まり)。
+
+978. **2026-10-21: 入力欄のTabで1つに決まった候補がディレクトリなら、確定せずに補完だけにする**
+   - **経緯**: 直接のユーザー報告"`^Xd/Volumes^I`では(あるいは`^Xd/Volu^I`でも)`/Volumes/`の(ls)になる(正しくは`/`(あるいは
+     `/Volumes/`)が補完され、`/Volumes/`で入力待ち)"。feedPromptByteInner()のTabは、候補が1つならRecentFile・RecentDirectory・
+     PathInput・ArchiveDestinationでそのままsubmitPrompt()していた(項目のフォローアップ13)。
+   - **実装**: 1つに決まった候補が'/'で終わる(ディレクトリ)なら補完だけにする(ファイルは今まで通り確定)。-cの擬似端末で
+     ^Xd/Volu^I・^Xd/Volumes^Iが「/Volumes/」で入力待ちになるのを確かめた。

@@ -15428,8 +15428,12 @@ bool Application::feedPromptByteInner(int byte) {
       // ArchiveDestinationもフィールド全体を1つの完結した値(常に
       // ディレクトリ)で置き換える全く同じ形のkindなので、対称的に
       // 含める――こちらには阻害する既存のdoctestが無いことを確認済み。
-      if (promptKind_ == PromptKind::RecentFile || promptKind_ == PromptKind::RecentDirectory ||
-          promptKind_ == PromptKind::PathInput || promptKind_ == PromptKind::ArchiveDestination) {
+      // 2026-10-21、直接のユーザー報告("`^Xd/Volumes^I`では(あるいは`^Xd/Volu^I`でも)`/Volumes/`の(ls)になる(正しくは
+      // `/`(あるいは`/Volumes/`)が補完され、`/Volumes/`で入力待ち)"): 1つに決まった候補がディレクトリ(末尾が'/')なら
+      // 補完だけで確定しない(その下をさらに補完できるように)。ファイルは今まで通りその場で確定する。
+      bool directory = !lcp.empty() && lcp.back() == '/';
+      if (!directory && (promptKind_ == PromptKind::RecentFile || promptKind_ == PromptKind::RecentDirectory ||
+                         promptKind_ == PromptKind::PathInput || promptKind_ == PromptKind::ArchiveDestination)) {
         return submitPrompt();
       }
     }
