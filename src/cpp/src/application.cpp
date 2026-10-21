@@ -10403,7 +10403,13 @@ bool Application::openSelectedGrepMatch() {
   ContentView &target = grepViewForMode(grepReturnMode_);
   target.setCursorIndex(match->sourceLineIndex);
   if (grepReturnMode_ != ApplicationMode::Shell) highlightGrepJumpTarget(target, match->sourceLineIndex);
+  // 2026-10-21、直接のユーザー報告("^O^J^S.o$^M^Mの画面上で^X(.^G^N^M^X)^Xe…戻り値が「EGREP: .o$」のままで無限行き来"): 飛ぶ
+  // たびに戻り値の注釈・戻り先を積み、^Gで一覧へ戻る時は降ろさないので、一覧の^G(returnFromGrep())が1つずつしか降ろせず、
+  // 飛んだ回数だけ一覧と行き来していた。一番上がこの一覧から飛んだ時のものなら、積み直さずに置き換える。
   if (grepReturnMode_ == ApplicationMode::Directory) {
+    if (const auto *top = directoryMode_.primaryAnnotations().top();
+        top && top->kind == DirectoryMode::DirAnnotationKind::Grep && !top->nameOverride)
+      directoryMode_.primaryAnnotations().pop();
     directoryMode_.primaryAnnotations().push(DirectoryMode::DirAnnotationKind::Grep,
                                               std::string(grepSyntaxLabel(grepSyntax_)) + ": " + grepMode_.pattern());
     // EXEC(2026-08-24追加、openSelectedLocateResult()自身のコメント
@@ -10446,6 +10452,10 @@ bool Application::openSelectedGrepMatch() {
     // それ自身の同一の訂正参照)。
     // 2026-10-10、直接のユーザー依頼("旧CUTでの修正と同じだが一覧から選んだ画面での戻り値は一律「FGREP: ^J」"):
     // 上の8/28の訂正(行の文字列)を改め、PARTの区間の中身(9/27)と同じく検索の種類と文字列を出す。
+    if (const auto *top = fileMode_.annotations().top(); top && top->kind == FileMode::FileAnnotationKind::Search &&
+                                                         !top->nameOverride &&
+                                                         top->text == previousModeName(ApplicationMode::Grep))
+      fileMode_.annotations().pop();  // 上のDirectoryの2026-10-21と同じ
     fileMode_.annotations().push(FileMode::FileAnnotationKind::Search, previousModeName(ApplicationMode::Grep));
     fileReturnMode_ = ApplicationMode::Grep;
   } else if (grepReturnMode_ == ApplicationMode::Man) {
@@ -10456,15 +10466,18 @@ bool Application::openSelectedGrepMatch() {
     // Grepを1つpush_back()するだけ――複数回ネストしても(例えば
     // マッチへ着地→そこから「さらに」別のGREPをしてまた別のマッチへ
     // 着地)、returnFromMan()が1段ずつ正しくpop_back()できる。
-    manReturnStack_.push_back(ApplicationMode::Grep);
+    if (manReturnStack_.empty() || manReturnStack_.back() != ApplicationMode::Grep)  // Directoryの2026-10-21と同じ
+      manReturnStack_.push_back(ApplicationMode::Grep);
   } else if (grepReturnMode_ == ApplicationMode::Locate) {
     // 上と同じ理屈、LOCATE版。
-    locateReturnStack_.push_back(ApplicationMode::Grep);
+    if (locateReturnStack_.empty() || locateReturnStack_.back() != ApplicationMode::Grep)  // Directoryの2026-10-21と同じ
+      locateReturnStack_.push_back(ApplicationMode::Grep);
   } else if (grepReturnMode_ == ApplicationMode::Du) {
     // 2026-09-19五訂正、直接のユーザー依頼("DUの修正と、戻り値の
     // 仕組みが無いようなのでMAN/LOCATEと同じ仕様にしてほしい")。
     // 上と同じ理屈、DU版。
-    duReturnStack_.push_back(ApplicationMode::Grep);
+    if (duReturnStack_.empty() || duReturnStack_.back() != ApplicationMode::Grep)  // Directoryの2026-10-21と同じ
+      duReturnStack_.push_back(ApplicationMode::Grep);
   } else if (grepReturnMode_ == ApplicationMode::Shell) {
     // 2026-09-20追加、直接のユーザー報告("ps等実行後、^Sps^Mでせっかく
     // プロンプト位置へ移動するのに^Mで無反応は残念"): 上のtarget.
