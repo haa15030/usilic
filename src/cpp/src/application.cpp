@@ -2550,6 +2550,9 @@ bool Application::loadPagerFile(const std::string &path) {
   auto filter = configuration_.programForSuffix(path, &kind);
   if (filter && kind == ArchiveKind::None && !filter->argv.empty() && !configuration_.isExec(path))
     return fileMode_.loadTransformedPagerFile(path, display_.rows(), "");
+  // 2026-10-21、直接のユーザー依頼("ページャーでももちろんMarkdownの変換を通してくれないと"): .md/.markdownも、
+  // (ls)の^Mと同じくmarkdownToHelpMarkup()で組んだ内容をページャーで開く(loadAndTransformContent()が変換する)。
+  if (isMarkdownFile(path)) return fileMode_.loadTransformedPagerFile(path, display_.rows(), "");
   int fd = ::open(path.c_str(), O_RDONLY);
   if (fd < 0) return false;
   fileMode_.loadStream(fd, /*ownsFd=*/true, path, display_.rows());

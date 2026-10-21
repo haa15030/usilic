@@ -32304,3 +32304,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - `markdown_to_help_markup.cpp`: `|`で始まる行の次が区切りの行(`|---|---|`)なら表とみなす(`isTableDelimiter()`・`splitTableRow()`)。各列を変換してから画面の幅(`markupDisplayWidth()`、タグは数えない)でそろえ、列の間は空白2つ、2桁の字下げ。見出しは太字、区切りは半角の`-`(罫線の─は2桁になることがあるため)。
    - 最後の列の区切りの線は、長い文の列だと画面の端で折り返したので、字下げを含めて80桁までに抑える。
    - 確認: `^Xf`でREADME.old.mdを開き、表が列にそろって出ることを擬似端末で確かめた(`-c ファイル`の起動はページャーの経路で、Markdownの変換を通らない)。
+
+996. **2026-10-21: ページャー(引数で開いたファイル)でも、Markdownを変換して表示する**
+   - 直接のユーザー依頼("ページャーでももちろんMarkdownの変換を通してくれないと")。項目995の確認で、`usilic README.old.md`(ページャー)だけはMarkdownの変換を通らず、生のまま出ていた。
+   - `Application::loadPagerFile()`(引数のファイルと、ページャーのn/pで移るファイルの両方)で、`.md`/`.markdown`は`loadTransformedPagerFile()`で開く(`loadAndTransformContent()`が`markdownToHelpMarkup()`する)。
+   - 確認: `usilic -c legacy/README.old.md`で、表が列にそろって出ることを擬似端末で確かめた。
