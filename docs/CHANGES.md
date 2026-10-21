@@ -32274,3 +32274,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ptyの現代化・コメント等を含む)とは別に置く。
    - **実装**: 初回インポート(47e2a1f、tcb-1.5b.linux無改造)の全ファイルの中身と名前のtcb/TCB/Tcbをusilic/USILIC/Usilicに置き換えた
      (バイナリは除く)。当時のビルドの残り(src/tcb.exe・TCB.EXE.stackdump・TAGS・perl/のdvi・aux・log)は入れない。
+
+992. **2026-10-21: legacy/(usilic.old)にクラッシュの修正だけを当て、新と並べて入れられるようにした**
+   - **経緯**: 項目991の続き(案A"クラッシュの修正のみ当てる")。
+   - **実装**: 7月以降の旧のコミットから、クラッシュ・ハング・メモリの破壊の修正だけを選んで当てた(f4c8d29のptyの現代化を除く
+     部分・018d51c・790dd15の(1)(2)(4)と日付のLC_ALL=C・1586411のPROMPT_COMMAND・a6a73c0・0ff70c0・c802cfdのデバッグの出力の削除
+     を除く部分・4b7e19c・2bc4abd・eeb5640/bf9546d)。macOSでビルドするための最小の直し(f1ca2a8のDarwinの分岐・8f27d7d・5f0c1f4・
+     0b5a0df)。当時の修正で見落とされていた、read_arc()がFILE*を32bitのfdに入れて渡していたのも直した。macOSでは/dev/ptyXXを
+     普通に開くと戻らず^J.で固まるので、O_NONBLOCKで試すようにした(SHELLは"Failed to open /dev/pty.."で戻る)。プログラム名を
+     usilic.old(~/.usilic.old/・usilic.oldrc)、環境変数をUSILIC_OLD等、一時ディレクトリを/tmp/.usilic.old、インストール先を
+     ~/.local/bin/usilic.old・~/.local/lib/usilic.old/にした。legacy/README.old.mdに、当てた修正・知っておくこと・Linuxで
+     CONFIG_LEGACY_PTYSを有効にしたカーネルを作る手順(Ubuntu・WSL2)を書いた。macOS 15で、ビルド・make install・(ls)・HELP・
+     ARC(tar.gzの一覧と中のファイル)・SHELLのキー(固まらずにエラーで戻る)を擬似端末で確かめた。macOSのtarの._ファイルの
+     取り違え(790dd15の(3)、クラッシュではない)は当てていない。
