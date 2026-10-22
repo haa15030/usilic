@@ -68,9 +68,26 @@ def main():
                 history.on_ring_pushed = lambda category: (
                     hist.save_to_disk(history, usilic_dir) if category != hist.SHELL_COMMAND else None)
                 app.directory_mode.history = app.file_mode.history = app.history = history
-            if not app.start_directory_listing(args[0] if args else '.'):
+            if args:
+                started = app.start_directory_listing(args[0])
+            else:  # 引数無し: 前回終わった時に見ていた物から(C++版と同じ「Current buffer」の名前)
+                last = hist.from_raw(history.session_state.last_open_name) if history is not None else ''
+                started = app.start_resuming_session(last, '.')
+            if not started:
                 return 'usilic: cannot list ' + (args[0] if args else '.')
-            app.on_exit = lambda: (app.save_positions(), history and hist.save_to_disk(history, usilic_dir))
+
+            def on_exit():
+                app.save_positions()
+                if history is None:
+                    return
+                # C++と同じく、ディレクトリで起動した時は見ていた物を残す(引数があっても)
+                resumed = hist.SessionState()
+                resumed.__dict__.update(history.session_state.__dict__)
+                resumed.last_open_name = hist.to_raw(app.current_resumable_name())
+                resumed.epub_vertical = False  # 縦横は本が決める
+                history.set_session_state(resumed)
+                hist.save_to_disk(history, usilic_dir)
+            app.on_exit = on_exit
         signal.signal(signal.SIGWINCH, on_winch)
         try:
             app.run(resized)

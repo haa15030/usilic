@@ -536,6 +536,49 @@ class Application:
         self.current_mode = DIRECTORY
         return True
 
+    def current_resumable_name(self):
+        """終わる時に見ていた物(次に引数無しで起動した時に開き直す、C++のcurrentResumableName()): FILEのファイル、
+        fileを分けたPART(「パス "文字列"」)、一番外のアーカイブ(ARCで見ていた.epubは「パス/」)、他は(ls)のディレクトリ。"""
+        mode = self.current_mode
+        name = self.file_mode.current_file
+        if mode == FILE and name and os.path.isabs(name) and os.path.isfile(name):
+            return name
+        if mode in (PART_TOC, PART) and self.part.source_name and os.path.isfile(self.part.source_name):
+            return '%s "%s"' % (self.part.source_name, self.part.pattern)
+        if mode == ARCHIVE and len(self.archives) == 1:
+            path = self.archives[0].current_archive
+            return path + '/' if is_epub_file(path) else path
+        return self.directory_mode.current_directory
+
+    def start_resuming_session(self, last, fallback):
+        """引数無しの起動: 前回終わった時に見ていた物から始める(C++のstartResumingSession())。開けなければその所の
+        (ls)。名前が無ければDIRの履歴の最新の(外から起動した物は除く)ディレクトリ。"""
+        spec = self.part_spec(last) if last else None
+        if spec and os.path.isfile(spec[0]):
+            if self.start_directory_listing(os.path.dirname(spec[0]) or fallback):
+                self.reopen_part(last)
+                return True
+        if last.endswith('/') and is_epub_file(last[:-1]) and os.path.isfile(last[:-1]):
+            if self.start_directory_listing(os.path.dirname(last[:-1])):
+                self.open_archive(last[:-1])
+                return True
+        if last and os.path.isfile(last):
+            if self.start_directory_listing(os.path.dirname(last) or fallback):
+                if is_epub_file(last):
+                    self.open_epub(last)
+                elif not (self.configuration.archive_for(last) and self.open_archive(last)):
+                    self.open_file(last)
+                return True
+        if not last:
+            recent = [d for d in self.ring(hist.RECENT_DIRECTORY) if not d.endswith(hist.USILIC_TAG)]
+            if recent and os.path.exists(recent[-1]):
+                fallback = recent[-1]
+        directory = last or fallback
+        while directory and not os.path.isdir(directory):  # 無くなっていれば、ある所まで上へ
+            parent = os.path.dirname(directory.rstrip('/'))
+            directory = parent if parent != directory else ''
+        return self.start_directory_listing(directory or fallback)
+
     def start_pager(self, files, stdin_stream=None):
         """引数のfile(複数ならn/p/x/f)または標準入力(Application::startPagerFileList())。"""
         self.pager_launch = True

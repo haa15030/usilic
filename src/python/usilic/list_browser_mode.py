@@ -52,12 +52,9 @@ class ListBrowserMode:
         self.view.ensure_cursor_visible()
 
     def toggle_sorted(self):
-        current = self.selected_item()
+        """^R: ソート済みと入力順を切り換える。カーソルは入力順なら最後(最新)、ソート済みなら先頭(C++の
+        toggleListBrowserHistory()と同じ、前の項目には残さない)。"""
         self.set_sorted(not self.sorted)
-        if current in self.items:  # 同じ項目にカーソルを残す
-            self.view.cursor_index = (self.items.index(current) if self.sorted
-                                      else len(self.items) - 1 - self.items[::-1].index(current))
-            self.view.ensure_cursor_visible()
 
     def selected_item(self):
         i = self.view.cursor_index
