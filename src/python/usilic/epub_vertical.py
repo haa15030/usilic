@@ -54,6 +54,7 @@ class SourceLine:
     links: list = field(default_factory=list)    # (開始, 終わり, href)
     indent_first: int = 0   # 最初の列の頭の空きのマス
     indent_rest: int = 0    # 続く列の頭の空きのマス
+    align_end: bool = False  # 1列に収まれば列の下端に寄せる(著者名等)
 
 
 @dataclass(slots=True)
@@ -71,6 +72,7 @@ class Column:
     cells: list
     raw: int
     padding: bool = False   # 章の頭を画面の右端に揃えるために足した空の列
+    title_page: bool = False  # 扉の1ページ分の列(その空の列も含む)
 
 
 _BLANK = Cell('  ')
@@ -153,6 +155,8 @@ def layout_columns(lines, rows):
         if not cells:
             cols.append(Column([], line.raw))
             continue
+        if line.align_end and len(cells) < height:  # 下端に寄せる
+            cells = [_BLANK] * (height - len(cells)) + cells
         i = 0
         while i < len(cells):
             indent = max(0, min(line.indent_first if i == 0 else line.indent_rest, height - 1))
@@ -182,7 +186,7 @@ class VerticalBook:
     """縦書きの本文の列の並びと、右端の列(first)・列カーソル(cursor)・記録(mark)・範囲指定(C++のApplicationの
     epubVerticalCols_・epubVerticalFirst_・epubVerticalCursor_・epubVerticalMark_・epubSelect…)。"""
 
-    def __init__(self, sources, chapter_raws, rows, columns, chapter_breaks):
+    def __init__(self, sources, chapter_raws, rows, columns, chapter_breaks, centered=(), horizontal=()):
         self.rows, self.columns = max(1, rows), columns
         self.per_screen = columns_per_screen(columns)
         self.chapter_breaks = chapter_breaks
@@ -191,11 +195,36 @@ class VerticalBook:
         self.link_targets = {s.raw: [h for _, _, h in sorted(s.links)] for s in sources if s.links}
         self.cols, self.boundaries = [], []
         laid = layout_columns(sources, self.rows)
-        for c, column in enumerate(laid):
-            if (c == 0 or laid[c - 1].raw != column.raw) and column.raw in chapter_raws:
-                self._pad_to_page()
-            self.cols.append(column)
+        c = 0
+        while c < len(laid):
+            raw = laid[c].raw
+            line_start = c == 0 or laid[c - 1].raw != raw
+            box = next((r for r in centered if r[0] <= raw <= r[1]), None)
+            if box is None:
+                if line_start and raw in chapter_raws:
+                    self._pad_to_page()
+                self.cols.append(laid[c])
+                c += 1
+                continue
+            # 扉(横書きの中の縦書きの箱): 1ページとし、両側に空の列を足して中央に置く
+            self._pad_to_page()
+            end = c
+            while end < len(laid) and box[0] <= laid[end].raw <= box[1]:
+                end += 1
+            title, c = laid[c:end], end
+            pad = max(0, self.per_screen - len(title))
+            self.cols += [Column([], box[0], padding=True, title_page=True) for _ in range(pad // 2)]
+            for column in title:
+                column.title_page = True
+                self.cols.append(column)
+            self.cols += [Column([], box[1], padding=True, title_page=True) for _ in range(pad - pad // 2)]
+            self._pad_to_page()  # 扉のページの後
         self._pad_to_page()  # 最後の章も右端から始められるよう
+        # 本文の後に横書きの範囲(奥付等)があれば、最後の章も本文の最後の列が右端に来るまで送れるよう1画面分の空の列
+        last_raw = max((col.raw for col in self.cols if not col.padding and col.cells), default=0)
+        if horizontal and horizontal[-1][0] > last_raw and self.cols:
+            raw = self.cols[-1].raw
+            self.cols += [Column([], raw, padding=True) for _ in range(self.per_screen)]
         self.first = self.cursor = 0
         self.mark = None
         self.link, self.link_raw = -1, -1
@@ -210,7 +239,7 @@ class VerticalBook:
         if self.chapter_breaks:
             size = len(self.cols)
             page = size - size % self.per_screen
-            if page != size and all(not c.cells and not c.padding for c in self.cols[page:]):
+            if page != size and all(not c.cells and not c.title_page for c in self.cols[page:]):
                 del self.cols[page:]  # 章の終わりの空行だけの新しいページは白紙になるので除く
             raw = self.cols[-1].raw if self.cols else 0
             while len(self.cols) % self.per_screen:
@@ -239,7 +268,10 @@ class VerticalBook:
                 first = c
                 break
         first = first if first is not None else max(0, len(self.cols) - 1)
-        self.set_view(first, first)
+        cursor = first  # 扉のページなら書名の列へ(列の頭はページの頭のまま)
+        while cursor + 1 < len(self.cols) and self.cols[cursor].title_page and self.cols[cursor].padding:
+            cursor += 1
+        self.set_view(first, cursor)
 
     def shown_range(self, first):
         """右端の列firstの章の列の範囲[from, until)(章ごとの時、画面には右端の列の章だけを描く)。"""
@@ -285,20 +317,42 @@ class VerticalBook:
         cursor = max(0, min(cursor, n - 1))
         d = 1 if forward else -1
         t, jumped = cursor + d, False
-        while 0 <= t < n and self.cols[t].padding:
+        if self.cols[cursor].title_page:  # 扉のページは1列の送り/戻りでページごと越える
+            while 0 <= t < n and self.cols[t].title_page:
+                t += d
+            jumped = True
+        while 0 <= t < n and self.cols[t].padding and not self.cols[t].title_page:
             t += d
             jumped = True
         if not 0 <= t < n:
             return -1, cursor
+        if self.cols[t].title_page:
+            return self.title_page_of(t)
         return ((t // self.per_screen) * self.per_screen if jumped else -1), t
+
+    def title_page_of(self, c):
+        """扉の列cの(ページの頭, 書名の列)。"""
+        start = c
+        while start > 0 and self.cols[start - 1].title_page:
+            start -= 1
+        title = start
+        while title < len(self.cols) and self.cols[title].title_page and self.cols[title].padding:
+            title += 1
+        if title >= len(self.cols) or not self.cols[title].title_page:
+            title = start
+        return start, title
 
     def step_first(self, delta):
         """右端の列を1列ずつdelta列ずらす(j/k)。列カーソルは送る向きの先頭。動いたらTrue。"""
         moved = False
         for _ in range(abs(delta)):
             before = self.first
-            _, target = self.step(self.first, delta > 0)
-            self.set_first(target)
+            first, target = self.step(self.first, delta > 0)
+            title = 0 <= target < len(self.cols) and self.cols[target].title_page
+            self.set_first(first if title and first >= 0 else target)
+            if title and self.first != before:
+                moved = True
+                continue
             if self.first != before:
                 cursor = self.first
                 if delta > 0:
@@ -314,6 +368,9 @@ class VerticalBook:
 
     def snap_to_page(self, forward):
         c = self.cursor
+        if 0 <= c < len(self.cols) and self.cols[c].title_page:  # 扉: ページの頭を右端に、カーソルは書名の列
+            self.set_view(*self.title_page_of(c))
+            return
         if 0 <= c < len(self.cols) and self.cols[c].padding:
             first, cursor = self.step(c, forward)
             self.set_view(self.first if first < 0 else first, cursor)

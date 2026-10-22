@@ -1,13 +1,19 @@
-"""EPUBの本(C++のfile_mode.cppのEPUBの読み込みとepub_to_help_markup.cppの、CUIの横書きの分)。
+"""EPUBの本(C++のfile_mode.cppのEPUBの読み込みとepub_to_help_markup.cppの、CUIの分)。
 
-container.xml→OPF→spineの順にXHTMLを読み、段落(p・h1〜h6・li等)ごとに行にする。字下げはCSSの
-padding-left・text-indent(1em=2桁)。太字(b・strong・h1〜h6)・下線(i・em・a)の属性を付ける。ルビは
-「親字《ルビ》」、画像は「[image: 名前]」(C++版の表示と同じ)。目次はnav.xhtml(無ければtoc.ncx、それも
-無ければspineの各ファイルの見出し)。
+container.xml→OPF→spineの順にXHTMLを読み、段落(p・h1〜h6・li等)ごとに行にする。太字(b・strong・h1〜h6・CSSの
+font-weight)・下線(i・em・a)の属性を付ける。ルビは「親字《ルビ》」、画像は「[image: 名前]」(C++版の表示と同じ)。
+目次はnav.xhtml(無ければtoc.ncx、それも無ければspineの各ファイルの見出し)。
+
+組版の指定(C++のEpubLayoutHints、EpubHints): 本文のファイルごとに、そのファイルが読み込むCSS(<link rel="stylesheet">・
+<style>)の単純なセレクタの規則から、要素ごとに縦横(writing-mode)・text-align・行頭側の余白(縦書きはpadding-top、横書きは
+padding-left)・text-indent・display:noneを決め、段落の最初の字の時点の値を段落に持たせる。縦書きの本の中の横書きの範囲
+(奥付等)・扉(横書きの中の縦書きの箱)・下端寄せ・中央寄せ・字下げ・注釈の区画(epub:typeと、本文と双方向のリンク)。
 """
+import math
 import posixpath
 import re
 import zipfile
+from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from urllib.parse import unquote
 
@@ -16,39 +22,209 @@ from .content_view import Line, wrap_text
 
 _BLOCKS = {'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote', 'section', 'aside', 'tr', 'dt',
            'dd', 'figure', 'figcaption', 'header', 'footer', 'article', 'nav', 'pre', 'table', 'ol', 'ul', 'dl',
-           'body', 'hr'}
+           'body', 'hr', 'caption', 'main', 'address'}
+_HEADINGS = {'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}
 _BOLD = {'b', 'strong', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'th'}
 _UNDERLINE = {'i', 'em', 'a', 'cite', 'u'}
 _SKIP = {'head', 'script', 'style', 'rp', 'title'}
+_VOID = {'br', 'img', 'image', 'hr', 'link', 'meta', 'input', 'col', 'area', 'base', 'wbr', 'source'}
+HR_TEXT = '-' * 40  # 区切り線(中央に置く、C++と同じ)
+
+
+def _round(x):
+    """C++のstd::lround()(0.5は0から遠い方へ)。"""
+    return int(math.floor(abs(x) + 0.5)) * (1 if x >= 0 else -1)
+
+
+# ---- CSS(C++のparseCssFontRules()の、CUIで使う分) ----
+
+@dataclass
+class CssRule:
+    tag: str
+    classes: list
+    props: dict  # vertical・align_end・center・pad_top・pad_left・text_indent・hidden・bold
+
+
+def _em(value):
+    """「1em」「-1em」「0」(emか0だけ、他の単位は読まない)。"""
+    v = value.strip()
+    if v == '0':
+        return 0.0
+    m = re.fullmatch(r'([-+]?[0-9]*\.?[0-9]+)em', v)
+    return float(m.group(1)) if m else None
+
+
+def _writing_mode(value):
+    if 'vertical' in value:
+        return True
+    if 'horizontal' in value:  # 知らない値(Kbt.epubの"hirozontal-tb"等の綴り違い)は無視
+        return False
+    return None
+
+
+def _align_end(value):
+    if 'right' in value or 'end' in value:
+        return True
+    return False if any(v in value for v in ('left', 'start', 'center', 'justify')) else None
+
+
+def _align_center(value):
+    if 'center' in value:
+        return True
+    return False if any(v in value for v in ('left', 'start', 'right', 'end', 'justify')) else None
+
+
+def _font_weight(value):
+    v = value.strip()
+    if not v:
+        return None
+    if 'bold' in v:
+        return True
+    if v[0].isdigit():
+        return int(re.match(r'\d+', v).group(0)) >= 600
+    return False
+
+
+def parse_css(css):
+    """CSSから規則の並び(単純なセレクタ「タグ」「.クラス」「タグ.クラス」だけ、頭のhtml/bodyは外す)。"""
+    css = re.sub(r'/\*.*?(\*/|$)', '', css, flags=re.S)
+    rules, pos = [], 0
+    while pos < len(css):
+        open_at = css.find('{', pos)
+        if open_at < 0:
+            break
+        selectors = css[pos:open_at].strip()
+        if ';' in selectors:  # "@charset ...;"等の文を読み飛ばす
+            selectors = selectors[selectors.rfind(';') + 1:].strip()
+        depth, close = 1, open_at + 1
+        while close < len(css) and depth > 0:
+            depth += {'{': 1, '}': -1}.get(css[close], 0)
+            close += 1
+        body = css[open_at + 1:close - 1]
+        pos = close
+        if selectors.startswith('@'):
+            if selectors.startswith('@media'):
+                rules.extend(parse_css(body))
+            continue
+        props = {}
+        for decl in body.split(';'):  # 同じ規則の中では後の宣言が勝つ
+            name, colon, value = decl.partition(':')
+            if not colon:
+                continue
+            name, value = name.strip().lower(), value.strip()
+            readers = []
+            if 'writing-mode' in name:
+                readers.append(('vertical', _writing_mode))
+            if 'text-align' in name:
+                readers += [('align_end', _align_end), ('center', _align_center)]
+            lengths = {'padding-top': 'pad_top', 'padding-left': 'pad_left', 'text-indent': 'text_indent'}
+            if name in lengths:  # "-webkit-padding-top"等には当てない
+                readers.append((lengths[name], _em))
+            if name == 'display':
+                readers.append(('hidden', lambda v: ('none' in v) if v.strip() else None))
+            if 'font-weight' in name:
+                readers.append(('bold', _font_weight))
+            for key, read in readers:
+                result = read(value)
+                if result is not None:
+                    props[key] = result
+        if not props:
+            continue
+        for sel in selectors.split(','):
+            sel = sel.strip()
+            stripped = True
+            while stripped:  # "html body { writing-mode: horizontal-tb }"(K3t.epub)は最後の部分と同じ
+                stripped = False
+                for outer in ('html', 'body'):
+                    if sel.startswith(outer) and len(sel) > len(outer):
+                        rest = sel[len(outer):]
+                        nxt = len(rest) - len(rest.lstrip(' \t\n>'))
+                        if nxt == 0 or nxt == len(rest):
+                            continue
+                        sel, stripped = rest[nxt:], True
+            if not sel or any(c in sel for c in ' \t\n>+~:[#'):
+                continue
+            parts = sel.split('.')
+            tag = '' if parts[0] == '*' else parts[0]
+            rules.append(CssRule(tag, parts[1:], props))
+    return rules
+
+
+def rule_for(rules, tag, classes, key):
+    """要素に当てはまりkeyを指定している規則のうち、詳しさ(クラスの数、次にタグ)が最も高いもの、同じなら後の物。"""
+    best, score = None, -1
+    for rule in rules:
+        if key not in rule.props or (rule.tag and rule.tag != tag) or not all(c in classes for c in rule.classes):
+            continue
+        s = len(rule.classes) * 10 + (1 if rule.tag else 0)
+        if s >= score:
+            best, score = rule.props[key], s
+    return best
+
+
+@dataclass
+class _Style:
+    """要素ごとの状態(C++のBodyConverterのfontStack_の1つ分)。"""
+    vertical: object = None       # writing-mode(None: 指定無し)
+    outside: bool = False         # 外側の要素のどれかが横書き(扉の縦書きの箱の見分け)
+    align_end: bool = False
+    center: bool = False
+    pad_top: float = 0.0          # 行頭側の余白(ブロックの中の行すべて、足していく)
+    pad_left: float = 0.0
+    text_indent: float = 0.0      # 段落の最初の行のずれ(継承)
+    bold: bool = False
+
+
+def is_note_type(value):
+    """epub:typeの語に注釈そのもの(footnote・endnote・rearnote・note)があるか(noterefやendnotesは違う)。"""
+    return any(w in ('footnote', 'endnote', 'rearnote', 'note') for w in (value or '').split())
 
 
 class Block:
     def __init__(self, tag, classes):
         self.tag = tag
         self.classes = classes
-        self.pieces = []          # (文字列, 属性)
+        self.pieces = []          # (文字列, 属性, href)
         self.anchors = []         # このブロックの中のid
         self.pre = 'pre' in classes or tag == 'pre'
+        self.styled = False       # 最初の字の時点の状態を持たせたか
+        self.kind = 'normal'      # 'horizontal'(縦書きの本の中の横書き)・'centered'(扉)
+        self.align_end = False
+        self.center = False
+        self.indent_em = (0, 0)       # 縦書きの列の頭の空き(1行目, 2行目から)
+        self.indent_columns = (0, 0)  # 横書きの字下げの桁(半角の数)
 
     def text(self):
         return ''.join(p[0] for p in self.pieces)
 
 
 class _XhtmlParser(HTMLParser):
-    """XHTMLを段落(Block)の並びに。"""
+    """XHTMLを段落(Block)の並びに。rulesはこのファイルが読み込むCSSの規則、book_verticalは本全体の向き。"""
 
-    def __init__(self):
+    def __init__(self, rules=(), book_vertical=False):
         super().__init__(convert_charrefs=True)
+        self.rules = list(rules)
+        self.book_vertical = book_vertical
         self.blocks = []
-        self.stack = []       # (tag, classes)
+        self.stack = []       # (tag, classes, _Style)
         self.current = None
         self.skip = 0
         self.ruby = []        # ルビの読み(rtの中の字)
         self.in_rt = 0
         self.pending_anchors = []
         self.hrefs = []       # 開いている<a href>の並び
+        self.hidden = None    # display:noneの要素(tag, 入れ子の数, 見出しか)
+        self.hidden_text = []
+        self.hidden_label = None  # 隠した見出しの字(章の名前)
+        self.block_frames = []    # (tag, 始まりのブロック, 注釈か, [id])
+        self.anchor_blocks = {}   # id→そのidを持つ(か囲む一番内側の)ブロックの範囲(ブロックの番号)
+        self.note_ranges = []
 
-    def _classes(self, attrs):
+    def style(self):
+        return self.stack[-1][2] if self.stack else _Style()
+
+    @staticmethod
+    def _classes(attrs):
         return set((dict(attrs).get('class') or '').split())
 
     def _start_block(self, tag, classes):
@@ -58,33 +234,83 @@ class _XhtmlParser(HTMLParser):
         self.pending_anchors = []
 
     def _end_block(self):
-        if self.current is not None and (self.current.pieces or self.current.anchors):
-            self.blocks.append(self.current)
-        self.current = None
+        """字の無いブロックは行にしない(idは次に字の出る段落へ、C++と同じ)。空の見出しだけは目次の名前の行のために残す
+        (EpubBook._with_toc_labels())。"""
+        block, self.current = self.current, None
+        if block is None:
+            return
+        if block.pieces or (block.anchors and block.tag in _HEADINGS):
+            self.blocks.append(block)
+        elif block.anchors:
+            self.pending_anchors = block.anchors + self.pending_anchors
 
     def _attr(self):
-        bold = any(t in _BOLD for t, _ in self.stack)
-        under = any(t in _UNDERLINE for t, _ in self.stack)
+        bold = any(t in _BOLD for t, _, _ in self.stack) or self.style().bold
+        under = any(t in _UNDERLINE for t, _, _ in self.stack)
         return 'bold' if bold else 'underline' if under else None
+
+    def _apply_style(self, block):
+        """段落の最初の字の時点の状態(C++のtext()のlineKind_・startLineIndent())。"""
+        st = self.style()
+        block.styled = True
+        block.kind = 'horizontal' if st.vertical is False else 'centered' if st.vertical and st.outside else 'normal'
+        block.align_end, block.center = st.align_end, st.center
+        vertical = st.vertical if st.vertical is not None else self.book_vertical
+        padding = st.pad_top if vertical else st.pad_left
+        block.indent_em = (max(0, _round(padding + st.text_indent)), max(0, _round(padding)))
+        block.indent_columns = (max(0, _round((padding + st.text_indent) * 2)), max(0, _round(padding * 2)))
 
     def _add(self, text, attr=None):
         if self.current is None:
-            parent = next(((t, c) for t, c in reversed(self.stack) if t in _BLOCKS), ('p', set()))
+            parent = next(((t, c) for t, c, _ in reversed(self.stack) if t in _BLOCKS), ('p', set()))
             self._start_block(parent[0], parent[1])
         text = text.replace('\xa0', ' ')
+        if not self.current.styled and text.strip(' '):
+            self._apply_style(self.current)
         href = next((h for h in reversed(self.hrefs) if h), None)
         self.current.pieces.append((text, attr if attr is not None else self._attr(), href))
 
+    def _push(self, tag, attrs):
+        """要素の状態を積む(C++のhandle()の最後、fontStack_)。"""
+        parent = self.style()
+        classes = self._classes(attrs)
+        st = _Style(parent.vertical, parent.outside or parent.vertical is False, parent.align_end, parent.center,
+                    parent.pad_top, parent.pad_left, parent.text_indent, parent.bold)
+
+        def rule(key):
+            return rule_for(self.rules, tag, classes, key)
+        for key in ('vertical', 'align_end', 'center', 'text_indent'):
+            value = rule(key)
+            if value is not None:
+                setattr(st, key, value)
+        st.pad_top += rule('pad_top') or 0.0
+        st.pad_left += rule('pad_left') or 0.0
+        if rule('bold'):
+            st.bold = True
+        self.stack.append((tag, classes, st))
+
     def handle_starttag(self, tag, attrs):
+        if self.hidden is not None:
+            if tag == self.hidden[0] and tag not in _VOID:
+                self.hidden = (self.hidden[0], self.hidden[1] + 1, self.hidden[2])
+            return
         if tag in _SKIP:
             self.skip += 1
             return
+        if self.skip:
+            return
         a = dict(attrs)
-        if a.get('id'):
+        if tag not in _VOID and rule_for(self.rules, tag, self._classes(attrs), 'hidden'):  # display:none
+            self.hidden = (tag, 1, tag in _HEADINGS)
+            self.hidden_text = []
+            return
+        if a.get('id') and not (tag in _BLOCKS and tag not in _VOID):  # ブロックのidは始めてから(下)
             if self.current is not None:
                 self.current.anchors.append(a['id'])
             else:
                 self.pending_anchors.append(a['id'])
+            if tag not in _BLOCKS and self.block_frames:
+                self.block_frames[-1][3].append(a['id'])
         if tag in ('br',):
             if self.current is not None:
                 tag0, classes = self.current.tag, self.current.classes
@@ -98,7 +324,15 @@ class _XhtmlParser(HTMLParser):
             return
         if tag in ('img', 'image'):
             src = a.get('src') or a.get('xlink:href') or a.get('href') or ''
-            self._add('[image: %s]' % posixpath.basename(src))
+            self._add('[image: %s]' % posixpath.basename(unquote(src)))
+            return
+        if tag == 'hr':
+            self._start_block('hr', set())
+            self._add(HR_TEXT)
+            self.current.center = True  # 区切り線は中央に置く(縦横は今の要素に従う)
+            self._end_block()
+            return
+        if tag in _VOID:
             return
         if tag == 'rt':
             self.in_rt += 1
@@ -106,22 +340,35 @@ class _XhtmlParser(HTMLParser):
             self.hrefs.append(a.get('href'))
         if tag in _BLOCKS:
             self._start_block(tag, self._classes(attrs))
-            if tag == 'hr':
-                self._add('―' * 8)
-                self._end_block()
-                return
-        self.stack.append((tag, self._classes(attrs)))
+            if a.get('id'):
+                self.current.anchors.append(a['id'])
+            self.block_frames.append((tag, len(self.blocks), is_note_type(a.get('epub:type') or a.get('type')),
+                                      [a['id']] if a.get('id') else []))
+        self._push(tag, attrs)
 
     def handle_startendtag(self, tag, attrs):
         self.handle_starttag(tag, attrs)
-        if tag not in ('br', 'img', 'image', 'hr') and tag not in _SKIP:
+        if tag not in _VOID and tag not in _SKIP and self.hidden is None:
             self.handle_endtag(tag)
         elif tag in _SKIP:
-            self.skip -= 1
+            self.skip = max(0, self.skip - 1)
 
     def handle_endtag(self, tag):
+        if self.hidden is not None:
+            if tag == self.hidden[0]:
+                nest = self.hidden[1] - 1
+                if nest == 0:
+                    label = re.sub(r'\s+', ' ', ''.join(self.hidden_text)).strip()
+                    if self.hidden[2] and label:
+                        self.hidden_label = label  # 隠した見出しの字は章の名前に(EpubHints.chapter_label)
+                    self.hidden = None
+                else:
+                    self.hidden = (self.hidden[0], nest, self.hidden[2])
+            return
         if tag in _SKIP:
             self.skip = max(0, self.skip - 1)
+            return
+        if self.skip:
             return
         if tag == 'rt':
             self.in_rt = max(0, self.in_rt - 1)
@@ -130,20 +377,34 @@ class _XhtmlParser(HTMLParser):
                 self.ruby = []
         if tag == 'a' and self.hrefs:
             self.hrefs.pop()
+        if tag in _BLOCKS:
+            self._end_block()
+            for i in range(len(self.block_frames) - 1, -1, -1):
+                if self.block_frames[i][0] == tag:
+                    _, start, note, ids = self.block_frames.pop(i)
+                    end = len(self.blocks) - 1
+                    if end >= start:
+                        for anchor in ids:
+                            self.anchor_blocks.setdefault(anchor, (start, end))
+                        if note:
+                            self.note_ranges.append((start, end))
+                    break
         for i in range(len(self.stack) - 1, -1, -1):
             if self.stack[i][0] == tag:
                 del self.stack[i:]
                 break
-        if tag in _BLOCKS:
-            self._end_block()
 
     def handle_data(self, data):
+        if self.hidden is not None:
+            if self.hidden[2]:
+                self.hidden_text.append(data)
+            return
         if self.skip:
             return
         if self.in_rt:
             self.ruby.append(data.strip())
             return
-        pre = self.current.pre if self.current is not None else any('pre' in c or t == 'pre' for t, c in self.stack)
+        pre = self.current.pre if self.current is not None else any('pre' in c or t == 'pre' for t, c, _ in self.stack)
         if not pre:
             data = re.sub(r'[ \t\r\n]+', ' ', data)
             if self.current is None and not data.strip():
@@ -155,24 +416,25 @@ class _XhtmlParser(HTMLParser):
         self._end_block()
 
 
-def _parse_css(text):
-    """CSSから「要素.クラス」ごとの(padding-left, text-indent)をemで。"""
-    rules = {}
-    for selector, body in re.findall(r'([^{}]+)\{([^}]*)\}', text):
-        props = dict((k.strip(), v.strip()) for k, _, v in
-                     (p.partition(':') for p in body.split(';') if ':' in p))
+def _stylesheets(xhtml):
+    """本文のファイルが読み込むCSS: (<link rel="stylesheet">のhrefの並び, <style>の中身の並び)。"""
+    links = []
+    for tag in re.findall(r'<link\b[^>]*>', xhtml, re.I):
+        attrs = dict((k.lower(), v) for k, v in re.findall(r'([\w:-]+)\s*=\s*["\']([^"\']*)["\']', tag))
+        if 'stylesheet' in attrs.get('rel', '') and attrs.get('href'):
+            links.append(attrs['href'])
+    styles = re.findall(r'<style\b[^>]*>(.*?)</style>', xhtml, re.I | re.S)
+    return links, styles
 
-        def em(name):
-            m = re.match(r'(-?[0-9.]+)em', props.get(name, ''))
-            return float(m.group(1)) if m else None
-        left, indent = em('padding-left'), em('text-indent')
-        if left is None and indent is None:
-            left = em('margin-left')
-        if left is None and indent is None:
-            continue
-        for sel in selector.split(','):
-            rules[sel.strip()] = (left or 0.0, indent or 0.0)
-    return rules
+
+def _is_cover_page(xhtml):
+    """本文(<body>の中)に字が無く、画像(<img>・SVGの<image>)だけのページか。"""
+    body = xhtml.find('<body')
+    if body < 0:
+        return False
+    rest = xhtml[body:]
+    image = re.search(r'<(img|image|svg:image)\b', rest) is not None
+    return image and not re.sub(r'<[^>]*>', '', rest).strip()
 
 
 class _NavParser(HTMLParser):
@@ -208,15 +470,32 @@ class _NavParser(HTMLParser):
             self.text.append(data)
 
 
+@dataclass
+class EpubHints:
+    """組版の指定(C++のEpubLayoutHints)。行は元の行の番号(段落の番号、1から)。"""
+    horizontal: list = field(default_factory=list)   # 縦書きの本の中の横書きの範囲(両端を含む)
+    centered: list = field(default_factory=list)     # 扉(横書きの中の縦書きの箱)の範囲
+    align_end: set = field(default_factory=set)      # 下端寄せ(text-align: right/end)
+    center: set = field(default_factory=set)         # 中央寄せ(text-align: center、区切り線)
+    indent: dict = field(default_factory=dict)       # 元の行→(1行目, 2行目から)の字下げ(字の数)
+    notes: list = field(default_factory=list)        # 注釈の区画の範囲
+    chapter_files: list = field(default_factory=list)  # (章の頭の元の行, 書庫の中のパス)
+
+
 class EpubBook:
     def __init__(self):
         self.path = ''
         self.title = ''
+        self.creator = ''
         self.spine = []        # 書庫の中のパス
         self.documents = {}    # パス -> [Block]
-        self.css = {}
+        self.anchor_blocks = {}  # パス -> {id: (始まり, 終わり)}(ブロックの番号)
+        self.note_blocks = {}    # パス -> [(始まり, 終わり)]
+        self.hidden_labels = {}  # パス -> 隠した見出しの字
         self.toc = []          # (パス#id, 見出し, 深さ)
         self.right_to_left = False
+        self.cover_first = False  # 最初のページが画像だけ(表紙): 書名・著者名はその後
+        self.hints = EpubHints()
 
     def load(self, path):
         """読めなければFalse(壊れたzip、OPFが無い等)。"""
@@ -230,7 +509,7 @@ class EpubBook:
                 opf_path = m.group(1)
                 opf = z.read(opf_path).decode('utf-8', 'replace')
                 base = posixpath.dirname(opf_path)
-                manifest, nav_href, ncx_href, css = {}, None, None, []
+                manifest, nav_href, ncx_href = {}, None, None
                 for item in re.findall(r'<item\b[^>]*>', opf):
                     attrs = dict(re.findall(r'([\w:-]+)="([^"]*)"', item))
                     href = posixpath.normpath(posixpath.join(base, unquote(attrs.get('href', ''))))
@@ -239,21 +518,38 @@ class EpubBook:
                         nav_href = href
                     if attrs.get('media-type') == 'application/x-dtbncx+xml':
                         ncx_href = href
-                    if attrs.get('media-type') == 'text/css':
-                        css.append(href)
-                title = re.search(r'<dc:title[^>]*>(.*?)</dc:title>', opf, re.S)
-                self.title = re.sub(r'<[^>]+>', '', title.group(1)).strip() if title else ''
+
+                def meta(name):
+                    found = re.search(r'<dc:%s[^>]*>(.*?)</dc:%s>' % (name, name), opf, re.S)
+                    # 全角の空白は字のまま(C++のcollapseSpace()は半角の空白類だけ)
+                    return re.sub(r'[ \t\r\n]+', ' ', re.sub(r'<[^>]+>', '', found.group(1))).strip(' ') if found else ''
+                self.title, self.creator = meta('title'), meta('creator')
                 self.right_to_left = bool(re.search(r'page-progression-direction="rtl"', opf))
                 self.spine = [manifest[i] for i in re.findall(r'<itemref\b[^>]*idref="([^"]+)"', opf)
                               if manifest.get(i) in names]
-                for href in css:
-                    if href in names:
-                        self.css.update(_parse_css(z.read(href).decode('utf-8', 'replace')))
-                for href in self.spine:
-                    parser = _XhtmlParser()
-                    parser.feed(z.read(href).decode('utf-8', 'replace'))
+                css_cache = {}
+                for n, href in enumerate(self.spine):
+                    xhtml = z.read(href).decode('utf-8', 'replace')
+                    if n == 0:
+                        self.cover_first = _is_cover_page(xhtml)
+                    links, styles = _stylesheets(xhtml)
+                    rules = []
+                    for link in links:
+                        css_path = self._resolve(posixpath.dirname(href), link).partition('#')[0]
+                        if css_path not in css_cache:
+                            css_cache[css_path] = parse_css(z.read(css_path).decode('utf-8', 'replace')) \
+                                if css_path in names else []
+                        rules += css_cache[css_path]
+                    for style in styles:
+                        rules += parse_css(style)
+                    parser = _XhtmlParser(rules, self.right_to_left)
+                    parser.feed(xhtml)
                     parser.close()
                     self.documents[href] = parser.blocks
+                    self.anchor_blocks[href] = parser.anchor_blocks
+                    self.note_blocks[href] = parser.note_ranges
+                    if parser.hidden_label:
+                        self.hidden_labels[href] = parser.hidden_label
                 self.toc = self._read_toc(z, nav_href if nav_href in names else None,
                                           ncx_href if ncx_href in names else None)
         except (OSError, KeyError, zipfile.BadZipFile, UnicodeError):
@@ -281,7 +577,7 @@ class EpubBook:
         out = []
         for href in self.spine:
             heading = next((b.text().strip() for b in self.documents[href] if b.tag in ('h1', 'h2', 'h3')), '')
-            out.append((href, heading or posixpath.basename(href), 0))
+            out.append((href, heading or self.hidden_labels.get(href) or posixpath.basename(href), 0))
         return out
 
     @staticmethod
@@ -290,35 +586,105 @@ class EpubBook:
         path = posixpath.normpath(posixpath.join(base, unquote(path))) if path else ''
         return path + ('#' + fragment if fragment else '')
 
-    def _indent(self, block):
-        """段落の(左の桁, 1行目の桁)。"""
-        left = indent = 0.0
-        for key in [block.tag] + ['%s.%s' % (block.tag, c) for c in sorted(block.classes)] + \
-                   ['.%s' % c for c in sorted(block.classes)]:
-            if key in self.css:
-                left, indent = self.css[key]
-        return max(0, round(left * 2)), max(0, round((left + indent) * 2))
+    def _with_toc_labels(self, href, blocks):
+        """目次の項目が指す所に字が無ければ、目次の名前(太字)の行にする。空の見出しの次が画像だけの段落なら、
+        「表紙 [image: title.jpg]」の1行にまとめる(C++のBodyConverterのpendingLabel_・deferredLabel_)。"""
+        labels, pending = {}, None
+        for target, label, _ in self.toc:
+            path, _, fragment = target.partition('#')
+            if path == href and label:
+                if fragment:
+                    labels.setdefault(fragment, label)
+                elif pending is None:
+                    pending = label
+        out, i, index_map, carried = [], 0, {}, []
+        while i < len(blocks):
+            index_map[i] = len(out)
+            block = blocks[i]
+            if carried:  # 行にしなかった空の見出しのidは、この段落へ
+                copy = Block(block.tag, block.classes)
+                copy.__dict__.update(block.__dict__)
+                copy.anchors = carried + block.anchors
+                block, carried = copy, []
+            for anchor in block.anchors:
+                pending = labels.get(anchor, pending)
+            if block.text().strip(' ') or pending is None or (block.tag not in _HEADINGS and
+                                                                not any(a in labels for a in block.anchors)):
+                if block.text().strip(' '):
+                    pending = None
+                if not block.pieces and block.tag in _HEADINGS:  # 名前の無い空の見出し: 行にしない
+                    carried = block.anchors
+                    i += 1
+                    continue
+                out.append(block)
+                i += 1
+                continue
+            nxt = blocks[i + 1] if i + 1 < len(blocks) else None
+            image_only = nxt is not None and re.fullmatch(r'(\[image: [^\]]*\] ?)+', nxt.text().strip(' '))
+            merged = Block(nxt.tag if image_only else block.tag, nxt.classes if image_only else block.classes)
+            merged.pieces = [(pending, 'bold', None)] + ([(' ', None, None)] + nxt.pieces if image_only else [])
+            merged.anchors = block.anchors + (nxt.anchors if image_only else [])
+            # 目次の名前の行の縦横等は、その所の状態(C++のcurrentKind())=続く段落の物
+            source = nxt if nxt is not None and nxt.styled else block
+            for name in ('styled', 'kind', 'align_end', 'center', 'indent_em', 'indent_columns'):
+                setattr(merged, name, getattr(source, name))
+            merged.tag = 'h2' if not image_only else merged.tag  # 章の行
+            if image_only:
+                index_map[i + 1] = len(out)
+            out.append(merged)
+            pending = None
+            i += 2 if image_only else 1
+        return out, index_map
+
+    def _header_blocks(self):
+        """本の冒頭の書名(太字)・著者名と空の行(C++のepubToHelpMarkup()のheader)。"""
+        blocks = []
+        for text, attr in ((self.title, 'bold'), (self.creator, None)):
+            if text:
+                block = Block('p', set())
+                block.pieces.append((text, attr, None))
+                blocks.append(block)
+        return blocks + [Block('p', set())] if blocks else []
 
     def render(self, width):
-        """本全体を画面の行に。(行の並び, 目次の各項目の行の番号)を返す。"""
+        """本全体を画面の行に。(行の並び, 目次の各項目の行の番号)を返す。組版の指定はself.hintsへ。"""
         lines, anchors, number = [], {}, 0
-        self.indents, self.chapter_files = {}, []  # 縦書き用: 元の行→(1行目, 2行目から)の桁、(章の頭の元の行, パス)
-        for href in self.spine:
-            anchors[href] = len(lines)
-            self.chapter_files.append((number + 1, href))
-            for block in self.documents[href]:
+        hints = EpubHints()
+        kinds, heading_raws, links = {}, set(), []   # 元の行→種類、章の行、(元の行, 行き先)
+        anchor_raws, header = {}, (0, 0)
+        documents = [(href,) + self._with_toc_labels(href, self.documents[href]) for href in self.spine]
+        at = 1 if self.cover_first else 0
+        if self._header_blocks():
+            documents.insert(min(at, len(documents)), (None, self._header_blocks(), {}))
+        pending = []  # 字の出る行を待っているアンカー(C++のresolveAnchorsHere()、空の行は指さない)
+
+        def resolve(index, raw):
+            for key in pending:
+                if key not in anchor_raws:
+                    anchors.setdefault(key[:-1] if key.endswith('#') else key, index)
+                    anchor_raws[key] = raw
+            pending.clear()
+        for href, blocks, index_map in documents:
+            if href is None:
+                header = (number + 1, number + len([b for b in blocks if b.pieces]))
+            else:
+                pending.append(href + '#')
+            first_number = number + 1
+            for block in blocks:
                 number += 1
-                for anchor in block.anchors:
-                    anchors.setdefault(href + '#' + anchor, len(lines))
-                text, runs, links, pos = '', [], [], 0
-                base = posixpath.dirname(href)
+                if href is not None:
+                    pending.extend(href + '#' + anchor for anchor in block.anchors)
+                text, runs, line_links, pos = '', [], [], 0
+                base = posixpath.dirname(href or '')
                 for piece, attr, link in block.pieces:
                     if attr:
                         runs.append((pos, pos + len(piece), attr))
                     if link:
                         target = link if re.match(r'[a-z]+:', link) else (
                             self._resolve(base, link) if not link.startswith('#') else href + link)
-                        links.append((pos, pos + len(piece), target))
+                        line_links.append((pos, pos + len(piece), target))
+                        if not re.match(r'[a-z]+:', target):
+                            links.append((number, target))
                     text += piece
                     pos += len(piece)
                 if not block.pre:
@@ -326,15 +692,105 @@ class EpubBook:
                     shift = len(text) - len(stripped)
                     text = stripped.rstrip(' ')
                     runs = [(max(0, s - shift), max(0, e - shift), a) for s, e, a in runs]
-                    links = [(max(0, s - shift), max(0, e - shift), h) for s, e, h in links]
-                left, first = self._indent(block)
-                self.indents[number] = (first, left)
-                lines.extend(_wrap_with_indent(text, runs, width, first, left, number, links))
+                    line_links = [(max(0, s - shift), max(0, e - shift), h) for s, e, h in line_links]
+                if text:
+                    kinds[number] = block.kind
+                    if block.align_end:
+                        hints.align_end.add(number)
+                    if block.center:
+                        hints.center.add(number)
+                    if block.indent_em != (0, 0):
+                        hints.indent[number] = block.indent_em
+                    if block.tag in _HEADINGS:
+                        heading_raws.add(number)
+                if text:
+                    resolve(len(lines), number)
+                first, left = block.indent_columns if text else (0, 0)
+                lines.extend(_wrap_with_indent(text, runs, width, first, left, number, line_links,
+                                               center=block.center))
+            if href is not None:
+                def at(i):
+                    return first_number + index_map.get(i, i)
+                for start, end in self.note_blocks.get(href, []):
+                    hints.notes.append((at(start), at(end)))
+                for anchor, (start, end) in self.anchor_blocks.get(href, {}).items():
+                    anchor_raws.setdefault('#blocks#' + href + '#' + anchor, (at(start), at(end)))
+        if lines:
+            resolve(len(lines) - 1, lines[-1].raw_line_number)
+        for href in self.spine:  # ファイルの頭の行(字の無いファイルは次のファイルと同じ行になるので、後の方を残す)
+            if href + '#' not in anchor_raws:
+                continue
+            line = max(1, anchor_raws[href + '#'])
+            if hints.chapter_files and hints.chapter_files[-1][0] >= line:
+                hints.chapter_files[-1] = (line, href)
+            else:
+                hints.chapter_files.append((line, href))
+        self._layout_ranges(hints, kinds, number, header)
         toc_lines = []
         for href, _, _ in self.toc:
             toc_lines.append(anchors.get(href, anchors.get(href.partition('#')[0], 0)))
         self.anchors = anchors
+        chapter_raws = heading_raws | {lines[i].raw_line_number for i in toc_lines if 0 <= i < len(lines)}
+        self._bidirectional_notes(hints, links, anchor_raws, chapter_raws)
+        self.hints = hints
         return lines, toc_lines
+
+    def _layout_ranges(self, hints, kinds, total, header):
+        """同じ種類の行が(空行をはさんでも)続く所を1つの範囲に(C++のepubToHelpMarkup()のflush())。横書きの範囲は、
+        後ろの空行等も次の行の手前まで(最後なら本の最後まで)含める。縦書きの本の冒頭の書名・著者名は扉と同じ扱い。"""
+        run, run_kind = None, 'normal'
+
+        def flush():
+            if run is not None and run[1] >= 1:
+                (hints.horizontal if run_kind == 'horizontal' else hints.centered).append((max(1, run[0]), run[1]))
+        for number in sorted(kinds):
+            kind = kinds[number]
+            if run is not None and kind == run_kind:
+                run[1] = number
+                continue
+            if run is not None and run_kind == 'horizontal':
+                run[1] = number - 1
+            flush()
+            run = None
+            if kind != 'normal':
+                run, run_kind = [number, number], kind
+        if run is not None and run_kind == 'horizontal':
+            run[1] = max(run[1], total)
+        flush()
+        if header[0] and header[1] >= header[0] and self.right_to_left:
+            hints.centered.append(header)
+            hints.centered.sort()
+            if self.creator:
+                hints.align_end.add(header[1])
+
+    @staticmethod
+    def _bidirectional_notes(hints, links, anchor_raws, chapter_raws):
+        """KDPの注釈(本文と双方向のリンク、epub:typeが無い本もある): リンクの行き先のidを持つ(か囲む)ブロックの中に、
+        元の行へ戻るリンクがあれば、そのブロックを注釈の区画にする。注釈は参照する行より後ろにある物だけで、章の行を
+        含む物・40行を超える物は除く(C++のaddBidirectionalNotes())。"""
+        resolved = []
+        for source, target in links:
+            to = anchor_raws.get(target) or anchor_raws.get(target.partition('#')[0] + '#')
+            resolved.append((source, to if isinstance(to, int) else None, target))
+        found = set(hints.notes)
+        for source, _, target in resolved:
+            block = anchor_raws.get('#blocks#' + target)
+            if not block:
+                continue
+            first, last = block
+            if last - first + 1 > 40 or first <= source:
+                continue
+            if any(first <= c <= last for c in chapter_raws):
+                continue
+            if not any(first <= s <= last and to == source for s, to, _ in resolved):
+                continue
+            if not any(n[0] <= last and first <= n[1] for n in found):
+                found.add((first, last))
+        hints.notes = sorted(found)
+
+    @property
+    def chapter_files(self):
+        return self.hints.chapter_files
 
     def line_for(self, href):
         """本の中のリンク先(「ファイル#id」)の行。無ければNone。"""
@@ -342,8 +798,8 @@ class EpubBook:
         return anchors.get(href, anchors.get(href.partition('#')[0]))
 
 
-def _wrap_with_indent(text, runs, width, first, left, number, links=()):
-    """1行目はfirst桁、2行目からはleft桁あけて、幅で折り返す(空の段落は空の行)。"""
+def _wrap_with_indent(text, runs, width, first, left, number, links=(), center=False):
+    """1行目はfirst桁、2行目からはleft桁あけて、幅で折り返す(空の段落は空の行)。centerなら行ごとに中央へ。"""
     from .overstrike import slice_runs
     if not text:
         return [Line('', number)]
@@ -353,10 +809,12 @@ def _wrap_with_indent(text, runs, width, first, left, number, links=()):
         piece = wrap_text(rest, room)[0]
         if not piece:
             piece = rest[0]
-        pad = ' ' * indent
-        attrs = [(s + indent, e + indent, a) for s, e, a in slice_runs(runs, offset, offset + len(piece))]
-        line_links = [(s + indent, e + indent, h) for s, e, h in slice_runs(links, offset, offset + len(piece))]
-        out.append(Line(pad + piece, number, ends_with_newline=False, attributes=attrs, links=line_links))
+        pad = indent
+        if center:
+            pad = max(pad, (width - utf8.text_width(' ' * indent + piece)) // 2 + indent)
+        attrs = [(s + pad, e + pad, a) for s, e, a in slice_runs(runs, offset, offset + len(piece))]
+        line_links = [(s + pad, e + pad, h) for s, e, h in slice_runs(links, offset, offset + len(piece))]
+        out.append(Line(' ' * pad + piece, number, ends_with_newline=False, attributes=attrs, links=line_links))
         offset += len(piece)
         rest = rest[len(piece):]
         indent = left

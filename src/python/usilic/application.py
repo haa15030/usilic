@@ -153,6 +153,12 @@ class Application:
         self.vertical_pieces = {}      # 元の行→[(本全体の行, 頭の空白の数, 論理行の中での始まり)]
         self.vertical_last_number = None
         self.vertical_source = None    # 組んだ時の本全体の行(epub_lines、別の物になれば組み直す)
+        # 縦書きの本の中の横書きの範囲(奥付等、EpubHints.horizontal)を見ている間、その範囲(元の行の両端)
+        self.epub_section = None
+        self.epub_section_line = None  # 範囲を見ている時の本全体の行(キー以外で動いたら範囲を離れたとみなす)
+        self.epub_from_below = False   # 先へ送って範囲へ入り、最初の行がまだ画面の上まで上がっていない
+        self.epub_note = None          # 注釈の区画を見ている間、元の所(show_epub_note())
+        self.last_key_number = None    # 最後のK-番号(横書きの範囲から出たかの決め方)
         self.vertical_prefix = None    # 縦書きのCOPYの'ESC'
         self.work_root = os.path.join('/tmp' if os.path.isdir('/tmp') else tempfile.gettempdir(), '.usilic',
                                       'python-%d' % os.getpid())  # HELPの「/tmp/.usilic/」
@@ -369,14 +375,21 @@ class Application:
 
     def redraw(self):
         view = self.active_view()
+        if self.current_mode == FILE and self.in_epub_body() and self.epub.right_to_left:
+            self.update_epub_section()
         if self.current_mode == FILE and self.vertical_active():
             self.render_vertical()
             view = self.vertical_view
+        section = self.epub_section if view is self.file_view and self.in_epub_body() and \
+            self.epub.right_to_left and not self.epub_note_active() else None
         visible = view.visible_lines()
         marks = self.marked_rows()
         grep_on = self.grep_active or self.grep_prompt is not None
         for row in range(view.height):
-            if row < len(visible):
+            if row < len(visible) and section is not None and \
+                    not section[0] <= visible[row].raw_line_number <= section[1]:
+                self.display.draw_row(row, '')  # 横書きの範囲の外の行は空に(C++のsetShownIndexRange())
+            elif row < len(visible):
                 index = view.top_index + row
                 line = visible[row]
                 reverse = view.cursor_highlight and index == view.cursor_index and not (
@@ -418,6 +431,8 @@ class Application:
     def save_positions(self):
         """終了の時: 今の画面の位置を覚える(保存はusilic.pyが)。"""
         if self.current_mode == FILE:
+            if self.epub_note_active():
+                self.leave_epub_note()
             self.file_mode.save_cursor_position()
         self.save_list_positions()
         self.directory_mode.save_current_cursor_position()
@@ -1370,6 +1385,7 @@ class Application:
         """K-番号の機能(Application::handleCommand()の、この版で動く分)。"""
         mode = self.current_mode
         view = self.active_view()
+        self.last_key_number = number
         if mode == FILE and self.vertical_active():
             result = self.vertical_number(number)
             if result is not None:
@@ -1993,6 +2009,8 @@ class Application:
             return self.show_epub_marks()
         if number == 28 and self.in_epub_body():
             return self.follow_epub_link()
+        if number == 20 and self.in_epub_body() and self.epub_note_active():  # 注釈の区画から元の所へ
+            return self.leave_epub_note()
         if number == 20 and self.in_epub_body() and self.epub_link_stack:  # 注釈から戻る
             line = self.epub_link_stack.pop()
             self.set_epub_cursor(line)
@@ -2747,6 +2765,12 @@ class Application:
         target = self.epub.line_for(href)
         if target is None:
             return False
+        if self.show_epub_note(self.epub_lines[target].raw_line_number):  # 注釈の区画へ(^Gで元の所へ)
+            return True
+        if self.epub_note_active():  # 注釈の中のリンク(↩等)から本文へ: 本文の行に戻してから
+            self.leave_epub_note()
+            self.set_epub_cursor(target)
+            return True
         self.epub_link_stack.append(self.global_epub_line())
         self.set_epub_cursor(target)
         self.file_view.top_index = self.file_view.cursor_index
@@ -2903,27 +2927,28 @@ class Application:
     # --- EPUBの縦書き(epub_vertical.py) ---
     def vertical_active(self):
         """縦書きの本の本文を見ている(縦横は本が決める、OPFのpage-progression-direction="rtl"、C++と同じ)。"""
-        return self.in_epub_body() and self.epub.right_to_left
+        return self.in_epub_body() and self.epub.right_to_left and self.epub_section is None
 
     def vertical_selecting(self):
         return (self.vertical is not None and self.vertical.selecting and self.current_mode == FILE
                 and self.vertical_active() and self.prompt is None)
 
     def epub_logical_lines(self):
-        """本全体の行(epub_lines)を元の行ごとの論理行につなぎ直す(字下げの頭の空白は除き、縦書きでは列の頭の
-        空きにする)。(SourceLineの並び, 元の行→[(本全体の行, 頭の空白の数, 論理行の中での始まり)])。"""
+        """本全体の行(epub_lines)を元の行ごとの論理行につなぎ直す(C++のepubLogicalLines())。中央寄せ・字下げの行は
+        頭の空白を除き、縦書きでは列の頭の空きにする。(SourceLineの並び, 元の行→[(本全体の行, 頭の空白の数,
+        論理行の中での始まり)])。"""
         sources, pieces = [], {}
-        indents = getattr(self.epub, 'indents', {})
+        hints = self.epub.hints
         for g, line in enumerate(self.epub_lines):
             raw = line.raw_line_number
-            first, left = indents.get(raw, (0, 0))
             head = not sources or sources[-1].raw != raw
-            pad = min(first if head else left, len(line.text) - len(line.text.lstrip(' ')))
+            pad = len(line.text) - len(line.text.lstrip(' ')) if raw in hints.center or raw in hints.indent else 0
             text = line.text[pad:]
             runs = [(max(0, a - pad), max(0, b - pad), t) for a, b, t in line.attributes]
             links = [(max(0, a - pad), max(0, b - pad), h) for a, b, h in line.links]
             if head:
-                sources.append(ev.SourceLine(text, raw, runs, links, (first + 1) // 2, (left + 1) // 2))
+                first, rest = hints.indent.get(raw, (0, 0))
+                sources.append(ev.SourceLine(text, raw, runs, links, first, rest, raw in hints.align_end))
                 pieces[raw] = [(g, pad, 0)]
                 continue
             src = sources[-1]
@@ -2945,10 +2970,12 @@ class Application:
         line = self.global_epub_line()
         if self.vertical is None or key != self.vertical_key or self.vertical_source is not self.epub_lines:
             sources, self.vertical_pieces = self.epub_logical_lines()
+            hints = self.epub.hints
+            sources = [x for x in sources if self.epub_horizontal_range(x.raw) is None]  # 横書きの範囲は列にしない
             chapter_raws = {self.epub_lines[i].raw_line_number for i in self.epub_toc_lines
                             if 0 <= i < len(self.epub_lines)}
             self.vertical = ev.VerticalBook(sources, chapter_raws, self.file_view.height, self.display.columns,
-                                            self.epub_chapter_mode)
+                                            self.epub_chapter_mode, hints.centered, hints.horizontal)
             self.vertical_key, self.vertical_source, self.vertical_synced = key, self.epub_lines, None
         if line != self.vertical_synced:
             self.show_vertical_line(line)
@@ -3018,14 +3045,252 @@ class Application:
             v.mark = v.cursor
             self.show_transient_notice('Mark set')
             return True
+        if number in (1, 2):  # j/k: 本の途中・端の横書きの範囲へも入る(C++のscrollEpubVertical())
+            delta = 1 if number == 1 else -1
+            edge = v.per_screen - 1 if not v.chapter_breaks and delta > 0 else 0
+            from_column = v.first + edge
+            if not v.step_first(delta):
+                if not self.enter_epub_section_at_edge(delta):
+                    return False
+                return True
+            if not self.enter_epub_section_between(from_column, v.first + edge, delta):
+                self.vertical_to_file()
+            return True
+        if number == 11 and self.enter_epub_section_at_book_end():  # ^[<: 本の末尾の奥付等の最下行へ
+            v.mark = v.cursor
+            return True
+        from_raw = v.current_raw()
         pages = (5, 6, 7, 8, 9, 10)
         result = v.command(number, repeated_page=last in pages and number in pages)
         if result is None:
             return None
         if result is False and number == 14:
             self.show_transient_notice('No mark set')
+        if number in (3, 4, 5, 6, 7, 8, 9, 10) and self.maybe_enter_epub_section(from_raw, number in (3, 5, 6, 7)):
+            return result
         self.vertical_to_file()
         return result
+
+    # --- 縦書きの本の中の横書きの範囲(奥付等)・注釈の区画 ---
+    def epub_horizontal_range(self, raw):
+        return next((r for r in self.epub.hints.horizontal if r[0] <= raw <= r[1]), None)
+
+    def epub_line_of_raw(self, raw):
+        """元の行rawの(無ければその後の)最初の本全体の行。"""
+        return next((g for g, line in enumerate(self.epub_lines) if line.raw_line_number >= raw),
+                    len(self.epub_lines) - 1)
+
+    def enter_epub_section(self, section, raw, from_below=False, from_above=False):
+        """横書きの範囲へ入る(C++のenterEpubHorizontal()): カーソルをrawの行に置き、範囲の最初の行を画面の一番上に
+        (範囲の途中/最後へ入る時はその行が見える所まで)。from_below: 縦書きから先へ送って入る時、範囲の最初の行を
+        画面の一番下に置く。from_above: 前へ送って入る時、範囲の最後の行を画面の一番上に置く。"""
+        self.epub_section = section
+        raw = max(section[0], min(raw, section[1]))
+        line = self.epub_line_of_raw(raw)
+        self.set_epub_cursor(line)
+        view, offset = self.file_view, line - self.file_view.cursor_index
+        start = self.epub_line_of_raw(section[0]) - offset
+        index = view.cursor_index
+        view.top_index = max(start, index - max(1, view.height) + 1)
+        self.epub_from_below = from_below and raw == section[0]
+        if self.epub_from_below:
+            view.top_index = max(0, start - max(1, view.height) + 1)
+        if from_above and raw == section[1]:
+            view.top_index = index
+        self.epub_section_line = self.global_epub_line()
+
+    def maybe_enter_epub_section(self, from_raw, forward):
+        """縦書きで先へ/前へ動いた後: 動く前の列と今の列の間に横書きの範囲があれば(本の端でそれ以上動けない時は
+        その先にあれば)、そこへ入る(C++のmaybeEnterEpubHorizontal())。"""
+        v = self.vertical
+        now = v.current_raw()
+
+        def no_text_beyond(d):
+            c = v.cursor + d
+            while 0 <= c < len(v.cols):
+                if not v.cols[c].padding:
+                    return False
+                c += d
+            return True
+        ranges = self.epub.hints.horizontal
+        if forward:
+            for r in ranges:
+                if r[0] > from_raw and (now >= r[0] or no_text_beyond(1)):
+                    self.enter_epub_section(r, r[0], from_below=True)
+                    return True
+        else:
+            for r in reversed(ranges):
+                if r[1] < from_raw and (now <= r[1] or no_text_beyond(-1)):
+                    self.enter_epub_section(r, r[1])
+                    return True
+        return False
+
+    def enter_epub_section_between(self, from_column, to_column, delta):
+        """j/kで列を送った時、送る前と後の列の行の間に横書きの範囲(本の途中の付録等)があれば入る。"""
+        v = self.vertical
+        total = len(v.cols)
+        from_column, to_column = min(from_column, total - 1), min(to_column, total - 1)
+        if from_column < 0 or to_column < 0:
+            return False
+        a, b = v.cols[from_column].raw, v.cols[to_column].raw
+        for r in self.epub.hints.horizontal:
+            if (delta > 0 and r[0] > a and r[1] < b) or (delta < 0 and r[1] < a and r[0] > b):
+                self.enter_epub_section(r, r[0] if delta > 0 else r[1], from_below=delta > 0, from_above=delta < 0)
+                return True
+        return False
+
+    def enter_epub_section_at_edge(self, delta):
+        """縦書きの列の端で、その先(前)に横書きの範囲があればそこへ入る(右端の列の行と比べる)。"""
+        v = self.vertical
+        if not 0 <= v.first < len(v.cols):
+            return False
+        edge = v.cols[v.first].raw
+        ranges = self.epub.hints.horizontal
+        target = next((r for r in ranges if r[0] > edge), None) if delta > 0 else \
+            next((r for r in reversed(ranges) if r[1] < edge), None)
+        if target is None:
+            return False
+        self.enter_epub_section(target, target[0] if delta > 0 else target[1], from_below=delta > 0)
+        return True
+
+    def enter_epub_section_at_book_end(self):
+        """^[<: 縦書きの本文の最後より後ろに横書きの範囲(奥付等)があれば、その最下行(画面の一番下)へ。"""
+        ranges = self.epub.hints.horizontal
+        last_raw = max((c.raw for c in self.vertical.cols if not c.padding and c.cells), default=0)
+        if not ranges or ranges[-1][0] <= last_raw:
+            return False
+        r = ranges[-1]
+        self.enter_epub_section(r, r[1])
+        view = self.file_view
+        last = max((i for i, l in enumerate(view.lines) if r[0] <= l.raw_line_number <= r[1]), default=None)
+        start = min((i for i, l in enumerate(view.lines) if r[0] <= l.raw_line_number <= r[1]), default=0)
+        if last is not None:
+            view.cursor_index = last
+            view.top_index = max(start, last - max(1, view.height) + 1)
+        self.epub_section_line = self.global_epub_line()
+        return True
+
+    def update_epub_section(self):
+        """描く前に: 横書きの側で横書きの範囲の行へ動いていれば(目次・リンク・検索・開いた位置)範囲に入り、範囲を
+        見ている間は範囲の外へ出たら縦書きへ戻る(C++のshowEpubVerticalRaw()・leaveEpubHorizontalIfOutside())。"""
+        if self.epub_note_active() or not self.epub_lines:
+            return
+        line = self.global_epub_line()
+        if self.epub_section is not None and line != self.epub_section_line and \
+                self.last_key_number not in range(1, 13):
+            self.epub_section = None  # 目次・リンク等で飛んだ(移動のキーではない)
+            self.vertical_synced = None
+        if self.epub_section is None:
+            if line != self.vertical_synced:
+                section = self.epub_horizontal_range(self.epub_lines[line].raw_line_number)
+                if section is not None:
+                    self.enter_epub_section(section, self.epub_lines[line].raw_line_number)
+                    self.set_epub_cursor(line)
+                    self.epub_section_line = line
+            return
+        self.leave_epub_section_if_outside()
+        if self.epub_section is not None:
+            self.epub_section_line = self.global_epub_line()
+
+    def leave_epub_section_if_outside(self):
+        """横書きの範囲で、範囲の外へ出たら縦書きへ戻る(前へ出たら範囲の直前の行の最後の列、先へ出たらその後の行)。
+        j/k等の画面を送るキーは範囲が画面に見えているかで、↑↓・ページ送りはカーソルの行で決める。"""
+        section, view = self.epub_section, self.file_view
+        lines, number = view.lines, self.last_key_number
+        scrolling = number in (1, 2)
+        by_visibility = scrolling or number not in (3, 4, 5, 6, 7, 8, 9, 10)
+        if not lines:
+            return
+        raw = lines[view.cursor_index].raw_line_number
+        top = view.top_index
+        top_raw = lines[top].raw_line_number if 0 <= top < len(lines) else raw
+        height = max(1, view.height)
+        first_index = next((i for i, l in enumerate(lines) if l.raw_line_number >= section[0]), len(lines))
+        if top >= first_index:
+            self.epub_from_below = False
+        last_index = next((i for i in range(len(lines) - 1, -1, -1) if lines[i].raw_line_number <= section[1]), -1)
+        if by_visibility:
+            before, after = first_index >= top + height, last_index < top
+        else:
+            before = raw < section[0] or (not self.epub_from_below and top_raw < section[0])
+            after = raw > section[1]
+        if not before and not after:
+            return
+        if before:
+            raw = section[0] - 1
+        elif scrolling or (by_visibility and raw <= section[1] + height):
+            raw = section[1] + 1
+        self.epub_section = None
+        other = self.epub_horizontal_range(raw)
+        if other is not None:
+            self.enter_epub_section(other, raw)
+            return
+        self.vertical_synced = None  # 組み直しは幅等が変わった時だけ(sync_vertical())
+        self.set_epub_cursor(self.epub_line_of_raw(max(1, raw)))
+        self.sync_vertical()
+        v = self.vertical
+        if before:
+            col = max((c for c, column in enumerate(v.cols) if not column.padding and column.raw <= raw), default=0)
+            after_columns = any(not column.padding and column.raw > section[1] for column in v.cols)
+            if v.chapter_breaks or not after_columns:
+                v.set_view(col, col)
+            else:
+                v.set_view(col - v.per_screen + 1, col)
+        elif raw == section[1] + 1 and not v.chapter_breaks:
+            col = next((c for c, column in enumerate(v.cols) if not column.padding and column.raw >= raw), None)
+            if col is not None:
+                v.set_view(col, col)
+        self.vertical_to_file()
+
+    def epub_note_active(self):
+        if self.epub_note is None:
+            return False
+        if self.file_view.lines is self.epub_note['shown'] and self.in_epub_body():
+            return True
+        self.epub_note = None
+        return False
+
+    def show_epub_note(self, raw):
+        """元の行rawが注釈の区画(入れ子なら一番狭い物)の中なら、file_viewをその注釈の行だけにする(縦書きの本では
+        横書きの範囲として横書きで見せる)。^Gで元の所へ(C++のshowEpubNoteAt())。"""
+        notes = [r for r in self.epub.hints.notes if r[0] <= raw <= r[1]]
+        if not notes:
+            return False
+        first, until = min(notes, key=lambda r: r[1] - r[0])
+        note = [l for l in self.epub_lines if first <= l.raw_line_number <= until]
+        while note and not note[-1].text.strip(' '):
+            note.pop()  # 注釈の後ろの空行
+        if not note:
+            return False
+        if self.epub_note_active():
+            origin = self.epub_note
+            self.leave_epub_note()
+        else:
+            v = self.vertical if self.vertical_active() else None
+            origin = {'lines': self.file_view.lines, 'top': self.file_view.top_index,
+                      'cursor': self.file_view.cursor_index, 'section': self.epub_section,
+                      'vertical': (v.first, v.cursor) if v is not None else None, 'chapter': self.epub_chapter}
+        if self.epub.right_to_left:
+            self.epub_section = (first, until)
+        self.file_view.set_lines(note)
+        self.file_view.cursor_index = self.file_view.top_index = 0
+        origin['shown'] = self.file_view.lines
+        self.epub_note = origin
+        return True
+
+    def leave_epub_note(self):
+        """注釈から本文の行と、注釈へ飛ぶ前の位置へ。"""
+        note, self.epub_note = self.epub_note, None
+        self.file_view.set_lines(note['lines'])
+        self.epub_chapter = note['chapter']
+        self.file_view.cursor_index, self.file_view.top_index = note['cursor'], note['top']
+        self.epub_section = note['section']
+        self.epub_section_line = self.global_epub_line()
+        if note['vertical'] is not None and self.vertical_active():
+            self.sync_vertical()
+            self.vertical.set_view(*note['vertical'])
+            self.vertical_synced = self.global_epub_line()
+        return True
 
     def feed_vertical_copy_key(self, byte, special):
         """縦書きのCOPYのキー。^N/←で次の列(左)、^P/→で前の列、^F/↓で下のマス、^B/↑で上のマス、^A/^Eで
