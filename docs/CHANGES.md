@@ -32412,3 +32412,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 1017. **2026-10-22: Python版: 日本語の名前のディレクトリ・ファイルで、履歴の保存が落ちていたのを直す**
    - 第3段に取りかかる前にコードを読み直して発見。履歴の中身はlatin-1の字(1バイト=1字、C++版と同じくバイトのまま往復させるため)だが、(ls)・FILEはUnicodeのstrのパスをそのまま`push_recent()`等へ渡していた。日本語のディレクトリへ入ると、保存(`serialize().encode('latin-1')`)で`UnicodeEncodeError`になり、前回の位置も日本語の名前では見つからなかった。
    - `history.py`: `to_raw()`(UTF-8のバイト→latin-1の字、読めないバイトはsurrogateescape)・`from_raw()`を足し、公開のメソッド(`position_for`・`set_position`・`push_recent`・`remember_name`・`recent_entries`・`names_in`)の入口と出口で変換する。unittest 1件(日本語のパスがUTF-8のままファイルに入り、読み返して同じ)。
+
+1018. **2026-10-22: Python版(第3段): ARC・EPUB・MAN・DU・LOCATE・CP/MV/RM・usilicrc・KEY/HELP・^Rの一覧**
+   - 直接のユーザー依頼("python3使ってみた。未実装な箇所はあるもののちゃんと動くところがいい。このまま次の段の最後まで一気に進めて。")。`.steering/20261022-python-cui-port-3/`。
+   - キー: 第2段までの`^J`・`^X`・`ESC`の印をやめ、C++のkey_bindings.cppと同じK-番号の表で受ける(`key_bindings.py`)。usilicrcのKEY節で置き換えられ、接頭キー^O・^J^Oも使える。^Gの戻り先はモードを積む`return_stack`(C++と同じく、(ls)でディレクトリを選ぶと空にする)。
+   - usilicrc(`configuration.py`): ARCHIVE・FILTER・LAUNCH・GREP・BUFFER・CODE・LINE・COPY・MOVE・DELETE・KEY。
+   - 新しいモジュール: `prompt.py`・`list_browser_mode.py`(^Xf・^X^F・^Xd・^X^D・^J^M・^J^A・^J^E、プロンプトの^R)、`archive_mode.py`(tar系・zip系は標準ライブラリ、他はC++と同じコマンドの一覧を同じ読み方で)、`epub_mode.py`(spineのXHTMLを段落ごとに、CSSの字下げ、太字・下線・ルビ・画像、nav/toc.ncxの目次)、`man_mode.py`・`overstrike.py`(重ね打ちの太字・下線)、`du_mode.py`、`locate_mode.py`(macOSは~/.usilic/locate.dbも、NFC/NFDの両方で)、`help_text.py`(HELP.1をgroffで組む、KEYの行、ラベルからキー列)。
+   - CP/MV/RM・^OaはSHELLで動かし、終わりの印(`echo '#usilic-cpmvrm#'$?`)で結果を見て、成功すれば行き先の(ls)で処理したファイルに下線(一時的な選択、^Lで消える)。印を引用符で囲まないと、bashは`#`以降を注釈として捨てる。
+   - HELP(^H)はC++版と同じくHELP.epubをEPUBで開く。KEY(^K)はHELP.1をgroffで組んだ行のうち「：」のある行で、C++版と同じ174行。^Mでその行のキーを打ったことにし、hで平文のHELPの同じ行へ。
+   - C++版(`usilic -c`)と擬似端末で画面を並べて合わせた所: ARCの一覧(`1/3 TOP 35 (tar)`)、中のfile(`a.txt 1/1 END 6 ARC: …`)、DU、LOCATE(`1/1 END 43`)、CP/RMのプロンプト(`CP 3/7 42% 転送先？`)、^J^Aの件数(17)、HELPの目次(43項目)。ずれていて直した所: tarfileはmacOSの「._名前」まで並べる(bsdtarの`tar tvf`は出さない)、長いパスのモードラインで最後の欄を縮めていなかった、MANの大きさは重ね打ちを解いた後で数える。
+   - UTF-8の続きのバイト0x80はC++のKeyInputが^SPCに使う0x80とぶつかるので、NULを0x80にするのは割り当てを照合する時だけにした。
+   - この版に無い物: マクロ・COPY・EDIT・TOOL・USILIC(^[u等)・PART・INFO・ブックマーク・レジスタ・^U、EPUBの縦書き・Webのリンク(^Ow)。
+   - unittest 21件を足した(合計40件)。

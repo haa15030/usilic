@@ -6,11 +6,30 @@ _EXACT = {
     'Not available in pager': 'ページャーでは使えません',
     'Permission denied': '許可がありません',
     'No string': '見つかりません',
+    'Not enough buffer': 'バッファが足りません',
+    'No chapter': '章がありません',
+    'Already in HELP': '既に HELP です',
+    'Already in KEY': '既に KEY です',
+    'Not found in HELP': 'HELP に見つかりません',
+    'SHELL/prompt only': 'SHELL・プロンプトだけで使えます',
+    'Reading...': '読み込み中...',
+    'Disk usage...': '集計中...',
+    'Loading archive...': 'アーカイブを読み込み中...',
+    'Delete? (y/n) ': '削除しますか？ (y/n) ',
+    'Destination? ': '転送先？',
+    'No results': '見つかりません',
 }
 
 _TEMPLATES = [
     ('Cannot read: {}', '読めません: {}'),
     ('Cannot list: {}', '一覧できません: {}'),
+    ('HELP not found: {} (make install)', 'HELP が見つかりません: {}（make install）'),
+    ('{}: command not found', '{}: コマンドが見つかりません'),
+    ('No manual entry for {}', '{} のマニュアルページはありません'),
+    ("Can't open {}", '{} を開けません'),
+    ('Cannot run: {}', '実行できません: {}'),
+    ('No such EPUB: {}', 'EPUB がありません: {}'),
+    ('Not a book: {}', '本ではありません: {}'),
 ]
 
 

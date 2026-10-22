@@ -54,6 +54,8 @@ class DirectoryMode:
         self.byte_count = 0
         self.cursor_positions = {}
         self.history = None  # ディレクトリで起動した時だけ(ページャーでは履歴に触れない)
+        self.marks = set()   # 選択(下線、. ^SPC ^Oy ^On)。項目の番号
+        self.temporary_marks = False  # CP/MV/展開の後の一時的な選択(^Lで消える)
 
     def enter_directory(self, path):
         """pathの一覧を出す(DirectoryMode::enterDirectory())。"""
@@ -74,6 +76,8 @@ class DirectoryMode:
         self.entries = [parse_ls_line(l) for l in lines]
         self.byte_count = len(result.stdout)
         self.current_directory = path
+        self.marks = set()
+        self.temporary_marks = False
         self.view.set_lines([Line(e.ls_line, i + 1) for i, e in enumerate(self.entries)])
         cursor, top = self.cursor_positions.get(path, (0, 0))
         if self.history is not None:

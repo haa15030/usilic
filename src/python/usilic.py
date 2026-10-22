@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from usilic import history as hist  # noqa: E402
 from usilic.application import Application  # noqa: E402
+from usilic.configuration import Configuration  # noqa: E402
 from usilic.display import TerminalDisplay  # noqa: E402
 from usilic.key_input import KeyInput  # noqa: E402
 
@@ -44,7 +45,9 @@ def main():
 
     def run(screen):
         display = TerminalDisplay(screen)
-        app = Application(display, KeyInput(0))
+        configuration = Configuration()
+        configuration.load_default_file()  # ~/.usilic/usilicrc(無ければ~/.local/lib/usilic/usilicrc)
+        app = Application(display, KeyInput(0), configuration)
         app.layout()
         if stdin_stream is not None and not args:
             app.start_pager([], stdin_stream)
@@ -57,7 +60,8 @@ def main():
             # ディレクトリで起動した時だけ、C++版と同じ~/.usilic/historyを読み書きする(積むたびに保存、C++の
             # setOnRingPushed()と同じくコマンドの履歴は除く)。
             usilic_dir = os.path.join(os.path.expanduser('~'), '.usilic')
-            history = hist.load_from_disk(usilic_dir) if os.path.isdir(usilic_dir) else None
+            history = (hist.load_from_disk(usilic_dir, configuration.retention_count)
+                       if os.path.isdir(usilic_dir) else None)
             if history is not None:
                 history.on_ring_pushed = lambda category: (
                     hist.save_to_disk(history, usilic_dir) if category != hist.SHELL_COMMAND else None)

@@ -1,7 +1,8 @@
 # usilic(Python3のCUI版、学習用の移植)
 
 C++版(`src/cpp/`)のCUI(`usilic -c`)を、Python3の標準ライブラリだけで写したもの。GUI(-g)・Windowsは対象外
-(WindowsでSHELLを使うならC++版)。計画と進み具合は`.steering/20261022-python-cui-port/`。
+(WindowsでSHELLを使うならC++版)。計画と進み具合は`.steering/20261022-python-cui-port/`(第2段・第3段は
+`-2/`・`-3/`)。
 
 ## 使い方
 
@@ -29,7 +30,25 @@ cmd | python3 src/python/usilic.py         # 標準入力のページャー
 - FGREP/EGREP: `^S`(打つたびに探す、打っている間の`^S`で次へ)・`^J^S`(拡張正規表現)。一致した所に色を
   付け、`^N`/`^P`で一致の間を移り、`^M`・`^G`でやめる
 
-ARC・EPUB・MAN・DU・LOCATE・CP/MV/RM・usilicrc・KEY/HELP・^Rの一覧は、次の段から。
+## 第3段(2026-10-22)で足したもの
+
+- キー: C++版と同じK-番号の割り当て(`key_bindings.py`)。usilicrcのKEY節で置き換えられる。接頭キーは
+  ^X・^J・^O・^C・^J^O(PREFIXの表示は「C-o-」等)
+- usilicrc: ~/.usilic/usilicrc(無ければ~/.local/lib/usilic/usilicrc)のARCHIVE・FILTER・LAUNCH・GREP・BUFFER・
+  CODE・LINE・COPY・MOVE・DELETE・KEY。GUIの節・MACRO・URL等は読み飛ばす
+- FILE(^Xf・^X^F)・DIR(^Xd・^X^D)・^J^J・^JN。プロンプトの^Rで入力順の一覧、一覧の^Rでソート済みと切り換え
+  (EGREPはGREPの例が先頭)、一覧で字を打つとプロンプトへ。^Iでパスの補完
+- 選択: (ls)の`.`・^SPC・^Oy・^On(下線)。CP/MV/RM: ^Oc・^Om(「転送先？」、空なら~/.usilic/data/、^Wで
+  以前のディレクトリ)・^Or(「削除しますか？ (y/n)」)。SHELLで動かし、成功すれば行き先の(ls)へ
+- ARC: (ls)の^Mで内容一覧、^Mで中のfile(中のアーカイブはさらに一覧)、^Oaで展開、^J^A。tar系・zip系は
+  標準ライブラリ、lha・rpm・deb・rar・7zはC++版と同じコマンド
+- EPUB: (ls)の^Mで本(横書き)、^Gで目次、`;`・`:`で前/次の章、^Je・^J^E・^Oe(ARCとして)
+- MAN(^Jm・^J^M、太字・下線)・DU(^Jd・^J^D、^Gで中断)・LOCATE(^J^L・^Jl、macOSは~/.usilic/locate.dbも)
+- HELP(^H・^J^H、HELP.epubをEPUBで)・KEY(^K・^J^K、^Mでその行のキーを実行、hで平文のHELPの同じ行へ)
+- FILTER(.gz等をgzip -dcで)・LAUNCH(画面を抜けて起動)・CODE(バイナリはfile(1)の結果)・BUFFER
+
+この版に無い物: マクロ・COPY・EDIT・TOOL・USILIC(^[u等)・PART・INFO・ブックマーク・レジスタ・^U、EPUBの
+縦書き・Webのリンク(^Ow)。
 
 ## C++版との対応
 

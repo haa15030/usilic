@@ -51,17 +51,26 @@ class TerminalDisplay:
         except curses.error:
             pass
 
-    def draw_row_with_spans(self, row, text, spans, reverse=False):
-        """一致した所(spans、字の位置)だけ色を変えて描く。"""
-        self.draw_row(row, text, reverse=reverse)
+    def draw_row_styled(self, row, text, runs, reverse=False, underline=False):
+        """属性付きで描く。runsは(開始, 終わり, 属性)の並び(字の位置)、属性は'bold'・'underline'・'match'。"""
+        self.draw_row(row, text, reverse=reverse, underline=underline)
+        if not runs:
+            return
+        base = (curses.A_REVERSE if reverse else 0) | (curses.A_UNDERLINE if underline else 0)
+        names = {'bold': curses.A_BOLD, 'underline': curses.A_UNDERLINE, 'match': self.match_attr,
+                 'reverse': curses.A_REVERSE}
         column = 0
         for index, ch in enumerate(text):
             w = utf8.display_width_of_codepoint(ord(ch))
             if column + w > self.columns - 1:
                 break
-            if any(start <= index < end for start, end in spans):
+            attr = 0
+            for start, end, name in runs:
+                if start <= index < end:
+                    attr |= names.get(name, 0)
+            if attr:
                 try:
-                    self.screen.addstr(row, column, ch, self.match_attr)
+                    self.screen.addstr(row, column, ch, base | attr)
                 except curses.error:
                     pass
             column += w
@@ -84,3 +93,13 @@ class TerminalDisplay:
 
     def flush(self):
         self.screen.refresh()
+
+    def suspend(self):
+        """外のプログラム(LAUNCH)の間、端末を元に戻す(C++のleaveRawMode())。"""
+        curses.def_prog_mode()
+        curses.endwin()
+
+    def resume(self):
+        curses.reset_prog_mode()
+        self.screen.clear()
+        self.refresh_size()
