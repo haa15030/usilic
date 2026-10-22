@@ -4000,6 +4000,13 @@ const std::vector<std::vector<int>> &Application::pagerAllowedKeys() {
     if (line.text.find("\xEF\xBC\x9A") == std::string::npos) continue;
     std::vector<int> bytes = keyBytesFromHelpLabel(line.text.substr(3));
     if (!bytes.empty()) pagerAllowedKeys_.push_back(bytes);
+    // 2026-10-22(HELPのキーの検証で、^Xrlが「ページャーでは使えません」): 説明の「（^Xrl も同じ）」のキーも。
+    std::size_t same = line.text.find("\xE3\x82\x82\xE5\x90\x8C\xE3\x81\x98");  // 「も同じ」
+    std::size_t open = same == std::string::npos ? same : line.text.rfind("\xEF\xBC\x88", same);  // 「（」
+    if (open != std::string::npos) {
+      std::vector<int> alias = keyBytesFromHelpLabel(line.text.substr(open + 3, same - open - 3));
+      if (!alias.empty()) pagerAllowedKeys_.push_back(alias);
+    }
   }
   pagerAllowedSource_ = helpText_.size();
   // 同日、直接のユーザー報告("Pager起動で^KがNot availableとなる。HELP.txtで行頭タブコードのキーがPagerの^K"):

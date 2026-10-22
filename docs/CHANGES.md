@@ -32365,3 +32365,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 直接のユーザー報告("WindowsではHELPが最新じゃない")。HELP・KEY・平文のHELPの本文は、roff版(HELP.1・HELP_en.1)をgroffでその場の幅に組んだもの(`renderHelpRoff()`)で、groffが無ければ平文の`HELP`になる。Windowsにはgroffが無いので、zip(`make WINDOWS=1 dist`)に入れていた`doc/HELP`(10/5からユーザーが直していない古い形式の原稿)が出ていた。あわせて、10/21のzipは22:55に作ったもので、23:30に作り直したHELP.epubより古かった(作り直した)。
    - `windows.mk`: doc/HELP.1・doc/HELP_en.1を入れ、それをHELPの組み方(`-rusilic-help=1`、78桁)で組んだものを隣の`HELP.1.txt`・`HELP_en.1.txt`に置く。
    - `renderHelpRoff()`: groffで組めなければ(Windowsではgroffを呼ばない)、roff版の隣の`<roff>.txt`をgroffの出力の代わりに使う(`helpPrerenderedPath_`、幅は78桁のまま)。Windowsの実機では未確認。
+
+1008. **2026-10-22: ページャーで^Xrl(ブックマークの一覧)が「ページャーでは使えません」になるのを直す**
+   - 直接のユーザー依頼("HELPに載っているキーアサインと機能を順に検証してみてほしい")の検証で発見。ページャーで使えるキーの表(`pagerAllowedKeys()`)は、HELPの行頭がタブの行の「：」より前のキーだけから作るので、「^Xrb：ブックマークへ移動（^Xrl も同じ）」の^Xrlが入っていなかった。
+   - 説明の中の「（キー も同じ）」のキーも表に入れる。
