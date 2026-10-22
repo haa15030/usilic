@@ -426,3 +426,32 @@ TEST_CASE("History: the default (0) keeps every entry -- no count limit") {
   reloaded.loadHistoryText(history.serialize("usilic", "now"), false);
   CHECK(reloaded.recentEntries(fm::RingCategory::RecentFile).size() == 1000);
 }
+
+// 2026-10-22(アイコンからの起動の組、History::setIconLaunch()参照)。
+TEST_CASE("an icon launch keeps its own font size and letter spacing apart from -g") {
+  History h(10);
+  History::GuiPreferences g;
+  g.fontPointSize = 14;
+  g.letterSpacingExtraHorizontal = 0;
+  g.hasColors = true;
+  g.fgR = 200;
+  h.setGuiPreferences(g);
+  History::setIconLaunch(true);
+  CHECK(h.guiPreferences().fontPointSize == 14);  // 最初のアイコン起動は-gの値から
+  History::GuiPreferences icon = h.guiPreferences();
+  icon.fontPointSize = 20;
+  icon.letterSpacingExtraHorizontal = 3;
+  h.setGuiPreferences(icon);
+  History::setIconLaunch(false);
+  CHECK(h.guiPreferences().fontPointSize == 14);
+  CHECK(h.guiPreferences().letterSpacingExtraHorizontal == 0);
+  History loaded(10);
+  REQUIRE(loaded.loadHistoryText(h.serialize("usilic", "Mon Jan  1 00:00:00 2026"),
+                                 /*environmentCharsetExplicitlySet=*/false));
+  CHECK(loaded.guiPreferences().fontPointSize == 14);
+  History::setIconLaunch(true);
+  CHECK(loaded.guiPreferences().fontPointSize == 20);
+  CHECK(loaded.guiPreferences().letterSpacingExtraHorizontal == 3);
+  CHECK(loaded.guiPreferences().fgR == 200);  // 色は共通
+  History::setIconLaunch(false);
+}

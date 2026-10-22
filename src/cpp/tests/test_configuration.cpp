@@ -505,3 +505,26 @@ TEST_CASE("Configuration: FILTER/LAUNCH section names (the former FILE/EXEC are 
   fm::Configuration old;
   CHECK_FALSE(old.loadRcText("FILTER\n\t.gz\tgzip\t-dc\n", true));
 }
+
+TEST_CASE("ICON-FONT/ICON-LINE-HEIGHT/ICON-LETTER-SPACING are used only for an icon launch") {
+  Configuration config;
+  std::string rc =
+      "FONT\n"
+      "\t/a.ttf\n"
+      "LINE-HEIGHT\n"
+      "\t1.2  1.0\n"
+      "LETTER-SPACING\n"
+      "\t0  0\n"
+      "ICON-FONT\n"
+      "\t/b.ttf\n"
+      "ICON-LETTER-SPACING\n"
+      "\t2  1\n";
+  REQUIRE(config.loadRcText(rc, true));
+  CHECK(config.fontPath() == "/a.ttf");
+  CHECK(config.letterSpacingExtras() == std::make_optional(std::make_pair(0, 0)));
+  Configuration::setIconLaunch(true);
+  CHECK(config.fontPath() == "/b.ttf");
+  CHECK(config.letterSpacingExtras() == std::make_optional(std::make_pair(2, 1)));
+  CHECK(config.lineHeightRatios() == std::make_pair(1.2, 1.0));  // ICON-LINE-HEIGHTが無ければLINE-HEIGHT
+  Configuration::setIconLaunch(false);
+}

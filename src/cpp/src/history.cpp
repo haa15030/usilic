@@ -362,12 +362,43 @@ void History::setSavedCharset(Charset::Encoding encoding) {
 }
 void History::setSavedCharsetImpl(Charset::Encoding encoding) { savedCharset_ = encoding; }
 
-History::GuiPreferences History::guiPreferences() const { return guiPreferences_; }
-void History::setGuiPreferences(const GuiPreferences &preferences) {
-  journal_.emplace_back([preferences](History &h) { h.setGuiPreferencesImpl(preferences); });
-  setGuiPreferencesImpl(preferences);
+bool History::iconLaunch_ = false;
+
+namespace {
+// アイコンからの起動だけの組(History::setIconLaunch()参照)に入る項目を、fromからtoへ写す。
+void copyIconGuiFields(const History::GuiPreferences &from, History::GuiPreferences &to) {
+  to.fontPointSize = from.fontPointSize;
+  to.rows = from.rows;
+  to.columns = from.columns;
+  to.fontPath = from.fontPath;
+  to.lineHeightExtraHorizontal = from.lineHeightExtraHorizontal;
+  to.lineHeightExtraVertical = from.lineHeightExtraVertical;
+  to.letterSpacingExtraHorizontal = from.letterSpacingExtraHorizontal;
+  to.letterSpacingExtraVertical = from.letterSpacingExtraVertical;
 }
-void History::setGuiPreferencesImpl(const GuiPreferences &preferences) { guiPreferences_ = preferences; }
+}  // namespace
+
+History::GuiPreferences History::guiPreferences() const {
+  GuiPreferences prefs = guiPreferences_;
+  if (iconLaunch_ && hasIconGuiPreferences_) copyIconGuiFields(iconGuiPreferences_, prefs);
+  return prefs;
+}
+void History::setGuiPreferences(const GuiPreferences &preferences) {
+  bool icon = iconLaunch_;
+  journal_.emplace_back([preferences, icon](History &h) { h.setGuiPreferencesImpl(preferences, icon); });
+  setGuiPreferencesImpl(preferences, icon);
+}
+void History::setGuiPreferencesImpl(const GuiPreferences &preferences, bool icon) {
+  if (!icon) {
+    guiPreferences_ = preferences;
+    return;
+  }
+  GuiPreferences shared = preferences;  // 色・端末のフォントは-gと共通
+  copyIconGuiFields(guiPreferences_, shared);
+  guiPreferences_ = shared;
+  copyIconGuiFields(preferences, iconGuiPreferences_);
+  hasIconGuiPreferences_ = true;
+}
 
 const History::SessionState &History::sessionState() const { return sessionState_; }
 void History::setSessionState(SessionState state) {
@@ -601,6 +632,18 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
       guiPreferences_.letterSpacingExtraHorizontal = std::atoi(toks[19].c_str());
       guiPreferences_.letterSpacingExtraVertical = std::atoi(toks[20].c_str());
     }
+    // アイコンからの起動の組(2026-10-22、setIconLaunch()参照)――同じ理由でさらに末尾に。無ければ-gと同じ。
+    hasIconGuiPreferences_ = toks.size() > 29 && std::atoi(toks[21].c_str()) != 0;
+    if (hasIconGuiPreferences_) {
+      iconGuiPreferences_.fontPointSize = std::atoi(toks[22].c_str());
+      iconGuiPreferences_.rows = std::atoi(toks[23].c_str());
+      iconGuiPreferences_.columns = std::atoi(toks[24].c_str());
+      iconGuiPreferences_.fontPath = decodeField(toks[25]);
+      iconGuiPreferences_.lineHeightExtraHorizontal = std::atoi(toks[26].c_str());
+      iconGuiPreferences_.lineHeightExtraVertical = std::atoi(toks[27].c_str());
+      iconGuiPreferences_.letterSpacingExtraHorizontal = std::atoi(toks[28].c_str());
+      iconGuiPreferences_.letterSpacingExtraVertical = std::atoi(toks[29].c_str());
+    }
   }
 
   complete_ = (i < lines.size() && !lines[i].empty() && lines[i][0] == kSubEof);
@@ -686,7 +729,13 @@ std::string History::serialize(const std::string &programName, const std::string
          std::to_string(epubSansSerif_ ? 1 : 0) + " " + std::to_string(guiPreferences_.lineHeightExtraHorizontal) + " " +
          std::to_string(guiPreferences_.lineHeightExtraVertical) + " " +
          std::to_string(guiPreferences_.letterSpacingExtraHorizontal) + " " +
-         std::to_string(guiPreferences_.letterSpacingExtraVertical) + "\n";
+         std::to_string(guiPreferences_.letterSpacingExtraVertical) + " " + std::to_string(hasIconGuiPreferences_ ? 1 : 0) +
+         " " + std::to_string(iconGuiPreferences_.fontPointSize) + " " + std::to_string(iconGuiPreferences_.rows) + " " +
+         std::to_string(iconGuiPreferences_.columns) + " " + encodeField(iconGuiPreferences_.fontPath) + " " +
+         std::to_string(iconGuiPreferences_.lineHeightExtraHorizontal) + " " +
+         std::to_string(iconGuiPreferences_.lineHeightExtraVertical) + " " +
+         std::to_string(iconGuiPreferences_.letterSpacingExtraHorizontal) + " " +
+         std::to_string(iconGuiPreferences_.letterSpacingExtraVertical) + "\n";
   out += std::string(1, kSubEof) + "\n";
   return out;
 }

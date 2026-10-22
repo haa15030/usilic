@@ -32344,3 +32344,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 直接のユーザー依頼("全てのPREFIXキーで`^T`の「C-t-」のようにmode-lineに表示して(1秒後とか)")。
    - `Application::pendingPrefixLabel()`が、待っているPREFIXをEmacsの書き方で返す(`ESC-`・`C-j-`・`C-o-`・`C-x-`・`C-x r-`・`C-x r SPC-`・`C-x r j-`・`C-j C-o-`・`C-o C-j-`・`C-t-`、COPYの`ESC-`・`C-x-`・`C-j-`も)。`pollPrefixEcho()`を実行ループ(-c・-gの両方)から毎回呼び、同じPREFIXのまま1秒経ったら`showTransientNotice()`で出す。一度出したら、続くPREFIX(`^X`→`r`)はすぐに出す。次のキーで消える(他の通知と同じ)。
    - `^T`の「C-t-」も、押してすぐではなく1秒後にそろえた。^Uの「C-u 4-」(数を表す)は今までどおりすぐ出す。
+
+1004. **2026-10-22: アイコンからの起動では、フォント・大きさ・行の高さ・字間を-gとは別に持つ**
+   - 直接のユーザー依頼("アイコン起動に限ってはフォントサイズ、種類、行間、字間等の情報を-gとは別にしてほしい")。
+   - アイコンからの起動 = 制御端末の無い起動(main.cppで既定を-gにしている所、macOS・Linux)。その時`Configuration::setIconLaunch(true)`・`History::setIconLaunch(true)`。
+   - usilicrcに`ICON-FONT`・`ICON-LINE-HEIGHT`・`ICON-LETTER-SPACING`の節を新設(書式はFONT・LINE-HEIGHT・LETTER-SPACINGと同じ、配るusilicrc・usilicrc.enには説明だけ)。アイコンからの起動では`fontPath()`・`lineHeightRatios()`・`letterSpacingExtras()`がこちらの値を返し、無ければ今までの節の値。アイコンからの起動の画面の`^[{ / ^[}`は`ICON-LETTER-SPACING`へ、`^Of`で選んだ基本のフォントは`ICON-FONT`へ書く(SERIF・SANS-SERIFは共通のまま)。
+   - ~/.usilic/historyの`GuiPreferences`も、フォントの大きさ・窓の行数と桁数・フォント・`^[[ / ^[]`の行の高さ・`^[{ / ^[}`の字間を、アイコンからの起動の組として別に持つ(USILICの行の末尾に追加、色と端末のフォントは共通)。最初のアイコンからの起動は-gの値から始まる。
+   - テスト3件を追加(Configuration・History・usilicrc::replaceSection)。

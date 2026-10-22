@@ -2563,18 +2563,25 @@ std::vector<fm::FontListEntry> buildFontList(const fm::GraphicalDisplay &gui) {
 }
 
 // ^Ofの一覧で選ばれたフォントを、その場で反映してusilicrcの節へ書く(-Fと同じ、applyRcOptions()参照)。
-void applyFontChoice(fm::Application &app, fm::GraphicalDisplay &gui, const std::string &section,
+void applyFontChoice(fm::Application &app, fm::GraphicalDisplay &gui, const std::string &chosenSection,
                      const std::string &path) {
+  // アイコンからの起動では、基本のフォントはICON-FONTへ(Configuration::setIconLaunch()参照、2026-10-22)。
+  const bool icon = fm::Configuration::iconLaunch();
+  std::string section = icon && chosenSection == "FONT" ? "ICON-FONT" : chosenSection;
   if (section == "FONT:terminal") {  // 端末のフォント(buildFontList()参照): 切り替えて、usilicrcのFONTを空に
     if (!gui.setFont(fm::GraphicalDisplay::FontKind::Base, path)) {
       app.showNotice("Cannot use this font");
       return;
     }
     const char *home = std::getenv("HOME");
-    if (!fm::usilicrc::setSection(home ? home : "", "FONT", {})) app.showNotice("Cannot write FONT to usilicrc");
+    // アイコンからの起動でICON-FONTを空にするとFONTへ戻るので、そのフォントのファイルを書く。
+    const char *fontSection = icon ? "ICON-FONT" : "FONT";
+    if (!fm::usilicrc::setSection(home ? home : "", fontSection,
+                                  icon ? std::vector<std::string>{path} : std::vector<std::string>{}))
+      app.showNotice(std::string("Cannot write ") + fontSection + " to usilicrc");
     return;
   }
-  auto kind = section == "FONT"         ? fm::GraphicalDisplay::FontKind::Base
+  auto kind = section == "FONT" || section == "ICON-FONT" ? fm::GraphicalDisplay::FontKind::Base
               : section == "SANS-SERIF" ? fm::GraphicalDisplay::FontKind::SansSerif
                                         : fm::GraphicalDisplay::FontKind::Serif;
   if (!gui.setFont(kind, path)) {
@@ -2791,9 +2798,10 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // 保存値のままだった): その場でusilicrcのLETTER-SPACINGへ書き込む(子は起動時にusilicrcを読む)。
       auto [horizontal, vertical] = fm::GraphicalDisplay::letterSpacingExtras();
       const char *home = std::getenv("HOME");
-      if (!fm::usilicrc::setSection(home ? home : "", "LETTER-SPACING",
+      const char *section = fm::Configuration::letterSpacingSection();  // アイコンからの起動はICON-LETTER-SPACING
+      if (!fm::usilicrc::setSection(home ? home : "", section,
                                     {std::to_string(horizontal) + "  " + std::to_string(vertical)}))
-        app.showNotice("Cannot write LETTER-SPACING to usilicrc");
+        app.showNotice(std::string("Cannot write ") + section + " to usilicrc");
     }
     // usilicrcを読み直した(EDITでusilicrcを直した・^Xs)なら、LINE-HEIGHTをその場で当て直す。
     if (auto ratios = app.takeLineHeightReloadRequest()) {
@@ -5430,6 +5438,9 @@ int main(int argc, char **argv) {
       forceCui = true;
     } else {
       forceGui = true;
+      // 2026-10-22: アイコンからの起動は、フォント・行の高さ・字間等を-gとは別に(Configuration::setIconLaunch()参照)。
+      fm::Configuration::setIconLaunch(true);
+      fm::History::setIconLaunch(true);
     }
   }
 #else
@@ -5438,8 +5449,13 @@ int main(int argc, char **argv) {
 #if !defined(USILIC_NO_GUI) && !defined(_WIN32)  // Windowsのネイティブは上で常に-g
   if (!forceCui && !forceGui) {
     int ttyFd = ::open("/dev/tty", O_RDWR | O_NOCTTY);
-    if (ttyFd >= 0) ::close(ttyFd);
-    else forceGui = true;
+    if (ttyFd >= 0) {
+      ::close(ttyFd);
+    } else {
+      forceGui = true;
+      fm::Configuration::setIconLaunch(true);  // 上のmacOSと同じ
+      fm::History::setIconLaunch(true);
+    }
   }
 #endif
   if (!forceCui && !forceGui) forceCui = true;

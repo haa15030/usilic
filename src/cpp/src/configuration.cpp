@@ -42,6 +42,8 @@ std::string sevenZipCommand() {
   return name;
 }
 
+bool Configuration::iconLaunch_ = false;
+
 namespace {
 
 const std::vector<std::string> &directiveKeywords() {
@@ -71,6 +73,8 @@ const std::vector<std::string> &directiveKeywords() {
       "LINE-HEIGHT",
       // 2026-10-21追加(letterSpacingExtras()参照)。
       "LETTER-SPACING",
+      // 2026-10-22追加(Configuration::setIconLaunch()参照): アイコンからの起動だけのFONT・LINE-HEIGHT・LETTER-SPACING。
+      "ICON-FONT", "ICON-LINE-HEIGHT", "ICON-LETTER-SPACING",
   };
   return kKeywords;
 }
@@ -749,7 +753,8 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
           }
         break;
       }
-      case 26: {  // LINE-HEIGHT(lineHeightRatios()参照): 横書き 縦書き(縦書きを省けば横書きと同じ)
+      case 26:    // LINE-HEIGHT(lineHeightRatios()参照): 横書き 縦書き(縦書きを省けば横書きと同じ)
+      case 29: {  // ICON-LINE-HEIGHT(書式は同じ)
         std::vector<double> ratios;
         while (auto data = nextDataLine(lines, i))
           for (const auto &token : tokenize(*data)) {
@@ -761,10 +766,15 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
             }
             ratios.push_back(value);
           }
-        if (!ratios.empty()) lineHeightRatios_ = {ratios[0], ratios.size() > 1 ? ratios[1] : ratios[0]};
+        if (!ratios.empty()) {
+          std::pair<double, double> value{ratios[0], ratios.size() > 1 ? ratios[1] : ratios[0]};
+          if (index == 29) iconLineHeightRatios_ = value;
+          else lineHeightRatios_ = value;
+        }
         break;
       }
-      case 27: {  // LETTER-SPACING(letterSpacingExtras()参照): 横書き 縦書き(ドット、縦書きを省けば横書きと同じ)
+      case 27:    // LETTER-SPACING(letterSpacingExtras()参照): 横書き 縦書き(ドット、縦書きを省けば横書きと同じ)
+      case 30: {  // ICON-LETTER-SPACING(書式は同じ)
         std::vector<int> extras;
         while (auto data = nextDataLine(lines, i))
           for (const auto &token : tokenize(*data)) {
@@ -776,14 +786,19 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
             }
             extras.push_back(static_cast<int>(value));
           }
-        if (!extras.empty()) letterSpacingExtras_ = std::make_pair(extras[0], extras.size() > 1 ? extras[1] : extras[0]);
+        if (!extras.empty()) {
+          auto value = std::make_pair(extras[0], extras.size() > 1 ? extras[1] : extras[0]);
+          if (index == 30) iconLetterSpacingExtras_ = value;
+          else letterSpacingExtras_ = value;
+        }
         break;
       }
-      case 22: {  // FONT
+      case 22:    // FONT
+      case 28: {  // ICON-FONT(書式は同じ)
         while (auto data = nextDataLine(lines, i)) {
           std::string path = *data;
           while (!path.empty() && (path.back() == ' ' || path.back() == '\t')) path.pop_back();
-          if (!path.empty()) fontPath_ = path;
+          if (!path.empty()) (index == 28 ? iconFontPath_ : fontPath_) = path;
         }
         break;
       }
@@ -917,6 +932,8 @@ void Configuration::reloadKeysAndMacros(const std::string &rcText) {
   // main.cppが当て直す)。節が無ければ既定(フォントの高さ)へ戻る。
   lineHeightRatios_ = fresh.lineHeightRatios_;
   letterSpacingExtras_ = fresh.letterSpacingExtras_;  // LETTER-SPACINGも(2026-10-21)
+  iconLineHeightRatios_ = fresh.iconLineHeightRatios_;  // ICON-LINE-HEIGHT・ICON-LETTER-SPACINGも(2026-10-22)
+  iconLetterSpacingExtras_ = fresh.iconLetterSpacingExtras_;
   // 同日、直接のユーザー依頼("WAITもusilicrc編集で即時反映"): マクロの間隔(使う時に読む)も。
   waitIntervalMicros_ = fresh.waitIntervalMicros_;
 }

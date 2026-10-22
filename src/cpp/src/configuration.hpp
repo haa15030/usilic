@@ -349,11 +349,22 @@ class Configuration {
   const std::vector<long> &arrowSpeedValues() const { return arrowSpeedValues_; }
   // LINE-HEIGHT(2026-10-16): -gの横書きの行の高さと縦書きの字の送りの、字の大きさに対する倍率
   // (GraphicalDisplay::setLineHeightRatios())。節が無ければ{0, 0}(フォントから求めた高さのまま)。
-  std::pair<double, double> lineHeightRatios() const { return lineHeightRatios_; }
+  std::pair<double, double> lineHeightRatios() const {
+    return iconLaunch_ && iconLineHeightRatios_ ? *iconLineHeightRatios_ : lineHeightRatios_;
+  }
   // LETTER-SPACING(2026-10-21、直接のユーザー依頼"字間の設定項目(リアルタイム更新)をusilicrcに追加"): -gの横書き・
   // 縦書きの字間に足すドット数(^[{ / ^[}がその場で書き込む)。節に値が無ければnullopt(~/.usilic/historyの値を使う)。
-  std::optional<std::pair<int, int>> letterSpacingExtras() const { return letterSpacingExtras_; }
-  const std::string &fontPath() const { return fontPath_; }
+  std::optional<std::pair<int, int>> letterSpacingExtras() const {
+    return iconLaunch_ && iconLetterSpacingExtras_ ? iconLetterSpacingExtras_ : letterSpacingExtras_;
+  }
+  const std::string &fontPath() const { return iconLaunch_ && !iconFontPath_.empty() ? iconFontPath_ : fontPath_; }
+  // 2026-10-22、直接のユーザー依頼("アイコン起動に限ってはフォントサイズ、種類、行間、字間等の情報を-gとは別にして
+  // ほしい"): アイコンからの起動(制御端末の無い起動、main.cpp)ならtrue。上の3つはICON-FONT・ICON-LINE-HEIGHT・
+  // ICON-LETTER-SPACINGの節に値があればそちらを返す(無ければFONT等と同じ)。^[{ / ^[}が書き込む節も
+  // letterSpacingSection()でICON-LETTER-SPACINGへ。フォントの大きさ等はHistory::setIconLaunch()。
+  static void setIconLaunch(bool icon) { iconLaunch_ = icon; }
+  static bool iconLaunch() { return iconLaunch_; }
+  static const char *letterSpacingSection() { return iconLaunch_ ? "ICON-LETTER-SPACING" : "LETTER-SPACING"; }
   // MACRO(2026-10-02新設): 「M-n キー K-a K-b ...」の行。キーはKEY節と同じ表記、K番号の並びは
   // それぞれの既定のキー列を続けて本体へ渡す(KeyBindings::configure()参照)。K番号の無い行は無視。
   struct MacroEntry {
@@ -444,6 +455,10 @@ class Configuration {
   std::vector<long> arrowSpeedValues_;  // ARROW
   std::pair<double, double> lineHeightRatios_{0.0, 0.0};  // LINE-HEIGHT
   std::optional<std::pair<int, int>> letterSpacingExtras_;  // LETTER-SPACING
+  std::optional<std::pair<double, double>> iconLineHeightRatios_;  // ICON-LINE-HEIGHT
+  std::optional<std::pair<int, int>> iconLetterSpacingExtras_;       // ICON-LETTER-SPACING
+  std::string iconFontPath_;                                         // ICON-FONT
+  static bool iconLaunch_;
   std::string fontPath_;           // FONT
   std::vector<MacroEntry> macros_;  // MACRO
   std::vector<UrlHandler> urlHandlers_;  // URL

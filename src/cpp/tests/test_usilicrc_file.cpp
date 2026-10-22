@@ -126,3 +126,30 @@ TEST_CASE("usilicrc::updateUserIfOlder: keeps the sections usilic itself writes"
   CHECK(text.find("\tvi\n") == std::string::npos);
   fs::remove_all(home);
 }
+
+TEST_CASE("usilicrc::replaceSection: ICON-LETTER-SPACING is written apart from LETTER-SPACING") {
+  std::string text =
+      "LETTER-SPACING\n"
+      "# 書式: 横書き  縦書き\n"
+      "\n"
+      "\t0  0\n"
+      "\n"
+      "ICON-LETTER-SPACING\n"
+      "# 書式: 横書き  縦書き\n"
+      "\n"
+      "URL\n";
+  CHECK(replaceSection(text, "ICON-LETTER-SPACING", {"2  1"}, "") ==
+        "LETTER-SPACING\n"
+        "# 書式: 横書き  縦書き\n"
+        "\n"
+        "\t0  0\n"
+        "\n"
+        "ICON-LETTER-SPACING\n"
+        "# 書式: 横書き  縦書き\n"
+        "\n"
+        "\t2  1\n"
+        "\n"
+        "URL\n");
+  CHECK(replaceSection(text, "LETTER-SPACING", {"3  3"}, "").find("ICON-LETTER-SPACING\n# 書式: 横書き  縦書き\n\nURL") !=
+        std::string::npos);
+}

@@ -6,7 +6,8 @@
 #
 # ARCHIVE, FILTER, LAUNCH, GREP, PROGRAM, EDITOR, BUFFER, CODE, LINE,
 # WAIT, COPY, MOVE, DELETE, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT,
-# LINE-HEIGHT, LETTER-SPACING, URL, KEY, MACRO
+# LINE-HEIGHT, LETTER-SPACING, ICON-FONT, ICON-LINE-HEIGHT, ICON-LETTER-SPACING,
+# URL, KEY, MACRO
 #
 # 英語のコメント付きの同じ内容のファイルが usilicrc.en です。
 # -------------------------------------------------------------
@@ -316,6 +317,26 @@ LETTER-SPACING
 # エディタで直した時は、^Xs で読み直します)。
 
 	0  0
+
+ICON-FONT
+# 書式: フォントファイル
+#
+# アイコン(usilic.app 等)から起動した時だけに使う FONT。値が無ければ FONT の
+# 値を使います。アイコンから起動した画面で ^Of で基本のフォントを選ぶと、FONT
+# ではなくこちらへ書き込みます。フォントの大きさ・窓の大きさ・^[[ / ^[] で増減
+# した行の高さも、アイコンからの起動と -g とで別々に覚えます(色は共通)。
+
+ICON-LINE-HEIGHT
+# 書式: 横書き  縦書き
+#
+# アイコンから起動した時だけに使う LINE-HEIGHT。値が無ければ LINE-HEIGHT の値。
+
+ICON-LETTER-SPACING
+# 書式: 横書き  縦書き
+#
+# アイコンから起動した時だけに使う LETTER-SPACING。値が無ければ LETTER-SPACING
+# の値。アイコンから起動した画面の ^[{ / ^[} は、LETTER-SPACING ではなくこちらへ
+# 書き込みます。
 
 URL
 # 書式: 名前  program  (option)

@@ -291,6 +291,11 @@ class History {
   };
   GuiPreferences guiPreferences() const;
   void setGuiPreferences(const GuiPreferences &preferences);
+  // 2026-10-22、直接のユーザー依頼("アイコン起動に限ってはフォントサイズ、種類、行間、字間等の情報を-gとは別にして
+  // ほしい"): アイコンからの起動(main.cpp)の間、guiPreferences()/setGuiPreferences()は、フォントの大きさ・
+  // 窓の行数と桁数・フォント・^[[ / ^[]の行の高さ・^[{ / ^[}の字間を、-gとは別の組(iconGuiPreferences_)で
+  // 読み書きする(色と端末のフォントは共通)。別の組がまだ無ければ(最初のアイコン起動)、-gの値から始める。
+  static void setIconLaunch(bool icon) { iconLaunch_ = icon; }
 
   const SessionState &sessionState() const;
   void setSessionState(SessionState state);
@@ -347,6 +352,9 @@ class History {
   bool epubSansSerif_ = false;  // epubSansSerif()参照
   int lsMode_ = 0;
   GuiPreferences guiPreferences_;
+  bool hasIconGuiPreferences_ = false;
+  GuiPreferences iconGuiPreferences_;  // 色・terminalFontPathは使わない(guiPreferences_の方)
+  static bool iconLaunch_;
   std::optional<Charset::Encoding> savedCharset_;
   SessionState sessionState_;
 
@@ -370,7 +378,7 @@ class History {
   void setEpubSansSerifImpl(bool sansSerif);
   void setLsModeImpl(int mode);
   void setSavedCharsetImpl(Charset::Encoding encoding);
-  void setGuiPreferencesImpl(const GuiPreferences &preferences);
+  void setGuiPreferencesImpl(const GuiPreferences &preferences, bool icon);
   void setSessionStateImpl(SessionState state);
 };
 
