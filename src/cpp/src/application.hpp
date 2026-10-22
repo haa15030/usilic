@@ -3231,7 +3231,8 @@ class Application {
   void reopenHelpInOtherLanguage(const HelpLanguageView &view);
   bool viewedThroughProgram(const std::string &path) const;  // executeEdit()参照
   // 2026-10-11、直接のユーザー依頼: ページャー起動のKEYは、HELP画面用に組んだ本文から行頭がタブの行だけ、-Kの
-  // KEYは「：」を含む行だけを読み込んだ一覧にする(KEYを開く前の画面へのキーの発動・hは無し、-Kでは^Gも無し)。
+  // KEYは「：」を含む行だけを読み込んだ一覧にする(hは無し、-Kでは^Gも無し。キーの発動は2026-10-22からページャー
+  // 起動でもする、executeSelectedKeyLine()参照)。
   bool keyListOnly() const { return pagerLaunch_ || keyColonListLaunch_; }
   bool keyColonListLaunch_ = false;
   // KEYの一覧の元の行(keyListOnly()なら上の行だけ、折り返しの続きの行も含める)。

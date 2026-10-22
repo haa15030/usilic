@@ -19669,8 +19669,9 @@ std::string decodeHex(const std::string &hex) {
 }  // namespace
 
 bool Application::executeSelectedKeyLine() {
-  // keyListOnly()参照: ページャー起動のKEYではキーは発動しない(2026-10-11、-KのKEYは発動する)。
-  if (keyListOnly() && !keyColonListLaunch_) return false;
+  // 2026-10-22、直接のユーザー報告("ページャー起動ではKEY画面からの機能実行が利かない"): ページャー起動のKEYでも
+  // キーを発動する(一覧はページャーで使えるキーの行だけなので、そのまま^Mで実行できる)。以前(2026-10-11)は発動
+  // しなかった。
   saveKeyCursor();
   const CutSegment *segment = cutMode_.selectedSegment();
   if (!segment) return false;
