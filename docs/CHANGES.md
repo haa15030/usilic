@@ -32328,3 +32328,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 1000. **2026-10-22: KEYのhで「HELPに見つかりません」になるのを直す**
    - 直接のユーザー報告("KEYで`h`→「HELPに見つかりません」")。KEYの行とHELP.epubの行は、空白と不可視の字を除いて比べる(`normalizeHelpLineForMatch()`)が、HELP.epubの字下げはU+00A0(NBSP)で、それを除いていなかったため、字下げのある行(キーの行のほとんど)がどれも一致しなかった。
    - `normalizeHelpLineForMatch()`でU+00A0も除く。KEYの「：」を含む全行で試し、一致しないのは平文のHELPとHELP.epubとで文言が違う行(`^J^K：SHELLからKEYを起動` ⇔ HELP.epubは「プロンプトから」)と、キーの行でない3行だけになった。
+
+1001. **2026-10-22: lha・lsar・7zの無いMacで、.lzh・.rar・.7zをtarで読む**
+   - 直接のユーザー報告("`src/skrw021.lzh`、`src/u100_SL.rar`がARC表示にならない")。Homebrewの無いMac(mpi)には`lha`・`lsar`・`7z`が無く、一覧のコマンドが失敗して普通のファイルとして開いていた。
+   - `configuration.cpp`: macOSでは、一覧のコマンドが見つからない時、Windowsと同じくtar(bsdtar、lzh・rar・7zも読める)の`-tvf`で一覧し、`ArchiveKind::Tar`として扱う(コマンドの有無を調べる`commandOnPath()`を`sevenZipCommand()`から切り出した)。
+   - `archive_mode.cpp`: tarのヘッダー("ustar")が無い書庫は、選んだ1つを`tar -xOf`で取り出して読む。skrw021.lzhの一覧と、README.TXT(Shift_JIS)を^Mで開けることを確かめた(u100_SL.rarは一覧まで)。取り出し(^Oa)はもともと`tar xf`。
+   - Linuxは変えていない(GNU tarはlzh・rarを読めない)。

@@ -11,26 +11,32 @@
 
 namespace fm {
 
+// PATH(とFinderからの起動ではPATHに無い/opt/homebrew/bin・/usr/local/bin)にnameのコマンドがあるか。
+static bool commandOnPath(const std::string &name) {
+  std::vector<std::string> dirs;
+  if (const char *path = std::getenv("PATH")) {
+    std::string all = path;
+    std::size_t start = 0;
+    while (start <= all.size()) {
+      std::size_t colon = all.find(':', start);
+      std::string dir = all.substr(start, colon == std::string::npos ? std::string::npos : colon - start);
+      if (!dir.empty()) dirs.push_back(dir);
+      if (colon == std::string::npos) break;
+      start = colon + 1;
+    }
+  }
+  dirs.push_back("/opt/homebrew/bin");
+  dirs.push_back("/usr/local/bin");
+  for (const auto &dir : dirs)
+    if (::access((dir + "/" + name).c_str(), X_OK) == 0) return true;
+  return false;
+}
+
 // configuration.hpp自身の宣言コメント参照(2026-09-27)。
 std::string sevenZipCommand() {
   static const std::string name = [] {
-    std::vector<std::string> dirs;
-    if (const char *path = std::getenv("PATH")) {
-      std::string all = path;
-      std::size_t start = 0;
-      while (start <= all.size()) {
-        std::size_t colon = all.find(':', start);
-        std::string dir = all.substr(start, colon == std::string::npos ? std::string::npos : colon - start);
-        if (!dir.empty()) dirs.push_back(dir);
-        if (colon == std::string::npos) break;
-        start = colon + 1;
-      }
-    }
-    dirs.push_back("/opt/homebrew/bin");  // Finderからの起動ではPATHに無い
-    dirs.push_back("/usr/local/bin");
     for (const char *candidate : {"7z", "7zz"})
-      for (const auto &dir : dirs)
-        if (::access((dir + "/" + candidate).c_str(), X_OK) == 0) return std::string(candidate);
+      if (commandOnPath(candidate)) return std::string(candidate);
     return std::string("7z");
   }();
   return name;
@@ -393,6 +399,14 @@ Configuration::Configuration() {
     }
 #endif
 #ifdef __APPLE__
+    // 2026-10-22、直接のユーザー報告("src/skrw021.lzh、src/u100_SL.rarがARC表示にならない"、Homebrewの無いMac):
+    // lha・lsar・7zが入っていなければ、Windowsと同じくmacOSのtar(bsdtar、lzh・rar・7zも読める)で一覧し、
+    // ArchiveKind::Tarとして扱う(中身・取り出しもtar)。
+    if ((kind == ArchiveKind::Lha || kind == ArchiveKind::Rar || kind == ArchiveKind::SevenZip) &&
+        !command.argv.empty() && !commandOnPath(command.argv[0])) {
+      kind = ArchiveKind::Tar;
+      command = {{"tar", "-tvf"}, std::nullopt};
+    }
     // 2026-10-16: macOSのtar(bsdtar)は"._X"(AppleDouble)を直後の項目の付加情報として一覧から隠す。本体の
     // 無い"._"だけの書庫では半分が消えるので、全部を受け取り、本体と組になるものだけを
     // TarReader::parseListing()が隠す(archive_reader.cppのisPairedAppleDouble()参照)。

@@ -397,6 +397,15 @@ std::optional<std::vector<unsigned char>> ArchiveMode::extractSelected() {
       std::ifstream in(currentArchive_, std::ios::binary);
       if (!in) return std::nullopt;
       data.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+#ifdef __APPLE__
+      // lha・lsar・7zの無いMacでtar(bsdtar)に読ませたlzh・rar・7z(configuration.cppのaddBuiltinArchive参照)は
+      // tarのヘッダーを辿れないので、その1つだけをtarに標準出力へ取り出させる。
+      if (data.size() < 263 || std::string(data.begin() + 257, data.begin() + 262) != "ustar") {
+        ChildProcess::Result result = ChildProcess::run({"tar", "-xOf", currentArchive_, entries_[idx].name});
+        if (!result.ok) return std::nullopt;
+        return std::vector<unsigned char>(result.output.begin(), result.output.end());
+      }
+#endif
       break;
     }
     case ArchiveKind::Zip:
