@@ -339,6 +339,10 @@ class History {
   // 新規に作って最新のファイルを読み込み、`history.replayJournalOnto(disk);`
   // した上で`disk`をシリアライズして保存する(main.cpp参照)。
   void replayJournalOnto(History &target) const;
+  // 2026-10-22(Python版の履歴の読み書きを作る中で発見): 保存してディスクへ反映した分の記録を消す。消さないと、
+  // 次の保存でも同じ操作を最初から重ね直し、「A→B→A」と見ただけで保存のたびにA,B,A,B,A…と増えていた
+  // (直前と同じものしか重複を除かないため。~/.usilic/historyのFILE_HISTORY 55,362件中33,131か所)。
+  void clearJournal() { journal_.clear(); }
 
  private:
   std::map<PositionCategory, std::map<std::string, CursorPosition>> positions_;

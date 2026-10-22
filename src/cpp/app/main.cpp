@@ -261,7 +261,7 @@ std::string currentTimestampText() {
 // 参照)の両方から呼ぶ。sessionHistoryは呼び出し側が最後にpushした
 // 状態のまま(このセッション自身のjournal_を保持している)必要がある
 // ので、値渡しではなく参照で受け取る。
-void saveHistoryToDisk(const fm::History &sessionHistory, const std::string &usilicDir,
+void saveHistoryToDisk(fm::History &sessionHistory, const std::string &usilicDir,
                         bool charsetExplicitlySet) {
   std::string historyPath = usilicDir + "history";
   std::string historyOldPath = usilicDir + "history.old";
@@ -290,6 +290,7 @@ void saveHistoryToDisk(const fm::History &sessionHistory, const std::string &usi
   // 更新されなかった(2026-10-16、-gの窓の大きさが保存されていなかった件)。
   if (!currentDiskText.empty()) fm::replaceFile(historyPath, historyOldPath);
   fm::replaceFile(historyTmpPath, historyPath);
+  sessionHistory.clearJournal();  // 反映した分は次の保存で重ね直さない(History::clearJournal()参照)
 
   releaseHistoryLock(historyLockPath);
 }

@@ -32382,3 +32382,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 直接のユーザー依頼("C++版usilicは…GUIメインに…スクリプトではCUIのみ…学習用でいいんで移植して")。`.steering/20261022-python-cui-port/`。
    - `src/python/`(`usilic.py`と`usilic/`の各モジュール、標準ライブラリだけ)。クラス・メソッドはC++版と同じ名前(snake_case)で、`utf8`・`mode_line`・`messages_ja`・`content_view`・`file_mode`・`directory_mode`・`key_input`・`display`(curses)・`application`。
    - ページャー(引数のfile・標準入力)のj k ^N ^P ␣ ^V ^F b ^B ^[v ^[< ^[> ^[N ^X^X ^L n p x f q、(ls)の^M ^G ^J^B ^J^C ^]、^X^C・^[^[、PREFIXの表示。C++版と同じキー列を擬似端末で送り、現在行が一致すること、60桁で日本語・ASCIIの折り返し(行頭禁則を含む)が同じ画面になることを確かめた。unittest 10件。
+
+1012. **2026-10-22: 履歴を保存するたびに、それまでの操作を重ね直して重複が増えていたのを直す**
+   - Python版の履歴の読み書き(C++版と同じ~/.usilic/historyを使う)を作る中で発見。保存(`saveHistoryToDisk()`)はディスクの最新を読み、このセッションの操作の記録(`History::journal_`)を重ねて書くが、保存した後も記録を消していなかった。リングは直前と同じものしか重複を除かないので、「A→B→A」と見ると、保存のたびにA,B,A,B,A…と増えていた(ディレクトリ引数で起動した間はFILE・DIR等をpushするたびに保存する)。実際の~/.usilic/historyで、FILE_HISTORY 55,362件中33,131か所、DIR_HISTORY 32,400件中14,004か所、USILIC_HISTORY 82,187件中29,402か所に「A,B,A,B,A」の並びがあった(5MBの大半)。
+   - `History::clearJournal()`を足し、`saveHistoryToDisk()`が書き終えたら呼ぶ。テスト1件(2回保存してもA,B,Aのまま)。
+   - 既に増えた分はそのまま(ユーザーのデータなので、まとめる場合は別に)。

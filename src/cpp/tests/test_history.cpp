@@ -455,3 +455,19 @@ TEST_CASE("an icon launch keeps its own font size and letter spacing apart from 
   CHECK(loaded.guiPreferences().fgR == 200);  // 色は共通
   History::setIconLaunch(false);
 }
+
+// 2026-10-22(History::clearJournal()参照): 保存(replayJournalOnto→clearJournal)を2回しても、A→B→Aは
+// ディスク上でA,B,Aのまま(以前はA,B,A,B,Aに増えていた)。
+TEST_CASE("saving twice does not replay the already-saved pushes again") {
+  History session(0);
+  History disk(0);
+  session.pushRecent(RingCategory::RecentFile, "/x/A");
+  session.replayJournalOnto(disk);
+  session.clearJournal();
+  session.pushRecent(RingCategory::RecentFile, "/x/B");
+  session.pushRecent(RingCategory::RecentFile, "/x/A");
+  session.replayJournalOnto(disk);
+  session.clearJournal();
+  const auto &ring = disk.recentEntries(RingCategory::RecentFile);
+  CHECK(std::vector<std::string>(ring.begin(), ring.end()) == std::vector<std::string>{"/x/A", "/x/B", "/x/A"});
+}
