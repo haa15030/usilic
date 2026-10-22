@@ -38,6 +38,19 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(h.recent_entries(H.RECENT_DIRECTORY), ['/x/y/'])
         self.assertEqual(h.recent_entries(H.USILIC), ['/x/y/z.txt'])
 
+    def test_japanese_names_round_trip(self):
+        # 日本語のパス(UTF-8)はバイトのままファイルへ、読み返すと同じstr(第2段では保存で落ちていた)
+        with tempfile.TemporaryDirectory() as d:
+            session = H.load_from_disk(d)
+            session.push_recent(H.RECENT_DIRECTORY, '/tmp/日本語/')
+            session.set_position(H.DIRECTORY, '/tmp/日本語/', H.CursorPosition(2, 5, 0, -1))
+            H.save_to_disk(session, d)
+            with open(os.path.join(d, 'history'), 'rb') as f:
+                self.assertIn('/tmp/日本語/'.encode('utf-8'), f.read())
+            disk = H.load_from_disk(d)
+            self.assertEqual(disk.recent_entries(H.RECENT_DIRECTORY), ['/tmp/日本語/'])
+            self.assertEqual(disk.position_for(H.DIRECTORY, '/tmp/日本語/').row, 2)
+
     def test_saving_twice_does_not_duplicate(self):
         with tempfile.TemporaryDirectory() as d:
             with open(os.path.join(d, 'history'), 'wb') as f:

@@ -32408,3 +32408,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 直接のユーザー報告("^J^Eには`https://ncode.syosetu.com/`がないのと、リストの一番上、`https://yomou.syosetu.com/a1234bc`ではエラー（ncodeの方はOK）")。
    - `kEpubListSiteUrls`に`https://ncode.syosetu.com/`を足した(yomouの次)。`isEpubNovelSiteUrl()`もそれを小説サイトの入口とみなすので、一覧に「(作品ID)」が付き、選ぶと^Owのモードに関わらずOpen(ブラウザ)で開く。
    - 項目1015の作品のURLの判定に、入口のホストの`yomou`(→`ncode`)・`noc`(→`novel18`)を足した。`https://yomou.syosetu.com/n6486mg`は`https://ncode.syosetu.com/n6486mg/`としてnarou2epubへ。作品番号は「n+数字4桁以上+英字」なので、`a1234bc`のような形は今までどおり作品とみなさない(Epubのモードでは「Not a Narou work」)。
+
+1017. **2026-10-22: Python版: 日本語の名前のディレクトリ・ファイルで、履歴の保存が落ちていたのを直す**
+   - 第3段に取りかかる前にコードを読み直して発見。履歴の中身はlatin-1の字(1バイト=1字、C++版と同じくバイトのまま往復させるため)だが、(ls)・FILEはUnicodeのstrのパスをそのまま`push_recent()`等へ渡していた。日本語のディレクトリへ入ると、保存(`serialize().encode('latin-1')`)で`UnicodeEncodeError`になり、前回の位置も日本語の名前では見つからなかった。
+   - `history.py`: `to_raw()`(UTF-8のバイト→latin-1の字、読めないバイトはsurrogateescape)・`from_raw()`を足し、公開のメソッド(`position_for`・`set_position`・`push_recent`・`remember_name`・`recent_entries`・`names_in`)の入口と出口で変換する。unittest 1件(日本語のパスがUTF-8のままファイルに入り、読み返して同じ)。

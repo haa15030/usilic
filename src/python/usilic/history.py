@@ -31,6 +31,16 @@ _RINGS = [(' HISTORY', SHELL_COMMAND), (' FILE_HISTORY', RECENT_FILE), (' DIR_HI
           (' USILIC_HISTORY', USILIC)]
 
 
+def to_raw(name):
+    """Pythonの名前(UTF-8、読めないバイトはsurrogateescape)を、内部のlatin-1の字(1バイト=1字)に。"""
+    return name.encode('utf-8', 'surrogateescape').decode('latin-1')
+
+
+def from_raw(raw):
+    """to_raw()の逆(履歴の中の名前を、パスとして使えるstrに)。"""
+    return raw.encode('latin-1').decode('utf-8', 'surrogateescape')
+
+
 def encode_field(s):
     """encodeField(): 空白はK_a、制御バイトはK_o+(バイト+'@')、空の欄はK_o単独。"""
     if not s:
@@ -106,18 +116,19 @@ class History:
         self.complete = False
         self.errors = []
 
-    # --- 読み取り ---
+    # --- 読み取り(名前は呼び出し側のstr、中ではto_raw()の形) ---
     def position_for(self, category, name):
-        return self.positions.get(category, {}).get(name)
+        return self.positions.get(category, {}).get(to_raw(name))
 
     def recent_entries(self, category):
-        return self.rings.get(category, [])
+        return [from_raw(n) for n in self.rings.get(category, [])]
 
     def names_in(self, category):
-        return self.name_sets.get(category, [])
+        return [from_raw(n) for n in self.name_sets.get(category, [])]
 
     # --- 変更(journalに積む) ---
     def set_position(self, category, name, position):
+        name = to_raw(name)
         self.journal.append(lambda h: h._set_position_impl(category, name, position))
         self._set_position_impl(category, name, position)
 
@@ -125,6 +136,7 @@ class History:
         self.positions.setdefault(category, {})[name] = position
 
     def remember_name(self, category, name):
+        name = to_raw(name)
         self.journal.append(lambda h: h._remember_name_impl(category, name))
         self._remember_name_impl(category, name)
 
@@ -134,6 +146,7 @@ class History:
             names.append(name)
 
     def push_recent(self, category, name):
+        name = to_raw(name)
         self.journal.append(lambda h: h._push_recent_impl(category, name))
         self._push_recent_impl(category, name)
         self.journal.append(lambda h: h._mirror_to_usilic_impl(category, name))
