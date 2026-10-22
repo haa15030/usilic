@@ -12,7 +12,8 @@ class GrepModeTest(unittest.TestCase):
         lines = ['line %d' % i for i in range(1, 51)]
         self.assertEqual(grep_line_indices(lines, '^line 4[0-9]$', REGEX), list(range(39, 49)))
         self.assertEqual(len(grep_line_indices(lines, 'line 2', FIXED)), 11)  # 2, 20〜29
-        self.assertEqual(grep_line_indices(['a\nx', 'b', 'x'], 'x', FIXED), [2])  # 1行目の中の改行はxでない
+        # 1行目の中の改行は空白になるので、3行目の'x'は3行目のまま(4行目にずれない)
+        self.assertEqual(grep_line_indices(['a\nx', 'b', 'x'], 'x', FIXED), [0, 2])
 
     def test_match_spans(self):
         self.assertEqual(match_spans('abcabc', 'bc', FIXED), [(1, 3), (4, 6)])
