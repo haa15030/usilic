@@ -32360,3 +32360,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 1006. **2026-10-22: ページャー起動のKEYでも、^Mでキーを実行する**
    - 直接のユーザー報告("ページャー起動ではKEY画面からの機能実行が利かない")。項目(2026-10-11)で、ページャー起動のKEY(HELPで行頭がタブの行だけの一覧)はキーを発動しないことにしていた(`executeSelectedKeyLine()`の初めで`return false`)。
    - その1行を外した。一覧はページャーで使えるキーだけなので、そのまま実行してよい。`usilic n.txt`(300行)→`^K`→「^[>：末尾へ」で`^M`→300/300 ENDになることを確かめた。`h`(HELPへ飛ぶ)は今までどおり無し。
+
+1007. **2026-10-22: WindowsのHELP・KEYを、最新のroff版(doc/HELP.1)から組んだものにする**
+   - 直接のユーザー報告("WindowsではHELPが最新じゃない")。HELP・KEY・平文のHELPの本文は、roff版(HELP.1・HELP_en.1)をgroffでその場の幅に組んだもの(`renderHelpRoff()`)で、groffが無ければ平文の`HELP`になる。Windowsにはgroffが無いので、zip(`make WINDOWS=1 dist`)に入れていた`doc/HELP`(10/5からユーザーが直していない古い形式の原稿)が出ていた。あわせて、10/21のzipは22:55に作ったもので、23:30に作り直したHELP.epubより古かった(作り直した)。
+   - `windows.mk`: doc/HELP.1・doc/HELP_en.1を入れ、それをHELPの組み方(`-rusilic-help=1`、78桁)で組んだものを隣の`HELP.1.txt`・`HELP_en.1.txt`に置く。
+   - `renderHelpRoff()`: groffで組めなければ(Windowsではgroffを呼ばない)、roff版の隣の`<roff>.txt`をgroffの出力の代わりに使う(`helpPrerenderedPath_`、幅は78桁のまま)。Windowsの実機では未確認。

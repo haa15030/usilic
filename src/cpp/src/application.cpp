@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <deque>
 #include <filesystem>
+#include <iterator>
 #include <fstream>
 #include <regex>
 #include <iostream>
@@ -19418,6 +19419,7 @@ bool Application::reloadHelpText() {
       std::ostringstream roff;
       roff << roffIn.rdbuf();
       helpRoff_ = roff.str();
+      helpPrerenderedPath_ = candidate + ".txt";
       if (!helpRoff_.empty() && renderHelpRoff(display_.columns())) {
         std::error_code ec;
         helpLoadedPath_ = candidate;
@@ -19446,19 +19448,28 @@ bool Application::reloadHelpText() {
 // 8桁へ広げる)と、groffが組んだ字下げの残りの空白に、行末の印はタブにする(HELPの目次・ページャー起動の
 // KEYのCUTは、今まで通り行末・行頭のタブで切れる)。
 bool Application::renderHelpRoff(int width) {
+  std::string output;
+#ifndef _WIN32
   ProgramCommand groff = configuration_.commandFor(ConfiguredRole::Groff);
-  if (groff.argv.empty()) return false;
-  std::vector<std::string> argv = groff.argv;
-  argv.push_back("-rLL=" + std::to_string(std::max(width, 20)) + "n");
-  argv.push_back("-rusilic-help=1");
-  ChildProcessOptions options;
-  options.input = &helpRoff_;
-  ChildProcess::Result result = ChildProcess::run(argv, options);
-  if (!result.ok || result.output.empty()) return false;
+  if (!groff.argv.empty()) {
+    std::vector<std::string> argv = groff.argv;
+    argv.push_back("-rLL=" + std::to_string(std::max(width, 20)) + "n");
+    argv.push_back("-rusilic-help=1");
+    ChildProcessOptions options;
+    options.input = &helpRoff_;
+    ChildProcess::Result result = ChildProcess::run(argv, options);
+    if (result.ok) output = std::move(result.output);
+  }
+#endif
+  if (output.empty() && !helpPrerenderedPath_.empty()) {  // helpPrerenderedPath_参照(幅は組んだ時のまま)
+    std::ifstream prerendered(helpPrerenderedPath_, std::ios::binary);
+    if (prerendered) output.assign(std::istreambuf_iterator<char>(prerendered), std::istreambuf_iterator<char>());
+  }
+  if (output.empty()) return false;
   const std::string marker = "\xEE\x80\x80";  // U+E000
   std::string text;
-  text.reserve(result.output.size());
-  std::istringstream in(result.output);
+  text.reserve(output.size());
+  std::istringstream in(output);
   for (std::string line; std::getline(in, line);) {
     std::size_t at = line.find(marker);
     if (at == std::string::npos) {

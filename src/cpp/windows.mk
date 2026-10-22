@@ -73,6 +73,12 @@ dist: $(BUILD_DIR)/usilic.exe
 	# 2026-10-21: 日本語版がHELP.1、英語版がHELP_en.1になった(組んだ平文の名前はそのまま)。
 	env GROFF_NO_SGR=1 groff -mandoc -Kutf8 -Tutf8 -rLL=78n ../../doc/HELP_en.1 > $(BUILD_DIR)/usilic/lib/usilic/HELP.man
 	env GROFF_NO_SGR=1 groff -mandoc -Kutf8 -Tutf8 -rLL=78n ../../doc/HELP.1 > $(BUILD_DIR)/usilic/lib/usilic/HELP.ja.man
+	# 2026-10-22、直接のユーザー報告("WindowsではHELPが最新じゃない"): HELP・KEYの本文もroff版(doc/HELP.1・
+	# doc/HELP_en.1)から。groffが無いので、ここでHELPの組み方(-rusilic-help=1)で組んだものを隣の<roff>.txtに置く
+	# (Application::helpPrerenderedPath_参照)。以前は10/5から直していない平文のdoc/HELPになっていた。
+	cp ../../doc/HELP.1 ../../doc/HELP_en.1 $(BUILD_DIR)/usilic/lib/usilic/
+	env GROFF_NO_SGR=1 groff -mandoc -Kutf8 -Tutf8 -rLL=78n -rusilic-help=1 ../../doc/HELP.1 > $(BUILD_DIR)/usilic/lib/usilic/HELP.1.txt
+	env GROFF_NO_SGR=1 groff -mandoc -Kutf8 -Tutf8 -rLL=78n -rusilic-help=1 ../../doc/HELP_en.1 > $(BUILD_DIR)/usilic/lib/usilic/HELP_en.1.txt
 	cd $(BUILD_DIR) && zip -qr usilic-win64.zip usilic
 
 clean:

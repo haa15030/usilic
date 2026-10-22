@@ -3274,6 +3274,9 @@ private:
   // HELP・KEY・平文のHELPは、それをgroffで今の幅に組んだもの(helpText_)を出し、幅が変わったら組み直す
   // (字下げの印U+FEFF等の不可視コードは使わない)。無ければ今まで通りHELP(-mで作る平文)。
   std::string helpRoff_;
+  // 2026-10-22、直接のユーザー報告("WindowsではHELPが最新じゃない"): groffの無いWindowsは、配る時に組んでおいた
+  // roff版の隣の<roff>.txt(windows.mkのdist)をgroffの出力の代わりに使う(以前は古い平文のHELPになっていた)。
+  std::string helpPrerenderedPath_;
   int helpRenderedWidth_ = -1;
   bool renderHelpRoff(int width);
 
