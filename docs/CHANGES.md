@@ -32424,3 +32424,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - UTF-8の続きのバイト0x80はC++のKeyInputが^SPCに使う0x80とぶつかるので、NULを0x80にするのは割り当てを照合する時だけにした。
    - この版に無い物: マクロ・COPY・EDIT・TOOL・USILIC(^[u等)・PART・INFO・ブックマーク・レジスタ・^U、EPUBの縦書き・Webのリンク(^Ow)。
    - unittest 21件を足した(合計40件)。
+
+1019. **2026-10-22: Python版(第4段): 残りのモード(PART・TOOL・USILIC・MACRO・COPY・EDIT・INFO・マーク・レジスタ・ブックマーク等)**
+   - 直接のユーザー依頼("まだ無いモードを一気に最後までよろしく。")。`.steering/20261022-python-cui-port-4/`。
+   - 新しいモジュール: `part_mode.py`(PARTの分割、^O^S・^O^J^Sの一致した行の一覧)、`copy_mode.py`(範囲・矩形、桁で数える)、`macro.py`(usilicrcのMACRO節、記録したバイト列→「K-n "文字列"」、MACRO節の「--」の前へ書き足し、元はusilicrc.日時.bakへ)、`bookmarks.py`(~/.usilic/bookmarks、C++と同じ「名前<TAB>行番号<TAB>パス」で新しい順)。
+   - K-番号の表に無いキー(^Xr…・^Xz・^O^S・^O^J^S・^U・(ls)の%・*)は、C++でも別に扱っているので、割り当ての照合の前に見る。第3段でEPUBに直に付けた`;`・`:`は外し、MACRO節(無ければC++の組み込みの6つ)で動かす。
+   - マーク: 第3段の^X^Xの戻り先(1つ)を最大16個の輪にした(^␣・^[< ^[>・ページ送り・^Sの開始・リンクで飛ぶ前)。^U^␣で遡る。
+   - EPUB: 段落の字にリンク先(href)を持たせ、^Mでカーソル行の最初のリンクへ(本の中は^Gで戻る、Webのリンクはusilicrcの`URL`節のモード、^Owで巡回)。^Osで章ごと/連続、^O^Eで~/.usilic/epub-marks.txtの一覧、^Jeの作品番号・作品のURLはnarou2epubをSHELLで動かし、出力の最後の行のEPUBを開く。
+   - 作業ファイル(^X^W)は/tmp/.usilic/python-PID/に置き、終了の時に消す。
+   - 範囲外: GUI(-g)の物、マウス(^Od)、窓の行き来(^Tn・^Tp・^T^H・^T^K)、EPUBの縦書きとその上のCOPYの記録。
+   - unittest 10件を足した(合計50件)。

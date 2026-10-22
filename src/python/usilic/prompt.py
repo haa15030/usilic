@@ -9,6 +9,9 @@ from .line_editor import LineEditor
 
 FILE, DIRECTORY, MAN, LOCATE, EPUB, COPY, MOVE, REMOVE, ARCHIVE, FGREP, EGREP, EXIT = (
     'File', 'Directory', 'Man', 'Locate', 'Epub', 'Copy', 'Move', 'Remove', 'Archive', 'Fgrep', 'Egrep', 'Exit')
+TOOL, PART, MACRO_KEY, BOOKMARK_SET, BOOKMARK_JUMP, MARK_REGEX, MARK_EXTENSION, OCCUR_FIXED, OCCUR_REGEX = (
+    'Tool', 'Part', 'MacroKey', 'BookmarkSet', 'BookmarkJump', 'MarkRegex', 'MarkExtension', 'OccurFixed',
+    'OccurRegex')
 
 # 種類 -> (モードラインの名前, 尋ねる文, ^Rの履歴)
 KINDS = {
@@ -24,6 +27,15 @@ KINDS = {
     FGREP: ('FGREP', '', hist.RECENT_FGREP_PATTERN),
     EGREP: ('EGREP', '', hist.RECENT_EGREP_PATTERN),
     EXIT: ('EXIT', 'Exit? (y/n) ', None),
+    TOOL: ('TOOL', '', hist.SHELL_COMMAND),
+    PART: ('PART', '', hist.RECENT_EGREP_PATTERN),
+    MACRO_KEY: ('MACRO', 'Key: ', None),
+    BOOKMARK_SET: ('BOOKMARK', 'Set: ', None),
+    BOOKMARK_JUMP: ('BOOKMARK', 'Jump: ', None),
+    MARK_REGEX: ('(ls)', 'Regexp: ', hist.RECENT_EGREP_PATTERN),
+    MARK_EXTENSION: ('(ls)', 'Extension: ', None),
+    OCCUR_FIXED: ('FGREP', '', hist.RECENT_FGREP_PATTERN),
+    OCCUR_REGEX: ('EGREP', '', hist.RECENT_EGREP_PATTERN),
 }
 
 

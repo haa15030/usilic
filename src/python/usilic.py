@@ -60,8 +60,10 @@ def main():
             # ディレクトリで起動した時だけ、C++版と同じ~/.usilic/historyを読み書きする(積むたびに保存、C++の
             # setOnRingPushed()と同じくコマンドの履歴は除く)。
             usilic_dir = os.path.join(os.path.expanduser('~'), '.usilic')
+            # ^Ouで開いた外のusilicは、その場限りの(ls)(履歴は読み書きしない、C++と同じ)
+            ephemeral = os.environ.pop('USILIC_NO_HISTORY', '') == '1'
             history = (hist.load_from_disk(usilic_dir, configuration.retention_count)
-                       if os.path.isdir(usilic_dir) else None)
+                       if os.path.isdir(usilic_dir) and not ephemeral else None)
             if history is not None:
                 history.on_ring_pushed = lambda category: (
                     hist.save_to_disk(history, usilic_dir) if category != hist.SHELL_COMMAND else None)

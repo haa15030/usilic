@@ -47,8 +47,23 @@ cmd | python3 src/python/usilic.py         # 標準入力のページャー
 - HELP(^H・^J^H、HELP.epubをEPUBで)・KEY(^K・^J^K、^Mでその行のキーを実行、hで平文のHELPの同じ行へ)
 - FILTER(.gz等をgzip -dcで)・LAUNCH(画面を抜けて起動)・CODE(バイナリはfile(1)の結果)・BUFFER
 
-この版に無い物: マクロ・COPY・EDIT・TOOL・USILIC(^[u等)・PART・INFO・ブックマーク・レジスタ・^U、EPUBの
-縦書き・Webのリンク(^Ow)。
+## 第4段(2026-10-22)で足したもの
+
+- PART(^Jp・^J^P)、一致した行の一覧(^O^S・^O^J^S、^Mでその行へ、; :で前/次)
+- TOOL(^Jt・^J^T): PROGRAMの物は画面を抜けて、`usilic`は外のページャー、他はSHELLで
+- USILIC(^[u・^J^U・^Ju)、作業ファイル(^X^W、/tmp/.usilic/python-PID/、終了で消える)、外のページャー(^Ou)、
+  (ls)の␣(クイックルック、macOS)
+- MACRO: usilicrcのMACRO節のキー(; : [ ] e l)、^X( ^X) ^Xe、^Xs(^Xeの直後は記録をMACRO節へ、それ以外は
+  usilicrcを読み直してMACROの一覧)
+- COPY(^O^C、^@/^␣・^X␣で範囲、^[wでクリップボード、^[tでTOOLへ)、プロンプトの^O^Y
+- EDIT(^[e、+N付き、終わったら読み直す)、INFO(^I・^J^I)、^J^Ou・^J^Oe・^J^Os・^J^Od・^J^Ow・^[l
+- マーク(^␣・^U^␣・^X^X、最大16個)、^U(回数)、^Xz、レジスタ(^Xr␣c・^Xrjc)、ブックマーク(^Xrm・^Xrb・
+  ^Xrl、~/.usilic/bookmarks)
+- (ls)の^Oo・^Ol・^O^L・%・*、SHELLの^J.・^J,・^Jw・^J^W・^W・^O/・^O^F・^O^B、^Of・^Oj
+- EPUB: 本文のリンク(^Mで注釈へ、^Gで戻る、Webのリンクは^Owのモードで)、^Os(章ごと/連続)、^O^E、^Jeの
+  作品番号・作品のURL(narou2epub)
+
+この版に無い物: GUI(-g)の物、マウス(^Od)、窓の行き来(^Tn・^Tp・^T^H・^T^K)、EPUBの縦書きとその上のCOPYの記録。
 
 ## C++版との対応
 

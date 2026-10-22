@@ -45,6 +45,26 @@ def parse_ls_line(line):
     return DirectoryEntry(line, name, is_directory)
 
 
+def sort_by_kind(entries, reverse=False):
+    """Kind(拡張子の順、C++のenterDirectory()): ./ ../ が先、拡張子のあるfile、無いfile、ディレクトリ。"""
+    nav = [e for e in entries if e.name in ('./', '../')]
+    rest = [e for e in entries if e.name not in ('./', '../')]
+
+    def extension(name):
+        stripped = name.rstrip('/*@=%|')
+        dot = stripped.rfind('.')
+        return '' if dot <= 0 else stripped[dot + 1:]
+
+    def key(e):
+        rank = 2 if e.is_directory else (1 if not extension(e.name) else 0)
+        return (rank, extension(e.name), e.name)
+    rest.sort(key=key, reverse=reverse)
+    return nav + rest
+
+
+SORT_KEYS = ['Name', 'Date', 'Size', 'Kind']
+
+
 class DirectoryMode:
     def __init__(self, view):
         self.view = view
@@ -54,6 +74,10 @@ class DirectoryMode:
         self.byte_count = 0
         self.cursor_positions = {}
         self.history = None  # ディレクトリで起動した時だけ(ページャーでは履歴に触れない)
+        self.sort_key = 'Name'   # ^Olで巡回(Name→Date→Size→Kind、C++のLsSortKey)
+        self.reverse = False     # ^O^L
+        self.filename_only = False  # ^Oo(名前だけの表示)
+        self.sort_label_shown = False
         self.marks = set()   # 選択(下線、. ^SPC ^Oy ^On)。項目の番号
         self.temporary_marks = False  # CP/MV/展開の後の一時的な選択(^Lで消える)
 
@@ -64,7 +88,9 @@ class DirectoryMode:
             path += '/'
         env = dict(os.environ, LC_ALL='C')
         try:
-            result = subprocess.run(['ls', '-alF', path], capture_output=True, env=env)
+            argv = ['ls', '-alF'] + {'Date': ['-t'], 'Size': ['-S']}.get(self.sort_key, []) + \
+                (['-r'] if self.reverse else []) + [path]
+            result = subprocess.run(argv, capture_output=True, env=env)
         except OSError:
             return False
         if result.returncode != 0:
@@ -74,11 +100,14 @@ class DirectoryMode:
         text = result.stdout.decode('utf-8', 'replace')
         lines = [l for l in text.split('\n') if l and not l.startswith('total ')]
         self.entries = [parse_ls_line(l) for l in lines]
+        if self.sort_key == 'Kind':
+            self.entries = sort_by_kind(self.entries, self.reverse)
         self.byte_count = len(result.stdout)
         self.current_directory = path
         self.marks = set()
         self.temporary_marks = False
-        self.view.set_lines([Line(e.ls_line, i + 1) for i, e in enumerate(self.entries)])
+        self.view.set_lines([Line(e.name if self.filename_only else e.ls_line, i + 1)
+                             for i, e in enumerate(self.entries)])
         cursor, top = self.cursor_positions.get(path, (0, 0))
         if self.history is not None:
             self.history.push_recent(hist.RECENT_DIRECTORY, path)
@@ -105,3 +134,24 @@ class DirectoryMode:
         trimmed = directory.rstrip('/')
         parent = os.path.dirname(trimmed) or '/'
         return parent if parent.endswith('/') else parent + '/'
+
+    def cycle_sort_key(self):
+        self.sort_key = SORT_KEYS[(SORT_KEYS.index(self.sort_key) + 1) % len(SORT_KEYS)]
+        self.sort_label_shown = True
+        return self.refresh()
+
+    def toggle_reverse_sort(self):
+        self.reverse = not self.reverse
+        return self.refresh()
+
+    def toggle_filename_only(self):
+        self.filename_only = not self.filename_only
+        return self.refresh()
+
+    def refresh(self):
+        cursor = self.view.cursor_index
+        ok = self.enter_directory(self.current_directory)
+        self.view.cursor_index = cursor
+        self.view.clamp()
+        self.view.ensure_cursor_visible()
+        return ok

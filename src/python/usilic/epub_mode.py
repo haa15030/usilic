@@ -31,7 +31,7 @@ class Block:
         self.pre = 'pre' in classes or tag == 'pre'
 
     def text(self):
-        return ''.join(t for t, _ in self.pieces)
+        return ''.join(p[0] for p in self.pieces)
 
 
 class _XhtmlParser(HTMLParser):
@@ -46,6 +46,7 @@ class _XhtmlParser(HTMLParser):
         self.ruby = []        # ルビの読み(rtの中の字)
         self.in_rt = 0
         self.pending_anchors = []
+        self.hrefs = []       # 開いている<a href>の並び
 
     def _classes(self, attrs):
         return set((dict(attrs).get('class') or '').split())
@@ -71,7 +72,8 @@ class _XhtmlParser(HTMLParser):
             parent = next(((t, c) for t, c in reversed(self.stack) if t in _BLOCKS), ('p', set()))
             self._start_block(parent[0], parent[1])
         text = text.replace('\xa0', ' ')
-        self.current.pieces.append((text, attr if attr is not None else self._attr()))
+        href = next((h for h in reversed(self.hrefs) if h), None)
+        self.current.pieces.append((text, attr if attr is not None else self._attr(), href))
 
     def handle_starttag(self, tag, attrs):
         if tag in _SKIP:
@@ -100,6 +102,8 @@ class _XhtmlParser(HTMLParser):
             return
         if tag == 'rt':
             self.in_rt += 1
+        if tag == 'a':
+            self.hrefs.append(a.get('href'))
         if tag in _BLOCKS:
             self._start_block(tag, self._classes(attrs))
             if tag == 'hr':
@@ -124,6 +128,8 @@ class _XhtmlParser(HTMLParser):
             if self.ruby:
                 self._add('《' + ''.join(self.ruby) + '》')
                 self.ruby = []
+        if tag == 'a' and self.hrefs:
+            self.hrefs.pop()
         for i in range(len(self.stack) - 1, -1, -1):
             if self.stack[i][0] == tag:
                 del self.stack[i:]
@@ -302,10 +308,15 @@ class EpubBook:
                 number += 1
                 for anchor in block.anchors:
                     anchors.setdefault(href + '#' + anchor, len(lines))
-                text, runs, pos = '', [], 0
-                for piece, attr in block.pieces:
+                text, runs, links, pos = '', [], [], 0
+                base = posixpath.dirname(href)
+                for piece, attr, link in block.pieces:
                     if attr:
                         runs.append((pos, pos + len(piece), attr))
+                    if link:
+                        target = link if re.match(r'[a-z]+:', link) else (
+                            self._resolve(base, link) if not link.startswith('#') else href + link)
+                        links.append((pos, pos + len(piece), target))
                     text += piece
                     pos += len(piece)
                 if not block.pre:
@@ -313,15 +324,22 @@ class EpubBook:
                     shift = len(text) - len(stripped)
                     text = stripped.rstrip(' ')
                     runs = [(max(0, s - shift), max(0, e - shift), a) for s, e, a in runs]
+                    links = [(max(0, s - shift), max(0, e - shift), h) for s, e, h in links]
                 left, first = self._indent(block)
-                lines.extend(_wrap_with_indent(text, runs, width, first, left, number))
+                lines.extend(_wrap_with_indent(text, runs, width, first, left, number, links))
         toc_lines = []
         for href, _, _ in self.toc:
             toc_lines.append(anchors.get(href, anchors.get(href.partition('#')[0], 0)))
+        self.anchors = anchors
         return lines, toc_lines
 
+    def line_for(self, href):
+        """本の中のリンク先(「ファイル#id」)の行。無ければNone。"""
+        anchors = getattr(self, 'anchors', {})
+        return anchors.get(href, anchors.get(href.partition('#')[0]))
 
-def _wrap_with_indent(text, runs, width, first, left, number):
+
+def _wrap_with_indent(text, runs, width, first, left, number, links=()):
     """1行目はfirst桁、2行目からはleft桁あけて、幅で折り返す(空の段落は空の行)。"""
     from .overstrike import slice_runs
     if not text:
@@ -334,7 +352,8 @@ def _wrap_with_indent(text, runs, width, first, left, number):
             piece = rest[0]
         pad = ' ' * indent
         attrs = [(s + indent, e + indent, a) for s, e, a in slice_runs(runs, offset, offset + len(piece))]
-        out.append(Line(pad + piece, number, ends_with_newline=False, attributes=attrs))
+        line_links = [(s + indent, e + indent, h) for s, e, h in slice_runs(links, offset, offset + len(piece))]
+        out.append(Line(pad + piece, number, ends_with_newline=False, attributes=attrs, links=line_links))
         offset += len(piece)
         rest = rest[len(piece):]
         indent = left

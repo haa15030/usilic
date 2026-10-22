@@ -18,6 +18,30 @@ _EXACT = {
     'Delete? (y/n) ': '削除しますか？ (y/n) ',
     'Destination? ': '転送先？',
     'No results': '見つかりません',
+    'Key: ': 'キー: ',
+    'Set: ': '置く: ',
+    'Jump: ': '移動: ',
+    'Extension: ': '拡張子: ',
+    'Regexp: ': '正規表現: ',
+    'Mark set': 'マークを置きました',
+    'No mark set': 'マークがありません',
+    'No bookmarks': 'ブックマークがありません',
+    "Can't set bookmark here": 'ここにはブックマークを置けません',
+    "Can't set register here": 'ここではレジスタに記録できません',
+    'Defining kbd macro...': 'キーボードマクロを記録しています...',
+    'Keyboard macro defined': 'キーボードマクロを記録しました',
+    'Already defining kbd macro': '既にキーボードマクロを記録しています',
+    'Not defining kbd macro': 'キーボードマクロを記録していません',
+    'No command to repeat': '繰り返すコマンドがありません',
+    'Type e to repeat macro': 'e でマクロを繰り返します',
+    'No marks': '記録がありません',
+    'No other windows': 'ほかのウィンドウがありません',
+    'Scroll: chapter': 'スクロール: 章ごと',
+    'Scroll: continuous': 'スクロール: 連続',
+    'Open only': 'Open だけです',
+    'COPY mode only': 'COPY モードだけで使えます',
+    'Plain text only': '平文だけで使えます',
+    '^G to return from note': '^G で注釈から戻ります',
 }
 
 _TEMPLATES = [
@@ -29,12 +53,32 @@ _TEMPLATES = [
     ("Can't open {}", '{} を開けません'),
     ('Cannot run: {}', '実行できません: {}'),
     ('No such EPUB: {}', 'EPUB がありません: {}'),
+    ('Register {} set', 'レジスタ {} に記録しました'),
+    ('Register {} is empty', 'レジスタ {} は空です'),
+    ('{} files marked', '{} 個のファイルを選択しました'),
+    ('{} file marked', '{} 個のファイルを選択しました'),
+    ('Copied: {}', 'コピーしました: {}'),
+    ('Saved: {}', '保存しました: {}'),
+    ('Cannot write: {}', '書き込めません: {}'),
+    ('Cannot get: {}', '取得できません: {}'),
+    ('Not a Narou work: {}', 'なろうの作品ではありません: {}'),
     ('Not a book: {}', '本ではありません: {}'),
 ]
 
 
+_override = None  # ^Ojで切り換えた後(Noneは環境変数のとおり)
+
+
+def set_japanese(value):
+    """^Oj: HELPの言語と一緒にメッセージの言語も切り換える(C++のsetMessagesJapanese())。"""
+    global _override
+    _override = value
+
+
 def japanese():
     """LANG(またはLC_ALL・LC_MESSAGES)がjaか。C++版はHELPの言語(^Oj)で決めている所。"""
+    if _override is not None:
+        return _override
     for name in ('LC_ALL', 'LC_MESSAGES', 'LANG'):
         value = os.environ.get(name)
         if value:

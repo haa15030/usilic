@@ -70,6 +70,27 @@ def tokenize(line):
     return tokens
 
 
+URL_MODES = ('Open', 'Pdf', 'Dump', 'Term', 'Copy', 'Look', 'Epub')
+
+
+def default_url_handlers():
+    """URL節が無い時(usilicrcのURLの注釈の通り。Pdf・Epubはスクリプトがある時だけ)。"""
+    lib = os.path.join(os.path.expanduser('~'), '.local', 'lib', 'usilic')
+    if sys.platform == 'darwin':
+        out = [('Open', ['open'])]
+    else:
+        out = [('Open', ['xdg-open'])]
+    if os.path.exists(os.path.join(lib, 'url2pdf')):
+        out.append(('Pdf', [os.path.join(lib, 'url2pdf')]))
+    out += [('Dump', ['w3m', '-dump']), ('Term', ['w3m'])]
+    out.append(('Copy', ['pbcopy'] if sys.platform == 'darwin' else ['xclip', '-selection', 'clipboard']))
+    if sys.platform == 'darwin':
+        out.append(('Look', []))
+    if os.path.exists(os.path.join(lib, 'narou2epub')):
+        out.append(('Epub', [os.path.join(lib, 'narou2epub')]))
+    return out
+
+
 class Configuration:
     def __init__(self):
         self.roles = {k: list(v) for k, v in DEFAULT_ROLES.items()}
@@ -82,6 +103,10 @@ class Configuration:
         self.binary_codes = None   # CODE(Noneは既定: 0x20未満で、ここに無い字があればバイナリ)
         self.retention_count = 0   # LINE(0は無制限)
         self.key_bindings = KeyBindings()
+        self.macros = None         # MACRO(Noneは節が無い: 組み込みの6つ)
+        self.url_handlers = None   # URL(Noneは節が無い: 組み込み)
+        self.editors = []          # EDITOR
+        self.wait_centiseconds = 10  # WAIT(マクロの間隔、10msec単位)
         self.errors = []
         self.path = None
 
@@ -142,6 +167,30 @@ class Configuration:
                 t = tokenize(line)
                 if t:
                     self.roles[role] = t
+        for line in body.get('EDITOR', []):
+            t = tokenize(line)
+            if t:
+                self.editors.append(t)
+        for line in body.get('WAIT', []):
+            t = tokenize(line)
+            if t and t[0].isdigit():
+                self.wait_centiseconds = int(t[0])
+        if 'MACRO' in body:
+            from .macro import parse_macro_lines
+            self.macros, errors = parse_macro_lines(body['MACRO'])
+            self.errors.extend(errors)
+        if 'URL' in body:
+            self.url_handlers = []
+            for line in body['URL']:
+                t = tokenize(line)
+                if not t:
+                    continue
+                name = t[0].capitalize()
+                if name not in URL_MODES:
+                    self.errors.append('URL: not Open/Pdf/Dump/Term/Copy/Look/Epub: ' + t[0])
+                    continue
+                argv = [os.path.expanduser(t[1])] + t[2:] if len(t) > 1 else []
+                self.url_handlers.append((name, argv))
         if 'KEY' in body:
             self.key_bindings.load_key_section(body['KEY'])
             self.errors.extend(self.key_bindings.errors)
@@ -162,6 +211,21 @@ class Configuration:
         return False
 
     # --- 問い合わせ ---
+    def macro_list(self):
+        if self.macros is not None:
+            return self.macros
+        from .macro import DEFAULT_MACRO_LINES, parse_macro_lines
+        return parse_macro_lines(DEFAULT_MACRO_LINES)[0]
+
+    def url_handler_list(self):
+        return self.url_handlers if self.url_handlers else default_url_handlers()
+
+    def editor_argv(self):
+        """EDIT: 環境変数EDITORがあればそちら、無ければEDITOR節の最初(無ければpico)。"""
+        if os.environ.get('EDITOR'):
+            return os.environ['EDITOR'].split()
+        return list(self.editors[0]) if self.editors else ['pico']
+
     def command_for(self, role):
         return list(self.roles.get(role, []))
 

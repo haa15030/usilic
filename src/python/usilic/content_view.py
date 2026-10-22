@@ -16,6 +16,7 @@ class Line:
     raw_line_number: Optional[int] = None
     ends_with_newline: bool = True
     attributes: list = field(default_factory=list)
+    links: list = field(default_factory=list)   # (開始, 終わり, href)(EPUBの本文のリンク)
 
 
 # 行頭禁則の字(C++のpipe_buffer.cppのisForbiddenAtLineStart())。

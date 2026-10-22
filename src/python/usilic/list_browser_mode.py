@@ -16,11 +16,25 @@ class ListBrowserMode:
         self.label = ''         # モードラインの名前(FILE・DIR・MAN等)
         self.on_choose = None   # ^Mで選んだ時(項目を受け取る)
         self.prompt_kind = None  # 字を打った時に開くプロンプト(Noneなら打った字は無視)
+        self.display_for = None  # 項目→表示の文字列(Noneなら項目のまま、ブックマーク等)
 
-    def show(self, items, sorted_view, label, on_choose, prompt_kind=None, badge_for=None):
+    def show(self, items, sorted_view, label, on_choose, prompt_kind=None, badge_for=None, display_for=None):
         self.source = list(items)
         self.label, self.on_choose, self.prompt_kind, self.badge_for = label, on_choose, prompt_kind, badge_for
+        self.display_for = display_for
         self.set_sorted(sorted_view)
+
+    def snapshot(self):
+        """入れ子の一覧(^[uの目次→各一覧)を開く前の状態。"""
+        return (self.source, self.items, self.sorted, self.badge_for, self.label, self.on_choose, self.prompt_kind,
+                self.display_for, list(self.view.lines), self.view.cursor_index, self.view.top_index)
+
+    def restore(self, snap):
+        (self.source, self.items, self.sorted, self.badge_for, self.label, self.on_choose, self.prompt_kind,
+         self.display_for, lines, cursor, top) = snap
+        self.view.set_lines(lines)
+        self.view.cursor_index, self.view.top_index = cursor, top
+        self.view.clamp()
 
     def set_sorted(self, sorted_view):
         """sorted_viewならソートして重複を除き先頭に、でなければ入力順で最後(最新)にカーソル。"""
@@ -29,7 +43,8 @@ class ListBrowserMode:
         lines = []
         for i, item in enumerate(self.items):
             badge = self.badge_for(item) if self.badge_for else ''
-            lines.append(Line(item + ('  ' + badge if badge else ''), i + 1))
+            text = self.display_for(item) if self.display_for else item
+            lines.append(Line(text + ('  ' + badge if badge else ''), i + 1))
         self.view.set_lines(lines)
         self.view.cursor_index = 0 if sorted_view else max(0, len(self.items) - 1)
         self.view.top_index = 0

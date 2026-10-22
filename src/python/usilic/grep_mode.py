@@ -56,6 +56,8 @@ class GrepMode:
         self.matches = []   # 一致した行(画面の行の番号)
         self.current = -1   # 今いる一致(matchesの番号)
         self.origin = 0     # 探し始めた時のカーソル(^Gで戻る所)
+        self.view = None    # 探した画面(強調はその画面だけ)
+        self.persistent = False  # ^O^Sの一覧から飛んだ後も強調を残す
 
     def search(self, lines, pattern, syntax, origin):
         self.pattern, self.syntax, self.origin = pattern, syntax, origin
