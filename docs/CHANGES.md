@@ -32398,3 +32398,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - `src/python/usilic/shell.py`・`line_editor.py`: `^[s`で疑似端末のbash(PS1にプロンプトの印、`#eos<PID>#`のハンドシェイクはC++版と同じ)、`^G`で戻る、コマンド行の編集、`^C`。C++版と違い、bashはreadline無し(`--noediting`)で動かす(エコーの取り除きを省いた)。子では、C++の`resetSignalsToDefault()`と同じくシグナルを既定に戻す。
    - `grep_mode.py`: `^S`(打つたびに探す)・`^J^S`(拡張正規表現)。画面の行をgrepへ渡し(行の中の改行・NULは空白、項目1002)、一致した所に色を付け、`^N`/`^P`で一致の間を移る。C++版と同じキー列を送り、モードラインの位置・先頭の行が同じになることを確かめた。
    - unittest 4件(合計19件)。
+
+1015. **2026-10-22: なろう・ノクターンの作品のURLも、^Owのモードに関わらずEPUBにする**
+   - 直接のユーザー依頼(なろうでは`https://noc.syousetu.com/A1234BC`等が"スルー"、"EPUBにして")。^Je・^J^Eで、なろうは作品番号(N1234AB)だけをnarou2epubへ回し、URLは本文のWebのリンクと同じく^Owの今のモード(既定はOpen)で開いていた。
+   - `openEpubPromptSpecial()`: `https://ncode.syosetu.com/n…/`・`https://novel18.syosetu.com/n…/`(話数の付いた`…/n…/5/`も、大文字の番号も)を、カクヨムの作品のURLと同じく、作品のURL(`https://<ホスト>.syosetu.com/<番号>/`)にそろえてnarou2epubへ。正規表現は手元で5通り確かめた(narou2epubは外のサイトへ取りに行くので、実際には動かしていない)。報告のURLは`syosetu`の綴り違い・番号の形(N+数字4桁以上+英字)違いで、これは今後もURLとして^Owのモードで開く。
+   - src/HELP_.txt・src/HELP_en_.txt(350行目): 作品番号の後に「や作品の ＵＲＬ（https://ncode.syosetu.com/n1234ab/ 等）」を足し、その行を1文1行に分けた。

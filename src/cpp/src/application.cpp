@@ -8504,7 +8504,20 @@ bool Application::openEpubPromptSpecial(const std::string &text) {
   // 青空文庫の図書カード・XHTML版のURL(2026-10-15、直接のユーザー依頼)も、^Owの今の対処に関わらずnarou2epubで。
   static const std::regex kAozoraUrl(
       R"(^\s*(https?://www\.aozora\.gr\.jp/cards/[0-9]+/(card[0-9]+|files/[0-9]+_[0-9]+)\.html)\s*$)", std::regex::icase);
+  // 2026-10-22、直接のユーザー依頼(なろうの作品のURLも"EPUBにして"): なろう・ノクターン/ムーンライトの作品のURL
+  // (話数の付いたURLも)も、カクヨムの作品のURLと同じく^Owの今の対処に関わらずnarou2epubで(作品のURLにそろえる)。
+  static const std::regex kNarouUrl(
+      R"(^\s*https?://(ncode|novel18)\.syosetu\.com/(n[0-9]{4,}[a-z]+)(/[0-9]+)?/?\s*$)", std::regex::icase);
   std::smatch match;
+  if (std::regex_match(text, match, kNarouUrl)) {
+    std::string host = match[1].str(), number = match[2].str();
+    for (char &c : host) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (char &c : number) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (const auto &handler : configuration_.urlHandlers())
+      if (handler.name == "Epub") return runNarouToEpub(handler, "https://" + host + ".syosetu.com/" + number + "/");
+    showTransientNotice(activeView(), "No Epub in URL (usilicrc)");
+    return true;
+  }
   if (std::regex_match(text, match, kAozoraUrl)) {
     for (const auto &handler : configuration_.urlHandlers())
       if (handler.name == "Epub") return runNarouToEpub(handler, match[1].str());
