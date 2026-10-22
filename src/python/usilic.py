@@ -61,7 +61,7 @@ def main():
             if history is not None:
                 history.on_ring_pushed = lambda category: (
                     hist.save_to_disk(history, usilic_dir) if category != hist.SHELL_COMMAND else None)
-                app.directory_mode.history = app.file_mode.history = history
+                app.directory_mode.history = app.file_mode.history = app.history = history
             if not app.start_directory_listing(args[0] if args else '.'):
                 return 'usilic: cannot list ' + (args[0] if args else '.')
             app.on_exit = lambda: (app.save_positions(), history and hist.save_to_disk(history, usilic_dir))

@@ -20,7 +20,16 @@ cmd | python3 src/python/usilic.py         # 標準入力のページャー
 - ^X^C・^[^[(終了の確認、「y」が入った状態で^M)、PREFIXの「C-x-」等(1秒後)
 - UTF-8の表示幅(East Asian Width)での折り返しと行頭禁則、日本語のメッセージ(LANGがja)
 
-SHELL・検索・ARC・EPUB・MAN・CP/MV/RM・履歴・usilicrc・KEY/HELPは、次の段から。
+## 第2段(2026-10-22)で足したもの
+
+- 履歴: C++版と同じ`~/.usilic/history`(ディレクトリで起動した時だけ)。(ls)・ファイルの位置、FILE・DIR・
+  コマンド・FGREP/EGREPの履歴。形式と保存の手順(ロック、最新を読み直して自分の変更だけを重ねる)はC++版と同じ
+- SHELL: `^[s`で疑似端末のbashへ、`^G`で戻る。コマンド行の^A ^E ^B ^F ^H ^D ^K ^U ^Y、`^C`。bashは
+  readline無し(`--noediting`)で動かす(C++版はreadlineのまま、エコーを見分けて取り除いている)
+- FGREP/EGREP: `^S`(打つたびに探す、打っている間の`^S`で次へ)・`^J^S`(拡張正規表現)。一致した所に色を
+  付け、`^N`/`^P`で一致の間を移り、`^M`・`^G`でやめる
+
+ARC・EPUB・MAN・DU・LOCATE・CP/MV/RM・usilicrc・KEY/HELP・^Rの一覧は、次の段から。
 
 ## C++版との対応
 

@@ -4,16 +4,21 @@
 dispatchLeaderByte()と同じ割り当て(HELPの「ページャーで機能する主なキー」と(ls)の基本)。
 """
 import os
+import select
 import time
 
 from . import mode_line, utf8
-from .content_view import ContentView
+from .content_view import ContentView, wrap_text, expand_tabs
 from .directory_mode import DirectoryMode
 from .file_mode import FileMode
+from .line_editor import LineEditor
 from .messages_ja import localized
+from .shell import Shell
+from .grep_mode import GrepMode, FIXED, REGEX, match_spans
+from . import history as hist
 
 PROGRAM_LABEL = 'usilic-1.5b'
-DIRECTORY, FILE = 'Directory', 'File'
+DIRECTORY, FILE, SHELL = 'Directory', 'File', 'Shell'
 CTRL_G, CTRL_J, CTRL_X, ESC, CR = 0x07, 0x0A, 0x18, 0x1B, 0x0D
 
 
@@ -52,16 +57,40 @@ class Application:
         self.mark_before_jump = None  # ^X^Xの戻り先(markBeforePageScroll()等)
         self.prefix_since = None
         self.prefix_shown = False
+        # SHELL(Application::shell_、shellReturnMode_)
+        self.shell = Shell()
+        self.shell_view = ContentView()
+        self.shell_view.cursor_highlight = False
+        self.command_line = LineEditor()
+        self.shell_return_mode = DIRECTORY
+        self.history = None  # ディレクトリで起動した時だけ(usilic.py)
+        self.utf8_pending = bytearray()
+        # FGREP/EGREP(grepInPlaceActive_、PromptKind::Fgrep/Egrep)
+        self.grep = GrepMode()
+        self.grep_active = False
+        self.grep_prompt = None   # (syntax, LineEditor)を打っている間
 
     # --- 画面 ---
     def active_view(self):
+        if self.current_mode == SHELL:
+            return self.shell_view
         return self.file_view if self.current_mode == FILE else self.directory_view
+
+    def refresh_shell_view(self, follow=True):
+        """SHELLの行を作り直す。followなら最後(プロンプト)へ(出力が来た時)。"""
+        at_end = self.shell_view.cursor_index >= len(self.shell_view.lines) - 1
+        self.shell_view.set_lines(self.shell.view_lines(self.wrap_width(), self.command_line.text))
+        if follow or at_end:
+            self.shell_view.go_to_bottom()
 
     def layout(self):
         rows, columns = self.display.refresh_size()
-        for view in (self.directory_view, self.file_view):
+        for view in (self.directory_view, self.file_view, self.shell_view):
             view.set_height(rows - 1)
         self.file_mode.rewrap(self.wrap_width())
+        if self.shell.alive():
+            self.shell.on_resize(rows - 1, columns)
+            self.refresh_shell_view()
 
     def wrap_width(self):
         """折り返しの幅(桁いっぱい、C++版と同じ)。"""
@@ -74,7 +103,20 @@ class Application:
             return 'EXIT   ' + localized('Exit? (y/n) ') + self.prompt
         if self.goto_digits is not None:
             return 'Goto line: ' + self.goto_digits
+        if self.grep_prompt is not None:
+            syntax, editor = self.grep_prompt
+            if syntax == FIXED:  # インクリメンタル: 「FGREP 1/11 打った字」
+                return '   '.join(['FGREP', self.grep.position_text(), editor.text])
+            return 'EGREP   ' + editor.text
+        if self.grep_active:
+            name, size = self.mode_line_target()
+            return self.fit_mode_line_tail([self.grep.label(), self.grep.position_text(), str(size),
+                                            '(' + self.grep.label().lower() + ')', name])
         position = self.notice if self.notice else None
+        if self.current_mode == SHELL:
+            pos = position or mode_line.format_fixed_width(view.cursor_index + 1, len(view.lines))
+            return self.fit_mode_line(['SHELL', pos, str(self.shell.byte_count), '(bash)',
+                                       self.shell.current_directory or self.directory_mode.current_directory])
         if self.current_mode == FILE:
             total = len(view.lines)
             pos = position or (mode_line.format_fixed_width(view.cursor_index + 1, total) if self.pager_launch
@@ -86,6 +128,25 @@ class Application:
         label = PROGRAM_LABEL if not self.directory_mode.mode_stack else ''
         return self.fit_mode_line([x for x in [self.directory_mode.current_directory, pos,
                                                str(self.directory_mode.byte_count), '(ls)', label] if x])
+
+    def mode_line_target(self):
+        """FGREP/EGREPのモードラインの最後の欄(探している物の名前)と大きさ。"""
+        if self.current_mode == FILE:
+            return self.file_mode.current_file, self.file_mode.byte_count
+        if self.current_mode == SHELL:
+            return 'SHELL', self.shell.byte_count
+        return self.directory_mode.current_directory, self.directory_mode.byte_count
+
+    def fit_mode_line_tail(self, fields):
+        """最後の欄(パス)の途中を「...」で縮める版(FGREP/EGREPのモードライン)。"""
+        rest = len('   '.join(fields[:-1])) + 3
+        room = self.display.columns - 1 - rest
+        name = fields[-1]
+        if utf8.text_width(name) > room and room > 8:
+            keep = room - 3
+            head = keep // 2
+            name = name[:head] + '...' + name[len(name) - (keep - head):]
+        return '   '.join(fields[:-1] + [name])
 
     def fit_mode_line(self, fields):
         """欄を空白3つでつなぐ。幅に収まらなければ、最初の欄(名前)の途中を「...」で縮める(C++版と同じ)。"""
@@ -104,12 +165,33 @@ class Application:
         for row in range(view.height):
             if row < len(visible):
                 index = view.top_index + row
-                self.display.draw_row(row, visible[row].text,
-                                      reverse=view.cursor_highlight and index == view.cursor_index)
+                reverse = view.cursor_highlight and index == view.cursor_index
+                if (self.grep_active or self.grep_prompt is not None) and index in self.grep.matches:
+                    self.display.draw_row_with_spans(row, visible[row].text,
+                                                     match_spans(visible[row].text, self.grep.pattern,
+                                                                 self.grep.syntax), reverse=reverse)
+                else:
+                    self.display.draw_row(row, visible[row].text, reverse=reverse)
             else:
                 self.display.draw_row(row, '')
         self.display.draw_mode_line(self.mode_line_text())
+        if (self.current_mode == SHELL and self.prompt is None and self.goto_digits is None
+                and self.grep_prompt is None and not self.grep_active):
+            self.display.show_cursor_at(*self.shell_cursor_position())
+        else:
+            self.display.hide_cursor()
         self.display.flush()
+
+    def shell_cursor_position(self):
+        """コマンド行のカーソルの画面の位置(行, 桁)。"""
+        view = self.shell_view
+        head = (self.shell.prompt if self.shell.prompt_ready else self.shell.pending)
+        before = head + self.command_line.text[:self.command_line.cursor]
+        width = self.wrap_width()
+        pieces = wrap_text(expand_tabs(before), width)
+        live_start = len(view.lines) - len(wrap_text(expand_tabs(head + self.command_line.text), width))
+        row = live_start + len(pieces) - 1 - view.top_index
+        return max(0, min(row, view.height - 1)), utf8.text_width(pieces[-1])
 
     def save_positions(self):
         """終了の時: 今の画面の位置を覚える(保存はusilic.pyが)。"""
@@ -208,6 +290,22 @@ class Application:
         self.notice = None
         if self.prompt is not None:
             return self.feed_prompt_byte(byte)
+        if self.grep_prompt is not None:
+            return self.feed_grep_prompt_byte(byte)
+        if self.grep_active and special is None:
+            if byte in (0x0E, 0x10):  # ^N/^P: 次/前の一致
+                self.grep.move(1 if byte == 0x0E else -1)
+                self.show_current_match()
+                return True
+            if byte == CR:   # そこに留まる
+                self.grep_active = False
+                return True
+            if byte == CTRL_G:  # 一致の間を移るのをやめる(今いる一致のまま、C++版と同じ)
+                self.grep_active = False
+                return True
+            self.grep_active = False  # 他のキーは、一致の間を移るのをやめてから
+        if special is None and byte == 0x13 and not (self.esc or self.leader_j or self.leader_x):
+            return self.start_grep_prompt(FIXED)
         if self.goto_digits is not None:
             if special is None and ord('0') <= byte <= ord('9'):
                 self.goto_digits += chr(byte)
@@ -233,9 +331,13 @@ class Application:
                 return self.handle_command(Command.PAGE_UP)
             if byte == ESC:
                 return self.handle_command(Command.EXIT)
+            if byte == ord('s'):
+                return self.start_shell()
             return False
         if self.leader_j:
             self.leader_j = False
+            if byte == 0x13:  # ^J^S
+                return self.start_grep_prompt(REGEX)
             if byte == 0x02:  # ^J^B
                 return self.handle_command(Command.PARENT_DIRECTORY)
             if byte == 0x03:  # ^J^C
@@ -248,6 +350,8 @@ class Application:
             if byte == CTRL_X:  # ^X^X
                 return self.handle_command(Command.EXCHANGE_POINT)
             return False
+        if self.current_mode == SHELL and special is None and byte not in (ESC, CTRL_J, CTRL_X):
+            return self.feed_shell_byte(byte)
         if special is None and byte == ESC:
             self.esc = True
             return True
@@ -261,6 +365,136 @@ class Application:
         if command is None:
             return False
         return self.handle_command(command)
+
+    def start_grep_prompt(self, syntax):
+        """^S(FGREP、打つたびに探す)・^J^S(EGREP)のプロンプト(Application::startGrepPrompt())。"""
+        if self.current_mode == FILE and self.file_mode.has_active_stream():
+            self.file_mode.load_all()  # ページャーは残りを全部読んでから(docs/CHANGES.md項目1009)
+        self.grep_active = False
+        self.grep.matches, self.grep.current, self.grep.pattern = [], -1, ''
+        self.grep.origin = self.active_view().cursor_index
+        self.grep_prompt = (syntax, LineEditor())
+        return True
+
+    def run_grep(self, syntax, pattern):
+        view = self.active_view()
+        ok = self.grep.search([line.text for line in view.lines], pattern, syntax, self.grep.origin)
+        if ok and self.grep.matches:
+            self.show_current_match()
+        return ok
+
+    def show_current_match(self):
+        """今の一致の行へ、画面の中ほどに(C++版と同じ)。"""
+        line = self.grep.current_line()
+        if line is None:
+            return
+        view = self.active_view()
+        view.cursor_index = line
+        view.top_index = line - view.height // 2
+        view.clamp()
+
+    def feed_grep_prompt_byte(self, byte):
+        syntax, editor = self.grep_prompt
+        if byte == CTRL_G:
+            self.grep_prompt = None
+            view = self.active_view()
+            view.cursor_index = self.grep.origin
+            view.ensure_cursor_visible()
+            return True
+        if byte == CR:
+            self.grep_prompt = None
+            pattern = editor.text
+            if not pattern:
+                return True
+            if self.history is not None:
+                self.history.push_recent(hist.RECENT_FGREP_PATTERN if syntax == FIXED else hist.RECENT_EGREP_PATTERN,
+                                         pattern)
+            if not self.run_grep(syntax, pattern) or not self.grep.matches:
+                self.show_transient_notice('No string')
+                return True
+            self.grep_active = True
+            return True
+        if byte == 0x13 and syntax == FIXED:  # 打っている間の^S: 次の一致へ
+            self.grep.move(1)
+            self.show_current_match()
+            return True
+        if byte in (0x08, 0x7F):
+            editor.backspace()
+        elif byte >= 0x80:
+            self.utf8_pending.append(byte)
+            if len(self.utf8_pending) < utf8.sequence_length(self.utf8_pending[0]):
+                return True
+            editor.insert(bytes(self.utf8_pending).decode('utf-8', 'replace'))
+            self.utf8_pending.clear()
+        elif byte >= 0x20:
+            editor.insert(chr(byte))
+        else:
+            return True
+        if syntax == FIXED:
+            self.run_grep(FIXED, editor.text)
+        return True
+
+    def start_shell(self):
+        """^[s: SHELLへ(初めてならbashを起動、Command::StartShell)。"""
+        if self.current_mode == SHELL:
+            return True
+        if not self.shell.alive():
+            directory = self.directory_mode.current_directory or os.getcwd()
+            if not self.shell.start(directory, self.display.rows - 1, self.display.columns):
+                self.shell.terminate()
+                self.show_transient_notice('Cannot start SHELL')
+                return False
+        self.shell_return_mode = self.current_mode
+        self.current_mode = SHELL
+        self.refresh_shell_view()
+        return True
+
+    def feed_shell_byte(self, byte):
+        """Application::feedShellByte(): コマンド行の編集、^Mで送る、^Cは中断、^Gで戻る。"""
+        editor = self.command_line
+        if byte == CTRL_G:
+            self.current_mode = self.shell_return_mode
+            return True
+        if byte == CR:
+            command = editor.text
+            editor.set_text('')
+            self.shell.submit_line(command)
+            if command.strip() and self.history is not None:
+                self.history.push_recent(hist.SHELL_COMMAND, command)
+        elif byte == 0x03:   # ^C
+            editor.set_text('')
+            self.shell.send_control_byte(0x03)
+        elif byte == 0x04 and not editor.text:   # 空の行の^DはEOF
+            self.shell.send_control_byte(0x04)
+        elif byte == 0x01:
+            editor.move_home()
+        elif byte == 0x05:
+            editor.move_end()
+        elif byte == 0x02:
+            editor.move_left()
+        elif byte == 0x06:
+            editor.move_right()
+        elif byte in (0x08, 0x7F):
+            editor.backspace()
+        elif byte == 0x04:
+            editor.delete_forward()
+        elif byte == 0x0B:
+            editor.kill_to_end()
+        elif byte == 0x15:
+            editor.kill_to_start()
+        elif byte == 0x19:
+            editor.yank()
+        elif byte == 0x0C:
+            pass  # 再表示
+        elif byte >= 0x80:  # UTF-8の字はバイトがそろってから(sequence_length())
+            self.utf8_pending.append(byte)
+            if len(self.utf8_pending) >= utf8.sequence_length(self.utf8_pending[0]):
+                editor.insert(bytes(self.utf8_pending).decode('utf-8', 'replace'))
+                self.utf8_pending.clear()
+        elif byte >= 0x20:
+            editor.insert(chr(byte))
+        self.refresh_shell_view()
+        return True
 
     def feed_prompt_byte(self, byte):
         """終了の確認の入力欄(LineEditorの今回使う分)。"""
@@ -358,16 +592,28 @@ class Application:
         self.layout()
         self.redraw()
         while not self.wants_exit:
-            key = self.key_input.read_key(timeout=0.1)
+            fds = [self.key_input.fd] + ([self.shell.fd] if self.shell.alive() else [])
+            try:
+                readable, _, _ = select.select(fds, [], [], 0 if self.key_input.pending else 0.1)
+            except InterruptedError:
+                readable = []
             if resized():
                 self.layout()
                 self.redraw()
+            if self.shell.alive() and self.shell.fd in readable:
+                if not self.shell.on_pty_readable() and self.current_mode == SHELL:
+                    self.current_mode = self.shell_return_mode  # bashが終わった
+                if self.current_mode == SHELL:
+                    self.refresh_shell_view()
+                    self.redraw()
+            key = self.key_input.read_key(timeout=0) if self.key_input.fd in readable or self.key_input.pending else None
             if key is None:
                 self.poll_prefix_echo()
                 continue
             self.prefix_shown = False
             self.feed_key(*key)
             self.redraw()
+        self.shell.terminate()
 
     def poll_prefix_echo(self):
         """Application::pollPrefixEcho(): PREFIXのまま1秒経ったらモードラインへ。"""
@@ -382,3 +628,4 @@ class Application:
             self.prefix_shown = True
             self.notice = label
             self.redraw()
+
