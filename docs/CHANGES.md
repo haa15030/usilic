@@ -32373,3 +32373,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 1009. **2026-10-22: ページャーで開いたファイルを検索すると、読み込んだ所(最初の画面)までしか探さないのを直す**
    - HELPのキーの検証で発見(`usilic a.txt`(500行)→`^J^S` `^line 4[0-9]$`→1件、`^O^S` `line 7`→1件。(ls)から開くと10件・11件)。ページャーは画面に要る分だけ少しずつ読むので、検索の元になる行(`fileView_.lines()`)が最初の40行だけだった。
    - `executeGrep()`(FGREP・EGREP・GREP・一致した行の一覧)と`executeCut()`の初めで、FILEがまだ読み込み中なら残りを全部読む(`ensurePagerStreamLoaded()`、`^[>`のGoToBottomと同じ)。
+
+1010. **2026-10-22: SHELLの^O^F・^O^B・^O^L・^O/が、SHELLを抜けて(ls)の方に効いていたのを直す**
+   - HELPのキーの検証で発見(「SHELL の中からは ^O/ で出力の検索、^O^F/^O^B でページ送り/戻し、^O^L で再表示」)。SHELLでPREFIXのキーを受けると、ディスパッチの前にSHELLへ入る前のモードへ切り替える(`feedShellByte()`)。例外(`isShellSafeNavigation`)は`^[< ^[> ^[v`・`^J^C`・`^J^S`・`^J^K`だけだったので、`^O^F`・`^O^B`は(ls)のページ送り/戻し、`^O^L`は(ls)の逆順、`^O/`は(ls)の検索になっていた。
+   - `^O^F`・`^O^B`・`^O^L`・`^O/`も例外にし、SHELLのまま実行する(`dispatchLeaderByte()`の^Oの節は、もともとSHELLの中から使う前提で書いてある)。SHELLで80行出した後、`^O^B`で戻る・`^O/`でSHELLの出力を探せることを確かめた。

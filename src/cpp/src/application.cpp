@@ -4378,8 +4378,11 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     // (KEY)も同じ理屈。事前の切り替えでKEYの戻り先がSHELLの前のモードになり、KEYで選んだ^A等(SHELL・プロンプト
     // 専用)が"SHELL/prompt only"になっていた。SHELLのままKEYを開けば、^Mで選んだキーはSHELLへ渡る。
     bool isShellSafeKey = leaderJPending_ && byte == 0x0b;
+    // 2026-10-22(HELPのキーの検証で、SHELLの^O^F・^O^B・^O^Lが(ls)へ抜けてそちらをページ送り等していた): SHELLの
+    // 中から使うための^O^F・^O^B・^O^L・^O/(dispatchLeaderByte()の^Oの節)も、SHELLのまま実行する。
+    bool isShellSafeLeaderO = leaderOPending_ && (byte == 0x06 || byte == 0x02 || byte == 0x0c || byte == '/');
     bool isShellSafeNavigation = (escPending_ && (byte == '<' || byte == '>' || byte == 'v')) ||
-                                 isShellSafeGoToFileSelector || isShellSafeGrep || isShellSafeKey;
+                                 isShellSafeGoToFileSelector || isShellSafeGrep || isShellSafeKey || isShellSafeLeaderO;
     if (shellLeaderPending && !isShellSafeNavigation) {
       // シーケンスを完了させる――ディスパッチする「前に」、ユーザーが
       // まず^Gを押したかのように、まさに正確に、SHELLがそこから入場
