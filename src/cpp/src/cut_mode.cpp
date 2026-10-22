@@ -109,11 +109,10 @@ bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::strin
   ProgramCommand cmd = configuration_.commandFor(cutSyntaxRole(syntax));
   if (cmd.argv.empty()) return false;
 
-  std::string inputText;
-  for (const auto &line : sourceLines) {
-    inputText += line.text;
-    inputText += '\n';
-  }
+  std::vector<std::string> texts;
+  texts.reserve(sourceLines.size());
+  for (const auto &line : sourceLines) texts.push_back(line.text);
+  std::string inputText = joinLinesForGrep(texts);
 
   // 2026-08-23追加(docs/CHANGES.md 407番): GrepMode::search()自身の
   // 全く同じ修正と同じ理屈――unicodeNormalizationCandidates()自身の

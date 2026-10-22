@@ -32334,3 +32334,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - `configuration.cpp`: macOSでは、一覧のコマンドが見つからない時、Windowsと同じくtar(bsdtar、lzh・rar・7zも読める)の`-tvf`で一覧し、`ArchiveKind::Tar`として扱う(コマンドの有無を調べる`commandOnPath()`を`sevenZipCommand()`から切り出した)。
    - `archive_mode.cpp`: tarのヘッダー("ustar")が無い書庫は、選んだ1つを`tar -xOf`で取り出して読む。skrw021.lzhの一覧と、README.TXT(Shift_JIS)を^Mで開けることを確かめた(u100_SL.rarは一覧まで)。取り出し(^Oa)はもともと`tar xf`。
    - Linuxは変えていない(GNU tarはlzh・rarを読めない)。
+
+1002. **2026-10-22: バイナリをcatしたSHELLのログを検索すると、それより後の検索結果の行がずれるのを直す**
+   - 直接のユーザー報告("`^J^W`で`728-01.png`等のバイナリファイルをSHELLログに記録すると、`cat '~/.usilic/data/728-01.png'`以降の検索結果行No.が狂う……`^P`を連打しても当該行に来るまではプロンプト行じゃない位置がハイライト表示")。
+   - FGREP・EGREP・GREP(`GrepMode::search()`)とCUT(`CutMode::split()`)は、画面の行を`\n`でつないでgrepの標準入力へ渡し、`grep -n`の行番号を画面の行の番号として使う。PNGを表示した行の中には`\n`が残っているものがあり(~/.usilic/shellで実測、33207行目等)、grepがそこを行の区切りとして数えるため、それより後の行番号が1つずつずれていた。
+   - 本文をつなぐ`joinLinesForGrep()`(grep_mode.hpp)を作り、行の中の`\n`とNUL(grepがバイナリとみなす)を空白にする(1バイトを1バイトに替えるので、一致した位置は変わらない)。

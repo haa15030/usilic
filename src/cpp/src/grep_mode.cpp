@@ -74,6 +74,18 @@ int widenSpanPastTabMarker(const std::string &line, int end) {
 }
 }  // namespace
 
+std::string joinLinesForGrep(const std::vector<std::string> &lines) {
+  std::string text;
+  for (const auto &line : lines) {
+    std::size_t start = text.size();
+    text += line;
+    for (std::size_t i = start; i < text.size(); i++)
+      if (text[i] == '\n' || text[i] == '\0') text[i] = ' ';
+    text += '\n';
+  }
+  return text;
+}
+
 GrepMode::GrepMode(ContentView &view, const Configuration &configuration)
     : view_(view), configuration_(configuration) {}
 
@@ -93,11 +105,7 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
   ProgramCommand cmd = configuration_.commandFor(role);
   if (cmd.argv.empty()) return false;
 
-  std::string inputText;
-  for (const auto &line : sourceLines) {
-    inputText += line;
-    inputText += '\n';
-  }
+  std::string inputText = joinLinesForGrep(sourceLines);
 
   // 2026-08-23追加(docs/CHANGES.md 407番、実際のユーザー報告: FGREPで
   // 「口座テスト」は見つかったが、「同じ」ディレクトリ一覧に対して

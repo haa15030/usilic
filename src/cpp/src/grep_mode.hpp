@@ -16,6 +16,12 @@ namespace fm {
 // このFixed/Regexの2値のままで変わらない。
 enum class GrepSyntax { Fixed, Regex, Basic };
 
+// grepへ標準入力で渡す本文(1行ずつ\n区切り)。2026-10-22、直接のユーザー報告(バイナリのファイルをcatした
+// SHELLのログを^J^Sで検索すると、それより後の検索結果の行がずれる): 行の中の\n(バイナリの表示に残る)を
+// grepは行の区切りとして数え、行番号が1つずつずれるので、\nとNUL(grepがバイナリとみなす)を空白にする
+// (1バイトを1バイトに替えるので、一致した位置はそのまま)。
+std::string joinLinesForGrep(const std::vector<std::string> &lines);
+
 struct GrepMatch {
   int sourceLineIndex = -1;  // search()に渡された行群への0始まりインデックス
   std::string text;
