@@ -5164,13 +5164,13 @@ bool Application::handleCommandImpl(Command command) {
     // 「ドラッグ」バグへ適用していたのと同じ原則。
     case Command::MoveUp:
       activeView().setHoverIndex(std::nullopt);
-      activeView().moveUp();
+      if (!wrapGrepListCursor(-1)) activeView().moveUp();
       activeView().syncVisibleCursor();
       refreshDirectEntryModeLine();  // RecentFile/RecentDirectory自身の読み取り専用の閲覧の外ではno-op
       return true;
     case Command::MoveDown:
       activeView().setHoverIndex(std::nullopt);
-      activeView().moveDown();
+      if (!wrapGrepListCursor(+1)) activeView().moveDown();
       activeView().syncVisibleCursor();
       refreshDirectEntryModeLine();
       return true;
@@ -9923,11 +9923,16 @@ std::optional<bool> Application::handleEpubTocVerticalCommand(Command command) {
   switch (command) {
     case Command::MoveDown:
     case Command::ScrollLineDown:
-      selectEpubTocVertical(segment + 1);
+      // 縦書きの検索結果の一覧の^N/^Pは巡回する(wrapGrepListCursor()と同じ、章の一覧は端で止まる)
+      selectEpubTocVertical(command == Command::MoveDown && currentMode_ == ApplicationMode::Grep && segment >= count - 1
+                                ? 0
+                                : segment + 1);
       return true;
     case Command::MoveUp:
     case Command::ScrollLineUp:
-      selectEpubTocVertical(segment - 1);
+      selectEpubTocVertical(command == Command::MoveUp && currentMode_ == ApplicationMode::Grep && segment <= 0
+                                ? count - 1
+                                : segment - 1);
       return true;
     case Command::PageDown:
       selectEpubTocVertical(std::max(segment + 1, segmentAtColumn(cursorCol + perScreen)));
@@ -10823,7 +10828,33 @@ std::vector<ContentView *> Application::grepModeLineViews(ApplicationMode mode) 
 // targetがfileView_で縦書きを見せている時は、本文のカーソルの行(一致の行)を右端に置いて縦書きを
 // 組み直し(一致の強調、Display::Attribute::Highlight/HighlightCurrentは本文の行の装飾として
 // 縦書きの字にも付く)、縦書きを描いてtrue。そうでなければ何もしないでfalse。
+// 2026-10-23、直接のユーザー依頼("^O^Sの時も巡回して"): 検索結果の一覧(GREP)の^N/^Pは、in-placeの
+// jumpToGrepInPlaceMatch()と同じく端で反対の端へ巡回する(;・:のマクロも一覧を通るので巡回する)。巡回したらtrue。
+bool Application::wrapGrepListCursor(int delta) {
+  if (currentMode_ != ApplicationMode::Grep) return false;
+  ContentView &view = activeView();
+  int count = static_cast<int>(view.lines().size());
+  if (count == 0) return false;
+  if (delta > 0 && view.cursorIndex() >= count - 1) view.setCursorIndex(0);
+  else if (delta < 0 && view.cursorIndex() <= 0) view.setCursorIndex(count - 1);
+  else return false;
+  view.redraw();
+  return true;
+}
+
 bool Application::redrawEpubVerticalForGrep(ContentView &target) {
+  // 2026-10-23、直接のユーザー報告("C++だと5/5のあとの^Nでは空っぽのページが表示される。続いて^Nで1/5"、src/Kbt.epubの
+  // ^S22^M): 縦書きの本の横書きの範囲(奥付等)の中の一致から範囲の外の一致へ巡回すると、範囲を出ないまま横書きで描いて
+  // いたので、範囲の外の行が空になっていた(次のキーのleaveEpubHorizontalIfOutside()でやっと縦書きへ戻った)。縦書きの本
+  // では範囲を一度忘れて組み直す(行き先が横書きの範囲の中ならshowEpubVerticalRaw()がその範囲へ入り直す)。
+  if (&target == &fileView_ && currentMode_ == ApplicationMode::File && epubBookVertical() && epubHorizontalSection_ &&
+      !epubNoteActive()) {
+    int raw = fileRawLineAtCursor();
+    if (raw < epubHorizontalSection_->first || raw > epubHorizontalSection_->second) {
+      epubHorizontalSection_.reset();
+      syncEpubHorizontalPresentation();
+    }
+  }
   if (&target != &fileView_ || currentMode_ != ApplicationMode::File || !epubVerticalActive()) return false;
   rebuildEpubVertical(fileRawLineAtCursor());
   if (grepInPlaceActive_) updateGrepInPlacePositionText();

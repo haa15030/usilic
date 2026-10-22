@@ -2758,6 +2758,7 @@ class Application {
   ContentView &grepViewForMode(ApplicationMode mode);
   std::vector<ContentView *> grepModeLineViews(ApplicationMode mode);
   bool redrawEpubVerticalForGrep(ContentView &target);
+  bool wrapGrepListCursor(int delta);  // 検索結果の一覧の^N/^Pの巡回(application.cppの定義のコメント参照)
   std::pair<int, int> epubVerticalShownRange(int first) const;
   // 縦書きの窓(右端の列first)に見える画像ページの置き場所(2026-10-03、rebuildEpubVertical()参照)。
   std::vector<Display::ContentImage> epubVerticalImagesFor(int first, int shownFrom, int shownUntil) const;

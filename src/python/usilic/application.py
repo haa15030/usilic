@@ -1457,6 +1457,11 @@ class Application:
         extra = self.handle_stage4_number(number, digit, mode, view)
         if extra is not None:
             return extra
+        if number in (3, 4) and mode == OCCUR and view.lines and \
+                view.cursor_index == (len(view.lines) - 1 if number == 3 else 0):
+            view.cursor_index = 0 if number == 3 else len(view.lines) - 1  # 一致の一覧の^N/^Pは巡回(;・:も)
+            view.ensure_cursor_visible()
+            return True
         if number in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12):
             return self.move(number, view)
         if number == 13:  # ^[N
@@ -3871,6 +3876,11 @@ class Application:
                 return 0
             return v.cols[max(0, min(c, len(v.cols) - 1))].raw - 1
         cursor = self.vlist_cursor_column()
+        wrap = self.current_mode == OCCUR  # 縦書きの一致の一覧の^N/^Pは巡回(章の一覧は端で止まる、C++と同じ)
+        if number == 3 and wrap and index >= count - 1:
+            return self.select_vertical_list(0)
+        if number == 4 and wrap and index <= 0:
+            return self.select_vertical_list(count - 1)
         if number in (1, 3):
             return self.select_vertical_list(index + 1)
         if number in (2, 4):
