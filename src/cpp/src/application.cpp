@@ -17447,6 +17447,10 @@ bool Application::executeGrep(const std::string &pattern) {
   // 再描画してモードラインを文字化けさせていたことが判明した。
   // viewForMode()(まさにこのために括り出された)は、File/Directory
   // だけでなく、どんなgrepReturnMode_についても正しいビューを選ぶ。
+  // 2026-10-22(HELPのキーの検証で、ページャーで開いた500行のファイルの^J^Sが最初の画面の40行しか探さなかった):
+  // ページャーは少しずつ読むので、FILEを探す前に残りを全部読む(GoToBottomと同じ)。
+  if (grepReturnMode_ == ApplicationMode::File && fileMode_.hasActiveStream())
+    ensurePagerStreamLoaded(std::numeric_limits<int>::max() - 1);
   ContentView &source = grepViewForMode(grepReturnMode_);
   std::vector<std::string> sourceLines;
   // 2026-09-11追加、直接のユーザー報告("^X^F^J^S^Uusilic^M→検索結果は
@@ -17522,6 +17526,9 @@ bool Application::executeGrep(const std::string &pattern) {
 }
 
 bool Application::executeCut(const std::string &pattern) {
+  // ページャーの残りを先に読む(executeGrep()と同じ、2026-10-22)。
+  if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream())
+    ensurePagerStreamLoaded(std::numeric_limits<int>::max() - 1);
   // 下の結果/ネストの深さに関わらず記録される――なぜこれが専用の
   // ringではなくRecentFgrepPattern/RecentEgrepPatternを再利用する
   // のかについてはstartPromptHistoryRecall()自身のコメント参照
