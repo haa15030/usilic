@@ -19629,13 +19629,18 @@ bool sendToChannel(long ownerPid, const std::string &name, const std::string &me
 }
 
 // HELPの行を、組み方(groffの字下げ・印のタブ、U+2060・U+E000・U+FEFF)によらず比べられる形に: 空白類と
-// それらの不可視の文字を全部除く。
+// それらの不可視の文字を全部除く。2026-10-22、直接のユーザー報告("KEYでh→HELPに見つかりません"): HELP.epubの
+// 字下げはU+00A0(NBSP)なので、それも除く(除かないと、字下げのある行がどれも一致しなかった)。
 std::string normalizeHelpLineForMatch(const std::string &line) {
   std::string out;
   for (std::size_t i = 0; i < line.size();) {
     unsigned char c = static_cast<unsigned char>(line[i]);
     if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
       i++;
+      continue;
+    }
+    if (line.compare(i, 2, "\xC2\xA0") == 0) {
+      i += 2;
       continue;
     }
     if (line.compare(i, 3, "\xE2\x81\xA0") == 0 || line.compare(i, 3, "\xEE\x80\x80") == 0 ||

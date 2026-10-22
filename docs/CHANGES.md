@@ -32324,3 +32324,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 直接のユーザー報告("~/.usilic/usilicrcではLETTER-SPACINGに「0 0」の既定値があるのにHELPから注釈を見ると既定値が無い")。HELPの注釈の既定値は、HELPを作る時のsrc/usilicrc(配る方)の値の行から取るが、項目975で配る方には説明だけを置いていた(ユーザーの~/.usilic/usilicrcの「0  0」は^[{ / ^[}が書き込んだもの)。
    - usilicrc・usilicrc.enのLETTER-SPACINGに「0  0」を置いた(LINE-HEIGHTの「1.2  1.0」と同じく)。^[{ / ^[}がその場で書き込むので、「前回の終了時の字間」との違いは出ない。
    - doc/HELP.epub・doc/HELP.en.epubを作り直し、注釈に「既定値 0  0」が出ることを確かめた。
+
+1000. **2026-10-22: KEYのhで「HELPに見つかりません」になるのを直す**
+   - 直接のユーザー報告("KEYで`h`→「HELPに見つかりません」")。KEYの行とHELP.epubの行は、空白と不可視の字を除いて比べる(`normalizeHelpLineForMatch()`)が、HELP.epubの字下げはU+00A0(NBSP)で、それを除いていなかったため、字下げのある行(キーの行のほとんど)がどれも一致しなかった。
+   - `normalizeHelpLineForMatch()`でU+00A0も除く。KEYの「：」を含む全行で試し、一致しないのは平文のHELPとHELP.epubとで文言が違う行(`^J^K：SHELLからKEYを起動` ⇔ HELP.epubは「プロンプトから」)と、キーの行でない3行だけになった。
