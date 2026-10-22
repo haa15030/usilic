@@ -1892,6 +1892,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     app.pollShellOfferFollowUp();
     app.pollShellHandoff();
     app.pollChildChannel();  // -KのKEYの^M・hの受け渡し(Application::openChildChannel()参照)
+    app.pollPrefixEcho();  // PREFIXキーの「C-x-」等(Application::pendingPrefixLabel()参照)
     app.pollPagerExitNotice();
     app.pollExternalPagerWindows();
     syncMouseTracking();
@@ -2816,6 +2817,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     app.pollShellOfferFollowUp();
     app.pollShellHandoff();
     app.pollChildChannel();  // -KのKEYの^M・hの受け渡し(Application::openChildChannel()参照)
+    app.pollPrefixEcho();  // PREFIXキーの「C-x-」等(Application::pendingPrefixLabel()参照)
     if (app.consumeGuiModeToggleRequest()) return;  // 親の^Ogの"G"(Application::toggleGuiModeFromParent())
     // `suppressDraw`(2026-09-07追加、直接のユーザー報告"わかったのは
     // ブロックカーソル位置を画面上真ん中辺に変更すると、瞬時の表示も

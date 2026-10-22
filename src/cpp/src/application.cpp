@@ -2853,8 +2853,7 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     return byte == 0x07 && !special;
   }
   if (!special && byte == 0x14 && !leaderPending && !universalArgPending_) {
-    leaderTPending_ = true;
-    showTransientNotice(activeView(), "C-t-");
+    leaderTPending_ = true;  // 「C-t-」はpollPrefixEcho()が出す
     return true;
   }
   if (repeatZPending_ && !leaderPending) {
@@ -21334,6 +21333,44 @@ void Application::pollChildChannel() {
     }
   }
   if (handled) display_.flush();
+}
+
+std::string Application::pendingPrefixLabel() const {
+  if (copyEscapePending_ || escPending_) return "ESC-";
+  if (copyLeaderXPending_) return "C-x-";
+  if (copyLeaderJPending_) return "C-j-";
+  if (registerPending_ == RegisterAction::Set) return "C-x r SPC-";
+  if (registerPending_ == RegisterAction::Jump) return "C-x r j-";
+  if (leaderXRPending_) return "C-x r-";
+  if (leaderXPending_) return "C-x-";
+  if (leaderJOPending_) return "C-j C-o-";
+  if (leaderOJPending_) return "C-o C-j-";
+  if (leaderJPending_) return "C-j-";
+  if (leaderOPending_) return "C-o-";
+  if (leaderTPending_) return "C-t-";
+  return std::string();
+}
+
+void Application::pollPrefixEcho() {
+  std::string label = pendingPrefixLabel();
+  auto now = std::chrono::steady_clock::now();
+  if (label.empty()) {
+    prefixEchoLabel_.clear();
+    prefixEchoShown_ = false;
+    return;
+  }
+  if (label != prefixEchoLabel_) {
+    prefixEchoLabel_ = label;
+    prefixEchoSince_ = now;
+    if (!prefixEchoShown_) return;
+    showTransientNotice(activeView(), label);  // ^X(出した後)→rの「C-x r-」等
+    display_.flush();
+    return;
+  }
+  if (prefixEchoShown_ || now - prefixEchoSince_ < std::chrono::seconds(1)) return;
+  prefixEchoShown_ = true;
+  showTransientNotice(activeView(), label);
+  display_.flush();
 }
 
 void Application::requestParentRaise() {

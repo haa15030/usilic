@@ -1570,6 +1570,13 @@ class Application {
   // 数え、次のコマンドの回数(pendingRepeatCount_)にする。
   bool universalArgPending_ = false;
   bool leaderTPending_ = false;  // ^Tを押した直後(dispatchByte()の^Tn/^Tp)
+  // 2026-10-22、直接のユーザー依頼("全てのPREFIXキーで^Tの「C-t-」のようにmode-lineに表示して(1秒後とか)"):
+  // ^J・^O・^X・^Xr・ESC・^T等の続きを待っている間、そのキーをEmacsの書き方(pendingPrefixLabel())で、1秒経ったら
+  // モードラインに出す(pollPrefixEcho()、実行ループから毎回呼ぶ)。一度出したら、続くPREFIXはすぐに出す。
+  std::string pendingPrefixLabel() const;
+  std::string prefixEchoLabel_;  // 今待っているPREFIX(pendingPrefixLabel())
+  std::chrono::steady_clock::time_point prefixEchoSince_;
+  bool prefixEchoShown_ = false;
   // 親と外部起動の子のウィンドウ(registerAsChild()で登録されたもの)を、`fromPid`の次(step=1)・前(-1)へ巡回して
   // 前に出す。子の^Tn/^Tpは親へ頼む(pollChildChannel()の"T")。
   bool cycleExternalWindows(int step, long fromPid);
@@ -1802,6 +1809,7 @@ class Application {
   void openChildChannel(long ownerPid, const std::string &name);
   void closeChildChannel();
   void pollChildChannel();
+  void pollPrefixEcho();
   void setParentPid(long pid) { parentPid_ = pid; }
   // このusilic自身の実行ファイル(main.cppのresolveOwnExecutablePath())。外部起動の子(launchExternalUsilic())は
   // "usilic"の名前ではなくこれで起動する(2026-10-20、.appのPATHでは/usr/local/bin/usilicの旧版が先に見つかった)。
