@@ -32377,3 +32377,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 1010. **2026-10-22: SHELLの^O^F・^O^B・^O^L・^O/が、SHELLを抜けて(ls)の方に効いていたのを直す**
    - HELPのキーの検証で発見(「SHELL の中からは ^O/ で出力の検索、^O^F/^O^B でページ送り/戻し、^O^L で再表示」)。SHELLでPREFIXのキーを受けると、ディスパッチの前にSHELLへ入る前のモードへ切り替える(`feedShellByte()`)。例外(`isShellSafeNavigation`)は`^[< ^[> ^[v`・`^J^C`・`^J^S`・`^J^K`だけだったので、`^O^F`・`^O^B`は(ls)のページ送り/戻し、`^O^L`は(ls)の逆順、`^O/`は(ls)の検索になっていた。
    - `^O^F`・`^O^B`・`^O^L`・`^O/`も例外にし、SHELLのまま実行する(`dispatchLeaderByte()`の^Oの節は、もともとSHELLの中から使う前提で書いてある)。SHELLで80行出した後、`^O^B`で戻る・`^O/`でSHELLの出力を探せることを確かめた。
+
+1011. **2026-10-22: Python3のCUI版(学習用の移植)の第1段: ページャーと(ls)**
+   - 直接のユーザー依頼("C++版usilicは…GUIメインに…スクリプトではCUIのみ…学習用でいいんで移植して")。`.steering/20261022-python-cui-port/`。
+   - `src/python/`(`usilic.py`と`usilic/`の各モジュール、標準ライブラリだけ)。クラス・メソッドはC++版と同じ名前(snake_case)で、`utf8`・`mode_line`・`messages_ja`・`content_view`・`file_mode`・`directory_mode`・`key_input`・`display`(curses)・`application`。
+   - ページャー(引数のfile・標準入力)のj k ^N ^P ␣ ^V ^F b ^B ^[v ^[< ^[> ^[N ^X^X ^L n p x f q、(ls)の^M ^G ^J^B ^J^C ^]、^X^C・^[^[、PREFIXの表示。C++版と同じキー列を擬似端末で送り、現在行が一致すること、60桁で日本語・ASCIIの折り返し(行頭禁則を含む)が同じ画面になることを確かめた。unittest 10件。
