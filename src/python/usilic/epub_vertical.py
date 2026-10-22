@@ -123,7 +123,7 @@ def to_cells(line):
     # 字の位置ごとの属性とリンクの番号(行ごとに一度だけ作る)
     attr_of, link_of = [None] * (len(s) + 1), [-1] * (len(s) + 1)
     for start, end, attr in reversed(line.runs):  # 前の物が勝つ(重なりは最初のラン)
-        if attr in ('bold', 'underline'):
+        if attr in ('bold', 'underline', 'match'):  # 'match'は検索結果の一覧の一致の字
             attr_of[start:end] = [attr] * len(attr_of[start:end])
     for number, (start, end, _) in reversed(list(enumerate(sorted(line.links)))):
         link_of[start:end] = [number] * len(link_of[start:end])
@@ -180,6 +180,15 @@ def columns_per_screen(columns):
 def screen_column(k, columns):
     """右からk番目の列の左の桁(行間はその右の桁)。"""
     return columns - 3 - k * PITCH
+
+
+def column_at(screen_col, columns):
+    """画面の桁(0から)が右から何番目の列か。列の上でなければ(行間・画面の外)-1(C++のepubVerticalColumnAt())。"""
+    from_right = columns - 1 - screen_col
+    if from_right < 0 or from_right % PITCH == 0:
+        return -1
+    k = from_right // PITCH
+    return k if k < columns_per_screen(columns) else -1
 
 
 class VerticalBook:
@@ -462,7 +471,7 @@ class VerticalBook:
             return r, max(0, screen_column(c - self.first, self.columns))
         return 0, max(0, screen_column(self.cursor - self.first, self.columns))
 
-    def render(self, highlights=None):
+    def render(self, highlights=None, highlight_column=-1):
         """右端に列firstを置いて画面1枚分を描く。(文字列, runs)の並び。highlightsは元の行→[(開始, 終わり)]
         (検索の一致)。リンクのある列にカーソルがあれば、選んでいるリンクの字を反転表示する。"""
         columns = self.columns
@@ -495,7 +504,9 @@ class VerticalBook:
                     attr = None
                     if x + 2 < columns:
                         screen[x + 2] = '|'
-                # 強調の順: 選んでいるリンク < 検索の一致 < 範囲指定
+                # 強調の順: 選んでいるリンク・列(一覧の選んでいる行) < 検索の一致 < 範囲指定
+                if c == highlight_column:
+                    attr = 'reverse'
                 if highlight_link >= 0 and column.raw == self.link_raw and cell.link == highlight_link:
                     attr = 'reverse'
                 if highlights and cell.start >= 0 and any(s < cell.end and cell.start < e
@@ -522,6 +533,13 @@ class VerticalBook:
         return out
 
     # --- 範囲指定(COPY) ---
+    def cell_at(self, row, screen_col):
+        """画面の行・桁のマス(列, 列の上からのマス)。行間や画面の外は近い列・マスへ(C++のepubSelectCellAt())。"""
+        from_right = max(0, self.columns - 1 - screen_col)
+        k = min(from_right // PITCH, self.per_screen - 1)
+        c = max(0, min(self.first + k, len(self.cols) - 1))
+        return c, max(0, min(row, self.rows - 1))
+
     def start_select(self):
         self.selecting, self.anchor, self.asking = True, None, False
         column = self.cols[self.cursor] if self.cols else None

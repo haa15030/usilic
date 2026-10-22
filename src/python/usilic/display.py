@@ -94,8 +94,19 @@ class TerminalDisplay:
     def flush(self):
         self.screen.refresh()
 
+    def set_mouse_tracking(self, enabled):
+        """マウスを追う(全部の動き・SGRの座標・括弧付き貼り付け)/やめる(C++のsetTerminalMouseTracking())。"""
+        import os
+        from .mouse import TRACKING_OFF, TRACKING_ON
+        self.mouse_on = enabled
+        try:
+            os.write(1, (TRACKING_ON if enabled else TRACKING_OFF).encode('ascii'))
+        except OSError:
+            pass
+
     def suspend(self):
         """外のプログラム(LAUNCH)の間、端末を元に戻す(C++のleaveRawMode())。"""
+        self.set_mouse_tracking(False)
         curses.def_prog_mode()
         curses.endwin()
 

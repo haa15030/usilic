@@ -193,6 +193,8 @@ class Block:
         self.center = False
         self.indent_em = (0, 0)       # 縦書きの列の頭の空き(1行目, 2行目から)
         self.indent_columns = (0, 0)  # 横書きの字下げの桁(半角の数)
+        self.chapter = False      # 章の行(C++の行末のタブ): 見出しと、目次が指す所の字の行
+        self.hidden_label = None  # この段落の前の隠した見出しの字(章の一覧の名前、C++のchapterLabel)
 
     def text(self):
         return ''.join(p[0] for p in self.pieces)
@@ -216,6 +218,7 @@ class _XhtmlParser(HTMLParser):
         self.hidden = None    # display:noneの要素(tag, 入れ子の数, 見出しか)
         self.hidden_text = []
         self.hidden_label = None  # 隠した見出しの字(章の名前)
+        self.next_hidden_label = None  # 次の段落に持たせる隠した見出しの字
         self.block_frames = []    # (tag, 始まりのブロック, 注釈か, [id])
         self.anchor_blocks = {}   # id→そのidを持つ(か囲む一番内側の)ブロックの範囲(ブロックの番号)
         self.note_ranges = []
@@ -239,7 +242,11 @@ class _XhtmlParser(HTMLParser):
         block, self.current = self.current, None
         if block is None:
             return
+        if block.pieces and not block.pre and not block.text().strip(' '):
+            block.pieces = []  # 空白だけ(要素の間の改行等)は字の無いブロック
         if block.pieces or (block.anchors and block.tag in _HEADINGS):
+            if block.pieces and self.next_hidden_label:
+                block.hidden_label, self.next_hidden_label = self.next_hidden_label, None
             self.blocks.append(block)
         elif block.anchors:
             self.pending_anchors = block.anchors + self.pending_anchors
@@ -358,9 +365,9 @@ class _XhtmlParser(HTMLParser):
             if tag == self.hidden[0]:
                 nest = self.hidden[1] - 1
                 if nest == 0:
-                    label = re.sub(r'\s+', ' ', ''.join(self.hidden_text)).strip()
+                    label = re.sub(r'[ \t\r\n]+', ' ', ''.join(self.hidden_text)).strip(' ')  # 全角の空白は字のまま
                     if self.hidden[2] and label:
-                        self.hidden_label = label  # 隠した見出しの字は章の名前に(EpubHints.chapter_label)
+                        self.hidden_label = self.next_hidden_label = label  # 隠した見出しの字は次の章の行の名前に
                     self.hidden = None
                 else:
                     self.hidden = (self.hidden[0], nest, self.hidden[2])
@@ -610,6 +617,10 @@ class EpubBook:
                 pending = labels.get(anchor, pending)
             if block.text().strip(' ') or pending is None or (block.tag not in _HEADINGS and
                                                                 not any(a in labels for a in block.anchors)):
+                if block.text().strip(' ') and (pending is not None or block.tag in _HEADINGS):
+                    copy = Block(block.tag, block.classes)  # 章の行(見出し、目次が指す所の最初の字の行)
+                    copy.__dict__.update(block.__dict__)
+                    copy.chapter, block = True, copy
                 if block.text().strip(' '):
                     pending = None
                 if not block.pieces and block.tag in _HEADINGS:  # 名前の無い空の見出し: 行にしない
@@ -628,7 +639,9 @@ class EpubBook:
             source = nxt if nxt is not None and nxt.styled else block
             for name in ('styled', 'kind', 'align_end', 'center', 'indent_em', 'indent_columns'):
                 setattr(merged, name, getattr(source, name))
-            merged.tag = 'h2' if not image_only else merged.tag  # 章の行
+            merged.tag = 'h2' if not image_only else merged.tag
+            merged.chapter = True  # 章の行
+            merged.hidden_label = source.hidden_label
             if image_only:
                 index_map[i + 1] = len(out)
             out.append(merged)
@@ -657,6 +670,7 @@ class EpubBook:
         if self._header_blocks():
             documents.insert(min(at, len(documents)), (None, self._header_blocks(), {}))
         pending = []  # 字の出る行を待っているアンカー(C++のresolveAnchorsHere()、空の行は指さない)
+        chapters, hidden_label = [], None  # 章の一覧(行, 名前)、まだ使っていない隠した見出しの字
 
         def resolve(index, raw):
             for key in pending:
@@ -705,6 +719,10 @@ class EpubBook:
                         heading_raws.add(number)
                 if text:
                     resolve(len(lines), number)
+                    hidden_label = block.hidden_label or hidden_label
+                    if block.chapter:
+                        chapters.append((len(lines), hidden_label or text))
+                        hidden_label = None
                 first, left = block.indent_columns if text else (0, 0)
                 lines.extend(_wrap_with_indent(text, runs, width, first, left, number, line_links,
                                                center=block.center))
@@ -726,11 +744,13 @@ class EpubBook:
             else:
                 hints.chapter_files.append((line, href))
         self._layout_ranges(hints, kinds, number, header)
-        toc_lines = []
-        for href, _, _ in self.toc:
-            toc_lines.append(anchors.get(href, anchors.get(href.partition('#')[0], 0)))
+        # 章の一覧(C++の章の印の行で分けたCUT): 章の行の字(隠した見出しがあればその字)、最初の章より前に行があれば「--」
+        if chapters and chapters[0][0] > 0:
+            chapters.insert(0, (0, '--'))
+        toc_lines = [index for index, _ in chapters]
+        self.chapter_titles = [title for _, title in chapters]
         self.anchors = anchors
-        chapter_raws = heading_raws | {lines[i].raw_line_number for i in toc_lines if 0 <= i < len(lines)}
+        chapter_raws = {lines[i].raw_line_number for i in toc_lines if 0 <= i < len(lines)}
         self._bidirectional_notes(hints, links, anchor_raws, chapter_raws)
         self.hints = hints
         return lines, toc_lines

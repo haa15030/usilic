@@ -107,6 +107,8 @@ class Configuration:
         self.url_handlers = None   # URL(Noneは節が無い: 組み込み)
         self.editors = []          # EDITOR
         self.wait_centiseconds = 10  # WAIT(マクロの間隔、10msec単位)
+        self.speed_values = []     # SPEED(慣性の段ごとの1ドットの待ち時間、usec)
+        self.arrow_values = []     # ARROW(CUIの慣性の段、無ければSPEED)
         self.errors = []
         self.path = None
 
@@ -175,6 +177,16 @@ class Configuration:
             t = tokenize(line)
             if t and t[0].isdigit():
                 self.wait_centiseconds = int(t[0])
+        for name, target in (('SPEED', self.speed_values), ('ARROW', self.arrow_values)):
+            values = []
+            for line in body.get(name, []):
+                for token in tokenize(line):
+                    if token.isdigit():
+                        values.append(int(token))
+                    else:
+                        self.errors.append('%s: not a number: %s' % (name, token))
+            if name in body:
+                target[:] = values
         if 'MACRO' in body:
             from .macro import parse_macro_lines
             self.macros, errors = parse_macro_lines(body['MACRO'])

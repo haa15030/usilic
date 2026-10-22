@@ -72,7 +72,10 @@ def main():
                 return 'usilic: cannot list ' + (args[0] if args else '.')
             app.on_exit = lambda: (app.save_positions(), history and hist.save_to_disk(history, usilic_dir))
         signal.signal(signal.SIGWINCH, on_winch)
-        app.run(resized)
+        try:
+            app.run(resized)
+        finally:
+            display.set_mouse_tracking(False)  # 落ちても端末にマウスの報告を残さない
         if getattr(app, 'on_exit', None):
             app.on_exit()
         return None

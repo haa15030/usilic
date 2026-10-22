@@ -168,5 +168,10 @@ class ContentView:
         self.top_index = self.cursor_index - self.height // 2
         self.clamp()
 
+    def line_index_at_row(self, row):
+        """画面の行(0から)の行の番号。行が無ければ-1(C++のlineIndexAtRow())。"""
+        index = self.top_index + row
+        return index if 0 <= row < self.height and index < len(self.lines) else -1
+
     def visible_lines(self):
         return self.lines[self.top_index:self.top_index + self.height]

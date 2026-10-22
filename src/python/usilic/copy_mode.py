@@ -81,6 +81,29 @@ class CopyMode:
         self.view.cursor_index = self.row
         self.view.ensure_cursor_visible()
 
+    # --- マウス(C++のplaceCursorAt()・beginOrExtendFromMouse()) ---
+    def place_cursor_at(self, row, column):
+        """画面の行(本文の行の番号)・桁へカーソルを(ドラッグ)。"""
+        if not self.view.lines:
+            return
+        self.row = max(0, min(len(self.view.lines) - 1, row))
+        self.col = index_at_column(self.text_at(self.row), column)
+        self._follow()
+
+    def begin_or_extend_from_mouse(self, row, column):
+        """押した所: 広がりのある範囲の途中なら、それを1つの範囲として残してここから新しく始める。まだ広がりの無い
+        範囲(^@の直後等)なら、その始まりのままカーソルだけ動かす。"""
+        if not self.view.lines:
+            return
+        was_active = self.anchor is not None
+        had_extent = was_active and self.anchor != (self.row, self.col)
+        if had_extent:
+            self.regions.append(Region(self.anchor, (self.row, self.col), self.rectangle))
+            self.anchor = None
+        self.place_cursor_at(row, column)
+        if not was_active or had_extent:
+            self.anchor, self.rectangle = (self.row, self.col), False
+
     # --- 範囲 ---
     def toggle(self, rectangle):
         """^@(rectangle=False)・^X␣(True): 始まりを置く/今の位置で閉じる。"""

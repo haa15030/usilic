@@ -39,7 +39,9 @@ class EpubTest(unittest.TestCase):
             self.assertEqual(lines[2].attributes, [(0, 3, 'bold')])
             self.assertIn((5, 7, 'bold'), lines[3].attributes)   # 字下げの分ずれる
             self.assertEqual([(t, depth) for _, t, depth in book.toc], [('第一章', 0), ('節', 1)])
-            self.assertEqual(toc, [2, 5])
+            # 章の一覧(C++のCUT): 章の行の字、最初の章より前(書名)は「--」
+            self.assertEqual(toc, [0, 2, 5])
+            self.assertEqual(book.chapter_titles, ['--', '第一章', '節'])
 
 
 if __name__ == '__main__':

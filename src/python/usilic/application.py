@@ -38,6 +38,7 @@ from .locate_mode import LocateMode
 from .man_mode import ManMode
 from .part_mode import PartMode, occur_lines
 from .messages_ja import japanese, localized
+from .mouse import MouseEvent, Paste, Speeds, dropped_paths, level_for_release_distance, step_level_by_key
 from .shell import Shell
 
 PROGRAM_LABEL = 'usilic-1.5b'
@@ -159,6 +160,18 @@ class Application:
         self.epub_from_below = False   # 先へ送って範囲へ入り、最初の行がまだ画面の上まで上がっていない
         self.epub_note = None          # 注釈の区画を見ている間、元の所(show_epub_note())
         self.last_key_number = None    # 最後のK-番号(横書きの範囲から出たかの決め方)
+        # マウス(C++のapp/main.cppのrunTerminalPhase()・runTerminalMouseDrag()・runCoastLoop())
+        self.drag = None               # 左ボタンを押している間(押した所・動いた量・離す直前の動き)
+        self.coast = None              # 慣性スクロール(段・向き・縦書きの列か・次に進む時刻)
+        self.click_targets_cursor = False  # 慣性を止めた後の次のクリックはハイライト行へ
+        self.wheel_reversed = False    # ^Od(ホイールの向き)
+        self.speeds = Speeds(self.configuration.speed_values, self.configuration.arrow_values)
+        # 縦書きの本の章の一覧・検索結果の一覧(OCCUR)の縦書き(C++のrefreshEpubTocVertical())
+        self.vlist = None              # 組んだ一覧(VerticalBook)
+        self.vlist_key = None
+        self.vlist_first = {TOC: 0, OCCUR: 0}  # 右端の列(一覧ごと)
+        self.vlist_view = ContentView()
+        self.vlist_view.cursor_highlight = False
         self.vertical_prefix = None    # 縦書きのCOPYの'ESC'
         self.work_root = os.path.join('/tmp' if os.path.isdir('/tmp') else tempfile.gettempdir(), '.usilic',
                                       'python-%d' % os.getpid())  # HELPの「/tmp/.usilic/」
@@ -174,7 +187,8 @@ class Application:
     def views(self):
         return [self.directory_view, self.file_view, self.shell_view, self.list_view, self.man_view, self.du_view,
                 self.locate_view, self.key_view, self.help_view, self.toc_view, self.part_toc_view, self.part_view,
-                self.occur_view, self.info_view, self.vertical_view] + [a.view for a in self.archives]
+                self.occur_view, self.info_view, self.vertical_view, self.vlist_view] + \
+            [a.view for a in self.archives]
 
     def active_view(self):
         return {
@@ -283,6 +297,9 @@ class Application:
             return self.fit_mode_line_tail(['HELP', position, str(self.help_byte_count), directory])
         if mode == TOC:
             size = os.path.getsize(self.epub.path) if self.epub and os.path.exists(self.epub.path) else 0
+            if self.vertical_list_active():  # 縦書きの章の一覧: 位置は「選んでいる章/章の数」
+                position = self.notice or '%02d/%02d' % (view.cursor_index + 1, max(1, len(view.lines)))
+                return self.fit_mode_line([self.epub_name, position, str(size), '縦書き', directory])
             return self.fit_mode_line([self.epub_name, position, str(size), directory])
         if mode == PART_TOC:
             return self.fit_mode_line(['PART', position, str(self.part.byte_count), '(egrep)', directory])
@@ -380,6 +397,11 @@ class Application:
         if self.current_mode == FILE and self.vertical_active():
             self.render_vertical()
             view = self.vertical_view
+        elif self.copy is not None and self.vertical_list_active():
+            view = self.copy.view
+        elif self.vertical_list_active():
+            self.render_vertical_list()
+            view = self.vlist_view
         section = self.epub_section if view is self.file_view and self.in_epub_body() and \
             self.epub.right_to_left and not self.epub_note_active() else None
         visible = view.visible_lines()
@@ -413,6 +435,9 @@ class Application:
             self.display.show_cursor_at(*self.shell_cursor_position())
         elif view is self.vertical_view and self.prompt is None and self.grep_prompt is None:
             self.display.show_cursor_at(*self.vertical.cursor_screen_position())  # 列カーソルの頭(C++の-cと同じ)
+        elif view is self.vlist_view and self.prompt is None and self.grep_prompt is None:
+            self.display.show_cursor_at(0, max(0, ev.screen_column(self.vlist_cursor_column() - self.vlist.first,
+                                                                   self.display.columns)))
         else:
             self.display.hide_cursor()
         self.display.flush()
@@ -771,7 +796,7 @@ class Application:
             return self.epub_lines[start:end]
         self.file_mode.set_rendered(path, lines, os.path.getsize(path), width, renderer=renderer)
         self.file_mode.record_history = name is None and not self.pager_launch
-        self.toc_view.set_lines([Line(title, i + 1) for i, (_, title, _) in enumerate(book.toc)])
+        self.toc_view.set_lines([Line(title, i + 1) for i, title in enumerate(book.chapter_titles)])
         self.toc_view.cursor_index = self.toc_view.top_index = 0
         first_time = self.history is None or self.history.position_for(hist.FILE, path) is None
         self.file_mode.restore_from_history()
@@ -1223,6 +1248,16 @@ class Application:
 
     def feed_key(self, byte, special):
         """1キー(Application::feedByte()→dispatchByte())。マクロの記録中は打ったバイトを残す。"""
+        if isinstance(special, MouseEvent):
+            return self.handle_mouse(special)
+        if isinstance(special, Paste):
+            return self.handle_paste(special.text)
+        if self.coast is not None and special in ('Up', 'Down', 'Left', 'Right'):
+            return self.adjust_coast_by_arrow(special)  # 慣性中の矢印: 速さ・向き
+        self.coast = self.drag = None  # キーで慣性・ドラッグは終わる
+        self.click_targets_cursor = False
+        if special in ('Up', 'Down', 'Left', 'Right') and self.start_coast_by_arrow(special):
+            return True
         if self.macro_recording is not None and not self.playing and special is None:
             self.macro_recording.append(byte)
         self.notice = None
@@ -1377,7 +1412,8 @@ class Application:
                 self.refresh_shell_view()
                 return True
         number = {'Up': 4, 'Left': 4, 'Down': 3, 'Right': 3, 'PageUp': 8, 'PageDown': 5}[special]
-        if self.current_mode == FILE and self.vertical_active() and special in ('Left', 'Right'):
+        if ((self.current_mode == FILE and self.vertical_active()) or self.vertical_list_active()) and \
+                special in ('Left', 'Right'):
             number = 3 if special == 'Left' else 4  # 縦書きは←で先(左)へ
         return self.handle_key_number(number, None)
 
@@ -1386,6 +1422,10 @@ class Application:
         mode = self.current_mode
         view = self.active_view()
         self.last_key_number = number
+        if self.vertical_list_active():
+            result = self.vertical_list_number(number)
+            if result is not None:
+                return result
         if mode == FILE and self.vertical_active():
             result = self.vertical_number(number)
             if result is not None:
@@ -2005,6 +2045,10 @@ class Application:
             return self.toggle_epub_chapter_mode()
         if number == 102:
             return self.cycle_url_mode()
+        if number == 107:  # ^Od: ホイールの向き(既定はmacOSのナチュラルスクロールの向き=reversed)
+            self.wheel_reversed = not self.wheel_reversed
+            self.show_transient_notice('Wheel: normal' if self.wheel_reversed else 'Wheel: reversed')
+            return True
         if number == 108:
             return self.show_epub_marks()
         if number == 28 and self.in_epub_body():
@@ -2334,7 +2378,14 @@ class Application:
             self.vertical.start_select()
             self.vertical_prefix = None
             return True
-        self.copy = CopyMode(self.active_view())
+        if self.vertical_list_active():  # 縦書きの一覧は描いた画面のまま(C++のCopyModeのスナップショット)
+            self.render_vertical_list()
+            snapshot = ContentView()
+            snapshot.set_height(self.vlist_view.height)
+            snapshot.set_lines(list(self.vlist_view.lines))
+            self.copy = CopyMode(snapshot)
+        else:
+            self.copy = CopyMode(self.active_view())
         self.copy_prefix = None
         return True
 
@@ -3185,8 +3236,6 @@ class Application:
                 section = self.epub_horizontal_range(self.epub_lines[line].raw_line_number)
                 if section is not None:
                     self.enter_epub_section(section, self.epub_lines[line].raw_line_number)
-                    self.set_epub_cursor(line)
-                    self.epub_section_line = line
             return
         self.leave_epub_section_if_outside()
         if self.epub_section is not None:
@@ -3362,16 +3411,487 @@ class Application:
         self.show_transient_notice('Recorded: ' + text[:20])
         return True
 
+    # --- マウス(C++のapp/main.cppのrunTerminalPhase()・runTerminalMouseDrag()・runCoastLoop()) ---
+    def sync_mouse_tracking(self):
+        """SHELL以外ではマウスを追う(SHELLでは端末の選択・貼り付けをそのまま使えるよう追わない)。"""
+        want = self.current_mode != SHELL
+        if hasattr(self.display, 'set_mouse_tracking') and getattr(self.display, 'mouse_on', None) != want:
+            self.display.set_mouse_tracking(want)
+
+    def mouse_view(self):
+        """マウスが相手にする画面(縦書きは描いた画面ではなく列の並びなので別に扱う)。"""
+        return self.active_view()
+
+    def vertical_scroll_active(self):
+        """縦書きの本文・一覧(ホイール・ドラッグ・慣性は列ごと)。"""
+        return self.prompt is None and ((self.current_mode == FILE and self.vertical_active())
+                                        or self.vertical_list_active())
+
+    def copy_mouse_active(self):
+        return self.copy is not None or self.vertical_selecting()
+
+    def handle_mouse(self, event):
+        """マウスの報告1つ。慣性中・ドラッグ中はその続き。"""
+        self.notice = None
+        if self.coast is not None:
+            return self.mouse_during_coast(event)
+        if self.drag is not None:
+            return self.mouse_during_drag(event)
+        if event.wheel:
+            return self.scroll_by_wheel(event.wheel)
+        if event.pressed and not event.motion and event.button == 2:  # 右クリック: ^G
+            return self.feed_key(CTRL_G, None)
+        if event.pressed and not event.motion and event.button == 0:
+            return self.start_mouse_drag(event)
+        if event.motion and event.button == 3 and self.prompt is None and self.grep_prompt is None:
+            return self.hover(event.row)
+        return False
+
+    def hover(self, row):
+        """ボタンを押していない動き: ポインタの行にカーソルを合わせる(C++のapplyHoverRowAndRedraw())。"""
+        self.click_targets_cursor = False
+        if self.vertical_scroll_active() or self.copy_mouse_active() or self.current_mode == SHELL:
+            return False
+        view = self.mouse_view()
+        index = view.line_index_at_row(row)
+        if index < 0 or index == view.cursor_index:
+            return False
+        view.cursor_index = index
+        return True
+
+    def scroll_by_wheel(self, direction, lines=1):
+        """ホイールの1刻み: j/kと同じく1行(縦書きは1列、縦書きの一覧は1列)。端では何もしない。"""
+        if self.wheel_reversed:
+            direction = -direction
+        if self.vertical_scroll_active():
+            for _ in range(lines):
+                if not self.scroll_epub_vertical(direction):
+                    break
+            return True
+        view = self.mouse_view()
+        for _ in range(lines):
+            if direction < 0:
+                if view.top_index <= 0:
+                    break
+                self.handle_key_number(2, None)
+            else:
+                if self.current_mode == FILE and self.file_mode.has_active_stream():
+                    self.file_mode.ensure_loaded_through(view.top_index + 2 * view.height)
+                if view.top_index >= view.max_top():
+                    break
+                self.handle_key_number(1, None)
+        return True
+
+    def scroll_epub_vertical(self, delta):
+        """縦書きを1列ずらす(ホイール・ドラッグ・慣性、C++のscrollEpubVertical())。動いたらTrue。"""
+        if self.vertical_list_active():
+            v = self.vlist
+            total = len(v.cols)
+            first = max(0, min(v.first + delta, max(0, total - v.per_screen)))
+            if first == v.first or total == 0:
+                return False
+            self.vlist_first[self.current_mode] = first
+            col = min(first + v.per_screen, total) - 1 if delta > 0 else first
+            source = self.vlist_source()
+            source.cursor_index = max(0, min(v.cols[col].raw - 1, len(source.lines) - 1))
+            self.render_vertical_list(keep_first=True)
+            return True
+        if not (self.current_mode == FILE and self.vertical_active()):
+            return False
+        before = (self.vertical.first, self.epub_section)
+        self.last_key_number = 1 if delta > 0 else 2  # 画面を送る操作(j/k)として
+        self.vertical_number(1 if delta > 0 else 2)
+        return (self.vertical.first, self.epub_section) != before
+
+    # --- 左ボタン(ドラッグ・クリック) ---
+    def start_mouse_drag(self, event):
+        if self.copy_mouse_active():
+            self.copy_mouse_down(event.row, event.column)
+            self.drag = {'copy': True}
+            return True
+        self.drag = {'copy': False, 'row': event.row, 'column': event.column, 'moved': False, 'samples': [],
+                     'columns': self.vertical_scroll_active(), 'accum': 0,
+                     'targets_cursor': self.click_targets_cursor}
+        self.click_targets_cursor = False
+        return True
+
+    def mouse_during_drag(self, event):
+        d = self.drag
+        if event.wheel or event.button < 0:
+            return False  # ドラッグ中のホイールは無視
+        if d['copy']:
+            if event.motion:
+                self.copy_mouse_drag(event.row, event.column)
+            elif not event.pressed:
+                self.drag = None
+                self.copy_mouse_up()
+            return True
+        now = time.monotonic()
+        if event.motion:
+            if d['columns']:
+                d['accum'] += event.column - d['column']
+                d['column'] = event.column
+                while abs(d['accum']) >= ev.PITCH:
+                    direction = 1 if d['accum'] > 0 else -1
+                    d['accum'] -= direction * ev.PITCH
+                    d['moved'] = True
+                    d['samples'].append((now, direction))
+                    if not self.scroll_epub_vertical(direction):
+                        d['accum'] = 0
+                    if not self.vertical_scroll_active():  # 横書きの範囲へ入った: 上下のドラッグとして続ける
+                        d.update(columns=False, row=event.row, samples=[])
+                        break
+                return True
+            delta = event.row - d['row']
+            d['row'] = event.row
+            if delta:
+                d['moved'] = True
+                self.drag_rows(delta)
+                d['samples'].append((now, delta))
+                if self.vertical_scroll_active():  # 横書きの範囲の外へ出た: 縦書きの左右のドラッグとして続ける
+                    d.update(columns=True, column=event.column, accum=0, samples=[])
+            return True
+        if event.pressed:
+            return False  # 押したままもう一度押した
+        self.drag = None
+        if not d['moved']:
+            view = self.mouse_view()
+            if d['targets_cursor'] and not d['columns']:
+                row = view.cursor_index - view.top_index
+                if 0 <= row < view.height:
+                    return self.handle_mouse_click(row, 0)
+            return self.handle_mouse_click(event.row, event.column)
+        recent = sum(v for t, v in d['samples'] if t >= now - 0.15)  # 離す直前(150ms)の動き
+        level = level_for_release_distance(recent)
+        if level == 0 or (d['columns'] and not self.vertical_scroll_active()):
+            return True
+        # 上下は自然なスクロール(下へ引くと前が見える)、左右は引いた向きへ列を送る
+        direction = (1 if recent > 0 else -1) if d['columns'] else (-1 if recent > 0 else 1)
+        return self.start_coast(level, direction, from_drag=True)
+
+    def drag_rows(self, delta):
+        """上下のドラッグ: 画面を指の向きに送り(下へ引くと前が見える)、カーソルは送る向きの端の行。"""
+        view = self.mouse_view()
+        before = view.top_index
+        if self.current_mode == FILE and self.file_mode.has_active_stream():
+            self.file_mode.ensure_loaded_through(before - delta + 2 * view.height)
+        view.top_index = max(0, min(before - delta, view.max_top()))
+        view.cursor_index = min(view.top_index + view.height - 1, len(view.lines) - 1) if delta < 0 else \
+            view.top_index
+        self.last_key_number = 1 if delta < 0 else 2  # 横書きの範囲の出入りは画面を送る操作(j/k)として
+        self.update_scrolled_section()
+
+    def update_scrolled_section(self):
+        """画面を送った後に、縦書きの本の横書きの範囲から出たか(描く前に見る、update_epub_section())。"""
+        if self.current_mode == FILE and self.in_epub_body() and self.epub.right_to_left:
+            self.epub_section_line = self.global_epub_line() if self.epub_section is not None else None
+            self.update_epub_section()
+
+    def handle_mouse_click(self, row, column):
+        """クリック(C++のhandleMouseClickImpl()): 一覧はその行を選び、選んでいる行ならそれを開く。縦書きは列を選び、
+        選んでいる列のリンク・リンクの字ならリンクへ。横書きのEPUBはリンクの字ならリンクへ。"""
+        if self.vertical_selecting() or self.prompt is not None or self.grep_prompt is not None:
+            return True
+        mode = self.current_mode
+        if mode == FILE and self.vertical_active():
+            return self.click_epub_vertical(row, column)
+        if self.vertical_list_active():
+            return self.click_vertical_list(column)
+        if mode == FILE and self.in_epub_body():
+            index = self.file_view.line_index_at_row(row)
+            return index >= 0 and self.click_epub_horizontal_link(index, column)
+        if mode in (DIRECTORY, DU, ARCHIVE, LOCATE, LIST, TOC, PART_TOC, OCCUR, INFO):
+            view = self.mouse_view()
+            index = view.line_index_at_row(row)
+            if index < 0:
+                return False
+            if index == view.cursor_index:
+                return self.enter_key()
+            view.cursor_index = index
+            return True
+        return False
+
+    def click_epub_vertical(self, row, column):
+        """縦書きの本文: リンクの字ならそのリンクへ。選んでいる列なら(リンク・画像の列は)開き、他の列は列カーソルを
+        動かすだけ(C++のclickEpubVertical())。"""
+        self.sync_vertical()
+        v = self.vertical
+        k = ev.column_at(column, self.display.columns)
+        c = v.first + k
+        if k < 0 or c >= len(v.cols):
+            return False
+        cells = v.cols[c].cells
+        if 0 <= row < len(cells) and cells[row].link >= 0:
+            v.set_view(v.first, c, cells[row].link)
+            self.vertical_to_file()
+            return self.vertical_number(28)
+        if c == v.cursor:
+            return self.vertical_number(28) if v.selected_href() is not None else True
+        v.set_view(v.first, c)
+        self.vertical_to_file()
+        return True
+
+    def click_epub_horizontal_link(self, index, column):
+        """横書きのEPUBの本文: 下線(リンク)の字のクリックはそのリンクへ。"""
+        line = self.file_view.lines[index]
+        from .copy_mode import index_at_column
+        pos = index_at_column(line.text, column)
+        if pos >= len(line.text):
+            return False
+        for start, end, href in line.links:
+            if start <= pos < end:
+                self.file_view.cursor_index = index
+                return self.follow_epub_link(href)
+        return False
+
+    # --- COPYのドラッグ(C++のcopyMouseDown()・copyMouseDrag()・copyMouseUp()) ---
+    def copy_mouse_down(self, row, column):
+        if self.vertical_selecting():  # 縦書きのCOPY: 押した所から範囲を始め直す
+            v = self.vertical
+            v.asking = False
+            v.anchor = v.point = v.cell_at(row, column)
+            return
+        view = self.copy.view
+        index = view.line_index_at_row(row)
+        if index < 0:  # 最後の行より下の余白は最後の行へ
+            index = len(view.lines) - 1
+        if index >= 0:
+            self.copy.begin_or_extend_from_mouse(index, column)
+
+    def copy_mouse_drag(self, row, column):
+        if self.vertical_selecting():
+            v = self.vertical
+            if v.anchor is not None:
+                v.point = v.cell_at(row, column)
+            return
+        view = self.copy.view
+        index = view.line_index_at_row(row)
+        if index < 0:
+            index = len(view.lines) - 1
+        if index >= 0:
+            self.copy.place_cursor_at(index, column)
+
+    def copy_mouse_up(self):
+        """縦書きのCOPY: 範囲があれば(押した所から動かしていれば)Record?(y/n)と問う。横書きは範囲を残すだけ。"""
+        if self.vertical_selecting():
+            v = self.vertical
+            if v.anchor is None or v.anchor == v.point:
+                v.anchor = None
+            else:
+                v.asking = True
+
+    # --- 慣性 ---
+    def start_coast(self, level, direction, from_drag=False):
+        level = min(level + (self.speeds.drag_offset() if from_drag else 0), self.speeds.max_level())
+        self.coast = {'level': max(1, level), 'direction': direction, 'columns': self.vertical_scroll_active(),
+                      'due': time.monotonic() + self.speeds.seconds_per_row(max(1, level))}
+        return True
+
+    def start_coast_by_arrow(self, special):
+        """←→(縦書きの本文は↓↑)で慣性を始める(段1、→・↓で先へ)。縦書きの一覧・SHELL・COPY・入力中は今までどおり。"""
+        if self.current_mode == SHELL or self.copy_mouse_active() or self.prompt is not None or \
+                self.grep_prompt is not None or self.grep_active or self.pending_keys or \
+                self.goto_digits is not None or self.register_state is not None:
+            return False
+        vertical_body = self.current_mode == FILE and self.vertical_active()
+        trigger = ('Down', 'Up') if vertical_body else () if self.vertical_list_active() else ('Right', 'Left')
+        if special not in trigger:
+            return False
+        horizontal_epub = self.current_mode == FILE and self.in_epub_body() and not vertical_body
+        forward = special == 'Down' or special == ('Left' if horizontal_epub else 'Right')
+        return self.start_coast(1, 1 if forward else -1)
+
+    def adjust_coast_by_arrow(self, special):
+        c = self.coast
+        if c['columns']:
+            forward = special in ('Down', 'Left')
+        elif self.current_mode == FILE and self.in_epub_body():
+            forward = special in ('Left', 'Up')
+        else:
+            forward = special in ('Right', 'Up')
+        c['level'], c['direction'] = step_level_by_key(c['level'], c['direction'], 1 if forward else -1,
+                                                       self.speeds.max_level())
+        return True
+
+    def mouse_during_coast(self, event):
+        """慣性中のマウス: ホイールは止めて1刻み、右クリックは止めて^G、クリックは止めるだけ(行の字の上なら、
+        止めてハイライト行をクリックしたことに。次のクリックはハイライト行へ)。動き・離すは何もしない。"""
+        if event.wheel:
+            self.coast = None
+            return self.scroll_by_wheel(event.wheel)
+        if event.pressed and not event.motion and event.button == 2:
+            self.coast = None
+            return self.feed_key(CTRL_G, None)
+        if event.pressed and not event.motion:
+            columns = self.coast['columns']
+            self.coast = None
+            if columns:
+                return True
+            view = self.mouse_view()
+            index = view.line_index_at_row(event.row)
+            on_text = index >= 0 and utf8.text_width(view.lines[index].text) > event.column
+            if on_text:
+                row = view.cursor_index - view.top_index
+                if 0 <= row < view.height:
+                    return self.handle_mouse_click(row, 0)
+            else:
+                self.click_targets_cursor = True
+            return True
+        return False
+
+    def coast_step(self):
+        """慣性で1行(縦書きは1列)進める。端で止まる。"""
+        c = self.coast
+        if c['columns']:
+            if not self.scroll_epub_vertical(c['direction']):
+                self.coast = None
+                return
+            if not self.vertical_scroll_active():  # 横書きの範囲へ入った: 上下の慣性として続ける
+                c['columns'] = False
+        else:
+            view = self.mouse_view()
+            before = view.top_index
+            if self.current_mode == FILE and self.file_mode.has_active_stream():
+                self.file_mode.ensure_loaded_through(before + 2 * view.height)
+            view.top_index = max(0, min(before + c['direction'], view.max_top()))
+            if view.top_index == before:
+                self.coast = None
+                self.redraw()
+                return
+            view.cursor_index = min(view.top_index + view.height - 1, len(view.lines) - 1) \
+                if c['direction'] > 0 else view.top_index
+            self.last_key_number = 1 if c['direction'] > 0 else 2
+            self.update_scrolled_section()
+            if self.vertical_scroll_active():  # 横書きの範囲から出た: 縦書きの左右の慣性として続ける
+                c['columns'] = True
+        c['due'] = time.monotonic() + self.speeds.seconds_per_row(c['level'])
+        self.redraw()
+
+    # --- ファイルのドロップ(括弧付き貼り付け) ---
+    def handle_paste(self, text):
+        """貼り付けた字がファイルのパスなら開く(1つなら^Xfと同じ、いくつもならUSILICの一覧)。違えば、またはプロンプト・
+        SHELLの中なら、打った字として渡す。"""
+        paths = dropped_paths(text)
+        if paths and self.current_mode != SHELL and self.prompt is None and self.grep_prompt is None:
+            if len(paths) == 1:
+                return self.open_path(paths[0])
+            if not self.show_list(paths, 'USILIC', self.open_usilic_item, False):
+                return False
+            self.list_view.cursor_index = self.list_view.top_index = 0  # 最初のファイルを開く(^Gで一覧へ)
+            return self.enter_key()
+        for b in text.encode('utf-8'):
+            self.feed_key(b, None)
+        return True
+
+    # --- 縦書きの章の一覧・検索結果の一覧(C++のrefreshEpubTocVertical()・handleEpubTocVerticalCommand()) ---
+    def vertical_list_active(self):
+        """縦書きの本の章の一覧(TOC)か、縦書きの本文から作った一致の一覧・記録の一覧(OCCUR)を見ている。"""
+        if self.epub is None or not self.epub.right_to_left or self.file_mode.current_file != self.epub.path:
+            return False
+        if self.current_mode == TOC:
+            return True
+        return self.current_mode == OCCUR and self.occur_origin == FILE
+
+    def vlist_source(self):
+        return self.toc_view if self.current_mode == TOC else self.occur_view
+
+    def vlist_cursor_column(self):
+        source = self.vlist_source()
+        return next((c for c, col in enumerate(self.vlist.cols) if col.raw == source.cursor_index + 1), 0)
+
+    def render_vertical_list(self, keep_first=False):
+        """一覧の1行を1つの論理行として本文と同じ組版で列に並べ、選んでいる行の最初の列を反転表示する。選んでいる
+        行が画面の外なら右端の列を動かす(keep_first: 動かさない、ホイール等の1列送り)。"""
+        source = self.vlist_source()
+        key = (id(source.lines), len(source.lines), self.file_view.height, self.display.columns)
+        if self.vlist is None or self.vlist_key != key:
+            sources = []
+            for i, line in enumerate(source.lines):
+                runs = list(line.attributes)
+                if self.current_mode == OCCUR and not self.occur_global:  # 一致した字の色
+                    runs = [(a, b, 'match') for a, b in match_spans(line.text, self.grep.pattern,
+                                                                    self.occur_syntax)] + runs
+                pad = len(line.text) - len(line.text.lstrip(' '))
+                sources.append(ev.SourceLine(line.text.strip(' '), i + 1,
+                                             [(max(0, a - pad), max(0, b - pad), t) for a, b, t in runs]))
+            self.vlist = ev.VerticalBook(sources, set(), self.file_view.height, self.display.columns, False)
+            self.vlist_key = key
+        v = self.vlist
+        cursor = self.vlist_cursor_column()
+        first = self.vlist_first.get(self.current_mode, 0)
+        if not keep_first and cursor < first:
+            first = cursor
+        if not keep_first and cursor >= first + v.per_screen:
+            first = cursor - v.per_screen + 1
+        v.first = max(0, min(first, max(0, len(v.cols) - v.per_screen)))
+        self.vlist_first[self.current_mode] = v.first
+        rows = v.render(highlight_column=cursor)
+        self.vlist_view.set_lines([Line(text, None, attributes=runs) for text, runs in rows])
+        self.vlist_view.cursor_index = self.vlist_view.top_index = 0
+
+    def select_vertical_list(self, index):
+        source = self.vlist_source()
+        source.cursor_index = max(0, min(index, len(source.lines) - 1))
+        source.ensure_cursor_visible()
+        return True
+
+    def vertical_list_number(self, number):
+        """縦書きの一覧のK-番号: ^N・j・←で次、^P・k・→で前、ページ送り、^[>で先頭・^[<で末尾(本文と同じく逆)。"""
+        source = self.vlist_source()
+        if self.vlist is None:
+            self.render_vertical_list()
+        v, index, count = self.vlist, source.cursor_index, len(source.lines)
+
+        def at_column(c):
+            if not v.cols:
+                return 0
+            return v.cols[max(0, min(c, len(v.cols) - 1))].raw - 1
+        cursor = self.vlist_cursor_column()
+        if number in (1, 3):
+            return self.select_vertical_list(index + 1)
+        if number in (2, 4):
+            return self.select_vertical_list(index - 1)
+        if number in (5, 6, 7):
+            return self.select_vertical_list(max(index + 1, at_column(cursor + v.per_screen)))
+        if number in (8, 9, 10):
+            return self.select_vertical_list(min(index - 1, at_column(cursor - v.per_screen)))
+        if number == 12:
+            return self.select_vertical_list(0)
+        if number == 11:
+            return self.select_vertical_list(count - 1)
+        return None
+
+    def click_vertical_list(self, column):
+        """縦書きの一覧のクリック: その列の行を選び、選んでいる行なら開く。"""
+        if self.vlist is None:
+            self.render_vertical_list()
+        k = ev.column_at(column, self.display.columns)
+        c = self.vlist.first + k
+        if k < 0 or c >= len(self.vlist.cols):
+            return False
+        index = self.vlist.cols[c].raw - 1
+        if index == self.vlist_source().cursor_index:
+            return self.enter_key()
+        return self.select_vertical_list(index)
+
     # --- 実行ループ(main.cppのrunTerminalPhase()) ---
     def run(self, resized):
         self.layout()
         self.redraw()
         while not self.wants_exit:
+            self.sync_mouse_tracking()
             fds = [self.key_input.fd] + ([self.shell.fd] if self.shell.alive() else [])
+            wait = 0.1
+            if self.coast is not None:  # 慣性: 次の1行(1列)の時刻まで
+                wait = max(0.0, min(wait, self.coast['due'] - time.monotonic()))
             try:
-                readable, _, _ = select.select(fds, [], [], 0 if self.key_input.pending else 0.1)
+                readable, _, _ = select.select(fds, [], [], 0 if self.key_input.pending else wait)
             except InterruptedError:
                 readable = []
+            if self.coast is not None and time.monotonic() >= self.coast['due'] and not self.key_input.pending \
+                    and self.key_input.fd not in readable:
+                self.coast_step()
+                continue
             if resized():
                 self.layout()
                 self.redraw()
@@ -3389,6 +3909,8 @@ class Application:
             self.prefix_shown = False
             self.feed_key(*key)
             self.redraw()
+        if getattr(self.display, 'mouse_on', False):
+            self.display.set_mouse_tracking(False)
         self.shell.terminate()
         while len(self.archives) > 1:  # 入れ子のアーカイブの一時ファイル
             self.archive_back()
