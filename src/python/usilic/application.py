@@ -219,11 +219,22 @@ class Application:
         """折り返しの幅(桁いっぱい、C++版と同じ)。"""
         return max(1, self.display.columns)
 
+    @staticmethod
+    def position_numbers(view):
+        """モードラインの位置(今の行, 行の数)。行が元の行の番号を持っていれば(折り返したFILE等)その番号で数える
+        (C++のContentView::applyRawLineNumbers())。"""
+        lines = view.lines
+        current, total = (view.cursor_index + 1 if lines else 0), len(lines)
+        if lines and lines[0].raw_line_number is not None:
+            index = max(0, min(view.cursor_index, len(lines) - 1))
+            current = lines[index].raw_line_number if lines[index].raw_line_number is not None else current
+            total = lines[-1].raw_line_number if lines[-1].raw_line_number is not None else total
+        return current, total
+
     def position_text(self, view, fixed=False):
         if self.notice:
             return self.notice
-        total = len(view.lines)
-        return (mode_line.format_fixed_width if fixed else mode_line.format)(view.cursor_index + 1, total)
+        return (mode_line.format_fixed_width if fixed else mode_line.format)(*self.position_numbers(view))
 
     def mode_line_text(self):
         """モードライン(ContentView::ModeLineFields)。マクロの記録中はモード名をMACROに。"""
@@ -273,7 +284,7 @@ class Application:
                     position = self.notice or self.vertical.position_text()
                     return self.fit_mode_line([self.epub_name, position, str(fm.byte_count), 'EPUB 縦書き'])
                 return self.fit_mode_line([self.epub_name, position, str(fm.byte_count), 'EPUB'])
-            pos = self.notice or (mode_line.format_fixed_width(view.cursor_index + 1, len(view.lines))
+            pos = self.notice or (mode_line.format_fixed_width(*self.position_numbers(view))
                                   if self.pager_launch else position)
             name = fm.current_file if self.pager_launch else os.path.basename(fm.current_file)
             tail = PROGRAM_LABEL if self.pager_launch else (fm.tail or directory)
@@ -439,9 +450,26 @@ class Application:
         elif view is self.vlist_view and self.prompt is None and self.grep_prompt is None:
             self.display.show_cursor_at(0, max(0, ev.screen_column(self.vlist_cursor_column() - self.vlist.first,
                                                                    self.display.columns)))
+        elif self.prompt is not None or self.grep_prompt is not None or self.goto_digits is not None:
+            self.display.show_cursor_at(self.display.rows - 1, self.prompt_cursor_column())
+        elif self.copy is not None:
+            c = self.copy
+            self.display.show_cursor_at(max(0, c.row - c.view.top_index),
+                                        utf8.text_width(c.text_at(c.row)[:c.col]))
+        elif 0 <= view.cursor_index - view.top_index < view.height:
+            # ブロックカーソルはカーソル行の頭に(C++のsyncVisibleCursor()、反転しない画面ではこれが今の行の印)
+            self.display.show_cursor_at(view.cursor_index - view.top_index, 0)
         else:
             self.display.hide_cursor()
         self.display.flush()
+
+    def prompt_cursor_column(self):
+        """入力中のモードラインの、入力欄のカーソルの桁。"""
+        text = self.mode_line_text()
+        editor = self.prompt.editor if self.prompt is not None else \
+            self.grep_prompt[1] if self.grep_prompt is not None else None
+        tail = editor.text[editor.cursor:] if editor is not None else ''
+        return max(0, min(self.display.columns - 1, utf8.text_width(text) - utf8.text_width(tail)))
 
     def shell_cursor_position(self):
         """コマンド行のカーソルの画面の位置(行, 桁)。"""
@@ -1255,9 +1283,7 @@ class Application:
         self.help_view.set_lines(lines)
         self.help_view.cursor_index = self.help_view.top_index = 0
         if raw_line is not None:
-            self.help_view.go_to_line(raw_line)
-            self.help_view.top_index = self.help_view.cursor_index
-            self.help_view.clamp()
+            self.help_view.go_to_line(raw_line)  # 画面の中ほどに(C++と同じ)
         self.enter_mode(HELP)
         return True
 
@@ -1396,6 +1422,12 @@ class Application:
             self.pending_keys = []
             return self.start_occur_prompt(FIXED if len(keys) == len(o_prefix) + 1 else REGEX)
         if o_prefix and keys == o_prefix + [CTRL_J]:
+            return True
+        if keys == [ESC, ord('g')]:  # ^[gg(EmacsのM-g g): 行番号を打つ(^[Nと同じ)
+            return True
+        if keys == [ESC, ord('g'), ord('g')]:
+            self.pending_keys = []
+            self.goto_digits = ''
             return True
         state, number = self.bindings.match(self.pending_keys)
         if state == 'more':
