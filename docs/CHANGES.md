@@ -32351,3 +32351,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - usilicrcに`ICON-FONT`・`ICON-LINE-HEIGHT`・`ICON-LETTER-SPACING`の節を新設(書式はFONT・LINE-HEIGHT・LETTER-SPACINGと同じ、配るusilicrc・usilicrc.enには説明だけ)。アイコンからの起動では`fontPath()`・`lineHeightRatios()`・`letterSpacingExtras()`がこちらの値を返し、無ければ今までの節の値。アイコンからの起動の画面の`^[{ / ^[}`は`ICON-LETTER-SPACING`へ、`^Of`で選んだ基本のフォントは`ICON-FONT`へ書く(SERIF・SANS-SERIFは共通のまま)。
    - ~/.usilic/historyの`GuiPreferences`も、フォントの大きさ・窓の行数と桁数・フォント・`^[[ / ^[]`の行の高さ・`^[{ / ^[}`の字間を、アイコンからの起動の組として別に持つ(USILICの行の末尾に追加、色と端末のフォントは共通)。最初のアイコンからの起動は-gの値から始まる。
    - テスト3件を追加(Configuration・History・usilicrc::replaceSection)。
+
+1005. **2026-10-22: ^T^KのKEYでhを押すと、HELPの子が飛んだ後に自分の窓を前に出す**
+   - 直接のユーザー依頼("`^T^K`の画面で`h`の時は、`^T^H`画面が無いことが検出できるなら`^T^H`の子を起動して`h`の対象に、`^T^H`がすでにあればPIDを共有のうえ、そちらと`h`連携")。
+   - 仕組み自体は項目983までに入っていた: -Kの子の`h`は親へ「H 番目:行」を送り(`jumpFromKeyToHelp()`)、親は自分のPIDの"help"のFIFO(HELPの子、`^T^H`・-Hで開いたもの)へ回し、いなければHELPの子を開き直して`USILIC_HELP_JUMP`で同じ行へ飛ばす(`forwardHelpRequest()`)。うまく行かなかったのは、HELPの子の側の照合が項目1000(HELP.epubの字下げのNBSP)で外れて「HELPに見つかりません」になっていたため。
+   - 加えて、すでにいるHELPの子は飛んでも窓がKEYの窓の後ろのままだったので、飛べたら`activateOwnWindow()`で前に出す。

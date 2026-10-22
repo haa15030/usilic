@@ -21325,9 +21325,11 @@ void Application::pollChildChannel() {
       cycleExternalWindows(step, fromPid);
       handled = true;
     } else if (line.size() > 2 && line.compare(0, 2, "H ") == 0) {
-      if (channelPath_.size() >= 5 && channelPath_.compare(channelPath_.size() - 5, 5, "/help") == 0)
-        jumpHelpToKeyLine(line.substr(2));
-      else
+      // 2026-10-22、直接のユーザー依頼("^T^Kの画面でhの時は...^T^Hがすでにあればそちらとh連携"): HELPの子は、
+      // 飛んだら自分の窓を前に出す(KEYの窓の後ろに隠れたままにしない)。
+      if (channelPath_.size() >= 5 && channelPath_.compare(channelPath_.size() - 5, 5, "/help") == 0) {
+        if (jumpHelpToKeyLine(line.substr(2))) activateOwnWindow();
+      } else
         forwardHelpRequest(line.substr(2));
       handled = true;
     }
