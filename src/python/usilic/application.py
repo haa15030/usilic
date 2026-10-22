@@ -27,6 +27,7 @@ from .content_view import ContentView, Line, wrap_text, expand_tabs
 from .copy_mode import CopyMode
 from .directory_mode import DirectoryMode
 from .du_mode import DuMode
+from . import epub_vertical as ev
 from .epub_mode import EpubBook, is_epub_file
 from .file_mode import FileMode
 from .grep_mode import GrepMode, FIXED, REGEX, match_spans
@@ -119,6 +120,7 @@ class Application:
         self.occur_items = []      # (元の画面の行, Line)
         self.occur_origin = None   # 一覧を作った元のモード
         self.occur_syntax = FIXED
+        self.occur_global = False  # occur_itemsの行が本全体の行(EPUBの記録の一覧)
         self.info_view = ContentView()
         self.info_targets = []     # INFOの行ごとの開く物(Noneは開けない)
         self.copy = None           # COPY(CopyMode)
@@ -142,6 +144,16 @@ class Application:
         self.epub_chapter_mode = False  # ^Os(章ごと)
         self.epub_lines = []           # 本全体の行(章ごとの時はその一部をfile_viewへ)
         self.epub_chapter = 0
+        # 縦書き(本のOPFがpage-progression-direction="rtl"の時、epub_vertical.py)
+        self.vertical = None           # 組んだ列の並びと位置(VerticalBook)
+        self.vertical_view = ContentView()
+        self.vertical_view.cursor_highlight = False
+        self.vertical_key = None       # 組んだ時の(本の行, 行数, 桁数, 章ごと)、変われば組み直す
+        self.vertical_synced = None    # 縦書きに合わせた本全体の行(横書きの側で動いたら縦書きを合わせる)
+        self.vertical_pieces = {}      # 元の行→[(本全体の行, 頭の空白の数, 論理行の中での始まり)]
+        self.vertical_last_number = None
+        self.vertical_source = None    # 組んだ時の本全体の行(epub_lines、別の物になれば組み直す)
+        self.vertical_prefix = None    # 縦書きのCOPYの'ESC'
         self.work_root = os.path.join('/tmp' if os.path.isdir('/tmp') else tempfile.gettempdir(), '.usilic',
                                       'python-%d' % os.getpid())  # HELPの「/tmp/.usilic/」
         self.work_files = []
@@ -156,7 +168,7 @@ class Application:
     def views(self):
         return [self.directory_view, self.file_view, self.shell_view, self.list_view, self.man_view, self.du_view,
                 self.locate_view, self.key_view, self.help_view, self.toc_view, self.part_toc_view, self.part_view,
-                self.occur_view, self.info_view] + [a.view for a in self.archives]
+                self.occur_view, self.info_view, self.vertical_view] + [a.view for a in self.archives]
 
     def active_view(self):
         return {
@@ -202,6 +214,10 @@ class Application:
     def mode_line_body(self):
         """モードライン(ContentView::ModeLineFields)。欄の間は空白3つ。"""
         view = self.active_view()
+        if self.vertical_selecting():
+            v = self.vertical
+            return 'COPY   ' + ('Record?(y/n)' if v.asking else '^@' if v.anchor is not None else '---') + (
+                '   ' + self.notice if self.notice else '')
         if self.copy is not None:
             return 'COPY   ' + ('^@' if self.copy.anchor is not None and not self.copy.rectangle else
                                 '^X␣' if self.copy.anchor is not None else '---') + (
@@ -232,6 +248,9 @@ class Application:
         if mode == FILE:
             fm = self.file_mode
             if self.epub is not None and fm.current_file == self.epub.path:
+                if self.vertical_active() and self.vertical is not None:
+                    position = self.notice or self.vertical.position_text()
+                    return self.fit_mode_line([self.epub_name, position, str(fm.byte_count), 'EPUB 縦書き'])
                 return self.fit_mode_line([self.epub_name, position, str(fm.byte_count), 'EPUB'])
             pos = self.notice or (mode_line.format_fixed_width(view.cursor_index + 1, len(view.lines))
                                   if self.pager_launch else position)
@@ -263,6 +282,8 @@ class Application:
             return self.fit_mode_line(['PART', position, str(self.part.byte_count), '(egrep)', directory])
         if mode == PART:
             return self.fit_mode_line(['PART', position, str(self.part.byte_count), 'PART: ' + self.part.pattern])
+        if mode == OCCUR and self.occur_global:
+            return self.fit_mode_line(['EPUB', position, str(self.occur_byte_count), '(marks)', self.epub_name])
         if mode == OCCUR:
             label = 'FGREP' if self.occur_syntax == FIXED else 'EGREP'
             return self.fit_mode_line([label, position, str(self.occur_byte_count), '(' + label.lower() + ')',
@@ -348,6 +369,9 @@ class Application:
 
     def redraw(self):
         view = self.active_view()
+        if self.current_mode == FILE and self.vertical_active():
+            self.render_vertical()
+            view = self.vertical_view
         visible = view.visible_lines()
         marks = self.marked_rows()
         grep_on = self.grep_active or self.grep_prompt is not None
@@ -374,6 +398,8 @@ class Application:
         if (self.current_mode == SHELL and self.prompt is None and self.goto_digits is None
                 and self.grep_prompt is None and not self.grep_active):
             self.display.show_cursor_at(*self.shell_cursor_position())
+        elif view is self.vertical_view and self.prompt is None and self.grep_prompt is None:
+            self.display.show_cursor_at(*self.vertical.cursor_screen_position())  # 列カーソルの頭(C++の-cと同じ)
         else:
             self.display.hide_cursor()
         self.display.flush()
@@ -1185,6 +1211,8 @@ class Application:
         if self.macro_recording is not None and not self.playing and special is None:
             self.macro_recording.append(byte)
         self.notice = None
+        if self.vertical_selecting():
+            return self.feed_vertical_copy_key(byte, special)
         if self.copy is not None:
             return self.feed_copy_key(byte, special)
         if self.prompt is not None:
@@ -1334,12 +1362,18 @@ class Application:
                 self.refresh_shell_view()
                 return True
         number = {'Up': 4, 'Left': 4, 'Down': 3, 'Right': 3, 'PageUp': 8, 'PageDown': 5}[special]
+        if self.current_mode == FILE and self.vertical_active() and special in ('Left', 'Right'):
+            number = 3 if special == 'Left' else 4  # 縦書きは←で先(左)へ
         return self.handle_key_number(number, None)
 
     def handle_key_number(self, number, digit):
         """K-番号の機能(Application::handleCommand()の、この版で動く分)。"""
         mode = self.current_mode
         view = self.active_view()
+        if mode == FILE and self.vertical_active():
+            result = self.vertical_number(number)
+            if result is not None:
+                return result
         extra = self.handle_stage4_number(number, digit, mode, view)
         if extra is not None:
             return extra
@@ -1523,6 +1557,13 @@ class Application:
 
     def pop_mark(self):
         """^U^␣: 新しいマークから順に遡って移る(遡った物は一番古い所へ回す)。"""
+        if self.current_mode == FILE and self.vertical_active():  # 縦書きの記録は1つ(C++と同じ)
+            self.sync_vertical()
+            if not self.vertical.pop_mark():
+                self.show_transient_notice('No mark set')
+                return False
+            self.vertical_to_file()
+            return True
         view = self.active_view()
         for i in range(len(self.mark_ring) - 1, -1, -1):
             v, index = self.mark_ring[i]
@@ -2020,6 +2061,7 @@ class Application:
             self.history.push_recent(hist.RECENT_FGREP_PATTERN if syntax == FIXED else hist.RECENT_EGREP_PATTERN,
                                      pattern)
         self.occur_items, self.occur_syntax, self.occur_origin = found, syntax, self.current_mode
+        self.occur_global = False
         self.grep.pattern, self.grep.syntax, self.grep.view = pattern, syntax, view
         self.grep.matches = [i for i, _ in found]
         self.occur_byte_count = sum(len(l.text.encode('utf-8')) + 1 for _, l in found)
@@ -2034,6 +2076,10 @@ class Application:
         if not 0 <= i < len(self.occur_items):
             return False
         line = self.occur_items[i][0]
+        if self.occur_global:  # EPUBの記録の一覧(^O^E): 本全体の行
+            self.enter_mode(self.occur_origin)
+            self.set_epub_cursor(line)
+            return True
         self.grep.current = i
         self.grep.persistent = True
         self.enter_mode(self.occur_origin)
@@ -2265,6 +2311,11 @@ class Application:
     def start_copy(self):
         if self.prompt is not None:
             return False
+        if self.current_mode == FILE and self.vertical_active():  # 縦書きのまま字を範囲指定する
+            self.sync_vertical()
+            self.vertical.start_select()
+            self.vertical_prefix = None
+            return True
         self.copy = CopyMode(self.active_view())
         self.copy_prefix = None
         return True
@@ -2330,6 +2381,10 @@ class Application:
         c = self.copy
         text = c.collected_text(for_tool=to_tool)
         self.copy = None
+        return self.deliver_copied_text(text, to_tool)
+
+    def deliver_copied_text(self, text, to_tool):
+        """COPYで集めた字をクリップボードへ(to_toolならTOOLのプロンプトへも)。"""
         if not text:
             return False
         self.clipboard_text = text
@@ -2676,15 +2731,17 @@ class Application:
         self.show_transient_notice('Scroll: chapter' if self.epub_chapter_mode else 'Scroll: continuous')
         return True
 
-    def follow_epub_link(self):
-        """本文の^M: カーソル行の最初のリンク(本の中は飛んで^Gで戻る、Webは^Owのモードで)。"""
-        lines = self.file_view.lines
-        if not lines:
-            return False
-        line = lines[self.file_view.cursor_index]
-        if not line.links:
-            return False
-        href = line.links[0][2]
+    def follow_epub_link(self, href=None):
+        """本文の^M: カーソル行の最初のリンク(本の中は飛んで^Gで戻る、Webは^Owのモードで)。縦書きは選んでいる
+        リンク(href)。"""
+        if href is None:
+            lines = self.file_view.lines
+            if not lines:
+                return False
+            line = lines[self.file_view.cursor_index]
+            if not line.links:
+                return False
+            href = line.links[0][2]
         if re.match(r'[a-z]+:', href):
             return self.open_url(href)
         target = self.epub.line_for(href)
@@ -2758,28 +2815,287 @@ class Application:
             return self.open_epub(path)
         return False
 
-    def show_epub_marks(self):
-        """^O^E: ~/.usilic/epub-marks.txt(「本.epub:章のパス:位置: 文字列」)の一覧、^Mでその本の章へ。"""
-        path = os.path.join(os.path.expanduser('~'), '.usilic', 'epub-marks.txt')
+    def epub_marks_path(self):
+        return os.path.join(os.path.expanduser('~'), '.usilic', 'epub-marks.txt')
+
+    def read_epub_marks(self):
         try:
-            with open(path, encoding='utf-8', errors='replace') as f:
-                items = [l.rstrip('\n') for l in f if '.epub:' in l]
+            with open(self.epub_marks_path(), encoding='utf-8', errors='replace') as f:
+                return [l.rstrip('\n') for l in f if '.epub:' in l]
         except OSError:
-            items = []
+            return []
+
+    @staticmethod
+    def parse_epub_mark(entry):
+        """「本.epub:章のパス:位置: 文字列」を(本, 章のパス, 位置, 文字列)に。違えばNone。"""
+        book, sep, rest = entry.partition('.epub:')
+        path, _, rest = rest.partition(':')
+        digits, sep2, text = rest.partition(': ')
+        if not sep or not sep2 or not digits.isdigit():
+            return None
+        return book + '.epub', path, int(digits), text
+
+    def epub_mark_place(self, chapter, offset, text, logical=None):
+        """開いている本の記録の位置を(本全体の行, その行の中の字の範囲)に。無ければNone。"""
+        chapters = {href: start for start, href in getattr(self.epub, 'chapter_files', [])}
+        if chapter not in chapters:
+            return None
+        sources, pieces = logical or self.epub_logical_lines()
+        place = ev.place_in_chapter([x.raw for x in sources], {x.raw: x.text for x in sources}, chapters[chapter],
+                                    offset, text)
+        if place is None:
+            return None
+        raw, pos = place
+        g, pad, start = next((p for p in reversed(pieces.get(raw, [])) if p[1] is not None and p[2] <= pos),
+                             (None, 0, 0))
+        if g is None:
+            return None
+        shown = self.epub_lines[g].text
+        begin = min(pos - start + pad, len(shown))
+        return g, (begin, min(begin + len(text), len(shown)))
+
+    def show_epub_marks(self):
+        """^O^E: 記録(~/.usilic/epub-marks.txt、「本.epub:章のパス:位置: 文字列」)の一覧。本文からは今の本の記録を、
+        記録した字を強調した本文の行の一覧に(C++のstartEpubMarkList()、^Mでその行へ)。他の画面からは全部の本の
+        記録(^Mでその本を開いてその所へ)。"""
+        entries = [e for e in (self.parse_epub_mark(x) for x in self.read_epub_marks()) if e]
+        if self.in_epub_body():
+            book = os.path.basename(self.epub.path)
+            logical = self.epub_logical_lines()
+            by_line = {}
+            for name, chapter, offset, text in entries:
+                if name != book:
+                    continue
+                found = self.epub_mark_place(chapter, offset, text, logical)
+                if found is not None:
+                    by_line.setdefault(found[0], []).append(found[1])
+            if not by_line:
+                self.show_transient_notice('No marks')
+                return False
+            lines = sorted(by_line)
+            self.occur_items = [(g, self.epub_lines[g]) for g in lines]
+            self.occur_global, self.occur_origin, self.occur_syntax = True, FILE, FIXED
+            self.occur_byte_count = sum(len(self.epub_lines[g].text.encode('utf-8')) + 1 for g in lines)
+            self.occur_view.set_lines([Line(self.epub_lines[g].text, i + 1,
+                                            attributes=[(a, b, 'match') for a, b in by_line[g] if b > a])
+                                       for i, g in enumerate(lines)])
+            self.occur_view.cursor_index = self.occur_view.top_index = 0
+            self.enter_mode(OCCUR)
+            return True
+        items = [x for x in self.read_epub_marks() if self.parse_epub_mark(x)]
         if not items:
             self.show_transient_notice('No marks')
             return False
 
         def choose(item):
-            book, _, rest = item.partition('.epub:')
-            chapter = rest.split(':', 1)[0]
-            if not self.open_epub(book + '.epub'):
+            name, chapter, offset, text = self.parse_epub_mark(item)
+            path = next((self.strip_tags(f) for f in self.ring(hist.RECENT_FILE)
+                         if os.path.basename(self.strip_tags(f)) == name), name)  # FILEの履歴から本の場所を
+            if not self.open_epub(path):
                 return False
-            line = self.epub.line_for(chapter)
+            found = self.epub_mark_place(chapter, offset, text)
+            line = found[0] if found else self.epub.line_for(chapter)
             if line is not None:
                 self.set_epub_cursor(line)
             return True
         return self.show_list(items, 'EPUB', choose, False)
+
+    # --- EPUBの縦書き(epub_vertical.py) ---
+    def vertical_active(self):
+        """縦書きの本の本文を見ている(縦横は本が決める、OPFのpage-progression-direction="rtl"、C++と同じ)。"""
+        return self.in_epub_body() and self.epub.right_to_left
+
+    def vertical_selecting(self):
+        return (self.vertical is not None and self.vertical.selecting and self.current_mode == FILE
+                and self.vertical_active() and self.prompt is None)
+
+    def epub_logical_lines(self):
+        """本全体の行(epub_lines)を元の行ごとの論理行につなぎ直す(字下げの頭の空白は除き、縦書きでは列の頭の
+        空きにする)。(SourceLineの並び, 元の行→[(本全体の行, 頭の空白の数, 論理行の中での始まり)])。"""
+        sources, pieces = [], {}
+        indents = getattr(self.epub, 'indents', {})
+        for g, line in enumerate(self.epub_lines):
+            raw = line.raw_line_number
+            first, left = indents.get(raw, (0, 0))
+            head = not sources or sources[-1].raw != raw
+            pad = min(first if head else left, len(line.text) - len(line.text.lstrip(' ')))
+            text = line.text[pad:]
+            runs = [(max(0, a - pad), max(0, b - pad), t) for a, b, t in line.attributes]
+            links = [(max(0, a - pad), max(0, b - pad), h) for a, b, h in line.links]
+            if head:
+                sources.append(ev.SourceLine(text, raw, runs, links, (first + 1) // 2, (left + 1) // 2))
+                pieces[raw] = [(g, pad, 0)]
+                continue
+            src = sources[-1]
+            offset = len(src.text)
+            src.text += text
+            src.runs += [(a + offset, b + offset, t) for a, b, t in runs]
+            for a, b, h in links:  # 折り返しで切れたリンクは1つに
+                if src.links and src.links[-1][1] == a + offset and src.links[-1][2] == h:
+                    src.links[-1] = (src.links[-1][0], b + offset, h)
+                else:
+                    src.links.append((a + offset, b + offset, h))
+            pieces[raw].append((g, pad, offset))
+        return sources, pieces
+
+    def sync_vertical(self):
+        """縦書きの列を(本・幅・行数・章ごとが変わっていれば)組み直し、横書きの側(FGREP・目次・リンク等)で
+        動いていれば、その行を縦書きの右端に置く。"""
+        key = (self.file_view.height, self.display.columns, self.epub_chapter_mode)
+        line = self.global_epub_line()
+        if self.vertical is None or key != self.vertical_key or self.vertical_source is not self.epub_lines:
+            sources, self.vertical_pieces = self.epub_logical_lines()
+            chapter_raws = {self.epub_lines[i].raw_line_number for i in self.epub_toc_lines
+                            if 0 <= i < len(self.epub_lines)}
+            self.vertical = ev.VerticalBook(sources, chapter_raws, self.file_view.height, self.display.columns,
+                                            self.epub_chapter_mode)
+            self.vertical_key, self.vertical_source, self.vertical_synced = key, self.epub_lines, None
+        if line != self.vertical_synced:
+            self.show_vertical_line(line)
+
+    def show_vertical_line(self, line):
+        if not 0 <= line < len(self.epub_lines):
+            return
+        raw = self.epub_lines[line].raw_line_number
+        pos = next((start for g, _, start in self.vertical_pieces.get(raw, []) if g == line), 0)
+        self.vertical.show_raw(raw, pos)
+        self.vertical_synced = line
+
+    def vertical_to_file(self):
+        """縦書きの列カーソルの所へ、横書きの側(file_view、FILEの位置の記録・目次・^G)を合わせる。"""
+        v = self.vertical
+        if not v.cols:
+            return
+        column = v.cols[v.cursor]
+        pos = next((cell.start for cell in column.cells if cell.start >= 0), 0)
+        line = None
+        for g, _, start in self.vertical_pieces.get(column.raw, []):
+            if start <= pos:
+                line = g
+        if line is None:
+            return
+        self.set_epub_cursor(line)
+        self.vertical_synced = line
+
+    def vertical_highlights(self):
+        """FGREP/EGREPの一致の字(元の行→論理行の中の範囲)。"""
+        grep_on = self.grep_active or self.grep_prompt is not None or self.grep.persistent
+        if not grep_on or self.grep.view is not self.file_view or not self.grep.pattern:
+            return None
+        offset = self.chapter_bounds(self.epub_chapter)[0] if self.epub_chapter_mode else 0
+        out = {}
+        for index in self.grep.matches:
+            g = index + offset
+            if not 0 <= g < len(self.epub_lines):
+                continue
+            line = self.epub_lines[g]
+            for piece, pad, start in self.vertical_pieces.get(line.raw_line_number, []):
+                if piece == g:
+                    out.setdefault(line.raw_line_number, []).extend(
+                        (a - pad + start, b - pad + start) for a, b in match_spans(line.text, self.grep.pattern,
+                                                                                    self.grep.syntax))
+        return out
+
+    def render_vertical(self):
+        self.sync_vertical()
+        rows = self.vertical.render(self.vertical_highlights())
+        self.vertical_view.set_lines([Line(text, None, attributes=runs) for text, runs in rows])
+        self.vertical_view.cursor_index = self.vertical_view.top_index = 0
+
+    def vertical_number(self, number):
+        """縦書きの本文のK-番号(移動・^M・^␣)。該当しなければNone(ふつうの処理へ、横書きの側で動けば
+        sync_vertical()が縦書きを合わせる)。"""
+        self.sync_vertical()
+        v = self.vertical
+        last, self.vertical_last_number = self.vertical_last_number, number
+        if number == 28:
+            href = v.selected_href()
+            if href is None:
+                return False
+            v.mark = v.cursor
+            return self.follow_epub_link(href)
+        if number == 36:
+            v.mark = v.cursor
+            self.show_transient_notice('Mark set')
+            return True
+        pages = (5, 6, 7, 8, 9, 10)
+        result = v.command(number, repeated_page=last in pages and number in pages)
+        if result is None:
+            return None
+        if result is False and number == 14:
+            self.show_transient_notice('No mark set')
+        self.vertical_to_file()
+        return result
+
+    def feed_vertical_copy_key(self, byte, special):
+        """縦書きのCOPYのキー。^N/←で次の列(左)、^P/→で前の列、^F/↓で下のマス、^B/↑で上のマス、^A/^Eで
+        列の頭/末、^V/^[vで1画面先/前。^@で範囲を始め、もう一度で閉じてRecord?(y/n)(yで記録)。^[wで
+        クリップボードへ、^[tでTOOLへ、^Gでやめる。"""
+        v = self.vertical
+        if v.asking:
+            v.asking = False
+            if special is None and byte in (ord('y'), ord('Y')):
+                return self.record_vertical_selection()
+            return True
+        if special is not None:
+            columns, cells = {'Up': (0, -1), 'Down': (0, 1), 'Left': (1, 0), 'Right': (-1, 0),
+                              'PageUp': (-v.per_screen, 0), 'PageDown': (v.per_screen, 0)}[special]
+            v.move_point(columns, cells)
+            return True
+        prefix, self.vertical_prefix = self.vertical_prefix, None
+        if prefix == 'ESC':
+            if byte in (ord('w'), ord('t')):
+                text = v.selection_text(' ' if byte == ord('t') else '\n')
+                v.end_select()
+                if not text:
+                    self.show_transient_notice('No string')
+                    return False
+                return self.deliver_copied_text(text, byte == ord('t'))
+            if byte == ord('v'):
+                v.move_point(-v.per_screen, 0)
+            return True
+        moves = {0x0E: (1, 0), 0x10: (-1, 0), 0x06: (0, 1), 0x02: (0, -1), 0x16: (v.per_screen, 0)}
+        if byte == ESC:
+            self.vertical_prefix = 'ESC'
+        elif byte in (0, CTRL_SPACE):
+            v.toggle_anchor()
+        elif byte == CTRL_G:
+            v.end_select()
+        elif byte in moves:
+            v.move_point(*moves[byte])
+        elif byte in (0x01, 0x05):
+            v.point_to_column_edge(byte == 0x05)
+        return True
+
+    def record_vertical_selection(self):
+        """範囲の字を~/.usilic/epub-marks.txtへ「本.epub:章のパス:位置: 文字列」で記録する(位置は章の頭からの
+        字数、C++のrecordEpubSelection()と同じ書式、^O^Eの一覧で見る)。"""
+        v = self.vertical
+        ranges = v.selection_ranges()
+        text = v.selection_text()
+        v.end_select()
+        if not text or not ranges:
+            self.show_transient_notice('No string')
+            return True
+        raw, pos = ranges[0][0], ranges[0][1]
+        chapter = None
+        for start, href in self.epub.chapter_files:
+            if start <= raw:
+                chapter = (start, href)
+        if chapter is None:
+            self.show_transient_notice('No chapter')
+            return True
+        path = self.epub_marks_path()
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'a', encoding='utf-8') as f:
+                f.write('%s:%s:%d: %s\n' % (os.path.basename(self.epub.path), chapter[1],
+                                            v.offset_in_chapter(chapter[0], raw, pos), text))
+        except OSError:
+            self.show_transient_notice('Cannot write ' + path)
+            return True
+        self.show_transient_notice('Recorded: ' + text[:20])
+        return True
 
     # --- 実行ループ(main.cppのrunTerminalPhase()) ---
     def run(self, resized):

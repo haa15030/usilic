@@ -302,8 +302,10 @@ class EpubBook:
     def render(self, width):
         """本全体を画面の行に。(行の並び, 目次の各項目の行の番号)を返す。"""
         lines, anchors, number = [], {}, 0
+        self.indents, self.chapter_files = {}, []  # 縦書き用: 元の行→(1行目, 2行目から)の桁、(章の頭の元の行, パス)
         for href in self.spine:
             anchors[href] = len(lines)
+            self.chapter_files.append((number + 1, href))
             for block in self.documents[href]:
                 number += 1
                 for anchor in block.anchors:
@@ -326,6 +328,7 @@ class EpubBook:
                     runs = [(max(0, s - shift), max(0, e - shift), a) for s, e, a in runs]
                     links = [(max(0, s - shift), max(0, e - shift), h) for s, e, h in links]
                 left, first = self._indent(block)
+                self.indents[number] = (first, left)
                 lines.extend(_wrap_with_indent(text, runs, width, first, left, number, links))
         toc_lines = []
         for href, _, _ in self.toc:
