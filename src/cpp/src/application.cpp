@@ -660,6 +660,7 @@ const char *const kUsilicWebDefaultUrl = "http://localhost/usilic-web/";
 // (Epubの時はサイトの入口をEPUBにはできないのでOpen、openEpubListSiteUrl()参照)。
 const char *const kEpubListSiteUrls[] = {
     "https://yomou.syosetu.com/",   // 小説家になろう(読もう)
+    "https://ncode.syosetu.com/",   // 小説家になろうの作品の置き場(2026-10-22、直接のユーザー報告"^J^Eにhttps://ncode.syosetu.com/がない")
     "https://noc.syosetu.com/",     // ノクターンノベルズ
     "https://kakuyomu.jp/",         // カクヨム
     "https://www.aozora.gr.jp/",    // 青空文庫
@@ -8506,12 +8507,16 @@ bool Application::openEpubPromptSpecial(const std::string &text) {
       R"(^\s*(https?://www\.aozora\.gr\.jp/cards/[0-9]+/(card[0-9]+|files/[0-9]+_[0-9]+)\.html)\s*$)", std::regex::icase);
   // 2026-10-22、直接のユーザー依頼(なろうの作品のURLも"EPUBにして"): なろう・ノクターン/ムーンライトの作品のURL
   // (話数の付いたURLも)も、カクヨムの作品のURLと同じく^Owの今の対処に関わらずnarou2epubで(作品のURLにそろえる)。
+  // 同日、直接のユーザー報告("^J^Eのリストの一番上、https://yomou.syosetu.com/a1234bcではエラー(ncodeの方はOK)"):
+  // ^J^Eの入口(yomou・noc)の後に作品番号を足した形も、作品の置き場(ncode・novel18)のURLに読み替える。
   static const std::regex kNarouUrl(
-      R"(^\s*https?://(ncode|novel18)\.syosetu\.com/(n[0-9]{4,}[a-z]+)(/[0-9]+)?/?\s*$)", std::regex::icase);
+      R"(^\s*https?://(ncode|novel18|yomou|noc)\.syosetu\.com/(n[0-9]{4,}[a-z]+)(/[0-9]+)?/?\s*$)", std::regex::icase);
   std::smatch match;
   if (std::regex_match(text, match, kNarouUrl)) {
     std::string host = match[1].str(), number = match[2].str();
     for (char &c : host) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (host == "yomou") host = "ncode";
+    if (host == "noc") host = "novel18";
     for (char &c : number) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     for (const auto &handler : configuration_.urlHandlers())
       if (handler.name == "Epub") return runNarouToEpub(handler, "https://" + host + ".syosetu.com/" + number + "/");

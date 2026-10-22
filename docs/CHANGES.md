@@ -32403,3 +32403,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 直接のユーザー依頼(なろうでは`https://noc.syousetu.com/A1234BC`等が"スルー"、"EPUBにして")。^Je・^J^Eで、なろうは作品番号(N1234AB)だけをnarou2epubへ回し、URLは本文のWebのリンクと同じく^Owの今のモード(既定はOpen)で開いていた。
    - `openEpubPromptSpecial()`: `https://ncode.syosetu.com/n…/`・`https://novel18.syosetu.com/n…/`(話数の付いた`…/n…/5/`も、大文字の番号も)を、カクヨムの作品のURLと同じく、作品のURL(`https://<ホスト>.syosetu.com/<番号>/`)にそろえてnarou2epubへ。正規表現は手元で5通り確かめた(narou2epubは外のサイトへ取りに行くので、実際には動かしていない)。報告のURLは`syosetu`の綴り違い・番号の形(N+数字4桁以上+英字)違いで、これは今後もURLとして^Owのモードで開く。
    - src/HELP_.txt・src/HELP_en_.txt(350行目): 作品番号の後に「や作品の ＵＲＬ（https://ncode.syosetu.com/n1234ab/ 等）」を足し、その行を1文1行に分けた。
+
+1016. **2026-10-22: ^J^Eの入口になろうの作品の置き場を足し、入口のURLに作品番号を足した形も作品として開く**
+   - 直接のユーザー報告("^J^Eには`https://ncode.syosetu.com/`がないのと、リストの一番上、`https://yomou.syosetu.com/a1234bc`ではエラー（ncodeの方はOK）")。
+   - `kEpubListSiteUrls`に`https://ncode.syosetu.com/`を足した(yomouの次)。`isEpubNovelSiteUrl()`もそれを小説サイトの入口とみなすので、一覧に「(作品ID)」が付き、選ぶと^Owのモードに関わらずOpen(ブラウザ)で開く。
+   - 項目1015の作品のURLの判定に、入口のホストの`yomou`(→`ncode`)・`noc`(→`novel18`)を足した。`https://yomou.syosetu.com/n6486mg`は`https://ncode.syosetu.com/n6486mg/`としてnarou2epubへ。作品番号は「n+数字4桁以上+英字」なので、`a1234bc`のような形は今までどおり作品とみなさない(Epubのモードでは「Not a Narou work」)。
