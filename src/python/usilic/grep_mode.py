@@ -54,7 +54,8 @@ class GrepMode:
         self.pattern = ''
         self.syntax = FIXED
         self.matches = []   # 一致した行(画面の行の番号)
-        self.current = -1   # 今いる一致(matchesの番号)
+        self.occurrences = []  # 一致の出現(行, (開始, 終わり))、1行に2つあれば2つ(C++のgrepInPlaceOccurrences_)
+        self.current = -1   # 今いる一致(occurrencesの番号)
         self.origin = 0     # 探し始めた時のカーソル(^Gで戻る所)
         self.view = None    # 探した画面(強調はその画面だけ)
         self.persistent = False  # ^O^Sの一覧から飛んだ後も強調を残す
@@ -62,19 +63,33 @@ class GrepMode:
     def search(self, lines, pattern, syntax, origin):
         self.pattern, self.syntax, self.origin = pattern, syntax, origin
         found = grep_line_indices(lines, pattern, syntax) if pattern else []
-        self.matches = found or []
-        self.current = 0 if self.matches else -1  # 最初の一致(カーソルの位置に関わらず、C++版と同じ)
+        self.set_matches(lines, found or [])
         return found is not None
+
+    def set_matches(self, lines, indices):
+        """一致した行から出現の並びを作り、最初の一致へ(カーソルの位置に関わらず、C++版と同じ)。"""
+        self.matches = list(indices)
+        self.occurrences = []
+        for i in self.matches:
+            text = lines[i] if 0 <= i < len(lines) else ''
+            spans = match_spans(text, self.pattern, self.syntax) or [(0, len(text))]  # 見つからなければ行全体
+            self.occurrences += [(i, span) for span in spans]
+        self.current = 0 if self.occurrences else -1
+
+    def select_line(self, line):
+        """行lineの最初の出現を今の一致に(一覧から飛んだ時)。"""
+        self.current = next((k for k, (i, _) in enumerate(self.occurrences) if i == line), self.current)
 
     def label(self):
         return 'FGREP' if self.syntax == FIXED else 'EGREP'
 
     def position_text(self):
-        return '%d/%d' % (self.current + 1, len(self.matches)) if self.matches else '0/0'
+        return '%d/%d' % (self.current + 1, len(self.occurrences)) if self.occurrences else '0/0'
 
     def move(self, step):
-        if self.matches:
-            self.current = max(0, min(len(self.matches) - 1, self.current + step))
+        """次/前の出現へ。端では反対の端へ巡回する(C++のjumpToGrepInPlaceMatch())。"""
+        if self.occurrences:
+            self.current = (self.current + step) % len(self.occurrences)
 
     def current_line(self):
-        return self.matches[self.current] if self.current >= 0 else None
+        return self.occurrences[self.current][0] if 0 <= self.current < len(self.occurrences) else None

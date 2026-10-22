@@ -696,7 +696,10 @@ class EpubBook:
                     if link:
                         target = link if re.match(r'[a-z]+:', link) else (
                             self._resolve(base, link) if not link.startswith('#') else href + link)
-                        line_links.append((pos, pos + len(piece), target))
+                        if line_links and line_links[-1][1] == pos and line_links[-1][2] == target:
+                            line_links[-1] = (line_links[-1][0], pos + len(piece), target)  # ルビ等で切れた同じリンク
+                        else:
+                            line_links.append((pos, pos + len(piece), target))
                         if not re.match(r'[a-z]+:', target):
                             links.append((number, target))
                     text += piece

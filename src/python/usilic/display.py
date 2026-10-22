@@ -43,11 +43,17 @@ class TerminalDisplay:
             used += w
         return ''.join(out) + ' ' * (width - used)
 
-    def draw_row(self, row, text, reverse=False, underline=False):
+    def draw_row(self, row, text, reverse=False, underline=False, to_edge=False):
+        """1行を描く。反転・下線は字の所まで(C++のContentView::renderLine()、highlightToRowEnd_が既定でfalse)、
+        to_edgeなら右端まで(モードライン)。"""
         attr = (curses.A_REVERSE if reverse else 0) | (curses.A_UNDERLINE if underline else 0)
         width = self.columns - (1 if row == self.rows - 1 else 0)  # 右下の桁に書くとcursesがエラーにする
+        fitted = self._fit(text, width)
+        body = fitted if to_edge or not attr else fitted.rstrip(' ')
         try:
-            self.screen.addstr(row, 0, self._fit(text, width), attr)
+            self.screen.addstr(row, 0, body, attr)
+            if len(body) < len(fitted):
+                self.screen.addstr(row, utf8.text_width(body), fitted[len(body):], 0)
         except curses.error:
             pass
 
@@ -58,7 +64,7 @@ class TerminalDisplay:
             return
         base = (curses.A_REVERSE if reverse else 0) | (curses.A_UNDERLINE if underline else 0)
         names = {'bold': curses.A_BOLD, 'underline': curses.A_UNDERLINE, 'match': self.match_attr,
-                 'reverse': curses.A_REVERSE}
+                 'reverse': curses.A_REVERSE, 'italic': getattr(curses, 'A_ITALIC', curses.A_UNDERLINE)}
         column = 0
         for index, ch in enumerate(text):
             w = utf8.display_width_of_codepoint(ord(ch))
@@ -76,7 +82,7 @@ class TerminalDisplay:
             column += w
 
     def draw_mode_line(self, text):
-        self.draw_row(self.rows - 1, text, reverse=True)
+        self.draw_row(self.rows - 1, text, reverse=True, to_edge=True)
 
     def show_cursor_at(self, row, column):
         try:

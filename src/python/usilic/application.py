@@ -29,6 +29,7 @@ from .directory_mode import DirectoryMode
 from .du_mode import DuMode
 from . import epub_vertical as ev
 from .epub_mode import EpubBook, is_epub_file
+from .markdown import is_markdown_file, render_markdown
 from .file_mode import FileMode
 from .grep_mode import GrepMode, FIXED, REGEX, match_spans
 from .key_bindings import CTRL_SPACE, DIGIT, prefix_label
@@ -551,6 +552,8 @@ class Application:
         path = os.path.abspath(self.pager_files[index])
         if is_epub_file(path) and self.open_epub(path, push=False):
             return True
+        if is_markdown_file(path) and self.open_markdown(path, push=False):
+            return True
         return self.file_mode.load_file(path, self.wrap_width(), self.file_view.height)
 
     # --- ファイルを開く ---
@@ -609,6 +612,8 @@ class Application:
             offending = None if raw else self.configuration.looks_binary(head)
             if offending is not None:
                 return self.show_binary_info(path, offending, tail)
+            if not raw and is_markdown_file(path):
+                return self.open_markdown(path, tail)
             if not self.file_mode.load_file(path, width, self.file_view.height):
                 self.show_transient_notice('Cannot read: ' + path)
                 return False
@@ -620,6 +625,25 @@ class Application:
         self.file_mode.record_history = not (streaming or raw)
         self.file_mode.restore_from_history()
         self.enter_mode(FILE)
+        return True
+
+    def open_markdown(self, path, tail=None, push=True):
+        """.md・.markdown: 文字装飾を付けて(C++のmarkdownToHelpMarkup()+expandHelpMarkup()、^[^Mは生のまま)。"""
+        try:
+            with open(path, 'rb') as f:
+                source = f.read(self.configuration.buffer_limit_bytes()).decode('utf-8', 'replace')
+        except OSError:
+            self.show_transient_notice('Cannot read: ' + path)
+            return False
+        self.file_mode.set_rendered(path, render_markdown(source, self.wrap_width()), os.path.getsize(path),
+                                    self.wrap_width(), renderer=lambda w: render_markdown(source, w))
+        self.file_mode.tail = tail
+        self.file_mode.record_history = not self.pager_launch
+        self.file_mode.restore_from_history()
+        if push:
+            self.enter_mode(FILE)
+        else:
+            self.current_mode = FILE
         return True
 
     def show_binary_info(self, path, offending, tail=None, data=None):
@@ -1835,7 +1859,7 @@ class Application:
         if self.current_mode == FILE and self.file_mode.has_active_stream():
             self.file_mode.load_all()  # ページャーは残りを全部読んでから(docs/CHANGES.md項目1009)
         self.grep_active = False
-        self.grep.matches, self.grep.current, self.grep.pattern = [], -1, ''
+        self.grep.matches, self.grep.occurrences, self.grep.current, self.grep.pattern = [], [], -1, ''
         self.grep.persistent = False
         self.grep.view = self.active_view()
         self.grep.origin = self.active_view().cursor_index
@@ -1890,8 +1914,8 @@ class Application:
                 self.prompt = None
                 self.grep_prompt = (syntax, editor)
             return result
-        if byte == 0x13 and syntax == FIXED:  # 打っている間の^S: 次の一致へ
-            self.grep.move(1)
+        if byte in (0x13, 0x0E, 0x10) and syntax == FIXED:  # 打っている間の^S・^N: 次の一致へ、^P: 前へ(巡回)
+            self.grep.move(-1 if byte == 0x10 else 1)
             self.show_current_match()
             return True
         if not self.edit_line(editor, byte):
@@ -2125,7 +2149,7 @@ class Application:
         self.occur_items, self.occur_syntax, self.occur_origin = found, syntax, self.current_mode
         self.occur_global = False
         self.grep.pattern, self.grep.syntax, self.grep.view = pattern, syntax, view
-        self.grep.matches = [i for i, _ in found]
+        self.grep.set_matches([l.text for l in view.lines], [i for i, _ in found])
         self.occur_byte_count = sum(len(l.text.encode('utf-8')) + 1 for _, l in found)
         self.occur_view.set_lines([Line(l.text, i + 1, attributes=l.attributes) for i, (_, l) in enumerate(found)])
         self.occur_view.cursor_index = self.occur_view.top_index = 0
@@ -2142,7 +2166,7 @@ class Application:
             self.enter_mode(self.occur_origin)
             self.set_epub_cursor(line)
             return True
-        self.grep.current = i
+        self.grep.select_line(line)
         self.grep.persistent = True
         self.enter_mode(self.occur_origin)
         view = self.active_view()
