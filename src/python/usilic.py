@@ -13,6 +13,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from usilic import history as hist  # noqa: E402
 from usilic.application import Application  # noqa: E402
 from usilic.display import TerminalDisplay  # noqa: E402
 from usilic.key_input import KeyInput  # noqa: E402
@@ -53,10 +54,21 @@ def main():
                 return 'usilic: cannot read ' + missing[0]
             app.start_pager(args)
         else:
+            # ディレクトリで起動した時だけ、C++版と同じ~/.usilic/historyを読み書きする(積むたびに保存、C++の
+            # setOnRingPushed()と同じくコマンドの履歴は除く)。
+            usilic_dir = os.path.join(os.path.expanduser('~'), '.usilic')
+            history = hist.load_from_disk(usilic_dir) if os.path.isdir(usilic_dir) else None
+            if history is not None:
+                history.on_ring_pushed = lambda category: (
+                    hist.save_to_disk(history, usilic_dir) if category != hist.SHELL_COMMAND else None)
+                app.directory_mode.history = app.file_mode.history = history
             if not app.start_directory_listing(args[0] if args else '.'):
                 return 'usilic: cannot list ' + (args[0] if args else '.')
+            app.on_exit = lambda: (app.save_positions(), history and hist.save_to_disk(history, usilic_dir))
         signal.signal(signal.SIGWINCH, on_winch)
         app.run(resized)
+        if getattr(app, 'on_exit', None):
+            app.on_exit()
         return None
 
     message = curses.wrapper(run)

@@ -111,6 +111,12 @@ class Application:
         self.display.draw_mode_line(self.mode_line_text())
         self.display.flush()
 
+    def save_positions(self):
+        """終了の時: 今の画面の位置を覚える(保存はusilic.pyが)。"""
+        if self.current_mode == FILE:
+            self.file_mode.save_cursor_position()
+        self.directory_mode.save_current_cursor_position()
+
     def show_transient_notice(self, text):
         self.notice = localized(text)
 
@@ -160,6 +166,7 @@ class Application:
             self.show_transient_notice('Cannot read: ' + target)
             return False
         self.file_mode.load_all()  # (ls)から開いたファイルは全部読む(C++と同じく「001/500」)
+        self.file_mode.restore_from_history()
         self.current_mode = FILE
         return True
 
@@ -288,6 +295,8 @@ class Application:
             if index != self.pager_index and self.pager_files[0] != '(stdin)':
                 self.open_pager_file(index)
             return True
+        if command in (Command.PARENT_DIRECTORY, Command.CURRENT_DIRECTORY) and self.current_mode == FILE:
+            self.file_mode.save_cursor_position()
         if command == Command.PARENT_DIRECTORY:
             if self.pager_launch:
                 self.show_transient_notice('Not available in pager')
@@ -304,6 +313,7 @@ class Application:
             return self.directory_mode.enter_directory(self.directory_mode.current_directory)
         if command == Command.BACK:
             if self.current_mode == FILE and not self.pager_launch:
+                self.file_mode.save_cursor_position()
                 self.current_mode = DIRECTORY
                 return True
             if self.current_mode == DIRECTORY and self.directory_mode.mode_stack:

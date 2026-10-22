@@ -5,6 +5,8 @@ ContentViewへ渡す(C++ではPipeBufferの役目)。
 """
 import os
 
+from . import history as hist
+
 from .content_view import Line, wrap_text, expand_tabs
 
 
@@ -32,6 +34,7 @@ class FileMode:
         self.width = 80
         self._partial = b''
         self.raw_texts = []      # 元の行(折り返す前、幅が変わった時の組み直し用)
+        self.history = None      # (ls)から開いた時だけ(ページャーでは履歴に触れない)
 
     def has_active_stream(self):
         return self.stream is not None
@@ -109,6 +112,41 @@ class FileMode:
             self._append_raw_line(data)
         self.view.clamp()
         return len(self.view.lines) > before
+
+    def restore_from_history(self):
+        """FileMode::loadFile()の後半: FILEの履歴へ積み、前回の位置へ(元の行の番号で合わせる)。"""
+        if self.history is None:
+            return
+        self.history.push_recent(hist.RECENT_FILE, self.current_file)
+        pos = self.history.position_for(hist.FILE, self.current_file)
+        if pos is None:
+            return
+        lines = self.view.lines
+        index, last = pos.row, len(lines) - 1
+        if pos.line_number > 0 and pos.total_rows != last + 1:
+            for i, line in enumerate(lines):
+                if line.raw_line_number is not None and line.raw_line_number >= pos.line_number:
+                    index = i
+                    break
+        self.view.cursor_index = min(max(index, 0), max(last, 0))
+        if 0 < pos.top < self.view.height:
+            self.view.top_index = self.view.cursor_index - pos.top
+        self.view.clamp()
+        self.view.ensure_cursor_visible()
+
+    def save_cursor_position(self):
+        """FileMode::saveCursorPosition(): row=カーソル、top=画面の中での行、lineNumber=元の行の番号。"""
+        if self.history is None or not self.current_file:
+            return
+        lines = self.view.lines
+        row = self.view.cursor_index
+        line_number = -1
+        for i in range(min(row, len(lines) - 1), -1, -1):
+            if lines[i].raw_line_number:
+                line_number = lines[i].raw_line_number
+                break
+        self.history.set_position(hist.FILE, self.current_file,
+                                  hist.CursorPosition(row, len(lines), max(0, row - self.view.top_index), line_number))
 
     def load_all(self):
         while self.ensure_loaded_through(len(self.view.lines) + 10000):

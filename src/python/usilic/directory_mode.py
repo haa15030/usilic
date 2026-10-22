@@ -7,6 +7,7 @@ import os
 import subprocess
 from dataclasses import dataclass
 
+from . import history as hist
 from .content_view import Line
 
 _MONTHS = ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
@@ -52,6 +53,7 @@ class DirectoryMode:
         self.mode_stack = []  # ^Gで戻る(ディレクトリ, カーソル)
         self.byte_count = 0
         self.cursor_positions = {}
+        self.history = None  # ディレクトリで起動した時だけ(ページャーでは履歴に触れない)
 
     def enter_directory(self, path):
         """pathの一覧を出す(DirectoryMode::enterDirectory())。"""
@@ -66,7 +68,7 @@ class DirectoryMode:
         if result.returncode != 0:
             return False
         if self.current_directory:
-            self.cursor_positions[self.current_directory] = (self.view.cursor_index, self.view.top_index)
+            self.save_current_cursor_position()
         text = result.stdout.decode('utf-8', 'replace')
         lines = [l for l in text.split('\n') if l and not l.startswith('total ')]
         self.entries = [parse_ls_line(l) for l in lines]
@@ -74,9 +76,21 @@ class DirectoryMode:
         self.current_directory = path
         self.view.set_lines([Line(e.ls_line, i + 1) for i, e in enumerate(self.entries)])
         cursor, top = self.cursor_positions.get(path, (0, 0))
+        if self.history is not None:
+            self.history.push_recent(hist.RECENT_DIRECTORY, path)
+            pos = self.history.position_for(hist.DIRECTORY, path)
+            cursor, top = (pos.row, 0) if pos else (0, 0)
         self.view.cursor_index, self.view.top_index = cursor, top
         self.view.clamp()
+        self.view.ensure_cursor_visible()
         return True
+
+    def save_current_cursor_position(self):
+        """DirectoryMode::saveCurrentCursorPosition()(row=カーソル、totalRows=項目の数、top=0)。"""
+        self.cursor_positions[self.current_directory] = (self.view.cursor_index, self.view.top_index)
+        if self.history is not None and self.current_directory:
+            self.history.set_position(hist.DIRECTORY, self.current_directory,
+                                      hist.CursorPosition(self.view.cursor_index, len(self.entries), 0, -1))
 
     def selected_entry(self):
         i = self.view.cursor_index
