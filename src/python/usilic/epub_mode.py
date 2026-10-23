@@ -25,10 +25,25 @@ _BLOCKS = {'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote', '
            'body', 'hr', 'caption', 'main', 'address'}
 _HEADINGS = {'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}
 _BOLD = {'b', 'strong', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'th'}
-_UNDERLINE = {'i', 'em', 'a', 'cite', 'u'}
+_ITALIC = {'i', 'em', 'cite'}  # 斜体(C++のchangeStyle(italic_))。下線はリンクだけ(_is_underlined_link())
 _SKIP = {'head', 'script', 'style', 'rp', 'title'}
 _VOID = {'br', 'img', 'image', 'hr', 'link', 'meta', 'input', 'col', 'area', 'base', 'wbr', 'source'}
 HR_TEXT = '-' * 40  # 区切り線(中央に置く、C++と同じ)
+
+
+# 本文の中の小説サイトの名前は、<a>の外ならそのサイトへのリンクにする(C++のepubNovelSiteLinks())。
+NOVEL_SITE_LINKS = (('小説家になろう', 'https://syosetu.com/'), ('小説を読もう', 'https://yomou.syosetu.com/'),
+                    ('ノクターンノベルズ', 'https://noc.syosetu.com/'), ('カクヨム', 'https://kakuyomu.jp/'),
+                    ('青空文庫', 'https://www.aozora.gr.jp/'))
+
+
+def _is_underlined_link(href):
+    """下線を付けるリンク(C++: http(s)と、本の中への物。他の「://」・mailto:は付けない)。"""
+    if not href:
+        return False
+    if href.startswith(('http://', 'https://')):
+        return True
+    return '://' not in href and not href.startswith('mailto:')
 
 
 def _round(x):
@@ -213,6 +228,7 @@ class _XhtmlParser(HTMLParser):
         self.skip = 0
         self.ruby = []        # ルビの読み(rtの中の字)
         self.in_rt = 0
+        self.linking_site = False  # _add()が小説サイトの名前をリンクにしている間
         self.pending_anchors = []
         self.hrefs = []       # 開いている<a href>の並び
         self.hidden = None    # display:noneの要素(tag, 入れ子の数, 見出しか)
@@ -247,14 +263,22 @@ class _XhtmlParser(HTMLParser):
         if block.pieces or (block.anchors and block.tag in _HEADINGS):
             if block.pieces and self.next_hidden_label:
                 block.hidden_label, self.next_hidden_label = self.next_hidden_label, None
+            if block.tag in _HEADINGS and self.blocks and self.blocks[-1].pieces:
+                self.blocks.append(Block('p', set()))  # 見出しの前は空行(C++のensureBlankLine())
             self.blocks.append(block)
         elif block.anchors:
             self.pending_anchors = block.anchors + self.pending_anchors
 
     def _attr(self):
-        bold = any(t in _BOLD for t, _, _ in self.stack) or self.style().bold
-        under = any(t in _UNDERLINE for t, _, _ in self.stack)
-        return 'bold' if bold else 'underline' if under else None
+        """今の字の属性(太字・斜体・下線を重ねて、C++のbold_・italic_・underline_)。無ければNone。"""
+        names = []
+        if any(t in _BOLD for t, _, _ in self.stack) or self.style().bold:
+            names.append('bold')
+        if any(t in _ITALIC for t, _, _ in self.stack):
+            names.append('italic')
+        if any(_is_underlined_link(h) for h in self.hrefs):
+            names.append('underline')
+        return tuple(names) or None
 
     def _apply_style(self, block):
         """段落の最初の字の時点の状態(C++のtext()のlineKind_・startLineIndent())。"""
@@ -268,11 +292,25 @@ class _XhtmlParser(HTMLParser):
         block.indent_columns = (max(0, _round((padding + st.text_indent) * 2)), max(0, _round(padding * 2)))
 
     def _add(self, text, attr=None):
+        if attr is None and not any(self.hrefs) and not self.linking_site and not self.in_rt and \
+                not any(t in ('ruby', 'pre') for t, _, _ in self.stack):  # C++のpreDepth_は<pre>の要素だけ
+            found = min(((text.find(name), name, url) for name, url in NOVEL_SITE_LINKS if name in text), default=None)
+            if found:  # 最初に出てくる名前から(C++のtext())
+                at, name, url = found
+                self.linking_site = True
+                if at:
+                    self._add(text[:at])
+                self.hrefs.append(url)
+                self._add(name)
+                self.hrefs.pop()
+                self.linking_site = False
+                if text[at + len(name):]:
+                    self._add(text[at + len(name):])
+                return
         if self.current is None:
             parent = next(((t, c) for t, c, _ in reversed(self.stack) if t in _BLOCKS), ('p', set()))
             self._start_block(parent[0], parent[1])
-        text = text.replace('\xa0', ' ')
-        if not self.current.styled and text.strip(' '):
+        if not self.current.styled and text.strip(' '):  # NBSPは字として残す(C++と同じ、行頭でも詰めない)
             self._apply_style(self.current)
         href = next((h for h in reversed(self.hrefs) if h), None)
         self.current.pieces.append((text, attr if attr is not None else self._attr(), href))
@@ -414,7 +452,7 @@ class _XhtmlParser(HTMLParser):
         pre = self.current.pre if self.current is not None else any('pre' in c or t == 'pre' for t, c, _ in self.stack)
         if not pre:
             data = re.sub(r'[ \t\r\n]+', ' ', data)
-            if self.current is None and not data.strip():
+            if self.current is None and not data.strip(' '):  # NBSPだけの段落は空行として残す(str.strip()はNBSPも取る)
                 return
         self._add(data)
 
@@ -691,8 +729,8 @@ class EpubBook:
                 text, runs, line_links, pos = '', [], [], 0
                 base = posixpath.dirname(href or '')
                 for piece, attr, link in block.pieces:
-                    if attr:
-                        runs.append((pos, pos + len(piece), attr))
+                    for name in ((attr,) if isinstance(attr, str) else attr or ()):
+                        runs.append((pos, pos + len(piece), name))
                     if link:
                         target = link if re.match(r'[a-z]+:', link) else (
                             self._resolve(base, link) if not link.startswith('#') else href + link)
@@ -736,6 +774,9 @@ class EpubBook:
                     hints.notes.append((at(start), at(end)))
                 for anchor, (start, end) in self.anchor_blocks.get(href, {}).items():
                     anchor_raws.setdefault('#blocks#' + href + '#' + anchor, (at(start), at(end)))
+                if lines and lines[-1].text:  # C++と同じく、ファイルの終わりが空行でなければ空行を1つ置く
+                    number += 1
+                    lines.append(Line('', number))
         if lines:
             resolve(len(lines) - 1, lines[-1].raw_line_number)
         for href in self.spine:  # ファイルの頭の行(字の無いファイルは次のファイルと同じ行になるので、後の方を残す)

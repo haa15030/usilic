@@ -70,7 +70,8 @@ class HintsTest(unittest.TestCase):
 
     def test_header_after_cover_and_title_page(self):
         texts = [l.text for l in self.lines]
-        self.assertEqual(texts[:3], ['[image: cover.jpg]', '書名　一', '著者'])  # 表紙が先頭、書名・著者名はその後
+        # 表紙が先頭、書名・著者名はその後(表紙のファイルの後に空行、C++と同じ)
+        self.assertEqual(texts[:4], ['[image: cover.jpg]', '', '書名　一', '著者'])
         h = self.book.hints
         self.assertIn((self.raw['書名　一'], self.raw['著者']), h.centered)        # 冒頭の書名・著者名は扉と同じ
         self.assertIn((self.raw['書名'], self.raw['書名'] + 1), h.centered)        # 横書きの中の縦書きの箱

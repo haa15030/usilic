@@ -35,7 +35,8 @@ class EpubTest(unittest.TestCase):
             lines, toc = book.render(40)
             texts = [l.text for l in lines]
             # 冒頭に書名と空の行(C++のepubToHelpMarkup()のheader)。CSSは本文のファイルが読み込む物だけ
-            self.assertEqual(texts, ['本', '', '第一章', '  本文の太字と漢字《かんじ》。', '', '節', '[image: pic.png]'])
+            # ファイルの終わりが空行でなければ空行を1つ置く(C++のepubToHelpMarkup()、同じ本でC++も8行)
+            self.assertEqual(texts, ['本', '', '第一章', '  本文の太字と漢字《かんじ》。', '', '節', '[image: pic.png]', ''])
             self.assertEqual(lines[2].attributes, [(0, 3, 'bold')])
             self.assertIn((5, 7, 'bold'), lines[3].attributes)   # 字下げの分ずれる
             self.assertEqual([(t, depth) for _, t, depth in book.toc], [('第一章', 0), ('節', 1)])

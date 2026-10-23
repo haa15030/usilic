@@ -357,7 +357,8 @@ class Application:
                 if self.vertical_active() and self.vertical is not None:
                     position = self.notice or self.vertical.position_text()
                     return F(self.epub_name, str(fm.byte_count), True, '', 'EPUB 縦書き'), position
-                fields = F(self.epub_name, str(fm.byte_count), True, '', 'EPUB', trailing2_kind=mode_line.PATH_MIDDLE)
+                name = self.epub_name if self.epub_name == 'HELP' else self.epub.path  # C++はHELP以外パスのまま
+                fields = F(name, str(fm.byte_count), True, '', 'EPUB', trailing2_kind=mode_line.PATH_MIDDLE)
                 fields.split_layout_when_crowded = True
                 return fields, position
             if self.pager_launch:  # ページャー(C++のpagerMode_)

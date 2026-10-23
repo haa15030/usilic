@@ -68,10 +68,10 @@ class TerminalDisplay:
         base = (curses.A_REVERSE if reverse else 0) | (curses.A_UNDERLINE if underline else 0)
         names = {'bold': curses.A_BOLD, 'underline': curses.A_UNDERLINE, 'match': self.match_attr,
                  'reverse': curses.A_REVERSE, 'italic': getattr(curses, 'A_ITALIC', curses.A_UNDERLINE)}
-        column = 0
+        column, width = 0, self.columns - (1 if row == self.rows - 1 else 0)  # 右端まで(右下の桁だけはcursesが書けない)
         for index, ch in enumerate(text):
             w = utf8.display_width_of_codepoint(ord(ch))
-            if column + w > self.columns - 1:
+            if column + w > width:
                 break
             attr = 0
             for start, end, name in runs:
