@@ -1323,8 +1323,8 @@ class Application:
             return False
         keys = help_text.key_bytes_from_label(line.text)
         self.go_back()
-        for b in keys:
-            self.feed_canonical(b, None)
+        for b in keys:  # 表記はKEY節で変えたキー(rewrite_help_text())なので、利用者のキーとして読み替えを通す
+            self.feed_key(b, None)
         return True
 
     def jump_from_key_to_help(self):

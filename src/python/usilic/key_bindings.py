@@ -126,6 +126,16 @@ def key_label(sequence):
     return ''.join(out)
 
 
+def _help_width(s):
+    """表示幅(全角は2、U+FEFF・U+2060は0、␣は1)。HELPの「キー：」の桁合わせ用。"""
+    width = 0
+    for c in s:
+        if c in '\ufeff\u2060':
+            continue
+        width += 1 if ord(c) < 0x80 or c == '␣' else 2
+    return width
+
+
 def _is_control(b):
     return 0 <= b < 0x20 or b in (0x7F, CTRL_SPACE)
 
@@ -240,6 +250,10 @@ class KeyBindings:
                         report('K-%d conflicts with K-%d' % (ri[0], rj[0]))
                         ri[2] = None
                         break
+        # HELPの書き換え(rewrite_help_text())は、全体の番号と、既定の表記が全体の番号に無い場面の番号(^[w等)だけ。
+        self.changed = [(r[1], r[2]) for r in resolved
+                        if r[2] is not None and r[2] != r[1] and r[3] != MACRO_REPEAT and
+                        (r[3] == GLOBAL or not any(o[3] == GLOBAL and o[1] == r[1] for o in resolved))]
         self.macro_repeat_key = next((r[2][0] for r in resolved if r[3] == MACRO_REPEAT and r[2]), -1)
         leader_first = [ESC] + [user[n][0] for n in (0, 1, 2, 4) if user[n] and user[n][0] != 0x03]
 
@@ -269,6 +283,59 @@ class KeyBindings:
             return rules
         self.rules = {ALL: build(set_for(GLOBAL)), CONTEXT_COPY: build(set_for(COPY)),
                       CONTEXT_PROMPT: build(set_for(PROMPT))}
+
+    def rewrite_help_text(self, text):
+        """C++のrewriteHelpText(): KEY節で変えたキーを、HELPの表記(「キー：説明」のキー欄と、本文の「^」の表記)にも。"""
+        if not self.changed:
+            return text
+        column_labels = [(key_label(a), key_label(b)) for a, b in self.changed]
+        caret_labels = [(a, b) for a, b in column_labels if len(a) >= 2 and a[0] == '^']
+
+        def rewrite_carets(s):
+            out, i = [], 0
+            while i < len(s):
+                best = None
+                if s[i] == '^':
+                    for a, b in caret_labels:
+                        if s.startswith(a, i) and (best is None or len(a) > len(best[0])):
+                            best = (a, b)
+                if best:
+                    # 一致の後ろがさらに表記の続き(^x)なら、もっと長いキーの一部なので置き換えない。
+                    end = i + len(best[0])
+                    longer = end + 1 < len(s) and s[end] == '^' and s[end + 1] != ' '
+                    if not longer or 'N' in best[0]:
+                        out.append(best[1])
+                        i = end
+                        continue
+                out.append(s[i])
+                i += 1
+            return ''.join(out)
+
+        lines = []
+        for line in text.split('\n'):
+            # 「キー：説明」の行: 行頭の空白(U+FEFFの印を含む)、キー欄、「：」。
+            key_start = len(line) - len(line.lstrip(' \ufeff'))
+            colon = line.find('：', key_start)
+            key = line[key_start:colon] if colon >= 0 else ''
+            if key and ' ' not in key:
+                replaced = next((b for a, b in column_labels if a == key), None) or rewrite_carets(key)
+                lead = line[:key_start]
+                if replaced != key:
+                    # 「：」の桁を保つ: 幅の差だけ前の空白を詰める/足し、足りなければ字下げの印を減らす(1つは残す)。
+                    diff = _help_width(replaced) - _help_width(key)
+                    spaces, marks = lead.count(' '), lead.count('\ufeff')
+                    if diff < 0:
+                        spaces -= diff
+                    else:
+                        from_spaces = min(spaces, diff)
+                        spaces -= from_spaces
+                        marks = max(1 if marks else 0, marks - (diff - from_spaces))
+                    lead = '\ufeff' * marks + ' ' * spaces
+                line = lead + replaced + rewrite_carets(line[colon:])
+            else:
+                line = rewrite_carets(line)
+            lines.append(line)
+        return '\n'.join(lines)
 
     def is_identity(self):
         return not any(self.rules.values())

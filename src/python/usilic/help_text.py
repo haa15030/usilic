@@ -40,14 +40,16 @@ def plain_help_lines(width, japanese, configuration):
     roff = find_in_library('HELP.1' if japanese else 'HELP_en.1')
     if roff:
         argv = configuration.command_for('Groff') + ['-rLL=%dn' % max(width, 20), '-rusilic-help=1', roff]
-        found = man_mode.run_to_lines(argv, width, transform=strip_markers)
+        rewrite = configuration.key_bindings.rewrite_help_text   # KEY節で変えたキーをHELPの表記にも
+        found = man_mode.run_to_lines(argv, width, transform=lambda text: strip_markers(rewrite(text)))
         if found and found[0]:
             return found[0], found[1], roff
     plain = find_in_library('HELP' if japanese else 'HELP.en')
     if plain:
         with open(plain, 'rb') as f:
             data = f.read()
-        return man_mode.styled_lines(strip_markers(data.decode('utf-8', 'replace')), width), len(data), plain
+        text = configuration.key_bindings.rewrite_help_text(data.decode('utf-8', 'replace'))
+        return man_mode.styled_lines(strip_markers(text), width), len(data), plain
     return None
 
 

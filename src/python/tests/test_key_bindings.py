@@ -36,6 +36,16 @@ class KeyBindingsTest(unittest.TestCase):
         self.assertEqual(b.feed(ord('k'), 'all', [[], None]), [])         # 空は割り当て無し(kは捨てる)
         self.assertEqual(b.feed(ord('J'), 'prompt', [[], None]), [ord('J')])  # プロンプトでは打った字のまま
 
+    def test_rewrite_help_text(self):
+        b = K.KeyBindings()
+        self.assertEqual(b.rewrite_help_text('  ^N：下へ'), '  ^N：下へ')   # 変えていなければそのまま
+        b.load_key_section(['    F-0   C-t', '    K-3   ESC n'])
+        text = '              ^N：カーソルを１行下へ\n\ufeff\ufeff^X^F：開く\n^X^F で開く'
+        self.assertEqual(b.rewrite_help_text(text).split('\n'), [
+            '             ^[n：カーソルを１行下へ',   # 「：」の桁を保つ(前の空白を1つ詰める)
+            '\ufeff\ufeff^T^F：開く',                # 同じ幅なら印はそのまま
+            '^T^F で開く'])                            # 本文の表記も
+
     def test_prefix_label(self):
         self.assertEqual(K.prefix_label([0x18]), 'C-x-')
         self.assertEqual(K.prefix_label([0x1B]), 'ESC-')
