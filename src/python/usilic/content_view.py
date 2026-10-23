@@ -59,15 +59,15 @@ def wrap_text(text, width):
     return pieces
 
 
-def expand_tabs(text, tab=8):
-    """タブを次の8桁の位置までの空白に(桁は表示幅で数える)。"""
+def expand_tabs(text, tab=8, marker=''):
+    """タブを次の8桁の位置までの空白に(桁は表示幅で数える)。markerはタブの所に置く字(C++のPipeBufferのU+2060)。"""
     if '\t' not in text:
         return text
     out, column = [], 0
     for ch in text:
         if ch == '\t':
             spaces = tab - column % tab
-            out.append(' ' * spaces)
+            out.append(marker + ' ' * spaces)
             column += spaces
         else:
             out.append(ch)

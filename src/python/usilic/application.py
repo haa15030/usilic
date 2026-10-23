@@ -41,7 +41,7 @@ from .man_mode import ManMode
 from .part_mode import PartMode, occur_lines
 from .messages_ja import japanese, localized
 from .mouse import MouseEvent, Paste, Speeds, dropped_paths, level_for_release_distance, step_level_by_key
-from .shell import Shell
+from .shell import Shell, PROMPT_DISPLAY_NAME
 
 PROGRAM_LABEL = 'usilic-1.5b'
 DIRECTORY, FILE, SHELL = 'Directory', 'File', 'Shell'
@@ -110,7 +110,9 @@ class Application:
         self.shell_view = ContentView()
         self.shell_view.cursor_highlight = False
         self.shell_view.bottom_anchored = True
-        self.shell_browsing = False  # ^P・^Nで確定した行を動いている間(Shell::historyBrowsing())  # C++のShellのscrollback_.setBottomAnchored(true)
+        self.shell_browsing = False  # ^P・^Nで確定した行を動いている間(Shell::historyBrowsing())
+        self.shell_started = False   # このセッションでbashを動かした(C++のshellStarted_、ログを書く)
+        self.shell_log_block = ''    # saveShellLog()がこのセッションで最後に書いた分(shellLogBlock_)  # C++のShellのscrollback_.setBottomAnchored(true)
         self.command_line = LineEditor()
         self.pending_shell_run = None   # SHELLで動かしているCP/MV/RM・展開(終わったら行き先の(ls)へ)
         self.history = None  # ディレクトリで起動した時だけ(usilic.py)
@@ -147,6 +149,7 @@ class Application:
         self.part_toc_view = ContentView()
         self.part_view = ContentView()
         self.part_view.cursor_highlight = False
+        self.part_view.raw_line_numbers = False  # 部分の中は折り返した行で数える(C++のcutContentView_)
         self.part = PartMode(self.part_toc_view, self.part_view)
         self.part_position_key = None  # FILEを分けたPARTの位置を覚える名前(「パス "パターン"」、C++のcutPositionKey_)
         self.occur_view = ContentView()
@@ -365,6 +368,8 @@ class Application:
                 pos = self.notice or (mode_line.format if fm.transformed else mode_line.format_fixed_width)(
                     *self.position_numbers(view))
                 return F(fm.current_file, str(fm.byte_count), False, PROGRAM_LABEL, fm.label or ''), pos
+            if os.path.isabs(fm.current_file):  # C++はfileのディレクトリ(FileModeの欄)
+                directory = os.path.dirname(fm.current_file).rstrip('/') + '/'
             fields = F(os.path.basename(fm.current_file), str(fm.byte_count), True, '', fm.tail or directory,
                        trailing2_kind=mode_line.PATH_MIDDLE if fm.tail else mode_line.PATH)
             fields.split_layout_when_crowded = True
@@ -427,12 +432,19 @@ class Application:
             fields.trailing3 = directory
             return fields, position
         if mode == PART_TOC:
-            fields = F('PART', str(self.part.byte_count), True, '', '(egrep)')
-            # FILEを分けたものはそのfileのパス、他はディレクトリ(C++のcutView_の欄)
-            fields.trailing3 = self.part.source_name or directory
+            part = self.part
+            if part.origin == 'LOG':  # SHELLのログ(^[l): 名前の後ろにログのファイル(C++のcutView_の欄)
+                return F('LOG', part.origin_path, False, ''), position
+            badge = '(fgrep)' if part.syntax == FIXED else '(egrep)'
+            fields = F('PART' if part.origin in ('PART', 'FILE') else part.origin, str(part.byte_count), True, '', badge)
+            # FILEを分けたものはそのfileのパス、MAN・LOCATE・DUはページ等、他はディレクトリ
+            fields.trailing3 = part.origin_path or part.source_name or directory
             return fields, position
-        if mode == PART:
-            return F('PART', str(self.part.byte_count), True, '', 'PART: ' + self.part.pattern), position
+        if mode == PART:  # 部分の中: 分けた元の名前(FILEはfileの名前)、大きさは部分の行(C++のcutContentView_)
+            part = self.part
+            name = os.path.basename(part.source_name) if part.origin in ('FILE', 'LOG') else part.origin
+            size = sum(len(l.text.encode('utf-8')) + 1 + l.hidden_bytes for l in view.lines)
+            return F(name or 'PART', str(size), True, '', 'PART: ' + part.pattern), position
         if mode == OCCUR:
             if self.occur_global:
                 fields = F('EPUB', str(self.occur_byte_count), True, '', '(marks)')
@@ -443,7 +455,7 @@ class Application:
                 fields.trailing3 = self.previous_mode_name(self.occur_origin)  # 戻り先(ファイルならそのパス)
             return fields, position
         d = self.directory_mode
-        fields = F(directory, str(d.byte_count), False, PROGRAM_LABEL if not d.mode_stack else '', '(ls)')
+        fields = F(directory, str(d.byte_count), False, PROGRAM_LABEL, '(ls)')  # 右端は常に(C++のDirectoryModeの欄)
         fields.split_layout_when_crowded = True
         if d.sort_label_shown:
             fields.trailing2, fields.trailing2_plain = d.sort_key, True
@@ -590,9 +602,14 @@ class Application:
                         runs.append((start, end, 'underline'))
                     reverse = underline = False
                 self.display.draw_row_styled(row, text, runs, reverse=reverse, underline=underline)
-            elif row == 0 and not view.lines and view.empty_placeholder is not None:
+            elif row == offset and not view.lines and (view.empty_placeholder is not None or view.cursor_highlight):
+                # 行が無い時の1行目: 決めた物(「pat: 見つかりません」等)か、カーソルを反転する画面では反転した「--」
+                # (C++のContentViewのemptyPlaceholderLine_の既定)
                 p = view.empty_placeholder
-                self.display.draw_row_styled(row, p.text, list(p.attributes))
+                if p is None:
+                    self.display.draw_row_styled(row, '--', [], reverse=True)
+                else:
+                    self.display.draw_row_styled(row, p.text, list(p.attributes))
             else:
                 self.display.draw_row(row, '')
         if not self.mode_line_hidden or self.prompt is not None or self.notice:
@@ -723,12 +740,110 @@ class Application:
             self.save_list_positions()
 
     def go_back(self):
-        """^G: 積んだ戻り先へ(無ければ(ls))。"""
+        """^G: 積んだ戻り先へ(無ければ(ls))。FILEから(ls)へは、そのfileのディレクトリへ移る(C++のreturnToDirectory())。"""
         self.save_mode_position()
+        leaving = self.current_mode
         self.current_mode = self.return_stack.pop() if self.return_stack else DIRECTORY
+        if leaving == FILE and self.current_mode == DIRECTORY:
+            self.move_to_file_directory(self.file_mode.current_file)
         if self.current_mode == ARCHIVE and not self.archives:
             self.current_mode = DIRECTORY
         return True
+
+    def selected_source_path(self):
+        """^J^C・^J^B・^JNの元(C++の各関数のsourcePath)。(パス, ディレクトリか)、無ければ(None, False)。"""
+        mode = self.current_mode
+        if mode == LIST:
+            item = self.list_mode.selected_item()
+            if item is None:
+                return None, False
+            return self.strip_tags(item), self.list_mode.label == 'DIR'
+        if mode == LOCATE:
+            path = self.locate_mode.selected_result()
+            return path, bool(path) and os.path.isdir(path)
+        if mode == DU:
+            entry = self.du_mode.selected_entry()
+            return (entry.path, entry.is_directory) if entry else (None, False)
+        if mode in (FILE, PART_TOC, PART):
+            return self.file_mode.current_file, False
+        if mode == ARCHIVE and self.archives:
+            return self.archives[-1].current_archive, False
+        return None, False
+
+    def enter_directory_with_floor(self, path):
+        """pathの(ls)へ。前の所とは^Gで行き来(C++のenterDirectory()+resetNavigationToFloor())。"""
+        previous = self.directory_mode.current_directory
+        if not self.directory_mode.enter_directory(path):
+            return False
+        if previous:
+            self.directory_mode.reset_navigation_to_floor(previous)
+        self.return_stack.clear()
+        self.current_mode = DIRECTORY
+        return True
+
+    def go_to_file_selector(self):
+        """^J^C(Application::goToFileSelector()): (ls)なら読み直す。他は見ている物のディレクトリの(ls)へ。"""
+        mode = self.current_mode
+        if mode == DIRECTORY or (mode in (PART_TOC, PART) and self.part.origin != 'FILE'):
+            if not self.directory_mode.enter_directory(self.directory_mode.current_directory):
+                return False
+            self.return_stack.clear()
+            self.current_mode = DIRECTORY
+            return True
+        if mode == SHELL:
+            return bool(self.shell.current_directory) and self.enter_directory_with_floor(self.shell.current_directory)
+        if mode == LIST and self.list_mode.label != 'FILE':
+            return False
+        source, _ = self.selected_source_path()
+        if not source or mode in (DU,):
+            return False
+        parent = os.path.dirname(source.rstrip('/') if source != '/' else source)
+        return bool(parent) and self.enter_directory_with_floor(parent)
+
+    def go_to_parent_from_file_or_archive(self):
+        """^J^B(Application::goToParentFromFileOrArchive()): (ls)は親へ。他は見ている物の入っているディレクトリの親へ。"""
+        mode = self.current_mode
+        if mode == DIRECTORY or (mode in (PART_TOC, PART) and self.part.origin != 'FILE'):
+            if not self.directory_mode.go_to_parent():
+                return False
+            self.return_stack.clear()
+            self.current_mode = DIRECTORY
+            return True
+        source, is_directory = self.selected_source_path()
+        if not source:
+            return False
+        containing = source.rstrip('/') if is_directory and len(source) > 1 else os.path.dirname(source)
+        parent = os.path.dirname(containing)
+        return bool(parent) and self.enter_directory_with_floor(parent)
+
+    def jump_to_path_prefix(self, digit):
+        """^JN(Application::jumpToPathPrefix()): 見ている物のパスのN番目の「/」までのディレクトリへ。"""
+        mode = self.current_mode
+        if mode == DIRECTORY or (mode in (PART_TOC, PART) and self.part.origin != 'FILE'):
+            source = self.directory_mode.current_directory
+        else:
+            source, _ = self.selected_source_path()
+        if not source:
+            return False
+        return self.enter_directory_with_floor(self.truncate_to_path_prefix(source, digit))
+
+    def go_to_recent_directory(self):
+        """Application::goToRecentDirectory(): 最近のディレクトリの、今の所以外で一番新しい所へ(外から起動した物は除く)。"""
+        for name in reversed(self.ring(hist.RECENT_DIRECTORY)):
+            if name == self.directory_mode.current_directory or name.endswith(hist.USILIC_TAG):
+                continue
+            if self.directory_mode.enter_directory(name):
+                return True
+        return False
+
+    def move_to_file_directory(self, path):
+        """(ls)を、見ていたfileのディレクトリにする(前の所とは^Gで行き来、C++のreturnToDirectory())。"""
+        if not path or not os.path.isabs(path) or not os.path.isfile(path):
+            return
+        parent = os.path.dirname(path).rstrip('/') + '/'
+        previous = self.directory_mode.current_directory
+        if parent != previous and self.directory_mode.enter_directory(parent) and previous:
+            self.directory_mode.reset_navigation_to_floor(previous)
 
     def enter_directory_listing(self, path, keep_stack=False):
         """(ls)へ(ディレクトリを選んだ時は^Gの戻り先を空にする、keep_stackならLOCATE等からの1回目)。"""
@@ -740,9 +855,12 @@ class Application:
                 self.return_stack.clear()
         elif not keep_stack:
             self.return_stack.clear()
+        previous = self.directory_mode.current_directory
         if not self.directory_mode.enter_directory(path):
             self.show_transient_notice('Cannot list: ' + path)
             return False
+        if previous and previous != self.directory_mode.current_directory:
+            self.directory_mode.reset_navigation_to_floor(previous)  # C++の一覧・プロンプト等からの移動と同じ
         self.current_mode = DIRECTORY
         return True
 
@@ -958,11 +1076,8 @@ class Application:
             return self.directory_mode.enter_directory(self.directory_mode.current_directory)
         target = os.path.normpath(os.path.join(self.directory_mode.current_directory, entry.name))
         if entry.is_directory or os.path.isdir(target):
-            self.directory_mode.mode_stack.append((self.directory_mode.current_directory, self.directory_view.cursor_index))
-            if entry.name in ('../', '..'):
-                self.directory_mode.mode_stack.clear()  # 親へは^Gのスタックを消す(C++のresetNavigationToFloor())
             self.return_stack.clear()
-            if not self.directory_mode.enter_directory(target):
+            if not self.directory_mode.descend_to(target):  # ../も同じ(C++のdescendTo())
                 self.show_transient_notice('Cannot list: ' + target)
                 return False
             return True
@@ -1866,18 +1981,14 @@ class Application:
             if self.pager_launch:
                 self.show_transient_notice('Not available in pager')
                 return False
-            return self.enter_directory_listing(self.directory_mode.current_directory)
+            return self.go_to_file_selector()
         if number == 26:  # ^J^B
             if self.pager_launch:
                 self.show_transient_notice('Not available in pager')
                 return False
-            self.directory_mode.mode_stack.clear()
-            return self.enter_directory_listing(self.directory_mode.parent_directory(
-                self.directory_mode.current_directory))
+            return self.go_to_parent_from_file_or_archive()
         if number == 27:  # ^JN: N番目の「/」までのディレクトリ(truncateToPathPrefix())
-            base = self.file_mode.current_file if mode == FILE and self.file_mode.current_file.startswith('/') \
-                else self.directory_mode.current_directory
-            return self.enter_directory_listing(self.truncate_to_path_prefix(base, digit - ord('0')))
+            return self.jump_to_path_prefix(digit - ord('0'))
         if number == 28:
             return self.enter_key()
         if number in (29, 30):  # ^O^M(1行ずつ)・^[^M(そのまま)
@@ -1957,9 +2068,14 @@ class Application:
         if number == 68:
             return self.start_shell()
         if number == 69:  # ^Js: SHELLを再起動
+            self.end_shell_session()  # C++のshellRestart(): 前のセッションをログへ
             self.shell.terminate()
             self.shell = Shell()
-            return self.start_shell()
+            if not self.ensure_shell():  # SHELLの中からでも新しいbashで(start_shell()はSHELLなら何もしない)
+                return False
+            self.enter_mode(SHELL)
+            self.refresh_shell_view()
+            return True
         if number in (90, 91):
             return self.start_help()
         if number in (93, 94):
@@ -2065,11 +2181,8 @@ class Application:
         if mode == DIRECTORY:
             if self.return_stack:
                 return self.go_back()
-            if self.directory_mode.mode_stack:
-                directory, cursor = self.directory_mode.mode_stack.pop()
-                self.directory_mode.enter_directory(directory)
-                self.directory_view.cursor_index = cursor
-                self.directory_view.ensure_cursor_visible()
+            if not self.directory_mode.go_back():
+                self.go_to_recent_directory()  # 戻る所が無ければ最近のディレクトリへ(C++のgoToRecentDirectory())
             return True
         if mode == FILE:
             if self.pager_launch and not self.in_epub_body():
@@ -2313,6 +2426,7 @@ class Application:
             self.shell.terminate()
             self.show_transient_notice('Cannot start SHELL')
             return False
+        self.shell_started = True
         return True
 
     def start_shell(self):
@@ -2430,7 +2544,9 @@ class Application:
             return False  # ^O^Yはプロンプトの中だけ(feed_prompt_byte())
         if number == 67:
             return self.start_edit()
-        if number == 70 or number == 86:  # ^[l・^J^Os
+        if number == 70:  # ^[l
+            return self.start_shell_log()
+        if number == 86:  # ^J^Os
             return self.show_shell_log()
         if number in (71, 72, 73, 74, 75, 76, 77):
             return self.shell_helper(number)
@@ -2512,10 +2628,14 @@ class Application:
         """^Jp: 今の画面を拡張正規表現で分ける。"""
         return self.start_prompt(pr.PART, '', self.execute_part)
 
-    def execute_part(self, pattern):
+    def execute_part(self, pattern, syntax=REGEX):
         if not pattern:
             return False
         view = self.active_view()
+        # 分けた元(C++のexecuteCut()のcutOrigin_)と、一覧のモードラインの最後の欄
+        origin, origin_path = {DIRECTORY: ('PART', ''), MAN: ('MAN', self.man_mode.current_page),
+                               LOCATE: ('LOCATE', self.locate_mode.query),
+                               DU: ('DU', self.du_mode.current_path)}.get(self.current_mode, ('FILE', ''))
         name = self.file_mode.current_file if self.current_mode == FILE else ''
         size = {FILE: self.file_mode.byte_count, MAN: self.man_mode.byte_count,
                 SHELL: self.shell.shown_byte_count(self.wrap_width())}.get(self.current_mode, self.directory_mode.byte_count)
@@ -2525,7 +2645,7 @@ class Application:
             size = sum(len(l.text.encode('utf-8')) + 1 + l.hidden_bytes for l in view.lines)
         if self.current_mode not in (PART_TOC, PART):
             self.part_position_key = None
-        if not self.part.split(view.lines, pattern, size, name):
+        if not self.part.split(view.lines, pattern, size, name, syntax, origin, origin_path):
             self.show_transient_notice('No string')
             return False
         if self.history is not None:
@@ -2993,18 +3113,64 @@ class Application:
             open(value, 'a').close() if os.path.isdir(os.path.dirname(value)) else None
         return self.open_file(value) if os.path.exists(value) else False
 
+    def shell_log_path(self):
+        """SHELLのログのfile(C++のlogFilePath_、~/.usilic/shell)。"""
+        return os.path.join(os.path.expanduser('~'), '.usilic', 'shell')
+
+    def save_shell_log(self):
+        """Application::saveShellLog(): 今のSHELLの行を、前のセッションの分を残したままログへ書く。このセッションで
+        前に書いた分(shell_log_block)があればそれを置き換え、無ければ足す。"""
+        if not self.shell_started:
+            return
+        block = ''.join(row + '\n' for row in self.shell.committed_rows(self.wrap_width()))
+        path = self.shell_log_path()
+        try:
+            with open(path, encoding='utf-8', errors='surrogateescape') as f:
+                text = f.read()
+        except OSError:
+            text = ''
+        at = text.rfind(self.shell_log_block) if self.shell_log_block else -1
+        text = text[:at] + block + text[at + len(self.shell_log_block):] if at >= 0 else text + block
+        temporary = '%s.tmp.%d' % (path, os.getpid())
+        try:
+            with open(temporary, 'w', encoding='utf-8', errors='surrogateescape') as f:
+                f.write(text)
+            os.replace(temporary, path)
+        except OSError:
+            return
+        self.shell_log_block = block
+
+    def end_shell_session(self):
+        """SHELLを終える前(bashが終わった・^Js): ログを書き、次のセッションは新しい分として足す。"""
+        self.save_shell_log()
+        self.shell_log_block = ''
+        self.shell_started = False
+
     def show_shell_log(self):
-        """^J^Os・^[l: SHELLの出力をFILEで(PART等が使える)。"""
-        lines = []
-        for number, text in enumerate(self.shell.lines, 1):
-            pieces = wrap_text(expand_tabs(text), self.wrap_width())
-            for i, piece in enumerate(pieces):
-                lines.append(Line(piece, number, ends_with_newline=i == len(pieces) - 1))
-        size = sum(len(t.encode('utf-8')) + 1 for t in self.shell.lines)
-        self.file_mode.set_rendered('SHELL', lines, size, self.wrap_width())
-        self.file_mode.record_history = False
-        self.file_view.go_to_bottom()
+        """^J^Os(Application::executeShowShellLog()): ログを書いてからfileとして開く。^Gは(ls)へ。"""
+        self.save_shell_log()
+        path = self.shell_log_path()
+        if not os.path.exists(path) or not self.open_file(path):
+            return False
         self.enter_mode(FILE)
+        self.return_stack[:] = [DIRECTORY]  # C++のfileReturnMode_ = Directory
+        return True
+
+    def start_shell_log(self):
+        """^[l(Application::executeStartLog()): ログを「usilic-1.5b:」(プロンプトの行)で分けた一覧(LOG)。"""
+        self.save_shell_log()
+        path = self.shell_log_path()
+        if not os.path.exists(path) or not self.open_file(path):
+            return False
+        self.current_mode = FILE
+        view = self.file_view
+        size = sum(len(l.text.encode('utf-8')) + 1 + l.hidden_bytes for l in view.lines)
+        if not self.part.split(view.lines, PROMPT_DISPLAY_NAME + ':', size, path, FIXED, 'LOG', path):
+            self.show_transient_notice('No string')
+            return False
+        self.part_position_key = None
+        self.current_mode = PART_TOC
+        self.return_stack[:] = [DIRECTORY]  # ^Gは(ls)へ(C++のcutReturnMode_の既定)
         return True
 
     def shell_helper(self, number):
@@ -4358,8 +4524,10 @@ class Application:
                 self.layout()
                 self.redraw()
             if self.shell.alive() and self.shell.fd in readable:
-                if not self.shell.on_pty_readable() and self.current_mode == SHELL:
-                    self.go_back()  # bashが終わった
+                if not self.shell.on_pty_readable():
+                    self.end_shell_session()  # bashが終わった(C++のhandleShellChildExited())
+                    if self.current_mode == SHELL:
+                        self.go_back()
                 self.check_shell_run()
                 if self.current_mode == SHELL:
                     self.refresh_shell_view()

@@ -10,7 +10,7 @@ class PartTest(unittest.TestCase):
         texts = ['intro', '# A', 'a', '# B', 'b1', 'b2']
         segments = split_lines(texts, '^#')
         self.assertEqual([(s.start, s.end, s.label) for s in segments],
-                         [(0, 1, 'intro'), (1, 3, '# A'), (3, 6, '# B')])
+                         [(0, 1, '--'), (1, 3, '# A'), (3, 6, '# B')])  # 一致の前は「--」(C++のCutMode::split())
 
     def test_part_mode_open(self):
         mode = PartMode(ContentView(), ContentView())

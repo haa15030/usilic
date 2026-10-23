@@ -71,7 +71,9 @@ class DirectoryMode:
         self.view = view
         self.current_directory = ''
         self.entries = []
-        self.mode_stack = []  # ^Gで戻る(ディレクトリ, カーソル)
+        # ^Gで戻る所(C++のModeStack): (ディレクトリ, カーソル)の並び、または('floor', ここ, 前)1つだけ(2つの間を
+        # ^Gで行き来する、pushFloor())
+        self.mode_stack = []
         self.byte_count = 0
         self.cursor_positions = {}
         self.history = None  # ディレクトリで起動した時だけ(ページャーでは履歴に触れない)
@@ -156,6 +158,56 @@ class DirectoryMode:
     def selected_entry(self):
         i = self.view.cursor_index
         return self.entries[i] if 0 <= i < len(self.entries) else None
+
+    # --- ^Gで戻る所(C++のDirectoryMode::descendTo()・goBack()・resetNavigationToFloor()) ---
+    def push_floor(self, directory, previous):
+        """ModeStack::pushFloor(): 戻る所を消して、ここと前の2つを行き来する1組にする。"""
+        self.mode_stack = [('floor', directory, previous)]
+
+    def reset_navigation_to_floor(self, previous):
+        self.push_floor(self.current_directory, previous)
+
+    def is_floor_on_top(self):
+        return bool(self.mode_stack) and self.mode_stack[-1][0] == 'floor' and len(self.mode_stack[-1]) == 3
+
+    def descend_to(self, target):
+        """下(や親)のディレクトリへ。^Gで戻る所に今の所を積む(行き来の組の上なら、組を新しい2つに置き換える)。"""
+        previous, cursor = self.current_directory, self.view.cursor_index
+        floor = self.is_floor_on_top()
+        if not self.enter_directory(target):
+            return False
+        if floor:
+            self.push_floor(self.current_directory, previous)
+        elif previous:
+            self.mode_stack.append((previous, cursor))
+        return True
+
+    def go_back(self):
+        """^G: 積んだ所へ。行き来の組なら前の所へ移って組を入れ替える(本当の行き来)。"""
+        if not self.mode_stack:
+            return False
+        if self.current_directory:
+            self.save_current_cursor_position()
+        frame = self.mode_stack.pop()
+        if len(frame) == 3:
+            _, directory, previous = frame
+            if not previous or not self.enter_directory(previous):
+                return False
+            self.push_floor(self.current_directory, directory)
+            return True
+        directory, cursor = frame
+        if not self.enter_directory(directory):
+            return False
+        if self.history is None:  # 履歴が無い時(ページャー)は積んだ時のカーソル
+            self.view.cursor_index = cursor
+            self.view.ensure_cursor_visible()
+        return True
+
+    def go_to_parent(self):
+        target = self.parent_directory(self.current_directory)
+        if target == self.current_directory:
+            return False
+        return self.descend_to(target)
 
     @staticmethod
     def parent_directory(directory):

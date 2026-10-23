@@ -213,6 +213,13 @@ class Shell:
             out.append(Line(piece, len(self.lines) + 1))
         return out
 
+    def committed_rows(self, width):
+        """確定した行を折り返した行の字(C++のscrollback_の行と同じく、タブの所は幅0の印U+2060と空白)。"""
+        rows = []
+        for text in self.lines:
+            rows.extend(wrap_text(expand_tabs(text, marker='\u2060'), width))
+        return rows
+
     def shown_byte_count(self, width):
         """モードラインの大きさ(C++はscrollback_の行ごとに字+1): 確定した行を折り返した1行ごとに。
         プロンプトと編集中のコマンドの行は数えない。C++はタブの所に幅0の印U+2060(3バイト)を置くので、その分も。"""
