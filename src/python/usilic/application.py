@@ -17,6 +17,7 @@ import time
 from . import mode_line, utf8
 from . import history as hist
 from . import help_text
+from . import os_name
 from . import bookmarks as bm
 from . import macro as mc
 from . import messages_ja
@@ -2748,18 +2749,19 @@ class Application:
 
     # --- INFO・SHELLの補助 ---
     def start_info(self):
-        """^I: Boot options・Startup file・ERROR・SHELL・DATA・WORK(^Mでそれぞれを開く)。"""
+        """^I: OS名(起動のコマンドライン)・Startup file・ERROR・SHELL・DATA・WORK(^Mでそれぞれを開く)。"""
         home = os.path.join(os.path.expanduser('~'), '.usilic')
-        boot = ' '.join(sys.argv[1:])
-        rows = [('Boot options', boot, None), ('Startup file', self.configuration.path or '', 'file'),
+        rows = [(os_name.os_display_name() or 'Boot options', os_name.command_line(), None),
+                ('Startup file', self.configuration.path or '', 'file'),
                 ('ERROR', os.path.join(home, 'error'), 'file'), ('SHELL', 'SHELL', 'shell'),
                 ('DATA', self.data_directory(), 'dir')]
         works = self.work_files or ['']
         for i, path in enumerate(works):
             rows.append(('WORK' if i == 0 else '', path, 'file' if path else None))
         lines, self.info_targets = [], []
+        width = max(12, len(rows[0][0]))  # 「:」の桁はOS名と「Startup file」の長い方に揃える(C++と同じ)
         for number, (label, value, kind) in enumerate(rows, 1):
-            text = (label.rjust(12) + ' : ' if label else ' ' * 15) + value
+            text = (label.rjust(width) + ' : ' if label else ' ' * (width + 3)) + value
             lines.append(Line(text, number))
             self.info_targets.append((kind, value) if kind else None)
         self.info_byte_count = sum(len(l.text.encode('utf-8')) + 1 for l in lines)

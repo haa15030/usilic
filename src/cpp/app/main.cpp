@@ -5692,7 +5692,8 @@ int main(int argc, char **argv) {
   // appear exactly as typed, whichever order that was) -- empty for a
   // bare no-argument launch. ~ expansion only ever applies to the
   // directory-looking token(s) (flags never start with ~).
-  std::string bootOptions;
+  // 2026-10-23: INFOの1行目は「OS名 : コマンドライン」なので、プログラム名(argv[0]の名前だけ)から。
+  std::string bootOptions = argc > 0 ? std::filesystem::path(argv[0]).filename().string() : std::string("usilic");
   for (int i = 1; i < argc; i++) {
     std::string token = argv[i];
     if (homeEnv && (token == "~" || (token.size() > 1 && token[0] == '~' && token[1] == '/'))) {

@@ -12581,8 +12581,14 @@ bool Application::executeShowUsilicBanner() {
       infoPreviousFilePath_.clear();
     }
   }
-  constexpr int kLabelWidth = 12;  // "Boot options"/"Startup file"自身の幅――他の全てのラベルはこれに右寄せされる
-  auto field = [](const std::string &label) {
+  // 2026-10-23、直接のユーザー依頼("モードラインでの区別が付かなくなったためINFOの「Boot Options : 」を
+  // 「OS名：コマンドライン」にしたらどうかな？"、例「macOS Sequoia 15.7.8 : usilic -c」): 1行目のラベルはOS名
+  // (osDisplayName())、値は起動のコマンドライン(bootOptions_、プログラム名から)。他のラベルはOS名と「Startup
+  // file」の長い方の幅に右寄せして、「:」の桁を揃える。
+  std::string osName = osDisplayName();
+  if (osName.empty()) osName = "Boot options";
+  const int kLabelWidth = std::max(12, static_cast<int>(osName.size()));
+  auto field = [kLabelWidth](const std::string &label) {
     std::string padded = label;
     if (static_cast<int>(padded.size()) < kLabelWidth) padded = std::string(kLabelWidth - padded.size(), ' ') + padded;
     return padded + " : ";
@@ -12630,7 +12636,7 @@ bool Application::executeShowUsilicBanner() {
   }
 
   std::ostringstream banner;
-  banner << field("Boot options") << bootOptions_ << "\n";
+  banner << field(osName) << bootOptions_ << "\n";
   banner << field("Startup file") << startupFilePath() << "\n";
   banner << field("ERROR") << errorLogPath_ << "\n";
   banner << field("SHELL") << logFilePath_ << "\n";

@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "application.hpp"
+#include "platform.hpp"
 #include "doctest.h"
 #include "help_text.hpp"
 #include "mode_line.hpp"
@@ -6887,7 +6888,9 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): shows a status screen with th
   for (const auto &line : app.activeContentView().lines()) joined += line.text + "\n";
   CHECK(joined.find("usilic-1.5b") == std::string::npos);  // removed field
   CHECK(joined.find((root / ".usilic" / "history").string()) == std::string::npos);  // removed field
-  CHECK(joined.find("Boot options") != std::string::npos);
+  // 1行目のラベルはOS名(osDisplayName()、2026-10-23に「Boot options」から)。
+  std::string osName = fm::osDisplayName();
+  CHECK(joined.find((osName.empty() ? std::string("Boot options") : osName) + " : ") != std::string::npos);
   CHECK(joined.find("Startup file") != std::string::npos);
   CHECK(joined.find((root / ".usilic" / "usilicrc").string()) != std::string::npos);
   CHECK(joined.find("ERROR") != std::string::npos);
@@ -7136,7 +7139,9 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): \"Boot options\" (the cursor'
   REQUIRE(app.activeContentView().cursorIndex() == 0);  // "Boot options" -- the cursor's own initial row
   for (int col = 0; col < 80; col++) CHECK_FALSE(display.standoutAt(0, col));
   CHECK(display.cursorRow() == 0);
-  CHECK(display.cursorCol() == 15);  // matches WORK/ERROR/etc.'s own front-of-value column, not bootOptions_'s end
+  // matches WORK/ERROR/etc.'s own front-of-value column, not bootOptions_'s end. 2026-10-23: the labels are right-aligned
+  // to the OS name (osDisplayName()) when it is longer than "Startup file".
+  CHECK(display.cursorCol() == std::max<int>(12, static_cast<int>(fm::osDisplayName().size())) + 3);
 }
 
 // 2026-08-18 fix, a direct user report: "ハイライト上の[return]が反応

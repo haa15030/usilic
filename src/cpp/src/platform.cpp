@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
 #include <sys/stat.h>
@@ -15,6 +16,82 @@ namespace fm {
 #ifndef _WIN32  // Windowsはplatform_win.cpp(MoveFileExW)
 bool replaceFile(const std::string &from, const std::string &to) {
   return std::rename(from.c_str(), to.c_str()) == 0;
+}
+#endif
+
+#ifndef _WIN32  // Windowsはplatform_win.cpp(レジストリ)
+namespace {
+// macOSの版の名前(メジャー番号→名前)。知らない番号は名前無し。
+std::string macOSReleaseName(const std::string &version) {
+  int major = std::atoi(version.c_str());
+  int minor = 0;
+  std::size_t dot = version.find('.');
+  if (dot != std::string::npos) minor = std::atoi(version.c_str() + dot + 1);
+  switch (major) {
+    case 10:
+      return minor == 13 ? "High Sierra" : minor == 14 ? "Mojave" : minor == 15 ? "Catalina" : "";
+    case 11: return "Big Sur";
+    case 12: return "Monterey";
+    case 13: return "Ventura";
+    case 14: return "Sonoma";
+    case 15: return "Sequoia";
+    case 26: return "Tahoe";
+    default: return "";
+  }
+}
+
+#ifndef __APPLE__
+// /etc/os-releaseの「KEY=値」の値(引用符を外す)。
+std::string osReleaseValue(const std::string &text, const std::string &key) {
+  std::size_t at = 0;
+  while (at < text.size()) {
+    std::size_t nl = text.find('\n', at);
+    std::string line = text.substr(at, nl == std::string::npos ? std::string::npos : nl - at);
+    if (line.compare(0, key.size() + 1, key + "=") == 0) {
+      std::string value = line.substr(key.size() + 1);
+      if (value.size() >= 2 && (value.front() == '"' || value.front() == '\'') && value.back() == value.front())
+        value = value.substr(1, value.size() - 2);
+      return value;
+    }
+    if (nl == std::string::npos) break;
+    at = nl + 1;
+  }
+  return "";
+}
+#endif
+}  // namespace
+
+std::string osDisplayName() {
+#ifdef __APPLE__
+  ChildProcess::Result result = ChildProcess::run({"sw_vers", "-productVersion"});
+  std::string version = result.ok ? result.output : "";
+  while (!version.empty() && (version.back() == '\n' || version.back() == '\r' || version.back() == ' '))
+    version.pop_back();
+  if (version.empty()) return "macOS";
+  std::string name = macOSReleaseName(version);
+  return "macOS " + (name.empty() ? "" : name + " ") + version;
+#else
+  std::ifstream in("/etc/os-release");
+  if (!in) in.open("/usr/lib/os-release");
+  std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  // 「Ubuntu」+「26.10 (Stonking Stingray)」→「Ubuntu 26.10 Stonking Stingray」。VERSIONが無ければPRETTY_NAME。
+  std::string name = osReleaseValue(text, "NAME"), version = osReleaseValue(text, "VERSION");
+  std::string out;
+  if (!name.empty() && !version.empty()) {
+    out = name + " ";
+    for (char c : version)
+      if (c != '(' && c != ')' && c != ',') out += c;
+    while (out.find("  ") != std::string::npos) out.erase(out.find("  "), 1);
+  } else {
+    out = osReleaseValue(text, "PRETTY_NAME");
+  }
+  if (out.empty()) {
+    ChildProcess::Result result = ChildProcess::run({"uname", "-sr"});
+    out = result.ok ? result.output : "";
+    while (!out.empty() && (out.back() == '\n' || out.back() == '\r')) out.pop_back();
+  }
+  return out;
+#endif
 }
 #endif
 

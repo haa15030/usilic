@@ -107,4 +107,21 @@ void showWindowsError(const std::string &message) {
   MessageBoxW(nullptr, widen(message).c_str(), L"usilic", MB_OK | MB_ICONERROR);
 }
 
+// HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersionのProductName(「Windows 10 Pro」)とDisplayVersion(「25H2」)。
+// Windows 11でもProductNameは「Windows 10 …」のままなので、ビルド番号22000以上なら11に直す。
+std::string osDisplayName() {
+  auto read = [](const wchar_t *name) {
+    wchar_t buffer[256];
+    DWORD size = sizeof(buffer);
+    if (RegGetValueW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", name, RRF_RT_REG_SZ,
+                     nullptr, buffer, &size) != ERROR_SUCCESS)
+      return std::string();
+    return narrow(buffer);
+  };
+  std::string product = read(L"ProductName"), display = read(L"DisplayVersion"), build = read(L"CurrentBuildNumber");
+  if (product.empty()) return "Windows";
+  if (std::atoi(build.c_str()) >= 22000 && product.compare(0, 10, "Windows 10") == 0) product.replace(8, 2, "11");
+  return display.empty() ? product : product + " " + display;
+}
+
 }  // namespace fm

@@ -15,7 +15,7 @@ CXXFLAGS    := -std=gnu++17 $(OPTFLAGS) -Wall -Wextra -Wno-missing-field-initial
 # SDL2・SDL2_ttfはDLL(libSDL2.dll.a)でリンクし、libstdc++・libgcc・winpthreadだけ静的に(usilic.exeとSDLの
 # DLLだけで動くように)。
 LDLIBS      := -L$(WIN_SDL_DIR)/lib -lmingw32 -lSDL2main -lSDL2 -lSDL2_ttf -mwindows \
-               -static-libgcc -static-libstdc++ -Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive,-Bdynamic -lshell32 -lole32 -luuid
+               -static-libgcc -static-libstdc++ -Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive,-Bdynamic -lshell32 -lole32 -luuid -ladvapi32
 
 SRC_DIR   = src
 APP_DIR   = app

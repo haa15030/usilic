@@ -12,6 +12,10 @@ namespace fm {
 
 // WSLの中か(/proc/sys/fs/binfmt_misc/WSLInteropがあるか、/proc/versionに"microsoft"を含むか)。
 // 一度だけ求めて覚える。
+// INFOの1行目のラベルにするOS名(「macOS Sequoia 15.7.8」「Ubuntu 26.10 Stonking Stingray」「Windows 11 Pro 25H2」)。
+// 分からなければ空。
+std::string osDisplayName();
+
 bool isWsl();
 // /proc/versionの内容からWSLかを判定する(isWsl()の中身、テスト用に分けた)。
 bool procVersionLooksLikeWsl(const std::string &procVersion);

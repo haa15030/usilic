@@ -32554,3 +32554,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 1035. **Python版: (ls)・FILEの^Rの一覧の順と戻り先をC++版と同じに(2026-10-23)** 直接のユーザー報告("python版はDIRとFILEとでHISTORYとの順番と戻り値が違っているのでC++に合わせて(lsで^Rだと戻り値がFILE(lsから来たのに)でさらに^Rではls(FILEから来たのに))")。
    - C++の^R(Command::ToggleHistoryView)は、(ls)では^X^D、FILE・ARCでは^X^Fと同じ一覧(`startRegexPromptList()`、並べ替えた順で開き、一覧の中の^Rで入力順のHISTORYに)を開く。Python版は別の作りで、入力順の一覧をいきなり開き、一覧の種類と戻り先の表示も食い違っていた。`toggle_history_view()`から^X^D・^X^Fと同じ処理を呼ぶようにした。
    - 確かめたこと: 擬似端末で、(ls)の^R・^R^R・^R^R^R、FILEの^R・^R^R・^R^Gのモードライン(一覧の種類・位置・入力欄・右端の戻り先)が両方の版で同じ。unittest 81件すべて通る。
+
+1036. **INFOの1行目を「OS名 : コマンドライン」に(C++・Python、2026-10-23)** 直接のユーザー依頼("モードラインでの区別が付かなくなったためINFOの「Boot Options : 」を「OS名：コマンドライン」にしたらどうかな？"、例「macOS Sequoia 15.7.8 : usilic -c」「Windows 11 Pro 25H2 : usilic.exe」「Ubuntu 26.10 Stonking Stingray : python3 usilic.py」)。項目1034でモードラインが両方の版で同じになり、どちらの版か見分けられなくなったため。
+   - OS名: macOSは`sw_vers -productVersion`(Pythonは`platform.mac_ver()`)の版に名前(11 Big Sur〜15 Sequoia・26 Tahoe、10.13〜10.15も)を付ける。Linuxは/etc/os-releaseのNAME+VERSION(括弧を外す、「Ubuntu 26.10 Stonking Stingray」、VERSIONが無ければPRETTY_NAME、それも無ければuname)。WindowsはレジストリのProductName+DisplayVersion(ビルド22000以上はProductNameが「Windows 10」のままなので11に直す)。C++は`fm::osDisplayName()`(platform.cpp・platform_win.cpp、Windowsはadvapi32を明示してリンク)、Pythonは`os_name.py`。
+   - コマンドライン: C++はargv[0]の名前+引数(以前は引数だけ)。Pythonはインタープリターとスクリプトの名前+引数(macOSのPythonは本体の名前「Python」になるので「python3」と出す)。外部起動の子の「(親のPID)」は今まで通り末尾。
+   - 他のラベル(Startup file・ERROR等)はOS名と「Startup file」の長い方の幅に右寄せし、「:」の桁を揃える。
+   - HELPの原稿(src/HELP_.txt・src/HELP_en_.txt、それぞれ3か所)の「Boot options」の説明も直した。
+   - 確かめたこと: 擬似端末で両方の版のINFOが「macOS Sequoia 15.7.8 : usilic -c」「macOS Sequoia 15.7.8 : python3 usilic.py」になり、「:」の桁が揃う。C++のINFOのテスト(19件)は、「Boot options」の字と値の桁(15)を見ていた2か所を直して、変更前から通らない2件(7085行・7118行)以外は通る。Pythonのunittest 81件すべて通る。make usilic・make install。Linux・Windowsでのビルドと表示は確かめていない。
