@@ -6,7 +6,7 @@ KEYのhで開くHELP。HELP.1(英語はHELP_en.1)をgroffで画面の幅に組�
 """
 import os
 
-from . import man_mode
+from . import man_mode, overstrike, utf8
 
 FULL_COLON = '：'
 MARKERS = ('⁠', '', '﻿')  # 組んだHELPの目印(行頭がタブの行等)。表示はしない
@@ -55,21 +55,64 @@ def help_epub_path(japanese):
 
 
 def plain_help_lines(width, japanese, configuration):
-    """平文のHELPの行と大きさ。(行, バイト数, パス)かNone。"""
+    """平文のHELPの行と大きさ。(行, バイト数, パス, 元の行(重ね打ちを解いた字、タブはそのまま))かNone。"""
     roff = find_in_library('HELP.1' if japanese else 'HELP_en.1')
     if roff:
         argv = configuration.command_for('Groff') + ['-rLL=%dn' % max(width, 20), '-rusilic-help=1', roff]
         rewrite = configuration.key_bindings.rewrite_help_text   # KEY節で変えたキーをHELPの表記にも
-        found = man_mode.run_to_lines(argv, width, transform=lambda text: strip_markers(rewrite(markers_to_tabs(text))))
+        shown = []
+
+        def transform(text):
+            shown.append(strip_markers(rewrite(markers_to_tabs(text))))
+            return shown[0]
+        found = man_mode.run_to_lines(argv, width, transform=transform)
         if found and found[0]:
-            return found[0], found[1], roff
+            return found[0], found[1], roff, raw_lines(shown[0])
     plain = find_in_library('HELP' if japanese else 'HELP.en')
     if plain:
         with open(plain, 'rb') as f:
             data = f.read()
-        text = configuration.key_bindings.rewrite_help_text(data.decode('utf-8', 'replace'))
-        return man_mode.styled_lines(strip_markers(text), width), len(data), plain
+        text = strip_markers(configuration.key_bindings.rewrite_help_text(data.decode('utf-8', 'replace')))
+        lines = man_mode.styled_lines(text, width)
+        return lines, man_mode.shown_byte_count(lines, text), plain, raw_lines(text)
     return None
+
+
+def raw_lines(text):
+    return [overstrike.decode(line.replace('\r', ''))[0] for line in text.split('\n')]
+
+
+def key_label_bytes(raw, width):
+    """KEYの一覧の1行(C++のCUTの見出し)の大きさ: 元の行の折り返す前の分を、タブを「U+2060+次の8桁までの空白」
+    (PipeBuffer)にして、行末の空白とタブの印を除いたもの(stripTrailingTabPadding())、と改行の1。"""
+    out, column = [], 0
+    for ch in raw:
+        if ch == '\t':
+            step = max(0, min(8 - column % 8, width - column))
+            out.append('\u2060' + ' ' * step)
+            column += step
+        else:
+            w = utf8.display_width_of_codepoint(ord(ch))
+            if column + w > width:
+                break
+            out.append(ch)
+            column += w
+        if column >= width:
+            break
+    label = ''.join(out).rstrip(' ')
+    if label.endswith('\u2060'):
+        label = label[:-1]
+    return len(label.encode('utf-8')) + 1
+
+
+def key_list_byte_count(lines, raw, width):
+    """KEYの一覧の大きさ(C++はCUTの見出しの行の大きさ、元の行ごとに1つ)。"""
+    total, line_start = 0, True
+    for line in lines:
+        if line_start and line.raw_line_number and line.raw_line_number <= len(raw):
+            total += key_label_bytes(raw[line.raw_line_number - 1], width)
+        line_start = line.ends_with_newline
+    return total
 
 
 def key_source_lines(lines):

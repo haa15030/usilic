@@ -20,10 +20,15 @@ def run_to_lines(argv, width, env=None, input_bytes=None, limit=None, transform=
         return None
     data = result.stdout[:limit] if limit else result.stdout
     text = data.decode('utf-8', 'replace')
-    lines = styled_lines(transform(text) if transform else text, width)
-    # 大きさは重ね打ちを解いた後の字で数える(C++版はPipeBufferを通した後の行の大きさ)
-    size = sum(len(l.text.encode('utf-8')) + (1 if l.ends_with_newline else 0) for l in lines)
-    return lines, size
+    text = transform(text) if transform else text
+    lines = styled_lines(text, width)
+    return lines, shown_byte_count(lines, text)
+
+
+def shown_byte_count(lines, text):
+    """C++のContentView::totalByteCount(): PipeBufferを通した後の行(折り返した1行ごとに改行の1を足す)の大きさ。
+    PipeBufferはタブの位置に幅0の印U+2060(3バイト)を置くので、その分も。"""
+    return sum(len(l.text.encode('utf-8')) + 1 for l in lines) + 3 * text.count('\t')
 
 
 def styled_lines(text, width):

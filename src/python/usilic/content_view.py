@@ -75,6 +75,7 @@ class ContentView:
         self.height = 1                 # 本文の行数(モードラインを除く)
         self.cursor_highlight = True    # setCursorHighlightEnabled()(ページャーではFalse)
         self.position_text_override = None  # setPositionTextOverride()(一時的な通知)
+        self.raw_line_numbers = True    # 位置を元の行で数える(applyRawLineNumbers())。MAN・KEYの一覧は折り返した行で
 
     # --- 内容 ---
     def set_lines(self, lines):

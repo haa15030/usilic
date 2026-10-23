@@ -102,7 +102,7 @@ class DirectoryMode:
         self.entries = [parse_ls_line(l) for l in lines]
         if self.sort_key == 'Kind':
             self.entries = sort_by_kind(self.entries, self.reverse)
-        self.byte_count = len(result.stdout)
+        self.byte_count = sum(len(l.encode('utf-8')) + 1 for l in lines)  # 一覧の行だけ(C++版と同じく「total」の行は除く)
         self.current_directory = path
         self.marks = set()
         self.temporary_marks = False

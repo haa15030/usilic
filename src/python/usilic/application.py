@@ -98,12 +98,14 @@ class Application:
         self.list_prompt = None    # ^Rで一覧を開いた元のプロンプト(^Mでそこへ戻す)
         self.archives = []         # ARCの入れ子(一番後ろが今のアーカイブ)
         self.man_view = ContentView()
+        self.man_view.raw_line_numbers = False  # C++のMANの行は元の行の番号を持たない
         self.man_mode = ManMode(self.man_view, self.configuration)
         self.du_view = ContentView()
         self.du_mode = DuMode(self.du_view, self.configuration)
         self.locate_view = ContentView()
         self.locate_mode = LocateMode(self.locate_view, self.configuration)
         self.key_view = ContentView()
+        self.key_view.raw_line_numbers = False  # KEYの一覧(CUTの見出し)も
         self.help_view = ContentView()
         self.help_view.cursor_highlight = False
         self.help_byte_count = 0
@@ -227,7 +229,7 @@ class Application:
         (C++のContentView::applyRawLineNumbers())。"""
         lines = view.lines
         current, total = (view.cursor_index + 1 if lines else 0), len(lines)
-        if lines and lines[0].raw_line_number is not None:
+        if lines and lines[0].raw_line_number is not None and view.raw_line_numbers:
             index = max(0, min(view.cursor_index, len(lines) - 1))
             current = lines[index].raw_line_number if lines[index].raw_line_number is not None else current
             total = lines[-1].raw_line_number if lines[-1].raw_line_number is not None else total
@@ -1283,7 +1285,7 @@ class Application:
         if not found:
             self.show_transient_notice('HELP not found: %s (make install)' % 'HELP.1')
             return False
-        lines, self.help_byte_count, _ = found
+        lines, self.help_byte_count = found[0], found[1]
         self.help_view.set_lines(lines)
         self.help_view.cursor_index = self.help_view.top_index = 0
         if raw_line is not None:
@@ -1301,7 +1303,7 @@ class Application:
             self.show_transient_notice('HELP not found: %s (make install)' % 'HELP.1')
             return False
         lines = help_text.key_source_lines(found[0])
-        self.key_byte_count = sum(len(l.text.encode('utf-8')) + (1 if l.ends_with_newline else 0) for l in lines)
+        self.key_byte_count = help_text.key_list_byte_count(lines, found[3], self.wrap_width())
         cursor = self.key_view.cursor_index
         self.key_view.set_lines(lines)
         self.key_view.cursor_index = cursor  # 前回KEYを離れた行(keyCursorIndex_)
