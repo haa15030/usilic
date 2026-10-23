@@ -86,8 +86,8 @@ class DirectoryMode:
         self.marks = set()   # 選択(下線、. ^SPC ^Oy ^On)。項目の番号
         self.temporary_marks = False  # CP/MV/展開の後の一時的な選択(^Lで消える)
 
-    def enter_directory(self, path):
-        """pathの一覧を出す(DirectoryMode::enterDirectory())。"""
+    def enter_directory(self, path, consult_history=True):
+        """pathの一覧を出す(DirectoryMode::enterDirectory())。consult_historyがFalseなら履歴に触れない(カーソルは頭)。"""
         path = os.path.abspath(path)
         if not path.endswith('/'):
             path += '/'
@@ -111,8 +111,8 @@ class DirectoryMode:
         self.marks = set()
         self.temporary_marks = False
         self.set_lines()
-        cursor, top = self.cursor_positions.get(path, (0, 0))
-        if self.history is not None:
+        cursor, top = self.cursor_positions.get(path, (0, 0)) if consult_history else (0, 0)
+        if self.history is not None and consult_history:
             self.history.push_recent(hist.RECENT_DIRECTORY, path)
             pos = self.history.position_for(hist.DIRECTORY, path)
             cursor, top = (pos.row, 0) if pos else (0, 0)
@@ -230,9 +230,14 @@ class DirectoryMode:
         return True
 
     def refresh(self):
-        cursor = self.view.cursor_index
-        ok = self.enter_directory(self.current_directory)
-        self.view.cursor_index = cursor
-        self.view.clamp()
-        self.view.ensure_cursor_visible()
-        return ok
+        """DirectoryMode::refresh(): 読み直して、カーソルは同じ名前の項目へ(並べ替えても付いて行く)。"""
+        before = self.selected_entry()
+        if not self.enter_directory(self.current_directory, consult_history=False):
+            return False
+        if before is not None:
+            for i, entry in enumerate(self.entries):
+                if entry.name == before.name:
+                    self.view.cursor_index = i
+                    self.view.ensure_cursor_visible()
+                    break
+        return True

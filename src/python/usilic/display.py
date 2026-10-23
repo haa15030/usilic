@@ -66,7 +66,8 @@ class TerminalDisplay:
         to_edgeなら右端まで(モードライン)。"""
         attr = (curses.A_REVERSE if reverse else 0) | (curses.A_UNDERLINE if underline else 0)
         width = self.columns - (1 if row == self.rows - 1 else 0)  # 右下の桁に書くとcursesがエラーにする
-        fitted = self._fit(text, width)
+        # 幅0の印U+2060(タブの所)は画面へは書かない(Terminal.appは1桁と数える、C++のrenderLine()と同じ)
+        fitted = self._fit(text, width).replace('\u2060', '')
         body = fitted if to_edge or not attr else fitted.rstrip(' ')
         try:
             # 先に行末まで消す(C++のclearToEndOfLine())。字の幅を端末と違って数えた(▽等)時に前の行の字が残らないように
@@ -91,6 +92,8 @@ class TerminalDisplay:
             w = utf8.display_width_of_codepoint(ord(ch))
             if column + w > width:
                 break
+            if ch == '\u2060':
+                continue
             attr = 0
             for start, end, name in runs:
                 if start <= index < end:

@@ -845,6 +845,27 @@ class Application:
             return False
         return self.enter_directory_with_floor(self.truncate_to_path_prefix(source, digit))
 
+    def go_to_recent_file(self):
+        """^J^J(Application::goToRecentFile()): FILEの履歴の、今見ている物以外で一番新しい項目を開く(外から起動した
+        物・usilic-webのURLは除く)。"""
+        current = ''
+        if self.current_mode == ARCHIVE and self.archives:
+            current = self.archives[-1].current_archive
+            if is_epub_file(current):
+                current += '/'  # ARCで開いた.epubの履歴の形
+        elif self.current_mode == FILE:
+            current = self.file_mode.current_file
+        elif self.current_mode in (PART_TOC, PART) and self.part.origin == 'FILE' and self.part_position_key:
+            current = self.part_position_key
+        for item in reversed(self.ring(hist.RECENT_FILE)):
+            if current and item == current:
+                continue
+            if item.endswith(hist.USILIC_TAG) or is_usilic_web_url(item):
+                continue
+            if self.open_recent_file_entry(item):
+                return True
+        return False
+
     def go_to_recent_directory(self):
         """Application::goToRecentDirectory(): 最近のディレクトリの、今の所以外で一番新しい所へ(外から起動した物は除く)。"""
         for name in reversed(self.ring(hist.RECENT_DIRECTORY)):
@@ -2017,9 +2038,7 @@ class Application:
                     return self.open_file(path, streaming=number == 29, raw=True)
             return False
         if number == 31:  # ^J^J
-            if self.previous_file and os.path.exists(self.previous_file):
-                return self.open_file(self.previous_file)
-            return False
+            return self.go_to_recent_file()
         if number in (35, 36):
             return self.toggle_mark()
         if number in (37, 38):
