@@ -18,6 +18,25 @@ def strip_markers(text):
     return text
 
 
+def markers_to_tabs(text):
+    """renderHelpRoff(): groffが出した行頭・行末のタブの印(U+E000)をタブに戻す。行頭の印は1桁を占め、
+    その後ろに元のタブが続くので、タブ(8桁)と残りの空白に。行末の印はタブに。"""
+    out = []
+    for line in text.split('\n'):
+        at = line.find('\ue000')
+        if at < 0:
+            out.append(line)
+            continue
+        before, after = line[:at], line[at + 1:]
+        if not before.strip(' '):
+            body = after.lstrip(' ')
+            columns = len(before) + 1 + len(after) - len(body)
+            out.append('\t' + ' ' * max(0, columns - 8) + body)
+        else:
+            out.append(before.rstrip(' ') + '\t')
+    return '\n'.join(out)
+
+
 def library_directories():
     """C++のinstallLibDirectory_の候補(~/.local/lib/usilic/、/usr/local/lib/usilic/)。"""
     return [os.path.join(os.path.expanduser('~'), '.local', 'lib', 'usilic'), '/usr/local/lib/usilic']
@@ -41,7 +60,7 @@ def plain_help_lines(width, japanese, configuration):
     if roff:
         argv = configuration.command_for('Groff') + ['-rLL=%dn' % max(width, 20), '-rusilic-help=1', roff]
         rewrite = configuration.key_bindings.rewrite_help_text   # KEY節で変えたキーをHELPの表記にも
-        found = man_mode.run_to_lines(argv, width, transform=lambda text: strip_markers(rewrite(text)))
+        found = man_mode.run_to_lines(argv, width, transform=lambda text: strip_markers(rewrite(markers_to_tabs(text))))
         if found and found[0]:
             return found[0], found[1], roff
     plain = find_in_library('HELP' if japanese else 'HELP.en')
