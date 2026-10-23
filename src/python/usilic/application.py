@@ -92,6 +92,7 @@ class Application:
         self.grep = GrepMode()
         self.grep_active = False
         self.grep_prompt = None   # (syntax, LineEditor)を打っている間
+        self.jump_highlight = None  # KEYのhで飛んだ行の強調(view, 行, 字, 始まり)(grepJumpHighlightView_)
         # 一覧・各モード
         self.list_view = ContentView()
         self.list_mode = ListBrowserMode(self.list_view)
@@ -443,6 +444,9 @@ class Application:
                     line = Line(text, line.raw_line_number)
                 if (grep_on or self.grep.persistent) and index in self.grep.matches and view is self.grep.view:
                     runs += [(s, e, 'match') for s, e in match_spans(line.text, self.grep.pattern, self.grep.syntax)]
+                jump = self.jump_highlight
+                if jump and jump[0] is view and jump[1] == index and jump[2] == line.text:
+                    runs.append((jump[3], len(line.text), 'match'))
                 self.display.draw_row_styled(row, text, runs, reverse=reverse, underline=index in marks)
             else:
                 self.display.draw_row(row, '')
@@ -1332,11 +1336,30 @@ class Application:
         return True
 
     def jump_from_key_to_help(self):
-        """KEYのh: 平文のHELPの同じ行へ(jumpFromKeyToHelp()のopenPlainHelp())。"""
+        """KEYのh: HELP.epubの同じ行へ(jumpFromKeyToHelp()・jumpHelpToKeyLine())。HELP.epubが無ければ平文のHELPの
+        同じ行へ(openPlainHelp())。"""
         line = self.key_line_label()
         if line is None:
             return False
+        found = self.plain_help()
+        request = help_text.key_line_request(found[3], line.raw_line_number) if found else None
+        path = help_text.help_epub_path(japanese())
+        if request and path and self.open_epub(path, name='HELP'):
+            return self.jump_help_to_key_line(*request)
         return self.open_plain_help(line.raw_line_number)
+
+    def jump_help_to_key_line(self, key, nth):
+        """jumpHelpToKeyLine(): 開いたHELP.epubの本文で、KEYの行と同じ行へ。行を(字下げの後ろから)強調する。"""
+        index = help_text.find_key_line(self.epub_lines, key, nth)
+        if index is None:
+            self.show_transient_notice('Not found in HELP')
+            return False
+        self.set_epub_cursor(index)
+        view = self.file_view
+        text = view.lines[view.cursor_index].text if view.lines else ''
+        start = len(text) - len(text.lstrip(' \t\u00a0'))
+        self.jump_highlight = (view, view.cursor_index, text, start)
+        return True
 
     # --- キー ---
     def pending_prefix_label(self):
@@ -1977,6 +2000,7 @@ class Application:
         self.grep_active = False
         self.grep.matches, self.grep.occurrences, self.grep.current, self.grep.pattern = [], [], -1, ''
         self.grep.persistent = False
+        self.jump_highlight = None  # KEYのhの強調も(clearGrepJumpHighlight())
         self.grep.view = self.active_view()
         self.grep.origin = self.active_view().cursor_index
         self.push_mark(self.active_view())  # ^Sの開始にもマーク(HELPの^X^X)

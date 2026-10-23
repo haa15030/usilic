@@ -115,6 +115,46 @@ def key_list_byte_count(lines, raw, width):
     return total
 
 
+def normalize_for_match(line):
+    """normalizeHelpLineForMatch(): 組み方によらず比べられるように、空白類と不可視の印(NBSPも)を除く。"""
+    return ''.join(c for c in line if c not in ' \t\r\n\u00a0\u2060\ue000\ufeff')
+
+
+def lines_match(a, b):
+    """helpLinesMatch(): 短い方がもう片方の頭(groffの折り返し)で、短い方も「：」を含むこと。"""
+    if not a or not b:
+        return False
+    shorter, longer = (a, b) if len(a) < len(b) else (b, a)
+    return FULL_COLON in shorter and longer.startswith(shorter)
+
+
+def key_line_request(raw, raw_line_number):
+    """jumpFromKeyToHelp(): KEYの行(元の行の番号)→(比べる形の字, 前に同じ行がいくつあるか)。無ければNone。"""
+    if not raw_line_number or raw_line_number > len(raw):
+        return None
+    key = normalize_for_match(raw[raw_line_number - 1])
+    if not key:
+        return None
+    return key, sum(1 for line in raw[:raw_line_number - 1] if lines_match(normalize_for_match(line), key))
+
+
+def find_key_line(lines, key, nth):
+    """jumpHelpToKeyLine(): 行(折り返した続きは元の行ごとにつなぐ)の中で、nth番目に一致する所の最初の行。"""
+    count, i = 0, 0
+    while i < len(lines):
+        j, joined = i + 1, lines[i].text
+        while j < len(lines) and lines[i].raw_line_number is not None and \
+                lines[j].raw_line_number == lines[i].raw_line_number:
+            joined += lines[j].text
+            j += 1
+        if lines_match(normalize_for_match(joined), key):
+            if count == nth:
+                return i
+            count += 1
+        i = j
+    return None
+
+
 def key_source_lines(lines):
     """keySourceLines(): 「：」のある行(元の行ごと、折り返した続きも)だけ。"""
     kept, keeping, line_start = [], False, True
