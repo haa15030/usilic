@@ -22,6 +22,7 @@ class Line:
     highlight_end: Optional[int] = None
     ellipsis: bool = False            # 長ければ途中を「...」に(ellipsisEligible、LOCATE・DU・ARC・一覧)
     never_highlighted: bool = False   # カーソルがあっても反転しない(neverHighlighted、INFOの開けない行)
+    hidden_bytes: int = 0             # C++が行に置く幅0の印(タブの所のU+2060)のバイト数(大きさを数える時だけ足す)
 
 
 # 行頭禁則の字(C++のpipe_buffer.cppのisForbiddenAtLineStart())。
@@ -38,16 +39,19 @@ def wrap_text(text, width):
     """
     if width <= 0:
         return [text]
+    if text.isascii():  # ASCIIだけなら1字1桁で、行頭禁則の字も無い(結果は下と同じ、長いfileを組む時に速く)
+        return [text[i:i + width] for i in range(0, len(text), width)] if text else ['']
+    char_width = utf8.char_width
     pieces, current, used = [], [], 0
     for ch in text:
-        w = utf8.display_width_of_codepoint(ord(ch))
+        w = char_width(ch)
         if used + w > width and current:
             carried = []
             if ch in FORBIDDEN_AT_LINE_START and len(current) > 1:
                 carried = [current.pop()]
             pieces.append(''.join(current))
             current = carried
-            used = sum(utf8.display_width_of_codepoint(ord(c)) for c in current)
+            used = sum(char_width(c) for c in current)
         current.append(ch)
         used += w
     pieces.append(''.join(current))

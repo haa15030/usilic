@@ -146,6 +146,7 @@ class Application:
         self.part_view = ContentView()
         self.part_view.cursor_highlight = False
         self.part = PartMode(self.part_toc_view, self.part_view)
+        self.part_position_key = None  # FILEを分けたPARTの位置を覚える名前(「パス "パターン"」、C++のcutPositionKey_)
         self.occur_view = ContentView()
         self.occur_items = []      # (元の画面の行, Line)
         self.occur_origin = None   # 一覧を作った元のモード
@@ -411,7 +412,8 @@ class Application:
             return fields, position
         if mode == PART_TOC:
             fields = F('PART', str(self.part.byte_count), True, '', '(egrep)')
-            fields.trailing3 = directory
+            # FILEを分けたものはそのfileのパス、他はディレクトリ(C++のcutView_の欄)
+            fields.trailing3 = self.part.source_name or directory
             return fields, position
         if mode == PART:
             return F('PART', str(self.part.byte_count), True, '', 'PART: ' + self.part.pattern), position
@@ -629,8 +631,33 @@ class Application:
             if self.epub_note_active():
                 self.leave_epub_note()
             self.file_mode.save_cursor_position()
+        if self.current_mode in (PART_TOC, PART):
+            self.save_part_position()  # 中身を見たまま終わっても一覧の位置が残るように
         self.save_list_positions()
         self.directory_mode.save_current_cursor_position()
+
+    def save_part_position(self):
+        """C++のsaveCutFilePosition(): 一覧の位置と、中を見ていればその中の行(+1、一覧なら-1)。"""
+        if self.history is None or not self.part_position_key:
+            return
+        line = self.part_view.cursor_index + 1 if self.current_mode == PART else -1
+        self.history.set_position(hist.SCREEN, self.part_position_key, hist.CursorPosition(
+            self.part_toc_view.cursor_index, len(self.part.segments), 0, line))
+
+    def restore_part_position(self):
+        """C++のrestoreCutFilePosition()・reopenLastCutContent(): 覚えた一覧の位置へ、中を見ていたら中のその行へ。"""
+        pos = self.history.position_for(hist.SCREEN, self.part_position_key) \
+            if self.history is not None and self.part_position_key else None
+        if pos is None:
+            return
+        last = len(self.part.segments) - 1
+        if last < 0:
+            return
+        self.part_toc_view.cursor_index = max(0, min(pos.row, last))
+        self.center_on(self.part_toc_view, self.part_toc_view.cursor_index)
+        if pos.line_number > 0 and self.part.open_selected():
+            self.enter_mode(PART)
+            self.center_on(self.part_view, max(0, min(pos.line_number - 1, len(self.part_view.lines) - 1)))
 
     def save_list_positions(self):
         """ARC・DU・MANの位置(SCREEN・MAN、C++のsaveCursorPosition())。"""
@@ -669,6 +696,8 @@ class Application:
         self.current_mode = mode
 
     def save_mode_position(self):
+        if self.current_mode in (PART_TOC, PART):
+            self.save_part_position()
         if self.current_mode == FILE:
             self.file_mode.save_cursor_position()
         elif self.current_mode in (ARCHIVE, DU, MAN):
@@ -1127,10 +1156,20 @@ class Application:
                 item = item[:at]
         return item
 
+    def open_recent_file_entry(self, item):
+        """FILEの履歴の項目を開く(C++のopenRecentFileEntry())。「パス "パターン"」はそのfileを開いてパターンで
+        分けたPARTに(.epubをタブで分けた項目はEPUBとして)、他はfile・ディレクトリ等として。"""
+        spec = None if item.endswith(hist.USILIC_TAG) else self.part_spec(item)
+        if spec:
+            if is_epub_file(spec[0]) and spec[1] == '\t':
+                return self.open_epub(spec[0])
+            return self.reopen_part(item)
+        return self.open_path(self.strip_tags(item))
+
     def start_file_list(self, filter_fn=None, label='FILE', on_choose=None):
         items = [i for i in self.ring(hist.RECENT_FILE)
                  if filter_fn is None or (not i.endswith(hist.USILIC_TAG) and filter_fn(self.strip_tags(i)))]
-        return self.show_list(items, label, on_choose or (lambda i: self.open_path(self.strip_tags(i))), True,
+        return self.show_list(items, label, on_choose or self.open_recent_file_entry, True,
                               pr.FILE, self.file_badge)
 
     def start_epub_list(self):
@@ -1613,6 +1652,7 @@ class Application:
                 self.grep_active = False
                 return True
             self.grep_active = False  # 他のキー(^Mも)は、一致の間を移るのをやめてから(KEYの^Mはその行のキー)
+            self.redraw()  # やめたことをすぐ描く(C++のdeactivateGrepInPlace()、後の処理が長いfileの読み込みでも)
         if self.goto_digits is not None:
             if special is None and ord('0') <= byte <= ord('9'):
                 self.goto_digits += chr(byte)
@@ -2427,6 +2467,10 @@ class Application:
                 SHELL: self.shell.byte_count}.get(self.current_mode, self.directory_mode.byte_count)
         if self.current_mode == FILE and self.file_mode.has_active_stream():
             self.file_mode.load_all()
+        if self.current_mode == FILE:  # 大きさはFILEの画面の行で(C++のcontentByteCount(fileView_))
+            size = sum(len(l.text.encode('utf-8')) + 1 + l.hidden_bytes for l in view.lines)
+        if self.current_mode not in (PART_TOC, PART):
+            self.part_position_key = None
         if not self.part.split(view.lines, pattern, size, name):
             self.show_transient_notice('No string')
             return False
@@ -2435,7 +2479,10 @@ class Application:
             self.history.remember_name(hist.CUT_PATTERN, pattern)
             if name and self.current_mode == FILE and os.path.isfile(name):
                 self.history.push_recent(hist.RECENT_FILE, '%s "%s"' % (name, pattern))
+        if name and self.current_mode == FILE and os.path.isfile(name):
+            self.part_position_key = '%s "%s"' % (name, pattern)
         self.enter_mode(PART_TOC)
+        self.restore_part_position()
         return True
 
     def reopen_part(self, item):

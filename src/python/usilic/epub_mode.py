@@ -827,11 +827,19 @@ def _wrap_with_indent(text, runs, width, first, left, number, links=(), center=F
     if not text:
         return [Line('', number)]
     out, offset, rest, indent = [], 0, text, first
+    queued = []  # 2行目から(字下げは同じ)は一度に折り返した残り(以前は1行ごとに残り全部を折り返し直していた)
     while rest:
         room = max(4, width - indent)
-        piece = wrap_text(rest, room)[0]
+        if not queued:
+            queued = wrap_text(rest, room)
+            if indent == left:
+                queued.reverse()
+            else:
+                queued = [queued[0]]
+        piece = queued.pop()
         if not piece:
             piece = rest[0]
+            queued = []
         pad = indent
         if center:
             pad = max(pad, (width - utf8.text_width(' ' * indent + piece)) // 2 + indent)

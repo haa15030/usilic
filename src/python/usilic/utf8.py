@@ -45,6 +45,19 @@ def display_width(data):
     return display_width_of_codepoint(ord(data.decode('utf-8', 'replace')[0]))
 
 
+_CHAR_WIDTHS = {}  # 字→表示幅(char_width()が覚える)
+
+
+def char_width(ch):
+    """1字の表示幅(display_width_of_codepoint()を字ごとに覚えたもの、長いfileを組む時に速く)。"""
+    w = _CHAR_WIDTHS.get(ch)
+    if w is None:
+        w = _CHAR_WIDTHS[ch] = display_width_of_codepoint(ord(ch))
+    return w
+
+
 def text_width(text):
     """文字列全体の表示幅(桁)。C++版では呼び出し側がsequence_length/display_widthで数えている所。"""
-    return sum(display_width_of_codepoint(ord(ch)) for ch in text)
+    if text.isascii():
+        return len(text)
+    return sum(char_width(ch) for ch in text)

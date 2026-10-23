@@ -324,45 +324,103 @@ def markdown_to_markup(source, tick=None):
 _TAGS = {'b': 'bold', 'i': 'italic', 'u': 'underline'}
 
 
+_MARKUP_TOKEN = re.compile(r'<(/?)(b|i|u)>|<indent(\d+)>|</indent>|<lt>')
+
+
 def markup_lines(markup, tick=None):
     """印の文字列を(字, 属性のラン, 字下げの桁)の行に展開する(expandHelpMarkup())。装飾は行をまたいでも続く。"""
     out, state, indent = [], {'bold': 0, 'italic': 0, 'underline': 0}, 0
     for count, line in enumerate(markup.split('\n')):
         if tick is not None and count % 4096 == 0:
             tick()
-        text, attrs, i, line_indent = [], [], 0, indent
-        while i < len(line):
-            if line[i] == '<':
-                m = re.match(r'<(/?)(b|i|u)>|<indent(\d+)>|</indent>|<lt>', line[i:])
-                if m:
-                    token = m.group(0)
-                    if token == '<lt>':
-                        text.append('<')
-                        attrs.append(tuple(k for k, v in state.items() if v))
-                    elif m.group(2):
-                        name = _TAGS[m.group(2)]
-                        state[name] = max(0, state[name] + (-1 if m.group(1) else 1))
-                    elif m.group(3) is not None:
-                        indent = int(m.group(3))
-                        if not text:
-                            line_indent = indent
-                    else:
-                        indent = 0
-                    i += len(token)
-                    continue
-            text.append(line[i])
-            attrs.append(tuple(k for k, v in state.items() if v))
-            i += 1
+        text, i, line_indent, length = [], 0, indent, 0
         runs, open_run = [], {}  # 属性→続いているランの番号
-        for pos, names in enumerate(attrs):
-            for name in names:
-                k = open_run.get(name)
-                if k is not None and runs[k][1] == pos:
-                    runs[k] = (runs[k][0], pos + 1, name)
-                else:
-                    open_run[name] = len(runs)
-                    runs.append((pos, pos + 1, name))
+
+        def add(chunk):
+            # 今の装飾で字を足す(続いているランは延ばす、字ごとに見ていた以前と同じラン)
+            nonlocal length
+            for name in ('bold', 'italic', 'underline'):
+                if state[name]:
+                    k = open_run.get(name)
+                    if k is not None and runs[k][1] == length:
+                        runs[k] = (runs[k][0], length + len(chunk), name)
+                    else:
+                        open_run[name] = len(runs)
+                        runs.append((length, length + len(chunk), name))
+            text.append(chunk)
+            length += len(chunk)
+        while i < len(line):
+            at = line.find('<', i)
+            if at < 0:
+                add(line[i:])
+                break
+            if at > i:
+                add(line[i:at])
+            m = _MARKUP_TOKEN.match(line, at)
+            if not m:
+                add('<')
+                i = at + 1
+                continue
+            token = m.group(0)
+            if token == '<lt>':
+                add('<')
+            elif m.group(2):
+                name = _TAGS[m.group(2)]
+                state[name] = max(0, state[name] + (-1 if m.group(1) else 1))
+            elif m.group(3) is not None:
+                indent = int(m.group(3))
+                if not text:
+                    line_indent = indent
+            else:
+                indent = 0
+            i = at + len(token)
         out.append((''.join(text), runs, line_indent))
+    return out
+
+
+def _wrap_with_tabs(text, runs, width, indent, number):
+    """字下げの桁から、幅で折り返す(続きも同じ字下げ)。タブはその行の中の桁で次の8桁目までの空白に(C++の
+    PipeBuffer、幅を越える分は切る)。C++はタブの所に幅0の印U+2060(3バイト)を置くので、その数をhidden_bytesに。"""
+    if not text:
+        return [Line('', number)]
+    out, chars, sources, column, tabs = [], [], [], indent, 0
+
+    def flush(last):
+        piece = ''.join(chars)
+        attrs = []
+        for s, e, a in runs:
+            inside = [k for k, src in enumerate(sources) if s <= src < e]
+            if inside:
+                attrs.append((inside[0] + indent, inside[-1] + 1 + indent, a))
+        line = Line(' ' * indent + piece, number, ends_with_newline=last, attributes=attrs)
+        line.hidden_bytes = 3 * tabs
+        out.append(line)
+
+    for index, ch in enumerate(text):
+        if ch == '\t':
+            step = max(0, min(8 - column % 8, width - column))
+            chars.extend(' ' * step)
+            sources.extend([index] * step)
+            column += step
+            tabs += 1
+            if column >= width:
+                flush(False)
+                chars, sources, column, tabs = [], [], indent, 0
+            continue
+        w = utf8.display_width_of_codepoint(ord(ch))
+        if column + w > width and chars:
+            flush(False)
+            chars, sources, column, tabs = [], [], indent, 0
+        chars.append(ch)
+        sources.append(index)
+        column += w
+        if column >= width:  # 幅いっぱいになったら次の行へ(C++と同じく、次のタブは次の行の頭から数える)
+            flush(False)
+            chars, sources, column, tabs = [], [], indent, 0
+    if chars or not out:
+        flush(True)
+    else:
+        out[-1].ends_with_newline = True
     return out
 
 
@@ -373,5 +431,8 @@ def render_markdown(source, width, tick=None):
     for number, (text, runs, indent) in enumerate(markup_lines(markdown_to_markup(source, tick), tick), 1):
         if tick is not None and number % 4096 == 0:
             tick()
-        lines.extend(_wrap_with_indent(text, runs, width, indent, indent, number))
+        if '\t' in text:
+            lines.extend(_wrap_with_tabs(text, runs, width, indent, number))
+        else:
+            lines.extend(_wrap_with_indent(text, runs, width, indent, indent, number))
     return lines
