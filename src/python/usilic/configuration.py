@@ -12,7 +12,7 @@ from .key_bindings import KeyBindings
 
 SECTIONS = ('ARCHIVE', 'FILTER', 'LAUNCH', 'GREP', 'PROGRAM', 'EDITOR', 'BUFFER', 'CODE', 'LINE', 'WAIT', 'COPY',
             'MOVE', 'DELETE', 'SERIF', 'SANS-SERIF', 'SPEED', 'DRAG', 'ARROW', 'FONT', 'LINE-HEIGHT',
-            'LETTER-SPACING', 'ICON-FONT', 'ICON-LINE-HEIGHT', 'ICON-LETTER-SPACING', 'URL', 'KEY', 'MACRO')
+            'LETTER-SPACING', 'ICON-FONT', 'ICON-LINE-HEIGHT', 'ICON-LETTER-SPACING', 'URL', 'KEY', 'MACRO', 'COLUMN')
 
 # ArchiveKind(configuration.hpp)
 TAR, LHA, ZIP, RPM, DEB, RAR, SEVEN_ZIP = 'Tar', 'Lha', 'Zip', 'Rpm', 'Deb', 'Rar', 'SevenZip'
@@ -107,6 +107,7 @@ class Configuration:
         self.url_handlers = None   # URL(Noneは節が無い: 組み込み)
         self.editors = []          # EDITOR
         self.wait_centiseconds = 10  # WAIT(マクロの間隔、10msec単位)
+        self.column_threshold = 8    # COLUMN((ls)の名前の欄がこの桁数より狭ければ名前だけの表示、columnThreshold())
         self.speed_values = []     # SPEED(慣性の段ごとの1ドットの待ち時間、usec)
         self.arrow_values = []     # ARROW(CUIの慣性の段、無ければSPEED)
         self.errors = []
@@ -173,6 +174,10 @@ class Configuration:
             t = tokenize(line)
             if t:
                 self.editors.append(t)
+        for line in body.get('COLUMN', []):
+            t = tokenize(line)
+            if t and t[0].isdigit():
+                self.column_threshold = int(t[0])
         for line in body.get('WAIT', []):
             t = tokenize(line)
             if t and t[0].isdigit():

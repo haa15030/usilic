@@ -3061,6 +3061,9 @@ class Application {
   // "[hit highlighted string][returns to the usilic screen]"と注釈
   // を付けていた――設計については自身の定義コメント参照。
   bool openSelectedBannerEntry();
+  // INFOの各行の反転の範囲(値の桁から)と、開けない行(1行目・空のWORK)。開いた時と、幅が変わって読み直した時に付ける
+  // (2026-10-23、INFOは折り返さずに開く、executeShowUsilicBanner()参照)。
+  void applyBannerLineHighlights();
   bool startCopyPrompt();
   bool startMovePrompt();
   bool startRemovePrompt();
@@ -3339,6 +3342,8 @@ private:
   // ト参照――バナー自身の単一の固定一時ファイルではない)、最古優先
   // ――^T自身の「arc.N」一覧のエントリ。
   std::vector<std::string> allocatedArcDirs_;
+  int bannerValueColumn_ = 15;          // applyBannerLineHighlights()参照
+  std::vector<bool> bannerOpenable_;    // 同上
   // K-67(^X^Ke、M_error、「ERROR」): CpMvRmModeが非対話的な子プロ
   // セスの標準エラーをルーティングする先(コンストラクタ自身の
   // コメントとCpMvRmMode自身のerrorLogPath_引数参照)。str.cの

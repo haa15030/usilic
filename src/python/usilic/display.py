@@ -51,6 +51,9 @@ class TerminalDisplay:
         fitted = self._fit(text, width)
         body = fitted if to_edge or not attr else fitted.rstrip(' ')
         try:
+            # 先に行末まで消す(C++のclearToEndOfLine())。字の幅を端末と違って数えた(▽等)時に前の行の字が残らないように
+            self.screen.move(row, 0)
+            self.screen.clrtoeol()
             self.screen.addstr(row, 0, body, attr)
             if len(body) < len(fitted):
                 self.screen.addstr(row, utf8.text_width(body), fitted[len(body):], 0)

@@ -7082,14 +7082,16 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): highlightStartColumn lands at
   // Boot options and an empty WORK are the only two non-openable lines
   // here (TUTORIAL, added 2026-09-14, is always openable -- see its own
   // `openable` comment).
+  // 2026-10-23: the rows are OS name / Startup file / ERROR / SHELL / DATA / WORK (as in HELP), one line each (no wrap).
   REQUIRE(lines.size() >= 6);
+  int valueColumn = std::max<int>(12, static_cast<int>(fm::osDisplayName().size())) + 3;  // labels align to the OS name
   for (std::size_t i = 0; i < 6; i++) {
     REQUIRE(lines[i].highlightStartColumn.has_value());
-    CHECK(*lines[i].highlightStartColumn == 15);  // kLabelWidth(12) + " : "(3) -- every line, uniformly
+    CHECK(*lines[i].highlightStartColumn == valueColumn);  // every line, uniformly
   }
-  CHECK(lines[0].neverHighlighted);         // "Boot options" -- never openable
+  CHECK(lines[0].neverHighlighted);         // the OS name / command line -- never openable
   CHECK(lines[5].neverHighlighted);         // "WORK :" with nothing after it
-  for (std::size_t i : {1, 2, 3, 4}) CHECK_FALSE(lines[i].neverHighlighted);  // Startup file / ERROR / SHELL / TUTORIAL
+  for (std::size_t i : {1, 2, 3, 4}) CHECK_FALSE(lines[i].neverHighlighted);  // Startup file / ERROR / SHELL / DATA
 }
 
 // 2026-10-02変更(TUTORIALはHELPへ改名、.steering/20261002-help-key-usilicrc-reorg/): INFOの「HELP」行で

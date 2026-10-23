@@ -12615,6 +12615,7 @@ bool Application::executeShowUsilicBanner() {
   openable.push_back(true);   // 「Startup file」――usilicrc、常に実在する
   openable.push_back(true);   // 「ERROR」――下でtouchされる、それ自身のコメント参照
   openable.push_back(true);   // 「SHELL」――下でtouchされる、それ自身のコメント参照
+  openable.push_back(true);   // 「DATA」――~/.usilic/data/の(ls)(2026-10-23、HELPの一覧に合わせて足した)
   // 「HELP」(旧「TUTORIAL」)の行は2026-10-19に廃止(直接のユーザー依頼"^IのHELPを廃棄")。
   for (std::size_t i = 0; i < (allocatedWorkFiles_.empty() ? std::size_t{1} : allocatedWorkFiles_.size()); i++)
     openable.push_back(!allocatedWorkFiles_.empty());
@@ -12640,6 +12641,7 @@ bool Application::executeShowUsilicBanner() {
   banner << field("Startup file") << startupFilePath() << "\n";
   banner << field("ERROR") << errorLogPath_ << "\n";
   banner << field("SHELL") << logFilePath_ << "\n";
+  banner << field("DATA") << dataDirectory() << "/\n";
   banner << field("WORK");
   for (std::size_t i = 0; i < allocatedWorkFiles_.size(); i++) {
     if (i) banner << continuationIndent;
@@ -12660,7 +12662,11 @@ bool Application::executeShowUsilicBanner() {
   std::filesystem::path bannerPath(bannerFilePath());
   std::string tempPath =
       materializeArchiveTempFile(bannerPath.parent_path().string(), bannerPath.filename().string(), bytes);
-  if (tempPath.empty() || !fileMode_.loadFile(tempPath)) return false;
+  // 2026-10-23、直接のユーザー指摘("INFOでは各行の内容は最初から決まっているためハイライトでちゃんと選択出来さえ
+  // すれば`...`により情報が欠落しても問題無い。その意味でもC++では折り返し行が選択不能なので完全に不良"): 折り返さずに
+  // 開き(1項目=1行)、長い値は描く時に途中を「...」にする(highlightStartColumnの行のtruncateHighlightedSuffix())。
+  // 以前は折り返していたので、続きの行が選べず、反転の範囲も行とずれていた(下の注の「稀なエッジケース」)。
+  if (tempPath.empty() || !fileMode_.loadFileNoWrap(tempPath)) return false;
   // WORK/arc.Nの候補リストの選択(2026-08-18修正、=cq): 実際の報告に
   // より、これらの行が全く選び出せないことが判明した――FileMode自体
   // がデフォルトでcursorHighlightEnabled_を無効にしている(プレーンな
@@ -12686,29 +12692,10 @@ bool Application::executeShowUsilicBanner() {
   // 入れる(このポート自身の$HOME/usilicrcのパスは、通常、折り返し
   // 前に利用可能な約65列分の予算よりはるかに短い)、ここでは解決
   // していない。
-  {
-    std::vector<ContentView::Line> lines = fileView_.lines();
-    for (std::size_t i = 0; i < lines.size(); i++) {
-      // highlightStartColumnは、開けるかどうかに関わらず、常にその行
-      // 自身の「値の先頭」の列(continuationIndent.size())である――
-      // 2026-08-28修正、実際の報告("Boot optionsは...ブロックカーソル
-      // 位置は「WORK : 」と同じでよろしく"): これへの「以前の」試み
-      // は、代わりに開けない行のhighlightStartColumnをそれ自身のテキ
-      // ストの末尾より先へ向けており、それはたまたま本物の端末の
-      // 「カレット」もそこへ動かしてしまっていた(syncVisibleCursor()
-      // はこの同じフィールドを使う)――空の場合の「WORK :」について
-      // は問題無い(ラベルの後に何も続かないので両方の列が一致する)
-      // が、「Boot options」については間違っている(bootOptions_は
-      // 本物の長い文字列になり得る)、WORK自身の慣習が置く場所より
-      // はるか先にカレットを着地させてしまう。実際に今SGRのハイライト
-      // を抑制するのはLine::neverHighlighted(この列ではない)なので、
-      // 「カレットがどこに座るか」と「この行が目に見えてハイライト
-      // されることがあるか」という2つの懸念は独立している。
-      lines[i].highlightStartColumn = static_cast<int>(continuationIndent.size());
-      lines[i].neverHighlighted = !(i < openable.size() && openable[i]);
-    }
-    fileView_.setLines(std::move(lines));
-  }
+  // 範囲の付け方の説明は、applyBannerLineHighlights()へ移した処理のもの。
+  bannerValueColumn_ = static_cast<int>(continuationIndent.size());
+  bannerOpenable_ = openable;
+  applyBannerLineHighlights();
   currentMode_ = ApplicationMode::File;
   // いつも通りfileReturnMode_ = Directoryだが、returnToDirectory()
   // 自身の2026-08-18のコメント参照: 他の全てのFileモードの入り口とは
@@ -12806,6 +12793,34 @@ bool Application::executeShowUsilicBanner() {
 // 分岐と全く同じCUT-by-file再生ロジックをここへ括り出し、両方の入口
 // (^I画面での選択、^T直接)から共有する。
 
+
+void Application::applyBannerLineHighlights() {
+  if (fileMode_.currentFile() != bannerFilePath()) return;
+  std::vector<ContentView::Line> lines = fileView_.lines();
+  for (std::size_t i = 0; i < lines.size(); i++) {
+      // highlightStartColumnは、開けるかどうかに関わらず、常にその行
+      // 自身の「値の先頭」の列(bannerValueColumn_)である――
+      // 2026-08-28修正、実際の報告("Boot optionsは...ブロックカーソル
+      // 位置は「WORK : 」と同じでよろしく"): これへの「以前の」試み
+      // は、代わりに開けない行のhighlightStartColumnをそれ自身のテキ
+      // ストの末尾より先へ向けており、それはたまたま本物の端末の
+      // 「カレット」もそこへ動かしてしまっていた(syncVisibleCursor()
+      // はこの同じフィールドを使う)――空の場合の「WORK :」について
+      // は問題無い(ラベルの後に何も続かないので両方の列が一致する)
+      // が、「Boot options」については間違っている(bootOptions_は
+      // 本物の長い文字列になり得る)、WORK自身の慣習が置く場所より
+      // はるか先にカレットを着地させてしまう。実際に今SGRのハイライト
+      // を抑制するのはLine::neverHighlighted(この列ではない)なので、
+      // 「カレットがどこに座るか」と「この行が目に見えてハイライト
+      // されることがあるか」という2つの懸念は独立している。
+    lines[i].highlightStartColumn = bannerValueColumn_;
+    lines[i].neverHighlighted = !(i < bannerOpenable_.size() && bannerOpenable_[i]);
+  }
+  int cursor = fileView_.cursorIndex(), top = fileView_.topIndex();
+  fileView_.setLines(std::move(lines));
+  fileView_.setCursorIndex(cursor);
+  fileView_.setTopIndex(top);
+}
 
 bool Application::openSelectedBannerEntry() {
   if (fileMode_.currentFile() != bannerFilePath()) return false;
@@ -12912,6 +12927,7 @@ bool Application::openSelectedBannerEntry() {
     fileView_.redraw();  // 上のfixedPathループ自身の同一のコメント参照
     return true;
   }
+  if (endsWith(dataDirectory() + "/")) return executeOpenDataDirectory();  // DATA: ~/.usilic/data/の(ls)
   for (const auto &arcPath : allocatedArcDirs_) {
     if (!endsWith(arcPath)) continue;
     if (!directoryMode_.enterDirectory(arcPath)) return false;
@@ -20643,6 +20659,7 @@ void Application::handleResize() {
   std::optional<int> epubRaw;  // 縦書きは、今のページの最初の行を保って組み直す
   if (currentMode_ == ApplicationMode::File && epubVerticalActive()) epubRaw = epubVerticalCurrentRaw();
   if (currentMode_ == ApplicationMode::File) fileMode_.reflow(display_.columns());
+  if (currentMode_ == ApplicationMode::File) applyBannerLineHighlights();  // INFOは読み直すと反転の範囲が消えるので
   // 平文のHELP(roff版、helpRoff_参照)は、groffで今の幅に組み直して開き直す(行は今の割合の所へ)。
   // 書き直すのはopenPlainHelp()が作った一時ファイルだけ(インストールしたHELPは書き換えない)。
   if (currentMode_ == ApplicationMode::File && !helpRoff_.empty() && !plainHelpPath_.empty() &&

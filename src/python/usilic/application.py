@@ -66,6 +66,7 @@ class Application:
         self.file_view = ContentView()
         self.file_view.cursor_highlight = False  # FileModeのコンストラクタと同じ(ページャーは反転しない)
         self.directory_mode = DirectoryMode(self.directory_view)
+        self.directory_mode.column_threshold = self.configuration.column_threshold
         self.file_mode = FileMode(self.file_view)
         self.current_mode = DIRECTORY
         self.return_stack = []      # ^Gの戻り先(モード)
@@ -218,6 +219,8 @@ class Application:
         for view in self.views():
             view.set_height(rows - (0 if self.mode_line_hidden else 1))
         self.file_mode.rewrap(self.wrap_width())
+        self.directory_mode.columns = columns  # 幅が変わったら名前だけの表示かを決め直す(C++と同じ)
+        self.directory_mode.apply_column_auto_display()
         if self.shell.alive():
             self.shell.on_resize(rows - 1, columns)
             self.refresh_shell_view()
@@ -356,10 +359,13 @@ class Application:
             fields = F(self.man_mode.current_page, str(self.man_mode.byte_count), True, '', '(man)')
             fields.trailing3 = 'MAN'
             return fields, position
-        if mode in (DU, LOCATE, INFO):
+        if mode == INFO:  # C++はINFOをファイルとして開く(FILEの欄、ディレクトリはtrailing2)
+            fields = F('INFO', str(self.info_byte_count), True, '', directory, trailing2_kind=mode_line.PATH)
+            fields.split_layout_when_crowded = True
+            return fields, position
+        if mode in (DU, LOCATE):
             name, size, tail = {DU: ('DU', self.du_mode.byte_count, self.du_mode.current_path),
-                                LOCATE: ('LOCATE', self.locate_mode.byte_count, directory),
-                                INFO: ('INFO', self.info_byte_count, directory)}[mode]
+                                LOCATE: ('LOCATE', self.locate_mode.byte_count, directory)}[mode]
             fields = F(name, str(size), True)
             fields.trailing3 = tail
             return fields, position
@@ -2641,6 +2647,8 @@ class Application:
             self.bindings = config.key_bindings
             for mode in (self.man_mode, self.du_mode, self.locate_mode):
                 mode.configuration = config
+            self.directory_mode.column_threshold = config.column_threshold
+            self.directory_mode.apply_column_auto_display()
         return True
 
     # --- COPY ---
@@ -2786,7 +2794,8 @@ class Application:
         home = os.path.join(os.path.expanduser('~'), '.usilic')
         rows = [(os_name.os_display_name() or 'Boot options', os_name.command_line(), None),
                 ('Startup file', self.configuration.path or '', 'file'),
-                ('ERROR', os.path.join(home, 'error'), 'file'), ('SHELL', 'SHELL', 'shell'),
+                ('ERROR', os.path.join(home, 'error'), 'file'),
+                ('SHELL', os.path.join(home, 'shell'), 'shell'),  # 値はSHELLの出力のファイル(C++のlogFilePath_)
                 ('DATA', self.data_directory(), 'dir')]
         works = self.work_files or ['']
         for i, path in enumerate(works):

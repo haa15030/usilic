@@ -78,6 +78,8 @@ class DirectoryMode:
         self.sort_key = 'Name'   # ^Olで巡回(Name→Date→Size→Kind、C++のLsSortKey)
         self.reverse = False     # ^O^L
         self.filename_only = False  # ^Oo(名前だけの表示)
+        self.columns = 80           # 画面の幅(apply_column_auto_display()用、Applicationが入れる)
+        self.column_threshold = 8   # usilicrcのCOLUMN
         self.sort_label_shown = False
         self.marks = set()   # 選択(下線、. ^SPC ^Oy ^On)。項目の番号
         self.temporary_marks = False  # CP/MV/展開の後の一時的な選択(^Lで消える)
@@ -103,13 +105,10 @@ class DirectoryMode:
         self.entries = [parse_ls_line(l) for l in lines]
         if self.sort_key == 'Kind':
             self.entries = sort_by_kind(self.entries, self.reverse)
-        self.byte_count = sum(len(l.encode('utf-8')) + 1 for l in lines)  # 一覧の行だけ(C++版と同じく「total」の行は除く)
         self.current_directory = path
         self.marks = set()
         self.temporary_marks = False
-        self.view.set_lines([Line(e.name if self.filename_only else e.ls_line, i + 1,
-                                  highlight_start=None if self.filename_only else e.name_start)
-                             for i, e in enumerate(self.entries)])
+        self.set_lines()
         cursor, top = self.cursor_positions.get(path, (0, 0))
         if self.history is not None:
             self.history.push_recent(hist.RECENT_DIRECTORY, path)
@@ -118,7 +117,34 @@ class DirectoryMode:
         self.view.cursor_index, self.view.top_index = cursor, top
         self.view.clamp()
         self.view.ensure_cursor_visible()
+        self.apply_column_auto_display()  # カーソルが決まった後に(C++のenterDirectory()と同じ)
         return True
+
+    def set_filename_only(self, enabled):
+        """setFilenameOnlyMode(): lsをやり直さずに、行を名前だけ/lsの行に。"""
+        self.filename_only = enabled
+        cursor, top = self.view.cursor_index, self.view.top_index
+        self.set_lines()
+        self.view.cursor_index, self.view.top_index = cursor, top
+        self.view.clamp()
+
+    def set_lines(self):
+        """項目→行(名前だけ/lsの行)。大きさは出している行で数える(C++のtotalByteCount()、「total」の行は入らない)。"""
+        lines = [Line(e.name if self.filename_only else e.ls_line, i + 1,
+                      highlight_start=None if self.filename_only else e.name_start)
+                 for i, e in enumerate(self.entries)]
+        self.byte_count = sum(len(l.text.encode('utf-8')) + 1 for l in lines)
+        self.view.set_lines(lines)
+
+    def apply_column_auto_display(self):
+        """applyColumnAutoDisplay(): 名前の欄(画面の幅-カーソル行の名前の始まり)がCOLUMNより狭ければ名前だけの表示、
+        広ければlsの行に(^Ooで切り換えた後も、一覧を読み直す・幅が変わるたびにこの決まりに戻る)。"""
+        if not self.entries:
+            return
+        entry = self.selected_entry() or self.entries[0]
+        should = self.columns - entry.name_start < self.column_threshold
+        if should != self.filename_only:
+            self.set_filename_only(should)
 
     def save_current_cursor_position(self):
         """DirectoryMode::saveCurrentCursorPosition()(row=カーソル、totalRows=項目の数、top=0)。"""
@@ -147,8 +173,9 @@ class DirectoryMode:
         return self.refresh()
 
     def toggle_filename_only(self):
-        self.filename_only = not self.filename_only
-        return self.refresh()
+        """^Oo: 読み直さずに切り換える(C++のsetFilenameOnlyMode()、読み直すとCOLUMNの決まりで戻ってしまう)。"""
+        self.set_filename_only(not self.filename_only)
+        return True
 
     def refresh(self):
         cursor = self.view.cursor_index
