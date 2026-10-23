@@ -268,7 +268,7 @@ class Application:
             if syntax == FIXED:  # インクリメンタル: 「FGREP 1/11 打った字」
                 return '   '.join(['FGREP', self.grep.position_text(), editor.text])
             return 'EGREP   ' + editor.text
-        if self.grep_active:
+        if self.grep_active and self.current_mode != KEY:  # KEYは一覧のモードラインのまま、位置を一致の番号に
             name, size = self.mode_line_target()
             return self.fit_mode_line_tail([self.grep.label(), self.grep.position_text(), str(size),
                                             '(' + self.grep.label().lower() + ')', name])
@@ -306,6 +306,8 @@ class Application:
         if mode == LOCATE:
             return self.fit_mode_line(['LOCATE', position, str(self.locate_mode.byte_count), directory])
         if mode == KEY:
+            if self.grep_active:
+                position = self.grep.position_text()
             return self.fit_mode_line_tail(['KEY', position, str(self.key_byte_count), directory])
         if mode == HELP:
             return self.fit_mode_line_tail(['HELP', position, str(self.help_byte_count), directory])
@@ -1399,10 +1401,10 @@ class Application:
                 self.grep.move(1 if byte == 0x0E else -1)
                 self.show_current_match()
                 return True
-            if byte in (CR, CTRL_G):  # そこに留まる(^Gも今いる一致のまま、C++版と同じ)
+            if byte == CTRL_G:  # そこに留まる(^Gも今いる一致のまま、C++版と同じ)
                 self.grep_active = False
                 return True
-            self.grep_active = False  # 他のキーは、一致の間を移るのをやめてから
+            self.grep_active = False  # 他のキー(^Mも)は、一致の間を移るのをやめてから(KEYの^Mはその行のキー)
         if self.goto_digits is not None:
             if special is None and ord('0') <= byte <= ord('9'):
                 self.goto_digits += chr(byte)
