@@ -6,6 +6,7 @@ import os
 import subprocess
 
 from . import overstrike
+from .content_view import expand_tabs
 
 
 def run_to_lines(argv, width, env=None, input_bytes=None, limit=None, transform=None):
@@ -32,7 +33,7 @@ def styled_lines(text, width):
         raw.pop()
     for number, line in enumerate(raw, 1):
         plain, runs = overstrike.decode(line.replace('\r', ''))
-        plain = plain.expandtabs(8) if '\t' in plain else plain
+        plain = expand_tabs(plain)  # 桁は表示幅で(str.expandtabs()は全角の字も1桁と数える)
         lines.extend(overstrike.wrap_styled(plain, runs, width, number))
     return lines
 
