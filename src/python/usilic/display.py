@@ -81,8 +81,29 @@ class TerminalDisplay:
                     pass
             column += w
 
-    def draw_mode_line(self, text):
-        self.draw_row(self.rows - 1, text, reverse=True, to_edge=True)
+    def draw_mode_line(self, segments):
+        """モードライン: [(字, 属性)](C++のContentView::renderModeLine()、属性は'standout'・'plain'・'bold'・
+        'underline')、字だけなら全部反転。右下の桁にも書く(cursesのエラーは無視する)。"""
+        if isinstance(segments, str):
+            self.draw_row(self.rows - 1, segments, reverse=True, to_edge=True)
+            return
+        attrs = {'standout': curses.A_REVERSE, 'plain': 0, 'bold': curses.A_BOLD, 'underline': curses.A_UNDERLINE}
+        row, column = self.rows - 1, 0
+        try:
+            self.screen.move(row, 0)
+            self.screen.clrtoeol()
+        except curses.error:
+            pass
+        for text, attr in segments:
+            for ch in text:
+                w = utf8.display_width_of_codepoint(ord(ch))
+                if column + w > self.columns:
+                    return
+                try:
+                    self.screen.addstr(row, column, ch, attrs.get(attr, curses.A_REVERSE))
+                except curses.error:
+                    pass
+                column += w
 
     def show_cursor_at(self, row, column):
         try:

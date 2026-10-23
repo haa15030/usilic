@@ -32543,3 +32543,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - C++の`jumpFromKeyToHelp()`・`jumpHelpToKeyLine()`と同じ: 選んだKEYの行の字を、空白類と不可視の印(NBSP・U+2060・U+E000・U+FEFF)を除いた形にし、HELPの中で前に同じ行がいくつあるかを数える。HELP.epubを開いて、本文(折り返した続きは元の行ごとにつなぐ)のその番目の一致の行へ、画面の中ほどに出し、字下げの後ろから行末までを強調する(次の^Sまで残る、`clearGrepJumpHighlight()`)。見つからなければ「Not found in HELP」。HELP.epubが無ければ、今まで通り平文のHELPの同じ行へ。
    - 確かめたこと: 擬似端末で、KEYの先頭の行・「^N：カーソルを１行下へ」・末尾の行(HELP.epubに無い)のhが、両方の版で同じ行に飛ぶ(末尾は両方とも見つからない)。unittest 81件すべて通る。
    - 気付いたこと(未対応): HELP.epubの組み方が両方の版で違う(本文の行の数がPython版1108・C++版1170、「^N：」の行の字下げもPython版は浅い)。^HでHELPを開いた時も同じ。
+
+1034. **Python版: モードラインの組み方をC++版と同じに(2026-10-23)** 直接のユーザー依頼("この2つも合わせて"、項目1032の「気付いたこと」の2つ目、60桁でPython版だけパスを「...」で縮める件)。どこまで合わせるか尋ね、「全部C++版に合わせる」との答え(項目1022の頃の「mode-lineに項目区分としての非アンダーライン空白が無いが当面は様子見」もこれで片付く)。
+   - 端末のC++の`ContentView::renderModeLine()`・`renderSplitModeLine()`をmode_line.pyへ移した(`Fields`=ModeLineFields、`compose()`)。欄だけを反転させ、欄の間は反転しない空白1つ(以前のPython版は行全体を反転させ、欄の間は空白3つ)。幅が足りなければC++と同じ順で欄を落とし・縮める(`withTruncatedFields()`・`withTruncatedTrailing3()`・`fitModeLineFields()`、名前は途中を「...」、trailing2はQueryEcho/Path/PathMiddleの種類ごと)。右端の「usilic-1.5b」は反転させず太字。混んだ時の(ls)・FILE等は名前を左・trailing2を右に分ける形。
+   - 各画面の欄の割り当てをC++の各ModeLineFieldsProviderと同じにした((ls)・FILE・EPUB・ARC・MAN・DU・LOCATE・INFO・KEY・HELP・目次・PART・OCCUR・SHELL・FGREP/EGREPの一致の間・COPY・縦書きのCOPY)。MACROの記録中は、C++と同じく名前の欄をMACROに置き換える(以前は頭に足していた)。
+   - プロンプト: C++の`drawPromptLabel()`と同じく、名前・位置は反転、尋ねる文と入力欄は反転させず、右端に戻り先(`previousModeName()`、16バイトを超えれば「...」+終わりの15バイト、MAN・LOCATE・DUは「MAN: 」等を残す)を反転して出す。入力欄はカーソルが収まるように頭を送る。EXITは答えの2桁の後ろに戻り先。^[ggは「Goto line:」をやめ、C++と同じく位置の欄の幅のまま反転しない入力欄に。^X^F・^X^Dの一覧はプロンプトの形で入力欄にカーソルの行、入力順にすると名前はHISTORYで入力欄のすぐ後ろに「FILE」等。プロンプトの^Rの一覧(入力順)は「HISTORY 位置 … MAN」。
+   - 確かめたこと: 擬似端末の60桁・80桁・100桁で、(ls)・KEY・FGREP(一致の間・入力中)・MAN・DU・ARC・FILE・HELP.epub・KEYのh・プロンプト(MAN・FILE・DIR)・^[gg(打つ前・打った後)・^X^F/^X^Dの一覧(並べ替え・入力順)・プロンプトの^R・EXIT・COPY(ls・FILE・縦書き)のモードラインが、両方の版で字も桁も同じになった。乱数のキーの試験(3冊)で例外は出ない。unittest 81件すべて通る。
+   - 字は同じ形で、数字だけが違うもの(前からの中身の違い、未対応): SHELL(行の数・大きさ)、縦書きの本(行の数・大きさ)、HELP.epub(行の数)。(ls)の^Rは、Python版が入力順のHISTORY(901件)、C++版が並べ替えたDIR(130件)を開く。

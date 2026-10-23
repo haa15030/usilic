@@ -92,6 +92,7 @@ class Application:
         self.grep = GrepMode()
         self.grep_active = False
         self.grep_prompt = None   # (syntax, LineEditor)を打っている間
+        self.prompt_field = (0, 0)  # 入力欄の始まりの桁・出している字の始まり(prompt_mode_line())
         self.jump_highlight = None  # KEYのhで飛んだ行の強調(view, 行, 字, 始まり)(grepJumpHighlightView_)
         # 一覧・各モード
         self.list_view = ContentView()
@@ -241,101 +242,207 @@ class Application:
             return self.notice
         return (mode_line.format_fixed_width if fixed else mode_line.format)(*self.position_numbers(view))
 
+    def mode_line_segments(self):
+        """モードライン: [(字, 反転するか)]。欄で組むものはC++と同じく欄だけ反転し、欄の間は反転しない空白1つ
+        (ContentView::scrollModeLineSegments())。マクロの記録中はモード名をMACROに(modeNameOverride())。"""
+        body = self.mode_line_body()
+        recording = self.macro_recording is not None and self.prompt is None
+        if isinstance(body, tuple):
+            fields, position = body
+            if recording:
+                fields.name = 'MACRO'
+            if self.goto_digits is not None:  # ^[gg: 位置の欄の幅のまま、反転しない入力欄に(gotoLineFieldWidth_)
+                padded = self.goto_digits.ljust(len(position))
+                segments = mode_line.compose(fields, padded, self.display.columns, position_plain=True)
+                column = 0
+                for text, attr in segments:
+                    if attr == mode_line.PLAIN and text == padded:
+                        self.prompt_field = (column, 0)
+                        break
+                    column += utf8.text_width(text)
+                return segments
+            return mode_line.compose(fields, position, self.display.columns)
+        if isinstance(body, list):
+            return body
+        return ('MACRO   ' + body) if recording else body   # 字のまま(プロンプト等、行の端まで反転)
+
     def mode_line_text(self):
-        """モードライン(ContentView::ModeLineFields)。マクロの記録中はモード名をMACROに。"""
-        text = self.mode_line_body()
-        if self.macro_recording is not None and self.prompt is None:
-            return 'MACRO   ' + text
-        return text
+        segments = self.mode_line_segments()
+        return segments if isinstance(segments, str) else mode_line.segments_text(segments)
 
     def mode_line_body(self):
         """モードライン(ContentView::ModeLineFields)。欄の間は空白3つ。"""
         view = self.active_view()
-        if self.vertical_selecting():
+        if self.vertical_selecting():  # C++のepubVerticalView_(epubSelectActive()): 名前だけCOPYに
             v = self.vertical
-            return 'COPY   ' + ('Record?(y/n)' if v.asking else '^@' if v.anchor is not None else '---') + (
-                '   ' + self.notice if self.notice else '')
-        if self.copy is not None:
-            return 'COPY   ' + ('^@' if self.copy.anchor is not None and not self.copy.rectangle else
-                                '^X␣' if self.copy.anchor is not None else '---') + (
-                '   ' + self.notice if self.notice else '')
+            position = 'Record?(y/n)' if v.asking else self.notice or v.position_text()
+            return mode_line.Fields('COPY', str(self.file_mode.byte_count), True, '', 'EPUB 縦書き'), position
+        if self.copy is not None:  # C++のcopyView_: 「COPY 状態 COPYに入る前のモードラインの名前」
+            state = '^@' if self.copy.anchor is not None and not self.copy.rectangle else \
+                '^X␣' if self.copy.anchor is not None else '---'
+            saved, self.copy = self.copy, None
+            try:
+                under = self.mode_line_body()
+            finally:
+                self.copy = saved
+            name = under[0].name if isinstance(under, tuple) else ''
+            return mode_line.Fields('COPY', name, True), self.notice or state
         if self.prompt is not None:
             p = self.prompt
-            head = [p.label] + ([mode_line.format(view.cursor_index + 1, len(view.lines))] if p.show_position else [])
-            return '   '.join(head + [localized(p.message) + p.editor.text]) if p.message else \
-                '   '.join(head + [p.editor.text])
-        if self.goto_digits is not None:
-            return 'Goto line: ' + self.goto_digits
+            position = mode_line.format(view.cursor_index + 1, len(view.lines)) if p.show_position else ''
+            return self.prompt_mode_line(p.label, position, localized(p.message), p.editor, p.kind == pr.EXIT)
         if self.grep_prompt is not None:
             syntax, editor = self.grep_prompt
             if syntax == FIXED:  # インクリメンタル: 「FGREP 1/11 打った字」
-                return '   '.join(['FGREP', self.grep.position_text(), editor.text])
-            return 'EGREP   ' + editor.text
+                return self.prompt_mode_line('FGREP', self.grep.position_text(), '', editor)
+            return self.prompt_mode_line('EGREP', '', '', editor)
         if self.grep_active and self.current_mode != KEY:  # KEYは一覧のモードラインのまま、位置を一致の番号に
             name, size = self.mode_line_target()
-            return self.fit_mode_line_tail([self.grep.label(), self.grep.position_text(), str(size),
-                                            '(' + self.grep.label().lower() + ')', name])
+            fields = mode_line.Fields(self.grep.label(), str(size), True, '', '(' + self.grep.label().lower() + ')')
+            fields.trailing3 = name
+            return fields, self.grep.position_text()
         position = self.position_text(view)
         directory = self.directory_mode.current_directory
         mode = self.current_mode
-        if mode == SHELL:
+        F = mode_line.Fields
+        if mode == SHELL:  # C++のshell_.scrollback()の欄
             pos = self.notice or mode_line.format_fixed_width(view.cursor_index + 1, len(view.lines))
-            return self.fit_mode_line(['SHELL', pos, str(self.shell.byte_count), '(bash)',
-                                       self.shell.current_directory or directory])
+            fields = F('SHELL', str(self.shell.byte_count), True, '', '(bash)')
+            fields.trailing3 = directory  # 戻り先(C++のshellReturnName_)
+            return fields, pos
         if mode == FILE:
             fm = self.file_mode
             if self.epub is not None and fm.current_file == self.epub.path:
                 if self.vertical_active() and self.vertical is not None:
                     position = self.notice or self.vertical.position_text()
-                    return self.fit_mode_line([self.epub_name, position, str(fm.byte_count), 'EPUB 縦書き'])
-                return self.fit_mode_line([self.epub_name, position, str(fm.byte_count), 'EPUB'])
-            pos = self.notice or (mode_line.format_fixed_width(*self.position_numbers(view))
-                                  if self.pager_launch else position)
-            name = fm.current_file if self.pager_launch else os.path.basename(fm.current_file)
-            tail = PROGRAM_LABEL if self.pager_launch else (fm.tail or directory)
-            label = [fm.label] if fm.label else []
-            return self.fit_mode_line([name, pos, str(fm.byte_count)] + label + [tail])
+                    return F(self.epub_name, str(fm.byte_count), True, '', 'EPUB 縦書き'), position
+                fields = F(self.epub_name, str(fm.byte_count), True, '', 'EPUB', trailing2_kind=mode_line.PATH_MIDDLE)
+                fields.split_layout_when_crowded = True
+                return fields, position
+            if self.pager_launch:  # ページャー(C++のpagerMode_)
+                pos = self.notice or mode_line.format_fixed_width(*self.position_numbers(view))
+                return F(fm.current_file, str(fm.byte_count), False, PROGRAM_LABEL, fm.label or ''), pos
+            fields = F(os.path.basename(fm.current_file), str(fm.byte_count), True, '', fm.tail or directory,
+                       trailing2_kind=mode_line.PATH_MIDDLE if fm.tail else mode_line.PATH)
+            fields.split_layout_when_crowded = True
+            if fm.label and not fm.tail:  # 組んだプログラム(「(groff)」等)の後ろにディレクトリ
+                fields.trailing2, fields.trailing3 = fm.label, directory
+            return fields, position
         if mode == ARCHIVE:
             a = self.archives[-1]
-            return self.fit_mode_line([a.display_name, position, str(a.byte_count), a.badge, directory])
+            fields = F(a.display_name, str(a.byte_count), True, '', a.badge)
+            fields.trailing3 = mode_line.truncated_trailing_path(directory)
+            return fields, position
         if mode == LIST:
-            item = self.list_mode.selected_item() or ''
-            return self.fit_mode_line_tail([self.list_mode.label, position, item])
+            lm = self.list_mode
+            item = lm.selected_item() or ''
+            back = self.return_stack[-1] if self.return_stack else DIRECTORY
+            if not lm.sorted and (lm.prompt_kind is not None or self.list_prompt is not None):
+                # 入力順(listBrowserChronological_): 名前はHISTORY、右端にプロンプトの名前
+                label = self.list_prompt.label if self.list_prompt is not None else lm.label
+                if lm.prompt_kind in (pr.FILE, pr.DIRECTORY) and self.list_prompt is None:
+                    # ^X^F・^X^Dの一覧: 入力欄にカーソルの行、そのすぐ後ろに「FILE」(drawPromptLabel()のshowsBadge)
+                    segments, _, _ = mode_line.prompt_segments('HISTORY', position, '', item, len(item), label,
+                                                               self.display.columns, badge=True)
+                    return segments
+                return F('HISTORY', '', False, label), position
+            if lm.prompt_kind in (pr.FILE, pr.DIRECTORY) and self.list_prompt is None:
+                # ^X^F・^X^D: C++はプロンプトのまま一覧を出し、入力欄にカーソルの行(drawPromptLabel())
+                return self.prompt_line_with_text(lm.label, position, item, back)
+            watermark = self.list_prompt.label if self.list_prompt is not None else ''
+            return F(lm.label, item, False, watermark, trailing_kind=mode_line.PATH_MIDDLE), position
         if mode == MAN:
-            return self.fit_mode_line([self.man_mode.current_page, position, str(self.man_mode.byte_count),
-                                       '(man)', 'MAN'])
-        if mode == DU:
-            return self.fit_mode_line_tail(['DU', position, str(self.du_mode.byte_count), self.du_mode.current_path])
-        if mode == LOCATE:
-            return self.fit_mode_line(['LOCATE', position, str(self.locate_mode.byte_count), directory])
-        if mode == KEY:
+            fields = F(self.man_mode.current_page, str(self.man_mode.byte_count), True, '', '(man)')
+            fields.trailing3 = 'MAN'
+            return fields, position
+        if mode in (DU, LOCATE, INFO):
+            name, size, tail = {DU: ('DU', self.du_mode.byte_count, self.du_mode.current_path),
+                                LOCATE: ('LOCATE', self.locate_mode.byte_count, directory),
+                                INFO: ('INFO', self.info_byte_count, directory)}[mode]
+            fields = F(name, str(size), True)
+            fields.trailing3 = tail
+            return fields, position
+        if mode == KEY:  # CUTの一覧(cutView_)の欄
             if self.grep_active:
                 position = self.grep.position_text()
-            return self.fit_mode_line_tail(['KEY', position, str(self.key_byte_count), directory])
-        if mode == HELP:
-            return self.fit_mode_line_tail(['HELP', position, str(self.help_byte_count), directory])
-        if mode == TOC:
+            return F('KEY', str(self.key_byte_count), True, '', directory), position
+        if mode == HELP:  # 平文のHELP(FILEの欄)
+            fields = F('HELP', str(self.help_byte_count), True, '', directory, trailing2_kind=mode_line.PATH)
+            fields.split_layout_when_crowded = True
+            return fields, position
+        if mode == TOC:  # EPUBの章の一覧(CUT)
             size = os.path.getsize(self.epub.path) if self.epub and os.path.exists(self.epub.path) else 0
+            name = 'HELP' if self.epub_name == 'HELP' else 'EPUB'
             if self.vertical_list_active():  # 縦書きの章の一覧: 位置は「選んでいる章/章の数」
                 position = self.notice or '%02d/%02d' % (view.cursor_index + 1, max(1, len(view.lines)))
-                return self.fit_mode_line([self.epub_name, position, str(size), '縦書き', directory])
-            return self.fit_mode_line([self.epub_name, position, str(size), directory])
+                fields = F('EPUB', str(size), True, '', '縦書き')
+            else:
+                fields = F(name, str(size), True)
+            fields.trailing3 = directory
+            return fields, position
         if mode == PART_TOC:
-            return self.fit_mode_line(['PART', position, str(self.part.byte_count), '(egrep)', directory])
+            fields = F('PART', str(self.part.byte_count), True, '', '(egrep)')
+            fields.trailing3 = directory
+            return fields, position
         if mode == PART:
-            return self.fit_mode_line(['PART', position, str(self.part.byte_count), 'PART: ' + self.part.pattern])
-        if mode == OCCUR and self.occur_global:
-            return self.fit_mode_line(['EPUB', position, str(self.occur_byte_count), '(marks)', self.epub_name])
+            return F('PART', str(self.part.byte_count), True, '', 'PART: ' + self.part.pattern), position
         if mode == OCCUR:
-            label = 'FGREP' if self.occur_syntax == FIXED else 'EGREP'
-            return self.fit_mode_line([label, position, str(self.occur_byte_count), '(' + label.lower() + ')',
-                                       directory])
+            if self.occur_global:
+                fields = F('EPUB', str(self.occur_byte_count), True, '', '(marks)')
+                fields.trailing3 = self.epub_name
+            else:
+                label = 'FGREP' if self.occur_syntax == FIXED else 'EGREP'
+                fields = F(label, str(self.occur_byte_count), True, '', '(' + label.lower() + ')')
+                fields.trailing3 = directory
+            return fields, position
+        d = self.directory_mode
+        fields = F(directory, str(d.byte_count), False, PROGRAM_LABEL if not d.mode_stack else '', '(ls)')
+        fields.split_layout_when_crowded = True
+        if d.sort_label_shown:
+            fields.trailing2, fields.trailing2_plain = d.sort_key, True
+        return fields, position
+
+    def prompt_mode_line(self, label, position, message, editor, exit_confirm=False):
+        """drawPromptLabel()の形のモードライン。右端は戻り先(previousModeName())。"""
+        destination = self.previous_mode_name(self.current_mode)
+        kind = 'prefixed' if self.current_mode in (MAN, LOCATE, DU) else ''
+        tail = mode_line.prompt_tail(destination, kind) if destination else ''
+        segments, start, shift = mode_line.prompt_segments(
+            label, position, message, editor.text, editor.cursor, tail, self.display.columns,
+            exit_destination=destination if exit_confirm else None)
+        self.prompt_field = (start, shift)
+        return segments
+
+    def prompt_line_with_text(self, label, position, text, destination_mode):
+        destination = self.previous_mode_name(destination_mode)
+        kind = 'prefixed' if destination_mode in (MAN, LOCATE, DU) else ''
+        tail = mode_line.prompt_tail(destination, kind) if destination else ''
+        segments, _, _ = mode_line.prompt_segments(label, position, '', text, len(text), tail, self.display.columns)
+        return segments
+
+    def previous_mode_name(self, mode):
+        """Application::previousModeName(): 戻り先の名前。"""
+        if mode == DIRECTORY:
+            return self.directory_mode.current_directory
+        if mode == FILE:
+            return self.file_mode.current_file
         if mode == INFO:
-            return self.fit_mode_line(['INFO', position, str(self.info_byte_count), directory])
-        label = PROGRAM_LABEL if not self.directory_mode.mode_stack else ''
-        sort = self.directory_mode.sort_key if self.directory_mode.sort_label_shown else ''
-        return self.fit_mode_line([x for x in [directory, position, str(self.directory_mode.byte_count), '(ls)',
-                                               sort, label] if x])
+            return 'INFO'
+        if mode == MAN:
+            return 'MAN: ' + self.man_mode.current_page
+        if mode == ARCHIVE:
+            return self.archives[-1].current_archive if self.archives else ''
+        if mode == DU:
+            return 'DU: ' + self.directory_mode.current_directory
+        if mode == LOCATE:
+            return 'LOCATE: ' + self.locate_mode.query
+        if mode == OCCUR:
+            return ('FGREP' if self.occur_syntax == FIXED else 'EGREP') + ': ' + self.grep.pattern
+        if mode == SHELL:
+            return 'SHELL'
+        if mode in (KEY, TOC, PART_TOC, PART):
+            return 'PART'
+        return ''
 
     def mode_line_target(self):
         """FGREP/EGREPのモードラインの最後の欄(探している物の名前)と大きさ。"""
@@ -348,38 +455,6 @@ class Application:
         if self.current_mode == ARCHIVE:
             return self.archives[-1].display_name, self.archives[-1].byte_count
         return self.directory_mode.current_directory, self.directory_mode.byte_count
-
-    def fit_mode_line_tail(self, fields):
-        """最後の欄(パス)の途中を「...」で縮める版(FGREP/EGREPのモードライン)。"""
-        rest = utf8.text_width('   '.join(fields[:-1])) + 3
-        room = self.display.columns - 1 - rest
-        name = fields[-1]
-        if utf8.text_width(name) > room and room > 8:
-            keep = room - 3
-            head = keep // 2
-            name = name[:head] + '...' + name[len(name) - (keep - head):]
-        return '   '.join(fields[:-1] + [name])
-
-    def fit_mode_line(self, fields):
-        """欄を空白3つでつなぐ。幅に収まらなければ、最後の欄(ディレクトリ)を「...」+終わりの方に、それでも
-        収まらなければ最初の欄(名前)の途中を「...」で縮める(C++版の「...ratchpad/home/t/」の形)。"""
-        fields = list(fields)
-        limit = self.display.columns - 1
-        if len(fields) > 1 and utf8.text_width('   '.join(fields)) > limit:
-            last = fields[-1]
-            room_last = limit - utf8.text_width('   '.join(fields[:-1])) - 3
-            keep = max(8, limit // 4)
-            if room_last >= keep:  # 名前が短い: 途中を縮める(「ARC: /private/...home/t/arc.tgz」)
-                head = (room_last - 3) // 2
-                fields[-1] = last[:head] + '...' + last[len(last) - (room_last - 3 - head):]
-            elif utf8.text_width(last) > keep:
-                fields[-1] = '...' + last[len(last) - (keep - 3):]
-        rest = utf8.text_width('   '.join(fields[1:])) + 3
-        room = limit - rest
-        name = fields[0]
-        if utf8.text_width(name) > room:
-            name = self.elide_middle(name, max(room, 8))
-        return '   '.join([name] + fields[1:])
 
     @staticmethod
     def elide_middle(text, width):
@@ -451,7 +526,7 @@ class Application:
             else:
                 self.display.draw_row(row, '')
         if not self.mode_line_hidden or self.prompt is not None or self.notice:
-            self.display.draw_mode_line(self.mode_line_text())
+            self.display.draw_mode_line(self.mode_line_segments())
         if (self.current_mode == SHELL and self.prompt is None and self.goto_digits is None
                 and self.grep_prompt is None and not self.grep_active):
             self.display.show_cursor_at(*self.shell_cursor_position())
@@ -475,11 +550,16 @@ class Application:
 
     def prompt_cursor_column(self):
         """入力中のモードラインの、入力欄のカーソルの桁。"""
-        text = self.mode_line_text()
+        segments = self.mode_line_segments()   # 入力欄の始まり(prompt_field)もここで決まる
         editor = self.prompt.editor if self.prompt is not None else \
             self.grep_prompt[1] if self.grep_prompt is not None else None
-        tail = editor.text[editor.cursor:] if editor is not None else ''
-        return max(0, min(self.display.columns - 1, utf8.text_width(text) - utf8.text_width(tail)))
+        if editor is not None and isinstance(segments, list):
+            start, shift = self.prompt_field
+            return min(self.display.columns - 1, start + utf8.text_width(editor.text[shift:editor.cursor]))
+        if self.goto_digits is not None and isinstance(segments, list):  # ^[gg: 位置の欄の中
+            return min(self.display.columns - 1, self.prompt_field[0] + len(self.goto_digits))
+        text = self.mode_line_text()
+        return max(0, min(self.display.columns - 1, utf8.text_width(text)))
 
     def shell_cursor_position(self):
         """コマンド行のカーソルの画面の位置(行, 桁)。"""
