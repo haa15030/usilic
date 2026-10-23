@@ -209,8 +209,12 @@ class Shell:
             for i, piece in enumerate(pieces):
                 out.append(Line(piece, number, ends_with_newline=(i == len(pieces) - 1), shell_command=command))
         live = (self.prompt if self.prompt_ready else self.pending) + command_text
+        bold = len(PROMPT_DISPLAY_NAME) + 1 if self.prompt_ready and self.prompt.startswith(PROMPT_DISPLAY_NAME + ':') else 0
         for piece in wrap_text(expand_tabs(live), width):
-            out.append(Line(piece, len(self.lines) + 1))
+            # 打っている行のプロンプトの「usilic-1.5b:」は太字(C++のSHELLのプロンプトの行)
+            attributes = [(0, min(bold, len(piece)), 'bold')] if bold else []
+            bold = max(0, bold - len(piece))
+            out.append(Line(piece, len(self.lines) + 1, attributes=attributes))
         return out
 
     def committed_rows(self, width):

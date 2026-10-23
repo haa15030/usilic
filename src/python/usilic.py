@@ -23,6 +23,11 @@ from usilic.key_input import KeyInput  # noqa: E402
 def main():
     locale.setlocale(locale.LC_ALL, '')
     args = sys.argv[1:]
+    # usilicの中から起動した子(^Ou・^Jtのusilic等、C++のUSILIC_TRANSIENT=親のPID): 右下は「USILIC」
+    transient = os.environ.pop('USILIC_TRANSIENT', '')
+    if transient.isdigit() and int(transient) > 1:
+        from usilic import application
+        application.PROGRAM_LABEL = 'USILIC'
     stdin_stream = None
     if not sys.stdin.isatty():
         # 標準入力のページャー: データは元の標準入力から読み、キーと画面は端末(/dev/tty)へ(C++版と同じ)。

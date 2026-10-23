@@ -32652,3 +32652,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - タブの所の幅0の印U+2060を画面へ書き出さない(C++の`renderLine()`、Terminal.appはこの字を1桁と数えて行が溢れる、2026-09-21のユーザー報告)。SHELLのログ(~/.usilic/shell)にはこの字が入っている。
    - 確かめたこと: vcmp.pyで、^M(.txt・.tgz・.md・ディレクトリ・.zip)・^[^M・^J^J・^Oo・^Ol(4回)・^O^L・.・^␣・^Oy・^Onが両方の版で同じ(字と属性)。unittest 81件。
    - 見つかったが、まだ直していないもの: 縦書きのEPUBの組み方、FILEの制御文字(C++はCRを反転したM、ESC[…mを太字等に、BSの重ね打ちを太字・下線に、制御文字を1桁の反転した字で描く、Python版は「^X」の2桁)、^O^M(C++はページャーと同じく少しずつ読む形)、バイナリのfile(C++はmacOSではクイックルック)。
+1050. **C++: SHELLで長いコマンドのエコーが残る、Python版: 子のusilicの「USILIC」・プロンプトの太字・直接の一覧・^J^M(2026-10-24)** 項目1047の続き(K-40〜K-49等を比べた)。
+   - C++: SHELLで画面の幅を越える長いコマンド(^J.の長いパスのcd等)を送ると、そのエコーがPipeBufferで折り返されて複数の行になり、`flushNewScrollbackLines()`が最初の行だけをコマンドと比べていたので一致せず、エコーが出力として画面・ログに残っていた。折り返した続きの行をつないで比べ、続きがまだ届いていなければ待つ。C++のSHELL関係のテスト(--test-case="*hell*,*SHELL*")は、この変更の前と同じく8件が通らない(PROGRAM→TOOL・CUT→PARTの改名等で古くなったもの、変更を外しても同じ8件)。
+   - Python版: ^Ou・USILICの一覧・^Jtのusilicで動かす子のusilicに、C++と同じくUSILIC_TRANSIENT(親のPID)を渡し、子は右下を「USILIC」にする(C++のmain.cpp)。
+   - Python版: SHELLの打っている行のプロンプトの「usilic-1.5b:」を太字に(C++と同じ)。
+   - Python版: ^J^T等の直接の一覧(C++の`isDirectEntry`)のモードラインは、C++と同じく選んでいる項目を反転せずに出し、右端に戻り先(`Fields.trailing2_right_justified`を足した)。以前は項目を反転して出していた。
+   - Python版: ^J^MはC++の`startManList()`と同じく、MANの履歴の名前順で重ねの無い一覧(usilicが無ければ頭に)。以前は入力順(HISTORY)で、履歴が空ならプロンプトだった。
+   - 確かめたこと: vcmp.pyで、CP・MV・RMのプロンプトと実行・^Jt・^J^T・^Ou(1つ・選んだ2つ)・^Oa・^Je・^J^E・^Oe・^J^M・SHELLの長いコマンドが両方の版で同じ(字と属性)。unittest 81件。make usilic・make install。
+   - 見つかったが、まだ直していないもの: USILICの目次(^[u)・^J^U・^Juは、C++では目次もグループもUSILICの一覧(モードラインは「USILIC 位置 大きさ ディレクトリ」、MAN・DIR・FILEはUSILICの履歴を種類で分けた物)、Python版はグループを別の一覧(MAN・DIR・FILE等)で見せている。^J^P等の一覧の項目の中のタブ(C++は1桁の空白で描き、モードラインでは反転したI)。

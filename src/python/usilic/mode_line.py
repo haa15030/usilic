@@ -50,6 +50,7 @@ class Fields:
     trailing3: str = ''
     split_layout_when_crowded: bool = False
     trailing2_plain: bool = False
+    trailing2_right_justified: bool = False  # trailing2を右端に寄せる(C++のModeLineFieldsの同名の欄)
 
 
 def _bytes(s):
@@ -286,7 +287,7 @@ def compose(fields, position, cols, name_underlined=False, trailing2_right_justi
     if show_trailing2 and f.trailing2:
         trailing2 = f.trailing2
         attr = PLAIN if f.trailing2_plain else STANDOUT
-        if trailing2_right_justified:
+        if trailing2_right_justified or f.trailing2_right_justified:
             row.move(cols - _width(trailing2))
             row.put(trailing2, attr)
         else:

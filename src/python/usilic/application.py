@@ -411,6 +411,13 @@ class Application:
             if lm.prompt_kind in (pr.FILE, pr.DIRECTORY) and self.list_prompt is None:
                 # ^X^F・^X^D: C++はプロンプトのまま一覧を出し、入力欄にカーソルの行(drawPromptLabel())
                 return self.prompt_line_with_text(lm.label, position, item, back)
+            if lm.prompt_kind is not None and lm.sorted and self.list_prompt is None:
+                # ^J^T等の直接の一覧(C++のpromptHistoryContext_->isDirectEntry): 項目は反転しない、右端に戻り先
+                destination = self.previous_mode_name(back) if lm.prompt_kind in (pr.TOOL, pr.FILE) else ''
+                trailing2 = mode_line.truncated_trailing_path(destination) if destination else ''
+                fields = F(lm.label, item, bool(trailing2), '', trailing2)
+                fields.trailing_plain = fields.trailing2_right_justified = True
+                return fields, position
             watermark = self.list_prompt.label if self.list_prompt is not None else ''
             return F(lm.label, item, False, watermark, trailing_kind=mode_line.PATH_MIDDLE), position
         if mode == MAN:
@@ -2087,10 +2094,10 @@ class Application:
             return self.start_locate_prompt()
         if number == 59:  # ^Jm
             return self.start_history_prompt(pr.MAN)
-        if number == 60:  # ^J^M
+        if number == 60:  # ^J^M: 名前順で重ねの無い一覧、usilicが無ければ頭に(C++のstartManList()、直接の一覧)
             items = self.ring(hist.RECENT_MAN_PAGE)
-            return self.show_list(items, 'MAN', self.execute_man, False, pr.MAN) if items else \
-                self.start_history_prompt(pr.MAN)
+            return self.show_list(items, 'MAN', self.execute_man, True, pr.MAN,
+                                  pinned=None if 'usilic' in items else ['usilic'])
         if number == 61:  # ^Xf
             return self.start_history_prompt(pr.FILE)
         if number == 62:  # ^X^F
@@ -2789,7 +2796,8 @@ class Application:
         directory, self.tool_directory = self.tool_directory, ''
         programs = [p[0] for p in self.configuration.programs if p]
         if words[0] == 'usilic':
-            return self.run_external([sys.executable, USILIC_SCRIPT] + shlex.split(command)[1:], cwd=directory or None)
+            return self.run_external([sys.executable, USILIC_SCRIPT] + shlex.split(command)[1:], cwd=directory or None,
+                                     env=dict(os.environ, USILIC_TRANSIENT=str(os.getpid())))
         if words[0] in programs:
             return self.run_external(['sh', '-c', command], cwd=directory or None)
         if not self.ensure_shell():
@@ -2809,7 +2817,7 @@ class Application:
         paths = [os.path.join(d.current_directory, d.entries[i].name.rstrip('*@=%|'))
                  for i in indices if i < len(d.entries) and d.entries[i].name not in ('./', '../')]
         for path in paths:
-            env = dict(os.environ, USILIC_NO_HISTORY='1')
+            env = dict(os.environ, USILIC_NO_HISTORY='1', USILIC_TRANSIENT=str(os.getpid()))
             self.run_external([sys.executable, USILIC_SCRIPT, path], env=env)
             if self.history is not None:
                 category = hist.RECENT_DIRECTORY if os.path.isdir(path) else hist.RECENT_FILE
@@ -2864,7 +2872,7 @@ class Application:
             return self.execute_man(item[:-len(' (man)')])
         if item.endswith(hist.USILIC_TAG):
             path = item[:-len(hist.USILIC_TAG)]
-            env = dict(os.environ, USILIC_NO_HISTORY='1')
+            env = dict(os.environ, USILIC_NO_HISTORY='1', USILIC_TRANSIENT=str(os.getpid()))
             return self.run_external([sys.executable, USILIC_SCRIPT, path], env=env)
         spec = self.part_spec(item)
         if spec:

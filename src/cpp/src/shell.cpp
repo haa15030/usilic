@@ -1014,8 +1014,24 @@ void Shell::flushNewScrollbackLines() {
   // そもそも可視になる最初の地点なので、エコーがいくつの別々のpty
   // 読み込みにまたがって届いたかは決して問題にならない。
   if (pendingEchoFilter_) {
-    const std::string &first = plines[start].text;
-    if (first == *pendingEchoFilter_ || first.empty()) start++;
+    // 2026-10-24修正(Python版との比較で発見): 画面の幅を越える長いコマンド(^J.の長いパスのcd等)は、
+    // エコーがPipeBufferで折り返されて複数の行になるので、最初の行だけをコマンドと比べると一致せず、
+    // エコーが出力として残っていた。折り返した続きの行(endsWithNewlineでない行)をつないで比べる。
+    // 続きの行がまだ届いていない(つないだ物がコマンドの頭までしか無い)時は、届くまで待つ。
+    std::string joined;
+    std::size_t k = start;
+    while (k < plines.size()) {
+      joined += plines[k].text;
+      bool lineEnded = plines[k].endsWithNewline;
+      k++;
+      if (lineEnded || joined.size() >= pendingEchoFilter_->size()) break;
+    }
+    const std::string &filter = *pendingEchoFilter_;
+    if (k == plines.size() && joined.size() < filter.size() && !joined.empty() &&
+        filter.compare(0, joined.size(), joined) == 0 && !plines[k - 1].endsWithNewline)
+      return;
+    if (joined == filter) start = k;
+    else if (plines[start].text.empty()) start++;
     pendingEchoFilter_.reset();
   }
   std::vector<ContentView::Line> newLines(scrollback_.lines());
