@@ -78,6 +78,18 @@ CPMVRM_MARKER = '#usilic-cpmvrm#'  # SHELLで動かしたCP/MV/RM・展開の終
 PAGER_KEYS = set(range(1, 24)) | {28, 47, 48, 49, 51, 52, 99, 100}
 
 
+def scroll_thumb_row_range(top_index, height, total):
+    """C++のscrollThumbRowRange(): つまみの(頭の行, 行の数)。全部見えていれば(0, 0)。"""
+    if height <= 0 or total <= height:
+        return 0, 0
+    def lround(x):
+        return int(x + 0.5) if x >= 0 else -int(-x + 0.5)
+    thumb_height = min(max(lround(height * (height / total)), 1), height)
+    max_top = height - thumb_height
+    thumb_top = min(max(lround(max_top * (top_index / (total - height))), 0), max_top)
+    return thumb_top, thumb_height
+
+
 class Application:
     def __init__(self, display, key_input, configuration=None):
         self.display = display
@@ -305,7 +317,9 @@ class Application:
                         break
                     column += utf8.text_width(text)
                 return segments
-            return mode_line.compose(fields, position, self.display.columns)
+            # 知らせ(show_transient_notice())は反転しない(C++のsetPositionTextOverride(text, plain=true))
+            return mode_line.compose(fields, position, self.display.columns,
+                                     position_plain=bool(self.notice) and position == self.notice)
         if isinstance(body, list):
             return body
         return ('MACRO   ' + body) if recording else body   # 字のまま(プロンプト等、行の端まで反転)
@@ -612,6 +626,10 @@ class Application:
                     self.display.draw_row_styled(row, p.text, list(p.attributes))
             else:
                 self.display.draw_row(row, '')
+        if self.mode_line_hidden and hasattr(self.display, 'draw_scroll_thumb'):
+            thumb = scroll_thumb_row_range(view.top_index, view.height, len(view.lines))
+            if thumb[1] > 0:
+                self.display.draw_scroll_thumb(*thumb)
         if not self.mode_line_hidden or self.prompt is not None or self.notice:
             self.display.draw_mode_line(self.mode_line_segments())
         if (self.current_mode == SHELL and self.prompt is None and self.goto_digits is None
@@ -2507,14 +2525,16 @@ class Application:
     # --- 第4段: K-番号の追加分 ---
     def handle_stage4_number(self, number, digit, mode, view):
         """第4段で足した機能。該当しなければNone(handle_key_number()の続きへ)。"""
-        if number == 5 and mode == DIRECTORY and sys.platform == 'darwin':
-            return self.quick_look()  # (ls)の␣はクイックルック
+        if number == 5 and mode == DIRECTORY and sys.platform == 'darwin' and self.quick_look():
+            return True  # (ls)の␣はクイックルック。対象が無ければ(./ ../)ページ送り(C++と同じ)
         if number == 36 and mode not in (DIRECTORY, ARCHIVE):  # ^␣: マークを置く
             self.push_mark(view)
             self.show_transient_notice('Mark set')
             return True
         if number == 23:  # ^Of
             self.mode_line_hidden = not self.mode_line_hidden
+            if hasattr(self.display, 'strip'):  # 隠している間は右端の2桁をつまみに(C++のmodeLineVisible_)
+                self.display.strip = 2 if self.mode_line_hidden else 0
             self.layout()
             return True
         if number == 32 and mode == DIRECTORY:

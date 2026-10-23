@@ -17,6 +17,7 @@ class TerminalDisplay:
         except curses.error:
             pass
         self.screen.keypad(False)
+        self.strip = 0  # 右端に空けておく桁(モードラインを隠している間のつまみ、C++のkScrollbarStripWidth)
         self.rows, self.columns = self.screen.getmaxyx()
         self.match_attr = curses.A_REVERSE  # 一致の色(C++版のマゼンタ、色が使えなければ反転)
         try:
@@ -27,10 +28,27 @@ class TerminalDisplay:
         except curses.error:
             pass
 
+    @property
+    def columns(self):
+        """使える桁(C++のTerminalDisplay::columns()、つまみの分を除く)。"""
+        return max(0, self.full_columns - self.strip)
+
+    @columns.setter
+    def columns(self, value):
+        self.full_columns = value
+
     def refresh_size(self):
         curses.update_lines_cols()
         self.rows, self.columns = self.screen.getmaxyx()
         return self.rows, self.columns
+
+    def draw_scroll_thumb(self, top, height):
+        """右端の2桁に反転した空白のつまみ(C++のContentView::renderScrollIndicatorOverlay())。"""
+        for row in range(top, top + height):
+            try:
+                self.screen.addstr(row, self.full_columns - 2, '  ', curses.A_REVERSE)
+            except curses.error:
+                pass
 
     def _fit(self, text, width):
         """表示幅widthに切り詰め、足りなければ空白で埋める。"""

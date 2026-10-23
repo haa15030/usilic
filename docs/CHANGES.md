@@ -32640,3 +32640,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - ^J^C・^J^B・^JN: C++の`goToFileSelector()`・`goToParentFromFileOrArchive()`・`jumpToPathPrefix()`と同じく、見ている物(FILEのfile・ARCのアーカイブ・FILEの履歴の一覧やLOCATE・DUの選んでいる物・SHELLのカレントディレクトリ)のディレクトリ・その親・N番目の「/」までへ(前の所とはfloor)。以前の^J^Cは今の(ls)を読み直すだけ、^J^Bは(ls)の親だけだった。
    - C++の不具合と思われるもの(直していない): SHELLで画面の幅を越える長いコマンド(^J.の長いパスのcd等)を送ると、その字がもう一度出力として行に残る(readlineの描き直しの分)。画面にもログにも残る。
    - 確かめたこと: vcmp.pyで、^J^Os・^[l・その^M・^G(SHELLの後・exitの後・^Jsの後・空のログ)、PART(一致の前・一致無し・空のfile、中身の位置・大きさ、折り返した行)、../と下のディレクトリの^G・^G^G、起動直後の^G、^Xfで別のディレクトリのfileを開いて^G、^J^C・^J^B・^J3/^J4((ls)・FILE・^X^F・^X^Dの一覧から)が両方の版で同じ(字と属性、C++の長いコマンドの件と時刻を除く)。unittest 81件。
+1048. **Python版: 知らせを反転しない・(ls)の␣の後のページ送り・^Ofのつまみと幅(C++に合わせる)(2026-10-24)** 項目1047の続き(HELPのキーを順にC++と比べる検証)。K-1〜K-23を(ls)・FILE・ページャー(複数のfile)で比べた。
+   - 知らせ(「マークがありません」等、`show_transient_notice()`)の位置の欄を反転しない。C++の`showTransientNotice()`は`setPositionTextOverride(text, plain=true)`。
+   - (ls)の␣: クイックルックの対象が無い(./・../の上で、選択も無い)時は、C++と同じく普通の␣(ページ送り)。以前は何もしなかった。
+   - ^Of(モードラインを隠す): C++と同じく、隠している間は画面の幅を2桁狭め(`TerminalDisplay.strip`、C++の`kScrollbarStripWidth`)、右端の2桁に反転した空白で今の位置のつまみを描く(`scroll_thumb_row_range()`・`draw_scroll_thumb()`、C++の`renderScrollIndicatorOverlay()`)。本文もその幅で折り返す。
+   - 違いではなかったもの: ページャーのqの後の画面(両方とも別画面から戻る、試験用の擬似端末が別画面を知らなかった)、ページャーのモードラインの右下の桁(C++は太字の空白を書き、cursesは行末を消す形にする、見た目は同じ)。
+   - 確かめたこと: vcmp.pyで、j・k・^N・^P・␣・^V・^F・b・^B・^[v・^[<・^[>・^[N・^[gg・^X^X((ls)とFILE)、n・p・x・f・q・^G・^L・^Of(ページャー)、^Of(FILE・(ls)・長い行・ページ送り・末尾)が両方の版で同じ(字と属性)。unittest 81件。
