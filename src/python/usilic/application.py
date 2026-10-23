@@ -109,6 +109,8 @@ class Application:
         self.shell = Shell()
         self.shell_view = ContentView()
         self.shell_view.cursor_highlight = False
+        self.shell_view.bottom_anchored = True
+        self.shell_browsing = False  # ^P・^Nで確定した行を動いている間(Shell::historyBrowsing())  # C++のShellのscrollback_.setBottomAnchored(true)
         self.command_line = LineEditor()
         self.pending_shell_run = None   # SHELLで動かしているCP/MV/RM・展開(終わったら行き先の(ls)へ)
         self.history = None  # ディレクトリで起動した時だけ(usilic.py)
@@ -231,11 +233,23 @@ class Application:
         }.get(self.current_mode, self.directory_view)
 
     def refresh_shell_view(self, follow=True):
-        """SHELLの行を作り直す。followなら最後(プロンプト)へ(出力が来た時)。"""
+        """SHELLの行を作り直す。followなら最後(プロンプト)へ(出力が来た時、^Pで戻っていてもやめる)。"""
         at_end = self.shell_view.cursor_index >= len(self.shell_view.lines) - 1
         self.shell_view.set_lines(self.shell.view_lines(self.wrap_width(), self.command_line.text))
+        if follow:
+            self.shell_browsing = False  # C++の新しい出力・送ったコマンドでのexitHistoryBrowsing()
         if follow or at_end:
             self.shell_view.go_to_bottom()
+
+    def live_row_count(self):
+        """SHELLの最後の「プロンプト+編集中のコマンド」が折り返して何行か。"""
+        head = self.shell.prompt if self.shell.prompt_ready else self.shell.pending
+        return len(wrap_text(expand_tabs(head + self.command_line.text), self.wrap_width()))
+
+    def exit_shell_browsing(self):
+        """Shell::exitHistoryBrowsing(): ^Pで戻っていたのをやめて、打っている行へ。"""
+        self.shell_browsing = False
+        self.shell_view.go_to_bottom()
 
     def layout(self):
         rows, columns = self.display.refresh_size()
@@ -334,7 +348,7 @@ class Application:
         F = mode_line.Fields
         if mode == SHELL:  # C++のshell_.scrollback()の欄
             pos = self.notice or mode_line.format_fixed_width(view.cursor_index + 1, len(view.lines))
-            fields = F('SHELL', str(self.shell.byte_count), True, '', '(bash)')
+            fields = F('SHELL', str(self.shell.shown_byte_count(self.wrap_width())), True, '', '(bash)')
             fields.trailing3 = directory  # 戻り先(C++のshellReturnName_)
             return fields, pos
         if mode == FILE:
@@ -480,7 +494,7 @@ class Application:
         if self.current_mode == FILE:
             return self.file_mode.current_file, self.file_mode.byte_count
         if self.current_mode == SHELL:
-            return 'SHELL', self.shell.byte_count
+            return 'SHELL', self.shell.shown_byte_count(self.wrap_width())
         if self.current_mode == MAN:
             return self.man_mode.current_page, self.man_mode.byte_count
         if self.current_mode == ARCHIVE:
@@ -529,15 +543,16 @@ class Application:
             view = self.vlist_view
         section = self.epub_section if view is self.file_view and self.in_epub_body() and \
             self.epub.right_to_left and not self.epub_note_active() else None
-        visible = view.visible_lines()
+        offset = view.anchor_offset()
+        visible = [None] * offset + view.visible_lines()  # SHELLは下に寄せる(上の空きはNone)
         marks = self.marked_rows()
         grep_on = self.grep_active or self.grep_prompt is not None
         for row in range(view.height):
             if row < len(visible) and section is not None and \
                     not section[0] <= visible[row].raw_line_number <= section[1]:
                 self.display.draw_row(row, '')  # 横書きの範囲の外の行は空に(C++のsetShownIndexRange())
-            elif row < len(visible):
-                index = view.top_index + row
+            elif row < len(visible) and visible[row] is not None:
+                index = view.top_index + row - offset
                 line = visible[row]
                 reverse = view.cursor_highlight and index == view.cursor_index and not (
                     self.prompt is not None and self.prompt.show_position) and self.copy is None
@@ -615,14 +630,16 @@ class Application:
         return max(0, min(self.display.columns - 1, utf8.text_width(text)))
 
     def shell_cursor_position(self):
-        """コマンド行のカーソルの画面の位置(行, 桁)。"""
+        """コマンド行のカーソルの画面の位置(行, 桁)。^Pで戻っている間はその行の頭(moveDisplayCursorToShellHistoryLine())。"""
         view = self.shell_view
+        if self.shell_browsing:
+            return max(0, view.cursor_index - view.top_index + view.anchor_offset()), 0
         head = (self.shell.prompt if self.shell.prompt_ready else self.shell.pending)
         before = head + self.command_line.text[:self.command_line.cursor]
         width = self.wrap_width()
         pieces = wrap_text(expand_tabs(before), width)
         live_start = len(view.lines) - len(wrap_text(expand_tabs(head + self.command_line.text), width))
-        row = live_start + len(pieces) - 1 - view.top_index
+        row = live_start + len(pieces) - 1 - view.top_index + view.anchor_offset()
         return max(0, min(row, view.height - 1)), utf8.text_width(pieces[-1])
 
     def save_positions(self):
@@ -2305,10 +2322,43 @@ class Application:
         return True
 
     def feed_shell_byte(self, byte):
-        """Application::feedShellByte(): コマンド行の編集、^Mで送る、^Cは中断、^Gで戻る。"""
+        """Application::feedShellByte(): コマンド行の編集、^Mで送る、^Cは中断、^Gで戻る。
+        ^P・^Nは確定した行を1行ずつ動く(C++のhistoryBrowsing)。プロンプトの行で^Mならそのコマンドをもう一度。"""
         editor = self.command_line
+        view = self.shell_view
+        last = len(view.lines) - self.live_row_count() - 1  # 確定した最後の行
         if byte == CTRL_G:
+            if self.shell_browsing:
+                self.exit_shell_browsing()
+                return True
             return self.go_back()
+        if byte == 0x10:  # ^P
+            if not self.shell_browsing:
+                if last < 0:
+                    return True
+                self.shell_browsing = True
+                view.cursor_index = last
+            else:
+                view.cursor_index = max(0, view.cursor_index - 1)
+            view.ensure_cursor_visible()
+            return True
+        if byte == 0x0E:  # ^N
+            if self.shell_browsing:
+                if view.cursor_index >= last:
+                    self.exit_shell_browsing()
+                else:
+                    view.cursor_index += 1
+                    view.ensure_cursor_visible()
+            return True
+        if self.shell_browsing and byte == CR:
+            command = view.lines[view.cursor_index].shell_command
+            if command is None:
+                self.exit_shell_browsing()
+                return True
+            editor.set_text(command)
+            self.shell_browsing = False
+        elif self.shell_browsing and byte != 0x03:
+            self.exit_shell_browsing()
         if byte == CR:
             command = editor.text
             editor.set_text('')
@@ -2464,7 +2514,7 @@ class Application:
         view = self.active_view()
         name = self.file_mode.current_file if self.current_mode == FILE else ''
         size = {FILE: self.file_mode.byte_count, MAN: self.man_mode.byte_count,
-                SHELL: self.shell.byte_count}.get(self.current_mode, self.directory_mode.byte_count)
+                SHELL: self.shell.shown_byte_count(self.wrap_width())}.get(self.current_mode, self.directory_mode.byte_count)
         if self.current_mode == FILE and self.file_mode.has_active_stream():
             self.file_mode.load_all()
         if self.current_mode == FILE:  # 大きさはFILEの画面の行で(C++のcontentByteCount(fileView_))
@@ -2962,7 +3012,7 @@ class Application:
             if not self.ensure_shell():
                 return False
             self.enter_mode(SHELL)
-            self.shell.submit_line('cd ' + shlex.quote(directory))
+            self.shell.submit_line("cd '" + directory + "'")  # C++と同じく、そのまま''で囲む
             self.refresh_shell_view()
             return True
         if number == 72:

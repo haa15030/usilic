@@ -32608,3 +32608,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 直接のユーザーの問い(「pythonでは表示の印として扱ってない？」): 項目1042で「幅0の字(U+2060・U+FEFF)を、C++版は表示の印として消すので出方が違う」と書いたが、調べ直すと違うのはU+FEFFだけだった。U+2060は両方の版とも字として残し、幅0で数える(Python版も`utf8.display_width_of_codepoint()`で幅0)。U+FEFFは、C++のPipeBufferが「続くK個で字下げK-1」という印(`readPortableIndentRun()`、usilic -mのusilic.man用)として読んで消すのに、Python版の`markdown.markup_lines()`にはこの処理が無く、字のまま残していた。
    - `markup_lines()`で、続くU+FEFFを<indentNN>と同じく字下げの印として読み、字には残さない。
    - 確かめたこと: docs/HISTORY.mdを幅80・120で組み、C++(expandHelpMarkup→PipeBuffer)と全行が同じ(77640行・62505行、タブの所のU+2060の印はPython版では`hidden_bytes`で数えるだけなので除いて比べた)。項目1042で残っていた2行と、PARTのモードラインの6バイト(U+FEFF 2つ分)の違いはこれだった。unittest 81件。
+1044. **Python版: SHELLを最下行から・^P/^Nで前の行へ・大きさの数え方(C++に合わせる)(2026-10-24)** 直接のユーザー依頼("pythonのSHELLはlegacyと同じく画面最上行から始まる。C++では結局実装できなかった仕様でもあるんだが、こっちの方がいい、ということで決まった経緯があるのでpythonも同じようにして")。経緯はHISTORY.md:5071("SHELLを起動したときのプロンプト位置は今の方がいい。最上行から始めたところでいずれは最下行が定位置なわけだし")。
+   - 行が画面に足りない間は上を空けて下に寄せる(C++の`ContentView::setBottomAnchored()`・`bottomAnchorRowOffset()`)。Python版の`ContentView.bottom_anchored`・`anchor_offset()`、描画・`line_index_at_row()`・カーソルの位置もずらす。
+   - 起動のハンドシェイク(`Shell.wait_for_handshake()`): C++と同じく番兵「#eos<PID>#」の後も出力が20ms途切れるまで読み、最初のプロンプトの印より前を捨てる。以前は番兵の行の改行が残って1行目が空になり、^J.のcdを最初のプロンプトが来る前に送って、その行のプロンプトが欠けていた。
+   - ^J.のcdは、C++と同じくパスをそのまま''で囲む(以前は`shlex.quote()`で、記号が無ければ囲まなかった)。
+   - モードラインの大きさ: bashから受け取ったバイトの数ではなく、C++と同じく確定した行を折り返した1行ごとに字+1、タブ1つに3(C++が置く幅0の印U+2060の分)。打っている最後の行は数えない(`Shell.shown_byte_count()`)。
+   - ^P・^Nで確定した行を1行ずつ動き、プロンプトの行で^Mならそのコマンドをもう一度送る、他の行の^M・^G・他のキー・新しい出力で打っている行へ戻る(C++の`Shell::historyBrowsing()`・`Line::shellCommand`)。以前のPython版の^P・^Nは何もしなかった。確定した「プロンプト+コマンド」の行は`shell.PromptLine`(strに送ったコマンドを持たせたもの)。
+   - 試験用の擬似端末(scratchpadのterm.py)がESC 7・ESC 8(カーソルの保存と復帰)を無視していて、下に寄せた画面がスクロールで崩れて見えた。usilicの不具合ではなかった(エミュレータを直した)。
+   - 確かめたこと: 擬似端末(10x70)で、^J.・echo・ls・ls -l・printfのタブ・^P^P・^P×4→^M・^P^P^N^N^N・^Pの後に字、のどれも両方の版で画面とモードラインが同じ。unittest 81件。

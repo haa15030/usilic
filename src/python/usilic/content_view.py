@@ -23,6 +23,7 @@ class Line:
     ellipsis: bool = False            # 長ければ途中を「...」に(ellipsisEligible、LOCATE・DU・ARC・一覧)
     never_highlighted: bool = False   # カーソルがあっても反転しない(neverHighlighted、INFOの開けない行)
     hidden_bytes: int = 0             # C++が行に置く幅0の印(タブの所のU+2060)のバイト数(大きさを数える時だけ足す)
+    shell_command: Optional[str] = None  # SHELLのプロンプトの行の送ったコマンド(Line::shellCommand、^Pで戻って^Mで再び)
 
 
 # 行頭禁則の字(C++のpipe_buffer.cppのisForbiddenAtLineStart())。
@@ -86,6 +87,7 @@ class ContentView:
         self.position_text_override = None  # setPositionTextOverride()(一時的な通知)
         self.empty_placeholder = None   # 行が無い時に1行目に出す行(setEmptyPlaceholder()、位置は0/0のまま)
         self.raw_line_numbers = True    # 位置を元の行で数える(applyRawLineNumbers())。MAN・KEYの一覧は折り返した行で
+        self.bottom_anchored = False    # setBottomAnchored(): 行が画面に足りない時、上を空けて下に寄せる(SHELL)
 
     # --- 内容 ---
     def set_lines(self, lines):
@@ -179,9 +181,17 @@ class ContentView:
         self.top_index = self.cursor_index - self.height // 2
         self.clamp()
 
+    def anchor_offset(self):
+        """bottomAnchorRowOffset(): 下に寄せる時、1行目の上に空ける行の数(寄せない時・画面が埋まる時は0)。"""
+        if not self.bottom_anchored:
+            return 0
+        return max(0, self.height - min(len(self.lines) - self.top_index, self.height))
+
     def line_index_at_row(self, row):
         """画面の行(0から)の行の番号。行が無ければ-1(C++のlineIndexAtRow())。"""
-        index = self.top_index + row
+        index = self.top_index + row - self.anchor_offset()
+        if index < self.top_index:
+            return -1
         return index if 0 <= row < self.height and index < len(self.lines) else -1
 
     def visible_lines(self):

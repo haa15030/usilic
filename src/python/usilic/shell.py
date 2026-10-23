@@ -24,6 +24,14 @@ PROGRAM_NAME = 'usilic'
 PROMPT_DISPLAY_NAME = 'usilic-1.5b'
 
 
+class PromptLine(str):
+    """「プロンプト+コマンド」の確定した行(字は普通の行と同じ、送ったコマンドを持つ)。"""
+    def __new__(cls, text, command):
+        line = super().__new__(cls, text)
+        line.command = command
+        return line
+
+
 class Shell:
     def __init__(self):
         self.pid = None
@@ -71,23 +79,37 @@ class Shell:
         os.write(fd, setup.encode())
         return self.wait_for_handshake()
 
-    def wait_for_handshake(self, timeout=5.0):
-        """Shell::waitForHandshake(): 「#eos<PID>#」までの出力は捨てる(設定のコマンドの分)。"""
-        end, data = time.time() + timeout, b''
+    def wait_for_handshake(self, timeout=10.0):
+        """Shell::waitForHandshake(): 「#eos<PID>#」までの出力は捨てる(設定のコマンドの分)。番兵の後も
+        出力が20ms途切れるまで読み、最初のプロンプトの印より前(番兵の行の改行等)も捨てる。"""
+        end, data, found = time.time() + timeout, b'', -1
         token = ('#eos%d#' % self.pid).encode()
         while time.time() < end:
-            r, _, _ = select.select([self.fd], [], [], 0.1)
-            if r:
-                try:
-                    chunk = os.read(self.fd, 4096)
-                except OSError:
-                    return False
-                data += chunk
+            r, _, _ = select.select([self.fd], [], [], 0.02)
+            if not r:
+                if found >= 0:
+                    break  # 番兵の後のまとまりが届き終わった
+                continue
+            try:
+                chunk = os.read(self.fd, 4096)
+            except OSError:
+                return False
+            if not chunk:
+                return False
+            data += chunk
+            if found < 0:
                 at = data.find(token)
                 if at >= 0:
-                    self.process_output_bytes(data[at + len(token):])
-                    return True
-        return False
+                    found = at + len(token)
+        if found < 0:
+            return False
+        rest = data[found:]
+        mark = rest.find(PROMPT_MARK.encode())
+        if mark >= 0:
+            rest = rest[mark:]
+        if rest:
+            self.process_output_bytes(rest)
+        return True
 
     def on_pty_readable(self):
         """Shell::onPtyReadable()。読めなければ(bashが終わった)False。"""
@@ -161,7 +183,7 @@ class Shell:
 
     def submit_line(self, command):
         """Shell::submitLine(): プロンプトとコマンドを行として残し、bashへ送る。"""
-        self.lines.append((self.prompt if self.prompt_ready else self.pending) + command)
+        self.lines.append(PromptLine((self.prompt if self.prompt_ready else self.pending) + command, command))
         if not self.prompt_ready:
             self.pending = ''
         self.prompt_ready = False
@@ -183,12 +205,19 @@ class Shell:
         out = []
         for number, text in enumerate(self.lines, 1):
             pieces = wrap_text(expand_tabs(text), width)
+            command = getattr(text, 'command', None)
             for i, piece in enumerate(pieces):
-                out.append(Line(piece, number, ends_with_newline=(i == len(pieces) - 1)))
+                out.append(Line(piece, number, ends_with_newline=(i == len(pieces) - 1), shell_command=command))
         live = (self.prompt if self.prompt_ready else self.pending) + command_text
         for piece in wrap_text(expand_tabs(live), width):
             out.append(Line(piece, len(self.lines) + 1))
         return out
+
+    def shown_byte_count(self, width):
+        """モードラインの大きさ(C++はscrollback_の行ごとに字+1): 確定した行を折り返した1行ごとに。
+        プロンプトと編集中のコマンドの行は数えない。C++はタブの所に幅0の印U+2060(3バイト)を置くので、その分も。"""
+        return sum(sum(len(piece.encode('utf-8')) + 1 for piece in wrap_text(expand_tabs(text), width))
+                   + 3 * text.count('\t') for text in self.lines)
 
     def terminate(self):
         if self.pid is not None:
