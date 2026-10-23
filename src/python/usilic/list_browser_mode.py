@@ -17,9 +17,12 @@ class ListBrowserMode:
         self.on_choose = None   # ^Mで選んだ時(項目を受け取る)
         self.prompt_kind = None  # 字を打った時に開くプロンプト(Noneなら打った字は無視)
         self.display_for = None  # 項目→表示の文字列(Noneなら項目のまま、ブックマーク等)
+        self.pinned = []         # 並びに無ければ頭に差し込む項目(^J^Eの入口、C++のaddDefaultUsilicWebUrl())
 
-    def show(self, items, sorted_view, label, on_choose, prompt_kind=None, badge_for=None, display_for=None):
+    def show(self, items, sorted_view, label, on_choose, prompt_kind=None, badge_for=None, display_for=None,
+             pinned=None):
         self.source = list(items)
+        self.pinned = list(pinned or [])
         self.label, self.on_choose, self.prompt_kind, self.badge_for = label, on_choose, prompt_kind, badge_for
         self.display_for = display_for
         self.set_sorted(sorted_view)
@@ -27,11 +30,11 @@ class ListBrowserMode:
     def snapshot(self):
         """入れ子の一覧(^[uの目次→各一覧)を開く前の状態。"""
         return (self.source, self.items, self.sorted, self.badge_for, self.label, self.on_choose, self.prompt_kind,
-                self.display_for, list(self.view.lines), self.view.cursor_index, self.view.top_index)
+                self.display_for, list(self.view.lines), self.view.cursor_index, self.view.top_index, self.pinned)
 
     def restore(self, snap):
         (self.source, self.items, self.sorted, self.badge_for, self.label, self.on_choose, self.prompt_kind,
-         self.display_for, lines, cursor, top) = snap
+         self.display_for, lines, cursor, top, self.pinned) = snap
         self.view.set_lines(lines)
         self.view.cursor_index, self.view.top_index = cursor, top
         self.view.clamp()
@@ -40,6 +43,8 @@ class ListBrowserMode:
         """sorted_viewならソートして重複を除き先頭に、でなければ入力順で最後(最新)にカーソル。"""
         self.sorted = sorted_view
         self.items = sorted(set(self.source)) if sorted_view else list(self.source)
+        # 並べた後で、無い入口を頭に(末尾の/の有無は問わない、並べ替えた順でも入力順でも)
+        self.items = [p for p in self.pinned if p not in self.items and p[:-1] not in self.items] + self.items
         lines = []
         for i, item in enumerate(self.items):
             badge = self.badge_for(item) if self.badge_for else ''

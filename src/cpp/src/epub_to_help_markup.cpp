@@ -1504,8 +1504,9 @@ bool isEpubNovelSiteUrl(const std::string &url) {
   if (target.empty()) return false;
   for (const auto &site : epubNovelSiteLinks())
     if (bare(site.second) == target) return true;
-  // 本文の名前のリンクには無いが^J^Eの入口にはある、なろうの作品の置き場(2026-10-22)。
-  return target == "ncode.syosetu.com";
+  // 本文の名前のリンクには無いが^J^Eの入口にはある、なろうの作品の置き場(2026-10-22)と、Archive of Our Own
+  // (2026-10-23、^J^Eの入口に足したもの。Epubの時に入口をnarou2epubへ渡さず、Openで開くように)。
+  return target == "ncode.syosetu.com" || target == "archiveofourown.org";
 }
 
 std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, std::map<int, int> *links,

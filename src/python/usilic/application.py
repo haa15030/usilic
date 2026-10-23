@@ -48,6 +48,28 @@ DIRECTORY, FILE, SHELL = 'Directory', 'File', 'Shell'
 ARCHIVE, LIST, MAN, DU, LOCATE, KEY, HELP, TOC = 'Archive', 'List', 'Man', 'Du', 'Locate', 'Key', 'Help', 'Toc'
 PART_TOC, PART, OCCUR, INFO = 'PartToc', 'Part', 'Occur', 'Info'
 USILIC_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'usilic.py')
+# ^J^Eの一覧の頭に、履歴に無ければ足す入口(C++のkUsilicWebDefaultUrl・kEpubListSiteUrls)。
+USILIC_WEB_DEFAULT_URL = 'http://localhost/usilic-web/'
+EPUB_LIST_SITE_URLS = ('https://yomou.syosetu.com/', 'https://ncode.syosetu.com/', 'https://noc.syosetu.com/',
+                       'https://kakuyomu.jp/', 'https://www.aozora.gr.jp/', 'https://archiveofourown.org/')
+# 小説サイトの入口(C++のisEpubNovelSiteUrl()): 作品の番号を探しに開く所なので、^Owの今の対処によらずOpenで開く。
+NOVEL_SITE_HOSTS = ('syosetu.com', 'yomou.syosetu.com', 'noc.syosetu.com', 'kakuyomu.jp', 'www.aozora.gr.jp',
+                    'ncode.syosetu.com', 'archiveofourown.org')
+
+
+def is_usilic_web_url(text):
+    return re.fullmatch(r'https?://\S*usilic[-_/]web\S*', text, re.I) is not None
+
+
+def is_epub_list_site_url(text):
+    return text in EPUB_LIST_SITE_URLS or text + '/' in EPUB_LIST_SITE_URLS
+
+
+def is_novel_site_url(url):
+    m = re.fullmatch(r'https?://([^/]+)/*', url)
+    return bool(m) and m.group(1) in NOVEL_SITE_HOSTS
+
+
 REPEATABLE = set(range(1, 13)) | {15, 16, 97}  # ^Uの回数が効くK-番号(移動・n/p・^Xe)
 CTRL_G, CTRL_J, CTRL_O, CTRL_X, ESC, CR = 0x07, 0x0A, 0x0F, 0x18, 0x1B, 0x0D
 CPMVRM_MARKER = '#usilic-cpmvrm#'  # SHELLで動かしたCP/MV/RM・展開の終わりの印(C++のkCpMvRmExitMarker)
@@ -1054,15 +1076,15 @@ class Application:
         return self.current_mode == FILE and self.epub is not None and self.file_mode.current_file == self.epub.path
 
     # --- 一覧(履歴) ---
-    def show_list(self, items, label, on_choose, sorted_view, prompt_kind=None, badge_for=None):
-        if not items:
+    def show_list(self, items, label, on_choose, sorted_view, prompt_kind=None, badge_for=None, pinned=None):
+        if not items and not pinned:  # 頭に差し込む入口があれば、履歴が空でも開く
             self.show_transient_notice('No string')
             return False
         if self.current_mode == LIST:
             self.list_stack.append(self.list_mode.snapshot())
         else:
             self.list_stack = []
-        self.list_mode.show(items, sorted_view, label, on_choose, prompt_kind, badge_for)
+        self.list_mode.show(items, sorted_view, label, on_choose, prompt_kind, badge_for, pinned=pinned)
         self.enter_mode(LIST)
         return True
 
@@ -1092,6 +1114,25 @@ class Application:
                  if filter_fn is None or (not i.endswith(hist.USILIC_TAG) and filter_fn(self.strip_tags(i)))]
         return self.show_list(items, label, on_choose or (lambda i: self.open_path(self.strip_tags(i))), True,
                               pr.FILE, self.file_badge)
+
+    def start_epub_list(self):
+        """^J^E: 履歴の.epubと、usilic-web・小説サイトの入口(無ければ頭に足す、C++のaddDefaultUsilicWebUrl())。"""
+        # 末尾が.epubの項目だけ(CUTの印等の付いた項目・ARCで開いた「パス/」は入れない、C++のisEpubFile(item))
+        items = [i for i in self.ring(hist.RECENT_FILE)
+                 if is_epub_file(i) or is_usilic_web_url(i) or is_epub_list_site_url(i)]
+        return self.show_list(items, 'FILE', self.open_epub_list_item, True, pr.FILE, self.epub_list_badge,
+                              pinned=(USILIC_WEB_DEFAULT_URL,) + EPUB_LIST_SITE_URLS)
+
+    def open_epub_list_item(self, item):
+        if is_epub_list_site_url(item) or is_usilic_web_url(item):
+            if is_usilic_web_url(item) and self.history is not None:
+                self.history.push_recent(hist.RECENT_FILE, item)
+            return self.open_url(item)  # 小説サイトの入口はopen_url()がOpenで開く
+        return self.open_path(self.strip_tags(item))
+
+    def epub_list_badge(self, item):
+        """小説サイトの入口は作品の番号を探しに開く所なので「(作品ID)」(C++のfileHistoryBadges())。"""
+        return '(作品ID)' if is_novel_site_url(item) else self.file_badge(item)
 
     def start_prompt(self, kind, text='', on_submit=None, show_position=False):
         self.prompt = pr.Prompt(kind, text, on_submit, show_position)
@@ -1786,7 +1827,7 @@ class Application:
         if number == 47:  # ^Je
             return self.start_prompt(pr.EPUB, '', self.execute_epub_input)
         if number == 48:  # ^J^E
-            return self.start_file_list(is_epub_file, 'FILE')
+            return self.start_epub_list()
         if number == 49:  # ^Oe: .epubをARCとして
             if mode == DIRECTORY:
                 entry = self.directory_mode.selected_entry()
@@ -3132,6 +3173,12 @@ class Application:
         handlers = self.configuration.url_handler_list()
         name, argv = handlers[self.url_mode % len(handlers)]
         self.url_mode = 0
+        if is_novel_site_url(url):  # 小説サイトの入口は^Owの今の対処によらずOpenで(C++のopenEpubWebLink())
+            opener = dict(handlers).get('Open')
+            if opener is None:
+                self.show_transient_notice('No Open in URL (usilicrc)')
+                return False
+            name, argv = 'Open', opener
         try:
             if name == 'Open':
                 subprocess.Popen(argv + [url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

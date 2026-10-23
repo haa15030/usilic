@@ -32587,3 +32587,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - C++・Python: ^Jeに作品・章のURL(`archiveofourown.org/works/<番号>…`、collections/…/works/も)を入れるとnarou2epubへ(作品のURLにそろえる)。EPUBの中のリンクのEpub(^Ow)もArchive of Our Ownの作品を受ける(C++)。C++の^J^Eの最初からある一覧にhttps://archiveofourown.org/を足した。HELPの原稿(src/HELP_.txt・src/HELP_en_.txt、それぞれ6か所)とtools/narou2epubの説明も。
    - 確かめたこと: narou2epub.pyの構文、ファイル名に使えない字の置き換え。make usilic・make install(narou2epub.pyも入れ直した)。Pythonのunittest 81件。**Archive of Our Ownは調べている間ずっと障害(Cloudflareの525・時間切れ)で、規約・作品のページ・ダウンロードの口の今の形はまだ確かめていない(手元の知識で作った)**。
    - 気付いたこと(未対応): Python版の^J^Eには、C++版の最初からある一覧(usilic-web・なろう等)が無い。
+
+1040. **Python版: ^J^Eの一覧の頭にusilic-web・小説サイトの入口(C++と同じ)、C++: Archive of Our Ownの入口もOpenで(2026-10-23)** 直接のユーザー依頼("Pythonにも入れて"、項目1039の「気付いたこと」)。
+   - Python: ^J^Eの一覧に、履歴に無ければusilic-web(http://localhost/usilic-web/)と、なろう・ノクターン・カクヨム・青空文庫・Archive of Our Ownの入口を頭に差し込む(C++の`addDefaultUsilicWebUrl()`)。差し込むのは並べた後で、並べ替えた順でも入力順(^R)でも頭(`ListBrowserMode.pinned`)。入口には「(作品ID)」。選ぶと、小説サイトの入口は^Owの今の対処によらずOpenで、usilic-webは^Owの今の対処で開く(C++の`openEpubWebLink()`、本文中の小説サイトのリンクもOpenで)。一覧に入れるのは末尾が.epubの項目だけにした(以前はCUTの印の付いた項目も入っていた、C++の`isEpubFile(item)`)。履歴が空でも入口があれば一覧を開く。
+   - C++: 項目1039でArchive of Our Ownを^J^Eの入口に足した時、小説サイトの入口の判定(`isEpubNovelSiteUrl()`)に入れ忘れていた。^OwがEpubの時に選ぶと入口をnarou2epubへ渡して「Not a Narou work」になるので、入れた(「(作品ID)」も付く)。
+   - 確かめたこと: 擬似端末の300行で、^J^E・^R・^R^Rの一覧の全部の行とモードラインが両方の版で同じ。Python版で、^OwがEpubの時に入口を選ぶとOpen(open)へ渡りnarou2epubへは行かないこと、章のURLは作品のURLにそろえてnarou2epubへ渡ることを、起動を差し替えて確かめた。unittest 81件。make usilic・make install。Archive of Our Ownは、まだ障害(525)で試せていない。
