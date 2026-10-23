@@ -77,7 +77,7 @@ class LocateMode:
                 if path not in results:
                     results.append(path)
         self.query, self.results = query, results
-        lines = [Line(p, i + 1) for i, p in enumerate(results)]
+        lines = [Line(p, i + 1, ellipsis=True) for i, p in enumerate(results)]
         if not results:
             lines = [Line(query + ': No results', None, attributes=[(len(query) + 2, len(query) + 12, 'underline')])]
         self.byte_count = sum(len(p.encode('utf-8', 'surrogateescape')) + 1 for p in results)

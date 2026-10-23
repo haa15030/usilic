@@ -32561,3 +32561,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 他のラベル(Startup file・ERROR等)はOS名と「Startup file」の長い方の幅に右寄せし、「:」の桁を揃える。
    - HELPの原稿(src/HELP_.txt・src/HELP_en_.txt、それぞれ3か所)の「Boot options」の説明も直した。
    - 確かめたこと: 擬似端末で両方の版のINFOが「macOS Sequoia 15.7.8 : usilic -c」「macOS Sequoia 15.7.8 : python3 usilic.py」になり、「:」の桁が揃う。C++のINFOのテスト(19件)は、「Boot options」の字と値の桁(15)を見ていた2か所を直して、変更前から通らない2件(7085行・7118行)以外は通る。Pythonのunittest 81件すべて通る。make usilic・make install。Linux・Windowsでのビルドと表示は確かめていない。
+
+1037. **Python版: 一覧のハイライト(反転・下線)の範囲をC++版と同じに(2026-10-23)** 直接のユーザー報告("(ls)でのハイライト表示がC++と違う。試してみて。")。
+   - 擬似端末の試験の道具に字の属性(反転・下線・太字)の記録を足して両方の版の画面を比べ、違いを洗い出した。Python版には、行の中の反転をかける範囲(C++の`Line::highlightStartColumn`・`highlightEndColumn`)の仕組みが無く、カーソル行は行の字全体を反転していた。`Line`に`highlight_start`・`highlight_end`・`ellipsis`(ellipsisEligible)・`never_highlighted`を足し、描く所(C++の`renderLine()`)を合わせた。
+   - (ls): カーソルの反転・マークの下線は名前の所から(-Fの印の前、名前だけの表示の時は行の頭から)。長い行は名前の前をそのまま、名前の途中を「...」に(`truncateHighlightedSuffix()`)。
+   - マークした行は、カーソルがあっても反転させず下線だけ((ls)・ARC・DU・LOCATE・一覧、C++の`markedRowUsesUnderline_`)。
+   - ARC・DU: 反転は名前・パスの所から(大きさの欄の幅+2)。ARC・DU・LOCATE・一覧の長い行は、途中を「...」に(1桁空けた幅まで、以前のPython版は画面の幅いっぱいで1字ずれていた)。
+   - KEY: 反転は「：」の手前まで、キーでない見出しの行(「HELP」等)は反転しない(`setLabelHighlightEndMarker()`)。groffの太字はC++の一覧と同じく付けない。
+   - INFO: 反転は値の所から、開けない行(1行目・空のWORK)は反転しない。
+   - ^X^Fの一覧で^Rの後(入力順): 「FILE」の後ろから行末までも反転(C++は行を先に反転で埋めてから書く)。
+   - ^O^Sで一致が無い時: C++と同じく空の一致の一覧を開き「a: 見つかりません」(「見つかりません」に下線、位置は0/0)を出す(以前はモードラインの知らせだけ)。一覧のモードラインの最後の欄は戻り先の名前(ファイルから開けばそのパス、以前はディレクトリ)。
+   - 確かめたこと: 擬似端末で、(ls)(カーソル・マーク・名前だけ)・KEY・ARC・DU・^X^Fの一覧(並べ替え・入力順)・INFO・^O^Sの一覧(一致あり・無し、(ls)・FILEから)の字と属性が両方の版で同じ(INFOは、C++がファイルとして長い値を折り返すため字だけ違う)。乱数のキーの試験で例外は出ない。unittest 81件すべて通る。

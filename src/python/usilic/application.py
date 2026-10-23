@@ -394,7 +394,7 @@ class Application:
             else:
                 label = 'FGREP' if self.occur_syntax == FIXED else 'EGREP'
                 fields = F(label, str(self.occur_byte_count), True, '', '(' + label.lower() + ')')
-                fields.trailing3 = directory
+                fields.trailing3 = self.previous_mode_name(self.occur_origin)  # 戻り先(ファイルならそのパス)
             return fields, position
         d = self.directory_mode
         fields = F(directory, str(d.byte_count), False, PROGRAM_LABEL if not d.mode_stack else '', '(ls)')
@@ -515,15 +515,37 @@ class Application:
                 if self.copy is not None:
                     runs += self.copy.runs_for_row(index)
                 text = line.text
-                if self.current_mode in (LIST, DU, LOCATE) and utf8.text_width(text) > self.display.columns:
-                    text = self.elide_middle(text, self.display.columns)  # C++版と同じく途中を「...」に
-                    line = Line(text, line.raw_line_number)
+                budget = self.display.columns - 1 if view.cursor_highlight else self.display.columns
+                if line.ellipsis and len(text.encode('utf-8')) > budget:  # 途中を「...」に(ellipsisEligible)
+                    text = mode_line.middle_ellipsis_by_width(text, budget)
+                    line = Line(text, line.raw_line_number, highlight_start=line.highlight_start)
+                if line.never_highlighted:
+                    reverse = False
                 if (grep_on or self.grep.persistent) and index in self.grep.matches and view is self.grep.view:
                     runs += [(s, e, 'match') for s, e in match_spans(line.text, self.grep.pattern, self.grep.syntax)]
                 jump = self.jump_highlight
                 if jump and jump[0] is view and jump[1] == index and jump[2] == line.text:
                     runs.append((jump[3], len(line.text), 'match'))
-                self.display.draw_row_styled(row, text, runs, reverse=reverse, underline=index in marks)
+                underline = index in marks
+                reverse = reverse and not underline  # マークした行はカーソルがあっても下線だけ(markedRowUsesUnderline_)
+                if line.highlight_start is not None or line.highlight_end is not None:
+                    # 反転・下線は範囲の字だけ(C++のrenderLine()、(ls)は名前から、KEYは「：」まで)
+                    start = line.highlight_start or 0
+                    if line.highlight_start is not None and not line.ellipsis and \
+                            len(text.encode('utf-8')) > self.display.columns - 1 and start < len(text):
+                        # 長い行は名前の前をそのまま、名前の途中を「...」に(truncateHighlightedSuffix())
+                        text = text[:start] + mode_line.middle_ellipsis_by_width(
+                            text[start:], max(0, self.display.columns - 1 - utf8.text_width(text[:start])))
+                    end = len(text) if line.highlight_end is None else line.highlight_end
+                    if reverse and end > start:
+                        runs.append((start, end, 'reverse'))
+                    if underline and end > start:
+                        runs.append((start, end, 'underline'))
+                    reverse = underline = False
+                self.display.draw_row_styled(row, text, runs, reverse=reverse, underline=underline)
+            elif row == 0 and not view.lines and view.empty_placeholder is not None:
+                p = view.empty_placeholder
+                self.display.draw_row_styled(row, p.text, list(p.attributes))
             else:
                 self.display.draw_row(row, '')
         if not self.mode_line_hidden or self.prompt is not None or self.notice:
@@ -1390,6 +1412,15 @@ class Application:
         lines = help_text.key_source_lines(found[0])
         self.key_byte_count = help_text.key_list_byte_count(lines, found[3], self.wrap_width())
         cursor = self.key_view.cursor_index
+        # C++のKEY(CUTの見出し): 反転は「：」の手前まで、キーでない見出しの行は反転しない、字の装飾は無し
+        # (setLabelHighlightEndMarker())。
+        shown, line_start = [], True
+        for line in lines:
+            at = line.text.find(help_text.FULL_COLON)
+            end = at if line_start and at >= 0 and help_text.is_key_assignment_label(line.text) else 0
+            shown.append(Line(line.text, line.raw_line_number, line.ends_with_newline, highlight_end=end))
+            line_start = line.ends_with_newline
+        lines = shown
         self.key_view.set_lines(lines)
         self.key_view.cursor_index = cursor  # 前回KEYを離れた行(keyCursorIndex_)
         self.key_view.clamp()
@@ -2357,9 +2388,6 @@ class Application:
         if self.current_mode == FILE and self.file_mode.has_active_stream():
             self.file_mode.load_all()
         found = occur_lines(view.lines, pattern, syntax)
-        if not found:
-            self.show_transient_notice('No string')
-            return False
         if self.history is not None:
             self.history.push_recent(hist.RECENT_FGREP_PATTERN if syntax == FIXED else hist.RECENT_EGREP_PATTERN,
                                      pattern)
@@ -2370,6 +2398,11 @@ class Application:
         self.occur_byte_count = sum(len(l.text.encode('utf-8')) + 1 for _, l in found)
         self.occur_view.set_lines([Line(l.text, i + 1, attributes=l.attributes) for i, (_, l) in enumerate(found)])
         self.occur_view.cursor_index = self.occur_view.top_index = 0
+        # 一致が無ければ空の一覧に「pattern: 見つかりません」(GrepMode::showMatches()、「見つかりません」に下線)
+        suffix = localized('No string')
+        text = pattern + ': ' + suffix
+        self.occur_view.empty_placeholder = None if found else \
+            Line(text, None, attributes=[(len(text) - len(suffix), len(text), 'underline')])
         self.enter_mode(OCCUR)
         return True
 
@@ -2762,7 +2795,8 @@ class Application:
         width = max(12, len(rows[0][0]))  # 「:」の桁はOS名と「Startup file」の長い方に揃える(C++と同じ)
         for number, (label, value, kind) in enumerate(rows, 1):
             text = (label.rjust(width) + ' : ' if label else ' ' * (width + 3)) + value
-            lines.append(Line(text, number))
+            # 反転は値から、開けない行(1行目・空のWORK)は反転しない(C++のhighlightStartColumn・neverHighlighted)
+            lines.append(Line(text, number, highlight_start=width + 3, never_highlighted=kind is None))
             self.info_targets.append((kind, value) if kind else None)
         self.info_byte_count = sum(len(l.text.encode('utf-8')) + 1 for l in lines)
         self.info_view.set_lines(lines)

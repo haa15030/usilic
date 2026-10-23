@@ -187,7 +187,8 @@ class ArchiveMode:
         width = max(len(str(e.size)) for e in entries)
         lines = ['%*d  %s' % (width, e.size, e.name) for e in entries]
         self.byte_count = sum(len(l.encode('utf-8', 'surrogateescape')) + 1 for l in lines)
-        self.view.set_lines([Line(l, i + 1) for i, l in enumerate(lines)])
+        self.view.set_lines([Line(l, i + 1, highlight_start=width + 2, ellipsis=True)  # 反転は名前から
+                             for i, l in enumerate(lines)])
         self.view.cursor_index = self.view.top_index = 0
         return True
 

@@ -44,7 +44,7 @@ class ListBrowserMode:
         for i, item in enumerate(self.items):
             badge = self.badge_for(item) if self.badge_for else ''
             text = self.display_for(item) if self.display_for else item
-            lines.append(Line(text + ('  ' + badge if badge else ''), i + 1))
+            lines.append(Line(text + ('  ' + badge if badge else ''), i + 1, ellipsis=True))
         self.view.set_lines(lines)
         self.view.cursor_index = 0 if sorted_view else max(0, len(self.items) - 1)
         self.view.top_index = 0

@@ -17,6 +17,11 @@ class Line:
     ends_with_newline: bool = True
     attributes: list = field(default_factory=list)
     links: list = field(default_factory=list)   # (開始, 終わり, href)(EPUBの本文のリンク)
+    # カーソルの反転・選択の下線をかける字の範囲(Line::highlightStartColumn・highlightEndColumn)。Noneなら行の字全体。
+    highlight_start: Optional[int] = None
+    highlight_end: Optional[int] = None
+    ellipsis: bool = False            # 長ければ途中を「...」に(ellipsisEligible、LOCATE・DU・ARC・一覧)
+    never_highlighted: bool = False   # カーソルがあっても反転しない(neverHighlighted、INFOの開けない行)
 
 
 # 行頭禁則の字(C++のpipe_buffer.cppのisForbiddenAtLineStart())。
@@ -75,6 +80,7 @@ class ContentView:
         self.height = 1                 # 本文の行数(モードラインを除く)
         self.cursor_highlight = True    # setCursorHighlightEnabled()(ページャーではFalse)
         self.position_text_override = None  # setPositionTextOverride()(一時的な通知)
+        self.empty_placeholder = None   # 行が無い時に1行目に出す行(setEmptyPlaceholder()、位置は0/0のまま)
         self.raw_line_numbers = True    # 位置を元の行で数える(applyRawLineNumbers())。MAN・KEYの一覧は折り返した行で
 
     # --- 内容 ---

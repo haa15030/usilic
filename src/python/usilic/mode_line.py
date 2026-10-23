@@ -367,6 +367,8 @@ def prompt_segments(label, position, message, text, cursor, tail, cols, exit_des
     if tail and column > start:
         row.move(column)
         row.put(tail)
+        if badge:  # 入力欄の後ろの残りは、先に反転で埋めた行のまま(drawPromptLabel())
+            row.put(' ' * max(0, cols - 1 - row.column))
     else:
         row.put(' ' * max(0, cols - 1 - row.column))
     return row.segments, start, shift

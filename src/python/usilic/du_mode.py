@@ -69,7 +69,8 @@ class DuMode:
         width = max([len(str(e.size_kb)) + 1 for e in self.entries] or [0])
         lines = [('%dK' % e.size_kb).rjust(width) + '  ' + e.path + e.type_marker for e in self.entries]
         self.byte_count = sum(len(l.encode('utf-8', 'surrogateescape')) + 1 for l in lines)
-        self.view.set_lines([Line(l, i + 1) for i, l in enumerate(lines)])
+        self.view.set_lines([Line(l, i + 1, highlight_start=width + 2, ellipsis=True)  # 反転はパスから
+                             for i, l in enumerate(lines)])
         self.view.cursor_index = self.view.top_index = 0
         self.current_path = path
         return True

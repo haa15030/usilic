@@ -18,6 +18,7 @@ class DirectoryEntry:
     ls_line: str
     name: str
     is_directory: bool
+    name_start: int = 0   # 行の中の名前の始まり(nameStartColumn、カーソルの反転はここから)
 
 
 def parse_ls_line(line):
@@ -42,7 +43,7 @@ def parse_ls_line(line):
     is_directory = line.startswith('d')
     if not is_directory and name and name[-1] in '*@=%|':
         name = name[:-1]
-    return DirectoryEntry(line, name, is_directory)
+    return DirectoryEntry(line, name, is_directory, name_start)
 
 
 def sort_by_kind(entries, reverse=False):
@@ -106,7 +107,8 @@ class DirectoryMode:
         self.current_directory = path
         self.marks = set()
         self.temporary_marks = False
-        self.view.set_lines([Line(e.name if self.filename_only else e.ls_line, i + 1)
+        self.view.set_lines([Line(e.name if self.filename_only else e.ls_line, i + 1,
+                                  highlight_start=None if self.filename_only else e.name_start)
                              for i, e in enumerate(self.entries)])
         cursor, top = self.cursor_positions.get(path, (0, 0))
         if self.history is not None:
