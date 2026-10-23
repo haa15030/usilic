@@ -1235,6 +1235,12 @@ class Application:
     def execute_epub_input(self, text):
         """^Je: カレントディレクトリの.epubだけ(C++と同じ)。作品番号・作品のURLはnarou2epubで、他のURLは^Owで。"""
         text = text.strip()
+        # Archive of Our Ownの作品・章のURLは作品のURLにそろえてnarou2epubへ(サイトのEPUBを落とす、C++と同じ)
+        ao3 = re.fullmatch(r'https?://(www\.)?archiveofourown\.org/(collections/[^/\s]+/)?works/([0-9]+)(/\S*)?', text)
+        if ao3:
+            if self.history is not None:
+                self.history.push_recent(hist.RECENT_FILE, text)
+            return self.run_narou2epub('https://archiveofourown.org/works/' + ao3.group(3))
         if re.fullmatch(r'[nN][0-9]{4,}[a-zA-Z]+', text) or re.fullmatch(r'[0-9]{10,}', text) or re.match(
                 r'https?://(ncode|novel18|yomou|noc)\.syosetu\.com/[nN][0-9]{4,}[a-zA-Z]+|https?://kakuyomu\.jp/works/'
                 r'[0-9]+|https?://www\.aozora\.gr\.jp/cards/', text):

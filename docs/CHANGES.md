@@ -32580,3 +32580,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - Python: 行を描く前に行末まで消す(C++の`clearToEndOfLine()`)。全角か半角か紛らわしい字(▽等)をPython版と端末とで違う幅に数えた時に、前の画面の字が行の終わりに残っていた((ls)の名前だけの表示で「*」が残る)。
    - 確かめたこと: 擬似端末の50・70・90桁で、両方の版のINFO(字と反転の範囲、コマンドラインの字以外)・DATAから開いた(ls)(自動の名前だけの表示)・^Oo・^Oo^Ooが同じ。C++のINFOのテストは、値の桁を見ていた所をOS名の幅に直して、前から通らない1件(INFOのHELPの行、今のINFOとHELPには無い)以外は通る。Pythonのunittest 81件・乱数のキーの試験も通る。make usilic・make install。
    - 違いが残る所: 右下の桁(「usilic-1.5b」の後ろの太字の空白)をPython版は描けない(cursesの制限、見た目は同じ)。
+
+1039. **narou2epub: Archive of Our Ownの作品はサイトのEPUBを落とす(C++・Python、2026-10-23)** 直接のユーザー依頼("英語圏最大の小説投稿サイトに`Wattpad`というのがあるらしいんだが…他には`Royal Road`、`Archive of Our Own`とか")。
+   - 調べたこと: WattpadはWattpad2Epub(GPL-2.0、2023年11月にアーカイブ、HTMLの読み取りが効かなくなっていた)を見た上で今のサイトを試した。作品のページに章の一覧のJSON、章のページに本文の取得先(`apiv2/?m=storytext&id=…&page=`)があり、ブラウザ無しで本文が取れる(有料の作品は案内の文だけ)。ただし利用規約(2019-05-13改訂)が「Don't scrape Wattpad.」、ソフトウェア等で中身をcrawl・取り出すことを禁じているので作らない。Royal RoadはCloudflareの確認画面でプログラムからの取得を止めていて、規約も読めない。それをくぐり抜ける道具は作らない。
+   - Archive of Our Ownはサイト自身が作品のEPUBのダウンロードを用意しているので、本文を取り出さずにそれを落とす(`narou2epub.py`の`ao3ToEpub()`)。作品のページ(`?view_adult=true`で成人向けの確認を通る)の`/downloads/<番号>/<題名>.epub`のリンクから落とし、`ao3-<番号>-<題名>.epub`で保存してパスを出す。ログインした人にだけ見せる作品は、その旨を出して止める。
+   - C++・Python: ^Jeに作品・章のURL(`archiveofourown.org/works/<番号>…`、collections/…/works/も)を入れるとnarou2epubへ(作品のURLにそろえる)。EPUBの中のリンクのEpub(^Ow)もArchive of Our Ownの作品を受ける(C++)。C++の^J^Eの最初からある一覧にhttps://archiveofourown.org/を足した。HELPの原稿(src/HELP_.txt・src/HELP_en_.txt、それぞれ6か所)とtools/narou2epubの説明も。
+   - 確かめたこと: narou2epub.pyの構文、ファイル名に使えない字の置き換え。make usilic・make install(narou2epub.pyも入れ直した)。Pythonのunittest 81件。**Archive of Our Ownは調べている間ずっと障害(Cloudflareの525・時間切れ)で、規約・作品のページ・ダウンロードの口の今の形はまだ確かめていない(手元の知識で作った)**。
+   - 気付いたこと(未対応): Python版の^J^Eには、C++版の最初からある一覧(usilic-web・なろう等)が無い。

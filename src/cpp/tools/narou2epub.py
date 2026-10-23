@@ -29,6 +29,7 @@ import shutil
 import tempfile
 import builtins
 import re
+import html
 import time
 import datetime
 import random
@@ -1045,12 +1046,44 @@ def aozoraToEpub(url, outputDirectory):
   print(path)
   return path
 
+# usilic: 2026-10-23、直接のユーザー依頼(英語圏の小説投稿サイトにも、Archive of Our Ownから)。Archive of Our Own
+# (archiveofourown.org/works/<作品の番号>)は、サイト自身が作品をEPUBでダウンロードする口を用意しているので、本文を
+# 取り出して組むのではなく、そのEPUB(横書き)をそのまま落とす。成人向けの作品は「view_adult=true」で確認を通る
+# (サイト側には何も影響しない)。ログインした人にだけ見せる作品は落とせない。
+AO3_SITE = r"https://archiveofourown.org/"
+
+def ao3ToEpub(url, outputDirectory):
+  match = re.search(r"archiveofourown\.org/(?:collections/[^/]+/)?works/([0-9]+)", url)
+  if not match:
+    raise Exception("Not an Archive of Our Own work: " + url)
+  workId = match.group(1)
+  page = fetch(AO3_SITE + "works/" + workId + "?view_adult=true", timeout=60)
+  if "/users/login" in page.url:
+    raise Exception("This work is only for logged-in users of Archive of Our Own: " + url)
+  page.raise_for_status()
+  link = re.search(r'href="(/downloads/' + workId + r'/[^"]+?\.epub[^"]*)"', page.text)
+  href = html.unescape(link.group(1)) if link else "/downloads/" + workId + "/" + workId + ".epub"
+  time.sleep(1)  # 続けて取りに行く時は間を空ける
+  epub = fetch(urllib.parse.urljoin(AO3_SITE, href), timeout=120)
+  epub.raise_for_status()
+  if not epub.content.startswith(b"PK"):
+    raise Exception("Not an EPUB: " + urllib.parse.urljoin(AO3_SITE, href))
+  name = urllib.parse.unquote(href.split("?")[0].rsplit("/", 1)[-1])
+  name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", name).strip() or workId + ".epub"
+  path = os.path.join(outputDirectory, "ao3-" + workId + "-" + name)
+  with open(path, "wb") as f:
+    f.write(epub.content)
+  print(path)
+  return path
+
 if __name__ == '__main__':
     # usilic: 出力先(-o)、URLも受け付ける、作業用の一時ディレクトリ、最後にEPUBのパスを標準出力へ。
     parser = ArgumentParser(description=r"EPUB3になろう(usilic narou2epub)")
     parser.add_argument("-n", "--ncode", type=str, help="N-code or https://ncode.syosetu.com/n.../ (novel18.syosetu.com too), "
                         "or a Kakuyomu work ID or https://kakuyomu.jp/works/<ID>, "
-                        "or an Aozora Bunko card https://www.aozora.gr.jp/cards/<person>/card<no>.html", nargs='+', required=True)
+                        "or an Aozora Bunko card https://www.aozora.gr.jp/cards/<person>/card<no>.html, "
+                        "or an Archive of Our Own work https://archiveofourown.org/works/<no> (its own EPUB download)",
+                        nargs='+', required=True)
     parser.add_argument("-o", "--output", type=str, help="output directory (default: ~/.usilic/data)")
     args = parser.parse_args()
 
@@ -1065,6 +1098,10 @@ if __name__ == '__main__':
       # usilic: 青空文庫(図書カードかXHTML版のURL、aozoraToEpub())
       if "aozora.gr.jp/cards/" in ncode:
         builtins.print(aozoraToEpub(ncode, outputDirectory), flush=True)
+        continue
+      # usilic: Archive of Our Own(作品のURL、ao3ToEpub())
+      if "archiveofourown.org/" in ncode:
+        builtins.print(ao3ToEpub(ncode, outputDirectory), flush=True)
         continue
       # usilic: カクヨム(kakuyomu.jp/works/<ID>、またはIDの数字だけ)
       match = re.search(r"kakuyomu\.jp/works/([0-9]+)", ncode) or re.fullmatch(r"\s*([0-9]{10,})\s*", ncode)

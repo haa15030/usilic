@@ -664,6 +664,7 @@ const char *const kEpubListSiteUrls[] = {
     "https://noc.syosetu.com/",     // ノクターンノベルズ
     "https://kakuyomu.jp/",         // カクヨム
     "https://www.aozora.gr.jp/",    // 青空文庫
+    "https://archiveofourown.org/", // Archive of Our Own(2026-10-23、英語圏の作品、サイトのEPUBを落とす)
 };
 
 bool isEpubListSiteUrl(const std::string &text) {
@@ -8471,7 +8472,8 @@ bool Application::runNarouToEpub(const Configuration::UrlHandler &handler, const
   // 青空文庫の図書カード・XHTML版(2026-10-15、直接のユーザー依頼、narou2epub.pyのaozoraToEpub())も。
   static const std::regex kNarouWork(
       R"(^https?://((ncode|novel18)\.syosetu\.com/n[0-9]{4,}[a-z]+|kakuyomu\.jp/works/[0-9]+|)"
-      R"(www\.aozora\.gr\.jp/cards/[0-9]+/(card[0-9]+|files/[0-9]+_[0-9]+)\.html))",
+      R"(www\.aozora\.gr\.jp/cards/[0-9]+/(card[0-9]+|files/[0-9]+_[0-9]+)\.html|)"
+      R"((www\.)?archiveofourown\.org/(collections/[^/]+/)?works/[0-9]+))",  // 2026-10-23、Archive of Our Own(narou2epub.pyのao3ToEpub())
       std::regex::icase);
   if (!std::regex_search(url, kNarouWork)) {
     showTransientNotice(activeView(), "Not a Narou work: " + url);
@@ -8513,7 +8515,17 @@ bool Application::openEpubPromptSpecial(const std::string &text) {
   // ^J^Eの入口(yomou・noc)の後に作品番号を足した形も、作品の置き場(ncode・novel18)のURLに読み替える。
   static const std::regex kNarouUrl(
       R"(^\s*https?://(ncode|novel18|yomou|noc)\.syosetu\.com/(n[0-9]{4,}[a-z]+)(/[0-9]+)?/?\s*$)", std::regex::icase);
+  // 2026-10-23、直接のユーザー依頼(英語圏の小説投稿サイトにも): Archive of Our Ownの作品のURL(章のURLも)も、
+  // ^Owの今の対処に関わらずnarou2epubで(サイトのEPUBを落とす、作品のURLにそろえる)。
+  static const std::regex kAo3Url(
+      R"(^\s*https?://(www\.)?archiveofourown\.org/(collections/[^/\s]+/)?works/([0-9]+)(/\S*)?\s*$)", std::regex::icase);
   std::smatch match;
+  if (std::regex_match(text, match, kAo3Url)) {
+    for (const auto &handler : configuration_.urlHandlers())
+      if (handler.name == "Epub") return runNarouToEpub(handler, "https://archiveofourown.org/works/" + match[3].str());
+    showTransientNotice(activeView(), "No Epub in URL (usilicrc)");
+    return true;
+  }
   if (std::regex_match(text, match, kNarouUrl)) {
     std::string host = match[1].str(), number = match[2].str();
     for (char &c : host) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));

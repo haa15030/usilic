@@ -1,7 +1,7 @@
 #!/bin/sh
 # narou2epub Nコード|作品のURL ... [-o 出力ディレクトリ(既定は~/.usilic/data)] -- 「小説家になろう」(2026-10-13から
 # 「カクヨム」の作品ID・kakuyomu.jp/works/<ID>も、2026-10-15から青空文庫の図書カード・XHTML版のURLも)の作品を
-# EPUB3にし(青空文庫は縦書き)、作ったEPUBの
+# EPUB3にし(青空文庫は縦書き。2026-10-23からArchive of Our Ownの作品のURLも、サイトのEPUBをそのまま落とす)、作ったEPUBの
 # パスを1行ずつ標準出力へ書く(途中の経過は標準エラー)。2026-10-11、NarouToEpub3(Apache-2.0、
 # narou2epub-assets/LICENSE)を改変したnarou2epub.pyを、このファイルの隣のvenv(url2pdfと同じ)で動かす。準備:
 #   python3 -m venv ~/.local/lib/usilic/venv
