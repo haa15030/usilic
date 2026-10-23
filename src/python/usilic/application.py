@@ -1968,20 +1968,16 @@ class Application:
         return False
 
     def toggle_history_view(self):
-        """^R(ToggleHistoryView): (ls)はDIR、FILE・ARCはFILEの入力順の一覧、一覧では並びを切り換え。"""
+        """^R(ToggleHistoryView): (ls)は^X^D、FILE・ARCは^X^Fの一覧、一覧では並びを切り換え。"""
         mode = self.current_mode
         if mode == LIST:
             self.list_mode.toggle_sorted()
             return True
+        # C++のstartRegexPromptList(): (ls)は^X^D、FILE・ARCは^X^Fと同じ一覧(並べ替えた順、^Rで入力順に)
         if mode == DIRECTORY:
-            items = self.ring(hist.RECENT_DIRECTORY)
-            return self.show_list(items, 'DIR', lambda i: self.enter_directory_listing(self.strip_tags(i),
-                                                                                         keep_stack=True),
-                                  False, pr.DIRECTORY)
+            return self.handle_key_number(64, None)
         if mode in (FILE, ARCHIVE):
-            items = self.ring(hist.RECENT_FILE)
-            return self.show_list(items, 'FILE', lambda i: self.open_path(self.strip_tags(i)), False, pr.FILE,
-                                  self.file_badge)
+            return self.start_file_list()
         return False
 
     def suspend(self):
