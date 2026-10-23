@@ -30,7 +30,7 @@ from .directory_mode import DirectoryMode
 from .du_mode import DuMode
 from . import epub_vertical as ev
 from .epub_mode import EpubBook, is_epub_file
-from .markdown import is_markdown_file, render_markdown
+from .markdown import is_markdown_file, render_markdown, pager_byte_count as markdown_pager_byte_count
 from .file_mode import FileMode
 from .grep_mode import GrepMode, FIXED, REGEX, match_spans
 from .key_bindings import CTRL_SPACE, DIGIT, prefix_label
@@ -361,8 +361,9 @@ class Application:
                 fields = F(name, str(fm.byte_count), True, '', 'EPUB', trailing2_kind=mode_line.PATH_MIDDLE)
                 fields.split_layout_when_crowded = True
                 return fields, position
-            if self.pager_launch:  # ページャー(C++のpagerMode_)
-                pos = self.notice or mode_line.format_fixed_width(*self.position_numbers(view))
+            if self.pager_launch:  # ページャー(C++のpagerMode_)。組んだ物(.md)の位置はFILEと同じ形、他は5桁
+                pos = self.notice or (mode_line.format if fm.transformed else mode_line.format_fixed_width)(
+                    *self.position_numbers(view))
                 return F(fm.current_file, str(fm.byte_count), False, PROGRAM_LABEL, fm.label or ''), pos
             fields = F(os.path.basename(fm.current_file), str(fm.byte_count), True, '', fm.tail or directory,
                        trailing2_kind=mode_line.PATH_MIDDLE if fm.tail else mode_line.PATH)
@@ -911,9 +912,11 @@ class Application:
         except OSError:
             self.show_transient_notice('Cannot read: ' + path)
             return False
-        self.file_mode.set_rendered(path, render_markdown(source, self.wrap_width(), self.reading_tick()),
-                                    os.path.getsize(path),
+        # ページャーではC++と同じく組んだ中身のバイト数(loadTransformedPagerFile())、他はfileの大きさ
+        size = markdown_pager_byte_count(source) if self.pager_launch else os.path.getsize(path)
+        self.file_mode.set_rendered(path, render_markdown(source, self.wrap_width(), self.reading_tick()), size,
                                     self.wrap_width(), renderer=lambda w: render_markdown(source, w))
+        self.file_mode.transformed = self.pager_launch
         self.file_mode.tail = tail
         self.file_mode.record_history = not self.pager_launch
         self.file_mode.restore_from_history()

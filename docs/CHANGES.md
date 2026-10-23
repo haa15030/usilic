@@ -32626,3 +32626,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - HELP.epubの「^Jt"usilic ~/.local/lib/usilic/<b>HELP</b>.1"^M」: Python版だけ「<b>HELP</b>」が字のまま出るが、HELP.epubの中身そのものが`&lt;b&gt;HELP&lt;/b&gt;`(原稿~/HELP.txtの`<u>…<b>HELP</b>.1</u>`をusilic -eが字にしたもの)で、C++はその字の<b>を表示の印として読んで消しているだけ。直していない。
    - unittest: 文書の間の空行の分、test_epub・test_epub_hintsの期待を直した(同じ本をC++で開いて同じ行になることを確かめた)。
    - 確かめたこと: 擬似端末(1300x80、本全体が1画面)でHELP.epubを開き、字と属性(太字・斜体・下線)が両方の版で「<b>HELP</b>」の段落を除いて同じ(違う行が290→0)。K3t.epub・Kbt.epubは違う行が減り(68→40、88→44、残りは縦書きのカーソルの列の反転)、book.epubは変わらず。unittest 81件。
+1046. **Python版: ページャーで開いた.mdの大きさ・位置をC++に合わせる、C++: INFOのHELPの行のテストを消す(2026-10-24)** 直接のユーザー依頼("テストは消して、ページャーはC++に合わせて。")。
+   - Python版: `usilic.py file.md`のページャーで、モードラインの大きさをC++の`loadTransformedPagerFile()`と同じく組んだ中身(`expandHelpMarkup()`の出力、太字等の印は制御バイト2つ、`<indentNN>`は3つ)のバイト数に(`markdown.pager_byte_count()`・`expanded_byte_count()`)。以前はfileの大きさ。C++の`markdownToHelpMarkup()`は元が空か改行で終われば最後に改行を付ける(Python版の`markdown_to_markup()`は付けない)ので、その分も足す。位置もC++と同じく、組んで見せる物はFILEと同じ形(「001/162」、以前は5桁固定の「00001/00162」、普通のテキストのページャーは5桁のまま)。`FileMode.transformed`。
+   - Python版: 空の.mdは行が無い(C++と同じく0/0、以前は空の1行で1/1)。
+   - C++: tests/test_application.cppの"INFO banner (^I, K-0): Enter on the HELP line splits HELP at its tab-marked chapters"を消した。2026-10-02に作った、INFOのHELPの行の^Mを確かめるテストで、その行は2026-10-19に廃止した(項目919、"^IのHELPを廃棄")のにテストだけ残って通らなかった。
+   - 確かめたこと: 擬似端末で、CLAUDE.md・docs/BUILD.md・小さい.md(太字・字下げ・改行で終わらない・空)・.txtのページャーと、(ls)から開いた空の.mdのモードラインが両方の版で同じ。docs/HISTORY.mdとCHANGES.md等で、組んだ中身のバイト数がC++(expandHelpMarkup()の出力)と同じ。unittest 81件。

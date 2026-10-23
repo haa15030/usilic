@@ -324,6 +324,51 @@ def markdown_to_markup(source, tick=None):
 _TAGS = {'b': 'bold', 'i': 'italic', 'u': 'underline'}
 
 
+_EXPAND_TOKEN = re.compile(r'<indent(\d{1,2})>\n?|</indent>|<lt>|</?(?:i|b|u|rb|rt|big|small|serif)>')
+
+
+def pager_byte_count(source):
+    """ページャーで開いた.mdの大きさ(C++のloadTransformedPagerFile()が読む、組んだ中身のバイト数)。C++の
+    markdownToHelpMarkup()は、元が空か改行で終わっていれば最後に改行を付ける(markdown_to_markup()は付けない)。"""
+    markup = markdown_to_markup(source)
+    if not source or source.endswith('\n'):
+        markup += '\n'
+    return expanded_byte_count(markup)
+
+
+def expanded_byte_count(markup):
+    """C++のexpandHelpMarkup()の出力のバイト数(ページャーで開いた.mdのモードラインの大きさ、C++はこれを
+    一時ファイルから読んだバイト数を出す)。<indentNN>は\x01と2桁(続く改行は捨てる)、</indent>は\x0100(直前の
+    改行を取る)、<lt>は<、他の装飾は制御バイトと0/1の2バイト。先頭の改行1個は読み飛ばす。"""
+    if markup.startswith('\n'):
+        markup = markup[1:]
+    size, last = 0, 0
+    previous_newline = False  # 出力の最後の字が改行か(</indent>が取る)
+    for m in _EXPAND_TOKEN.finditer(markup):
+        chunk = markup[last:m.start()]
+        if chunk:
+            size += len(chunk.encode('utf-8'))
+            previous_newline = chunk.endswith('\n')
+        token = m.group(0)
+        if token == '</indent>':
+            if previous_newline:
+                size -= 1
+            size += 3
+            previous_newline = False
+        elif token == '<lt>':
+            size += 1
+            previous_newline = False
+        elif m.group(1) is not None:
+            size += 3
+            previous_newline = False
+        else:
+            size += 2
+            previous_newline = False
+        last = m.end()
+    size += len(markup[last:].encode('utf-8'))
+    return size
+
+
 _MARKUP_TOKEN = re.compile(r'<(/?)(b|i|u)>|<indent(\d+)>|</indent>|<lt>')
 
 
@@ -442,6 +487,8 @@ def render_markdown(source, width, tick=None):
     """Markdownのfileを画面の行に(字下げの行は折り返した続きも同じだけ字下げ)。tickは長い間に時々呼ぶ。"""
     from .epub_mode import _wrap_with_indent
     lines = []
+    if not source:
+        return lines  # 空のfileは行が無い(C++は0/0)
     for number, (text, runs, indent) in enumerate(markup_lines(markdown_to_markup(source, tick), tick), 1):
         if tick is not None and number % 4096 == 0:
             tick()
