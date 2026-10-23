@@ -175,6 +175,7 @@ class FileMode:
         self.history.set_position(hist.FILE, self.current_file,
                                   hist.CursorPosition(row, len(lines), max(0, row - self.view.top_index), line_number))
 
-    def load_all(self):
+    def load_all(self, tick=None):
         while self.ensure_loaded_through(len(self.view.lines) + 10000):
-            pass
+            if tick is not None:
+                tick()  # 長いfileの間に「読み込み中...」(Application.reading_tick())

@@ -87,7 +87,7 @@ std::string joinMarkupLinesAtBreaks(const std::string &source) {
   return out;
 }
 
-std::string expandHelpMarkup(const std::string &source) {
+std::string expandHelpMarkup(const std::string &source, const std::function<void()> &tick) {
   std::string text = joinMarkupLinesAtBreaks(source);  // <br />(joinMarkupLinesAtBreaks()参照)
   std::string out;
   out.reserve(text.size() * 2);
@@ -138,7 +138,12 @@ std::string expandHelpMarkup(const std::string &source) {
   // 固定のまま変更していない。
   const std::string indentOpenPrefix = "<indent";
   const std::string indentClose = "</indent>";
+  std::size_t nextTick = 0;
   while (i < text.size()) {
+    if (tick && i >= nextTick) {  // 2026-10-23: 5MBのHISTORY.mdで1.6秒かかるので、その間にも「Reading...」を出せるように
+      tick();
+      nextTick = i + 256 * 1024;
+    }
     std::size_t numStart = i + indentOpenPrefix.size();
     std::size_t numEnd = numStart;
     while (numEnd < text.size() && numEnd < numStart + 2 && std::isdigit(static_cast<unsigned char>(text[numEnd])))

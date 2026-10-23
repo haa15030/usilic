@@ -32592,3 +32592,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - Python: ^J^Eの一覧に、履歴に無ければusilic-web(http://localhost/usilic-web/)と、なろう・ノクターン・カクヨム・青空文庫・Archive of Our Ownの入口を頭に差し込む(C++の`addDefaultUsilicWebUrl()`)。差し込むのは並べた後で、並べ替えた順でも入力順(^R)でも頭(`ListBrowserMode.pinned`)。入口には「(作品ID)」。選ぶと、小説サイトの入口は^Owの今の対処によらずOpenで、usilic-webは^Owの今の対処で開く(C++の`openEpubWebLink()`、本文中の小説サイトのリンクもOpenで)。一覧に入れるのは末尾が.epubの項目だけにした(以前はCUTの印の付いた項目も入っていた、C++の`isEpubFile(item)`)。履歴が空でも入口があれば一覧を開く。
    - C++: 項目1039でArchive of Our Ownを^J^Eの入口に足した時、小説サイトの入口の判定(`isEpubNovelSiteUrl()`)に入れ忘れていた。^OwがEpubの時に選ぶと入口をnarou2epubへ渡して「Not a Narou work」になるので、入れた(「(作品ID)」も付く)。
    - 確かめたこと: 擬似端末の300行で、^J^E・^R・^R^Rの一覧の全部の行とモードラインが両方の版で同じ。Python版で、^OwがEpubの時に入口を選ぶとOpen(open)へ渡りnarou2epubへは行かないこと、章のURLは作品のURLにそろえてnarou2epubへ渡ることを、起動を差し替えて確かめた。unittest 81件。make usilic・make install。Archive of Our Ownは、まだ障害(525)で試せていない。
+
+1041. **ファイルを開く時の「読み込み中...」を1秒経った所で出す(C++)、Python版にも(2026-10-23)** 直接のユーザー報告("(ls)でファイル(docs/HISTORY.md等)を読み込むときの「読み込み中...」が読み終わってから出る感じ。pythonではそもそも出ない。")。
+   - C++: 「読み込み中...」は、読み始めて1秒経っても終わっていなければ出す作り(`readingAbortCheck()`)だが、確かめるのはファイルを組む区切り(1MBごと)だけだった。docs/HISTORY.md(5MB)は、その前の.mdの変換(`expandHelpMarkup()`、1.6秒)に時間の大半がかかるので、出るのが^Mから1.77秒、読み終わり(2.03秒)の直前になっていた(macOSのsampleで、変換の中にいることを確かめた)。変換の間にも256KBごとに知らせだけを確かめるようにした(`FileMode::setLoadProgressTick()`、キーは読まない、読むと押されたキーを捨てることになるので)。読み込みが終わると外す。
+   - Python: 「読み込み中...」が無かった。同じく読み始めて1秒経っても終わっていなければ、一度だけモードラインに「FILE 読み込み中...」(C++のdrawPromptLabel()と同じ形、名前は反転・文は下線)を出す(`reading_tick()`)。.mdの組み立て(4096行ごと)と、普通のファイルの読み込み(1万行ごと)の間に確かめる。
+   - 確かめたこと: 擬似端末で^Mからの最後の行を0.25秒ごとに見て、docs/HISTORY.mdで「読み込み中...」が出るのがC++は1.26秒(以前1.77秒、読み終わりは2.02秒)、Pythonは1.29秒(以前は出ない、読み終わりは4.38秒)。Pythonのunittest 81件。make usilic・make install。

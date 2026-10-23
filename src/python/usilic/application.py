@@ -830,7 +830,7 @@ class Application:
                 self.show_transient_notice('Cannot read: ' + path)
                 return False
             if not streaming and size <= self.configuration.buffer_limit_bytes():
-                self.file_mode.load_all()
+                self.file_mode.load_all(self.reading_tick())
             elif not streaming:
                 self.show_transient_notice('Not enough buffer')
         self.file_mode.tail = tail
@@ -838,6 +838,23 @@ class Application:
         self.file_mode.restore_from_history()
         self.enter_mode(FILE)
         return True
+
+    def reading_tick(self):
+        """読み始めて1秒経っても終わっていなければ、一度だけモードラインに「FILE 読み込み中...」(C++の
+        readingAbortCheck()、読み終えて描き直すと消える)。長い読み込みの間に時々呼ぶ関数を返す。"""
+        start, shown = time.monotonic(), [False]
+
+        def tick():
+            if not shown[0] and time.monotonic() - start >= 1.0:
+                shown[0] = True
+                message = localized('Reading...')
+                used = utf8.text_width('FILE') + 1 + utf8.text_width(message)
+                # drawPromptLabel()のstaticMessage: 名前は反転、文は下線、残りは先に埋めた反転のまま
+                self.display.draw_mode_line([('FILE', mode_line.STANDOUT), (' ', mode_line.PLAIN),
+                                             (message, mode_line.UNDERLINE),
+                                             (' ' * max(0, self.display.columns - 1 - used), mode_line.STANDOUT)])
+                self.display.flush()
+        return tick
 
     def open_markdown(self, path, tail=None, push=True):
         """.md・.markdown: 文字装飾を付けて(C++のmarkdownToHelpMarkup()+expandHelpMarkup()、^[^Mは生のまま)。"""
@@ -847,7 +864,8 @@ class Application:
         except OSError:
             self.show_transient_notice('Cannot read: ' + path)
             return False
-        self.file_mode.set_rendered(path, render_markdown(source, self.wrap_width()), os.path.getsize(path),
+        self.file_mode.set_rendered(path, render_markdown(source, self.wrap_width(), self.reading_tick()),
+                                    os.path.getsize(path),
                                     self.wrap_width(), renderer=lambda w: render_markdown(source, w))
         self.file_mode.tail = tail
         self.file_mode.record_history = not self.pager_launch

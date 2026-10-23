@@ -539,7 +539,7 @@ std::string FileMode::loadAndTransformContent(const std::string &path) const {
   contentProgram_.clear();
   if (!rawControlCodesMode_ && isEpubFile(path)) {
     if (auto markup = epubToHelpMarkup(epubMemberReader(path), &epubLinks_, &epubLayoutHints_))
-      return expandHelpMarkup(*markup);
+      return expandHelpMarkup(*markup, loadProgressTick_);
   }
   // 2026-10-02追加、直接のユーザー報告(doc/tcb.1.gzを^Mするとバイナリ判定、"gzip -dcは何処へ？"):
   // usilicrcのFILTER節(以前のFILE、拡張子ごとの表示用フィルタ、.gz→gzip -dc等)は読み込むだけで、表示に一度も
@@ -587,12 +587,12 @@ std::string FileMode::loadAndTransformContent(const std::string &path) const {
   // <indentN>/<i>/<b>/<u>markupを、リテラルなタグのままではなく
   // ^Jh自身のkHelpTextJa/kHelpTextGuiJaと同じ規約で展開する)。
   if (isHelpMarkupPagerFile(path)) {
-    content = expandHelpMarkup(content);
+    content = expandHelpMarkup(content, loadProgressTick_);
   } else if (isMarkdownFile(path)) {
     // markdownToHelpMarkup()自身のコメント参照: Markdownを<b>/<u>/<i>/<indentN>タグへ
     // 変換してから、既存のexpandHelpMarkup()でHELP.txt/QUICK.txtと同じ制御バイトへ
     // 展開する(二段構成)。
-    content = expandHelpMarkup(markdownToHelpMarkup(content));
+    content = expandHelpMarkup(markdownToHelpMarkup(content), loadProgressTick_);
   } else if (looksLikeRoffDocument(content)) {
     // 2026-09-20追加、直接のユーザー依頼("usilic -m src/QUICK.txt > .../
     // usilic.man...HELPは同ファイルを「C-j b」でCUTする")、HELP.jp
@@ -1039,7 +1039,10 @@ bool FileMode::loadContentAsPipe(const std::string &content) {
 
 bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()> &shouldAbort) {
   std::ifstream probe(path, std::ios::binary);
-  if (!probe) return false;
+  if (!probe) {
+    loadProgressTick_ = nullptr;  // setLoadProgressTick()参照
+    return false;
+  }
   probe.close();
   if (beforeLoad_) beforeLoad_();  // setBeforeLoad()参照
   contentProgramOverride_.clear();  // setContentProgram()参照
@@ -1069,6 +1072,7 @@ bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()>
 
   // 2026-09-16追加、loadFileRaw()自身の宣言コメント参照。
   view_.setLines(rawControlCodesMode_ && shouldAbort ? readAndWrapChunked(path, shouldAbort) : readAndWrap(path, shouldAbort));
+  loadProgressTick_ = nullptr;  // setLoadProgressTick()参照(この読み込みの分だけ)
   currentFile_ = path;
   // 新しい読み込みは古い検索を無効にする――AnnotationStack自身のコメント参照
   annotations_.clear();

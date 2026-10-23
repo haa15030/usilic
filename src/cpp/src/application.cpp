@@ -6432,12 +6432,20 @@ bool Application::openListEntrySpecial(bool raw) {
 std::function<bool()> Application::readingAbortCheck() {
   auto start = std::chrono::steady_clock::now();
   auto shown = std::make_shared<bool>(false);
-  return [this, start, shown]() {
+  auto showIfSlow = [this, start, shown]() {
     if (!*shown && display_.outputEnabled() && std::chrono::steady_clock::now() - start >= std::chrono::seconds(1)) {
       *shown = true;
       drawPromptLabel(PromptKind::FileLoad, /*positionText=*/"", "Reading...");
       display_.flush();
     }
+  };
+  // 2026-10-23、直接のユーザー報告("(ls)でファイル(docs/HISTORY.md等)を読み込むときの「読み込み中...」が読み終わって
+  // から出る感じ"): 中断の確かめ(下)はファイルを少しずつ組む区切りでしか呼ばれず、その前の変換(.mdの
+  // expandHelpMarkup()、5MBで1.6秒)の間は呼ばれないので、1秒を過ぎても知らせが出なかった。変換の間にも
+  // 知らせだけを確かめる(キーは読まない、読むと押されたキーを捨てることになるので)。
+  fileMode_.setLoadProgressTick(showIfSlow);
+  return [this, showIfSlow]() {
+    showIfSlow();
     return keyInterruptRequested();
   };
 }

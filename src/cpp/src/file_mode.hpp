@@ -574,6 +574,9 @@ class FileMode {
   void setEpubImageRows(EpubImageRows rows) { epubImageRows_ = std::move(rows); }
   // 読み込みを始める前(開けると分かった後、描く前)に呼ぶ関数。Applicationが、前に見ていたファイル
   // だけに関わる表示の状態(縦書きのEPUBの横書きの範囲で見せる行の範囲等)を消すのに使う(2026-10-06)。
+  // 2026-10-23: 次の読み込みの、読んだ後の変換(expandHelpMarkup())の間にも時々呼ぶ(Application::readingAbortCheck()の
+  // 「Reading...」)。読み込みが終わると外す。
+  void setLoadProgressTick(std::function<void()> tick) { loadProgressTick_ = std::move(tick); }
   void setBeforeLoad(std::function<void()> callback) { beforeLoad_ = std::move(callback); }
 
  private:
@@ -646,6 +649,7 @@ class FileMode {
   // 表示用に最後に通したプログラム(FILE節のgzip等、roffならgroff)。モードラインの"(groff)"等
   // (loadAndTransformContent()参照、2026-10-08)。
   mutable std::string contentProgram_;
+  std::function<void()> loadProgressTick_;  // setLoadProgressTick()参照
   mutable EpubLayoutHints epubLayoutHints_;  // epubLinks_と同じく変換のたびに作り直す
   std::vector<ContentView::Line> expandEpubImageLines(std::vector<ContentView::Line> lines, const std::string &path,
                                                      int width) const;

@@ -18,6 +18,7 @@
 // (HELP.txt/QUICK.txtという名前の通常ファイルを開いた時の展開)からも
 // 引き続き使われている。
 
+#include <functional>
 #include <string>
 
 namespace fm {
@@ -26,7 +27,8 @@ namespace fm {
 // wrapLine()が理解する制御バイト(太字/下線は1文字ごとのX\bX/_\bX、
 // 字下げ/斜体はusilic内部専用の\x01/\x02系)へ変換する。定義は
 // help_text.cpp。
-std::string expandHelpMarkup(const std::string &text);
+// tick: 長い原稿の間に時々呼ぶ(FileModeの読み込みの「Reading...」、setLoadProgressTick()参照)。
+std::string expandHelpMarkup(const std::string &text, const std::function<void()> &tick = nullptr);
 
 // <br />の改行(2026-10-06、直接のユーザー依頼"HELP.txtのソース...句点のたびに改行しておきたい。diffがわかり
 // やすいので。そこで<br />を導入してほしい。usilicで読み込んだときは、それが来るまで改行しない"): 原稿が

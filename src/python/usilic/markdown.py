@@ -206,7 +206,7 @@ def _markup_width(text):
     return width
 
 
-def markdown_to_markup(source):
+def markdown_to_markup(source, tick=None):
     """Markdownを<b>・<i>・<u>・<indentNN>…</indent>・<lt>の印へ(C++のmarkdownToHelpMarkup())。"""
     text = source.replace('<', '<lt>')
     lines = text.split('\n')
@@ -227,6 +227,8 @@ def markdown_to_markup(source):
         paragraph.clear()
     li = 0
     while li < len(lines):
+        if tick is not None and li % 4096 == 0:
+            tick()  # 長いfileの間に「読み込み中...」(Application.reading_tick())
         raw = lines[li]
         trimmed = raw.lstrip(' \t')
         lead = len(raw) - len(trimmed)
@@ -322,10 +324,12 @@ def markdown_to_markup(source):
 _TAGS = {'b': 'bold', 'i': 'italic', 'u': 'underline'}
 
 
-def markup_lines(markup):
+def markup_lines(markup, tick=None):
     """印の文字列を(字, 属性のラン, 字下げの桁)の行に展開する(expandHelpMarkup())。装飾は行をまたいでも続く。"""
     out, state, indent = [], {'bold': 0, 'italic': 0, 'underline': 0}, 0
-    for line in markup.split('\n'):
+    for count, line in enumerate(markup.split('\n')):
+        if tick is not None and count % 4096 == 0:
+            tick()
         text, attrs, i, line_indent = [], [], 0, indent
         while i < len(line):
             if line[i] == '<':
@@ -362,10 +366,12 @@ def markup_lines(markup):
     return out
 
 
-def render_markdown(source, width):
-    """Markdownのfileを画面の行に(字下げの行は折り返した続きも同じだけ字下げ)。"""
+def render_markdown(source, width, tick=None):
+    """Markdownのfileを画面の行に(字下げの行は折り返した続きも同じだけ字下げ)。tickは長い間に時々呼ぶ。"""
     from .epub_mode import _wrap_with_indent
     lines = []
-    for number, (text, runs, indent) in enumerate(markup_lines(markdown_to_markup(source)), 1):
+    for number, (text, runs, indent) in enumerate(markup_lines(markdown_to_markup(source, tick), tick), 1):
+        if tick is not None and number % 4096 == 0:
+            tick()
         lines.extend(_wrap_with_indent(text, runs, width, indent, indent, number))
     return lines
