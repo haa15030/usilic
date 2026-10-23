@@ -144,6 +144,51 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {111, "F-2 t"},    // ^Ot   明朝体・ゴシック体の切り換え(2026-10-17、~/.usilic/historyに残す。2026-10-20からEPUB以外の和文も)
       {112, "ESC {"},    // ^[{   -g: 字間を1ドット広げる(2026-10-20)
       {113, "ESC }"},    // ^[}   -g: 字間を1ドット狭める(2026-10-20)
+      // 2026-10-23(Scope参照): 今までコードに書いた値で受けていたキー。全体の番号。
+      {114, "ESC g g"},      // ^[gg  指定行へ(Emacs M-g g、^[Nと同じ)
+      {115, "C-u"},          // ^U    次のコマンドの回数
+      {116, "F-0 z"},        // ^Xz   直前のコマンドをもう一度
+      {117, "F-0 r m"},      // ^Xrm  ブックマークを置く
+      {118, "F-0 r b"},      // ^Xrb  ブックマークへ飛ぶ
+      {119, "F-0 r l"},      // ^Xrl  ブックマークの一覧
+      {120, "F-0 r SPC"},    // ^Xr␣  今の場所をレジスタへ
+      {121, "F-0 r C-SPC"},  // ^Xr^␣ 今の場所をレジスタへ(^Xr␣と同じ)
+      {122, "F-0 r j"},      // ^Xrj  レジスタの場所へ飛ぶ
+      {123, "F-2 C-s"},      // ^O^S  一致した行の一覧(FGREP)
+      {124, "F-2 F-1 C-s"},  // ^O^J^S 一致した行の一覧(EGREP)
+      {125, "%"},            // %     (ls): 名前が正規表現に合うファイルを選ぶ
+      {126, "*"},            // *     (ls): 拡張子が同じファイルを選ぶ
+      {127, "C-t n"},        // ^Tn   次の窓へ
+      {128, "C-t p"},        // ^Tp   前の窓へ
+      {129, "C-t C-h"},      // ^T^H  HELPの窓
+      {130, "C-t C-k"},      // ^T^K  KEYの窓
+      {131, "e", Scope::MacroRepeat},  // e  ^Xeの直後: マクロをもう一度
+      // COPYの中だけの番号(^N/^P・^G・^@・.・^[N・^[gg・^[^[・^X^Cは全体の番号と共有)
+      {132, "C-f", Scope::Copy},      // ^F    COPY: 1文字進む
+      {133, "C-b", Scope::Copy},      // ^B    COPY: 1文字戻る
+      {134, "C-a", Scope::Copy},      // ^A    COPY: 行頭へ
+      {135, "C-e", Scope::Copy},      // ^E    COPY: 行末へ
+      {136, "F-0 SPC", Scope::Copy},  // ^X␣   COPY: 矩形の範囲
+      {137, "ESC w", Scope::Copy},    // ^[w   COPY: クリップボードへ
+      {138, "ESC t", Scope::Copy},    // ^[t   COPY: TOOLのプロンプトへ
+      // プロンプトの中だけの番号(^M・^G・^R・^N/^P・^S・^O^Yは全体の番号と共有)
+      {139, "C-a", Scope::Prompt},    // ^A    入力: 行頭へ
+      {140, "C-e", Scope::Prompt},    // ^E    入力: 行末へ
+      {141, "C-f", Scope::Prompt},    // ^F    入力: 1文字進む
+      {142, "C-b", Scope::Prompt},    // ^B    入力: 1文字戻る
+      {143, "C-d", Scope::Prompt},    // ^D    入力: カーソルの字を削除
+      {144, "C-h", Scope::Prompt},    // ^H    入力: 前の字を削除(DELも)
+      {145, "C-u", Scope::Prompt},    // ^U    入力: 行頭まで削除
+      {146, "C-k", Scope::Prompt},    // ^K    入力: 行末まで削除
+      {147, "C-y", Scope::Prompt},    // ^Y    入力: 削除した字を入れ直す
+      {148, "C-_", Scope::Prompt},    // ^_    入力: 取り消し
+      {149, "C-q", Scope::Prompt},    // ^Q    入力: 次の字をそのまま入れる
+      {150, "C-i", Scope::Prompt},    // ^I    入力: パスの補完
+      {151, "C-w", Scope::Prompt},    // ^W    入力: 以前のディレクトリ(CP/MVの転送先)
+      {152, "ESC f", Scope::Prompt},  // ^[f   入力: 1語進む
+      {153, "ESC b", Scope::Prompt},  // ^[b   入力: 1語戻る
+      {154, "ESC d", Scope::Prompt},  // ^[d   入力: 1語削除
+      {155, "ESC C-h", Scope::Prompt},  // ^[^H 入力: 前の1語を削除(^[DELも)
   };
   return entries;
 }
@@ -372,14 +417,14 @@ void KeyBindings::configure(const std::map<int, std::string> &userPrefixes,
     int number;
     Sequence defaultSeq;
     std::optional<Sequence> userSeq;
+    Scope scope = Scope::Global;
   };
   std::vector<Resolved> resolved;
   for (const auto &entry : defaultEntries()) {
     std::string error;
-    Resolved r{entry.number, *parseSpec(entry.spec, defaultPrefixes, &error), std::nullopt};
+    Resolved r{entry.number, *parseSpec(entry.spec, defaultPrefixes, &error), std::nullopt, entry.scope};
     auto it = userEntries.find(entry.number);
     if (it == userEntries.end()) {
-      // usilicrcに無い番号は既定のキー表記のまま(ただし接頭キーは利用者のもの)。
       r.userSeq = parseSpec(entry.spec, userPrefixSeqs, &error);
     } else if (it->second.find_first_not_of(" \t") != std::string::npos) {
       auto seq = parseSpec(it->second, userPrefixSeqs, &error);
@@ -391,6 +436,9 @@ void KeyBindings::configure(const std::map<int, std::string> &userPrefixes,
         bool userHasDigit = std::find(seq->begin(), seq->end(), kDigit) != seq->end();
         if (defaultHasDigit != userHasDigit) {
           report(knName(entry.number) + ": N must be used exactly when the default uses it");
+          r.userSeq = parseSpec(entry.spec, userPrefixSeqs, &error);
+        } else if (entry.scope == Scope::MacroRepeat && seq->size() != 1) {
+          report(knName(entry.number) + ": must be one key");
           r.userSeq = parseSpec(entry.spec, userPrefixSeqs, &error);
         } else {
           r.userSeq = *seq;
@@ -405,25 +453,55 @@ void KeyBindings::configure(const std::map<int, std::string> &userPrefixes,
     if (!known) report("unknown " + knName(kv.first));
   }
 
-  // 重複/接頭の衝突: 後に出てきた方を割り当て無しにする。
-  for (std::size_t i = 0; i < resolved.size(); i++) {
-    if (!resolved[i].userSeq) continue;
-    for (std::size_t j = 0; j < i; j++) {
-      if (!resolved[j].userSeq) continue;
-      const Sequence &a = *resolved[j].userSeq, &b = *resolved[i].userSeq;
-      if (samePattern(a, b) || patternIsProperPrefix(a, b) || patternIsProperPrefix(b, a)) {
-        report(knName(resolved[i].number) + " conflicts with " + knName(resolved[j].number));
-        resolved[i].userSeq.reset();
-        break;
+  // 場面ごとの番号の組: 全体の番号と、COPY/プロンプトの番号+それと既定のキーが同じでない全体の番号(Scope参照)。
+  auto setFor = [&](Scope scope) {
+    std::vector<std::size_t> set;
+    for (std::size_t i = 0; i < resolved.size(); i++) {
+      if (resolved[i].scope == scope) set.push_back(i);
+      if (resolved[i].scope != Scope::Global || scope == Scope::Global) continue;
+      bool shadowed = std::any_of(resolved.begin(), resolved.end(), [&](const Resolved &o) {
+        return o.scope == scope && o.defaultSeq == resolved[i].defaultSeq;
+      });
+      if (!shadowed) set.push_back(i);
+    }
+    std::sort(set.begin(), set.end());
+    return set;
+  };
+  // 重なり(同じキー・あるキーが別のキーの頭)は場面ごとに見て、後の方を割り当て無しにする。COPY/プロンプトの組では、
+  // その場面の番号が関わる重なりだけ(全体の番号どうしは全体の組で見る)。
+  for (Scope scope : {Scope::Global, Scope::Copy, Scope::Prompt}) {
+    std::vector<std::size_t> set = setFor(scope);
+    for (std::size_t x = 0; x < set.size(); x++) {
+      Resolved &ri = resolved[set[x]];
+      if (!ri.userSeq) continue;
+      for (std::size_t y = 0; y < x; y++) {
+        const Resolved &rj = resolved[set[y]];
+        if (!rj.userSeq) continue;
+        if (scope != Scope::Global && ri.scope == Scope::Global && rj.scope == Scope::Global) continue;
+        const Sequence &first = *rj.userSeq, &second = *ri.userSeq;
+        if (samePattern(first, second) || patternIsProperPrefix(first, second) || patternIsProperPrefix(second, first)) {
+          report(knName(ri.number) + " conflicts with " + knName(rj.number));
+          ri.userSeq.reset();
+          break;
+        }
       }
     }
   }
-
-  changed_.clear();
+  macroRepeatKey_ = -1;
   for (const auto &r : resolved)
-    if (r.userSeq && *r.userSeq != r.defaultSeq) changed_.push_back({r.defaultSeq, *r.userSeq});
+    if (r.scope == Scope::MacroRepeat && r.userSeq && r.userSeq->size() == 1) macroRepeatKey_ = (*r.userSeq)[0];
 
-  // 接頭キー(F-n)の先頭のバイト――プロンプト/SHELL等でも照合してよい列の判定用。
+  // HELPの書き換え(rewriteHelpText())は、全体の番号と、既定の表記が全体の番号に無い場面の番号(^[w等)だけ。
+  changed_.clear();
+  for (const auto &r : resolved) {
+    if (!r.userSeq || *r.userSeq == r.defaultSeq || r.scope == Scope::MacroRepeat) continue;
+    if (r.scope != Scope::Global &&
+        std::any_of(resolved.begin(), resolved.end(),
+                    [&](const Resolved &o) { return o.scope == Scope::Global && o.defaultSeq == r.defaultSeq; }))
+      continue;
+    changed_.push_back({r.defaultSeq, *r.userSeq});
+  }
+
   std::vector<int> leaderFirstBytes = {kEsc};
   for (int n : {0, 1, 2, 4})
     if (!userPrefixSeqs[n].empty() && userPrefixSeqs[n][0] != kCtrlC) leaderFirstBytes.push_back(userPrefixSeqs[n][0]);
@@ -431,18 +509,41 @@ void KeyBindings::configure(const std::map<int, std::string> &userPrefixes,
     return from.size() >= 2 && isLeaderByte(defaultSeq[0]) &&
            std::find(leaderFirstBytes.begin(), leaderFirstBytes.end(), from[0]) != leaderFirstBytes.end();
   };
+  // プロンプトの中: ^X・^J・^O・ESCで始まるキー(LeaderOnlyと同じ)と、制御文字1字のキー(既定も制御文字1字か
+  // ^X等で始まるもの)。打った字になる1字のキー(j・n等、利用者のキーが1字の字のもの)は置き換えない。
+  auto isControl = [](int b) { return (b >= 0 && b < 0x20) || b == 0x7f || b == 0x80; };
+  auto promptEligible = [&](const Sequence &from, const Sequence &defaultSeq) {
+    if (leaderEligible(from, defaultSeq)) return true;
+    bool fromControl = (from.size() == 1 && isControl(from[0])) ||
+                       (from.size() >= 2 && std::find(leaderFirstBytes.begin(), leaderFirstBytes.end(), from[0]) !=
+                                                leaderFirstBytes.end());
+    bool defaultControl = (defaultSeq.size() == 1 && isControl(defaultSeq[0])) ||
+                          (defaultSeq.size() >= 2 && isLeaderByte(defaultSeq[0]));
+    return fromControl && defaultControl;
+  };
 
-  for (const auto &r : resolved) {
-    if (r.userSeq && *r.userSeq == r.defaultSeq) continue;
-    if (r.userSeq) rules_.push_back({*r.userSeq, r.defaultSeq, leaderEligible(*r.userSeq, r.defaultSeq)});
-    // 元の(既定の)キーは、他のK番号の利用者のキーになっていない限り効かなくする。
-    bool reused = std::any_of(resolved.begin(), resolved.end(),
-                              [&](const Resolved &o) { return o.userSeq && *o.userSeq == r.defaultSeq; });
-    if (!reused)
-      rules_.push_back({r.defaultSeq, std::nullopt, isLeaderByte(r.defaultSeq[0]) && r.defaultSeq.size() >= 2});
-  }
+  // 組ごとの規則: 利用者のキー列→既定のキー列。既定のキー列は、組の中で他の番号のキーとして使われていなければ無効化。
+  auto buildRules = [&](const std::vector<std::size_t> &set) {
+    std::vector<Rule> rules;
+    for (std::size_t i : set) {
+      const Resolved &r = resolved[i];
+      if (r.userSeq && *r.userSeq == r.defaultSeq) continue;
+      if (r.userSeq)
+        rules.push_back({*r.userSeq, r.defaultSeq, leaderEligible(*r.userSeq, r.defaultSeq),
+                         promptEligible(*r.userSeq, r.defaultSeq)});
+      bool reused = std::any_of(set.begin(), set.end(), [&](std::size_t o) {
+        return resolved[o].userSeq && *resolved[o].userSeq == r.defaultSeq;
+      });
+      if (!reused)
+        rules.push_back({r.defaultSeq, std::nullopt, isLeaderByte(r.defaultSeq[0]) && r.defaultSeq.size() >= 2,
+                         promptEligible(r.defaultSeq, r.defaultSeq)});
+    }
+    return rules;
+  };
+  rules_ = buildRules(setFor(Scope::Global));
+  copyRules_ = buildRules(setFor(Scope::Copy));
+  promptRules_ = buildRules(setFor(Scope::Prompt));
 
-  // MACRO(Macro自身のコメント参照)。キーがKEY節のどれかのキーと重なる/頭になっていればエラーで無視。
   std::vector<Sequence> macroKeys;
   for (const auto &macro : macros) {
     std::string name = "MACRO: M-" + std::to_string(macro.number);
@@ -453,9 +554,10 @@ void KeyBindings::configure(const std::map<int, std::string> &userPrefixes,
       continue;
     }
     bool conflict = std::find(from->begin(), from->end(), kDigit) != from->end();
-    for (const auto &r : resolved)
-      if (r.userSeq && (samePattern(*r.userSeq, *from) || patternIsProperPrefix(*r.userSeq, *from) ||
-                        patternIsProperPrefix(*from, *r.userSeq)))
+    for (const auto &r : resolved)  // マクロのキーは全体のキーとだけ比べる(COPY・プロンプト・^Xeの直後の番号は別の場面)
+      if (r.scope == Scope::Global && r.userSeq &&
+          (samePattern(*r.userSeq, *from) || patternIsProperPrefix(*r.userSeq, *from) ||
+           patternIsProperPrefix(*from, *r.userSeq)))
         conflict = true;
     for (const auto &other : macroKeys)
       if (samePattern(other, *from) || patternIsProperPrefix(other, *from) || patternIsProperPrefix(*from, other))
@@ -483,10 +585,11 @@ void KeyBindings::configure(const std::map<int, std::string> &userPrefixes,
     if (!ok || to.empty()) continue;
     macroKeys.push_back(*from);
     rules_.push_back({*from, to, leaderEligible(*from, *from)});
+    promptRules_.push_back({*from, to, leaderEligible(*from, *from), leaderEligible(*from, *from)});
   }
 }
 
-bool KeyBindings::isIdentity() const { return rules_.empty(); }
+bool KeyBindings::isIdentity() const { return rules_.empty() && copyRules_.empty() && promptRules_.empty(); }
 
 std::vector<std::pair<int, KeyBindings::Sequence>> KeyBindings::defaultSequences() {
   std::vector<Sequence> prefixes(kPrefixCount);
@@ -517,13 +620,17 @@ bool KeyBindings::isPrefixOf(const std::vector<int> &input, const Sequence &patt
 }
 
 std::vector<int> KeyBindings::feed(int byte, Context context, Pending &pending) const {
-  if (rules_.empty()) return {byte};
+  if (isIdentity()) return {byte};
   if (pending.bytes.empty()) {
     if (context == Context::None) return {byte};
     pending.context = context;
   }
+  const std::vector<Rule> &rules = pending.context == Context::Copy     ? copyRules_
+                                    : pending.context == Context::Prompt ? promptRules_
+                                                                         : rules_;
   pending.bytes.push_back(byte);
   auto eligible = [&](const Rule &rule) {
+    if (pending.context == Context::Prompt) return rule.promptEligible;
     return pending.context != Context::LeaderOnly || rule.leaderEligible;
   };
   std::vector<int> out;
@@ -533,13 +640,13 @@ std::vector<int> KeyBindings::feed(int byte, Context context, Pending &pending) 
   // 接頭キーに変えられた^T)が、それで始まる長い列より先に捨てられないように
   // するため。
   while (!pending.bytes.empty()) {
-    bool anyLonger = std::any_of(rules_.begin(), rules_.end(), [&](const Rule &rule) {
+    bool anyLonger = std::any_of(rules.begin(), rules.end(), [&](const Rule &rule) {
       return eligible(rule) && isPrefixOf(pending.bytes, rule.from);
     });
     if (anyLonger) return out;
     const Rule *best = nullptr;
     std::size_t bestLength = 0;
-    for (const auto &rule : rules_) {
+    for (const auto &rule : rules) {
       if (!eligible(rule) || rule.from.size() > pending.bytes.size() || rule.from.size() <= bestLength) continue;
       std::vector<int> head(pending.bytes.begin(), pending.bytes.begin() + rule.from.size());
       if (matches(rule.from, head)) {

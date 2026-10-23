@@ -26,9 +26,16 @@ class KeyBindings {
  public:
   // 接頭キーF-0〜F-4と、K番号の組み込みの表(TUTORIALの登場順)。
   static constexpr int kPrefixCount = 5;
+  // 2026-10-23追加、直接のユーザー依頼("全てのキー割り当てがusilicrcでなされているほうが形としては望ましいので
+  // C++共々反映してほしい。...モード限定キー以外の^N/^P等は新たなK-No.を設定せずに既存割り当てと共有で"、
+  // .steering/20261023-keys-all-in-usilicrc/): K番号の場面。COPYの中・プロンプトの中だけの番号は、その場面では
+  // 同じ既定のキーの全体の番号に代わって効き(COPYの^Fは1字進む、全体のK-7の^Fはページ送り)、重なりの判定・
+  // 空いた既定のキーの無効化も場面ごとに行う。MacroRepeatは^Xeの直後に繰り返すキー(1字)。
+  enum class Scope { Global, Copy, Prompt, MacroRepeat };
   struct DefaultEntry {
     int number;        // K-number
     const char *spec;  // 既定のキー表記
+    Scope scope = Scope::Global;
   };
   static const std::vector<const char *> &defaultPrefixSpecs();  // F-0..F-4
   static const std::vector<DefaultEntry> &defaultEntries();
@@ -79,7 +86,9 @@ class KeyBindings {
   // 入力1バイトを照合する。context: 照合を始めてよい範囲(Application::
   // keyBindingContext()参照)。戻り値は本体へ渡すバイト列(空なら、まだ
   // 溜めている途中か、無効化されたキーとして捨てた)。
-  enum class Context { None, LeaderOnly, All };
+  // Copy: COPYの中(COPYの番号と全体の番号、2026-10-23から。以前はCOPYでは置き換えなかった)。Prompt: プロンプトの
+  // 中(LeaderOnlyに、プロンプトの番号と制御文字1字のキーを足す。打った字になる1字のキーは置き換えない)。
+  enum class Context { None, LeaderOnly, All, Copy, Prompt };
   // 照合の途中状態(溜めているキー)。置き換え表(このクラス)はConfigurationが
   // 持ち、途中状態は入力を受け取る側(Application)が持つ――usilicrcを後から
   // 読み直しても、表と状態が食い違わないようにするため。
@@ -88,14 +97,20 @@ class KeyBindings {
     Context context = Context::None;
   };
   std::vector<int> feed(int byte, Context context, Pending &pending) const;
+  // ^Xeの直後に繰り返すキー(K-131の1字、既定は'e'。割り当て無しなら-1)。
+  int macroRepeatKey() const { return macroRepeatKey_; }
 
  private:
   struct Rule {
     Sequence from;              // 利用者のキー列(照合する側)
     std::optional<Sequence> to; // 既定のキー列(nulloptなら捨てる=無効化)
     bool leaderEligible;        // プロンプト/SHELL等(LeaderOnly)でも対象か
+    bool promptEligible = false;  // プロンプトの中(Context::Prompt)で対象か
   };
-  std::vector<Rule> rules_;
+  std::vector<Rule> rules_;        // 全体(Context::All・LeaderOnly)
+  std::vector<Rule> copyRules_;    // COPYの中(Context::Copy)
+  std::vector<Rule> promptRules_;  // プロンプトの中(Context::Prompt)
+  int macroRepeatKey_ = 'e';
   // configure()が組んだ、KEY節で変えたキー(既定のキー列→利用者のキー列)。rewriteHelpText()用。
   std::vector<std::pair<Sequence, Sequence>> changed_;
 

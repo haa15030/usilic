@@ -547,6 +547,53 @@ KEY
     K-103 F-1 C-a # ^J^A  ARC: list (archives in the FILE history)
     K-104 F-1 C-f # ^J^F  -g: font list (FONT, SANS-SERIF, SERIF)
     K-105 h       # h     From KEY to that line of plain HELP (else plain HELP)
+#
+# K-114 and later had no key assignment before (they were written in the program, 2026-10-23).
+# K-132..K-138 work only in COPY, K-139..K-155 only while typing in a prompt; there they take
+# the place of the K-n with the same default key (K-7 for ^F). ^N/^P, ^G, ^M, ^R, ^S, ^@, ^[N
+# etc. in COPY and prompts share K-3, K-4, K-20, K-28 etc. (changing those changes these too).
+    K-114 ESC g g # ^[gg  Go to line (same as ^[N)
+    K-115 C-u     # ^U    Repeat count for the next command
+    K-116 F-0 z   # ^Xz   Repeat the last command
+    K-117 F-0 r m # ^Xrm  Set a bookmark
+    K-118 F-0 r b # ^Xrb  Jump to a bookmark
+    K-119 F-0 r l # ^Xrl  List bookmarks
+    K-120 F-0 r SPC # ^Xr␣  Save this place to a register
+    K-121 F-0 r C-SPC # ^Xr^␣ Save this place to a register (same as ^Xr␣)
+    K-122 F-0 r j # ^Xrj  Jump to a register
+    K-123 F-2 C-s # ^O^S  List of matching lines (FGREP)
+    K-124 F-2 F-1 C-s # ^O^J^SList of matching lines (EGREP)
+    K-125 %       # %     (ls): select names matching a regular expression
+    K-126 *       # *     (ls): select files with the same suffix
+    K-127 C-t n   # ^Tn   Next window
+    K-128 C-t p   # ^Tp   Previous window
+    K-129 C-t C-h # ^T^H  HELP window
+    K-130 C-t C-k # ^T^K  KEY window
+    K-131 e       # e     Right after ^Xe: repeat the macro (one key)
+    K-132 C-f     # ^F    COPY: forward one character
+    K-133 C-b     # ^B    COPY: back one character
+    K-134 C-a     # ^A    COPY: beginning of line
+    K-135 C-e     # ^E    COPY: end of line
+    K-136 F-0 SPC # ^X␣   COPY: rectangle region
+    K-137 ESC w   # ^[w   COPY: to the clipboard
+    K-138 ESC t   # ^[t   COPY: to the TOOL prompt
+    K-139 C-a     # ^A    Input: beginning of line
+    K-140 C-e     # ^E    Input: end of line
+    K-141 C-f     # ^F    Input: forward one character
+    K-142 C-b     # ^B    Input: back one character
+    K-143 C-d     # ^D    Input: delete the character at the cursor
+    K-144 C-h     # ^H    Input: delete the previous character (DEL too)
+    K-145 C-u     # ^U    Input: delete to the beginning
+    K-146 C-k     # ^K    Input: delete to the end
+    K-147 C-y     # ^Y    Input: yank the deleted text
+    K-148 C-_     # ^_    Input: undo
+    K-149 C-q     # ^Q    Input: insert the next key as is
+    K-150 C-i     # ^I    Input: complete the path
+    K-151 C-w     # ^W    Input: previous directory (CP/MV destination)
+    K-152 ESC f   # ^[f   Input: forward one word
+    K-153 ESC b   # ^[b   Input: back one word
+    K-154 ESC d   # ^[d   Input: delete one word
+    K-155 ESC C-h # ^[^H  Input: delete the previous word (^[DEL too)
 
 MACRO
 # Keyboard macros.

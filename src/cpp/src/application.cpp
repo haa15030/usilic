@@ -3944,9 +3944,11 @@ KeyBindings::Context Application::keyBindingContext() const {
       gotoLineGPending_ || gotoLineDigitsPending_)
     return KeyBindings::Context::None;
   if (leaderTPending_) return KeyBindings::Context::None;  // ^Tの後のn・p(dispatchByte())は置き換えない
-  if (currentMode_ == ApplicationMode::Copy) return KeyBindings::Context::None;
-  if (tabCompletionContext_ || promptKind_ != PromptKind::None || currentMode_ == ApplicationMode::Shell)
-    return KeyBindings::Context::LeaderOnly;
+  // 2026-10-23(KeyBindings::Scope参照): COPYの中はCOPYの番号と全体の番号で、プロンプトの中はプロンプトの番号と
+  // 全体の番号(打った字になる1字のキーは除く)で置き換える。SHELL(bashが行を編集する)は今までどおり接頭キーの列だけ。
+  if (currentMode_ == ApplicationMode::Copy) return KeyBindings::Context::Copy;
+  if (tabCompletionContext_ || promptKind_ != PromptKind::None) return KeyBindings::Context::Prompt;
+  if (currentMode_ == ApplicationMode::Shell) return KeyBindings::Context::LeaderOnly;
   if (currentMode_ == ApplicationMode::ListBrowser && promptHistoryContext_ &&
       (promptHistoryContext_->kind == PromptKind::GrepPattern || promptHistoryContext_->kind == PromptKind::CutPattern ||
        promptHistoryContext_->kind == PromptKind::ManName || promptHistoryContext_->kind == PromptKind::RecentFile ||
@@ -4086,7 +4088,7 @@ bool Application::feedByteUngated(int byte, std::optional<KeyInput::SpecialKey> 
   // ^Xeの直後の'e'は、記録したマクロの再実行(macroRepeatArmed_参照)。usilicrcのMACROの'e'(EDIT)より先に見る。
   if (macroRepeatArmed_) {
     macroRepeatArmed_ = false;
-    if (!special && byte == 'e') {
+    if (!special && byte == configuration_.keyBindings().macroRepeatKey()) {  // K-131(既定はe)
       clearTransientNotice();
       return playRecordedMacro();
     }

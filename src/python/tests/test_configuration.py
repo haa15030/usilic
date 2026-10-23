@@ -39,7 +39,7 @@ class ConfigurationTest(unittest.TestCase):
         self.assertEqual(self.c.retention_count, 100)
         self.assertEqual(self.c.command_for('Cp'), ['cp', '-vRi'])
         self.assertEqual(self.c.command_for('Mv'), ['mv', '-v'])  # 書かなければ既定
-        self.assertEqual(self.c.key_bindings.sequence_for(1), [0x19])
+        self.assertEqual(self.c.key_bindings.feed(0x19, 'all', [[], None]), [ord('j')])  # 既定のjへ読み替える
 
     def test_archive_suffixes(self):
         self.assertEqual(self.c.archive_for('a.TGZ')[:1], (C.TAR,))

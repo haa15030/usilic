@@ -2,6 +2,10 @@
 
 機能はK-番号(HELPの記載順)で表し、キーは「C-x f」のような書き方(usilicrcのKEY節と同じ)。接頭キーF-0〜F-4
 (既定は^X・^J・^O・^C・^J^O)を書き換えると、それを使う機能のキーもまとめて変わる。
+
+C++と同じく、本体(Application)は既定のキー列で書いてあり、KEY節で変えたキーは入口で既定のキー列へ読み替える
+(configure()・feed())。番号には場面(全体・COPY・プロンプト・^Xeの直後)があり、COPY・プロンプトの番号はその場面で、
+同じ既定のキーの全体の番号に代わって効く(2026-10-23、.steering/20261023-keys-all-in-usilicrc/)。
 """
 
 DIGIT = -1  # 「N」(数字、^[N・^JN)。C++のKeyBindings::kDigit
@@ -29,7 +33,22 @@ DEFAULT_ENTRIES = [
     (101, 'F-2 s'), (102, 'F-2 w'), (103, 'F-1 C-a'), (104, 'F-1 C-f'), (105, 'h'), (106, 'F-1 C-p'),
     (107, 'F-2 d'), (108, 'F-2 C-e'), (109, 'ESC ['), (110, 'ESC ]'), (111, 'F-2 t'), (112, 'ESC {'),
     (113, 'ESC }'),
+    # 2026-10-23: 以前はコードに書いた値で受けていたキー(C++と同じ番号)
+    (114, 'ESC g g'), (115, 'C-u'), (116, 'F-0 z'), (117, 'F-0 r m'), (118, 'F-0 r b'), (119, 'F-0 r l'),
+    (120, 'F-0 r SPC'), (121, 'F-0 r C-SPC'), (122, 'F-0 r j'), (123, 'F-2 C-s'), (124, 'F-2 F-1 C-s'),
+    (125, '%'), (126, '*'), (127, 'C-t n'), (128, 'C-t p'), (129, 'C-t C-h'), (130, 'C-t C-k'), (131, 'e'),
+    (132, 'C-f'), (133, 'C-b'), (134, 'C-a'), (135, 'C-e'), (136, 'F-0 SPC'), (137, 'ESC w'), (138, 'ESC t'),
+    (139, 'C-a'), (140, 'C-e'), (141, 'C-f'), (142, 'C-b'), (143, 'C-d'), (144, 'C-h'), (145, 'C-u'),
+    (146, 'C-k'), (147, 'C-y'), (148, 'C-_'), (149, 'C-q'), (150, 'C-i'), (151, 'C-w'), (152, 'ESC f'),
+    (153, 'ESC b'), (154, 'ESC d'), (155, 'ESC C-h'),
 ]
+
+# 番号の場面(C++のKeyBindings::Scope、書いていない番号は全体)
+GLOBAL, COPY, PROMPT, MACRO_REPEAT = 'global', 'copy', 'prompt', 'macro_repeat'
+SCOPES = dict([(131, MACRO_REPEAT)] + [(n, COPY) for n in range(132, 139)] + [(n, PROMPT) for n in range(139, 156)])
+# 読み替えの場面(C++のKeyBindings::Context)
+CONTEXT_NONE, LEADER_ONLY, ALL, CONTEXT_COPY, CONTEXT_PROMPT = 'none', 'leader', 'all', 'copy', 'prompt'
+_LEADER_BYTES = (0x18, 0x0A, 0x0F, ESC)  # isLeaderByte()
 
 CTRL_SPACE = 0x80  # KeyInputは^Space(NUL)を0x80として報告する(C++と同じ)
 
@@ -107,56 +126,200 @@ def key_label(sequence):
     return ''.join(out)
 
 
+def _is_control(b):
+    return 0 <= b < 0x20 or b in (0x7F, CTRL_SPACE)
+
+
+class Rule:
+    def __init__(self, source, target, leader_eligible, prompt_eligible):
+        self.source, self.target = source, target   # 利用者のキー列→既定のキー列(Noneなら捨てる=無効化)
+        self.leader_eligible, self.prompt_eligible = leader_eligible, prompt_eligible
+
+
 class KeyBindings:
+    """KEY節の読み替え(C++のKeyBindings::configure()・feed())と、既定のキー列でのK-番号の照合(match())。"""
+
     def __init__(self):
-        self.prefix_specs = list(DEFAULT_PREFIX_SPECS)
+        self.prefix_specs = list(DEFAULT_PREFIX_SPECS)   # 利用者の接頭キー(KEY節のF-n)
         self.overrides = {}   # K-番号 -> spec(''は割り当て無し)
         self.errors = []
         self.rebuild()
 
-    def rebuild(self):
-        """接頭キーと各機能のキー列を組み直す(後から来た重複は割り当て無し、C++と同じ)。"""
-        self.prefixes = []
-        for spec in self.prefix_specs:
-            seq, _ = parse_spec(spec, self.prefixes)  # F-4はF-1を使える(前の接頭キーまで)
-            self.prefixes.append(seq or [])
-        self.sequences = {}   # K-番号 -> [バイト]
-        for number, spec in DEFAULT_ENTRIES:
-            spec = self.overrides.get(number, spec)
-            if not spec:
-                continue
-            seq, error = parse_spec(spec, self.prefixes)
-            if seq is None:
-                self.errors.append('K-%d: %s' % (number, error))
-                continue
-            clash = next((n for n, other in self.sequences.items()
-                          if other == seq or _same_head(other, seq) or _same_head(seq, other)), None)
-            if clash is not None:
-                self.errors.append('K-%d: conflicts with K-%d: %s' % (number, clash, spec))
-                continue
-            self.sequences[number] = seq
-
     def load_key_section(self, lines):
         """usilicrcのKEY節の行(「F-n キー」「K-n キー」、#以降は注釈)。"""
+        self.user_prefixes = {}
         for line in lines:
             body = line.split('#', 1)[0].strip()
             if not body:
                 continue
             tokens = body.split()
             head, spec = tokens[0], ' '.join(tokens[1:])
-            if head.startswith('F-') and head[2:].isdigit() and int(head[2:]) < len(self.prefix_specs):
-                self.prefix_specs[int(head[2:])] = spec
+            if head.startswith('F-') and head[2:].isdigit():
+                self.user_prefixes[int(head[2:])] = spec
             elif head.startswith('K-') and head[2:].isdigit():
                 self.overrides[int(head[2:])] = spec
             else:
                 self.errors.append('KEY: ' + body)
         self.rebuild()
 
+    def rebuild(self):
+        """C++のconfigure(): 既定のキー列(本体が照合する)と、場面ごとの読み替えの規則を組む。"""
+        report = lambda message: self.errors.append('KEY: ' + message)  # noqa: E731
+        user_prefixes = getattr(self, 'user_prefixes', {})
+        # 既定の接頭キー(本体が使う)と利用者の接頭キー
+        self.prefixes = []
+        for spec in DEFAULT_PREFIX_SPECS:
+            self.prefixes.append(parse_spec(spec, self.prefixes)[0] or [])
+        user = []
+        for n, spec in enumerate(DEFAULT_PREFIX_SPECS):
+            user.append(list(self.prefixes[n]))
+            given = user_prefixes.get(n)
+            if given is None or not given.strip():
+                continue
+            seq, error = parse_spec(given, user)
+            if seq is None:
+                report('F-%d: %s' % (n, error))
+            elif DIGIT in seq:
+                report('F-%d: N is not allowed' % n)
+            else:
+                user[n] = seq
+        for n in user_prefixes:
+            if not 0 <= n < len(DEFAULT_PREFIX_SPECS):
+                report('unknown F-%d' % n)
+        self.user_prefix_sequences = user
+        # 番号ごとの既定のキー列と利用者のキー列
+        resolved = []   # [番号, 既定, 利用者(None=割り当て無し), 場面]
+        self.sequences = {}
+        for number, spec in DEFAULT_ENTRIES:
+            default = parse_spec(spec, self.prefixes)[0]
+            scope = SCOPES.get(number, GLOBAL)
+            if scope == GLOBAL:
+                self.sequences[number] = default
+            given = self.overrides.get(number)
+            if given is None:
+                seq = parse_spec(spec, user)[0]
+            elif not given.strip():
+                seq = None
+            else:
+                seq, error = parse_spec(given, user)
+                if seq is None:
+                    report('K-%d: %s' % (number, error))
+                    seq = parse_spec(spec, user)[0]
+                elif (DIGIT in default) != (DIGIT in seq):
+                    report('K-%d: N must be used exactly when the default uses it' % number)
+                    seq = parse_spec(spec, user)[0]
+                elif scope == MACRO_REPEAT and len(seq) != 1:
+                    report('K-%d: must be one key' % number)
+                    seq = parse_spec(spec, user)[0]
+            resolved.append([number, default, seq, scope])
+        known = {n for n, _ in DEFAULT_ENTRIES}
+        for n in self.overrides:
+            if n not in known:
+                report('unknown K-%d' % n)
+
+        def set_for(scope):
+            out = []
+            for i, r in enumerate(resolved):
+                if r[3] == scope:
+                    out.append(i)
+                elif r[3] == GLOBAL and scope != GLOBAL and \
+                        not any(o[3] == scope and o[1] == r[1] for o in resolved):
+                    out.append(i)
+            return sorted(out)
+        for scope in (GLOBAL, COPY, PROMPT):  # 重なりは場面ごとに、後の方を割り当て無しに
+            members = set_for(scope)
+            for x, i in enumerate(members):
+                ri = resolved[i]
+                if ri[2] is None:
+                    continue
+                for j in members[:x]:
+                    rj = resolved[j]
+                    if rj[2] is None or (scope != GLOBAL and ri[3] == GLOBAL and rj[3] == GLOBAL):
+                        continue
+                    if rj[2] == ri[2] or _same_head(rj[2], ri[2]) or _same_head(ri[2], rj[2]):
+                        report('K-%d conflicts with K-%d' % (ri[0], rj[0]))
+                        ri[2] = None
+                        break
+        self.macro_repeat_key = next((r[2][0] for r in resolved if r[3] == MACRO_REPEAT and r[2]), -1)
+        leader_first = [ESC] + [user[n][0] for n in (0, 1, 2, 4) if user[n] and user[n][0] != 0x03]
+
+        def leader_eligible(source, default):
+            return len(source) >= 2 and default[0] in _LEADER_BYTES and source[0] in leader_first
+
+        def prompt_eligible(source, default):
+            if leader_eligible(source, default):
+                return True
+            from_control = (len(source) == 1 and _is_control(source[0])) or \
+                (len(source) >= 2 and source[0] in leader_first)
+            default_control = (len(default) == 1 and _is_control(default[0])) or \
+                (len(default) >= 2 and default[0] in _LEADER_BYTES)
+            return from_control and default_control
+
+        def build(members):
+            rules = []
+            for i in members:
+                number, default, seq, _ = resolved[i]
+                if seq == default:
+                    continue
+                if seq is not None:
+                    rules.append(Rule(seq, default, leader_eligible(seq, default), prompt_eligible(seq, default)))
+                if not any(resolved[o][2] == default for o in members):
+                    rules.append(Rule(default, None, default[0] in _LEADER_BYTES and len(default) >= 2,
+                                      prompt_eligible(default, default)))
+            return rules
+        self.rules = {ALL: build(set_for(GLOBAL)), CONTEXT_COPY: build(set_for(COPY)),
+                      CONTEXT_PROMPT: build(set_for(PROMPT))}
+
+    def is_identity(self):
+        return not any(self.rules.values())
+
+    def feed(self, byte, context, pending):
+        """入力1バイトを読み替える(C++のfeed())。pendingは溜めている途中の[バイトの並び, 場面]。本体へ渡すバイトの
+        並び(空なら溜めている途中か、無効化されたキー)。"""
+        if self.is_identity():
+            return [byte]
+        if not pending[0]:
+            if context == CONTEXT_NONE:
+                return [byte]
+            pending[1] = context
+        context = pending[1]
+        rules = self.rules[CONTEXT_COPY] if context == CONTEXT_COPY else \
+            self.rules[CONTEXT_PROMPT] if context == CONTEXT_PROMPT else self.rules[ALL]
+        bytes_ = pending[0]
+        bytes_.append(byte)
+
+        def eligible(rule):
+            if context == CONTEXT_PROMPT:
+                return rule.prompt_eligible
+            return context != LEADER_ONLY or rule.leader_eligible
+
+        def matches(pattern, data):
+            return len(pattern) == len(data) and all(
+                p == d or (p == DIGIT and 0x30 <= d <= 0x39) for p, d in zip(pattern, data))
+        out = []
+        while bytes_:
+            if any(eligible(r) and len(bytes_) < len(r.source) and matches(r.source[:len(bytes_)], bytes_)
+                   for r in rules):
+                return out  # どれかの列の途中: 待つ
+            best = None
+            for r in rules:
+                if eligible(r) and len(r.source) <= len(bytes_) and (best is None or len(r.source) > len(best.source)) \
+                        and matches(r.source, bytes_[:len(r.source)]):
+                    best = r
+            if best is not None:
+                if best.target is not None:
+                    out.extend(bytes_[len(best.source) - 1] if k == DIGIT else k for k in best.target)
+                del bytes_[:len(best.source)]
+            else:
+                out.append(bytes_.pop(0))
+        return out
+
     def sequence_for(self, number):
+        """K-番号の既定のキー列(本体が照合する)。"""
         return self.sequences.get(number)
 
     def match(self, pending):
-        """打ったバイトの並びを照合: ('done', K-番号, 数字の並び)・('more',)・('none',)。
+        """打ったバイトの並び(読み替えた後の既定のキー列)を照合: ('done', K-番号)・('more', None)・('none', None)。
 
         Nの機能は、1桁目で決まり、続けて打つ数字はApplicationの方でためる(C++のgotoLineDigits_)。
         """

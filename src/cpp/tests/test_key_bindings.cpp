@@ -191,3 +191,42 @@ TEST_CASE("KeyBindings::rewriteHelpText: a longer key keeps the colon column by 
   KeyBindings b = configured("\tK-61\tESC C-f\n");  // ^Xf -> ^[^F(1桁長い)
   CHECK(b.rewriteHelpText("         ^Xf\xEF\xBC\x9A" "x\n") == "        ^[^F\xEF\xBC\x9A" "x\n");
 }
+
+// 2026-10-23追加(KeyBindings::Scope参照、.steering/20261023-keys-all-in-usilicrc/): COPY・プロンプトの中だけの番号と、
+// 全体の番号との共有。
+TEST_CASE("KeyBindings: COPY numbers replace keys only in COPY, and COPY shares the global numbers") {
+  constexpr int kEsc = 0x1b;
+  KeyBindings b = configured("\tK-132\tESC f\n\tK-3\tESC n\n");  // COPYの1文字進む(^F)をESC fへ、^N(K-3)をESC nへ
+  CHECK(run(b, {kEsc, 'f'}, Context::Copy) == std::vector<int>{0x06});
+  CHECK(run(b, {0x06}, Context::Copy).empty());                       // COPYの^Fは空いたので無効
+  CHECK(run(b, {0x06}, Context::All) == std::vector<int>{0x06});      // 全体の^F(K-7、ページ送り)はそのまま
+  CHECK(run(b, {kEsc, 'n'}, Context::Copy) == std::vector<int>{0x0e});  // K-3の変更はCOPYの^Nにも
+  CHECK(run(b, {0x0e}, Context::Copy).empty());
+  CHECK(run(b, {kEsc, 'n'}, Context::All) == std::vector<int>{0x0e});
+}
+
+TEST_CASE("KeyBindings: prompt numbers and the prompt context") {
+  constexpr int kEsc = 0x1b;
+  KeyBindings b = configured("\tK-139\tESC a\n\tK-20\tC-\\\n\tK-1\tJ\n");  // 入力の行頭(^A)・^G(K-20)・j(K-1)を変える
+  CHECK(run(b, {kEsc, 'a'}, Context::Prompt) == std::vector<int>{0x01});
+  CHECK(run(b, {0x01}, Context::Prompt).empty());
+  CHECK(run(b, {0x01}, Context::All) == std::vector<int>{0x01});    // 全体には^Aの番号が無い
+  CHECK(run(b, {0x1c}, Context::Prompt) == std::vector<int>{0x07});  // ^G(K-20)はプロンプトでも共有
+  CHECK(run(b, {'J'}, Context::Prompt) == std::vector<int>{'J'});    // 打った字になる1字のキーは置き換えない
+  CHECK(run(b, {'J'}, Context::All) == std::vector<int>{'j'});
+  CHECK(run(b, {0x1c}, Context::LeaderOnly) == std::vector<int>{0x1c});  // SHELL等は今までどおり接頭キーの列だけ
+}
+
+TEST_CASE("KeyBindings: conflicts are checked per scope, and the macro repeat key") {
+  std::vector<std::string> errors;
+  configured("\tK-132\tC-n\n", &errors);  // COPYの中ではK-3(^N)と重なる
+  CHECK(errors.size() == 1);
+  errors.clear();
+  configured("\tK-139\tC-a\n\tK-134\tESC a\n", &errors);  // 別の場面どうしは重ならない
+  CHECK(errors.empty());
+  CHECK(configured("").macroRepeatKey() == 'e');
+  CHECK(configured("\tK-131\tx\n").macroRepeatKey() == 'x');
+  errors.clear();
+  CHECK(configured("\tK-131\tF-0 x\n", &errors).macroRepeatKey() == 'e');  // 1文字だけ
+  CHECK(errors.size() == 1);
+}

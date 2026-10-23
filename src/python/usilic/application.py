@@ -173,6 +173,8 @@ class Application:
         self.vlist_first = {TOC: 0, OCCUR: 0}  # 右端の列(一覧ごと)
         self.vlist_view = ContentView()
         self.vlist_view.cursor_highlight = False
+        self.translate_pending = [[], None]  # KEY節の読み替えで溜めている途中のバイト(KeyBindings.feed())
+        self.utf8_skip = 0
         self.vertical_prefix = None    # 縦書きのCOPYの'ESC'
         self.work_root = os.path.join('/tmp' if os.path.isdir('/tmp') else tempfile.gettempdir(), '.usilic',
                                       'python-%d' % os.getpid())  # HELPの「/tmp/.usilic/」
@@ -1322,7 +1324,7 @@ class Application:
         keys = help_text.key_bytes_from_label(line.text)
         self.go_back()
         for b in keys:
-            self.feed_key(b, None)
+            self.feed_canonical(b, None)
         return True
 
     def jump_from_key_to_help(self):
@@ -1351,6 +1353,36 @@ class Application:
         self.click_targets_cursor = False
         if special in ('Up', 'Down', 'Left', 'Right') and self.start_coast_by_arrow(special):
             return True
+        # KEY節で変えたキーを既定のキー列へ読み替えてから本体へ(C++のfeedByteUngated())。UTF-8の字の続きは読み替えない。
+        if special is not None:
+            flushed, self.translate_pending[0] = self.translate_pending[0], []
+            for b in flushed:
+                self.feed_canonical(b, None)
+            return self.feed_canonical(byte, special)
+        if self.utf8_skip > 0 or byte >= 0xC0:
+            self.utf8_skip = self.utf8_skip - 1 if self.utf8_skip > 0 else (1 if byte < 0xE0 else 2 if byte < 0xF0 else 3)
+            return self.feed_canonical(byte, None)
+        out = self.bindings.feed(CTRL_SPACE if byte == 0 else byte, self.key_context(), self.translate_pending)
+        result = True
+        for b in out:
+            result = self.feed_canonical(0 if b == CTRL_SPACE else b, None)
+        return result
+
+    def key_context(self):
+        """読み替えの場面(C++のkeyBindingContext())。"""
+        from . import key_bindings as kb
+        if self.pending_keys or self.goto_digits is not None or self.register_state is not None:
+            return kb.CONTEXT_NONE
+        if self.copy is not None or self.vertical_selecting():
+            return kb.CONTEXT_COPY
+        if self.prompt is not None or self.grep_prompt is not None or self.current_mode == SHELL:
+            return kb.CONTEXT_PROMPT
+        if self.current_mode == LIST and self.list_mode.prompt_kind:
+            return kb.LEADER_ONLY
+        return kb.ALL
+
+    def feed_canonical(self, byte, special):
+        """既定のキー列の1キー(読み替えた後、マクロの再生・KEYの^Mから)。"""
         if self.macro_recording is not None and not self.playing and special is None:
             self.macro_recording.append(byte)
         self.notice = None
@@ -2413,7 +2445,7 @@ class Application:
                     self.run_command(value, None)
                 else:
                     for b in value.encode('utf-8'):
-                        self.feed_key(b, None)
+                        self.feed_canonical(b, None)
         finally:
             self.playing = False
         return True
@@ -2427,7 +2459,7 @@ class Application:
         wait = self.configuration.wait_centiseconds / 100.0
         try:
             for b in self.macro_bytes:
-                self.feed_key(b, None)
+                self.feed_canonical(b, None)
                 if wait:
                     self.redraw()
                     time.sleep(wait)

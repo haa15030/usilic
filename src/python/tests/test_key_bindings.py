@@ -30,9 +30,11 @@ class KeyBindingsTest(unittest.TestCase):
     def test_key_section_overrides(self):
         b = K.KeyBindings()
         b.load_key_section(['    F-0   C-t     # ^Xの代わりに^T', '    K-1   C-y', '    K-2'])
-        self.assertEqual(b.sequence_for(62), [0x14, 0x06])  # 接頭キーを変えると^T^Fに
-        self.assertEqual(b.sequence_for(1), [0x19])
-        self.assertIsNone(b.sequence_for(2))               # 空は割り当て無し
+        pending = [[], None]
+        self.assertEqual(b.feed(0x14, 'all', pending) + b.feed(0x06, 'all', pending), [0x18, 0x06])  # ^T^Fは既定の^X^Fへ
+        self.assertEqual(b.feed(0x19, 'all', [[], None]), [ord('j')])   # K-1は^Yで、既定のjへ
+        self.assertEqual(b.feed(ord('k'), 'all', [[], None]), [])         # 空は割り当て無し(kは捨てる)
+        self.assertEqual(b.feed(ord('J'), 'prompt', [[], None]), [ord('J')])  # プロンプトでは打った字のまま
 
     def test_prefix_label(self):
         self.assertEqual(K.prefix_label([0x18]), 'C-x-')
