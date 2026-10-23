@@ -32604,3 +32604,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 読み込みを速く: Markdownの印の展開を、印の無い所はまとめて扱うように(`markup_lines()`)。字の幅を覚え(`utf8.char_width()`)、ASCIIだけの行は幅で切るだけに(`wrap_text()`、行頭禁則の字はASCIIに無いので結果は同じ)。字下げ付きの折り返し(`_wrap_with_indent()`、EPUBでも使う)が1行ごとに残り全部を折り返し直していたのを、一度に折り返して順に使うように。docs/HISTORY.mdのCPU時間が4.71秒→1.77秒(C++は約2秒)。HISTORY.md・CHANGES.md・CLAUDE.mdの3つの幅(100・60・37)とEPUB3冊で、元の関数と結果が一字も違わないことを確かめた。
    - ^Sで一致の間を移っている時に他のキー(^M等)を押すと、やめたことをすぐ描く(C++の`deactivateGrepInPlace()`)。長いfileを読む間もモードラインが「FGREP …」のままになっていた。
    - 確かめたこと: 擬似端末で、^X^Fの一覧からdocs/HISTORY.md "^<"を選ぶと両方の版でPARTの一覧の同じ位置(2355/2405)・同じモードライン(大きさは幅0の字の分の6バイト違う)。(ls)の^Sの後の^Mで、読み込み中のモードラインが両方の版で(ls)の普通のもの→「FILE 読み込み中...」。unittest 81件。
+1043. **Python版: .mdの本文のU+FEFFを字下げの印として読む(C++のPipeBufferと同じ)(2026-10-24)**
+   - 直接のユーザーの問い(「pythonでは表示の印として扱ってない？」): 項目1042で「幅0の字(U+2060・U+FEFF)を、C++版は表示の印として消すので出方が違う」と書いたが、調べ直すと違うのはU+FEFFだけだった。U+2060は両方の版とも字として残し、幅0で数える(Python版も`utf8.display_width_of_codepoint()`で幅0)。U+FEFFは、C++のPipeBufferが「続くK個で字下げK-1」という印(`readPortableIndentRun()`、usilic -mのusilic.man用)として読んで消すのに、Python版の`markdown.markup_lines()`にはこの処理が無く、字のまま残していた。
+   - `markup_lines()`で、続くU+FEFFを<indentNN>と同じく字下げの印として読み、字には残さない。
+   - 確かめたこと: docs/HISTORY.mdを幅80・120で組み、C++(expandHelpMarkup→PipeBuffer)と全行が同じ(77640行・62505行、タブの所のU+2060の印はPython版では`hidden_bytes`で数えるだけなので除いて比べた)。項目1042で残っていた2行と、PARTのモードラインの6バイト(U+FEFF 2つ分)の違いはこれだった。unittest 81件。

@@ -351,6 +351,20 @@ def markup_lines(markup, tick=None):
             length += len(chunk)
         while i < len(line):
             at = line.find('<', i)
+            if '\ufeff' in line:
+                mark = line.find('\ufeff', i)
+                if mark >= 0 and (at < 0 or mark < at):
+                    # PipeBufferと同じく、続くK個のU+FEFFは字下げK-1の印(幅0、字としては残さない)
+                    if mark > i:
+                        add(line[i:mark])
+                    end = mark
+                    while end < len(line) and line[end] == '\ufeff':
+                        end += 1
+                    indent = end - mark - 1
+                    if not text:
+                        line_indent = indent
+                    i = end
+                    continue
             if at < 0:
                 add(line[i:])
                 break
