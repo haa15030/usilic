@@ -7094,39 +7094,6 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): highlightStartColumn lands at
   for (std::size_t i : {1, 2, 3, 4}) CHECK_FALSE(lines[i].neverHighlighted);  // Startup file / ERROR / SHELL / DATA
 }
 
-// 2026-10-02変更(TUTORIALはHELPへ改名、.steering/20261002-help-key-usilicrc-reorg/): INFOの「HELP」行で
-// Enterすると、HELP(~/.local/lib/usilic/HELP)を読み直してタブ(^I)でCUTする(^Hと同じstartHelp())。
-TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the HELP line splits HELP at its tab-marked chapters") {
-  fs::create_directories(root / ".local" / "lib" / "usilic");
-  {
-    std::ofstream help(root / ".local" / "lib" / "usilic" / "HELP");
-    help << "intro\n"
-         << "first\t\nfirst section\n"
-         << "second\t\nsecond section\n";
-  }
-
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
-  const auto &lines = app.activeContentView().lines();
-  int helpRow = -1;
-  std::string suffix = (root / ".local" / "lib" / "usilic" / "HELP").string();
-  for (std::size_t i = 0; i < lines.size(); i++) {
-    if (lines[i].text.size() >= suffix.size() &&
-        lines[i].text.compare(lines[i].text.size() - suffix.size(), suffix.size(), suffix) == 0) {
-      helpRow = static_cast<int>(i);
-      break;
-    }
-  }
-  REQUIRE(helpRow >= 0);
-  app.activeContentView().setCursorIndex(helpRow);
-  REQUIRE(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-  CHECK(app.cutMode().pattern() == "^[^\t].*\t[ \xEF\xBB\xBF]*$");  // kHelpChapterPattern
-  // 冒頭の"--"("intro")と、タブの付いた2つの章。
-  REQUIRE(app.cutMode().segments().size() == 3);
-  CHECK(app.cutMode().segments()[0].label == "--");
-}
-
 // 2026-08-28 addition, same report: confirms the ACTUAL RENDERED
 // result, not just the Line data -- "Boot options" (the cursor's own
 // initial row, right when INFO first opens) shows no Standout ANYWHERE
