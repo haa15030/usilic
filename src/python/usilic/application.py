@@ -141,6 +141,7 @@ class Application:
         self.list_mode = ListBrowserMode(self.list_view)
         self.list_prompt = None    # ^Rで一覧を開いた元のプロンプト(^Mでそこへ戻す)
         self.tab_completion = None  # ^I^Iの候補の一覧の(元のプロンプト(SHELLはNone), 補完した語, その前の部分)
+        self.prompt_swallow_byte = False  # プロンプトの中の^Xrの次の字(捨てる)
         self.tab_armed = False      # 候補が幾つもあった^Iの直後(続けて^Iで一覧、C++のpromptTabArmed_)
         self.archives = []         # ARCの入れ子(一番後ろが今のアーカイブ)
         self.man_view = ContentView()
@@ -357,7 +358,8 @@ class Application:
         if self.prompt is not None:
             p = self.prompt
             position = mode_line.format(view.cursor_index + 1, len(view.lines)) if p.show_position else ''
-            under = (self.return_stack[-1] if self.return_stack else DIRECTORY) if p.candidate_list else None
+            listed = p.candidate_list or p.kind in (pr.BOOKMARK_SET, pr.BOOKMARK_JUMP)  # 一覧の下の戻り先
+            under = (self.return_stack[-1] if self.return_stack else DIRECTORY) if listed else None
             return self.prompt_mode_line(p.label, position, localized(p.message), p.editor, p.kind == pr.EXIT, under)
         if self.grep_prompt is not None:
             syntax, editor = self.grep_prompt
@@ -626,7 +628,8 @@ class Application:
                 index = view.top_index + row - offset
                 line = visible[row]
                 reverse = view.cursor_highlight and index == view.cursor_index and not (
-                    self.prompt is not None and self.prompt.show_position and not self.prompt.candidate_list) \
+                    self.prompt is not None and self.prompt.show_position and not self.prompt.candidate_list
+                    and self.prompt.kind not in (pr.BOOKMARK_SET, pr.BOOKMARK_JUMP)) \
                     and self.copy is None
                 runs = list(line.attributes)
                 if self.copy is not None:
@@ -1963,11 +1966,18 @@ class Application:
         続きを待つ間はプロンプトのまま、割り当てに当たればプロンプトをやめてその機能。Noneは前置キーではない。"""
         if self.word_edit_escape(editor, byte):
             return True
+        if self.prompt_swallow_byte:
+            self.prompt_swallow_byte = False
+            return True
         if not self.pending_keys and ([byte] == self.bindings.prefixes[2][:1] or not self.starts_binding_in_text_mode(byte)):
             return None  # ^O(^O^Y)はfeed_prompt_byte()の中で
         prompt, grep_prompt = self.prompt, self.grep_prompt
         self.prompt = self.grep_prompt = None
         result = self.feed_key_sequence(byte)
+        if self.register_state is not None:  # ^Xr…(レジスタ・ブックマーク)はプロンプトの中では使わない(C++と同じ、次の字も捨てる)
+            self.register_state = None
+            self.prompt_swallow_byte = True
+            self.sequence_state = 'none'
         if self.sequence_state != 'run':  # 続きを待つ・割り当て無し: プロンプトのまま
             self.prompt, self.grep_prompt = prompt, grep_prompt
             return True
@@ -3740,25 +3750,33 @@ class Application:
         return True
 
     def execute_bookmark(self, text):
-        name = text.strip()
+        """ブックマークの一覧の^M(C++のexecuteBookmark())。名前が空・消す名前や飛ぶ名前が無い時はBELで一覧のまま。"""
+        name = text.strip(' \t')
         setting = self.bookmark_place is not None
-        self.go_back()
-        if not name:
+
+        def stay():
+            kind = pr.BOOKMARK_SET if setting else pr.BOOKMARK_JUMP
+            self.prompt = pr.Prompt(kind, text, self.execute_bookmark, show_position=True)
             return False
+        if not name:
+            return stay()
         if setting:
             path, raw = self.bookmark_place
             self.bookmark_place = None
+            self.go_back()
             bm.set_bookmark(name, path, raw)
             self.show_transient_notice('Bookmark "%s" set' % name)
             return True
         if name.startswith('-') and len(name) > 1:
-            if bm.delete_bookmark(name[1:]):
-                self.show_transient_notice('Bookmark "%s" deleted' % name[1:])
-                return True
-            return False
+            if not bm.delete_bookmark(name[1:]):
+                return stay()
+            self.go_back()
+            self.show_transient_notice('Bookmark "%s" deleted' % name[1:])
+            return True
         entry = bm.take_bookmark(name)
         if entry is None:
-            return False
+            return stay()
+        self.go_back()
         if not self.jump_to_place(entry[1], entry[2]):
             self.show_transient_notice("Can't open " + entry[1])
             return False
