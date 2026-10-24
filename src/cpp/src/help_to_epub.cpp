@@ -673,8 +673,10 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       std::string rid = "r" + std::to_string(++refCount);
       backrefs[nid].push_back({fname, rid});
       out += h.substr(pos, group1End - pos);
-      out += "<a id=\"" + rid + "\" href=\"notes.xhtml#" + nid + "\" epub:type=\"noteref\">" + (bold ? "<b>" : "") +
-             item + (closeBold ? "</b>" : "") + "</a>";
+      // 2026-10-24、直接のユーザー依頼("HELP.epubもこの形式に"、Kbt.epubの注釈番号): 名前はそのまま、その後ろに
+      // 注釈番号(nidの番号)を注釈へのリンクに(Kindleの注釈番号の形、usilicは青い太字で描く)。
+      out += std::string(bold ? "<b>" : "") + item + (closeBold ? "</b>" : "") + "<a id=\"" + rid +
+             "\" href=\"notes.xhtml#" + nid + "\" epub:type=\"noteref\">" + nid.substr(1) + "</a>";
       pos = end;
     }
     out += h.substr(pos);
@@ -717,7 +719,8 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       std::string rid = "r" + std::to_string(++refCount);
       backrefs[nid].push_back({fname, rid});
       linked += out.substr(pos, m - pos);
-      linked += "<a id=\"" + rid + "\" href=\"notes.xhtml#" + nid + "\" epub:type=\"noteref\"><i>" + shown + "</i></a>";
+      linked += "<i>" + shown + "</i><a id=\"" + rid + "\" href=\"notes.xhtml#" + nid + "\" epub:type=\"noteref\">" +
+                nid.substr(1) + "</a>";  // 名前の後ろに注釈番号(上の<b>の項目と同じ)
       pos = end;
     }
     linked += out.substr(pos);
@@ -795,8 +798,9 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
     std::string back;
     for (std::size_t k = 0; k < refs.size(); k++) {
       if (k) back += ' ';
-      back += "<a epub:type=\"noteref\" href=\"" + refs[k].first + "#" + refs[k].second + "\">\xE2\x86\xA9" +
-              (refs.size() > 1 ? std::to_string(k + 1) : "") + "</a>";
+      // 注釈の頭の戻りのリンク: 最初は注釈番号(本文の番号と同じ、Kbt.epubの形)、2つ目からは↩2 ↩3…
+      back += "<a epub:type=\"noteref\" href=\"" + refs[k].first + "#" + refs[k].second + "\">" +
+              (k == 0 ? nid.substr(1) : "\xE2\x86\xA9" + std::to_string(k + 1)) + "</a>";
     }
     std::string inner;
     auto w = written.find(item);

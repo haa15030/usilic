@@ -32767,3 +32767,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告(=lt.png)"拡大してみると色が付いているのはわかる。それでも注釈に見えないのは文字の位置にあるからかなと。右寄せbold青みを強調では？"。項目1069では「1」が2マス幅の真ん中に細く置かれ、右側の傍線とも離れていた。
    - **実装**: 注釈番号の色を`Display::kNoteColor`(#0044EE、以前の#1E64C8より鮮やか)にまとめた。-gの縦書きでは、この色の半角の字を2マスの右端(傍線の側)へ寄せる(`renderCell()`)。縦書きのマスの注釈番号に太字のランを別に足す(傍線の下線のランと重ねて持てるように、`renderEpubVerticalWindow()`)。Python版は色を256色の27番に、太字も重ねる。
    - make usilic・make install・make app。unittest 82件。-gの見た目は未確認。
+1071. **HELP.epubの注釈も注釈番号の形に(2026-10-24)**
+   - **経緯**: 直接のユーザー依頼"今度はそれとわかる(=lu.png)。HELP.epubもこの形式にしてみて"(項目1070のKbt.epubの注釈番号)。
+   - **実装**: `usilic -e`(help_to_epub.cpp)は、以前は斜体・太字の設定項目の名前そのもの(「<i>KEY</i>」等)を注釈へのリンク(noteref)にしていた。名前はそのまま、その後ろに注釈番号(n1→1)を注釈へのリンクにする(usilicは青い太字で描く、項目1069・1070)。注釈の頭の戻りのリンクも、最初は注釈番号(以前は↩)、同じ注釈を指す所が他にもあれば↩2 ↩3…。
+   - make help-epub・make help-epub-en(~/HELP.txt・~/HELP_en.txtから)でdoc/HELP.epub・doc/HELP.en.epubを作り直して入れた(「KEY1」「LINE-HEIGHT2」、注釈の頭は「1 usilicrc の KEY」)。make usilic・make install・make app。
