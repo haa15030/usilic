@@ -261,16 +261,24 @@ class Application:
     def refresh_shell_view(self, follow=True):
         """SHELLの行を作り直す。followなら最後(プロンプト)へ(出力が来た時、^Pで戻っていてもやめる)。"""
         at_end = self.shell_view.cursor_index >= len(self.shell_view.lines) - 1
-        self.shell_view.set_lines(self.shell.view_lines(self.wrap_width(), self.command_line.text))
+        self.shell_view.set_lines(self.shell.view_lines(self.wrap_width(), self.shell_live_text()[0]))
         if follow:
             self.shell_browsing = False  # C++の新しい出力・送ったコマンドでのexitHistoryBrowsing()
         if follow or at_end:
             self.shell_view.go_to_bottom()
 
+    def shell_live_text(self):
+        """打っている行に見せるコマンドとカーソルの桁。プロンプトの後ろの欄に入らなければ、C++と同じく折り返さずに
+        横にずらす(Shell::updateCommandLineField()の欄)。プロンプトが来る前は折り返す。"""
+        if not self.shell.prompt_ready:
+            return self.command_line.text, None
+        width = max(1, self.display.columns - utf8.text_width(expand_tabs(self.shell.prompt)))
+        return self.command_line.visible_slice(width)
+
     def live_row_count(self):
         """SHELLの最後の「プロンプト+編集中のコマンド」が折り返して何行か。"""
         head = self.shell.prompt if self.shell.prompt_ready else self.shell.pending
-        return len(wrap_text(expand_tabs(head + self.command_line.text), self.wrap_width()))
+        return len(wrap_text(expand_tabs(head + self.shell_live_text()[0]), self.wrap_width()))
 
     def exit_shell_browsing(self):
         """Shell::exitHistoryBrowsing(): ^Pで戻っていたのをやめて、打っている行へ。"""
@@ -722,6 +730,10 @@ class Application:
         if self.shell_browsing:
             return max(0, view.cursor_index - view.top_index + view.anchor_offset()), 0
         head = (self.shell.prompt if self.shell.prompt_ready else self.shell.pending)
+        live, column = self.shell_live_text()
+        if column is not None:  # 1行の欄(横にずらす)
+            row = len(view.lines) - 1 - view.top_index + view.anchor_offset()
+            return max(0, min(row, view.height - 1)), utf8.text_width(expand_tabs(head)) + column
         before = head + self.command_line.text[:self.command_line.cursor]
         width = self.wrap_width()
         pieces = wrap_text(expand_tabs(before), width)

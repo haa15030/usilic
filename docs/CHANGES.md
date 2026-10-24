@@ -32715,3 +32715,6 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - class="pre"の段落は、C++(`preDepth_`は`<pre>`の要素だけ)と同じく空白をまとめる(HELP.epubの「^[^[：終了 」の行末の空白がC++では無かった)。
    - 確かめたこと: C++の`epubToHelpMarkup()`→`expandHelpMarkup()`→PipeBufferで行を出す道具を作って、HELP.epub・HELP.en.epubの全行をPython版の行と比べ、違うのは`<b>HELP</b>`の段落だけ(下記)。vcmp.pyで^H・^Hの^G・^Gの後の^M・^Sが同じ。unittest 82件(EPUBのテストは章の行の印を除いて比べるように直した)。
    - 残る違い: HELP.epubには「~/.local/lib/usilic/&lt;b&gt;HELP&lt;/b&gt;.1」という字がそのまま入っていて(~/HELP.txtの`<u>…<b>HELP</b>.1</u>`の入れ子をusilic -eが字として書き出したもの)、C++は字に戻した「<b>」をマークアップとして読んで太字にし、Python版は字のまま出す(HELPの章の一覧の大きさが7バイト違う)。縦書きの本(book.epub)の大きさは、縦書きの組み方の違い(保留中)で11バイト違う。
+1060. **Python版: SHELLの打っている行を折り返さずに横にずらす(C++に合わせる)(2026-10-24)** 項目1047の続き(^Jwで見つけていた違い)。
+   - SHELLの打っている行は、C++の`Shell::updateCommandLineField()`と同じくプロンプトの後ろから右端までの1行の欄で、入らなければ`LineEditor::adjustViewport()`と同じくカーソルが欄に入るように横にずらす(`LineEditor.visible_slice()`、ずらし具合は打つ間も覚えておく)。以前は画面の幅で折り返していた(^Jwで長いパスを入れた時等)。プロンプトが来る前は今まで通り折り返す。
+   - 確かめたこと: vcmp.pyで、SHELLの^Jw・長いコマンド(英字・日本語)・^A・^A^F^F・^Mが両方の版で同じ(一時ディレクトリの名前を除く、字と属性)。unittest 82件。

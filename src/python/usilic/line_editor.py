@@ -1,4 +1,5 @@
 """コマンド行の1行の編集(C++のline_editor.cppのLineEditor、今回使う分)。"""
+from . import utf8
 
 MAX_UNDO = 100
 UNDO_INSERT_GROUP = 20  # Emacsの「文字の挿入は20個ずつ」
@@ -17,6 +18,7 @@ class LineEditor:
         self.select_all_pending = False  # 入れておいた字を全部選んだ状態(C++のselectAllPending_)
         self.undo_stack = []
         self.undo_insert_run = 0  # 直前の記録から続いている文字入力の数(0=まとまり無し)
+        self.shift = 0  # 欄に入らない時に見せ始める字(C++のshift_、カーソルが欄に入るように動かす)
 
     @property
     def kill_buffer(self):
@@ -175,3 +177,22 @@ class LineEditor:
         self.push_undo()
         self.kill_buffer = self.text[self.cursor:end]
         self.text = self.text[:self.cursor] + self.text[end:]
+
+    def visible_slice(self, width):
+        """幅widthの欄に見せる字とカーソルの桁(C++のadjustViewport()・redraw())。入らなければ横にずらす。"""
+        def columns(text):
+            return sum(utf8.text_width(c) for c in text)
+        if columns(self.text) <= width:
+            self.shift = 0
+        else:
+            self.shift = min(self.shift, self.cursor)
+            while self.shift < self.cursor and columns(self.text[self.shift:self.cursor]) >= width:
+                self.shift += 1
+        shown, used = '', 0
+        for c in self.text[self.shift:]:
+            w = utf8.text_width(c)
+            if used + w > width:
+                break
+            shown += c
+            used += w
+        return shown, columns(self.text[self.shift:self.cursor])
