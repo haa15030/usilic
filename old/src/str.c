@@ -1399,6 +1399,47 @@ int init_config(CHILD *chp, LIST **lcpp, LIST **lgpp, STR **scpp, STR **sgpp, u_
 	  if (!(cp = strchr(str, '\n'))) continue;
       *cp = '\0';
     } while (0);
+    {
+      /* 2026-10-24、直接のユーザー依頼("今のusilicrcが以前とは違うため旧版が起動できなくなっている。設定項目名
+       * まわりの修正だけ(TOOL、PARTも受付可)でいい"): C++版で改名した節は旧版の名前に読み替え、C++版で増えた
+       * 節(旧版には無い設定)は中身ごと読み飛ばす。 */
+      static const char *alias[][2] = {
+	{"FILTER", "FILE"}, {"LAUNCH", "EXEC"}, {"TOOL", "PROGRAM"}, {"PART", "GREP"},
+	{"LINE", "HISTORY"}, {"COPY", "CP"}, {"MOVE", "MV"}, {"DELETE", "RM"}, {NULL, NULL},
+      };
+      static const char *ignored[] = {
+	"COLUMN", "SERIF", "SANS-SERIF", "SPEED", "DRAG", "FONT", "MACRO", "URL", "ARROW",
+	"LINE-HEIGHT", "LETTER-SPACING", "ICON-FONT", "ICON-LINE-HEIGHT", "ICON-LETTER-SPACING", NULL,
+      };
+      int i;
+
+      for (i = 0; alias[i][0]; i++)
+	if (!strcmp(alias[i][0], str)) {
+	  strcpy(str, alias[i][1]);
+	  break;
+	}
+      for (i = 0; ignored[i]; i++)
+	if (!strcmp(ignored[i], str)) break;
+      if (!ignored[i] && !strcmp(str, "KEY")) {
+	/* KEYの節: 旧版の書き方(「F-?」等の区切りの行)でなければ(C++版の「K-n キー」の行だけなら)読めないので、
+	 * 中身を読み飛ばして既定のキーのまま。旧版の書き方ならそこまで戻してconf_key()に読ませる。 */
+	long at = ftell(fp);
+	u_char line[N_line];
+
+	line[0] = line[1] = '\0';
+	while (fgets(line, N_line, fp) && strchr(s_S(S_nop), *line)) ;
+	if (strncmp(&line[1], "-?", 2)) i = -1;
+	fseek(fp, at, SEEK_SET);
+      }
+      if (i < 0 || ignored[i]) {
+	/* 次の節の見出し(行頭がS_nopの字でない行)まで読み飛ばす */
+	do {
+	  if (!fgets(str, N_line, fp)) f_skip = -1;
+	} while (f_skip >= 0 && strchr(s_S(S_nop), *str));
+	if (f_skip >= 0) f_skip = 1;
+	continue;
+      }
+    }
     for (f_usilicrc = 0; usilicrc[f_usilicrc]; f_usilicrc++) 
       if (!strcmp(usilicrc[f_usilicrc], str)) break;
     if (usilicrc[f_usilicrc] && !strchr(p, f_usilicrc + '0')) f_skip = 0;

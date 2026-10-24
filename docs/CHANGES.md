@@ -32723,3 +32723,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - ARCの中のfile(^Oeの.xhtml等も)は、C++の`archiveContentView_`と同じく位置も大きさも画面の行で数える(長い行を折り返すと「1/6」、大きさは行ごとに字+1)。以前は元の行で「1/3」とfileの大きさ。
    - 確かめたこと: vcmp.pyで、HELPの^Os(^N・^G・^Mの後)・^Os^Os・^Ow(1回・2回・その後のj)・^O^E(記録無し)・book.epubの^Oe(一覧・.xhtml)・長い行のあるzipの中のfile(^N)・tgzの中のfileが両方の版で同じ(字と属性)。unittest 82件。
    - 要確認(C++の不具合?): ^Os(章ごと)の間、C++は^N・^V・^[>でカーソルが章の外へ動き(^N6回で「0007/1170」なのに画面は第1章のまま、^Vでは画面が空)、Python版は章の終わりで止まる。Python版はC++に合わせていない。
+1062. **旧(old/): 今のusilicrcで起動できるように、節の名前を読み替える(2026-10-24)**
+   - **経緯**: 直接のユーザー依頼"今のusilicrcが以前とは違うため旧版が起動できなくなっている。設定項目名まわりの修正だけ(TOOL、PARTも受付可)でいい"(legacy/はそのまま、old/の方で)。旧の`init_config()`は知らない節の名前があると「Invalid format.」で起動をやめていた。
+   - **実装**: `init_config()`(old/src/str.c)で、C++版で改名した節を旧の名前に読み替える(FILTER→FILE、LAUNCH→EXEC、TOOL→PROGRAM、PART→GREP、LINE→HISTORY、COPY・MOVE・DELETE→CP・MV・RM)。C++版で増えた節(COLUMN・SERIF・SANS-SERIF・SPEED・DRAG・FONT・MACRO・URL・ARROW・LINE-HEIGHT・LETTER-SPACING・ICON-FONT・ICON-LINE-HEIGHT・ICON-LETTER-SPACING)は中身ごと読み飛ばす。KEYの節は、旧の書き方(「F-?」等の区切りの行)でなければ(C++版の「K-n キー」の行だけなら)読めないので中身を読み飛ばし、旧の既定のキーのまま(旧の書き方ならそのまま読む)。
+   - 確かめたこと: src/config.sh・makeでビルドし、一時的なHOMEの~/.U/Urcに、src/usilicrc・~/.usilic/usilicrcの写し・PROGRAM/GREPをTOOL/PARTにした物・legacy/usilicrc(旧の書き方)を置いて、どれでも(ls)まで起動した。make installはしていない(入っている/usr/local/bin/Uは以前のPREFIXのもの)。
