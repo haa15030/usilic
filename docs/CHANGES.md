@@ -32660,3 +32660,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - Python版: ^J^MはC++の`startManList()`と同じく、MANの履歴の名前順で重ねの無い一覧(usilicが無ければ頭に)。以前は入力順(HISTORY)で、履歴が空ならプロンプトだった。
    - 確かめたこと: vcmp.pyで、CP・MV・RMのプロンプトと実行・^Jt・^J^T・^Ou(1つ・選んだ2つ)・^Oa・^Je・^J^E・^Oe・^J^M・SHELLの長いコマンドが両方の版で同じ(字と属性)。unittest 81件。make usilic・make install。
    - 見つかったが、まだ直していないもの: USILICの目次(^[u)・^J^U・^Juは、C++では目次もグループもUSILICの一覧(モードラインは「USILIC 位置 大きさ ディレクトリ」、MAN・DIR・FILEはUSILICの履歴を種類で分けた物)、Python版はグループを別の一覧(MAN・DIR・FILE等)で見せている。^J^P等の一覧の項目の中のタブ(C++は1桁の空白で描き、モードラインでは反転したI)。
+1051. **Python版: USILICの目次・グループ・一覧をC++の形に、制御文字の描き方(2026-10-24)** 項目1047の続き(K-78〜K-80等を比べた)。
+   - ^[uの目次から開く種類(MAN・DIR・FILE・TOOL・WORK・USILIC・ARC・EPUB・PART)は、C++の`openUsilicGroup()`と同じく同じUSILICの一覧で、その種類の物だけを名前順で重ねなく(MAN・DIR・FILEはUSILICの履歴を「名前 (man)」・/で終わる物・他の/で始まる物に分けた物、TOOLはコマンドの履歴、ARC・EPUB・PARTはFILEの履歴から、USILICは外のusilicで開いた物)、頭から。以前はMAN・DIR・FILE等の別の一覧(^X^F等)を出していた。^Gは目次の同じ種類へ。TOOLの項目の^Mは、その字を入れたTOOLのプロンプト(右端に戻り先のUSILIC)。
+   - USILICの一覧(目次・種類・^J^U・^Ju)のモードラインは、C++の`underlineView_`と同じく「USILIC 位置 大きさ」と、最後に(ls)のディレクトリ(以前は選んでいる項目)。
+   - USILICの一覧から開いた(ls)は「(ls)」の代わりに「USILIC」を出して右端まで(別のディレクトリへ移ると消える)、fileは名前をパスのまま後ろに「USILIC」(C++のDirAnnotationKind::Usilic・pushWithNameOverride())。`DirectoryMode.annotation`・`FileMode.origin`。
+   - 画面に描く制御文字: C++の`renderLine()`と同じく、行の途中のタブは空白1つ、それ以外(行末のタブも)は1桁の「字+'@'」(DELは?)で反転を入れ替えて描く(`display.shown_controls()`、モードラインも)。以前は字のまま描き、cursesがタブを8桁ごとに広げていたので、^J^P・USILICのPARTの一覧の「"<タブ>"」の項目の幅がC++と違っていた。
+   - 確かめたこと: vcmp.pyで、^[u・その9つの種類・種類の中の^M(ディレクトリ・file・TOOL)・その^G・^G^G・^J^U・^Ju・^J^Pが両方の版で同じ(字と属性)。unittest 81件。
+   - 要確認(C++の不揃い?): ^X^F・^J^P等のプロンプトの形の一覧で、^[<・^[>だけ普通の一覧の形(項目を反転・途中を「...」)に変わる(^N・^P・j・k・^V・␣・b・^[v・^F・^Bでは変わらない)。Python版は変わらない。

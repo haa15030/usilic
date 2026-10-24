@@ -44,6 +44,7 @@ from .mouse import MouseEvent, Paste, Speeds, dropped_paths, level_for_release_d
 from .shell import Shell, PROMPT_DISPLAY_NAME
 
 PROGRAM_LABEL = 'usilic-1.5b'
+USILIC_TOC_TITLES = ['MAN', 'DIR', 'FILE', 'TOOL', 'WORK', 'USILIC', 'ARC', 'EPUB', 'PART']  # ^[uの目次(usilicTocTitles())
 DIRECTORY, FILE, SHELL = 'Directory', 'File', 'Shell'
 ARCHIVE, LIST, MAN, DU, LOCATE, KEY, HELP, TOC = 'Archive', 'List', 'Man', 'Du', 'Locate', 'Key', 'Help', 'Toc'
 PART_TOC, PART, OCCUR, INFO = 'PartToc', 'Part', 'Occur', 'Info'
@@ -382,6 +383,9 @@ class Application:
                 pos = self.notice or (mode_line.format if fm.transformed else mode_line.format_fixed_width)(
                     *self.position_numbers(view))
                 return F(fm.current_file, str(fm.byte_count), False, PROGRAM_LABEL, fm.label or ''), pos
+            if fm.origin is not None:  # USILICの一覧から開いたfile: 名前はパスのまま、後ろに印
+                fields = F(fm.origin[0], str(fm.byte_count), True, '', fm.origin[1])
+                return fields, position
             if os.path.isabs(fm.current_file):  # C++はfileのディレクトリ(FileModeの欄)
                 directory = os.path.dirname(fm.current_file).rstrip('/') + '/'
             fields = F(os.path.basename(fm.current_file), str(fm.byte_count), True, '', fm.tail or directory,
@@ -394,6 +398,13 @@ class Application:
             a = self.archives[-1]
             fields = F(a.display_name, str(a.byte_count), True, '', a.badge)
             fields.trailing3 = mode_line.truncated_trailing_path(directory)
+            return fields, position
+        if mode == LIST and self.list_mode.label == 'USILIC' and self.list_prompt is None:
+            # USILICの一覧(目次・種類・時系列のどれも、C++のunderlineView_の欄): 大きさは一覧の行、最後に(ls)のディレクトリ
+            if not view.lines:
+                return F(''), position
+            fields = F('USILIC', str(sum(len(l.text.encode('utf-8')) + 1 for l in view.lines)), True, '')
+            fields.trailing3 = directory
             return fields, position
         if mode == LIST:
             lm = self.list_mode
@@ -476,6 +487,8 @@ class Application:
                 fields.trailing3 = self.previous_mode_name(self.occur_origin)  # 戻り先(ファイルならそのパス)
             return fields, position
         d = self.directory_mode
+        if d.annotation:  # USILICの一覧から入った所: 「(ls)」の代わりに印、右端まで(C++のprimaryAnnotations_)
+            return F(directory, str(d.byte_count), True, '', d.annotation), position
         fields = F(directory, str(d.byte_count), False, PROGRAM_LABEL, '(ls)')  # 右端は常に(C++のDirectoryModeの欄)
         fields.split_layout_when_crowded = True
         if d.sort_label_shown:
@@ -522,6 +535,8 @@ class Application:
             return 'SHELL'
         if mode in (KEY, TOC, PART_TOC, PART):
             return 'PART'
+        if mode == LIST and self.list_mode.label == 'USILIC':
+            return 'USILIC'
         return ''
 
     def mode_line_target(self):
@@ -1305,8 +1320,9 @@ class Application:
         return self.current_mode == FILE and self.epub is not None and self.file_mode.current_file == self.epub.path
 
     # --- 一覧(履歴) ---
-    def show_list(self, items, label, on_choose, sorted_view, prompt_kind=None, badge_for=None, pinned=None):
-        if not items and not pinned:  # 頭に差し込む入口があれば、履歴が空でも開く
+    def show_list(self, items, label, on_choose, sorted_view, prompt_kind=None, badge_for=None, pinned=None,
+                  allow_empty=False):
+        if not items and not pinned and not allow_empty:  # 頭に差し込む入口があれば、履歴が空でも開く
             self.show_transient_notice('No string')
             return False
         if self.current_mode == LIST:
@@ -2841,30 +2857,48 @@ class Application:
     # --- USILIC・WORK ---
     def start_usilic_toc(self):
         """^[u: MAN・DIR・FILE・TOOL・WORK・USILIC・ARC・EPUB・PARTの目次。"""
-        titles = ['MAN', 'DIR', 'FILE', 'TOOL', 'WORK', 'USILIC', 'ARC', 'EPUB', 'PART']
-        result = self.show_list(titles, 'USILIC', self.open_usilic_group, False)
+        result = self.show_list(USILIC_TOC_TITLES, 'USILIC', self.open_usilic_group, False)
         self.list_view.cursor_index = self.list_view.top_index = 0
         return result
 
     def open_usilic_group(self, title):
-        if title == 'MAN':
-            return self.show_list(self.ring(hist.RECENT_MAN_PAGE), 'MAN', self.execute_man, True, pr.MAN)
-        if title == 'DIR':
-            return self.handle_key_number(64, None)
-        if title == 'FILE':
-            return self.start_file_list()
+        """USILICの目次の項目(Application::openUsilicGroup()): 同じUSILICの一覧で、その種類の物だけ。MAN・DIR・FILEは
+        USILICの履歴を種類で分けた物(「名前 (man)」・/で終わる物・他の/で始まる物)、TOOLはコマンドの履歴、ARC・EPUB・
+        PARTはFILEの履歴から、USILICは外のusilicで開いた物。どれも名前順で重ねの無い並び。"""
+        titles = USILIC_TOC_TITLES
+        kind = titles.index(title) if title in titles else -1
+        if kind < 0:
+            return False
+
+        def usilic_kind(entry):
+            entry = entry[:-len(hist.USILIC_TAG)] if entry.endswith(hist.USILIC_TAG) else entry
+            if not entry.startswith('/'):
+                return 0
+            return 1 if entry.endswith('/') else 2
+        on_choose = self.open_usilic_item
         if title == 'TOOL':
-            return self.handle_key_number(44, None)
-        if title == 'WORK':
-            return self.show_work_list()
-        if title == 'USILIC':
-            items = [i for i in self.ring(hist.USILIC) if i.endswith(hist.USILIC_TAG)]
-            return self.show_list(items, 'USILIC', self.open_usilic_item, True)
-        if title == 'ARC':
-            return self.handle_key_number(103, None)
-        if title == 'EPUB':
-            return self.handle_key_number(48, None)
-        return self.handle_key_number(106, None)
+            entries = sorted(set(self.ring(hist.SHELL_COMMAND)))
+            on_choose = self.start_tool_prompt  # TOOLのプロンプトにその字を入れる
+        elif title == 'WORK':
+            entries = list(self.work_files)
+        elif title in ('ARC', 'EPUB', 'PART'):
+            keep = {'ARC': lambda e: self.is_archive_history_entry(e), 'EPUB': is_epub_file,
+                    'PART': lambda e: self.part_spec(e) is not None}[title]
+            entries = [e for e in sorted(set(self.ring(hist.RECENT_FILE))) if keep(e)]
+            if title == 'ARC':
+                on_choose = self.open_recent_file_entry
+        elif title == 'USILIC':
+            entries = sorted(set(e for e in self.ring(hist.USILIC) if e.endswith(hist.USILIC_TAG)))
+        else:
+            entries = sorted(set(e for e in self.ring(hist.USILIC) if usilic_kind(e) == kind))
+        result = self.show_list(entries, 'USILIC', on_choose, False, allow_empty=True)
+        self.list_view.cursor_index = self.list_view.top_index = 0  # 頭から(C++のunderlineMode_.show())
+        return result
+
+    def is_archive_history_entry(self, item):
+        """Application::isArchiveHistoryEntry(): アーカイブの項目(.epubは除く、ARCで開いた「…/」も)。"""
+        path = item[:-1] if len(item) > 1 and item.endswith('/') else item
+        return not is_epub_file(path) and bool(self.configuration.archive_for(path))
 
     def open_usilic_item(self, item):
         """USILICの項目: 「名前 (man)」はMAN、「(usilic)」付きは外のusilic、/で終わればディレクトリ。"""
@@ -2875,9 +2909,15 @@ class Application:
             env = dict(os.environ, USILIC_NO_HISTORY='1', USILIC_TRANSIENT=str(os.getpid()))
             return self.run_external([sys.executable, USILIC_SCRIPT, path], env=env)
         spec = self.part_spec(item)
-        if spec:
-            return self.reopen_part(item)
-        return self.open_path(item)
+        if spec or not os.path.exists(item):  # 無い物(「パス "文字列"」等)はFILEの履歴の開き方で
+            return self.open_recent_file_entry(item)
+        if not self.open_path(item):
+            return False
+        if self.current_mode == DIRECTORY and os.path.isdir(item):
+            self.directory_mode.annotation = 'USILIC'  # C++のDirAnnotationKind::Usilic
+        elif self.current_mode == FILE and self.file_mode.current_file == item and self.epub is None:
+            self.file_mode.origin = (item, 'USILIC')
+        return True
 
     def allocate_work_file(self):
         os.makedirs(self.work_root, exist_ok=True)

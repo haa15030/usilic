@@ -7,6 +7,24 @@ import curses
 from . import utf8
 
 
+def shown_controls(text):
+    """制御文字の描き方(C++のContentView::renderLine()): 行の途中のタブは空白1つ、それ以外(行末のタブも)は1桁の
+    「字+'@'」(DELは'?')で反転を入れ替えて描く。(描く字, 反転を入れ替える字の位置の集まり)。"""
+    if not any(ch < ' ' or ch == '\x7f' for ch in text):
+        return text, ()
+    out, flipped = [], []
+    for i, ch in enumerate(text):
+        c = ord(ch)
+        if ch == '\t' and i + 1 < len(text):
+            out.append(' ')
+        elif c < 0x20 or c == 0x7f:
+            flipped.append(i)
+            out.append('?' if c == 0x7f else chr(c + 0x40))
+        else:
+            out.append(ch)
+    return ''.join(out), flipped
+
+
 class TerminalDisplay:
     def __init__(self, screen):
         self.screen = screen
@@ -66,6 +84,7 @@ class TerminalDisplay:
         to_edgeなら右端まで(モードライン)。"""
         attr = (curses.A_REVERSE if reverse else 0) | (curses.A_UNDERLINE if underline else 0)
         width = self.columns - (1 if row == self.rows - 1 else 0)  # 右下の桁に書くとcursesがエラーにする
+        text, flipped = shown_controls(text)
         # 幅0の印U+2060(タブの所)は画面へは書かない(Terminal.appは1桁と数える、C++のrenderLine()と同じ)
         fitted = self._fit(text, width).replace('\u2060', '')
         body = fitted if to_edge or not attr else fitted.rstrip(' ')
@@ -76,6 +95,9 @@ class TerminalDisplay:
             self.screen.addstr(row, 0, body, attr)
             if len(body) < len(fitted):
                 self.screen.addstr(row, utf8.text_width(body), fitted[len(body):], 0)
+            for i in flipped:  # 制御文字は反転を入れ替えて(C++のsetStandout(!markedNow))
+                if i < len(fitted):
+                    self.screen.addstr(row, utf8.text_width(fitted[:i]), fitted[i], attr ^ curses.A_REVERSE)
         except curses.error:
             pass
 
@@ -88,6 +110,8 @@ class TerminalDisplay:
         names = {'bold': curses.A_BOLD, 'underline': curses.A_UNDERLINE, 'match': self.match_attr,
                  'reverse': curses.A_REVERSE, 'italic': getattr(curses, 'A_ITALIC', curses.A_UNDERLINE)}
         column, width = 0, self.columns - (1 if row == self.rows - 1 else 0)  # 右端まで(右下の桁だけはcursesが書けない)
+        text, flipped = shown_controls(text)
+        flipped = set(flipped)
         for index, ch in enumerate(text):
             w = utf8.display_width_of_codepoint(ord(ch))
             if column + w > width:
@@ -99,8 +123,11 @@ class TerminalDisplay:
                 if start <= index < end:
                     attr |= names.get(name, 0)
             if attr:
+                final = base | attr
+                if index in flipped:  # 制御文字は反転を入れ替える(draw_row()と同じ)
+                    final ^= curses.A_REVERSE
                 try:
-                    self.screen.addstr(row, column, ch, base | attr)
+                    self.screen.addstr(row, column, ch, final)
                 except curses.error:
                     pass
             column += w
@@ -113,6 +140,16 @@ class TerminalDisplay:
             return
         attrs = {'standout': curses.A_REVERSE, 'plain': 0, 'bold': curses.A_BOLD, 'underline': curses.A_UNDERLINE}
         row, column = self.rows - 1, 0
+        shown = []
+        for text, attr in segments:  # 制御文字は反転を入れ替えた1桁の字(本文と同じ)
+            for ch in text:
+                c = ord(ch)
+                if c < 0x20 or c == 0x7f:
+                    flip = 'plain' if attrs.get(attr, curses.A_REVERSE) & curses.A_REVERSE else 'standout'
+                    shown.append(('?' if c == 0x7f else chr(c + 0x40), flip))
+                else:
+                    shown.append((ch, attr))
+        segments = shown
         try:
             self.screen.move(row, 0)
             self.screen.clrtoeol()

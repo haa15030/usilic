@@ -83,6 +83,7 @@ class DirectoryMode:
         self.columns = 80           # 画面の幅(apply_column_auto_display()用、Applicationが入れる)
         self.column_threshold = 8   # usilicrcのCOLUMN
         self.sort_label_shown = False
+        self.annotation = ''  # 「(ls)」の代わりに出す印(USILICの一覧から入った所は「USILIC」、別の所へ移ると消える)
         self.marks = set()   # 選択(下線、. ^SPC ^Oy ^On)。項目の番号
         self.temporary_marks = False  # CP/MV/展開の後の一時的な選択(^Lで消える)
 
@@ -107,6 +108,8 @@ class DirectoryMode:
         self.entries = [parse_ls_line(l) for l in lines]
         if self.sort_key == 'Kind':
             self.entries = sort_by_kind(self.entries, self.reverse)
+        if path != self.current_directory:
+            self.annotation = ''
         self.current_directory = path
         self.marks = set()
         self.temporary_marks = False
