@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
-from . import utf8
+from . import mode_line, utf8
 
 PITCH = 3  # 1列の幅(全角2桁+行間1桁)
 
@@ -352,8 +352,24 @@ class VerticalBook:
         return start, title
 
     def step_first(self, delta):
-        """右端の列を1列ずつdelta列ずらす(j/k)。列カーソルは送る向きの先頭。動いたらTrue。"""
+        """右端の列を1列ずつdelta列ずらす(j/k)。列カーソルは送る向きの先頭。動いたらTrue。
+        連続スクロールでは扉も1列ずつ流す(C++のstepEpubVerticalFirst()、章ごとの時だけ扉をページごと越える)。"""
         moved = False
+        if not self.chapter_breaks:
+            n = len(self.cols)
+            for _ in range(abs(delta)):
+                first = max(0, min(self.first + (1 if delta > 0 else -1), max(0, n - self.per_screen)))
+                if first == self.first:
+                    break
+                last_shown = min(first + self.per_screen, n) - 1
+                cursor = last_shown if delta > 0 else first
+                while delta > 0 and cursor > first and self.cols[cursor].padding:
+                    cursor -= 1
+                while delta < 0 and cursor < last_shown and self.cols[cursor].padding:
+                    cursor += 1
+                self.set_view(first, cursor)
+                moved = True
+            return moved
         for _ in range(abs(delta)):
             before = self.first
             first, target = self.step(self.first, delta > 0)
@@ -462,7 +478,7 @@ class VerticalBook:
         if total <= 0:
             current, total = self.cursor + 1, len(self.cols)
         current = max(current, 1)
-        return '%05d/%05d %3d%%' % (current, max(total, 1), 100 * current // total if total > 0 else 100)
+        return mode_line.format(current, max(total, 1))  # 横書きと同じく総数の桁(C++と同じ、以前は5桁に決め打ち)
 
     def cursor_screen_position(self):
         """端末のカーソルの(行, 桁): 範囲指定の間は今の所のマス、ふだんは列カーソルの列の頭。"""

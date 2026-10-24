@@ -4489,11 +4489,17 @@ class Application:
         列の頭/末、^V/^[vで1画面先/前。^@で範囲を始め、もう一度で閉じてRecord?(y/n)(yで記録)。^[wで
         クリップボードへ、^[tでTOOLへ、^Gでやめる。"""
         v = self.vertical
-        if v.asking:
+        if v.asking:  # Record?(y/n): yで記録、^[w・^[tは範囲をコピー(C++と同じ)、他はやめる
+            if special is None and byte == ESC and self.vertical_prefix is None:
+                self.vertical_prefix = 'ESC'
+                return True
+            esc, self.vertical_prefix = self.vertical_prefix == 'ESC', None
             v.asking = False
             if special is None and byte in (ord('y'), ord('Y')):
                 return self.record_vertical_selection()
-            return True
+            if not (esc and special is None and byte in (ord('w'), ord('t'))):
+                return True
+            self.vertical_prefix = 'ESC'
         if special is not None:
             columns, cells = {'Up': (0, -1), 'Down': (0, 1), 'Left': (1, 0), 'Right': (-1, 0),
                               'PageUp': (-v.per_screen, 0), 'PageDown': (v.per_screen, 0)}[special]

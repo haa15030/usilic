@@ -1933,7 +1933,10 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // 明朝体。2026-10-11、直接のユーザー報告("ヒラギノ明朝 ProN W3って縦書きはいいんだが横書きだとフォントの大きさが
   // おかしい"、スクリーンショット=iu: M・O・U・D・W・m等だけ小さい): 明朝体の欧文は字ごとに幅が違うので、幅の広い字が
   // 半角1マスに収まらず縮めて描かれていた。半角(1マス幅)の字は明朝体にせず基本の等幅フォントで描く(縦書きは2マス幅)。
-  if (TTF_Font *serif = (cell.serif || impl_->serifEverywhere) && isWide ? serifFontFor(*impl_, codepoint) : nullptr)
+  // 2026-10-24、直接のユーザー報告(=ln.png、目次の章番号の縦中横の数字だけゴシック体): 縦書きでは半角の字も
+  // 2マス幅(縦中横・横倒し)で描くので、明朝体の幅でも収まる――縦書きの時だけ半角も明朝体にする。
+  if (TTF_Font *serif = (cell.serif || impl_->serifEverywhere) && (isWide || verticalText)
+                            ? serifFontFor(*impl_, codepoint) : nullptr)
     renderFont = serif;
   renderFont = verticalFormFontFor(*impl_, renderFont, codepoint);  // 縦書き用の字が無いフォント(それ自身のコメント参照)
   renderFont = symbolFontFor(*impl_, renderFont, codepoint);  // どのフォントにも無い記号(それ自身のコメント参照)
@@ -2236,7 +2239,9 @@ void GraphicalDisplay::renderCursor() {
   // 明朝体。2026-10-11、直接のユーザー報告("ヒラギノ明朝 ProN W3って縦書きはいいんだが横書きだとフォントの大きさが
   // おかしい"、スクリーンショット=iu: M・O・U・D・W・m等だけ小さい): 明朝体の欧文は字ごとに幅が違うので、幅の広い字が
   // 半角1マスに収まらず縮めて描かれていた。半角(1マス幅)の字は明朝体にせず基本の等幅フォントで描く(縦書きは2マス幅)。
-  if (TTF_Font *serif = (cell.serif || impl_->serifEverywhere) && isWide ? serifFontFor(*impl_, codepoint) : nullptr)
+  bool verticalCell = impl_->verticalText && !(impl_->modeLineVisible && row == impl_->rows - 1);
+  if (TTF_Font *serif = (cell.serif || impl_->serifEverywhere) && (isWide || verticalCell)  // renderCell()と同じ
+                            ? serifFontFor(*impl_, codepoint) : nullptr)
     renderFont = serif;
   renderFont = verticalFormFontFor(*impl_, renderFont, codepoint);  // 縦書き用の字が無いフォント(それ自身のコメント参照)
   renderFont = symbolFontFor(*impl_, renderFont, codepoint);  // どのフォントにも無い記号(それ自身のコメント参照)

@@ -3477,6 +3477,7 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 範囲のコピー/PROGRAMへ)はCOPYの外では何もしないので、そう知らせる(どれかのキーで消える)。
       case 'w':
       case 't':  // 2026-10-12、^[pから
+        if (epubSelectActive()) return copyEpubSelection(byte == 't');  // 縦書きのCOPY(2026-10-24)
         showTransientNotice(activeView(), "COPY mode only");
         return false;
       default:
@@ -9387,13 +9388,13 @@ void Application::setEpubVerticalView(int first, int cursor, std::optional<int> 
     rawTotal = total;
   }
   rawCurrent = std::max(rawCurrent, 1);
-  char position[64];
-  std::snprintf(position, sizeof(position), "%05d/%05d %3d%%", rawCurrent, std::max(rawTotal, 1),
-                rawTotal > 0 ? static_cast<int>(100L * rawCurrent / rawTotal) : 100);
+  // 2026-10-24、直接のユーザー報告("400ページしかないのに行数が5桁"): 以前は"%05d/%05d"の5桁に決め打ちしていた。
+  // 横書き(ModeLine::format())と同じく、総数の桁に合わせてTOP/END。
+  std::string position = ModeLine::format(rawCurrent, std::max(rawTotal, 1));
   // 縦書きのCOPY(epubSelectActive()): 離した後の問い(Record?(y/n))を位置の欄に出す
   if (epubRecordAsk_ && epubSelectActive())
     epubVerticalView_.setPositionTextOverride(localized("Record?(y/n)"), /*plain=*/true);
-  else epubVerticalView_.setPositionTextOverride(std::string(position));
+  else epubVerticalView_.setPositionTextOverride(position);
 }
 
 // 左右のドラッグ/慣性で端から見えてくる列(Display::beginContentEdgeCapture()参照)を、
@@ -9681,6 +9682,26 @@ bool Application::enterEpubHorizontalAtEdge(int delta) {
 // 現れる、setEpubVerticalView()参照)。扉のページはページの頭。
 bool Application::stepEpubVerticalFirst(int delta) {
   bool moved = false;
+  // 2026-10-24、直接のユーザー報告(Kbt.epub、=li〜=lm.png"表紙のタイトルページが連続モードのスクロールであっても
+  // 一繋がりに流れない"): 扉(titlePage)はページごと越える(epubVerticalStep())ので、連続スクロールでも書名が
+  // 中央に来た所で止まり、次の扉・目次へページ単位で飛んでいた。連続スクロールでは扉も1列ずつ流す
+  // (章ごとの時と、^N・^Vのページ送りは今のまま)。カーソルは画面の中の字のある列(扉の空の列は飛ばす)。
+  if (!epubChapterBreaks_) {
+    int n = static_cast<int>(epubVerticalCols_.size());
+    int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+    for (int k = 0; k < std::abs(delta); k++) {
+      int before = epubVerticalFirst_;
+      int first = std::clamp(before + (delta > 0 ? 1 : -1), 0, std::max(0, n - perScreen));
+      if (first == before) break;
+      int lastShown = std::min(first + perScreen, n) - 1;
+      int cursor = delta > 0 ? lastShown : first;
+      while (cursor > first && delta > 0 && epubVerticalCols_[cursor].padding) cursor--;
+      while (cursor < lastShown && delta < 0 && epubVerticalCols_[cursor].padding) cursor++;
+      setEpubVerticalView(first, cursor);
+      moved = true;
+    }
+    return moved;
+  }
   for (int k = 0; k < std::abs(delta); k++) {
     int before = epubVerticalFirst_;
     auto [first, target] = epubVerticalStep(epubVerticalFirst_, delta > 0);
@@ -14236,9 +14257,38 @@ bool Application::recordEpubSelection() {
 
 // 縦書きのCOPYの間のキー。^GでCOPYをやめ、Record?(y/n)の間はyで記録、それ以外は問いだけやめる(範囲は残す)。
 // ほかのキーはそのまま(スクロール等はふだんどおり、範囲は列の番号で持つので画面を送っても残る)。
+// 縦書きのCOPYの^[w(toTool=false)・^[t(toTool=true): 選んだ字をクリップボードとプロンプトの^Yへ入れて範囲指定を
+// 終える。^[tはさらにTOOLのプロンプトへ(横書きのCOPYと同じ)。
+bool Application::copyEpubSelection(bool toTool) {
+  std::string text = epubSelectionText(nullptr);
+  endEpubSelect();
+  if (text.empty()) {
+    showTransientNotice(epubVerticalView_, "No string");
+    return true;
+  }
+  promptEditor_.setKillBuffer(text);
+  copyTextToSystemClipboard(text);
+  if (toTool) {
+    startProgramPrompt();
+    if (promptActive()) promptEditor_.setText(text);
+    return true;
+  }
+  showTransientNotice(epubVerticalView_, "Copied: " + text.substr(0, byteOfCodePoint(text, 20)));
+  return true;
+}
+
 bool Application::feedEpubSelectByte(int byte, std::optional<KeyInput::SpecialKey> special) {
   if (epubRecordAsk_) {
     if (!special && (byte == 'y' || byte == 'Y')) return recordEpubSelection();
+    // 2026-10-24、直接のユーザー依頼("「記録しますか？」のときに`^[w`とやるとクリップボードへコピーでは？"):
+    // 横書きのCOPYと同じく、^[wは選んだ字をクリップボード(とプロンプトの^Y)へ、^[tはTOOLのプロンプトへ。
+    // 以前はESCで問いを取り消し、続くwがグローバルの^[wになって"COPY mode only"が出ていた。
+    if (!special && byte == kEscape && !epubRecordAskEsc_) {
+      epubRecordAskEsc_ = true;
+      return true;
+    }
+    bool esc = std::exchange(epubRecordAskEsc_, false);
+    if (esc && !special && (byte == 'w' || byte == 't')) return copyEpubSelection(byte == 't');
     epubRecordAsk_ = false;
     setEpubVerticalView(epubVerticalFirst_, epubVerticalCursor_);
     epubVerticalView_.redraw();

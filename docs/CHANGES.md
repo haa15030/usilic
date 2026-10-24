@@ -32736,3 +32736,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - fileを開く時(^M・^Xf・履歴等の`open_file_entry()`)、macOSでバイナリのfileが画像・PDFか、クイックルックの扱える種類(`qlmanage -m plugins`のUTIに、mdlsのkMDItemContentTypeTreeのどれかが入っている)なら、C++の`openExternallyIfApplicable()`・`runQuickLook()`と同じく`qlmanage -p`を前で動かし、TOOLの履歴に「qlmanage -p 名前」を残す(`quick_look_binary()`)。以前はfile(1)の結果を出していた。LAUNCHの割り当てがあればそちらが先(C++と同じ)。
    - LAUNCH・TOOL等の外のプログラムに渡す前に、C++の`leaveForExternalProgram()`と同じく代替画面のまま画面を消す(cursesのendwin()が代替画面を抜けるので入り直す、元の画面は消さない)。以前はusilicの画面の上に重ねて出ていた。^Zは今まで通り消さない。
    - 確かめたこと: vcmp.pyで、^Xfで8×8のPNGを開いた画面(qlmanageの出力)が両方の版で同じ(クイックルックの窓が開くのも確かめた)。unittest 82件。動画(C++のopenVideos())は対象外。
+1065. **縦書きのEPUB: 連続スクロールで扉も流す、位置の桁、縦中横の数字の明朝体、範囲を尋ねている間の^[w(2026-10-24)**
+   - **経緯**: 直接のユーザー報告(src/Kbt.epub、スクリーンショット=li〜=ln.png)。
+   - 連続スクロール(^O^Eで章区切りでない時)のj/k・ドラッグで、扉(EpubLayoutHints::centeredの縦書きの箱、titlePage)はページごと越える作り(2026-09-29の依頼)のままだったので、書名が中央に来た所で止まり、次の扉・目次の頭へページ単位で飛んでいた。連続スクロールの時は扉も1列ずつ流す(`stepEpubVerticalFirst()`、Python版の`step_first()`も)。章ごとの時と^N・^Vのページ送りは今のまま。
+   - 縦書きの位置は"%05d/%05d"の5桁に決め打ちだった(400行の本でも「00004/00401」)。横書きと同じ`ModeLine::format()`(総数の桁、TOP/END)に。Python版も。
+   - -gの縦書きで、半角の字は明朝体にしない決まり(2026-10-11、横書きの欧文が1マスに収まらない件)のため、目次の章番号の縦中横の数字だけゴシック体だった。縦書きでは半角も2マス幅で描くので、縦書きの時は半角も明朝体に(`renderCell()`・カーソルの描き直し)。
+   - 縦書きのCOPYで範囲を選んで「記録しますか？」と尋ねている間の^[wは、ESCで問いを取り消して続くwがグローバルの^[wになり「COPY モードだけで使えます」(モード名はCOPY)が出ていた。^[wは選んだ字をクリップボードとプロンプトの^Yへ、^[tはTOOLのプロンプトへ(`copyEpubSelection()`)。尋ねる前の縦書きのCOPYの^[w・^[tも同じ。Python版も問いの間の^[w・^[tを足した。
+   - src/Kbt.epub(リポジトリ外のユーザーのfile、元はsrc/Kbt.epub.bak)に、ユーザーの依頼で注釈を足した: 「当事者の未来」(Section013)の「素粒子の状態を乱してしまう」の後に注釈番号1(`<a class="noteref" epub:type="noteref">`、CSSで小さく色違い・上線・上付き)、奥付の手前に注釈のページ(Section024n.xhtml、`<aside epub:type="footnote">`の中に表、戻りのリンク付き)。usilicの表は今のところ欄を空白でつなぐだけ(欄はそろわない)。
+   - make usilic・make install。C++のテスト(--test-case="*ertical*,*EPUB*,*epub*")は、触っていない`epubToHelpMarkup()`のテスト3件(test_epub_to_help_markup.cpp:94・111・142)が通らない(以前からの物と思われる)。unittest 82件。

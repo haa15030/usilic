@@ -2888,10 +2888,12 @@ class Application {
   std::optional<std::pair<long, int>> epubSelectAnchor_;
   std::pair<long, int> epubSelectPoint_{0, 0};
   bool epubRecordAsk_ = false;          // Record?(y/n)の答え待ち
+  bool epubRecordAskEsc_ = false;       // Record?(y/n)の間のESC(続く w/t、feedEpubSelectByte()参照)
   bool startEpubSelect();
   void endEpubSelect();
   std::pair<long, int> epubSelectCellAt(int row, int column) const;
   std::optional<EpubVerticalSelection> epubSelection() const;
+  bool copyEpubSelection(bool toTool);
   bool feedEpubSelectByte(int byte, std::optional<KeyInput::SpecialKey> special);
   // 範囲の字(論理行ごとに切り出してつないだもの)と、始まりの位置(元の行番号, 論理行の中のバイト)。
   std::string epubSelectionText(std::pair<int, int> *start) const;
