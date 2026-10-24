@@ -227,3 +227,25 @@ TEST_CASE("epubToHelpMarkup: KDP-style notes -- footnote asides, endnote list it
   CHECK(notes[2].find("脚注") == std::string::npos);
   CHECK(notes[2].find("1.") == std::string::npos);  // 注釈の項目にはリストの番号を付けない
 }
+
+// 2026-10-24、直接のユーザー依頼("KDPのガイドラインに掲載事項の範囲内で進めて"): 表は欄の幅をそろえ(全角の空白で
+// 埋めて欄の間に全角の空白1つ)、<th>は太字。欄の間の空白(改行・字下げ)は出さない。
+TEST_CASE("epubToHelpMarkup: table cells are aligned per column, th is bold") {
+  std::map<std::string, std::string> files = {
+      {"META-INF/container.xml", kContainer},
+      {"OEBPS/content.opf", R"(<package><manifest>
+  <item id="a" href="a.xhtml" media-type="application/xhtml+xml"/>
+</manifest><spine><itemref idref="a"/></spine></package>)"},
+      {"OEBPS/a.xhtml", R"(<body><table>
+<tr><th>見出</th><th>二</th></tr>
+<tr>
+  <td>あ</td>
+  <td>いう</td>
+</tr>
+</table></body>)"},
+  };
+  auto out = fm::epubToHelpMarkup(readerFor(files));
+  REQUIRE(out);
+  CHECK(out->find("<b>見出</b>\xE3\x80\x80<b>二</b>") != std::string::npos);
+  CHECK(out->find("あ\xE3\x80\x80\xE3\x80\x80いう") != std::string::npos);
+}

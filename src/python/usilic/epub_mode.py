@@ -236,6 +236,8 @@ class _XhtmlParser(HTMLParser):
         self.hidden_label = None  # 隠した見出しの字(章の名前)
         self.next_hidden_label = None  # 次の段落に持たせる隠した見出しの字
         self.block_frames = []    # (tag, 始まりのブロック, 注釈か, [id])
+        self.tables = []          # 開いている表ごとの[(行のBlock, [(欄の頭, 終わり)のpiecesの番号])]
+        self.row_cells = []       # 今の行(<tr>)の欄
         self.anchor_blocks = {}   # id→そのidを持つ(か囲む一番内側の)ブロックの範囲(ブロックの番号)
         self.note_ranges = []
 
@@ -383,6 +385,12 @@ class _XhtmlParser(HTMLParser):
             self.in_rt += 1
         if tag == 'a':
             self.hrefs.append(a.get('href'))
+        if tag == 'table':
+            self.tables.append([])
+        if tag in ('td', 'th') and self.tables and self.current is not None:  # 欄の頭(_finish_table()でそろえる)
+            self.row_cells.append([len(self.current.pieces), len(self.current.pieces)])
+        if tag == 'tr':
+            self.row_cells = []
         if tag in _BLOCKS:
             self._start_block(tag, self._classes(attrs))
             if a.get('id'):
@@ -422,8 +430,15 @@ class _XhtmlParser(HTMLParser):
                 self.ruby = []
         if tag == 'a' and self.hrefs:
             self.hrefs.pop()
+        if tag in ('td', 'th') and self.tables and self.row_cells and self.current is not None:
+            self.row_cells[-1][1] = len(self.current.pieces)
+        if tag == 'tr' and self.tables and self.current is not None and self.row_cells:
+            self.tables[-1].append((self.current, self.row_cells))
+            self.row_cells = []
         if tag in _BLOCKS:
             self._end_block()
+            if tag == 'table' and self.tables:
+                _finish_table(self.tables.pop())
             for i in range(len(self.block_frames) - 1, -1, -1):
                 if self.block_frames[i][0] == tag:
                     _, start, note, ids = self.block_frames.pop(i)
@@ -459,6 +474,34 @@ class _XhtmlParser(HTMLParser):
     def close(self):
         super().close()
         self._end_block()
+
+
+def _table_width(pieces):
+    """欄の見た目の幅(全角は2、ルビの読み《…》は数えない、C++のmarkupWidth())。"""
+    return utf8.text_width(re.sub(r'《[^》]*》', '', ''.join(p[0] for p in pieces)))
+
+
+def _finish_table(rows):
+    """表(HTMLの<table>)の欄の幅をそろえる(C++のfinishTable()、KDPのガイドラインの範囲で罫線・色は足さない):
+    欄ごとに一番広い幅へ全角の空白(奇数なら半角の空白も)で埋め、欄の間に全角の空白を1つ。欄の外の空白は出さない。"""
+    widths = []
+    for block, cells in rows:
+        for i, (start, end) in enumerate(cells):
+            if len(widths) <= i:
+                widths.append(0)
+            widths[i] = max(widths[i], _table_width(block.pieces[start:end]))
+    for block, cells in rows:
+        pieces = []
+        for i, (start, end) in enumerate(cells):
+            cell = block.pieces[start:end]
+            if i > 0:
+                pieces.append(('\u3000', None, None))
+            pieces.extend(cell)
+            if i + 1 < len(cells):
+                pad = widths[i] - _table_width(cell)
+                if pad > 0:
+                    pieces.append(('\u3000' * (pad // 2) + ' ' * (pad % 2), None, None))
+        block.pieces = pieces
 
 
 def _stylesheets(xhtml):

@@ -923,8 +923,30 @@ class BodyConverter {
         changeStyle(underline_, -1, "u");
       }
     } else if (name == "td" || name == "th") {
-      if (close) pendingSpace_ = true;
+      // 2026-10-24、直接のユーザー依頼("KDPのガイドラインに掲載事項の範囲内で進めて"): 表(HTMLの<table>)は、
+      // 以前は欄を空白1つでつなぐだけで欄がそろわなかった。行(<tr>)ごとに欄の位置を覚え、表を閉じた所で
+      // 欄の幅をそろえる(finishTable())。見出しの欄(<th>)は太字。罫線・色はKDPのガイドラインの通りCSS
+      // 任せで、足さない。
+      if (!tableStack_.empty()) {
+        if (open) {
+          pendingSpace_ = pendingNewline_ = false;  // 欄の間の空白(改行・字下げ)は出さない
+          rowCells_.push_back({line_.size(), line_.size()});  // 太字の開きのタグも欄の中に
+          if (name == "th") changeStyle(bold_, +1, "b");
+        }
+        if (close) {
+          if (name == "th") changeStyle(bold_, -1, "b");
+          if (!rowCells_.empty()) rowCells_.back().second = line_.size();
+          pendingSpace_ = pendingNewline_ = false;
+        }
+      } else if (close) {
+        pendingSpace_ = true;
+      }
     } else if (kBlockElements.count(name)) {
+      if (name == "table" && t.kind == XmlToken::Open) tableStack_.emplace_back();
+      if (name == "tr" && open) rowCells_.clear();
+      // 行を閉じる: endLine()で出す行の、out_の中の頭と欄の位置を覚える
+      std::size_t rowStart = out_.size();
+      bool rowClosing = close && name == "tr" && !tableStack_.empty();
       if (open) {
         endLine(false);
         // ブロックの行の範囲(注釈の区画、EpubLayoutHints::notes)。閉じた所(下)で記録する。
@@ -948,13 +970,19 @@ class BodyConverter {
       if (close) {
         if (name == "pre" && preDepth_ > 0) preDepth_--;
         if ((name == "ul" || name == "ol") && !listStack_.empty()) listStack_.pop_back();
-        if (pendingLabel_ && lineVisible_) {
+        if (rowClosing) {
+          std::vector<std::pair<std::size_t, std::size_t>> cells = rowCells_;
+          rowCells_.clear();
+          endLine(false);
+          if (out_.size() > rowStart && !cells.empty()) tableStack_.back().push_back({rowStart, std::move(cells)});
+        } else if (pendingLabel_ && lineVisible_) {
           pendingLabel_.reset();
           endLine(true);
         } else {
           endLine(false);
           if (pendingLabel_ && depth_ <= pendingDepth_) emitLabelLine();
         }
+        if (name == "table" && !tableStack_.empty()) finishTable();
       }
     }
     // ブロックを閉じた: その行の範囲を、中のid(anchorBlocks_)と注釈(noteRanges_)に記録する
@@ -1278,6 +1306,72 @@ class BodyConverter {
   }
 
   // 行番号: out_の改行を前回数えた所から数え足す(毎回全体を数えない)。
+  // 表の行(out_の中の行の頭, その行の中の欄の[頭, 終わり))。
+  struct TableRow {
+    std::size_t start;
+    std::vector<std::pair<std::size_t, std::size_t>> cells;
+  };
+
+  // マークアップの見た目の幅(タグ<…>とルビの読み<rt>…</rt>は数えない、全角は2)。
+  static int markupWidth(const std::string &markup) {
+    int width = 0, rt = 0;
+    for (std::size_t p = 0; p < markup.size();) {
+      if (markup[p] == '<') {
+        std::size_t close = markup.find('>', p);
+        if (close == std::string::npos) break;
+        std::string tag = markup.substr(p + 1, close - p - 1);
+        if (tag == "rt") rt++;
+        else if (tag == "/rt" && rt > 0) rt--;
+        p = close + 1;
+        continue;
+      }
+      int len = Utf8::sequence_length(static_cast<unsigned char>(markup[p]));
+      if (!rt) width += Utf8::display_width(reinterpret_cast<const unsigned char *>(markup.data()) + p, len);
+      p += len;
+    }
+    return width;
+  }
+
+  // 表を閉じた: 欄ごとに一番広い幅へ全角の空白(U+3000、奇数なら半角の空白も)で埋め、欄の間に全角の空白を
+  // 1つ置いて、出した行を組み直す(縦書きでも欄の頭がそろう)。行の数は変えない(リンク・アンカーの行番号のため)。
+  void finishTable() {
+    std::vector<TableRow> rows = std::move(tableStack_.back());
+    tableStack_.pop_back();
+    std::vector<int> widths;
+    for (const auto &row : rows) {
+      std::size_t end = out_.find('\n', row.start);
+      std::string line = out_.substr(row.start, end - row.start);
+      for (std::size_t i = 0; i < row.cells.size(); i++) {
+        auto [from, to] = row.cells[i];
+        int w = markupWidth(line.substr(std::min(from, line.size()), std::min(to, line.size()) - std::min(from, line.size())));
+        if (widths.size() <= i) widths.push_back(0);
+        widths[i] = std::max(widths[i], w);
+      }
+    }
+    for (auto row = rows.rbegin(); row != rows.rend(); ++row) {
+      std::size_t end = out_.find('\n', row->start);
+      std::string line = out_.substr(row->start, end - row->start);
+      std::string rebuilt = line.substr(0, std::min(row->cells.front().first, line.size()));
+      for (std::size_t i = 0; i < row->cells.size(); i++) {
+        auto [from, to] = row->cells[i];
+        from = std::min(from, line.size());
+        to = std::min(std::max(to, from), line.size());
+        std::string cell = line.substr(from, to - from);
+        if (i > 0) rebuilt += "\xE3\x80\x80";
+        rebuilt += cell;
+        if (i + 1 < row->cells.size()) {
+          int pad = widths[i] - markupWidth(cell);
+          for (; pad >= 2; pad -= 2) rebuilt += "\xE3\x80\x80";
+          if (pad) rebuilt += ' ';
+        }
+      }
+      rebuilt += line.substr(std::min(row->cells.back().second, line.size()));  // 行末で閉じた装飾等
+      // currentLineNumber()が数え終えた所(counted_)が後ろなら、長さの変わった分だけずらす(改行の数は同じ)
+      if (counted_ >= end) counted_ = counted_ + rebuilt.size() - (end - row->start);
+      out_.replace(row->start, end - row->start, rebuilt);
+    }
+  }
+
   int currentLineNumber() {
     for (; counted_ < out_.size(); counted_++)
       if (out_[counted_] == '\n') newlines_++;
@@ -1384,6 +1478,8 @@ class BodyConverter {
   bool lineImageOnly_ = false;                 // 今の行は画像の"[image: ...]"だけ
   int pendingDepth_ = 0;
   std::string line_;
+  std::vector<std::vector<TableRow>> tableStack_;           // 開いている表ごとの行(finishTable())
+  std::vector<std::pair<std::size_t, std::size_t>> rowCells_;  // 今の行(<tr>)の欄のline_の中の位置
   bool lineVisible_ = false;
   bool pendingSpace_ = false;
   bool pendingNewline_ = false;  // pendingSpace_の空白に改行が含まれていた
