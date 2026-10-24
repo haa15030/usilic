@@ -42,6 +42,35 @@ _EXACT = {
     'COPY mode only': 'COPY モードだけで使えます',
     'Plain text only': '平文だけで使えます',
     '^G to return from note': '^G で注釈から戻ります',
+    '-g not available over ssh': 'ssh 越しでは -g は使えません',
+    'Add it to PROGRAM in usilicrc (^Js restarts SHELL)': 'usilicrc の PROGRAM に加えてください（^Js で SHELL を再起動）',
+    'Already in GUI': '既に GUI です',
+    'Cannot open a terminal window': '端末のウィンドウを開けません',
+    'Cannot use this font': 'このフォントは使えません',
+    'CP/MV/RM: not supported with cmd.exe': 'CP/MV/RM: cmd.exe では使えません',
+    'Ends with the parent': '親と一緒に終了します',
+    'Font list: -g only': 'フォントの一覧: -g だけで使えます',
+    'LETTER-SPACING: -g only': 'LETTER-SPACING: -g だけで使えます',
+    'LINE-HEIGHT: -g only': 'LINE-HEIGHT: -g だけで使えます',
+    'No Epub in URL (usilicrc)': 'usilicrc の URL に Epub がありません',
+    'No fonts (fc-list)': 'フォントが見つかりません（fc-list）',
+    'No GUI available': 'GUI が使えません',
+    'No Open in URL (usilicrc)': 'usilicrc の URL に Open がありません',
+    'Opened in a new window': '新しいウィンドウで開きました',
+    'Parent not reachable': '親に届きません',
+    'Wheel: normal': 'ホイール: 順',
+    'Wheel: reversed': 'ホイール: 逆',
+    'Window not reachable': 'ウィンドウに届きません',
+    'Serif': '明朝体',
+    'Sans-serif': 'ゴシック体',
+    'Serif (-g only)': '明朝体（-g だけ）',
+    'Sans-serif (-g only)': 'ゴシック体（-g だけ）',
+    'Jump to register: ': 'レジスタの位置へ: ',
+    'Point to register: ': 'レジスタへ記録: ',
+    'Downloading...': 'ダウンロード中...',
+    'Making PDF...': 'PDF を作成中...',
+    'Record?(y/n)': '記録しますか？ (y/n)',
+    'No String': '見つかりません',
 }
 
 _TEMPLATES = [
@@ -63,6 +92,16 @@ _TEMPLATES = [
     ('Cannot get: {}', '取得できません: {}'),
     ('Not a Narou work: {}', 'なろうの作品ではありません: {}'),
     ('Not a book: {}', '本ではありません: {}'),
+    ('LINE-HEIGHT (vertical): {} dots ({})', 'LINE-HEIGHT（縦書き）: {} ドット（{}）'),
+    ('LINE-HEIGHT: {} dots ({})', 'LINE-HEIGHT: {} ドット（{}）'),
+    ('LETTER-SPACING (vertical): {} dots ({} dots per column)', 'LETTER-SPACING（縦書き）: {} ドット（1 桁 {} ドット）'),
+    ('LETTER-SPACING: {} dots ({} dots per column)', 'LETTER-SPACING: {} ドット（1 桁 {} ドット）'),
+    ('Cannot write {} to usilicrc', 'usilicrc に {} を書き込めません'),
+    ('Bookmark "{}" set', 'ブックマーク「{}」を置きました'),
+    ('Bookmark "{}" deleted', 'ブックマーク「{}」を削除しました'),
+    ('Cannot write {}', '{} に書き込めません'),
+    ('No books: {}', '本がありません: {}'),
+    ('Recorded: {}', '記録しました: {}'),
 ]
 
 
@@ -86,6 +125,30 @@ def japanese():
     return False
 
 
+def _match(text, english):
+    """textが英語の型("{}"がいくつでも)に合えば、各"{}"に当たる部分のリスト。合わなければNone(C++のmatchPattern()と同じ)。"""
+    parts = english.split('{}')
+    if not text.startswith(parts[0]):
+        return None
+    pos = len(parts[0])
+    values = []
+    for i in range(1, len(parts)):
+        literal = parts[i]
+        if i == len(parts) - 1:  # 最後の固定部分は末尾に
+            if len(text) < pos + len(literal) or not text.endswith(literal):
+                return None
+            at = len(text) - len(literal)
+        else:
+            at = text.find(literal, pos)
+            if at < 0:
+                return None
+        if at == pos:  # "{}"は空でない
+            return None
+        values.append(text[pos:at])
+        pos = at + len(literal)
+    return values if pos == len(text) else None
+
+
 def localized(text):
     """textの訳(日本語の時だけ)。まるごと一致する文、次に"{}"を含む型(localized()と同じ順)。"""
     if not japanese():
@@ -93,7 +156,12 @@ def localized(text):
     if text in _EXACT:
         return _EXACT[text]
     for english, japanese_text in _TEMPLATES:
-        head, tail = english.split('{}')
-        if text.startswith(head) and text.endswith(tail) and len(text) >= len(head) + len(tail):
-            return japanese_text.replace('{}', text[len(head):len(text) - len(tail)])
+        values = _match(text, english)
+        if values is None:
+            continue
+        parts = japanese_text.split('{}')
+        out = parts[0]
+        for i in range(1, len(parts)):
+            out += (values[i - 1] if i - 1 < len(values) else '') + parts[i]
+        return out
     return text
