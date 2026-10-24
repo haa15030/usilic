@@ -32763,3 +32763,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼"=lo.pngはまさにKindle本なのであんな感じでよろしく"(本のCSSの字の色は使わない、の確認の後)。=lo.pngは、縦書きの本文の注釈番号「7」が青い太字で、右側に青い線。
    - **実装**: C++: 本文の注釈へのリンク(epub:type="noteref")を、項目1068の太字に加えて<note>で囲む(`epubToHelpMarkup()`)。expandHelpMarkup()が\x13に、PipeBufferが決まった色(`kNoteColor`、#1E64C8)の色のラン(Display::Attribute::Color、ファイルのESC[…mの色と同じ仕組み)にする。縦書きのマスにも色を持たせ(EpubVerticalCell::fg)、色のランにして描く。-gの縦書きの傍線は、線の元の字の色で描く(番号と線が同じ青)。Python版: 'note'の属性を足し、cursesの色の組み(256色なら26番、無ければ青)で描く(横書き・縦書きとも)。
    - 確かめたこと: -cでKbt.epubの「1」が`ESC[38;2;30;100;200m`で出る。C++のテスト(--test-case="*pub*,*ertical*,*ipe*,*olor*")は以前からの3件(test_epub_to_help_markup.cpp)だけ通らない(HELPのテスト群はHELPがEPUBになる前のCUTの期待値のままで、以前から通らない)。unittest 82件。-gの見た目は未確認。make usilic・make install・make app。
+1070. **注釈番号を右寄せ・太字・鮮やかな青に(2026-10-24)**
+   - **経緯**: 直接のユーザー報告(=lt.png)"拡大してみると色が付いているのはわかる。それでも注釈に見えないのは文字の位置にあるからかなと。右寄せbold青みを強調では？"。項目1069では「1」が2マス幅の真ん中に細く置かれ、右側の傍線とも離れていた。
+   - **実装**: 注釈番号の色を`Display::kNoteColor`(#0044EE、以前の#1E64C8より鮮やか)にまとめた。-gの縦書きでは、この色の半角の字を2マスの右端(傍線の側)へ寄せる(`renderCell()`)。縦書きのマスの注釈番号に太字のランを別に足す(傍線の下線のランと重ねて持てるように、`renderEpubVerticalWindow()`)。Python版は色を256色の27番に、太字も重ねる。
+   - make usilic・make install・make app。unittest 82件。-gの見た目は未確認。

@@ -399,6 +399,7 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
     addSeparateRuns(Display::Attribute::Serif, [&](int x) { return static_cast<bool>(serifs[x]); });
     addSeparateRuns(Display::Attribute::Large, [&](int x) { return sizes[x] > 0; });
     addSeparateRuns(Display::Attribute::Small, [&](int x) { return sizes[x] < 0; });
+    addSeparateRuns(Display::Attribute::Bold, [&](int x) { return fgs[x] == Display::kNoteColor; });  // 注釈番号は太字
     for (int x = 0, pos = 0; x < columns; pos += static_cast<int>(screen[x].size()), x++) {  // 字の色(Cell::fg)
       int end = pos + static_cast<int>(screen[x].size());
       if (fgs[x] == Display::kDefaultColor || end <= pos) continue;

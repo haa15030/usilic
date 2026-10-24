@@ -45,9 +45,9 @@ class TerminalDisplay:
             curses.use_default_colors()
             curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_MAGENTA)
             self.match_attr = curses.color_pair(1)
-            # 本文の注釈番号の青(C++のPipeBuffer::kNoteColor #1E64C8、256色なら近い26番、無ければ青)
-            curses.init_pair(2, 26 if curses.COLORS >= 256 else curses.COLOR_BLUE, -1)
-            self.note_attr = curses.color_pair(2)
+            # 本文の注釈番号の青(C++のDisplay::kNoteColor #0044EE、256色なら近い27番、無ければ青)の太字
+            curses.init_pair(2, 27 if curses.COLORS >= 256 else curses.COLOR_BLUE, -1)
+            self.note_attr = curses.color_pair(2) | curses.A_BOLD
         except curses.error:
             pass
 

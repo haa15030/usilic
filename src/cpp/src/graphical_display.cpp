@@ -2087,6 +2087,10 @@ void GraphicalDisplay::renderCell(int row, int col) {
       if (kSmallKana.count(codepoint)) {
         dst.x += maxW / 8;  // 小書きの仮名は右上へ
         dst.y -= impl_->cellHeight / 8;
+      } else if (!isWide && cell.fgColor == Display::kNoteColor && codepoint > 0x20 && codepoint < 0x7F) {
+        // 2026-10-24、直接のユーザー依頼(=lt.png"右寄せbold青みを強調"): 本文の注釈番号の半角の字は、2セルの
+        // 右端(右側の傍線の側)へ寄せる(Kindleの注釈番号のように、字の並びの中ではなく脇の印に見えるよう)。
+        dst.x = box.x + impl_->cellWidth * 2 - dst.w;
       } else if (!isWide && codepoint > 0x20 && codepoint < 0x7F && blankAt(col + 1) && blankAt(col - 1)) {
         dst.x += impl_->cellWidth / 2;  // 1字だけの半角は2セルの中央へ(縦中横の2字はそのまま)
       }
