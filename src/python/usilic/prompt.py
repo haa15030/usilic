@@ -12,6 +12,7 @@ FILE, DIRECTORY, MAN, LOCATE, EPUB, COPY, MOVE, REMOVE, ARCHIVE, FGREP, EGREP, E
 TOOL, PART, MACRO_KEY, BOOKMARK_SET, BOOKMARK_JUMP, MARK_REGEX, MARK_EXTENSION, OCCUR_FIXED, OCCUR_REGEX = (
     'Tool', 'Part', 'MacroKey', 'BookmarkSet', 'BookmarkJump', 'MarkRegex', 'MarkExtension', 'OccurFixed',
     'OccurRegex')
+SHELL_COMMAND = 'ShellCommand'
 
 # 種類 -> (モードラインの名前, 尋ねる文, ^Rの履歴)
 KINDS = {
@@ -36,6 +37,7 @@ KINDS = {
     MARK_EXTENSION: ('(ls)', 'Extension: ', None),
     OCCUR_FIXED: ('FGREP', '', hist.RECENT_FGREP_PATTERN),
     OCCUR_REGEX: ('EGREP', '', hist.RECENT_EGREP_PATTERN),
+    SHELL_COMMAND: ('SHELL', '', hist.SHELL_COMMAND),
 }
 
 
@@ -47,23 +49,56 @@ class Prompt:
         self.editor.set_text(text)
         self.on_submit = on_submit
         self.show_position = show_position   # CP・MV・RMは「CP 3/7 42% 転送先？」
+        self.candidate_list = False  # 一覧から打ち始めた: 一覧が残り、^N・^Pで候補を移る(C++のpromptCandidateListActive_)
 
 
-def complete_path(text, base_directory, directories_only=False):
-    """^Iの補完: textの最後の部分を、合うものの共通の頭まで延ばす(1つならディレクトリは/も)。"""
-    expanded = os.path.expanduser(text)
-    path = expanded if os.path.isabs(expanded) else os.path.join(base_directory, expanded)
-    head, tail = os.path.split(path)
+def complete_filesystem_path(partial, base_directory, directories_only=False):
+    """^Iの補完の候補(C++のcompleteFilesystemPath()): partialの最後の/までをそのまま頭に、ディレクトリは/付き。名前順。"""
+    slash = partial.rfind('/')
+    dir_part, prefix = (partial[:slash + 1], partial[slash + 1:]) if slash >= 0 else ('', partial)
+    if dir_part.startswith('/') or dir_part.startswith('~'):
+        search = os.path.expanduser(dir_part)
+    else:
+        search = os.path.join(base_directory, dir_part)
     try:
-        names = sorted(n for n in os.listdir(head or '/') if n.startswith(tail))
+        names = os.listdir(search)
     except OSError:
-        return text
-    if directories_only:
-        names = [n for n in names if os.path.isdir(os.path.join(head, n))]
-    if not names:
-        return text
-    common = os.path.commonprefix(names)
-    added = common[len(tail):]
-    if len(names) == 1 and os.path.isdir(os.path.join(head, common)):
-        added += '/'
-    return text + added
+        return []
+    out = []
+    for name in names:
+        if not name.startswith(prefix):
+            continue
+        is_dir = os.path.isdir(os.path.join(search, name))
+        if directories_only and not is_dir:
+            continue
+        out.append(dir_part + name + ('/' if is_dir else ''))
+    return sorted(out)
+
+
+def path_program_candidates(partial):
+    """$PATHの実行できるfileでpartialで始まる物(C++のpathProgramCandidates())。"""
+    out = set()
+    for directory in os.environ.get('PATH', '').split(':'):
+        if not directory:
+            continue
+        try:
+            entries = list(os.scandir(directory))
+        except OSError:
+            continue
+        for entry in entries:
+            if not entry.name.startswith(partial):
+                continue
+            try:
+                if entry.is_dir() or not entry.stat().st_mode & 0o100:
+                    continue
+            except OSError:
+                continue
+            out.add(entry.name)
+    return sorted(out)
+
+
+def should_search_path(text):
+    """まだコマンド名を打っている間(区切りの字が無い、.で始まらない)は$PATHから(C++のshouldSearchPath())。"""
+    if text.startswith('.'):
+        return False
+    return not any(c in text for c in '/<>()|; ')

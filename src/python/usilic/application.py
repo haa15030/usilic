@@ -73,6 +73,7 @@ def is_novel_site_url(url):
 
 REPEATABLE = set(range(1, 13)) | {15, 16, 97}  # ^Uの回数が効くK-番号(移動・n/p・^Xe)
 CTRL_G, CTRL_J, CTRL_O, CTRL_X, ESC, CR = 0x07, 0x0A, 0x0F, 0x18, 0x1B, 0x0D
+TAB_COMPLETION_KINDS = (pr.FILE, pr.DIRECTORY, pr.EPUB, pr.COPY, pr.MOVE, pr.ARCHIVE, pr.TOOL, pr.MAN)
 CPMVRM_MARKER = '#usilic-cpmvrm#'  # SHELLで動かしたCP/MV/RM・展開の終わりの印(C++のkCpMvRmExitMarker)
 
 # ページャーとして起動した時に使えるK-番号(HELPの行頭がタブの行のキー、C++のpagerAllowedKeys())
@@ -139,6 +140,8 @@ class Application:
         self.list_view = ContentView()
         self.list_mode = ListBrowserMode(self.list_view)
         self.list_prompt = None    # ^Rで一覧を開いた元のプロンプト(^Mでそこへ戻す)
+        self.tab_completion = None  # ^I^Iの候補の一覧の(元のプロンプト(SHELLはNone), 補完した語, その前の部分)
+        self.tab_armed = False      # 候補が幾つもあった^Iの直後(続けて^Iで一覧、C++のpromptTabArmed_)
         self.archives = []         # ARCの入れ子(一番後ろが今のアーカイブ)
         self.man_view = ContentView()
         self.man_view.raw_line_numbers = False  # C++のMANの行は元の行の番号を持たない
@@ -351,7 +354,8 @@ class Application:
         if self.prompt is not None:
             p = self.prompt
             position = mode_line.format(view.cursor_index + 1, len(view.lines)) if p.show_position else ''
-            return self.prompt_mode_line(p.label, position, localized(p.message), p.editor, p.kind == pr.EXIT)
+            under = (self.return_stack[-1] if self.return_stack else DIRECTORY) if p.candidate_list else None
+            return self.prompt_mode_line(p.label, position, localized(p.message), p.editor, p.kind == pr.EXIT, under)
         if self.grep_prompt is not None:
             syntax, editor = self.grep_prompt
             if syntax == FIXED:  # インクリメンタル: 「FGREP 1/11 打った字」(一致が無ければ位置は空、C++と同じ)
@@ -413,6 +417,8 @@ class Application:
             lm = self.list_mode
             item = lm.selected_item() or ''
             back = self.return_stack[-1] if self.return_stack else DIRECTORY
+            if self.tab_completion is not None:  # ^I^Iの候補の一覧: 語の前の部分に続けて、右端に戻り先
+                return self.prompt_line_with_text(lm.label, position, self.tab_completion[2] + item, back)
             if not lm.sorted and (lm.prompt_kind is not None or self.list_prompt is not None):
                 # 入力順(listBrowserChronological_): 名前はHISTORY、右端にプロンプトの名前
                 label = self.list_prompt.label if self.list_prompt is not None else lm.label
@@ -501,10 +507,11 @@ class Application:
             fields.trailing2, fields.trailing2_plain = d.sort_key, True
         return fields, position
 
-    def prompt_mode_line(self, label, position, message, editor, exit_confirm=False):
+    def prompt_mode_line(self, label, position, message, editor, exit_confirm=False, mode=None):
         """drawPromptLabel()の形のモードライン。右端は戻り先(previousModeName())。"""
-        destination = self.previous_mode_name(self.current_mode)
-        kind = 'prefixed' if self.current_mode in (MAN, LOCATE, DU) else ''
+        mode = self.current_mode if mode is None else mode
+        destination = self.previous_mode_name(mode) if mode != SHELL or label != 'SHELL' else self.shell_directory()
+        kind = 'prefixed' if mode in (MAN, LOCATE, DU) else ''
         tail = mode_line.prompt_tail(destination, kind) if destination else ''
         segments, start, shift = mode_line.prompt_segments(
             label, position, message, editor.text, editor.cursor, tail, self.display.columns,
@@ -513,11 +520,16 @@ class Application:
         return segments
 
     def prompt_line_with_text(self, label, position, text, destination_mode):
-        destination = self.previous_mode_name(destination_mode)
+        destination = self.previous_mode_name(destination_mode) if destination_mode != SHELL or label != 'SHELL' \
+            else self.shell_directory()  # SHELLの^I^Iの一覧はSHELLのディレクトリ
         kind = 'prefixed' if destination_mode in (MAN, LOCATE, DU) else ''
         tail = mode_line.prompt_tail(destination, kind) if destination else ''
         segments, _, _ = mode_line.prompt_segments(label, position, '', text, len(text), tail, self.display.columns)
         return segments
+
+    def shell_directory(self):
+        directory = self.shell.current_directory
+        return directory if directory.endswith('/') else directory + '/'
 
     def previous_mode_name(self, mode):
         """Application::previousModeName(): 戻り先の名前。"""
@@ -611,7 +623,8 @@ class Application:
                 index = view.top_index + row - offset
                 line = visible[row]
                 reverse = view.cursor_highlight and index == view.cursor_index and not (
-                    self.prompt is not None and self.prompt.show_position) and self.copy is None
+                    self.prompt is not None and self.prompt.show_position and not self.prompt.candidate_list) \
+                    and self.copy is None
                 runs = list(line.attributes)
                 if self.copy is not None:
                     runs += self.copy.runs_for_row(index)
@@ -1420,13 +1433,21 @@ class Application:
     def prompt_handlers(self, kind):
         """プロンプトの種類ごとの^Mの処理(Application::executePromptSubmission())。"""
         return {
-            pr.FILE: lambda t: self.open_path(self.resolve_path(t)) if t else False,
-            pr.DIRECTORY: lambda t: self.enter_directory_listing(self.resolve_path(t) + '/', keep_stack=True)
-            if t else False,
+            pr.FILE: lambda t: self.execute_path_input(t, False),
+            pr.DIRECTORY: lambda t: self.execute_path_input(t, True),
             pr.MAN: self.execute_man,
             pr.LOCATE: self.execute_locate,
             pr.EPUB: self.execute_epub_input,
         }.get(kind)
+
+    def execute_path_input(self, text, directory):
+        """^Xf・^Xdの^M(C++のexecutePathInput()): 無い物は何も言わずにそのまま、ディレクトリは(ls)、他は開く。"""
+        path = self.resolve_path(text) if text else ''
+        if not path or not os.path.exists(path):
+            return False
+        if directory and os.path.isdir(path):
+            return self.enter_directory_listing(path.rstrip('/') + '/', keep_stack=True)
+        return self.open_path(path)
 
     def start_history_prompt(self, kind):
         return self.start_prompt(kind, '', self.prompt_handlers(kind))
@@ -1434,8 +1455,8 @@ class Application:
     def start_list_from_prompt(self):
         """プロンプトの^R: 入力順の一覧(EGREPはusilicrcのGREPの例を先頭に)。"""
         p = self.prompt
-        if p.history_category is None:
-            return True
+        if p.history_category is None or p.kind in (pr.FILE, pr.DIRECTORY, pr.EPUB) and not p.candidate_list:
+            return True  # ^Xf・^Xd・^Jeには履歴の一覧が無い(^X^F等の一覧から打ち始めた物にはある、C++と同じ)
         items = list(self.ring(p.history_category))
         if p.kind in (pr.EGREP, pr.PART, pr.OCCUR_REGEX, pr.MARK_REGEX):
             items = list(self.configuration.grep_examples) + items
@@ -1915,6 +1936,38 @@ class Application:
             macro = self.macro_for_byte(byte)
             if macro is not None:
                 return self.run_macro(macro)
+        elif self.current_mode == SHELL and self.word_edit_escape(self.command_line, byte):
+            self.refresh_shell_view()
+            return True
+        return self.feed_key_sequence(byte)
+
+    def word_edit_escape(self, editor, byte):
+        """ESC f/b/d/DEL(M-f/M-b/M-d/M-DEL、C++のapplyWordEditEscape())。割り当ての照合より先に。"""
+        if self.pending_keys != [ESC] or byte not in (ord('f'), ord('b'), ord('d'), 0x7F, 0x08):
+            return False
+        self.pending_keys = []
+        {ord('f'): editor.move_word_right, ord('b'): editor.move_word_left,
+         ord('d'): editor.kill_word_forward}.get(byte, editor.kill_word_backward)()
+        return True
+
+    def feed_prompt_leader_byte(self, editor, byte):
+        """プロンプトの中の前置キー(^X・^J・ESCで始まる割り当て、C++のfeedPromptByteInner()がdispatchLeaderByte()へ)。
+        続きを待つ間はプロンプトのまま、割り当てに当たればプロンプトをやめてその機能。Noneは前置キーではない。"""
+        if self.word_edit_escape(editor, byte):
+            return True
+        if not self.pending_keys and ([byte] == self.bindings.prefixes[2][:1] or not self.starts_binding_in_text_mode(byte)):
+            return None  # ^O(^O^Y)はfeed_prompt_byte()の中で
+        prompt, grep_prompt = self.prompt, self.grep_prompt
+        self.prompt = self.grep_prompt = None
+        result = self.feed_key_sequence(byte)
+        if self.sequence_state != 'run':  # 続きを待つ・割り当て無し: プロンプトのまま
+            self.prompt, self.grep_prompt = prompt, grep_prompt
+            return True
+        return result
+
+    def feed_key_sequence(self, byte):
+        """pending_keysへ足して割り当てと照合する(sequence_stateに'more'・'none'・'run')。"""
+        self.sequence_state = 'run'
         self.pending_keys.append(byte)
         keys = self.pending_keys
         x_prefix, o_prefix = self.bindings.prefixes[0], self.bindings.prefixes[2]
@@ -1929,14 +1982,18 @@ class Application:
             self.pending_keys = []
             return self.start_occur_prompt(FIXED if len(keys) == len(o_prefix) + 1 else REGEX)
         if o_prefix and keys == o_prefix + [CTRL_J]:
+            self.sequence_state = 'more'
             return True
         if keys == [ESC, ord('g')]:  # ^[gg(EmacsのM-g g): 行番号を打つ(^[Nと同じ)
+            self.sequence_state = 'more'
             return True
         if keys == [ESC, ord('g'), ord('g')]:
             self.pending_keys = []
             self.goto_digits = ''
             return True
         state, number = self.bindings.match(self.pending_keys)
+        if state in ('more', 'none'):
+            self.sequence_state = state
         if state == 'more':
             return True
         keys, self.pending_keys = self.pending_keys, []
@@ -1995,20 +2052,36 @@ class Application:
         return byte == ESC or byte in heads
 
     def type_into_list_prompt(self, byte):
-        """字を打つ一覧: 打った字でプロンプトを開く(^J^M等の「新たに入力された文字列」)。"""
+        """字を打つ一覧: 選んでいる項目に続けて打つプロンプト(C++のfeedRegexListByte()・feedTabCompletionListByte())。
+        一覧は画面に残り、^N・^Pで候補を移ると入力欄がその項目に(candidate_list)。^Mで元のモードへ戻ってから実行。"""
         kind = self.list_mode.prompt_kind
-        back = self.list_prompt
-        self.list_prompt = None
-        self.go_back()
-        if back is not None:  # プロンプトの^Rの一覧: カーソル行の文字列に続けて打つ
-            p = back
-            p.editor.set_text(self.strip_tags(self.list_mode.selected_item() or ''))
+        back, self.list_prompt = self.list_prompt, None
+        tab, self.tab_completion = self.tab_completion, None
+        selected = self.list_mode.selected_item()
+        if tab is not None:  # ^I^Iの候補の一覧: 語の前の部分に続けて
+            p, partial, prefix = tab
+            seed = prefix + (selected if selected is not None else partial)
+            if p is None:
+                p = pr.Prompt(pr.SHELL_COMMAND, '', self.submit_shell_command)
+        elif kind == pr.TOOL and back is None:
+            return True  # ^J^Tの一覧では打った字は使わない(C++と同じ)
         else:
-            p = pr.Prompt(kind, '', self.prompt_handlers(kind))
-        self.restore_prompt(p)
-        if kind in (pr.FGREP, pr.EGREP):
+            p = back if back is not None else pr.Prompt(kind, '', self.prompt_handlers(kind))
+            seed = self.strip_tags(selected or '')
+        p.editor.set_text(seed)
+        p.editor.clear_undo()
+        if kind in (pr.FGREP, pr.EGREP):  # ^J^S等: 元のモードのプロンプトに
+            self.go_back()
+            self.restore_prompt(p)
             return self.feed_grep_prompt_byte(byte)
+        p.candidate_list = p.show_position = True
+        self.prompt = p
         return self.feed_prompt_byte(byte, None)
+
+    def submit_shell_command(self, text):
+        """SHELLの^I^Iの一覧から打ち始めたプロンプトの^M: その行をSHELLで動かす(C++のPromptKind::ShellCommand)。"""
+        self.command_line.set_text(text)
+        return self.feed_shell_byte(CR)
 
     def handle_special(self, special):
         """矢印・PageUp/PageDown(Application::resolveCommand()の特別なキー)。"""
@@ -2296,6 +2369,8 @@ class Application:
         if mode == LIST and self.list_stack:  # 一覧の中から開いた一覧: 前の一覧へ
             self.list_mode.restore(self.list_stack.pop())
             return True
+        if mode == LIST and self.tab_completion is not None:  # ^I^Iの候補の一覧: 元のままプロンプトへ
+            return self.return_from_tab_completion(None)
         if mode == LIST and self.list_prompt is not None:  # プロンプトの^Rの一覧: プロンプトへ戻る
             back, self.list_prompt = self.list_prompt, None
             self.go_back()
@@ -2363,6 +2438,8 @@ class Application:
         """モードラインの入力欄(LineEditor)。^Mで実行、^Gでやめる、^Rで履歴、^Iで補完、^Wで以前のディレクトリ。"""
         p = self.prompt
         editor = p.editor
+        if byte != 0x09:
+            self.tab_armed = False
         if special is not None:
             if special in ('Left', 'Right'):
                 (editor.move_left if special == 'Left' else editor.move_right)()
@@ -2375,33 +2452,104 @@ class Application:
         if byte == CTRL_O:
             self.prompt_ctrl_o = True
             return True
-        if p.kind in (pr.BOOKMARK_SET, pr.BOOKMARK_JUMP) and byte in (0x0E, 0x10):  # 一覧を選ぶ
+        leader = self.feed_prompt_leader_byte(editor, byte)
+        if leader is not None:
+            return leader
+        if (p.candidate_list or p.kind in (pr.BOOKMARK_SET, pr.BOOKMARK_JUMP)) and byte in (0x0E, 0x10):  # 一覧を選ぶ
             (self.list_view.move_down if byte == 0x0E else self.list_view.move_up)()
-            editor.set_text(self.list_mode.selected_item() or '')
+            selected = self.list_mode.selected_item() or ''
+            editor.set_text(selected if not p.candidate_list else self.strip_tags(selected))
             return True
         if byte == CR:
             self.prompt = None
             text = editor.text
+            if p.candidate_list:
+                self.go_back()
             return p.on_submit(text) if p.on_submit else True
         if byte == CTRL_G:
             self.prompt = None
+            if p.candidate_list:
+                self.go_back()
             if p.kind in (pr.BOOKMARK_SET, pr.BOOKMARK_JUMP):
                 self.bookmark_place = None
                 self.go_back()
             return True
         if byte == 0x12:  # ^R
             return self.start_list_from_prompt()
-        if byte == 0x09 and p.kind in (pr.FILE, pr.DIRECTORY, pr.EPUB, pr.COPY, pr.MOVE, pr.ARCHIVE):
-            base = self.directory_mode.current_directory or os.getcwd()
-            editor.set_text(pr.complete_path(editor.text, base, p.kind != pr.FILE and p.kind != pr.EPUB))
-            return True
+        if byte == 0x09 and p.kind in TAB_COMPLETION_KINDS:
+            return self.complete_by_tab(p)
         if byte == 0x17 and p.kind in (pr.COPY, pr.MOVE, pr.ARCHIVE):  # ^W
             editor.insert(self.previous_directory())
             return True
         return self.edit_line(editor, byte)
 
+    def complete_by_tab(self, p):
+        """^I(K-65): 候補の共通の頭まで補完(C++のfeedPromptByteInner()・Shell::onTab())。候補が幾つもあればBELで、続けて
+        ^Iで候補の一覧。1つに決まったfileはFILE・DIR・ARC等ではその場で確定する(ディレクトリはその下を補完できるように
+        確定しない)。TOOL・MAN・SHELLは最後の語だけを、まだコマンド名を打っている間は$PATHから。pはNoneでSHELL。"""
+        kind = p.kind if p is not None else None
+        editor = p.editor if p is not None else self.command_line
+        text, cursor = editor.text, editor.cursor
+        word_start = 0
+        partial = text
+        if kind in (pr.TOOL, pr.MAN, None):
+            word_start = max(text.rfind(' ', 0, cursor), text.rfind('\t', 0, cursor)) + 1
+            partial = text[word_start:cursor]
+        if kind in (pr.TOOL, pr.MAN, None) and pr.should_search_path(text):
+            candidates = pr.path_program_candidates(partial)
+        else:
+            base = (self.shell.current_directory if kind is None else self.directory_mode.current_directory) \
+                or os.getcwd()
+            candidates = pr.complete_filesystem_path(partial, base, kind in (pr.DIRECTORY, pr.ARCHIVE))
+            if kind in (pr.FILE, pr.EPUB):  # fileを開く所ではディレクトリを候補にしない
+                candidates = [c for c in candidates if not c.endswith('/')]
+            if kind == pr.EPUB:  # ^Jeはカレントディレクトリの.epubだけ
+                candidates = [c for c in candidates if '/' not in c and is_epub_file(c)]
+        if not candidates:
+            self.tab_armed = False
+            return True
+        common = os.path.commonprefix(candidates)
+        ambiguous = len(candidates) > 1
+        if ambiguous and self.tab_armed:
+            self.tab_armed = False
+            return self.show_tab_completion_list(p, candidates, partial, text[:word_start])
+        if len(common) > len(partial):
+            editor.insert(common[len(partial):])
+        self.tab_armed = ambiguous
+        if not ambiguous and not common.endswith('/') and kind in (pr.FILE, pr.DIRECTORY, pr.EPUB, pr.ARCHIVE):
+            return self.feed_prompt_byte(CR, None)
+        return True
+
+    def show_tab_completion_list(self, p, candidates, partial, prefix):
+        """^I^Iの候補の一覧(C++のshowTabCompletionList())。^Mで選んだ物を入れる(FILE・DIR・ARCはそのまま確定)、^Gで元の
+        まま戻る、字を打つと選んでいる物に続けて打つ。"""
+        self.prompt = None
+        self.tab_completion = (p, partial, prefix)
+        label = p.label if p is not None else 'SHELL'
+        return self.show_list(candidates, label, lambda item: self.return_from_tab_completion(item), True,
+                              prompt_kind=p.kind if p is not None else pr.TOOL)
+
+    def return_from_tab_completion(self, item, byte=None):
+        """一覧から戻る(itemがNoneなら^G、byteは一覧で打った字、C++のreturnFromTabCompletionList()・
+        feedTabCompletionListByte())。"""
+        p, partial, prefix = self.tab_completion
+        self.tab_completion = None
+        self.go_back()
+        full = prefix + (item if item is not None else partial)
+        if p is None:
+            self.command_line.set_text(full)
+            if byte is not None:
+                return self.feed_shell_byte(byte)
+            self.refresh_shell_view()
+            return True
+        if item is not None and byte is None and p.kind in (pr.FILE, pr.DIRECTORY, pr.EPUB, pr.ARCHIVE):
+            return p.on_submit(full) if p.on_submit else True
+        p.editor.set_text(full)
+        self.restore_prompt(p)
+        return self.feed_prompt_byte(byte, None) if byte is not None else True
+
     def edit_line(self, editor, byte):
-        """コマンド行の編集(^A ^E ^B ^F ^H ^D ^K ^U ^Y、UTF-8の字)。"""
+        """コマンド行の編集(^A ^E ^B ^F ^H ^D ^K ^U ^Y ^_、UTF-8の字)。"""
         if byte == 0x01:
             editor.move_home()
         elif byte == 0x05:
@@ -2420,15 +2568,17 @@ class Application:
             editor.kill_to_start()
         elif byte == 0x19:
             editor.yank()
+        elif byte == 0x1F:  # ^_: 取り消し
+            editor.undo()
         elif byte >= 0xC0 or (self.utf8_pending and byte >= 0x80):
             if byte >= 0xC0:
                 self.utf8_pending.clear()
             self.utf8_pending.append(byte)
             if len(self.utf8_pending) >= utf8.sequence_length(self.utf8_pending[0]):
-                editor.insert(bytes(self.utf8_pending).decode('utf-8', 'replace'))
+                editor.insert(bytes(self.utf8_pending).decode('utf-8', 'replace'), self_insert=True)
                 self.utf8_pending.clear()
         elif 0x20 <= byte < 0x7F:
-            editor.insert(chr(byte))
+            editor.insert(chr(byte), self_insert=True)
         else:
             return False
         return True
@@ -2472,6 +2622,11 @@ class Application:
 
     def feed_grep_prompt_byte(self, byte):
         syntax, editor = self.grep_prompt
+        leader = self.feed_prompt_leader_byte(editor, byte)
+        if leader is not None:
+            if syntax == FIXED and self.grep_prompt is not None:
+                self.run_grep(FIXED, editor.text)
+            return leader
         if byte == CTRL_G:  # やめる。カーソルは今の一致の行に残る(C++と同じ、元の位置へは戻らない)
             self.grep_prompt = None
             return True
@@ -2535,6 +2690,8 @@ class Application:
         """Application::feedShellByte(): コマンド行の編集、^Mで送る、^Cは中断、^Gで戻る。
         ^P・^Nは確定した行を1行ずつ動く(C++のhistoryBrowsing)。プロンプトの行で^Mならそのコマンドをもう一度。"""
         editor = self.command_line
+        if byte != 0x09:
+            self.tab_armed = False
         view = self.shell_view
         last = len(view.lines) - self.live_row_count() - 1  # 確定した最後の行
         if byte == CTRL_G:
@@ -2591,6 +2748,10 @@ class Application:
                 return self.show_list(items, 'SHELL', choose, False)
         elif byte == 0x0C:
             pass  # 再表示
+        elif byte == 0x09:   # ^I: 最後の語を補完
+            result = self.complete_by_tab(None)
+            if self.current_mode != SHELL:
+                return result
         else:
             self.edit_line(editor, byte)
         self.refresh_shell_view()

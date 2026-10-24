@@ -32684,3 +32684,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - Python版: INFOから開く時、SHELLの行はログを書き出してから開く。空のfileは下線の「No String」の行。開いたfileは後ろに「INFO」(`FileMode.origin`)。
    - C++のテスト: PROGRAM→TOOL(^J^Pが^J^Tに)・CUT→PARTの改名で古くなっていた物を直した(5件はHaikuのサブエージェント、残りの4件は自分で)。「^R at SHELL prompt…」はHELPの代わりにPARTのcpmvで、「^J^W pressed while an editable FGREP prompt…」はPARTのcpmv_aの最後の欄で^Mの後に開く物で、「offerShellCommand(): follow-up…」は項目966(続きの行はそのまま動かす)の動きに合わせた。
    - 確かめたこと: vcmp.pyで両方の版が同じ(PID・時刻と、わざと変えたINFOの1行目を除く)。./build/run_tests --test-case="*hell*,*SHELL*,*TOOL*,*PROGRAM*,offerShellCommand*"で136件すべて通る。unittest 81件。
+1055. **Python版: 入力欄の語の編集・取り消し・前置キー・^Iの補完・一覧から打ち始める形をC++に合わせる(2026-10-24)** 項目1047の続き(HELPの「入力」のキーをHaikuのサブエージェントに比べさせた結果から)。
+   - 入力欄・SHELLの行で、ESC f・ESC b(語の後ろ・前へ)・ESC d・ESC DEL(語を消す)、^_(取り消し、C++の`LineEditor::undo()`と同じく、続けて打った字は20字までを1回分に)。以前はESCの次の字がそのまま入っていた。
+   - 入力欄の中の^X・^J・ESCで始まる割り当て(^J^H・^J^K・ESC >・^Xd等)は、C++の`feedPromptByteInner()`→`dispatchLeaderByte()`と同じく、プロンプトをやめてその機能を(続きを待つ間はプロンプトのまま)。以前は字として入っていた。
+   - ^I(K-65): C++と同じく候補の共通の頭まで補完し、候補が幾つもあれば続けての^Iで候補の一覧(選んで^M・^Gで元のまま・字を打つと続けて)、1つに決まったfileは^Xf・^Xd・^Je・ARCではその場で確定(ディレクトリは確定しない)、^Xf・^Jeではディレクトリを候補にしない、^Jeは.epubだけ。TOOL・MAN・SHELLは最後の語だけを、まだコマンド名を打っている間は$PATHから(`complete_filesystem_path()`・`path_program_candidates()`・`should_search_path()`)。SHELLの^Iは以前は何もしなかった。
+   - ^X^F・^X^D・^R等の一覧・^I^Iの一覧で字を打つと、C++の`feedRegexListByte()`と同じく選んでいる項目に続けて打つ形に(一覧は画面に残り、^N・^Pで候補を移ると入力欄がその項目に、`Prompt.candidate_list`)。以前は一覧を閉じて打った字だけのプロンプトにしていた。^J^Tの一覧では打った字は使わない(C++と同じ)。
+   - ^Xf・^Xd(C++のPathInput)には^Rの履歴の一覧が無い、無いパスの^Mは何も言わずにそのまま、^Xdでfileを指すと開く(C++の`executePathInput()`)。
+   - 確かめたこと: vcmp.pyで、ESC f/b/d/DEL・^_・^Xfの中の^J^H/^J^K/ESC >/^Xd・SHELLのESC b/d/DEL・^_・^I(1つ・幾つも・^I^I・一覧の^N/^M/^G/字)・SHELLの^I^I・^X^F/^X^Dの一覧で字を打つ・^N・^G・^Xf/^Xdの^R・無いパス・^J^Tで字を打つ・^Jm/^Jtの^I^Iが両方の版で同じ(字と属性)。unittest 81件。
+   - 要確認(C++の不揃い?): SHELLからESC ESC(終了の確認)を押すと、C++は確認の間も^Gの後も(ls)になる(SHELLに戻らない)。Python版はSHELLのまま。
