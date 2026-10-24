@@ -300,16 +300,18 @@ class Application:
         """折り返しの幅(桁いっぱい、C++版と同じ)。"""
         return max(1, self.display.columns)
 
-    @staticmethod
-    def position_numbers(view):
+    def position_numbers(self, view):
         """モードラインの位置(今の行, 行の数)。行が元の行の番号を持っていれば(折り返したFILE等)その番号で数える
-        (C++のContentView::applyRawLineNumbers())。"""
+        (C++のContentView::applyRawLineNumbers())。EPUBの章ごとの時も本全体の行の数(C++は本全体の一部を見せる)。"""
         lines = view.lines
         current, total = (view.cursor_index + 1 if lines else 0), len(lines)
-        if lines and lines[0].raw_line_number is not None and view.raw_line_numbers:
+        if lines and lines[0].raw_line_number is not None and view.raw_line_numbers and not (
+                view is self.file_view and self.archive_member_shown()):
             index = max(0, min(view.cursor_index, len(lines) - 1))
             current = lines[index].raw_line_number if lines[index].raw_line_number is not None else current
-            total = lines[-1].raw_line_number if lines[-1].raw_line_number is not None else total
+            whole = self.epub_lines if view is self.file_view and self.epub is not None and self.epub_chapter_mode \
+                and self.epub_lines else lines
+            total = whole[-1].raw_line_number if whole[-1].raw_line_number is not None else total
         return current, total
 
     def position_text(self, view, fixed=False):
@@ -343,9 +345,14 @@ class Application:
             return body
         return ('MACRO   ' + body) if recording else body   # 字のまま(プロンプト等、行の端まで反転)
 
+    def archive_member_shown(self):
+        """ARCの中のfileを見ている(C++のarchiveContentView_: 位置も大きさも画面の行で数える)。"""
+        return self.current_mode == FILE and (self.file_mode.tail or '').startswith('ARC: ')
+
     def content_byte_count(self):
         """本文の行のバイト数(C++のcontentByteCount(fileView_)): EPUBの章の一覧・縦書きの大きさ。"""
-        return sum(len(line.text.encode('utf-8')) + 1 for line in self.file_view.lines)
+        lines = self.epub_lines if self.epub is not None and self.epub_lines else self.file_view.lines  # 章ごとでも本全体
+        return sum(len(line.text.encode('utf-8')) + 1 for line in lines)
 
     def mode_line_text(self):
         segments = self.mode_line_segments()
@@ -412,7 +419,8 @@ class Application:
                 return fields, position
             if os.path.isabs(fm.current_file):  # C++はfileのディレクトリ(FileModeの欄)
                 directory = os.path.dirname(fm.current_file).rstrip('/') + '/'
-            fields = F(os.path.basename(fm.current_file), str(fm.byte_count), True, '', fm.tail or directory,
+            size = self.content_byte_count() if self.archive_member_shown() else fm.byte_count
+            fields = F(os.path.basename(fm.current_file), str(size), True, '', fm.tail or directory,
                        trailing2_kind=mode_line.PATH_MIDDLE if fm.tail else mode_line.PATH)
             fields.split_layout_when_crowded = True
             if fm.label and not fm.tail:  # 組んだプログラム(「(groff)」等)の後ろにディレクトリ
