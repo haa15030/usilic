@@ -12,7 +12,7 @@ FILE, DIRECTORY, MAN, LOCATE, EPUB, COPY, MOVE, REMOVE, ARCHIVE, FGREP, EGREP, E
 TOOL, PART, MACRO_KEY, BOOKMARK_SET, BOOKMARK_JUMP, MARK_REGEX, MARK_EXTENSION, OCCUR_FIXED, OCCUR_REGEX = (
     'Tool', 'Part', 'MacroKey', 'BookmarkSet', 'BookmarkJump', 'MarkRegex', 'MarkExtension', 'OccurFixed',
     'OccurRegex')
-SHELL_COMMAND = 'ShellCommand'
+SHELL_COMMAND, MACRO_EDIT = 'ShellCommand', 'MacroEdit'
 
 # 種類 -> (モードラインの名前, 尋ねる文, ^Rの履歴)
 KINDS = {
@@ -38,6 +38,7 @@ KINDS = {
     OCCUR_FIXED: ('FGREP', '', hist.RECENT_FGREP_PATTERN),
     OCCUR_REGEX: ('EGREP', '', hist.RECENT_EGREP_PATTERN),
     SHELL_COMMAND: ('SHELL', '', hist.SHELL_COMMAND),
+    MACRO_EDIT: ('MACRO', 'Key: ', None),
 }
 
 

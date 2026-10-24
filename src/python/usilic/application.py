@@ -188,6 +188,9 @@ class Application:
         self.register_state = None  # 'r'(^Xrの後)・'set'・'jump'
         self.registers = {}
         self.macro_recording = None  # ^X(〜^X)のバイト列
+        self.macro_repeat_armed = False  # ^Xeの直後(eでもう一度、C++のmacroRepeatArmed_)
+        self.macro_list = None  # MACROの一覧の(行, 記録を書いた直後か)
+        self.macro_list_last_number = 0  # 最後に書いたM-番号(次の^Xsはその行から)
         self.macro_bytes = b''
         self.macro_just_played = False
         self.playing = False
@@ -1846,6 +1849,11 @@ class Application:
             return self.adjust_coast_by_arrow(special)  # 慣性中の矢印: 速さ・向き
         self.coast = self.drag = None  # キーで慣性・ドラッグは終わる
         self.click_targets_cursor = False
+        if self.macro_repeat_armed:  # ^Xeの直後のe(K-131)は、記録したマクロをもう一度(MACRO節のeより先に)
+            self.macro_repeat_armed = False
+            if special is None and byte == self.bindings.macro_repeat_key:
+                self.notice = None
+                return self.play_recorded_macro()
         if special in ('Up', 'Down', 'Left', 'Right') and self.start_coast_by_arrow(special):
             return True
         # KEY節で変えたキーを既定のキー列へ読み替えてから本体へ(C++のfeedByteUngated())。UTF-8の字の続きは読み替えない。
@@ -2455,6 +2463,18 @@ class Application:
         leader = self.feed_prompt_leader_byte(editor, byte)
         if leader is not None:
             return leader
+        if p.kind == pr.MACRO_EDIT and byte in (0x0E, 0x10, CTRL_G, CR):
+            if byte == CTRL_G:
+                return self.close_macro_list()
+            if byte == CR:
+                self.prompt = None
+                return self.execute_macro_edit(editor.text)
+            if self.macro_list[1]:  # 記録を書いた直後は「--」の行だけ
+                return True
+            (self.list_view.move_down if byte == 0x0E else self.list_view.move_up)()
+            editor.set_text(self.list_mode.selected_item() or '')
+            editor.move_home()
+            return True
         if (p.candidate_list or p.kind in (pr.BOOKMARK_SET, pr.BOOKMARK_JUMP)) and byte in (0x0E, 0x10):  # 一覧を選ぶ
             (self.list_view.move_down if byte == 0x0E else self.list_view.move_up)()
             selected = self.list_mode.selected_item() or ''
@@ -2834,17 +2854,7 @@ class Application:
             self.show_transient_notice('Defining kbd macro...')
             return True
         if number == 96:
-            if self.macro_recording is None:
-                self.show_transient_notice('Not defining kbd macro')
-                return False
-            seq = self.bindings.sequence_for(96) or []
-            recorded = self.macro_recording
-            self.macro_recording = None
-            if seq and recorded[-len(seq):] == seq:
-                recorded = recorded[:-len(seq)]
-            self.macro_bytes = bytes(recorded)
-            self.show_transient_notice('Keyboard macro defined')
-            return True
+            return self.stop_macro_recording(96)
         if number == 97:
             return self.play_recorded_macro()
         if number == 98:
@@ -3162,10 +3172,26 @@ class Application:
             self.playing = False
         return True
 
-    def play_recorded_macro(self):
-        """^Xe: 記録したキーを打ち直す(間隔はWAIT)。"""
-        if not self.macro_bytes:
+    def stop_macro_recording(self, number):
+        """^X)(K-96)・記録中の^Xe(K-97): 記録を終える(終えたキー自身は記録に入れない)。"""
+        if self.macro_recording is None:
             self.show_transient_notice('Not defining kbd macro')
+            return False
+        seq = self.bindings.sequence_for(number) or []
+        recorded = self.macro_recording
+        self.macro_recording = None
+        if seq and recorded[-len(seq):] == seq:
+            recorded = recorded[:-len(seq)]
+        self.macro_bytes = bytes(recorded)
+        self.show_transient_notice('Keyboard macro defined')
+        return True
+
+    def play_recorded_macro(self):
+        """^Xe: 記録したキーを打ち直す(間隔はWAIT、C++のplayRecordedMacro())。記録が無ければ何もしない。記録中なら
+        記録を終えてから(Emacsのkmacro-end-and-call-macro)。打ち直した後は、続けてe(K-131)でもう一度。"""
+        if self.macro_recording is not None:
+            self.stop_macro_recording(97)
+        if not self.macro_bytes:
             return False
         self.playing = True
         wait = self.configuration.wait_centiseconds / 100.0
@@ -3178,34 +3204,112 @@ class Application:
         finally:
             self.playing = False
         self.macro_just_played = True
+        self.macro_repeat_armed = True
+        self.show_transient_notice('Type e to repeat macro')
         return True
 
     def save_or_reload_macros(self):
-        """^Xs: ^Xeの直後なら記録をMACRO節へ(キーを尋ねる)、それ以外はusilicrcを読み直してMACROの一覧。"""
-        if self.macro_just_played and self.macro_bytes and self.configuration.path:
+        """^Xs(C++のsaveMacroToUsilicrc()): usilicrcを読み直してMACROの一覧。^Xeの直後なら、記録をMACRO節の「--」の
+        行へ書いてから、その行でキーを尋ねる。"""
+        just_played, self.macro_just_played = self.macro_just_played, False
+        path = self.configuration.path
+        if not path:
+            return False
+        self.reload_configuration()
+        recorded = False
+        if just_played and self.macro_bytes:
             items = mc.items_from_bytes(list(self.macro_bytes))
             if not items:
                 return False
+            mc.set_macro_marker(path, ['\t--\t' + items])
+            recorded = True
+        return self.start_macro_list(recorded)
 
-            def submit(key):
-                key = key.strip()
-                if not key:
-                    return False
-                try:
-                    mc.save_macro(self.configuration.path, key, items)
-                except OSError:
-                    self.show_transient_notice('Cannot write: ' + self.configuration.path)
-                    return False
-                self.reload_configuration()
-                return True
-            self.macro_just_played = False
-            return self.start_prompt(pr.MACRO_KEY, '', submit)
+    def start_macro_list(self, recorded):
+        """MACROの一覧(C++のstartMacroList()): 「キー  キーの表記」の行と「--」の行。カーソルの行を「キー キーの表記」
+        として入力欄で直し、^Mでusilicrcへ(execute_macro_edit())。記録を書いた直後は「--」の行だけ(^N・^Pでは動かない)。"""
+        if self.prompt is not None and self.prompt.kind != pr.MACRO_EDIT:
+            return False
+        lines = mc.macro_lines(mc.read_text(self.configuration.path))
+        if not any(m.number == 0 for m in lines):
+            lines.append(mc.MacroLine())
+        if not recorded:
+            lines = [m for m in lines if m.number] or lines
+        items, displays, selected = [], {}, 0
+        for i, m in enumerate(lines):
+            shown_notation = mc.notation(m.items)
+            item = (m.key + ' ' + shown_notation) if m.number else ''
+            shown = m.key if m.number else '--'
+            shown += ' ' * (4 - len(shown) if len(shown) < 4 else 1)
+            items.append(item)
+            displays[item] = shown + shown_notation
+            if (m.number == 0) if recorded else (self.macro_list_last_number and m.number == self.macro_list_last_number):
+                selected = i
+        self.macro_list = (lines, recorded)
+        if self.current_mode != LIST or self.prompt is None:
+            self.list_mode.show(items, False, 'MACRO', lambda i: True, None, None, lambda n: displays.get(n, n))
+            self.enter_mode(LIST)
+        else:
+            self.list_mode.show(items, False, 'MACRO', lambda i: True, None, None, lambda n: displays.get(n, n))
+        self.list_view.cursor_index = selected
+        self.list_view.ensure_cursor_visible()
+        p = pr.Prompt(pr.MACRO_EDIT, items[selected], self.execute_macro_edit, show_position=True)
+        p.candidate_list = True
+        p.editor.move_home()
+        self.prompt = p
+        return True
+
+    def close_macro_list(self):
+        self.prompt = None
+        self.macro_list = None
+        return self.go_back()
+
+    def execute_macro_edit(self, text):
+        """MACROの一覧の^M(C++のexecuteMacroEdit()): 「キー キーの表記」でその行(「--」の行なら新しい番号)を書き換える。
+        表記が今のままなら要素も今のまま。キーが空・他の行で使っている・表記が読めない時はBELでそのまま。"""
+        lines, _ = self.macro_list
+        index = self.list_view.cursor_index
+        if not 0 <= index < len(lines):
+            return self.close_macro_list()
+
+        def stay():
+            p = pr.Prompt(pr.MACRO_EDIT, text, self.execute_macro_edit, show_position=True)
+            p.candidate_list = True
+            self.prompt = p
+            return False
+        number = lines[index].number
+        key, _, shown_notation = text.lstrip(' \t').replace('\t', ' ').partition(' ')
+        shown_notation = shown_notation.strip(' \t')
+        if not key or '#' in key or '"' in key:
+            return stay()
+        path = self.configuration.path
+        rc_text = mc.read_text(path)
+        description = ''
+        for m in mc.macro_lines(rc_text):
+            if m.number and m.number != number and m.key == key:
+                return stay()
+            if m.number == number and number:  # 「# キーの並び  説明」の説明を残す
+                at = next((i for i, c in enumerate(m.comment) if c in ' \t'), -1)
+                if at >= 0:
+                    description = m.comment[at:].lstrip(' \t')
+        if not shown_notation or shown_notation == mc.notation(lines[index].items):
+            items = lines[index].items
+        else:
+            items = mc.items_from_notation(shown_notation)
+        if not items:
+            return stay()
+        written = number or mc.next_macro_number(rc_text)
+        line = '\tM-%d  %s\t%s\t\t# %s' % (written, key, items, mc.notation(items))
+        if description:
+            line += '\t' + description
+        ok = mc.set_macro_line(path, number, line) if number else mc.set_macro_marker(path, [line, '\t--'])
+        if not ok:
+            return stay()
         self.reload_configuration()
-        lines = ['%s  %s' % (m.key_spec, ' '.join('K-%d' % v if k == 'k' else '"%s"' % v for k, v in m.items))
-                 for m in self.configuration.macro_list()]
-        result = self.show_list(lines, 'MACRO', lambda i: True, False)
-        self.list_view.cursor_index = self.list_view.top_index = 0
-        return result
+        self.macro_list_last_number = written
+        self.close_macro_list()
+        self.show_transient_notice('M-%d %s' % (written, key))
+        return True
 
     def reload_configuration(self):
         """usilicrcを読み直す(EDITで直した時・^Xs)。"""

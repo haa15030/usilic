@@ -32692,3 +32692,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - ^Xf・^Xd(C++のPathInput)には^Rの履歴の一覧が無い、無いパスの^Mは何も言わずにそのまま、^Xdでfileを指すと開く(C++の`executePathInput()`)。
    - 確かめたこと: vcmp.pyで、ESC f/b/d/DEL・^_・^Xfの中の^J^H/^J^K/ESC >/^Xd・SHELLのESC b/d/DEL・^_・^I(1つ・幾つも・^I^I・一覧の^N/^M/^G/字)・SHELLの^I^I・^X^F/^X^Dの一覧で字を打つ・^N・^G・^Xf/^Xdの^R・無いパス・^J^Tで字を打つ・^Jm/^Jtの^I^Iが両方の版で同じ(字と属性)。unittest 81件。
    - 要確認(C++の不揃い?): SHELLからESC ESC(終了の確認)を押すと、C++は確認の間も^Gの後も(ls)になる(SHELLに戻らない)。Python版はSHELLのまま。
+1056. **Python版: ^Xeの繰り返し・記録中の^Xe・MACROの一覧(^Xs)をC++に合わせる(2026-10-24)** 項目1055の続き。
+   - ^Xe: 記録が無ければ何も言わない(以前は「キーボードマクロを記録していません」)。打ち直した後は「e でマクロを繰り返します」と出し、続けてe(K-131)でもう一度(C++の`macroRepeatArmed_`、以前は(ls)のe=EDITが動いた)。記録中の^Xeは記録を終えてから打ち直す(^Xe自身は記録に入れない、以前は自分を打ち直し続けた)。
+   - ^Xs: C++の`startMacroList()`と同じく、MACRO節の行を「キー  キーの表記(^G^P^M等)」で並べた一覧と、カーソルの行を「キー: キー 表記」で直す入力欄(^N・^Pで行を移る、^Mでその行をusilicrcへ書き換え「M-n キー」、^Gでやめる)。^Xeの直後の^Xsは、記録をMACRO節の「--」の行へ書いてからその行だけ(^N・^Pでは動かない)でキーを尋ね、^Mで新しい番号の行に。以前は単なる一覧と、キーだけを尋ねるプロンプトで、usilicrc.日時.bakも作っていた(C++は作らない)。
+   - macro.pyに`notation()`・`items_from_notation()`・`macro_lines()`・`replace_macro_marker()`・`next_macro_number()`・`replace_macro_line()`(C++のusilicrc_file.cpp・macroNotation()等)。`save_macro()`は使わなくなったので消した。
+   - 確かめたこと: vcmp.pyで、^Xe(記録無し・打ち直し・e・ee・記録中・その後のk)・^Xs(^N・^P・^G・^M・表記を直す・BS)・^Xeの後の^Xs(^N・キーを打って^M・もう一度^Xs)が両方の版で同じ(字と属性)。unittest 82件。

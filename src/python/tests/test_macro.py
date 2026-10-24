@@ -1,5 +1,3 @@
-import os
-import tempfile
 import unittest
 
 from usilic import macro as M
@@ -19,16 +17,22 @@ class MacroTest(unittest.TestCase):
         self.assertEqual(M.items_from_bytes([0x18, 0x06, ord('a'), ord('b'), 0x0D]), 'K-62 "ab" K-28')
         self.assertEqual(M.items_from_bytes([ord('j'), 0x0E]), '"j" K-3')
 
-    def test_save_macro_before_marker(self):
-        with tempfile.TemporaryDirectory() as d:
-            rc = os.path.join(d, 'usilicrc')
-            with open(rc, 'w') as f:
-                f.write('BUFFER\n\t64\nMACRO\n\tM-1  ;\tK-20 K-4 K-28\n\t--\nURL\n')
-            self.assertEqual(M.save_macro(rc, 'z', 'K-3 K-3'), 2)
-            with open(rc) as f:
-                lines = f.read().split('\n')
-            self.assertEqual(lines[4:6], ['\tM-2  z\tK-3 K-3', '\t--'])
-            self.assertTrue(any(n.endswith('.bak') for n in os.listdir(d)))
+    def test_marker_and_lines(self):
+        text = 'BUFFER\n\t64\nMACRO\n\tM-1  ;\tK-20 K-4 K-28\t\t# ^G^P^M\t前\n\t--\nURL\n'
+        self.assertEqual(M.next_macro_number(text), 2)
+        marked = M.replace_macro_marker(text, ['\t--\tK-3 K-3'])
+        lines = M.macro_lines(marked)
+        self.assertEqual([(m.number, m.key, m.items, m.comment) for m in lines],
+                         [(1, ';', 'K-20 K-4 K-28', '^G^P^M\t前'), (0, '', 'K-3 K-3', '')])
+        replaced = M.replace_macro_line(marked, 1, '\tM-1  q\tK-3')
+        self.assertIn('\tM-1  q\tK-3\n', replaced)
+
+    def test_notation(self):
+        self.assertEqual(M.notation('K-20 K-4 K-28'), '^G^P^M')
+        self.assertEqual(M.notation('K-86 "a b" K-28'), '^J^Osa\u2423b^M')
+        self.assertEqual(M.items_from_notation('^G^P^M'), 'K-20 K-4 K-28')
+        self.assertEqual(M.items_from_notation('j^N'), '"j" K-3')
+        self.assertIsNone(M.items_from_notation('^1'))
 
 
 if __name__ == '__main__':
