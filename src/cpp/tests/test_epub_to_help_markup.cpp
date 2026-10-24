@@ -249,3 +249,23 @@ TEST_CASE("epubToHelpMarkup: table cells are aligned per column, th is bold") {
   CHECK(out->find("<b>見出</b>\xE3\x80\x80<b>二</b>") != std::string::npos);
   CHECK(out->find("あ\xE3\x80\x80\xE3\x80\x80いう") != std::string::npos);
 }
+
+// 2026-10-24、直接のユーザー依頼(表の行の間の罫線): <table>にCSSのborderがあれば、行の間に表の幅の「─」の行。
+TEST_CASE("epubToHelpMarkup: a table with a CSS border gets a rule line between rows") {
+  std::map<std::string, std::string> files = {
+      {"META-INF/container.xml", kContainer},
+      {"OEBPS/content.opf", R"(<package><manifest>
+  <item id="a" href="a.xhtml" media-type="application/xhtml+xml"/>
+</manifest><spine><itemref idref="a"/></spine></package>)"},
+      {"OEBPS/a.xhtml", R"(<head><style>table.n { border-collapse: collapse; border: 1px solid #888 }</style></head>
+<body><table class="n"><tr><td>あ</td><td>い</td></tr><tr><td>う</td><td>え</td></tr></table>
+<table><tr><td>お</td></tr><tr><td>か</td></tr></table></body>)"},
+  };
+  auto out = fm::epubToHelpMarkup(readerFor(files));
+  REQUIRE(out);
+  CHECK(out->find("あ\xE3\x80\x80い</serif>\n") != std::string::npos);
+  std::string rule;
+  for (int i = 0; i < 6; i++) rule += "\xE2\x94\x80";  // 表の幅(2+2+2桁)だけ「─」(半角の幅)
+  CHECK(out->find("\n" + rule + "\n") != std::string::npos);
+  CHECK(out->find("お</serif>\n<serif>か") != std::string::npos);  // borderの無い表には罫線を入れない
+}

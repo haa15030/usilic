@@ -132,6 +132,11 @@ def to_cells(line):
         ch, width, pos = glyphs[i]
         link = link_of[pos]
         attr = 'underline' if link >= 0 else attr_of[pos]  # リンクは太字等と重なっても傍線
+        if ch == '\u2500' and width < 2 and i + 1 < n and glyphs[i + 1][0] == '\u2500':
+            # 表の罫線の行(epub_mode._finish_table()): 半角の幅の「─」は2字で1マスの「｜」(C++のtoCells())
+            cells.append(Cell('\uff5c', ch, attr, link, pos, glyphs[i + 1][2] + 1))
+            i += 2
+            continue
         if ch < '\x7f' and i + 1 < n:  # 縦中横: 半角英数2字まで、"!!" "!?" "?!" "??"
             h = glyphs[i + 1][0]
             if (_is_alnum(ch) and _is_alnum(h) and run_length[i] == 2) or (ch in '!?' and h in '!?'):

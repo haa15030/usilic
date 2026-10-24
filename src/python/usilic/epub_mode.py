@@ -139,6 +139,9 @@ def parse_css(css):
                 readers.append(('hidden', lambda v: ('none' in v) if v.strip() else None))
             if 'font-weight' in name:
                 readers.append(('bold', _font_weight))
+            if name in ('border', 'border-top', 'border-bottom', 'border-left', 'border-right'):  # 表の罫線(C++と同じ)
+                readers.append(('border', lambda v: not (not v or 'none' in v or 'hidden' in v or v == '0'
+                                                         or v.startswith('0 '))))
             for key, read in readers:
                 result = read(value)
                 if result is not None:
@@ -236,7 +239,7 @@ class _XhtmlParser(HTMLParser):
         self.hidden_label = None  # 隠した見出しの字(章の名前)
         self.next_hidden_label = None  # 次の段落に持たせる隠した見出しの字
         self.block_frames = []    # (tag, 始まりのブロック, 注釈か, [id])
-        self.tables = []          # 開いている表ごとの[(行のBlock, [(欄の頭, 終わり)のpiecesの番号])]
+        self.tables = []          # 開いている表ごとの(罫線があるか, [(行のBlock, [(欄の頭, 終わり)のpiecesの番号])], [罫線のBlock])
         self.row_cells = []       # 今の行(<tr>)の欄
         self.anchor_blocks = {}   # id→そのidを持つ(か囲む一番内側の)ブロックの範囲(ブロックの番号)
         self.note_ranges = []
@@ -386,7 +389,15 @@ class _XhtmlParser(HTMLParser):
         if tag == 'a':
             self.hrefs.append(a.get('href'))
         if tag == 'table':
-            self.tables.append([])
+            frame = a.get('border') or ''
+            border = bool(rule_for(self.rules, 'table', self._classes(attrs), 'border')) or frame not in ('', '0')
+            self.tables.append((border, [], []))
+        if tag == 'tr' and self.tables and self.tables[-1][0] and self.tables[-1][1]:
+            self._end_block()  # 罫線のある表の2行目からは、行の前に罫線の行(_finish_table()が幅に合わせて入れる)
+            rule = Block('p', set())
+            rule.pieces = [('', None, None)]
+            self.blocks.append(rule)
+            self.tables[-1][2].append(rule)
         if tag in ('td', 'th') and self.tables and self.current is not None:  # 欄の頭(_finish_table()でそろえる)
             self.row_cells.append([len(self.current.pieces), len(self.current.pieces)])
         if tag == 'tr':
@@ -433,12 +444,12 @@ class _XhtmlParser(HTMLParser):
         if tag in ('td', 'th') and self.tables and self.row_cells and self.current is not None:
             self.row_cells[-1][1] = len(self.current.pieces)
         if tag == 'tr' and self.tables and self.current is not None and self.row_cells:
-            self.tables[-1].append((self.current, self.row_cells))
+            self.tables[-1][1].append((self.current, self.row_cells))
             self.row_cells = []
         if tag in _BLOCKS:
             self._end_block()
             if tag == 'table' and self.tables:
-                _finish_table(self.tables.pop())
+                _finish_table(*self.tables.pop())
             for i in range(len(self.block_frames) - 1, -1, -1):
                 if self.block_frames[i][0] == tag:
                     _, start, note, ids = self.block_frames.pop(i)
@@ -481,7 +492,7 @@ def _table_width(pieces):
     return utf8.text_width(re.sub(r'《[^》]*》', '', ''.join(p[0] for p in pieces)))
 
 
-def _finish_table(rows):
+def _finish_table(border, rows, rules):
     """表(HTMLの<table>)の欄の幅をそろえる(C++のfinishTable()、KDPのガイドラインの範囲で罫線・色は足さない):
     欄ごとに一番広い幅へ全角の空白(奇数なら半角の空白も)で埋め、欄の間に全角の空白を1つ。欄の外の空白は出さない。"""
     widths = []
@@ -502,6 +513,10 @@ def _finish_table(rows):
                 if pad > 0:
                     pieces.append(('\u3000' * (pad // 2) + ' ' * (pad % 2), None, None))
         block.pieces = pieces
+    # 罫線の行: 表の幅(欄の幅と欄の間の全角の空白)だけ「─」(半角の幅、縦書きでは2字で1マスの「｜」)
+    total = sum(widths) + 2 * max(0, len(widths) - 1)
+    for rule in rules:
+        rule.pieces = [('\u2500' * max(1, total // max(1, utf8.text_width('\u2500'))), None, None)]
 
 
 def _stylesheets(xhtml):
