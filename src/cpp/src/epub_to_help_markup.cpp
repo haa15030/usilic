@@ -905,7 +905,9 @@ class BodyConverter {
         // 2026-10-25、直接のユーザー依頼(=lv.png"文字の大きさが同じなので項目名の一部のような印象"、=lw.pngの
         // Kindle本の「［2］」): 番号を括弧で囲み(括弧は番号の外、リンクの外)、番号は小さい字に。括弧は縦書きでは
         // 全角(縦書きの形﹇﹈、半角の[2]だと3字の英数字の並びとして横倒しになる)、横書きでは半角。
+        line_ += "<small>";  // 括弧も番号と同じく小さい字(2026-10-25)
         text(vertical_.value_or(bookVertical_) ? "\xEF\xBC\xBB" : "[");
+        line_ += "</small>";
         noterefOpen_.push_back(true);
         changeStyle(bold_, +1, "b");
         line_ += "<note><small>";  // Kindleの注釈番号と同じく決まった色(PipeBuffer::currentNote_)
@@ -939,7 +941,9 @@ class BodyConverter {
         if (noterefOpen_.back()) {
           line_ += "</small></note>";
           changeStyle(bold_, -1, "b");
+          line_ += "<small>";
           text(vertical_.value_or(bookVertical_) ? "\xEF\xBC\xBD" : "]");
+          line_ += "</small>";
         }
         noterefOpen_.pop_back();
       }

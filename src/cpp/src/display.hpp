@@ -167,7 +167,7 @@ class Display {
   static constexpr int kDefaultColor = -1;
   static constexpr int kTrueColorFlag = 0x1000000;
   // 2026-10-24追加: 本文の注釈番号(EPUBのnoteref、PipeBuffer::currentNote_)の青。Kindleの注釈番号のように
-  // 鮮やかな青(=lo.png)。-gの縦書きはこの色の半角の字を右寄せにする(GraphicalDisplay::renderCell())。
+  // 鮮やかな青(=lo.png)。(2026-10-25: 括弧で囲むようになったので、-gの縦書きの右寄せはやめて中央に戻した)
   static constexpr int kNoteColor = kTrueColorFlag | 0x0044EE;
 
   enum class Key { Up, Down, Left, Right, PageUp, PageDown, ShiftUp, ShiftDown, ShiftLeft, ShiftRight };  // Shift*: 2026-10-03
