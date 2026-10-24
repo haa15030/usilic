@@ -32679,3 +32679,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - messages_ja.pyに、C++のmessages_ja.cppにあってPython版に無かった物を足した(まるごと一致する文29件、「{}」を含む型10件)。訳の違う物は無かった。
    - 「{}」が2つある型(「LINE-HEIGHT: {} dots ({})」等)は、以前の`localized()`(「{}」が1つの前提で前後に分けていた)では訳そうとすると落ちたので、C++の`matchPattern()`と同じく「{}」がいくつでも合わせる`_match()`にした。
    - 確かめたこと: 表をもう一度読み比べて、足りない物・違う物が0件。unittest 81件。
+1054. **Python版: 作業ディレクトリ・^X^W・WORKの一覧・INFOの開き方、C++: 古くなったテストを直す(2026-10-24)** 項目1047の続き。
+   - Python版: 作業用のディレクトリはC++と同じく/tmp/.usilic.<PID>。^X^Wの「Saved」の知らせは出さない(C++は出さない)。WORKの一覧はUSILICの目次のWORKの種類(C++の`openUsilicGroup()`)。
+   - Python版: INFOから開く時、SHELLの行はログを書き出してから開く。空のfileは下線の「No String」の行。開いたfileは後ろに「INFO」(`FileMode.origin`)。
+   - C++のテスト: PROGRAM→TOOL(^J^Pが^J^Tに)・CUT→PARTの改名で古くなっていた物を直した(5件はHaikuのサブエージェント、残りの4件は自分で)。「^R at SHELL prompt…」はHELPの代わりにPARTのcpmvで、「^J^W pressed while an editable FGREP prompt…」はPARTのcpmv_aの最後の欄で^Mの後に開く物で、「offerShellCommand(): follow-up…」は項目966(続きの行はそのまま動かす)の動きに合わせた。
+   - 確かめたこと: vcmp.pyで両方の版が同じ(PID・時刻と、わざと変えたINFOの1行目を除く)。./build/run_tests --test-case="*hell*,*SHELL*,*TOOL*,*PROGRAM*,offerShellCommand*"で136件すべて通る。unittest 81件。

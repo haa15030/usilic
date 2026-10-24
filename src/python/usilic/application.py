@@ -224,8 +224,9 @@ class Application:
         self.translate_pending = [[], None]  # KEY節の読み替えで溜めている途中のバイト(KeyBindings.feed())
         self.utf8_skip = 0
         self.vertical_prefix = None    # 縦書きのCOPYの'ESC'
-        self.work_root = os.path.join('/tmp' if os.path.isdir('/tmp') else tempfile.gettempdir(), '.usilic',
-                                      'python-%d' % os.getpid())  # HELPの「/tmp/.usilic/」
+        # 作業ファイルの置き場(C++のworkRootDirectory_と同じ/tmp/.usilic.<PID>、終わる時に消す)
+        self.work_root = os.path.join('/tmp' if os.path.isdir('/tmp') else tempfile.gettempdir(),
+                                      '.usilic.%d' % os.getpid())
         self.work_files = []
         self.last_shell_insert = ''    # ^Wで出し直す(^J^W・^Jw)
         self.tool_directory = ''
@@ -2966,11 +2967,13 @@ class Application:
         except OSError:
             self.show_transient_notice('Cannot write: ' + path)
             return False
-        self.show_transient_notice('Saved: ' + path)
-        return True
+        return True  # 知らせは出さない(C++のsaveBufferToFile()と同じ)
 
     def show_work_list(self):
-        return self.show_list(self.work_files, 'WORK', lambda p: self.open_file(p), False)
+        """^J^Ow(Application::executeOpenWorkList()): USILICの目次のWORKを開いたのと同じ(^Gは目次のWORKへ)。"""
+        self.start_usilic_toc()
+        self.list_view.cursor_index = USILIC_TOC_TITLES.index('WORK')
+        return self.open_usilic_group('WORK')
 
     # --- マクロ ---
     def macro_for_byte(self, byte):
@@ -3223,13 +3226,19 @@ class Application:
         if target is None:
             return False
         kind, value = target
-        if kind == 'shell':
-            return self.show_shell_log()
         if kind == 'dir':
             return self.enter_directory_listing(value, keep_stack=True)
+        if kind == 'shell':
+            self.save_shell_log()  # 今のSHELLの分を書いてから(C++のrefreshShellLogFile())
         if not os.path.exists(value):
             open(value, 'a').close() if os.path.isdir(os.path.dirname(value)) else None
-        return self.open_file(value) if os.path.exists(value) else False
+        if not os.path.exists(value) or not self.open_file(value):
+            return False
+        # C++のopenSelectedBannerEntry(): 空なら下線の「No String」の1行、名前はfileの名前で後ろに「INFO」、^GはINFOへ
+        if not self.file_view.lines:
+            self.file_view.set_lines([Line('No String', None, attributes=[(0, 9, 'underline')])])
+        self.file_mode.origin = (os.path.basename(value), 'INFO')
+        return True
 
     def shell_log_path(self):
         """SHELLのログのfile(C++のlogFilePath_、~/.usilic/shell)。"""

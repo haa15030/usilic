@@ -3092,7 +3092,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^T opens a TOOL candidate list (StartPr
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
 }
 
-TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^J ^P seeds the candidate list from ShellCommand history, and Enter runs it") {
+TEST_CASE_FIXTURE(Fixture, "TOOL: ^J ^T seeds the candidate list from ShellCommand history, and Enter runs it") {
   REQUIRE(app.start(path()));
   std::string outPath = (root / "prog_out2.txt").string();
   REQUIRE(app.handleCommand(Command::StartProgram));
@@ -3102,7 +3102,7 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^J ^P seeds the candidate list from ShellCo
 
   fs::remove(outPath);
   app.feedByte(0x0a, std::nullopt);
-  REQUIRE(app.feedByte(0x10, std::nullopt));
+  REQUIRE(app.feedByte(0x14, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // Enter on the seeded (most recent) entry
   CHECK(fs::exists(outPath));
@@ -3117,14 +3117,14 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^J ^P seeds the candidate list from ShellCo
 // おらず、既にApplicationMode::ListBrowserへ切り替わった後の
 // currentMode_を誤って読んでpreviousModeName()の空文字列フォール
 // バックに落ち、戻り値が消えていたバグが露呈した。
-TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^J ^P shows a non-empty destination (return value) in the mode line, "
+TEST_CASE_FIXTURE(Fixture, "TOOL: ^J ^T shows a non-empty destination (return value) in the mode line, "
                            "not a blank trailing2 field") {
   REQUIRE(app.start(path()));
   history.pushRecent(RingCategory::ShellCommand, "echo hi");
   REQUIRE(app.handleCommand(Command::StartProgramList));
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
   const std::string &row = display.rowText(display.rows() - 1);
-  CHECK(row.find("PROGRAM") != std::string::npos);
+  CHECK(row.find("TOOL") != std::string::npos);  // 2026-10-10にPROGRAMからTOOLへ改名
   // truncatedTrailingPath()自身の慣習(archive_mode.cppの同種のテスト
   // 参照、"tail-truncated")に合わせ、フル一致ではなく末尾での一致を
   // 見る――path()自身(fixtureの一時ディレクトリ)がtrailing2の表示幅
@@ -4271,7 +4271,7 @@ TEST_CASE_FIXTURE(Fixture, "LIST: Tab-completion within RecentDirectory's own co
   CHECK(app.directoryMode().currentDirectory() == (root / "recentdir_target_one").string() + "/");
 }
 
-TEST_CASE_FIXTURE(Fixture, "LIST: PROGRAM's own mode-line label also shows \"PROGRAM\" (not \"LIST\") "
+TEST_CASE_FIXTURE(Fixture, "LIST: TOOL's own mode-line label also shows \"TOOL\" (not \"LIST\") "
                            "from the first frame of browsing, same as SHELL") {
   REQUIRE(app.start(path()));
   fs::create_directories(root / ".pathbin");
@@ -4293,7 +4293,7 @@ TEST_CASE_FIXTURE(Fixture, "LIST: PROGRAM's own mode-line label also shows \"PRO
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
 
   std::string row = display.rowText(display.rows() - 1);
-  CHECK(row.find("PROGRAM") != std::string::npos);
+  CHECK(row.find("TOOL") != std::string::npos);
   CHECK(row.find("LIST") == std::string::npos);
 }
 
@@ -4395,8 +4395,8 @@ TEST_CASE_FIXTURE(Fixture, "LIST: Tab-completion also works while editing Recent
 // だけ。" -- every existing "starting to edit keeps the list visible"
 // test happened to be SHELL-originated only; this is the PROGRAM-
 // originated (non-Shell) equivalent, reproducing the gap directly.
-TEST_CASE_FIXTURE(Fixture, "LIST: PROGRAM-originated (non-SHELL) editing also keeps the candidate "
-                           "list visible and the correct \"PROGRAM\" label, not the underlying "
+TEST_CASE_FIXTURE(Fixture, "LIST: TOOL-originated (non-SHELL) editing also keeps the candidate "
+                           "list visible and the correct \"TOOL\" label, not the underlying "
                            "Directory view's own raw content reappearing (real report: \"^Bを押した"
                            "途端、モード名とプロンプトの「usilic 」が戻る。FILEでも同じ\")") {
   REQUIRE(app.start(path()));
@@ -4430,10 +4430,10 @@ TEST_CASE_FIXTURE(Fixture, "LIST: PROGRAM-originated (non-SHELL) editing also ke
   CHECK(app.currentMode() == ApplicationMode::Directory);  // PROGRAM's own returnMode here
   CHECK(listOnScreen());
   const std::string &row = display.rowText(display.rows() - 1);
-  CHECK(row.find("PROGRAM") != std::string::npos);
+  CHECK(row.find("TOOL") != std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "LIST: PROGRAM-originated editing also keeps the list when the "
+TEST_CASE_FIXTURE(Fixture, "LIST: TOOL-originated editing also keeps the list when the "
                            "return mode is File instead of Directory (フォローアップ6 follow-on "
                            "coverage -- the non-SHELL activatePrompt() path itself was already fine; "
                            "only Shell's own async pty output needed a promptActive() guard, "
@@ -4474,7 +4474,7 @@ TEST_CASE_FIXTURE(Fixture, "LIST: PROGRAM-originated editing also keeps the list
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(listOnScreen());
   const std::string &row2 = display.rowText(display.rows() - 1);
-  CHECK(row2.find("PROGRAM") != std::string::npos);
+  CHECK(row2.find("TOOL") != std::string::npos);
 }
 
 // 2026-09-10 (a direct user request): "usilic" itself is always accepted
@@ -9377,7 +9377,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: shows the total byte count of all s
 // `default: return "";` -- an EMPTY shellReturnName_ is what triggers
 // the "usilic-1.5b" watermark fallback the provider already had for
 // legacy's own "no previous mode" case.
-TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: entering from Cut mode shows \"CUT\" as the return-target "
+TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: entering from Cut mode shows \"PART\" as the return-target "
                            "trailing field, not the \"usilic-1.5b\" no-previous-mode fallback") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartCut));
@@ -9391,7 +9391,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: entering from Cut mode shows \"CUT\
   }
   REQUIRE(app.currentMode() == ApplicationMode::Shell);
   std::string text = app.shell().scrollback().modeLineText();
-  CHECK(text.find("CUT") != std::string::npos);
+  CHECK(text.find("PART") != std::string::npos);
   CHECK(text.find("usilic-1.5b") == std::string::npos);
 }
 
@@ -11665,8 +11665,10 @@ TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: refused outside Shell mode (usin
                            "top-level ^R meaning -- see the dedicated \"^R directory-name/file-name history\"/"
                            "\"^R in Archive\" tests below)") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.loadHelpText("placeholder\n"));
-  REQUIRE(app.handleCommand(Command::StartHelp));
+  // 2026-10-24: ^H(HELP)はHELP.epubで開くようになりPARTにならないので、(ls)をPARTで分けてPARTにする
+  REQUIRE(app.handleCommand(Command::StartCut));
+  feedText("cpmv");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
 
   CHECK_FALSE(app.feedByte(0x12, std::nullopt));  // top-level ^R (ToggleHistoryView) is a no-op here
@@ -12823,10 +12825,14 @@ TEST_CASE_FIXTURE(Fixture, "FGREP prompt (not yet submitted) from within a HELP 
 TEST_CASE_FIXTURE(Fixture, "^J^W pressed while an editable FGREP prompt is still active (not yet submitted) "
                            "correctly hands SUBSEQUENT keystrokes to the real SHELL, not back to the stale "
                            "prompt") {
-  REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.handleCommand(Command::Enter));  // "Section One：first entry"
+  // 2026-10-24: ^H(HELP)はHELP.epubで開くようになりPARTにならないので、(ls)をPARTで分けた部分の中で試す
+  REQUIRE(app.handleCommand(Command::StartCut));
+  feedText("cpmv_a");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+  app.activeContentView().setCursorIndex(static_cast<int>(app.cutMode().segments().size()) - 1);  // cpmv_a.txtの部分
+  REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::CutContent);
 
   REQUIRE(app.handleCommand(Command::StartFgrep));  // ^S
@@ -12853,7 +12859,7 @@ TEST_CASE_FIXTURE(Fixture, "^J^W pressed while an editable FGREP prompt is still
 
   bool sawCatOutput = pumpUntil(app, [&] {
     for (const auto &line : app.shell().scrollback().lines())
-      if (line.text.find("Section one content") != std::string::npos) return true;
+      if (line.text.find("cpmv_a.txt") != std::string::npos) return true;
     return false;
   });
   CHECK(sawCatOutput);  // the real `cat` command actually ran
@@ -15761,7 +15767,7 @@ TEST_CASE_FIXTURE(Fixture, "Space (Archive mode): Quick Look on the highlighted 
 // 終わり、プロンプトが戻ったら...未インストールのアプリのみ再度brew実行"):
 // offerShellCommand()のfollowUpは、置いた行が実行されてプロンプトが戻った
 // 後に呼ばれ、返した行が再び入力欄に置かれる(空なら終わり)。
-TEST_CASE_FIXTURE(Fixture, "offerShellCommand(): follow-up re-offers after the offered line ran, until it returns empty") {
+TEST_CASE_FIXTURE(Fixture, "offerShellCommand(): follow-up runs the next line after the offered line ran, until it returns empty") {
   REQUIRE(app.start(path()));
   int calls = 0;
   if (!app.offerShellCommand("true", [&]() -> std::string { return ++calls == 1 ? "printf again" : ""; })) {
@@ -15776,13 +15782,16 @@ TEST_CASE_FIXTURE(Fixture, "offerShellCommand(): follow-up re-offers after the o
     return calls == 1;
   }));
   // (fixtureのPROGRAMにechoがあり、echoはSHELLではなくPROGRAMとして走るのでprintf)
-  CHECK(app.shell().commandLine().text() == "printf again");
-  app.shell().submitLine();
+  // 2026-10-20(項目966)から、followUpが返した行は入力欄に置かずにそのまま実行する。
   REQUIRE(pumpUntil(app, [&] {
     app.pollShellOfferFollowUp();
     return calls == 2;
   }));
   CHECK(app.shell().commandLine().text().empty());
+  bool ranAgain = false;
+  for (const auto &line : app.shell().scrollback().lines())
+    if (line.text.find("printf again") != std::string::npos) ranAgain = true;
+  CHECK(ranAgain);
 }
 
 // 2026-10-03追加、直接のユーザー依頼("^X^SではMACRO登録後の動作が~/.usilic/usilicrcを開いて編集を促す
