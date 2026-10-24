@@ -56,6 +56,14 @@ class ManMode:
         if not name:
             return False
         argv = self.configuration.command_for('Man') + [name]
+        if name == 'usilic':  # usilic自身はHELP.1(英語はHELP_en.1)をgroffで(C++のsetPageResolver())
+            from . import help_text
+            from .messages_ja import japanese
+            page = (help_text.find_in_library('HELP.1') if japanese() else None) or \
+                help_text.find_in_library('HELP_en.1')
+            groff = self.configuration.command_for('Groff')
+            if page and groff:
+                argv = groff + ['-rLL=%dn' % max(width, 20), page]
         found = run_to_lines(argv, width, env={'MANWIDTH': str(width), 'MAN_KEEP_FORMATTING': '1'},
                              limit=self.configuration.buffer_limit_bytes())
         if not found or not found[0]:

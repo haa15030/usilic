@@ -118,12 +118,15 @@ class TerminalDisplay:
                 break
             if ch == '\u2060':
                 continue
-            attr = 0
+            attr, matched = 0, False
             for start, end, name in runs:
                 if start <= index < end:
                     attr |= names.get(name, 0)
+                    matched = matched or name == 'match'
             if attr:
                 final = base | attr
+                if matched and self.match_attr != curses.A_REVERSE:  # 一致の字は色だけ(カーソルの反転を外す、C++と同じ)
+                    final = (final & ~curses.A_REVERSE) | self.match_attr
                 if index in flipped:  # 制御文字は反転を入れ替える(draw_row()と同じ)
                     final ^= curses.A_REVERSE
                 try:

@@ -272,6 +272,8 @@ class Configuration:
             return None
         _, kind, argv, piped = best
         argv = [seven_zip_command() if a is None else a for a in argv]
+        if sys.platform == 'darwin' and kind in (LHA, RAR, SEVEN_ZIP) and shutil.which(argv[0]) is None:
+            kind, argv = TAR, ['tar', '-tvf']  # lha・lsar・7zが無ければmacOSのtar(bsdtar)で(C++のaddBuiltinArchive())
         return kind, argv, piped, '(' + argv[0] + ')'
 
     def filter_for(self, path):

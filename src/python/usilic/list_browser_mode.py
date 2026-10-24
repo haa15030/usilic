@@ -22,6 +22,7 @@ class ListBrowserMode:
     def show(self, items, sorted_view, label, on_choose, prompt_kind=None, badge_for=None, display_for=None,
              pinned=None):
         self.source = list(items)
+        self.prompt_style = True  # ^X^F・^X^Dの一覧をプロンプトの形で(C++のプロンプトの履歴の間)、戻ると普通の一覧の形
         self.pinned = list(pinned or [])
         self.label, self.on_choose, self.prompt_kind, self.badge_for = label, on_choose, prompt_kind, badge_for
         self.display_for = display_for

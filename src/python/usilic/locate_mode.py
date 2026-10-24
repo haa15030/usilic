@@ -78,8 +78,9 @@ class LocateMode:
                     results.append(path)
         self.query, self.results = query, results
         lines = [Line(p, i + 1, ellipsis=True) for i, p in enumerate(results)]
-        if not results:
-            lines = [Line(query + ': No results', None, attributes=[(len(query) + 2, len(query) + 12, 'underline')])]
+        # 無ければ行は無く、行の無い時の1行目に「検索語: No results」(反転しない、C++のsetEmptyPlaceholder())
+        self.view.empty_placeholder = None if results else \
+            Line(query + ': No results', None, attributes=[(len(query) + 2, len(query) + 12, 'underline')])
         self.byte_count = sum(len(p.encode('utf-8', 'surrogateescape')) + 1 for p in results)
         self.view.set_lines(lines)
         self.view.cursor_index = self.view.top_index = 0

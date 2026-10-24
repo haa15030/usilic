@@ -158,6 +158,7 @@ class Application:
         self.epub_name = ''        # モードラインの名前(HELPの本は「HELP」)
         self.epub_toc_lines = []   # 目次の各項目の本文の行
         self.previous_file = None  # ^J^Jの行き先
+        self.dir_list_origin = ''  # ^X^Dの一覧から(ls)へ移る前のディレクトリ(C++のdirListOriginDirectory_)
         # 第4段: PART・OCCUR・INFO・COPY・マーク・^U・マクロ・レジスタ等
         self.part_toc_view = ContentView()
         self.part_view = ContentView()
@@ -352,8 +353,9 @@ class Application:
             return self.prompt_mode_line(p.label, position, localized(p.message), p.editor, p.kind == pr.EXIT)
         if self.grep_prompt is not None:
             syntax, editor = self.grep_prompt
-            if syntax == FIXED:  # インクリメンタル: 「FGREP 1/11 打った字」
-                return self.prompt_mode_line('FGREP', self.grep.position_text(), '', editor)
+            if syntax == FIXED:  # インクリメンタル: 「FGREP 1/11 打った字」(一致が無ければ位置は空、C++と同じ)
+                position = self.grep.position_text() if self.grep.occurrences else ''
+                return self.prompt_mode_line('FGREP', position, '', editor)
             return self.prompt_mode_line('EGREP', '', '', editor)
         if self.grep_active and self.current_mode != KEY:  # KEYは一覧のモードラインのまま、位置を一致の番号に
             name, size = self.mode_line_target()
@@ -419,6 +421,9 @@ class Application:
                                                                self.display.columns, badge=True)
                     return segments
                 return F('HISTORY', '', False, label), position
+            if lm.prompt_kind in (pr.FILE, pr.DIRECTORY) and self.list_prompt is None and not lm.prompt_style:
+                # 開いた物から戻った・^[<・^[>の後: 普通の一覧の形(項目を反転、途中を「...」、C++のRecentFileの欄)
+                return F(lm.label, item, True, '', trailing_kind=mode_line.PATH_MIDDLE), position
             if lm.prompt_kind in (pr.FILE, pr.DIRECTORY) and self.list_prompt is None:
                 # ^X^F・^X^D: C++はプロンプトのまま一覧を出し、入力欄にカーソルの行(drawPromptLabel())
                 return self.prompt_line_with_text(lm.label, position, item, back)
@@ -754,11 +759,10 @@ class Application:
         if self.history is None:
             return
         pos = self.history.position_for(category, name)
-        if pos is not None:
-            view.cursor_index = pos.row
-            view.clamp()
-            view.top_index = view.cursor_index - view.height // 2
-            view.clamp()
+        if pos is not None:  # C++のsetLines()(頭は0)+setCursorIndex(): その行が画面の一番下に来る
+            view.top_index = 0
+            view.cursor_index = max(0, min(pos.row, len(view.lines) - 1))
+            view.ensure_cursor_visible()
 
     def show_transient_notice(self, text):
         self.notice = localized(text)
@@ -784,6 +788,8 @@ class Application:
         self.save_mode_position()
         leaving = self.current_mode
         self.current_mode = self.return_stack.pop() if self.return_stack else DIRECTORY
+        if self.current_mode == LIST and leaving in (FILE, DIRECTORY):
+            self.list_mode.prompt_style = False  # 開いた物から戻った一覧は普通の一覧の形(C++と同じ)
         if leaving == FILE and self.current_mode == DIRECTORY:
             self.move_to_file_directory(self.file_mode.current_file)
         if self.current_mode == ARCHIVE and not self.archives:
@@ -1329,9 +1335,26 @@ class Application:
             self.list_stack.append(self.list_mode.snapshot())
         else:
             self.list_stack = []
+        if prompt_kind in (pr.FILE, pr.DIRECTORY) and sorted_view:
+            on_choose = self.direct_list_chooser(prompt_kind, on_choose)
         self.list_mode.show(items, sorted_view, label, on_choose, prompt_kind, badge_for, pinned=pinned)
         self.enter_mode(LIST)
         return True
+
+    def direct_list_chooser(self, prompt_kind, on_choose):
+        """^X^F・^X^D等の直接の一覧から開いた物に印(C++のexecutePromptSubmission()のfromDirectEntry): fileは名前をパスの
+        まま後ろに「FILE」、(ls)は「(ls)」の代わりに「DIR」(^Gで元のディレクトリへ戻ってから一覧へ)。"""
+        def chosen(item):
+            origin = self.directory_mode.current_directory
+            if not on_choose(item):
+                return False
+            if prompt_kind == pr.FILE and self.current_mode == FILE and self.epub is None:
+                self.file_mode.origin = (self.file_mode.current_file, 'FILE')
+            elif prompt_kind == pr.DIRECTORY and self.current_mode == DIRECTORY:
+                self.directory_mode.annotation = 'DIR'
+                self.dir_list_origin = origin
+            return True
+        return chosen
 
     def ring(self, category):
         return self.history.recent_entries(category) if self.history is not None else []
@@ -1471,8 +1494,11 @@ class Application:
 
     def start_locate_prompt(self):
         last = self.ring(hist.RECENT_LOCATE_QUERY)
-        text = self.locate_mode.query or (last[-1] if last else '')
-        return self.start_prompt(pr.LOCATE, text, self.execute_locate)
+        text = last[-1] if last else ''  # LOCATEの履歴の最後(C++のstartLocatePrompt())
+        result = self.start_prompt(pr.LOCATE, text, self.execute_locate)
+        if self.prompt is not None:
+            self.prompt.editor.select_all()  # 前の検索語は打つと置き換わる(C++のselectAllOnSeed)
+        return result
 
     def start_du(self, path):
         """^Jd: duを動かす(^Gで中断、それまでの結果を出す)。"""
@@ -2152,6 +2178,8 @@ class Application:
 
     def move(self, number, view):
         """移動(K-1〜K-12)。ページャーは先に要る所まで読む(ensurePagerStreamLoaded())。"""
+        if self.current_mode == LIST and number in (11, 12):
+            self.list_mode.prompt_style = False  # ^[<・^[>はプロンプトの形の一覧を普通の一覧の形に(C++と同じ)
         if self.current_mode == FILE and self.file_mode.has_active_stream():
             if number == 12:
                 self.file_mode.load_all()
@@ -2239,6 +2267,10 @@ class Application:
         """^G(モードごと)。"""
         mode = self.current_mode
         if mode == DIRECTORY:
+            if self.directory_mode.annotation == 'DIR' and self.return_stack and self.return_stack[-1] == LIST:
+                self.directory_mode.annotation = ''  # ^X^Dの一覧から入った所: 元のディレクトリへ戻ってから一覧へ
+                if self.dir_list_origin:
+                    self.directory_mode.enter_directory(self.dir_list_origin)
             if self.return_stack:
                 return self.go_back()
             if not self.directory_mode.go_back():
@@ -2439,11 +2471,8 @@ class Application:
 
     def feed_grep_prompt_byte(self, byte):
         syntax, editor = self.grep_prompt
-        if byte == CTRL_G:
+        if byte == CTRL_G:  # やめる。カーソルは今の一致の行に残る(C++と同じ、元の位置へは戻らない)
             self.grep_prompt = None
-            view = self.active_view()
-            view.cursor_index = self.grep.origin
-            view.ensure_cursor_visible()
             return True
         if byte == CR:
             self.grep_prompt = None
@@ -2467,7 +2496,9 @@ class Application:
                 self.prompt = None
                 self.grep_prompt = (syntax, editor)
             return result
-        if byte in (0x13, 0x0E, 0x10) and syntax == FIXED:  # 打っている間の^S・^N: 次の一致へ、^P: 前へ(巡回)
+        if byte == 0x13:  # 打っている間の^Sは何もしない(C++と同じ、次の一致へは^N)
+            return True
+        if byte in (0x0E, 0x10) and syntax == FIXED:  # 打っている間の^N: 次の一致へ、^P: 前へ(巡回)
             self.grep.move(-1 if byte == 0x10 else 1)
             self.show_current_match()
             return True

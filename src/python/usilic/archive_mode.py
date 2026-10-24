@@ -71,6 +71,19 @@ def parse_ar_listing(listing):
     return entries
 
 
+def parse_bsdtar_listing(listing):
+    """`tar -tvf`(bsdtar)の一覧: 「種類と許可 リンク数 持ち主 グループ 大きさ 日付3つ 名前」。"""
+    entries = []
+    for line in listing.splitlines():
+        parts = line.split(None, 8)
+        if len(parts) < 9 or not parts[4].isdigit():
+            continue
+        name = parts[8].split(' -> ')[0]
+        is_directory = parts[0].startswith('d') or name.endswith('/')
+        entries.append(ArchiveEntry(name, 0 if is_directory else int(parts[4]), is_directory))
+    return entries
+
+
 def parse_rar_listing(listing):
     """RarReader::parseListing()(lsar -l): 「=」の行の後から、「(」で始まる注記の前まで。"""
     entries, in_table = [], False
@@ -170,6 +183,10 @@ class ArchiveMode:
                     entries.sort(key=lambda e: e.name)  # .epubは名前順(C++のfinishLoadFromOutput())
         except (OSError, tarfile.TarError, zipfile.BadZipFile, AttributeError):
             entries = None
+        if entries is None and kind == conf.TAR and argv[:2] == ['tar', '-tvf']:
+            listing = self._run(argv + [path])  # tarの形でないlzh・rar・7zをbsdtarに一覧させる(lha等の無いmacOS)
+            if listing is not None:
+                entries = parse_bsdtar_listing(listing.decode('utf-8', 'surrogateescape'))
         if entries is None and kind not in (conf.TAR, conf.ZIP):
             listing = self._run(argv + [path])
             if listing is not None:
@@ -201,9 +218,12 @@ class ArchiveMode:
         path, kind, name = self.current_archive, self.kind, entry.name
         try:
             if kind == conf.TAR:
-                with self._tar_open(path) as tar:
-                    member = tar.extractfile(name.rstrip('/') if entry.is_directory else name)
-                    return member.read() if member else None
+                try:
+                    with self._tar_open(path) as tar:
+                        member = tar.extractfile(name.rstrip('/') if entry.is_directory else name)
+                        return member.read() if member else None
+                except tarfile.ReadError:  # tarの形でない(bsdtarに一覧させたlzh・rar・7z): その1つをtarに取り出させる
+                    return self._run(['tar', '-xOf', path, name])
             if kind == conf.ZIP:
                 with zipfile.ZipFile(path) as z:
                     return z.read(name)
