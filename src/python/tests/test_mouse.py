@@ -58,10 +58,10 @@ class CopyMouseTest(unittest.TestCase):
         c = CopyMode(v)
         c.begin_or_extend_from_mouse(0, 1)
         c.place_cursor_at(1, 3)
-        self.assertEqual(c.collected_text(), 'bcdef\nghi')
+        self.assertEqual(c.joined_text(), 'bcdef\nghi')
         c.begin_or_extend_from_mouse(0, 4)   # 広がりのある範囲は残して、ここから新しく
         c.place_cursor_at(0, 6)
-        self.assertEqual(c.collected_text(), 'bcdef\nghi\nef')
+        self.assertEqual(c.joined_text(), 'bcdef\nghi ef')
 
 
 class VerticalColumnTest(unittest.TestCase):

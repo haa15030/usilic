@@ -122,7 +122,7 @@ class CopyMode:
         return regions
 
     def runs_for_row(self, row):
-        """描く時の反転(字の位置)。カーソルの字も反転。"""
+        """描く時の反転(字の位置)。カーソルの字は反転しない(端末のカーソルで、C++と同じ)。"""
         text = self.text_at(row)
         runs = []
         for region in self.all_regions():
@@ -137,8 +137,6 @@ class CopyMode:
                 start = c1 if row == r1 else 0
                 end = c2 if row == r2 else len(text)
                 runs.append((start, max(end, start), 'reverse'))
-        if row == self.row:
-            runs.append((self.col, self.col + 1, 'reverse'))
         return runs
 
     def region_text(self, region):
@@ -164,10 +162,14 @@ class CopyMode:
             out += ('\n' if joined else '') + parts[i + 1]
         return out
 
-    def collected_text(self, for_tool=False):
-        """全部の範囲の文字列(^[w: 改行でつなぐ、^[t: 普通の範囲は空白でつなぐ)。"""
-        texts = [self.region_text(r) for r in self.all_regions()]
-        if for_tool:
-            return ' '.join(t.replace('\n', ' ') if not r.rectangle else t
-                            for t, r in zip(texts, self.all_regions()))
-        return '\n'.join(texts)
+    def confirmed_text(self):
+        """^[w(C++のconfirmMark()): 空でない範囲が2つ以上で矩形が無ければ空白で、他は改行でつなぐ。範囲は消す。"""
+        text = self.joined_text()
+        self.regions, self.anchor, self.rectangle = [], None, False
+        return text
+
+    def joined_text(self):
+        regions = self.all_regions()
+        texts = [t for t in (self.region_text(r) for r in regions) if t]
+        joiner = ' ' if len(texts) >= 2 and not any(r.rectangle for r in regions) else '\n'
+        return joiner.join(texts)

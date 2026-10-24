@@ -178,6 +178,7 @@ class Application:
         self.info_view = ContentView()
         self.info_targets = []     # INFOの行ごとの開く物(Noneは開けない)
         self.copy = None           # COPY(CopyMode)
+        self.copy_saved_position = None  # COPYに入る前の(ビュー, カーソル, 頭)
         self.copy_prefix = None    # COPYの中の'ESC'・'X'・'goto'
         self.copy_digits = ''
         self.clipboard_text = ''
@@ -346,8 +347,7 @@ class Application:
             position = 'Record?(y/n)' if v.asking else self.notice or v.position_text()
             return mode_line.Fields('COPY', str(self.file_mode.byte_count), True, '', 'EPUB 縦書き'), position
         if self.copy is not None:  # C++のcopyView_: 「COPY 状態 COPYに入る前のモードラインの名前」
-            state = '^@' if self.copy.anchor is not None and not self.copy.rectangle else \
-                '^X␣' if self.copy.anchor is not None else '---'
+            state = 'Rectangle-Mark' if self.copy.anchor is not None and self.copy.rectangle else '---'  # normalPositionText()
             saved, self.copy = self.copy, None
             try:
                 under = self.mode_line_body()
@@ -1461,7 +1461,8 @@ class Application:
     def start_list_from_prompt(self):
         """プロンプトの^R: 入力順の一覧(EGREPはusilicrcのGREPの例を先頭に)。"""
         p = self.prompt
-        if p.history_category is None or p.kind in (pr.FILE, pr.DIRECTORY, pr.EPUB) and not p.candidate_list:
+        if p.history_category is None or p.kind in (pr.MARK_REGEX, pr.MARK_EXTENSION) or \
+                p.kind in (pr.FILE, pr.DIRECTORY, pr.EPUB) and not p.candidate_list:
             return True  # ^Xf・^Xd・^Jeには履歴の一覧が無い(^X^F等の一覧から打ち始めた物にはある、C++と同じ)
         items = list(self.ring(p.history_category))
         if p.kind in (pr.EGREP, pr.PART, pr.OCCUR_REGEX, pr.MARK_REGEX):
@@ -2384,6 +2385,13 @@ class Application:
             return self.go_back()
         if mode == ARCHIVE:
             return self.archive_back()
+        if mode == OCCUR and not self.occur_global:  # 一致の一覧から元の画面へ: 飛んだ時の「FGREP: 語」の印と一致の色は外す
+            self.grep.persistent = False
+            label = self.previous_mode_name(OCCUR)
+            if self.file_mode.origin is not None and self.file_mode.origin[1] == label:
+                self.file_mode.origin = None
+            if self.directory_mode.annotation == label:
+                self.directory_mode.annotation = ''
         if mode == LIST and self.list_stack:  # 一覧の中から開いた一覧: 前の一覧へ
             self.list_mode.restore(self.list_stack.pop())
             return True
@@ -2630,7 +2638,7 @@ class Application:
         self.grep.view = self.active_view()
         self.grep.origin = self.active_view().cursor_index
         self.push_mark(self.active_view())  # ^Sの開始にもマーク(HELPの^X^X)
-        self.grep_prompt = (syntax, LineEditor())
+        self.grep_prompt = (syntax, LineEditor(pr.PROMPT_KILL))
         return True
 
     def run_grep(self, syntax, pattern):
@@ -2985,10 +2993,17 @@ class Application:
             return True
         self.grep.select_line(line)
         self.grep.persistent = True
+        label = self.previous_mode_name(OCCUR)  # 「FGREP: 語」
         self.enter_mode(self.occur_origin)
         view = self.active_view()
         self.push_mark(view)
-        self.center_on(view, line)
+        view.cursor_index = line  # C++のopenSelectedGrepMatch(): setCursorIndex()(画面に入れるだけ)
+        view.ensure_cursor_visible()
+        # 右端(fileは後ろ、(ls)は「(ls)」の代わり)に「FGREP: 語」(C++のFileAnnotationKind::Search・DirAnnotationKind::Grep)
+        if self.occur_origin == FILE and self.epub is None:
+            self.file_mode.origin = (os.path.basename(self.file_mode.current_file), label)
+        elif self.occur_origin == DIRECTORY:
+            self.directory_mode.annotation = label
         return True
 
     # --- TOOL・外のページャー ---
@@ -3349,7 +3364,9 @@ class Application:
             snapshot.set_lines(list(self.vlist_view.lines))
             self.copy = CopyMode(snapshot)
         else:
-            self.copy = CopyMode(self.active_view())
+            view = self.active_view()
+            self.copy = CopyMode(view)
+            self.copy_saved_position = (view, view.cursor_index, view.top_index)
         self.copy_prefix = None
         return True
 
@@ -3396,7 +3413,7 @@ class Application:
         elif byte in (0, CTRL_SPACE):
             c.toggle(False)
         elif byte == CTRL_G:
-            self.copy = None
+            self.end_copy()
         elif byte in (0x0E, 0x10):
             c.move_row(1 if byte == 0x0E else -1)
         elif byte in (0x06, 0x02):
@@ -3409,14 +3426,29 @@ class Application:
             c.move_row(c.view.height)
         return True
 
-    def copy_to_clipboard(self, to_tool):
-        """^[w: 範囲をクリップボードへ(macOSはpbcopy、他はxclip)。^[tはさらにTOOLのプロンプトへ。"""
-        c = self.copy
-        text = c.collected_text(for_tool=to_tool)
+    def end_copy(self):
+        """COPYを抜ける。下のモードの位置はCOPYに入る前のまま(C++はCOPYを写し(copyView_)の上でする)。"""
         self.copy = None
-        return self.deliver_copied_text(text, to_tool)
+        saved, self.copy_saved_position = self.copy_saved_position, None
+        if saved is not None:
+            view, cursor, top = saved
+            view.cursor_index, view.top_index = cursor, top
+            view.clamp()
 
-    def deliver_copied_text(self, text, to_tool):
+    def copy_to_clipboard(self, to_tool):
+        """^[w: 範囲をクリップボードへ(macOSはpbcopy、他はxclip)。^[tはさらにTOOLのプロンプトへ(改行もそのまま)。
+        ^[wはC++と同じくCOPYのまま(矩形の範囲の時だけ抜ける)、知らせは出さない。"""
+        c = self.copy
+        rectangle = c.anchor is not None and c.rectangle
+        text = c.confirmed_text()
+        if rectangle or to_tool:
+            self.end_copy()
+        if not text:  # 範囲が無い: ^[tは前にコピーした字でTOOLのプロンプトへ(C++のclipboardText())
+            return self.start_tool_prompt(self.clipboard_text or '') if to_tool else True
+        pr.PROMPT_KILL['text'] = text  # プロンプトの^Yで入る(C++のpromptEditor_.setKillBuffer())
+        return self.deliver_copied_text(text, to_tool, notice=False)
+
+    def deliver_copied_text(self, text, to_tool, notice=True):
         """COPYで集めた字をクリップボードへ(to_toolならTOOLのプロンプトへも)。"""
         if not text:
             return False
@@ -3428,7 +3460,8 @@ class Application:
             pass
         if to_tool:
             return self.start_tool_prompt(text)
-        self.show_transient_notice('Copied: ' + text.split('\n')[0][:40])
+        if notice:
+            self.show_transient_notice('Copied: ' + text.split('\n')[0][:40])
         return True
 
     def clipboard_contents(self):

@@ -14,6 +14,8 @@ TOOL, PART, MACRO_KEY, BOOKMARK_SET, BOOKMARK_JUMP, MARK_REGEX, MARK_EXTENSION, 
     'OccurRegex')
 SHELL_COMMAND, MACRO_EDIT = 'ShellCommand', 'MacroEdit'
 
+PROMPT_KILL = {'text': ''}
+
 # 種類 -> (モードラインの名前, 尋ねる文, ^Rの履歴)
 KINDS = {
     FILE: ('FILE', '', hist.RECENT_FILE),
@@ -33,8 +35,8 @@ KINDS = {
     MACRO_KEY: ('MACRO', 'Key: ', None),
     BOOKMARK_SET: ('BOOKMARK', 'Set: ', None),
     BOOKMARK_JUMP: ('BOOKMARK', 'Jump: ', None),
-    MARK_REGEX: ('(ls)', 'Regexp: ', hist.RECENT_EGREP_PATTERN),
-    MARK_EXTENSION: ('(ls)', 'Extension: ', None),
+    MARK_REGEX: ('MARK', 'Regexp: ', hist.RECENT_EGREP_PATTERN),
+    MARK_EXTENSION: ('MARK', 'Extension: ', None),
     OCCUR_FIXED: ('FGREP', '', hist.RECENT_FGREP_PATTERN),
     OCCUR_REGEX: ('EGREP', '', hist.RECENT_EGREP_PATTERN),
     SHELL_COMMAND: ('SHELL', '', hist.SHELL_COMMAND),
@@ -46,7 +48,7 @@ class Prompt:
     def __init__(self, kind, text='', on_submit=None, show_position=False):
         self.kind = kind
         self.label, self.message, self.history_category = KINDS[kind]
-        self.editor = LineEditor()
+        self.editor = LineEditor(PROMPT_KILL)  # C++のpromptEditor_は1つなので、削除バッファはプロンプトどうしで同じ
         self.editor.set_text(text)
         self.on_submit = on_submit
         self.show_position = show_position   # CP・MV・RMは「CP 3/7 42% 転送先？」

@@ -18,8 +18,7 @@ class CopyTest(unittest.TestCase):
         c.toggle(False)
         c.move_row(1)
         c.toggle(False)
-        self.assertEqual(c.collected_text(), 'bc\nd')
-        self.assertEqual(c.collected_text(for_tool=True), 'bc d')  # TOOLへは空白でつなぐ
+        self.assertEqual(c.joined_text(), 'bc\nd')
 
     def test_rectangle_uses_columns(self):
         c = CopyMode(view(['日本語', 'abcdef']))
@@ -28,7 +27,7 @@ class CopyTest(unittest.TestCase):
         c.move_row(1)          # 2行目の桁2(c)
         c.move_col(2)          # 桁4(e)
         c.toggle(True)
-        self.assertEqual(c.collected_text(), '本\ncd')
+        self.assertEqual(c.joined_text(), '本\ncd')
 
     def test_several_regions(self):
         c = CopyMode(view(['one two']))
@@ -39,7 +38,9 @@ class CopyTest(unittest.TestCase):
         c.toggle(False)
         c.line_end()
         c.toggle(False)
-        self.assertEqual(c.collected_text(), 'one\ntwo')
+        self.assertEqual(c.joined_text(), 'one two')  # 範囲が2つ以上なら空白でつなぐ(C++のconfirmMark())
+        self.assertEqual(c.confirmed_text(), 'one two')
+        self.assertEqual(c.all_regions(), [])
 
 
 if __name__ == '__main__':

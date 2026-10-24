@@ -10,13 +10,21 @@ def is_word_char(c):
 
 
 class LineEditor:
-    def __init__(self):
+    def __init__(self, kill=None):
         self.text = ''
         self.cursor = 0
-        self.kill_buffer = ''
+        self.kill = kill if kill is not None else {'text': ''}  # ^K・^Uの削除バッファ(プロンプトどうしで共有できる)
         self.select_all_pending = False  # 入れておいた字を全部選んだ状態(C++のselectAllPending_)
         self.undo_stack = []
         self.undo_insert_run = 0  # 直前の記録から続いている文字入力の数(0=まとまり無し)
+
+    @property
+    def kill_buffer(self):
+        return self.kill['text']
+
+    @kill_buffer.setter
+    def kill_buffer(self, text):
+        self.kill['text'] = text
 
     def set_text(self, text):
         # 空の行は新しい入力の始まりなので取り消しの履歴を捨てる。それ以外の置き換えは1回分の編集。
