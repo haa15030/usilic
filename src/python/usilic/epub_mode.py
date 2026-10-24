@@ -272,6 +272,11 @@ class _XhtmlParser(HTMLParser):
         elif block.anchors:
             self.pending_anchors = block.anchors + self.pending_anchors
 
+    def _vertical_now(self):
+        """今の要素が縦書きか(CSSのwriting-mode、指定が無ければ本全体の向き)。"""
+        vertical = self.style().vertical
+        return vertical if vertical is not None else self.book_vertical
+
     def _attr(self):
         """今の字の属性(太字・斜体・下線を重ねて、C++のbold_・italic_・underline_)。無ければNone。"""
         names = []
@@ -387,9 +392,12 @@ class _XhtmlParser(HTMLParser):
         if tag == 'rt':
             self.in_rt += 1
         if tag == 'a':
+            noteref = 'noteref' in (a.get('epub:type') or a.get('type') or '')
+            if noteref:  # 注釈番号は括弧で囲む(括弧はリンクの外、縦書きは全角、C++と同じ)
+                self._add('［' if self._vertical_now() else '[')
             self.hrefs.append(a.get('href'))
             # 本文の注釈へのリンク(epub:type="noteref")の字は太字(C++のnoterefOpen_)
-            self.noterefs.append('noteref' in (a.get('epub:type') or a.get('type') or ''))
+            self.noterefs.append(noteref)
         if tag == 'table':
             self.tables.append([])
         if tag in ('td', 'th') and self.tables and self.current is not None:  # 欄の頭(_finish_table()でそろえる)
@@ -435,8 +443,8 @@ class _XhtmlParser(HTMLParser):
                 self.ruby = []
         if tag == 'a' and self.hrefs:
             self.hrefs.pop()
-            if self.noterefs:
-                self.noterefs.pop()
+            if self.noterefs and self.noterefs.pop():
+                self._add('］' if self._vertical_now() else ']')
         if tag in ('td', 'th') and self.tables and self.row_cells and self.current is not None:
             self.row_cells[-1][1] = len(self.current.pieces)
         if tag == 'tr' and self.tables and self.current is not None and self.row_cells:

@@ -902,9 +902,13 @@ class BodyConverter {
       // 2026-10-24、直接のユーザー報告(=lr.png"注釈であることを示す1.がわかりにくい"): 本文の注釈への
       // リンク(epub:type="noteref"、KDPの注釈の形)の字は太字にする(下線/縦書きの傍線に加えて)。
       if (t.kind == XmlToken::Open && attr(t, "type").find("noteref") != std::string::npos) {
+        // 2026-10-25、直接のユーザー依頼(=lv.png"文字の大きさが同じなので項目名の一部のような印象"、=lw.pngの
+        // Kindle本の「［2］」): 番号を括弧で囲み(括弧は番号の外、リンクの外)、番号は小さい字に。括弧は縦書きでは
+        // 全角(縦書きの形﹇﹈、半角の[2]だと3字の英数字の並びとして横倒しになる)、横書きでは半角。
+        text(vertical_.value_or(bookVertical_) ? "\xEF\xBC\xBB" : "[");
         noterefOpen_.push_back(true);
         changeStyle(bold_, +1, "b");
-        line_ += "<note>";  // Kindleの注釈番号と同じく決まった色(PipeBuffer::currentNote_)
+        line_ += "<note><small>";  // Kindleの注釈番号と同じく決まった色(PipeBuffer::currentNote_)
       } else if (t.kind == XmlToken::Open) {
         noterefOpen_.push_back(false);
       }
@@ -933,8 +937,9 @@ class BodyConverter {
       }
       if (t.kind == XmlToken::Close && !noterefOpen_.empty()) {
         if (noterefOpen_.back()) {
-          line_ += "</note>";
+          line_ += "</small></note>";
           changeStyle(bold_, -1, "b");
+          text(vertical_.value_or(bookVertical_) ? "\xEF\xBC\xBD" : "]");
         }
         noterefOpen_.pop_back();
       }

@@ -32771,3 +32771,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼"今度はそれとわかる(=lu.png)。HELP.epubもこの形式にしてみて"(項目1070のKbt.epubの注釈番号)。
    - **実装**: `usilic -e`(help_to_epub.cpp)は、以前は斜体・太字の設定項目の名前そのもの(「<i>KEY</i>」等)を注釈へのリンク(noteref)にしていた。名前はそのまま、その後ろに注釈番号(n1→1)を注釈へのリンクにする(usilicは青い太字で描く、項目1069・1070)。注釈の頭の戻りのリンクも、最初は注釈番号(以前は↩)、同じ注釈を指す所が他にもあれば↩2 ↩3…。
    - make help-epub・make help-epub-en(~/HELP.txt・~/HELP_en.txtから)でdoc/HELP.epub・doc/HELP.en.epubを作り直して入れた(「KEY1」「LINE-HEIGHT2」、注釈の頭は「1 usilicrc の KEY」)。make usilic・make install・make app。
+1072. **注釈番号を小さい字に、［ ］で囲む(2026-10-25)**
+   - **経緯**: 直接のユーザー依頼(=lv.png)"文字の大きさが同じなので項目名の一部のような印象がある。小さめにして欲しいのと、別のKindle本にこんなのがあったのでこれを入れてみて(=lw.png、縦書きの「［2］」)"。
+   - **実装**: C++: 本文の注釈へのリンク(noteref)の番号を<small>(-gで小さい字)にし、リンクの外側を括弧で囲む。括弧は縦書きの要素では全角の［］(縦書きの形﹇﹈、半角の[2]は3字の英数字の並びとして横倒しになる)、横書きでは半角の[ ](HELPの「SPEED[22]」)。括弧は番号の色・傍線・太字の外。Python版も括弧を足す(字の大きさは端末では変えられないので無し)。
+   - 確かめたこと: C++と同じ処理で行を出す道具とPython版で、HELP.epubの「SPEED[22]」・注釈の頭の「[22] usilicrc の SPEED」、Kbt.epubの「乱してしまう［1］」。C++のテスト(--test-case="*pub*,*ertical*,*ipe*")は以前からの3件だけ通らない。unittest 82件。-gの見た目は未確認。make usilic・make install・make app。
