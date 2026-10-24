@@ -32732,3 +32732,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: C++: ^[^[・^X^Cを`isShellSafeNavigation`に足した(`isShellSafeExit`)。確認の^G・^[でやめるとSHELLのまま。Python版は元からSHELLのままだったが、終了の確認を^[でやめる(C++の2026-10-21の動き)が無かったので足した。
    - C++のテスト: 「SHELL leader keys: ^X^C (EXIT)…」を、SHELLのまま確認が出て^[でやめるとSHELLのまま、を確かめる形に。「prompt labels: EXIT…」は項目994で「Exit? (y/n) 」にした後も古い文のままだったので直した。--test-case="*hell*,*SHELL*,*xit*,*EXIT*"の119件が通る。make usilic・make install。
    - 確かめたこと: vcmp.pyで、SHELLの^[^[・その^G・^[・^X^C・その^G・(ls)の^[^[/^X^Cの^[が両方の版で同じ(字と属性)。unittest 82件。
+1064. **Python版: バイナリのfileをクイックルックで開く、外のプログラムの前に画面を消す(C++に合わせる)(2026-10-24)** 項目1047の続き(保留していた4つのうちの1つ、直接のユーザー依頼"4.だけ。画面が出てもかまわない")。
+   - fileを開く時(^M・^Xf・履歴等の`open_file_entry()`)、macOSでバイナリのfileが画像・PDFか、クイックルックの扱える種類(`qlmanage -m plugins`のUTIに、mdlsのkMDItemContentTypeTreeのどれかが入っている)なら、C++の`openExternallyIfApplicable()`・`runQuickLook()`と同じく`qlmanage -p`を前で動かし、TOOLの履歴に「qlmanage -p 名前」を残す(`quick_look_binary()`)。以前はfile(1)の結果を出していた。LAUNCHの割り当てがあればそちらが先(C++と同じ)。
+   - LAUNCH・TOOL等の外のプログラムに渡す前に、C++の`leaveForExternalProgram()`と同じく代替画面のまま画面を消す(cursesのendwin()が代替画面を抜けるので入り直す、元の画面は消さない)。以前はusilicの画面の上に重ねて出ていた。^Zは今まで通り消さない。
+   - 確かめたこと: vcmp.pyで、^Xfで8×8のPNGを開いた画面(qlmanageの出力)が両方の版で同じ(クイックルックの窓が開くのも確かめた)。unittest 82件。動画(C++のopenVideos())は対象外。

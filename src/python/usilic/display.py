@@ -3,6 +3,7 @@
 桁の計算は自前(utf8.text_width)で行い、cursesには1行ずつ描く。最下行がモードライン。
 """
 import curses
+import sys
 
 from . import utf8
 
@@ -195,11 +196,19 @@ class TerminalDisplay:
         except OSError:
             pass
 
-    def suspend(self):
-        """外のプログラム(LAUNCH)の間、端末を元に戻す(C++のleaveRawMode())。"""
+    def suspend(self, clear=True):
+        """外のプログラム(LAUNCH)の間、端末を元に戻す(C++のleaveRawMode())。C++のleaveForExternalProgram()と同じく、
+        代替画面のまま画面を消してから渡す(endwin()が代替画面を抜けるので入り直す、元の画面は消さない)。"""
         self.set_mouse_tracking(False)
         curses.def_prog_mode()
         curses.endwin()
+        if not clear:  # ^Z(C++のleaveForSuspend()は画面を消さない)
+            return
+        try:
+            sys.stdout.write('\033[?1049h\033[H\033[2J')
+            sys.stdout.flush()
+        except OSError:
+            pass
 
     def resume(self):
         curses.reset_prog_mode()

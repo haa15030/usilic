@@ -1071,6 +1071,8 @@ class Application:
         launch = self.configuration.launch_for(path)
         if launch:
             return self.run_external(launch + [path])
+        if self.quick_look_binary(path):
+            return True
         if self.configuration.archive_for(path):
             if self.open_archive(path):
                 return True
@@ -1192,6 +1194,55 @@ class Application:
                 return False
             return True
         return self.open_file_entry(target)
+
+    def quick_look_binary(self, path):
+        """macOS: バイナリのfileで、画像・PDFか、クイックルックの扱える種類(`qlmanage -m plugins`の表にmdlsの
+        kMDItemContentTypeTreeのどれかがある)なら、qlmanage -pで開く(C++のopenExternallyIfApplicable())。"""
+        if not os.access('/usr/bin/qlmanage', os.X_OK) or is_epub_file(path):
+            return False
+        try:
+            with open(path, 'rb') as f:
+                head = f.read(0x10000)
+        except OSError:
+            return False
+        if self.configuration.looks_binary(head) is None:
+            return False
+        try:
+            mime = subprocess.run(['file', '-b', '--mime-type', path], capture_output=True, text=True).stdout
+        except OSError:
+            mime = ''
+        mime = mime.split('\n')[0]
+        if not (mime.startswith('image/') or mime == 'application/pdf'):
+            supported = self.quick_look_supported_types()
+            if not supported:
+                return False
+            try:
+                tree = subprocess.run(['mdls', '-raw', '-name', 'kMDItemContentTypeTree', path],
+                                      capture_output=True, text=True)
+            except OSError:
+                return False
+            if tree.returncode != 0 or not supported & set(re.findall(r'"([^"]*)"', tree.stdout)):
+                return False
+        if self.history is not None:  # C++のrunQuickLook()と同じく、TOOLの履歴に「qlmanage -p 名前」
+            self.history.push_recent(hist.SHELL_COMMAND, 'qlmanage -p ' + os.path.basename(path.rstrip('/')))
+        return self.run_external(['qlmanage', '-p', path])
+
+    _quick_look_types = None
+
+    @classmethod
+    def quick_look_supported_types(cls):
+        """`qlmanage -m plugins`の各行(「  <UTI> -> <ジェネレーター> (...)」)のUTI(起動後に1回だけ調べる)。"""
+        if cls._quick_look_types is None:
+            types = set()
+            try:
+                out = subprocess.run(['qlmanage', '-m', 'plugins'], capture_output=True, text=True).stdout
+            except OSError:
+                out = ''
+            for line in out.splitlines():
+                if ' -> ' in line:
+                    types.add(line.split(' -> ', 1)[0].strip())
+            cls._quick_look_types = types
+        return cls._quick_look_types
 
     def run_external(self, argv, cwd=None, env=None):
         """LAUNCH・TOOL・EDIT: 画面を抜けてプログラムを動かし、終わったら戻る。"""
@@ -2476,7 +2527,7 @@ class Application:
 
     def suspend(self):
         """^Z: サスペンド(端末を戻してから止まる)。"""
-        self.display.suspend()
+        self.display.suspend(clear=False)
         os.kill(os.getpid(), signal.SIGSTOP)
         self.display.resume()
         self.layout()
