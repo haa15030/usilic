@@ -32753,3 +32753,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **実装**: CSSの読み取り(`parseCssFontRules()`・Python版の`parse_css()`)にborder・border-top/bottom/left/right(noneや0でなければ有り)を足した。<table>にその指定(またはHTMLのborder属性)があれば、2行目からの行の前に罫線の行を出し、表を閉じた所(`finishTable()`)で表の幅(欄の幅と欄の間)だけの「─」(半角の幅)で埋める(行の数は先に決まるので、リンク・アンカーの行番号はずれない)。縦書きでは「─」2字を1マスの「｜」にする(`toCells()`、半角の英数字2字の縦中横と同じ考え方、表の高さのマスとそろう)。usilicのCSSは入れ子の選択子(table.note td等)を読まないので、表そのものの指定で決める。
    - src/Kbt.epub(ユーザーのfile)のCSSのtable.noteにborderを足し、表の中の「強い光」「弱い光」「位置」「速度」を太字にした(ユーザーの依頼)。
    - 確かめたこと: C++と同じ処理で行を出す道具とPython版で、Kbt.epubの表の行の間に表の幅の罫線が入る。C++のテスト「epubToHelpMarkup: a table with a CSS border gets a rule line between rows」(罫線の無い表には入れないことも)を足した。test_epub_to_help_markup.cppの以前からの3件は通らないまま。unittest 82件。make usilic・make install・make app。
+1068. **表の罫線(項目1067)を外す、注釈番号を太字に、縦書きの本の注釈は縦書きのまま(2026-10-24)**
+   - **経緯**: 直接のユーザー報告。(1)=lq.png"線が太くて繋がっておらず悪目立ち...無しに戻して"、(2)=lr.png"注釈であることを示す1.がわかりにくい"、(3)=ls.png"1.から飛んでみると横書き"。
+   - (1) 項目1067の罫線(CSSのborderの読み取り・罫線の行・縦書きの「─」2字の「｜」)をC++・Python版とも外した(項目1066の欄をそろえる所までに戻した)。src/Kbt.epubのCSSのtable.noteに足したborderも外した。
+   - (2) 本文の注釈へのリンク(epub:type="noteref"、KDPの注釈の形)の字を太字にする(下線/縦書きの傍線に加えて、C++の`noterefOpen_`・Python版の`noterefs`)。
+   - (3) 縦書きの本の注釈は、2026-10-15の作り(奥付と同じく横書きの範囲として横書きで見せる)をやめ、注釈の行だけで縦書きの列を組み直して縦書きのまま見せる(`showEpubNoteAt()`)。^G・右クリックで戻る時は本文の列を組み直して元の位置へ(`leaveEpubNote()`)。注釈が横書きの範囲の中にある時は今まで通り横書き。Python版も(`show_epub_note()`・`leave_epub_note()`)。
+   - 確かめたこと: C++のテスト(--test-case="*pub*,*ertical*,*note*,*Note*")は以前からの3件(test_epub_to_help_markup.cpp)だけ通らない。unittest 82件。-gでの見た目は未確認(ユーザーに確かめてもらう)。make usilic・make install・make app。

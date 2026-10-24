@@ -4462,17 +4462,32 @@ class Application:
             origin = {'lines': self.file_view.lines, 'top': self.file_view.top_index,
                       'cursor': self.file_view.cursor_index, 'section': self.epub_section,
                       'vertical': (v.first, v.cursor) if v is not None else None, 'chapter': self.epub_chapter}
-        if self.epub.right_to_left:
-            self.epub_section = (first, until)
+        vertical = self.epub.right_to_left and self.epub_horizontal_range(first) is None
+        if self.epub.right_to_left and not vertical:
+            self.epub_section = (first, until)  # 注釈が横書きの範囲の中
         self.file_view.set_lines(note)
         self.file_view.cursor_index = self.file_view.top_index = 0
         origin['shown'] = self.file_view.lines
         self.epub_note = origin
+        if vertical:
+            # 縦書きの本: 注釈の行だけで縦書きの列を組み、縦書きのまま見せる(C++と同じ、以前は横書き)。
+            # 本文の列は覚えておき、leave_epub_note()で戻す。
+            self.epub_section = None
+            origin['vertical_book'] = (self.vertical, self.vertical_key, self.vertical_source, self.vertical_synced)
+            self.sync_vertical()
+            sources = [x for x in self.epub_logical_lines()[0]
+                       if first <= x.raw <= until and self.epub_horizontal_range(x.raw) is None]
+            hints = self.epub.hints
+            self.vertical = ev.VerticalBook(sources, set(), self.file_view.height, self.display.columns,
+                                            self.epub_chapter_mode, hints.centered, hints.horizontal)
+            self.vertical_synced = self.global_epub_line()
         return True
 
     def leave_epub_note(self):
         """注釈から本文の行と、注釈へ飛ぶ前の位置へ。"""
         note, self.epub_note = self.epub_note, None
+        if 'vertical_book' in note:  # 注釈を縦書きで見せていた: 本文の列に戻す
+            self.vertical, self.vertical_key, self.vertical_source, self.vertical_synced = note['vertical_book']
         self.file_view.set_lines(note['lines'])
         self.epub_chapter = note['chapter']
         self.file_view.cursor_index, self.file_view.top_index = note['cursor'], note['top']

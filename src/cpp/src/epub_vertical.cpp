@@ -222,15 +222,6 @@ std::vector<Cell> toCells(const EpubVerticalSourceLine &line, bool sideways) {
       continue;
     }
     // 縦中横: 半角英数2字まで(2026-09-29、数字だけから英字にも広げた)、"!!" "!?" "?!" "??"
-    // 2026-10-24(表の罫線の行、epub_to_help_markup.cppのfinishTable()): 半角の幅の「─」は2字で1マスの「｜」に
-    // (横書きの表の幅の桁と、縦書きの表の高さのマスをそろえる)。
-    if (g.cp == 0x2500 && i + 1 < glyphs.size() && glyphs[i + 1].cp == 0x2500 && g.width < 2) {
-      appendUtf8(cell.glyph, 0xFF5C);
-      cell.byteEnd = glyphs[i + 1].byte + static_cast<int>(glyphs[i + 1].bytes.size());
-      cells.push_back(cell);
-      i++;
-      continue;
-    }
     if (i + 1 < glyphs.size()) {
       const Glyph &h = glyphs[i + 1];
       bool digits = isAsciiAlnum(g.cp) && isAsciiAlnum(h.cp) && runLength[i] == 2;

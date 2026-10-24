@@ -10197,13 +10197,24 @@ bool Application::showEpubNoteAt(int raw) {
   origin.file = fileMode_.currentFile();
   origin.fullLines = fileView_.lines();
   epubNote_ = std::move(origin);
-  if (epubBookVertical()) epubHorizontalSection_ = std::make_pair(from, until);  // 縦書きの本: 横書きで見せる
+  // 2026-10-24、直接のユーザー報告(=ls.png"1.から飛んでみると横書き"): 縦書きの本の注釈は、以前(2026-10-15)は
+  // 奥付と同じく横書きの範囲として横書きで見せていた。縦書きの本では、注釈の行だけで縦書きの列を組み直して
+  // 縦書きのまま見せる(戻る時はleaveEpubNote()が本文の列を組み直す)。
+  bool vertical = epubBookVertical() && note.front().rawLineNumber && !epubHorizontalRangeAt(*note.front().rawLineNumber);
+  if (epubBookVertical()) epubHorizontalSection_.reset();
   epubHorizontalLink_.reset();
   fileView_.setLines(std::move(note));
   fileView_.setRawLineBase(from - 1);  // モードラインは注釈の中の行番号(1/8等)
   fileView_.setCursorIndex(0);
   fileView_.setTopIndex(0);
   epubNote_->shownData = fileView_.lines().data();
+  if (vertical) {
+    rebuildEpubVertical(from);
+    activeView().redraw();
+    activeView().syncVisibleCursor();
+    return true;
+  }
+  if (epubBookVertical()) epubHorizontalSection_ = std::make_pair(from, until);  // 注釈が横書きの範囲の中
   syncEpubHorizontalPresentation();
   fileView_.redraw();
   fileView_.syncVisibleCursor();
@@ -10222,7 +10233,13 @@ bool Application::leaveEpubNote(bool redraw) {
   epubHorizontalLink_.reset();
   if (epubBookVertical()) epubHorizontalSection_ = note.originSection;
   syncEpubHorizontalPresentation();
-  if (note.originVertical && epubVerticalActive()) setEpubVerticalView(note.originVerticalFirst, note.originVerticalCursor);
+  if (note.originVertical && epubVerticalActive()) {
+    // 注釈を縦書きで見せていた(epubVerticalCols_が注釈だけ)ので、本文の列を組み直してから元の位置へ
+    const auto &lines = fileView_.lines();
+    int cursor = std::clamp(note.originCursor, 0, std::max(0, static_cast<int>(lines.size()) - 1));
+    if (!lines.empty()) rebuildEpubVertical(lines[cursor].rawLineNumber.value_or(1));
+    setEpubVerticalView(note.originVerticalFirst, note.originVerticalCursor);
+  }
   if (redraw) {
     activeView().redraw();
     activeView().syncVisibleCursor();

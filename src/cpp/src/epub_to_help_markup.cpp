@@ -8,7 +8,6 @@
 #include <cstdlib>
 #include <map>
 #include <set>
-#include <tuple>
 #include <vector>
 
 namespace fm {
@@ -375,9 +374,6 @@ struct CssFontRule {
   // 丸めたもの(1: 大きい字、-1: 小さい字、0: ふつう)。-gだけがマスの中で字を拡大縮小して
   // 描く(Display::Attribute::Large/Small、<big>/<small>)。
   std::optional<int> fontSize;
-  // 2026-10-24、直接のユーザー依頼(表の行の間の罫線): border・border-top等(noneや0でなければtrue)。<table>に
-  // 指定があれば行の間に罫線の行を置く(BodyConverter::finishTable())。
-  std::optional<bool> border;
   // 本のCSSより優先する規則(kReaderOverrideCss)。詳しさに関わらず、本の規則に勝つ。
   bool readerOverride = false;
 };
@@ -605,21 +601,6 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
           emphasis = v;
       fp = colon;
     }
-    std::optional<bool> border;
-    for (std::size_t fp = 0; (fp = body.find("border", fp)) != std::string::npos;) {
-      std::size_t colon = body.find(':', fp);
-      if (colon == std::string::npos) break;
-      bool nameStart = fp == 0 || !(std::isalnum(static_cast<unsigned char>(body[fp - 1])) || body[fp - 1] == '-');
-      std::string suffix = trimAsciiSpace(body.substr(fp + 6, colon - fp - 6));
-      bool side = suffix.empty() || suffix == "-top" || suffix == "-bottom" || suffix == "-left" || suffix == "-right";
-      std::size_t end = body.find(';', colon);
-      if (nameStart && side) {
-        std::string value = trimAsciiSpace(body.substr(colon + 1, end == std::string::npos ? std::string::npos : end - colon - 1));
-        border = !(value.empty() || value.find("none") != std::string::npos || value.find("hidden") != std::string::npos ||
-                   value == "0" || value.compare(0, 2, "0 ") == 0);
-      }
-      fp = colon;
-    }
     std::optional<bool> hidden;
     for (std::size_t fp = 0; (fp = body.find("display", fp)) != std::string::npos;) {
       std::size_t colon = body.find(':', fp);
@@ -634,7 +615,7 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
       fp = colon;
     }
     if (!serif && !vertical && !alignEnd && !center && !paddingTop && !paddingLeft && !textIndent && !hidden && !bold &&
-        !emphasis && !fontSize && !border)
+        !emphasis && !fontSize)
       continue;
     std::string one;
     for (char c : selectors + ",") {
@@ -672,7 +653,6 @@ std::vector<CssFontRule> parseCssFontRules(std::string css) {
       rule.bold = bold;
       rule.emphasis = emphasis;
       rule.fontSize = fontSize;
-      rule.border = border;
       std::size_t dot = sel.find('.');
       rule.tag = sel.substr(0, dot);
       if (rule.tag == "*") rule.tag.clear();
@@ -919,6 +899,14 @@ class BodyConverter {
       // アンダーラインを付加し returnで当該行へ飛んではどうか"): 本の中へのリンク
       // だけに下線を付け、リンク先の行を記録する(外部URLは飛べないので対象外)。
       // 下線はリンク専用にするため、h1と<u>には付けない。
+      // 2026-10-24、直接のユーザー報告(=lr.png"注釈であることを示す1.がわかりにくい"): 本文の注釈への
+      // リンク(epub:type="noteref"、KDPの注釈の形)の字は太字にする(下線/縦書きの傍線に加えて)。
+      if (t.kind == XmlToken::Open && attr(t, "type").find("noteref") != std::string::npos) {
+        noterefOpen_.push_back(true);
+        changeStyle(bold_, +1, "b");
+      } else if (t.kind == XmlToken::Open) {
+        noterefOpen_.push_back(false);
+      }
       if (t.kind == XmlToken::Open) {
         std::string href = attr(t, "href");
         bool external = href.find("://") != std::string::npos || href.compare(0, 7, "mailto:") == 0;
@@ -942,6 +930,10 @@ class BodyConverter {
         linkTarget_.reset();
         changeStyle(underline_, -1, "u");
       }
+      if (t.kind == XmlToken::Close && !noterefOpen_.empty()) {
+        if (noterefOpen_.back()) changeStyle(bold_, -1, "b");
+        noterefOpen_.pop_back();
+      }
     } else if (name == "td" || name == "th") {
       // 2026-10-24、直接のユーザー依頼("KDPのガイドラインに掲載事項の範囲内で進めて"): 表(HTMLの<table>)は、
       // 以前は欄を空白1つでつなぐだけで欄がそろわなかった。行(<tr>)ごとに欄の位置を覚え、表を閉じた所で
@@ -962,23 +954,13 @@ class BodyConverter {
         pendingSpace_ = true;
       }
     } else if (kBlockElements.count(name)) {
-      if (name == "table" && t.kind == XmlToken::Open) {
-        tableStack_.emplace_back();
-        std::string frame = attr(t, "border");
-        tableStack_.back().border = ruleFor("table", attr(t, "class"), &CssFontRule::border).value_or(false) ||
-                                    (!frame.empty() && frame != "0");
-      }
+      if (name == "table" && t.kind == XmlToken::Open) tableStack_.emplace_back();
       if (name == "tr" && open) rowCells_.clear();
       // 行を閉じる: endLine()で出す行の、out_の中の頭と欄の位置を覚える
       std::size_t rowStart = out_.size();
       bool rowClosing = close && name == "tr" && !tableStack_.empty();
       if (open) {
         endLine(false);
-        // 罫線のある表の2行目からは、行の前に罫線の行(中身はfinishTable()が幅に合わせて入れる)
-        if (name == "tr" && !tableStack_.empty() && tableStack_.back().border && !tableStack_.back().rows.empty()) {
-          tableStack_.back().rules.push_back(out_.size());
-          out_ += '\n';
-        }
         // ブロックの行の範囲(注釈の区画、EpubLayoutHints::notes)。閉じた所(下)で記録する。
         if (t.kind == XmlToken::Open) {
           blockStack_.push_back({currentLineNumber(), isNoteType(attr(t, "type")), {}});
@@ -1004,7 +986,7 @@ class BodyConverter {
           std::vector<std::pair<std::size_t, std::size_t>> cells = rowCells_;
           rowCells_.clear();
           endLine(false);
-          if (out_.size() > rowStart && !cells.empty()) tableStack_.back().rows.push_back({rowStart, std::move(cells)});
+          if (out_.size() > rowStart && !cells.empty()) tableStack_.back().push_back({rowStart, std::move(cells)});
         } else if (pendingLabel_ && lineVisible_) {
           pendingLabel_.reset();
           endLine(true);
@@ -1365,57 +1347,40 @@ class BodyConverter {
   // 表を閉じた: 欄ごとに一番広い幅へ全角の空白(U+3000、奇数なら半角の空白も)で埋め、欄の間に全角の空白を
   // 1つ置いて、出した行を組み直す(縦書きでも欄の頭がそろう)。行の数は変えない(リンク・アンカーの行番号のため)。
   void finishTable() {
-    Table table = std::move(tableStack_.back());
+    std::vector<TableRow> rows = std::move(tableStack_.back());
     tableStack_.pop_back();
-    const std::vector<TableRow> &rows = table.rows;
     std::vector<int> widths;
     for (const auto &row : rows) {
       std::size_t end = out_.find('\n', row.start);
       std::string line = out_.substr(row.start, end - row.start);
       for (std::size_t i = 0; i < row.cells.size(); i++) {
         auto [from, to] = row.cells[i];
-        from = std::min(from, line.size());
-        int w = markupWidth(line.substr(from, std::min(std::max(to, from), line.size()) - from));
+        int w = markupWidth(line.substr(std::min(from, line.size()), std::min(to, line.size()) - std::min(from, line.size())));
         if (widths.size() <= i) widths.push_back(0);
         widths[i] = std::max(widths[i], w);
       }
     }
-    // 行と罫線の行の置き換え(out_の中の頭, 元の長さ, 新しい中身)。後ろから置き換える。
-    std::vector<std::tuple<std::size_t, std::size_t, std::string>> edits;
-    for (const auto &row : rows) {
-      std::size_t end = out_.find('\n', row.start);
-      std::string line = out_.substr(row.start, end - row.start);
-      std::string rebuilt = line.substr(0, std::min(row.cells.front().first, line.size()));
-      for (std::size_t i = 0; i < row.cells.size(); i++) {
-        auto [from, to] = row.cells[i];
+    for (auto row = rows.rbegin(); row != rows.rend(); ++row) {
+      std::size_t end = out_.find('\n', row->start);
+      std::string line = out_.substr(row->start, end - row->start);
+      std::string rebuilt = line.substr(0, std::min(row->cells.front().first, line.size()));
+      for (std::size_t i = 0; i < row->cells.size(); i++) {
+        auto [from, to] = row->cells[i];
         from = std::min(from, line.size());
         to = std::min(std::max(to, from), line.size());
         std::string cell = line.substr(from, to - from);
         if (i > 0) rebuilt += "\xE3\x80\x80";
         rebuilt += cell;
-        if (i + 1 < row.cells.size()) {
+        if (i + 1 < row->cells.size()) {
           int pad = widths[i] - markupWidth(cell);
           for (; pad >= 2; pad -= 2) rebuilt += "\xE3\x80\x80";
           if (pad) rebuilt += ' ';
         }
       }
-      rebuilt += line.substr(std::min(row.cells.back().second, line.size()));  // 行末で閉じた装飾等
-      edits.emplace_back(row.start, end - row.start, std::move(rebuilt));
-    }
-    // 罫線の行: 表の幅(欄の幅と欄の間の全角の空白)だけ「─」(縦書きでは「｜」、epub_vertical.cppのverticalForms())
-    int total = 0;
-    for (int w : widths) total += w;
-    total += 2 * std::max(0, static_cast<int>(widths.size()) - 1);
-    static const std::string kRule = "\xE2\x94\x80";
-    int ruleWidth = std::max(1, Utf8::display_width(reinterpret_cast<const unsigned char *>(kRule.data()), 3));
-    std::string rule;
-    for (int w = 0; w < total; w += ruleWidth) rule += kRule;
-    for (std::size_t at : table.rules) edits.emplace_back(at, 0, rule);
-    std::sort(edits.begin(), edits.end(), [](const auto &a, const auto &b) { return std::get<0>(a) > std::get<0>(b); });
-    for (const auto &[at, length, text] : edits) {
+      rebuilt += line.substr(std::min(row->cells.back().second, line.size()));  // 行末で閉じた装飾等
       // currentLineNumber()が数え終えた所(counted_)が後ろなら、長さの変わった分だけずらす(改行の数は同じ)
-      if (counted_ >= at + length) counted_ = counted_ + text.size() - length;
-      out_.replace(at, length, text);
+      if (counted_ >= end) counted_ = counted_ + rebuilt.size() - (end - row->start);
+      out_.replace(row->start, end - row->start, rebuilt);
     }
   }
 
@@ -1525,12 +1490,8 @@ class BodyConverter {
   bool lineImageOnly_ = false;                 // 今の行は画像の"[image: ...]"だけ
   int pendingDepth_ = 0;
   std::string line_;
-  struct Table {
-    bool border = false;               // <table>にborderの指定(CSS・属性): 行の間に罫線の行
-    std::vector<TableRow> rows;
-    std::vector<std::size_t> rules;    // 罫線の行(空の行として出した所)のout_の中の頭
-  };
-  std::vector<Table> tableStack_;      // 開いている表(finishTable())
+  std::vector<bool> noterefOpen_;  // 開いている<a>ごとに、注釈へのリンク(noteref、太字にした)か
+  std::vector<std::vector<TableRow>> tableStack_;           // 開いている表ごとの行(finishTable())
   std::vector<std::pair<std::size_t, std::size_t>> rowCells_;  // 今の行(<tr>)の欄のline_の中の位置
   bool lineVisible_ = false;
   bool pendingSpace_ = false;
