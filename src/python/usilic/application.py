@@ -2501,6 +2501,9 @@ class Application:
         if byte == CTRL_O:
             self.prompt_ctrl_o = True
             return True
+        if p.kind == pr.EXIT and byte == ESC and not self.pending_keys:  # 終了の確認は^[でもやめる(C++と同じ)
+            self.prompt = None
+            return True
         leader = self.feed_prompt_leader_byte(editor, byte)
         if leader is not None:
             return leader

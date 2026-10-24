@@ -4385,8 +4385,12 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     // 2026-10-22(HELPのキーの検証で、SHELLの^O^F・^O^B・^O^Lが(ls)へ抜けてそちらをページ送り等していた): SHELLの
     // 中から使うための^O^F・^O^B・^O^L・^O/(dispatchLeaderByte()の^Oの節)も、SHELLのまま実行する。
     bool isShellSafeLeaderO = leaderOPending_ && (byte == 0x06 || byte == 0x02 || byte == 0x0c || byte == '/');
+    // 2026-10-24、直接のユーザー依頼("SHELL画面のままEXITって出せない？"): 終了の確認(^[^[・^X^C)もSHELLのまま。
+    // 以前は他の命令と同じく戻り先((ls)等)へ切り換えてから出していた(旧も同じ)。
+    bool isShellSafeExit = (escPending_ && byte == kEscape) || (leaderXPending_ && byte == 0x03);
     bool isShellSafeNavigation = (escPending_ && (byte == '<' || byte == '>' || byte == 'v')) ||
-                                 isShellSafeGoToFileSelector || isShellSafeGrep || isShellSafeKey || isShellSafeLeaderO;
+                                 isShellSafeGoToFileSelector || isShellSafeGrep || isShellSafeKey || isShellSafeLeaderO ||
+                                 isShellSafeExit;
     if (shellLeaderPending && !isShellSafeNavigation) {
       // シーケンスを完了させる――ディスパッチする「前に」、ユーザーが
       // まず^Gを押したかのように、まさに正確に、SHELLがそこから入場

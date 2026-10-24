@@ -32727,3 +32727,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼"今のusilicrcが以前とは違うため旧版が起動できなくなっている。設定項目名まわりの修正だけ(TOOL、PARTも受付可)でいい"(legacy/はそのまま、old/の方で)。旧の`init_config()`は知らない節の名前があると「Invalid format.」で起動をやめていた。
    - **実装**: `init_config()`(old/src/str.c)で、C++版で改名した節を旧の名前に読み替える(FILTER→FILE、LAUNCH→EXEC、TOOL→PROGRAM、LINE→HISTORY、COPY・MOVE・DELETE→CP・MV・RM)。旧に当たる節の無いPART(以前のCUT)・CUTと、C++版で増えた節(COLUMN・SERIF・SANS-SERIF・SPEED・DRAG・FONT・MACRO・URL・ARROW・LINE-HEIGHT・LETTER-SPACING・ICON-FONT・ICON-LINE-HEIGHT・ICON-LETTER-SPACING)は中身ごと読み飛ばす。KEYの節は、旧の書き方(「F-?」等の区切りの行)でなければ(C++版の「K-n キー」の行だけなら)読めないので中身を読み飛ばし、旧の既定のキーのまま(旧の書き方ならそのまま読む)。
    - 確かめたこと: src/config.sh・makeでビルドし、一時的なHOMEの~/.U/Urcに、src/usilicrc・~/.usilic/usilicrcの写し・PROGRAMをTOOLにしてPARTの節を足した物・legacy/usilicrc(旧の書き方)を置いて、どれでも(ls)まで起動した。ユーザーの指定でsrc/install.shで~/.local/bin/U・~/.local/lib/U/へ入れた(doc/usilic.1.gzが無いのでmanだけは入らない)。入れた~/.local/bin/Uでも同じく起動を確かめた。
+1063. **SHELLの^[^[・^X^C(終了の確認)をSHELLの画面のまま出す(2026-10-24)**
+   - **経緯**: 直接のユーザー依頼"SHELLで^[^[したら(ls)の件は旧でもそうなっているようだが理由は思い出せない。SHELL画面のままEXITって出せない？"。C++の`feedShellByte()`は、SHELLの中の前置キーの命令を、一部(^J^C・^O^S・^J^K・^O^F等、`isShellSafeNavigation`)を除いて戻り先((ls)等)へ切り換えてから動かす作りで、終了の確認もその中に入っていた。
+   - **実装**: C++: ^[^[・^X^Cを`isShellSafeNavigation`に足した(`isShellSafeExit`)。確認の^G・^[でやめるとSHELLのまま。Python版は元からSHELLのままだったが、終了の確認を^[でやめる(C++の2026-10-21の動き)が無かったので足した。
+   - C++のテスト: 「SHELL leader keys: ^X^C (EXIT)…」を、SHELLのまま確認が出て^[でやめるとSHELLのまま、を確かめる形に。「prompt labels: EXIT…」は項目994で「Exit? (y/n) 」にした後も古い文のままだったので直した。--test-case="*hell*,*SHELL*,*xit*,*EXIT*"の119件が通る。make usilic・make install。
+   - 確かめたこと: vcmp.pyで、SHELLの^[^[・その^G・^[・^X^C・その^G・(ls)の^[^[/^X^Cの^[が両方の版で同じ(字と属性)。unittest 82件。

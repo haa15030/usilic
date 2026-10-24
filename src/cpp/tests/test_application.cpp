@@ -9147,8 +9147,8 @@ TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^X^F (FILE history) switches out 
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // left Shell, ^X^F's own real target mode
 }
 
-TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^X^C (EXIT) switches back to the mode SHELL was entered "
-                           "from FIRST, then opens the confirmation prompt") {
+// 2026-10-24、直接のユーザー依頼("SHELL画面のままEXITって出せない？"): 以前は戻り先へ切り換えてから確認を出していた。
+TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^X^C (EXIT) opens the confirmation prompt while staying in SHELL") {
   REQUIRE(app.start(path()));
   int idx = indexOf("subdir/");
   REQUIRE(idx >= 0);
@@ -9162,9 +9162,12 @@ TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^X^C (EXIT) switches back to the 
 
   CHECK(app.feedShellByte(0x18, std::nullopt));  // ^X
   CHECK(app.feedShellByte(0x03, std::nullopt));  // ^C
-  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.currentMode() == ApplicationMode::Shell);
   CHECK(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");  // shellReturnMode_'s own state, not reset
   CHECK(app.promptActive());
+  CHECK(app.feedByte(0x1b, std::nullopt));  // ^[で確認をやめるとSHELLのまま
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Shell);
 }
 
 TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^J d (DU) works too, exercising a DIFFERENT leader (^J, not ^X)") {
@@ -10482,16 +10485,16 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ESC ESC also starts the exit-confirmation 
 // visible indication of what it was asking for; every startXxxPrompt()
 // drew an unlabeled blank edit field. --
 
-TEST_CASE_FIXTURE(Fixture, "prompt labels: EXIT shows \"EXIT\" reversed, then the plain \"Exit (y/n) ? \" "
+TEST_CASE_FIXTURE(Fixture, "prompt labels: EXIT shows \"EXIT\" reversed, then the plain \"Exit? (y/n) \" "
                            "message text (2026-08-05 fix, ported from disp.c's own M_exit case -- a real CUI "
                            "screenshot found this port had previously combined both into one fully-reversed "
                            "\"EXIT (y/n)?\" string, matching neither the wording nor the styling)") {
   REQUIRE(app.start(path()));
   int row = display.rows() - 1;
   REQUIRE(app.handleCommand(Command::StartExit));
-  CHECK(display.rowText(row).find("EXIT Exit (y/n) ? ") != std::string::npos);
+  CHECK(display.rowText(row).find("EXIT Exit? (y/n) ") != std::string::npos);  // 2026-10-21に"Exit? (y/n)"へ(項目994)
   CHECK(display.standoutAt(row, 0) == true);   // "EXIT" itself is reversed
-  CHECK(display.standoutAt(row, 5) == false);  // "Exit (y/n) ? " is not
+  CHECK(display.standoutAt(row, 5) == false);  // "Exit? (y/n) " is not
 }
 
 TEST_CASE_FIXTURE(Fixture, "prompt labels: EXIT also shows the previous mode's name (e.g. the open file) "
