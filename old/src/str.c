@@ -1404,10 +1404,11 @@ int init_config(CHILD *chp, LIST **lcpp, LIST **lgpp, STR **scpp, STR **sgpp, u_
        * まわりの修正だけ(TOOL、PARTも受付可)でいい"): C++版で改名した節は旧版の名前に読み替え、C++版で増えた
        * 節(旧版には無い設定)は中身ごと読み飛ばす。 */
       static const char *alias[][2] = {
-	{"FILTER", "FILE"}, {"LAUNCH", "EXEC"}, {"TOOL", "PROGRAM"}, {"PART", "GREP"},
+	{"FILTER", "FILE"}, {"LAUNCH", "EXEC"}, {"TOOL", "PROGRAM"},
 	{"LINE", "HISTORY"}, {"COPY", "CP"}, {"MOVE", "MV"}, {"DELETE", "RM"}, {NULL, NULL},
       };
       static const char *ignored[] = {
+	"PART", "CUT",  /* PART(以前のCUT)に当たる節は旧には無い */
 	"COLUMN", "SERIF", "SANS-SERIF", "SPEED", "DRAG", "FONT", "MACRO", "URL", "ARROW",
 	"LINE-HEIGHT", "LETTER-SPACING", "ICON-FONT", "ICON-LINE-HEIGHT", "ICON-LETTER-SPACING", NULL,
       };
