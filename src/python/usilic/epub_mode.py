@@ -201,7 +201,7 @@ class Block:
         self.classes = classes
         self.pieces = []          # (文字列, 属性, href)
         self.anchors = []         # このブロックの中のid
-        self.pre = 'pre' in classes or tag == 'pre'
+        self.pre = tag == 'pre'  # C++のpreDepth_と同じく<pre>の要素だけ(class="pre"は字の形だけ)
         self.styled = False       # 最初の字の時点の状態を持たせたか
         self.kind = 'normal'      # 'horizontal'(縦書きの本の中の横書き)・'centered'(扉)
         self.align_end = False
@@ -449,7 +449,7 @@ class _XhtmlParser(HTMLParser):
         if self.in_rt:
             self.ruby.append(data.strip())
             return
-        pre = self.current.pre if self.current is not None else any('pre' in c or t == 'pre' for t, c, _ in self.stack)
+        pre = self.current.pre if self.current is not None else any(t == 'pre' for t, _, _ in self.stack)
         if not pre:
             data = re.sub(r'[ \t\r\n]+', ' ', data)
             if self.current is None and not data.strip(' '):  # NBSPだけの段落は空行として残す(str.strip()はNBSPも取る)
@@ -765,8 +765,16 @@ class EpubBook:
                         chapters.append((len(lines), hidden_label or text))
                         hidden_label = None
                 first, left = block.indent_columns if text else (0, 0)
-                lines.extend(_wrap_with_indent(text, runs, width, first, left, number, line_links,
-                                               center=block.center))
+                wrapped = _wrap_with_indent(text, runs, width, first, left, number, line_links, center=block.center)
+                if text and block.chapter and wrapped:
+                    # 章の行の印(C++のepubToHelpMarkup()が行末に付けるタブ)。PipeBufferと同じく、幅0のU+2060と
+                    # 次の8桁目までの空白に広げた形で行に残す(見えないが、大きさ・検索はC++と同じに)
+                    last = wrapped[-1]
+                    column = utf8.text_width(last.text)
+                    spaces = min(8 - column % 8, width - column)
+                    if spaces > 0:
+                        last.text += '\u2060' + ' ' * spaces
+                lines.extend(wrapped)
             if href is not None:
                 def at(i):
                     return first_number + index_map.get(i, i)

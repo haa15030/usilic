@@ -63,13 +63,13 @@ class HintsTest(unittest.TestCase):
         self.lines, _ = self.book.render(40)
         self.raw = {}
         for line in self.lines:
-            self.raw.setdefault(line.text.strip(' '), line.raw_line_number)
+            self.raw.setdefault(line.text.split('\u2060')[0].strip(' '), line.raw_line_number)  # 章の行の印は除いて
 
     def tearDown(self):
         self.dir.cleanup()
 
     def test_header_after_cover_and_title_page(self):
-        texts = [l.text for l in self.lines]
+        texts = [l.text.split('\u2060')[0] for l in self.lines]  # 章の行の印(U+2060と空白)は除いて
         # 表紙が先頭、書名・著者名はその後(表紙のファイルの後に空行、C++と同じ)
         self.assertEqual(texts[:4], ['[image: cover.jpg]', '', '書名　一', '著者'])
         h = self.book.hints
@@ -79,12 +79,13 @@ class HintsTest(unittest.TestCase):
 
     def test_colophon_is_horizontal_and_hidden_heading(self):
         h = self.book.hints
-        start = next(l.raw_line_number for l in self.lines if l.text.startswith(' ') and l.text.strip() == '書名')
+        start = next(l.raw_line_number for l in self.lines
+                     if l.text.startswith(' ') and l.text.split('\u2060')[0].strip() == '書名')
         self.assertNotIn('奥付', self.raw)                            # display:noneの見出しは出さない
         self.assertEqual(h.horizontal[-1][0], start)
         self.assertIn(start, h.center)
         centered = next(l for l in self.lines if l.raw_line_number == start)
-        self.assertEqual(centered.text, ' ' * 18 + '書名')             # 横書きでは中央に((40-4)//2)
+        self.assertEqual(centered.text.split('\u2060')[0], ' ' * 18 + '書名')  # 横書きでは中央に((40-4)//2)
 
     def test_indent_uses_padding_top_in_vertical_book(self):
         self.assertEqual(self.book.hints.indent[self.raw['字下げ']], (1, 2))

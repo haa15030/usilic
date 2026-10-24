@@ -32709,3 +32709,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - %・*(MARK)のプロンプトの名前は「MARK」(以前は「(ls)」)、^Rの履歴の一覧は無い(C++と同じ)。
    - occur(^O^S)の一覧の^M: C++の`openSelectedGrepMatch()`と同じく、その行を画面に入れるだけで(以前は真ん中へ)、fileは右端・(ls)は「(ls)」の代わりに「FGREP: 語」。一覧から元の画面へ戻るとその印と一致の色を外す。
    - 確かめたこと: vcmp.pyで、COPY(移動・^@・^X␣・^[w・矩形の^[w・^[wの後の^Y・^[t・範囲無しの^[t・^G)・%・*・%の^R・^O^Sの^M・^G・^G^G・^[>((ls)・file)が両方の版で同じ(一時ディレクトリの名前を除く、字と属性)。unittest 82件。
+1059. **Python版: EPUBの章の一覧・縦書きの大きさ、章の行の印、class="pre"(C++に合わせる)(2026-10-24)** 項目1047の続き(^Hの^Gで大きさが違った件)。
+   - EPUBの章の一覧(^Hの^G等)・縦書きの本文・縦書きの章の一覧のモードラインの大きさは、C++の`contentByteCount(fileView_)`と同じく本文の行のバイト数(`Application.content_byte_count()`)。以前は.epubのfileの大きさ(HELPで206440、C++は107474)。
+   - 章の行(C++の`epubToHelpMarkup()`が行末にタブを付ける行)の終わりに、PipeBufferと同じくU+2060と次の8桁目までの空白を残す(見えない、大きさ・検索がC++と同じになる)。
+   - class="pre"の段落は、C++(`preDepth_`は`<pre>`の要素だけ)と同じく空白をまとめる(HELP.epubの「^[^[：終了 」の行末の空白がC++では無かった)。
+   - 確かめたこと: C++の`epubToHelpMarkup()`→`expandHelpMarkup()`→PipeBufferで行を出す道具を作って、HELP.epub・HELP.en.epubの全行をPython版の行と比べ、違うのは`<b>HELP</b>`の段落だけ(下記)。vcmp.pyで^H・^Hの^G・^Gの後の^M・^Sが同じ。unittest 82件(EPUBのテストは章の行の印を除いて比べるように直した)。
+   - 残る違い: HELP.epubには「~/.local/lib/usilic/&lt;b&gt;HELP&lt;/b&gt;.1」という字がそのまま入っていて(~/HELP.txtの`<u>…<b>HELP</b>.1</u>`の入れ子をusilic -eが字として書き出したもの)、C++は字に戻した「<b>」をマークアップとして読んで太字にし、Python版は字のまま出す(HELPの章の一覧の大きさが7バイト違う)。縦書きの本(book.epub)の大きさは、縦書きの組み方の違い(保留中)で11バイト違う。

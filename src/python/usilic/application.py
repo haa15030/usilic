@@ -335,6 +335,10 @@ class Application:
             return body
         return ('MACRO   ' + body) if recording else body   # 字のまま(プロンプト等、行の端まで反転)
 
+    def content_byte_count(self):
+        """本文の行のバイト数(C++のcontentByteCount(fileView_)): EPUBの章の一覧・縦書きの大きさ。"""
+        return sum(len(line.text.encode('utf-8')) + 1 for line in self.file_view.lines)
+
     def mode_line_text(self):
         segments = self.mode_line_segments()
         return segments if isinstance(segments, str) else mode_line.segments_text(segments)
@@ -345,7 +349,7 @@ class Application:
         if self.vertical_selecting():  # C++のepubVerticalView_(epubSelectActive()): 名前だけCOPYに
             v = self.vertical
             position = 'Record?(y/n)' if v.asking else self.notice or v.position_text()
-            return mode_line.Fields('COPY', str(self.file_mode.byte_count), True, '', 'EPUB 縦書き'), position
+            return mode_line.Fields('COPY', str(self.content_byte_count()), True, '', 'EPUB 縦書き'), position
         if self.copy is not None:  # C++のcopyView_: 「COPY 状態 COPYに入る前のモードラインの名前」
             state = 'Rectangle-Mark' if self.copy.anchor is not None and self.copy.rectangle else '---'  # normalPositionText()
             saved, self.copy = self.copy, None
@@ -386,7 +390,7 @@ class Application:
             if self.epub is not None and fm.current_file == self.epub.path:
                 if self.vertical_active() and self.vertical is not None:
                     position = self.notice or self.vertical.position_text()
-                    return F(self.epub_name, str(fm.byte_count), True, '', 'EPUB 縦書き'), position
+                    return F(self.epub_name, str(self.content_byte_count()), True, '', 'EPUB 縦書き'), position
                 name = self.epub_name if self.epub_name == 'HELP' else self.epub.path  # C++はHELP以外パスのまま
                 fields = F(name, str(fm.byte_count), True, '', 'EPUB', trailing2_kind=mode_line.PATH_MIDDLE)
                 fields.split_layout_when_crowded = True
@@ -471,13 +475,12 @@ class Application:
             fields.split_layout_when_crowded = True
             return fields, position
         if mode == TOC:  # EPUBの章の一覧(CUT)
-            size = os.path.getsize(self.epub.path) if self.epub and os.path.exists(self.epub.path) else 0
             name = 'HELP' if self.epub_name == 'HELP' else 'EPUB'
             if self.vertical_list_active():  # 縦書きの章の一覧: 位置は「選んでいる章/章の数」
                 position = self.notice or '%02d/%02d' % (view.cursor_index + 1, max(1, len(view.lines)))
-                fields = F('EPUB', str(size), True, '', '縦書き')
-            else:
-                fields = F(name, str(size), True)
+                fields = F('EPUB', str(self.content_byte_count()), True, '', '縦書き')
+            else:  # 大きさは本文の行のバイト数(C++のcontentByteCount(fileView_))
+                fields = F(name, str(self.content_byte_count()), True)
             fields.trailing3 = directory
             return fields, position
         if mode == PART_TOC:
