@@ -32759,3 +32759,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - (2) 本文の注釈へのリンク(epub:type="noteref"、KDPの注釈の形)の字を太字にする(下線/縦書きの傍線に加えて、C++の`noterefOpen_`・Python版の`noterefs`)。
    - (3) 縦書きの本の注釈は、2026-10-15の作り(奥付と同じく横書きの範囲として横書きで見せる)をやめ、注釈の行だけで縦書きの列を組み直して縦書きのまま見せる(`showEpubNoteAt()`)。^G・右クリックで戻る時は本文の列を組み直して元の位置へ(`leaveEpubNote()`)。注釈が横書きの範囲の中にある時は今まで通り横書き。Python版も(`show_epub_note()`・`leave_epub_note()`)。
    - 確かめたこと: C++のテスト(--test-case="*pub*,*ertical*,*note*,*Note*")は以前からの3件(test_epub_to_help_markup.cpp)だけ通らない。unittest 82件。-gでの見た目は未確認(ユーザーに確かめてもらう)。make usilic・make install・make app。
+1069. **本文の注釈番号をKindleのように青で(2026-10-24)**
+   - **経緯**: 直接のユーザー依頼"=lo.pngはまさにKindle本なのであんな感じでよろしく"(本のCSSの字の色は使わない、の確認の後)。=lo.pngは、縦書きの本文の注釈番号「7」が青い太字で、右側に青い線。
+   - **実装**: C++: 本文の注釈へのリンク(epub:type="noteref")を、項目1068の太字に加えて<note>で囲む(`epubToHelpMarkup()`)。expandHelpMarkup()が\x13に、PipeBufferが決まった色(`kNoteColor`、#1E64C8)の色のラン(Display::Attribute::Color、ファイルのESC[…mの色と同じ仕組み)にする。縦書きのマスにも色を持たせ(EpubVerticalCell::fg)、色のランにして描く。-gの縦書きの傍線は、線の元の字の色で描く(番号と線が同じ青)。Python版: 'note'の属性を足し、cursesの色の組み(256色なら26番、無ければ青)で描く(横書き・縦書きとも)。
+   - 確かめたこと: -cでKbt.epubの「1」が`ESC[38;2;30;100;200m`で出る。C++のテスト(--test-case="*pub*,*ertical*,*ipe*,*olor*")は以前からの3件(test_epub_to_help_markup.cpp)だけ通らない(HELPのテスト群はHELPがEPUBになる前のCUTの期待値のままで、以前から通らない)。unittest 82件。-gの見た目は未確認。make usilic・make install・make app。

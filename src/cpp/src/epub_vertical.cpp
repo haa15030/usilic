@@ -81,9 +81,16 @@ std::optional<Display::Attribute> attributeAt(const std::vector<AttributeRun> &r
   for (const auto &run : runs)
     if (byte >= run.start && byte < run.end && run.attribute != Display::Attribute::Serif &&
         run.attribute != Display::Attribute::RubyBase && run.attribute != Display::Attribute::RubyText &&
-        run.attribute != Display::Attribute::Large && run.attribute != Display::Attribute::Small)
+        run.attribute != Display::Attribute::Large && run.attribute != Display::Attribute::Small &&
+        run.attribute != Display::Attribute::Color)
       return run.attribute;
   return std::nullopt;
+}
+
+int colorAt(const std::vector<AttributeRun> &runs, int byte) {
+  for (const auto &run : runs)
+    if (byte >= run.start && byte < run.end && run.attribute == Display::Attribute::Color) return run.fg;
+  return Display::kDefaultColor;
 }
 
 bool serifAt(const std::vector<AttributeRun> &runs, int byte) {
@@ -201,6 +208,7 @@ std::vector<Cell> toCells(const EpubVerticalSourceLine &line, bool sideways) {
     }
     previousUnderline = underline;
     cell.serif = serifAt(line.attributes, g.byte);
+    cell.fg = colorAt(line.attributes, g.byte);
     cell.size = hasRun(line.attributes, g.byte, Display::Attribute::Large)   ? 1
                 : hasRun(line.attributes, g.byte, Display::Attribute::Small) ? -1
                                                                              : 0;
@@ -317,6 +325,7 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
     std::vector<std::optional<Display::Attribute>> attrs(std::max(0, columns));
     std::vector<bool> serifs(std::max(0, columns), false);
     std::vector<int> sizes(std::max(0, columns), 0);
+    std::vector<int> fgs(std::max(0, columns), Display::kDefaultColor);
     std::vector<std::pair<std::string, int>> rubies(std::max(0, columns));  // 桁ごとのルビ(読み, 親字の行数)
     for (int k = 0; k < perScreen; k++) {
       long c = static_cast<long>(first) + k;
@@ -353,6 +362,8 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
       if (x + 1 < columns) serifs[x + 1] = cell.serif;
       sizes[x] = cell.size;
       if (x + 1 < columns) sizes[x + 1] = cell.size;
+      fgs[x] = cell.fg;
+      if (x + 1 < columns) fgs[x + 1] = cell.fg;
     }
     ContentView::Line line;
     for (int x = 0; x < columns; x++) {
@@ -388,6 +399,15 @@ std::vector<ContentView::Line> renderEpubVerticalWindow(const std::vector<EpubVe
     addSeparateRuns(Display::Attribute::Serif, [&](int x) { return static_cast<bool>(serifs[x]); });
     addSeparateRuns(Display::Attribute::Large, [&](int x) { return sizes[x] > 0; });
     addSeparateRuns(Display::Attribute::Small, [&](int x) { return sizes[x] < 0; });
+    for (int x = 0, pos = 0; x < columns; pos += static_cast<int>(screen[x].size()), x++) {  // 字の色(Cell::fg)
+      int end = pos + static_cast<int>(screen[x].size());
+      if (fgs[x] == Display::kDefaultColor || end <= pos) continue;
+      if (!line.attributes.empty() && line.attributes.back().attribute == Display::Attribute::Color &&
+          line.attributes.back().fg == fgs[x] && line.attributes.back().end == pos)
+        line.attributes.back().end = end;
+      else
+        line.attributes.push_back({pos, end, Display::Attribute::Color, fgs[x], Display::kDefaultColor});
+    }
     while (!line.text.empty() && line.text.back() == ' ') line.text.pop_back();
     for (auto &run : line.attributes) run.end = std::min<int>(run.end, static_cast<int>(line.text.size()));
     line.attributes.erase(std::remove_if(line.attributes.begin(), line.attributes.end(),

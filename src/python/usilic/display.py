@@ -39,11 +39,15 @@ class TerminalDisplay:
         self.strip = 0  # 右端に空けておく桁(モードラインを隠している間のつまみ、C++のkScrollbarStripWidth)
         self.rows, self.columns = self.screen.getmaxyx()
         self.match_attr = curses.A_REVERSE  # 一致の色(C++版のマゼンタ、色が使えなければ反転)
+        self.note_attr = curses.A_BOLD     # 注釈番号の色(色が使えなければ太字のまま)
         try:
             curses.start_color()
             curses.use_default_colors()
             curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_MAGENTA)
             self.match_attr = curses.color_pair(1)
+            # 本文の注釈番号の青(C++のPipeBuffer::kNoteColor #1E64C8、256色なら近い26番、無ければ青)
+            curses.init_pair(2, 26 if curses.COLORS >= 256 else curses.COLOR_BLUE, -1)
+            self.note_attr = curses.color_pair(2)
         except curses.error:
             pass
 
@@ -108,7 +112,7 @@ class TerminalDisplay:
         if not runs:
             return
         base = (curses.A_REVERSE if reverse else 0) | (curses.A_UNDERLINE if underline else 0)
-        names = {'bold': curses.A_BOLD, 'underline': curses.A_UNDERLINE, 'match': self.match_attr,
+        names = {'bold': curses.A_BOLD, 'underline': curses.A_UNDERLINE, 'match': self.match_attr, 'note': self.note_attr,
                  'reverse': curses.A_REVERSE, 'italic': getattr(curses, 'A_ITALIC', curses.A_UNDERLINE)}
         column, width = 0, self.columns - (1 if row == self.rows - 1 else 0)  # 右端まで(右下の桁だけはcursesが書けない)
         text, flipped = shown_controls(text)

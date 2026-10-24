@@ -182,6 +182,10 @@ class PipeBuffer {
   // 2026-10-01追加: <big>(\x11)/<small>(\x12)、Display::Attribute::Large/Small参照。
   int currentLarge_ = 0;
   int currentSmall_ = 0;
+  // 2026-10-24追加: <note>(\x13)、本文の注釈番号(EPUBのnoteref)。決まった色(kNoteColor)の色のランにする
+  // (Kindleの注釈番号と同じく青、本の字の色(CSSのcolor)は使わない)。
+  int currentNote_ = 0;
+  static constexpr int kNoteColor = Display::kTrueColorFlag | 0x1E64C8;
 
   // escapeLengthAt()自身のコメント参照。SGRで指定された現在の状態――
   // 本物の端末と同じく、改行や折り返しをまたいで次のSGRまで持続する。

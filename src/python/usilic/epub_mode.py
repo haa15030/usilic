@@ -281,6 +281,8 @@ class _XhtmlParser(HTMLParser):
             names.append('italic')
         if any(_is_underlined_link(h) for h in self.hrefs):
             names.append('underline')
+        if any(self.noterefs):
+            names.append('note')  # 本文の注釈番号: 決まった色(C++の<note>)
         return tuple(names) or None
 
     def _apply_style(self, block):

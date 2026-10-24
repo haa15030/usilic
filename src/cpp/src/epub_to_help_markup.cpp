@@ -904,6 +904,7 @@ class BodyConverter {
       if (t.kind == XmlToken::Open && attr(t, "type").find("noteref") != std::string::npos) {
         noterefOpen_.push_back(true);
         changeStyle(bold_, +1, "b");
+        line_ += "<note>";  // Kindleの注釈番号と同じく決まった色(PipeBuffer::currentNote_)
       } else if (t.kind == XmlToken::Open) {
         noterefOpen_.push_back(false);
       }
@@ -931,7 +932,10 @@ class BodyConverter {
         changeStyle(underline_, -1, "u");
       }
       if (t.kind == XmlToken::Close && !noterefOpen_.empty()) {
-        if (noterefOpen_.back()) changeStyle(bold_, -1, "b");
+        if (noterefOpen_.back()) {
+          line_ += "</note>";
+          changeStyle(bold_, -1, "b");
+        }
         noterefOpen_.pop_back();
       }
     } else if (name == "td" || name == "th") {

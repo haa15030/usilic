@@ -1867,7 +1867,11 @@ void GraphicalDisplay::renderCell(int row, int col) {
   if (verticalText && blank && !cell.continuation && !cell.underline && underlinedGlyphAt(col - 1)) {
     int lineW = std::max(1, impl_->cellWidth / 8);
     SDL_Rect side{box.x + (impl_->cellWidth - lineW) / 2, box.y, lineW, impl_->cellHeight};
-    SDL_SetRenderDrawColor(impl_->renderer, fg.r, fg.g, fg.b, fg.a);
+    // 2026-10-24: 傍線は線の元の字の色(注釈番号の<note>の青等、Kindleと同じく番号と線を同じ色に)
+    const Cell &glyphCell = impl_->cellAt(row, col - 1).continuation && col >= 2 ? impl_->cellAt(row, col - 2)
+                                                                                : impl_->cellAt(row, col - 1);
+    SDL_Color lineColor = glyphCell.fgColor != Display::kDefaultColor && !cell.standout ? ansiColorToSdl(glyphCell.fgColor) : fg;
+    SDL_SetRenderDrawColor(impl_->renderer, lineColor.r, lineColor.g, lineColor.b, lineColor.a);
     SDL_RenderFillRect(impl_->renderer, &side);
     return;
   }

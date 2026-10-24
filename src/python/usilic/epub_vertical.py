@@ -65,6 +65,7 @@ class Cell:
     link: int = -1          # 論理行の中のリンクの番号
     start: int = -1         # 論理行の中の字の範囲[start, end)(空きのマスは-1)
     end: int = -1
+    note: bool = False      # 本文の注釈番号(epub_modeの'note'、決まった色で描く、C++のEpubVerticalCell::fg)
 
 
 @dataclass(slots=True)
@@ -125,6 +126,10 @@ def to_cells(line):
     for start, end, attr in reversed(line.runs):  # 前の物が勝つ(重なりは最初のラン)
         if attr in ('bold', 'underline', 'match'):  # 'match'は検索結果の一覧の一致の字
             attr_of[start:end] = [attr] * len(attr_of[start:end])
+    note_of = [False] * (len(s) + 1)
+    for start, end, attr in line.runs:
+        if attr == 'note':
+            note_of[start:end] = [True] * len(note_of[start:end])
     for number, (start, end, _) in reversed(list(enumerate(sorted(line.links)))):
         link_of[start:end] = [number] * len(link_of[start:end])
     cells, i = [], 0
@@ -143,6 +148,9 @@ def to_cells(line):
             glyph = '  ' if ch == ' ' else ch if width >= 2 else ch + ' '
         cells.append(Cell(glyph, ch, attr, link, pos, pos + 1))
         i += 1
+    for cell in cells:
+        if 0 <= cell.start < len(note_of):
+            cell.note = note_of[cell.start]
     return cells
 
 
@@ -517,7 +525,7 @@ class VerticalBook:
                         screen[x + 1] = cell.glyph[1:]
                 attr = cell.attr
                 if attr == 'underline':  # 傍線: 列の右の行間に「|」
-                    attr = None
+                    attr = 'note' if cell.note else None
                     if x + 2 < columns:
                         screen[x + 2] = '|'
                 # 強調の順: 選んでいるリンク・列(一覧の選んでいる行) < 検索の一致 < 範囲指定

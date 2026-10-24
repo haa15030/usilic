@@ -269,10 +269,11 @@ std::string expandHelpMarkup(const std::string &source, const std::function<void
     // 2026-09-30追加: <rb>...</rb>(ルビの親字、\x06)と<rt>...</rt>(ルビの読み、\x10)、
     // Display::Attribute::RubyBase/RubyText参照。<serif>と同じトグル式。
     // 2026-10-01追加: <big>...</big>(\x11)と<small>...</small>(\x12)、Display::Attribute::
-    // Large/Small参照(EPUBのCSSのfont-size)。
+    // Large/Small参照(EPUBのCSSのfont-size)。2026-10-24追加: <note>...</note>(\x13)、本文の注釈番号
+    // (PipeBuffer::currentNote_参照)。
     bool rubyTagMatched = false;
     for (const auto &[tag, byte] : {std::pair<const char *, char>{"rb", '\x06'}, {"rt", '\x10'},
-                                    {"big", '\x11'}, {"small", '\x12'}}) {
+                                    {"big", '\x11'}, {"small", '\x12'}, {"note", '\x13'}}) {
       for (bool closing : {false, true}) {
         std::string markup = std::string(closing ? "</" : "<") + tag + ">";
         if (text.compare(i, markup.size(), markup) != 0) continue;

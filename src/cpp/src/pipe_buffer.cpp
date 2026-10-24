@@ -471,7 +471,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       }
       unsigned char value = static_cast<unsigned char>(convertedLine[pos + 1]);
       if ((mc == '\x02' || mc == '\x03' || mc == '\x04' || mc == '\x05' || mc == '\x06' || mc == '\x10' ||
-           mc == '\x11' || mc == '\x12') &&
+           mc == '\x11' || mc == '\x12' || mc == '\x13') &&
           value >= '0' && value <= '9') {
         // ゼロ幅マーカー、位置だけ進める(状態の更新は本物の消費パス側の責務)。
       } else {
@@ -525,6 +525,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       else if (mc == '\x10') currentRubyText_ = std::max(0, currentRubyText_ + delta);
       else if (mc == '\x11') currentLarge_ = std::max(0, currentLarge_ + delta);
       else if (mc == '\x12') currentSmall_ = std::max(0, currentSmall_ + delta);
+      else if (mc == '\x13') currentNote_ = std::max(0, currentNote_ + delta);
       else break;
       pos += 2;
     }
@@ -579,7 +580,10 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     if (currentLarge_) push(Display::Attribute::Large);
     if (currentSmall_) push(Display::Attribute::Small);
     if (sgrReverse_) push(Display::Attribute::Standout);
-    if (sgrFg_ != Display::kDefaultColor || sgrBg_ != Display::kDefaultColor) {
+    if (currentNote_ && sgrFg_ == Display::kDefaultColor && sgrBg_ == Display::kDefaultColor) {  // <note>
+      wrapAttrs_.push_back({start, start + bytes, Display::Attribute::Color, kNoteColor, Display::kDefaultColor});
+      count++;
+    } else if (sgrFg_ != Display::kDefaultColor || sgrBg_ != Display::kDefaultColor) {
       wrapAttrs_.push_back({start, start + bytes, Display::Attribute::Color, sgrFg_, sgrBg_});
       count++;
     }
@@ -643,6 +647,14 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       if (digit == '0' || digit == '1') {
         int &counter = (c == '\x06') ? currentRubyBase_ : currentRubyText_;
         counter = std::max(0, counter + (digit == '1' ? 1 : -1));
+        i += 2;
+        continue;
+      }
+    }
+    if (c == '\x13' && i + 1 < n) {  // <note>(currentNote_参照)
+      unsigned char digit = static_cast<unsigned char>(convertedLine[i + 1]);
+      if (digit == '0' || digit == '1') {
+        currentNote_ = std::max(0, currentNote_ + (digit == '1' ? 1 : -1));
         i += 2;
         continue;
       }
