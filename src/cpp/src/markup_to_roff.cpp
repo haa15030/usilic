@@ -226,7 +226,11 @@ static std::string extractHelpNotes(const std::string &markup, std::vector<std::
 
 std::string convertMarkupToMsRoffSource(const std::string &source) {
   std::vector<std::vector<std::string>> notes;
-  const std::string markup = extractHelpNotes(joinMarkupLinesAtBreaks(source), &notes);  // <br />(help_text.hpp参照)
+  // 2026-10-25、直接のユーザー依頼("-e/-nでHELP.epub/HELP.1を作成するときも⊥→タブコードの変換処理を入れて"、
+  // et.plのtab_code()と同じ): 原稿の「⊥」はタブ(行末のタブは章の題の印、usilic-tab参照)。
+  std::string tabbed = joinMarkupLinesAtBreaks(source);  // <br />(help_text.hpp参照)
+  for (std::size_t at; (at = tabbed.find("\xE2\x8A\xA5")) != std::string::npos;) tabbed.replace(at, 3, "\t");  // ⊥
+  const std::string markup = extractHelpNotes(tabbed, &notes);
   std::string out;
   out.reserve(markup.size() * 2);
   std::size_t i = 0;

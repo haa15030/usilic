@@ -32799,3 +32799,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼"タイプミス`^Xd/temp^M`等ではエラーメッセージ出して"(項目1076の確認の後)。
    - **実装**: Application::executePathInput()は、無いパス・入れないディレクトリ・読めないファイルで何も言わずに元の画面へ戻っていた。^Jeの「No such EPUB: …」と同じく、「No such file or directory: 入れたパス」(日本語は「ファイルまたはディレクトリがありません: …」)・「Can't open 入れたパス」を一時的な知らせで出す。Python版(execute_path_input())も無いパスで同じ知らせ。src/HELP_.txt・HELP_en_.txtのDIRの節に1文。
    - 確かめたこと: -cで^Xd/temp^Mの知らせ。Python unittest 82件。make usilic・make install・make app。
+1078. **-n・-eでも原稿の⊥をタブに(2026-10-25)**
+   - **経緯**: 直接のユーザー依頼"-e/-nでHELP.epub/HELP.1を作成するときも⊥→タブコードの変換処理を入れて"(et.plのtab_code()と同じ。原稿でタブを⊥で書く)。
+   - **実装**: convertMarkupToMsRoffSource()の入口(-n・-eの両方が通る)で⊥をタブに。行末のタブは今まで通り章の題の印(usilic-tab)。テスト1件。
+   - 確かめたこと: 小さな原稿の-nで、行末の⊥が\*[usilic-tab]、行の途中の⊥がタブ。make usilic・make install・make app。

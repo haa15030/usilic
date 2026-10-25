@@ -240,3 +240,10 @@ TEST_CASE("convertMarkupToMsRoffSource: ‡ refs and ≡...∠ notes are hidden 
   CHECK(msBody(out).find("\xE2\x89\xA1") == std::string::npos);
   CHECK(msBody(out).find(".br\nd\n") != std::string::npos);  // 注釈の行は空行を残さない
 }
+
+// 2026-10-25 (a direct user request): ⊥ in the source is a tab, so a line ending with ⊥ gets the usilic-tab mark.
+TEST_CASE("convertMarkupToMsRoffSource: ⊥ becomes a tab") {
+  std::string out = convertMarkupToMsRoffSource("Title\xE2\x8A\xA5\nbody\n");
+  CHECK(msBody(out).find("Title\\*[usilic-tab]") != std::string::npos);
+  CHECK(out.find("\xE2\x8A\xA5") == std::string::npos);
+}
