@@ -4,6 +4,8 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <map>
 #include <optional>
@@ -156,6 +158,16 @@ std::vector<Piece> tokenize(const std::string &s) {
       i += 3;
       continue;
     }
+    if (s.compare(i, 14, "\\*[usilic-note") == 0 && s.find(']', i) != std::string::npos) {
+      // 注釈の参照(convertMarkupToMsRoffSource()のusilic-note参照)は「‡」「‡6」に戻す(linkRefs()が番号にする)
+      std::size_t close = s.find(']', i);
+      std::string arg = s.substr(i + 14, close - i - 14);
+      std::size_t a = arg.find_first_not_of(' ');
+      flush();
+      pieces.push_back({Piece::Literal, "\xE2\x80\xA1" + (a == std::string::npos ? std::string() : arg.substr(a))});
+      i = close + 1;
+      continue;
+    }
     if (s.compare(i, 14, "\\*[usilic-tab]") == 0) {
       flush();
       pieces.push_back({Piece::Literal, ""});
@@ -267,6 +279,32 @@ std::string inlineHtml(const std::vector<Piece> &pieces, int col0) {
 }
 
 std::string inlineHtml(const std::string &s, int col0) { return inlineHtml(tokenize(s), col0); }
+
+// 注釈の文(原稿のmarkupのまま、convertMarkupToMsRoffSource()のextractHelpNotes()参照)の1行をXHTMLへ。
+// <b>・<i>はそのまま、<u>は<i>(本文と同じ)、ほかの「<」「&」は字として。
+std::string markupLineHtml(const std::string &s) {
+  static const char *const tags[][2] = {{"<b>", "<b>"}, {"</b>", "</b>"}, {"<i>", "<i>"}, {"</i>", "</i>"},
+                                        {"<u>", "<i>"}, {"</u>", "</i>"}};
+  std::string out, text;
+  auto flush = [&] {
+    out += escapeHtml(text);
+    text.clear();
+  };
+  for (std::size_t i = 0; i < s.size();) {
+    bool tag = false;
+    for (const auto &t : tags)
+      if (s.compare(i, std::strlen(t[0]), t[0]) == 0) {
+        flush();
+        out += t[1];
+        i += std::strlen(t[0]);
+        tag = true;
+        break;
+      }
+    if (!tag) text += s[i++];
+  }
+  flush();
+  return out;
+}
 std::string inlineText(const std::string &s) { return inlineHtml({{Piece::Text, s}}, 0); }
 
 std::string removeAll(std::string s, const std::string &what) {
@@ -450,8 +488,19 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
   std::vector<Block> blocks;
   std::string lastName;
   const std::string tab = "\\*[usilic-tab]";
+  // 2026-10-25、直接のユーザー依頼(Kb.txtと同じ注釈の書式をHELPの原稿でも): 原稿の「≡…∠」の注釈の文
+  // (convertMarkupToMsRoffSource()がroffのコメントにしたもの)。本文の「‡」はN番目の「≡…∠」、「‡6」は6番目を指す。
+  std::vector<std::vector<std::string>> manualNotes;
   for (std::size_t li = start; li < lines.size(); li++) {
     const std::string &l = lines[li];
+    if (l == ".\\\" usilic-note-begin") {
+      manualNotes.emplace_back();
+      continue;
+    }
+    if (l.compare(0, 21, ".\\\" usilic-note-line ") == 0) {
+      if (!manualNotes.empty()) manualNotes.back().push_back(l.substr(21));
+      continue;
+    }
     if (!l.empty() && l[0] == '.') {
       std::istringstream in(l);
       std::string req, arg;
@@ -628,6 +677,9 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
   std::map<std::string, std::string> noteIds;         // 設定項目 -> 注釈のid
   std::map<std::string, std::vector<std::pair<std::string, std::string>>> backrefs;  // 注釈のid -> (章のファイル, 参照のid)
   int refCount = 0;
+  int manualSeq = 0;  // 番号の無い「‡」の数(N番目の「≡…∠」を指す)
+  // 「≡…∠」の注釈の名前(noteOrder・noteIdsの中で設定項目の名前と重ならないよう、頭に\x01)
+  auto manualKey = [](int k) { return "\x01" + std::to_string(k); };
   // 「usilicrc の URL」「usilicrc の <b>EGREP</b>」の設定項目の名前を注釈へのリンクにする。
   auto linkRefs = [&](const std::string &h, const std::string &fname) {
     const std::string lead = "<i>usilicrc</i>";
@@ -689,6 +741,25 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
     pos = 0;
     for (;;) {
       std::size_t m = out.find("<i>", pos);
+      std::size_t dagger = out.find("\xE2\x80\xA1", pos);  // ‡(斜体の名前と同じ並びで番号を振る)
+      if (dagger != std::string::npos && (m == std::string::npos || dagger < m)) {
+        std::size_t d = dagger + 3;
+        while (d < out.size() && std::isdigit(static_cast<unsigned char>(out[d]))) d++;
+        int k = d > dagger + 3 ? std::atoi(out.c_str() + dagger + 3) : ++manualSeq;
+        linked += out.substr(pos, dagger - pos);
+        pos = d;
+        if (k < 1 || k > static_cast<int>(manualNotes.size())) continue;  // 指す注釈が無ければ印だけ消す
+        std::string item = manualKey(k);
+        if (!noteIds.count(item)) {
+          noteIds[item] = "n" + std::to_string(noteIds.size() + 1);
+          noteOrder.push_back(item);
+        }
+        std::string nid = noteIds[item];
+        std::string rid = "r" + std::to_string(++refCount);
+        backrefs[nid].push_back({fname, rid});
+        linked += "<a id=\"" + rid + "\" href=\"notes.xhtml#" + nid + "\" epub:type=\"noteref\">" + nid.substr(1) + "</a>";
+        continue;
+      }
       if (m == std::string::npos) break;
       std::size_t close = out.find("</i>", m + 3);
       if (close == std::string::npos) break;
@@ -788,6 +859,43 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
     }
     files.push_back({std::string("Text/") + fname, xhtml(chapters[n].title, body, lang)});
   }
+  for (int k = 1; k <= static_cast<int>(manualNotes.size()); k++)  // どこからも指していない「≡…∠」も注釈に
+    if (!noteIds.count(manualKey(k))) {
+      noteIds[manualKey(k)] = "n" + std::to_string(noteIds.size() + 1);
+      noteOrder.push_back(manualKey(k));
+    }
+  // 注釈の番号を本文に出てくる順に振り直す(linkRefs()は段落ごとに「usilicrc の」の参照・「‡」と斜体の名前の順に
+  // 2回なめるので、同じ段落の中で番号が前後していた)。どこからも指していない注釈は最後に。
+  {
+    std::map<std::string, std::string> renumber;  // 前のid -> 新しいid
+    auto renumbered = [&](const std::string &nid) {
+      auto r = renumber.find(nid);
+      if (r != renumber.end()) return r->second;
+      return renumber[nid] = "n" + std::to_string(renumber.size() + 1);
+    };
+    const std::string href = "href=\"notes.xhtml#";
+    for (auto &f : files) {
+      std::string &x = f.second, fixed;
+      std::size_t pos = 0;
+      for (std::size_t at; (at = x.find(href, pos)) != std::string::npos;) {
+        std::size_t idStart = at + href.size(), idEnd = x.find('"', idStart);
+        std::string to = renumbered(x.substr(idStart, idEnd - idStart));
+        // 続く「 epub:type="noteref">番号</a>」の番号も
+        std::size_t gt = x.find('>', idEnd), lt = gt == std::string::npos ? gt : x.find('<', gt);
+        fixed += x.substr(pos, idStart - pos) + to + x.substr(idEnd, gt + 1 - idEnd) + to.substr(1);
+        pos = lt;
+      }
+      x = fixed + x.substr(pos);
+    }
+    for (const auto &item : noteOrder) renumbered(noteIds[item]);
+    std::map<std::string, std::vector<std::pair<std::string, std::string>>> moved;
+    for (auto &kv : backrefs) moved[renumber[kv.first]] = kv.second;
+    backrefs = moved;
+    for (auto &kv : noteIds) kv.second = renumber[kv.second];
+    std::sort(noteOrder.begin(), noteOrder.end(), [&](const std::string &x, const std::string &y) {
+      return std::stoi(noteIds[x].substr(1)) < std::stoi(noteIds[y].substr(1));
+    });
+  }
 
   // 巻末の注釈。注釈の頭に、参照した所へ戻るリンク(複数なら↩1 ↩2…)。中身はusilicrcのその項目の
   // コメント(字下げ・桁そろえを保つので等幅で1行ずつ)、HELP.notesに書いてあればその文。
@@ -804,6 +912,19 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
     }
     std::string inner;
     auto w = written.find(item);
+    if (item[0] == '\x01') {
+      // 「≡…∠」: 1行目は戻りのリンクの後ろに(Kb.txtの「1　光子を…」の形)、2行目からは1行ずつ段落に。
+      const auto &note = manualNotes[std::stoi(item.substr(1)) - 1];
+      std::string head;
+      for (std::size_t k = 0; k < note.size(); k++) {
+        std::string t = markupLineHtml(note[k]);
+        if (k == 0) head = t;
+        else inner += "<p>" + (strip(t).empty() ? std::string(kNbsp) : t) + "</p>\n";
+      }
+      asides += "<aside id=\"" + nid + "\" epub:type=\"footnote\">\n<p class=\"nh\">" + back + head + "</p>\n" + inner +
+                "</aside>\n";
+      continue;
+    }
     if (w != written.end()) {
       std::vector<std::string> paragraph;
       auto flushParagraph = [&] {

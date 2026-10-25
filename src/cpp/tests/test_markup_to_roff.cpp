@@ -228,3 +228,15 @@ TEST_CASE("convertMarkupToMsRoffSource: only kana/kanji make the source Japanese
   CHECK(convertMarkupToMsRoffSource("\xE3\x80\x8C\xE3\x80\x8D : messages\n").find("\"User Commands\"") != std::string::npos);
   CHECK(convertMarkupToMsRoffSource("\xE5\x90\x8D\xE7\xA7\xB0\n").find("User Commands") == std::string::npos);
 }
+
+// 2026-10-25 (a direct user request): note marks ‡ / ‡6 become the empty usilic-note string, and the ≡...∠ note
+// text leaves the body for comment lines at the end (usilic -e reads them, groff shows nothing).
+TEST_CASE("convertMarkupToMsRoffSource: ‡ refs and ≡...∠ notes are hidden from groff") {
+  std::string out = convertMarkupToMsRoffSource("a\xE2\x80\xA1" "b\xE2\x80\xA1" "6c\n\xE2\x89\xA1x<b>y</b>\nz\xE2\x88\xA0\nd\n");
+  CHECK(out.find("a\\*[usilic-note]b\\*[usilic-note 6]c\n") != std::string::npos);
+  CHECK(out.find(".ds usilic-note\n") != std::string::npos);
+  CHECK(out.find(".\\\" usilic-note-begin\n.\\\" usilic-note-line x<b>y</b>\n.\\\" usilic-note-line z\n") !=
+        std::string::npos);
+  CHECK(msBody(out).find("\xE2\x89\xA1") == std::string::npos);
+  CHECK(msBody(out).find(".br\nd\n") != std::string::npos);  // 注釈の行は空行を残さない
+}

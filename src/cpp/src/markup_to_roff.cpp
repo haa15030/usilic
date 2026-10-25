@@ -6,6 +6,7 @@
 #include <cstring>
 #include <ctime>
 #include <optional>
+#include <vector>
 
 #include "help_text.hpp"
 #include "utf8.hpp"
@@ -177,8 +178,55 @@ static std::string wrapMiscountedKana(const std::string &text, char font) {
 // (さもないと著者の本文がroffの制御行/エスケープと誤認される)、
 // (2)改行・空行の扱い(2026-09-25以降は元の1行=出力の1行の.brと、
 // 空行の.sp――関数本体冒頭の同日のコメント参照)。
+// 2026-10-25、直接のユーザー依頼(Kb.txtと同じ注釈の書式をHELPの原稿でも、"src/HELP_.txtに反映してみて"):
+// 「≡注釈の文…∠」(複数行でもよい)を本文から外して1行ずつnotesへ。中の<indentN>・</indent>は本文の字下げの
+// 対応を崩さないよう本文に残し、注釈の文からは外す。行頭の≡から行末の∠までなら、その行ごと外す(空行を残さない)。
+static std::string extractHelpNotes(const std::string &markup, std::vector<std::vector<std::string>> *notes) {
+  const std::string open = "\xE2\x89\xA1", close = "\xE2\x88\xA0";  // ≡ ∠
+  std::string body;
+  std::size_t pos = 0;
+  for (;;) {
+    std::size_t start = markup.find(open, pos);
+    std::size_t end = start == std::string::npos ? std::string::npos : markup.find(close, start + open.size());
+    if (end == std::string::npos) break;
+    body += markup.substr(pos, start - pos);
+    std::string inner = markup.substr(start + open.size(), end - start - open.size());
+    std::string tags, text;
+    for (std::size_t k = 0; k < inner.size();) {
+      std::size_t len = 0;
+      if (inner.compare(k, 9, "</indent>") == 0) {
+        len = 9;
+      } else if (inner.compare(k, 7, "<indent") == 0) {
+        std::size_t g = inner.find('>', k);
+        if (g != std::string::npos) len = g + 1 - k;
+      }
+      if (len) {
+        tags += inner.substr(k, len);
+        k += len;
+      } else {
+        text += inner[k++];
+      }
+    }
+    std::vector<std::string> lines;
+    for (std::size_t a = 0;;) {
+      std::size_t b = text.find('\n', a);
+      lines.push_back(text.substr(a, b == std::string::npos ? std::string::npos : b - a));
+      if (b == std::string::npos) break;
+      a = b + 1;
+    }
+    while (!lines.empty() && lines.back().find_first_not_of(" \t") == std::string::npos) lines.pop_back();
+    notes->push_back(lines);
+    body += tags;
+    pos = end + close.size();
+    bool lineStart = body.empty() || body.back() == '\n';
+    if (lineStart && tags.empty() && pos < markup.size() && markup[pos] == '\n') pos++;
+  }
+  return body + markup.substr(pos);
+}
+
 std::string convertMarkupToMsRoffSource(const std::string &source) {
-  const std::string markup = joinMarkupLinesAtBreaks(source);  // <br />(help_text.hpp参照)
+  std::vector<std::vector<std::string>> notes;
+  const std::string markup = extractHelpNotes(joinMarkupLinesAtBreaks(source), &notes);  // <br />(help_text.hpp参照)
   std::string out;
   out.reserve(markup.size() * 2);
   std::size_t i = 0;
@@ -252,6 +300,9 @@ std::string convertMarkupToMsRoffSource(const std::string &source) {
          // なって消えるので、usilicのHELPが組む時(-rusilic-help=1)だけ印U+E000を出す(usilicが組んだ後で
          // タブに戻す、Application::renderHelpRoff()参照)。manで読む時は何も出ない。
          ".ie r usilic-help .ds usilic-tab \\[uE000]\n.el .ds usilic-tab\n"
+         // 2026-10-25: 注釈の参照「‡」「‡6」(extractHelpNotes()参照)は\*[usilic-note]・\*[usilic-note 6]。groffでは
+         // 何も出さず、usilic -e(convertMsRoffToHelpEpub())だけが注釈の番号にする。
+         ".ds usilic-note\n"
          // 2026-10-10、直接のユーザー報告("~/HELP.txt平文表示と比べるとHELP.ja.1ではタブコードで始まる行で
          // 全角コロンの位置が左寄り"): manの既定のタブ位置は0.5i(5桁)ごとで、平文(8桁ごと)より左へずれる。
          // 平文と同じ8桁ごとにする。
@@ -365,6 +416,14 @@ std::string convertMarkupToMsRoffSource(const std::string &source) {
       }
     }
 
+    if (markup.compare(i, 3, "\xE2\x80\xA1") == 0) {  // ‡(前置きのusilic-note参照)
+      std::size_t d = i + 3;
+      while (d < markup.size() && markup[d] >= '0' && markup[d] <= '9') d++;
+      out += "\\*[usilic-note" + (d > i + 3 ? " " + markup.substr(i + 3, d - i - 3) : std::string()) + "]";
+      i = d;
+      continue;
+    }
+
     bool isBold = markup.compare(i, boldOpen.size(), boldOpen) == 0;
     bool isUnderline = !isBold && markup.compare(i, underlineOpen.size(), underlineOpen) == 0;
     bool isItalic = !isBold && !isUnderline && markup.compare(i, italicOpen.size(), italicOpen) == 0;
@@ -406,6 +465,11 @@ std::string convertMarkupToMsRoffSource(const std::string &source) {
   // 末尾が空行で埋まらないよう、最後にページ長を現在位置まで縮める
   // (man自身の連続表示と同じ定番の手法)。
   ensureFreshLine();
+  // 注釈の文(extractHelpNotes()参照)はroffのコメントで(groffでは出ない)。usilic -eが読んで巻末の注釈にする。
+  for (const auto &note : notes) {
+    out += ".\\\" usilic-note-begin\n";
+    for (const auto &l : note) out += ".\\\" usilic-note-line " + l + "\n";
+  }
   // 末尾の行(.TH)は見出しと同じ幅で。-mandoc(man)で組む時は、末尾の行をmanのマクロ自身が最後に出すので
   // ページ長を縮めない(縮めると末尾の行が出ない)。an-footerはgroffのan.tmacのマクロ。
   out += ".br\n.if !d an-footer .pl \\n(nlu+1v\n";
