@@ -20816,7 +20816,15 @@ void Application::handleResize() {
   }
   shell_.onResize(display_.rows(), display_.columns(), /*redraw=*/currentMode_ == ApplicationMode::Shell);
   activeView().redraw();
-  if (promptActive()) promptEditor_.redraw();
+  // 2026-10-25、直接のユーザー報告(=ma、縦書きの本の閲覧中の^X^Dの一覧で、モードラインの非ハイライトの
+  // プロンプトと右端の戻り先が無い。-gは一覧を開くと行の高さが変わってここを通る): 上のredraw()は一覧の
+  // モードラインを汎用の形で描くので、^X^F/^X^D等の直接入力の一覧は開いた時と同じ形で描き直す。
+  // プロンプトも入力欄だけでなくラベルから(以前は「//」だけになっていた)。
+  refreshDirectEntryModeLine();
+  if (promptActive()) {
+    drawPromptLabel(promptKind_);
+    promptEditor_.redraw();
+  }
 }
 
 void Application::relayoutForModeLineVisibilityChange() {

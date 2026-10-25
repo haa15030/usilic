@@ -2899,7 +2899,12 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // terminal's SIGWINCH -- it reads the Display's current rows()/
     // columns() itself, already updated by the time this runs.
     // 2026-10-16(GraphicalDisplay::setVerticalLineSpacing()参照): 縦書きの画面では縦書きの字の送りの行の高さに。
-    gui.setVerticalLineSpacing(app.verticalLayoutShown());
+    // 2026-10-25、直接のユーザー報告(=ma/=mb、縦書きの本の閲覧中に^X^Dの一覧で字を打つと一覧が消え、モードラインは
+    // 「//」だけ。^Xd・^Jp・^J^P等でも): 一覧から入力に移るとモードは元のFILEへ戻り(一覧はプロンプトの裏に
+    // 残す)、ここで縦書きの行の高さへ切り替わっていた。行の高さが変わるとhandleResize()が本文を組み直して描き、
+    // プロンプトは入力欄だけを描き直すので、一覧とラベルが消えていた。プロンプトの間は今の行の高さのままにする
+    // (閉じた後のフレームで切り替える)。
+    if (!app.promptActive()) gui.setVerticalLineSpacing(app.verticalLayoutShown());
     if (gui.consumeSizeChanged()) {
       app.handleResize();
       anyEventThisFrame = true;
