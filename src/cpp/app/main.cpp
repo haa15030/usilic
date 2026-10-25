@@ -3368,6 +3368,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     while (auto sb = gui.consumeScrollbarEvent()) {
       anyEventThisFrame = true;
       app.noteUserActivity();  // マウスに触れたら一時的な表示を消す(Application::noteUserActivity()参照)
+      if (app.promptActive() && app.verticalLayoutShown()) continue;  // 上のDragEventType::Motionと同じ
       // 縦書きの本文(Application::epubVerticalScrollbar()参照): 上端が本の最初、下端が本の
       // 最後。draggingは立てない(立てると行単位のrenderScrolled()で描き、縦書きのマスの
       // 描画を通らない)。
@@ -3587,6 +3588,11 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         }
         case fm::GraphicalDisplay::DragEventType::Motion: {
           clickTargetsCursor = false;  // 本物のドラッグ(clickTargetsCursor自身のコメント参照)
+          // 2026-10-25、直接のユーザー報告(=ly、縦書きの本の閲覧中に^Xd/のまま画面をドラッグすると動かず、
+          // 本文が崩れたまま): プロンプトの間はepubVerticalDragActive()が偽なので、下の行単位のドラッグ
+          // (renderScrolled())で縦書きの本文を横書きの行として描いていた。ホイールと同じくプロンプトの
+          // 間は動かさない。
+          if (app.promptActive() && app.verticalLayoutShown()) break;
           if ((buttonHeldPendingDrag || epubDragging) && !dragging && app.epubVerticalDragActive()) {
             // epubDragging自身のコメント参照。右へのドラッグで先へ(本文が右へ動き、左から
             // 次の列が出てくる)。本の端で動けなければずらさない。

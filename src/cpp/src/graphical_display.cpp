@@ -63,6 +63,11 @@ struct Cell {
   std::string ruby;
   int rubySpan = 0;
   bool rubyVertical = false;
+  // 2026-10-25追加、直接のユーザー報告(=lx/=ly、縦書きの本の閲覧中に^Xd/で本文の太字が潰れ、ルビ・傍点・
+  // 列カーソルが消える): 縦書きの描き方(setVerticalTextHint())で書かれた字か。以前は描く時の設定を
+  // 画面全体に当てていたので、プロンプトの間にApplication側が設定を切る(syncEpubHorizontalPresentation())
+  // と、縦書きのまま残っている本文まで横書きの描き方で描き直されていた。
+  bool vertical = false;
 };
 
 // TerminalDisplay::attributeEscape()のHighlight/HighlightCurrent
@@ -1009,7 +1014,7 @@ struct GraphicalDisplay::Impl {
     const Impl &d = *this;
     auto blankGlyph = [](const Cell &c) { return !c.continuation && !c.standout && (c.glyph.empty() || c.glyph == " "); };
     std::vector<int> kinds;
-    if (d.verticalText) {
+    if (d.cellAt(row, col).vertical) {  // Cell::vertical参照
       for (int r = 0; r < d.rows; r++) {
         const Cell &c = d.cellAt(r, col);
         bool blank = blankGlyph(c) && (col + 1 >= d.columns || blankGlyph(d.cellAt(r, col + 1)) ||
@@ -1742,12 +1747,14 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
   cell.ruby = std::move(impl_->pendingRuby);
   cell.rubySpan = impl_->pendingRubySpan;
   cell.rubyVertical = impl_->pendingRubyVertical;
+  cell.vertical = impl_->verticalText;  // Cell::vertical参照
   impl_->pendingRuby.clear();
 
   if (width == 2 && impl_->cursorCol + 1 < impl_->columns) {
     Cell &shadow = impl_->cellAt(impl_->cursorRow, impl_->cursorCol + 1);
     shadow = Cell{};
     shadow.continuation = true;
+    shadow.vertical = impl_->verticalText;
     shadow.bold = cell.bold;
     shadow.underline = cell.underline;
     shadow.standout = cell.standout;
@@ -1808,7 +1815,7 @@ void GraphicalDisplay::renderCellBackground(int row, int col) {
 void GraphicalDisplay::renderCell(int row, int col) {
   // 2026-10-13、直接のユーザー報告("-gのスクロールモード切り換えで「Scroll：chapter」の「：」が横倒し"): モードラインの
   // 行(一時的な知らせもここに出る)は縦書きの本文ではないので、縦書きの処理(回転・横倒し・縦中横)をしない。
-  bool verticalText = impl_->verticalText && !(impl_->modeLineVisible && row == impl_->rows - 1);
+  bool verticalText = impl_->cellAt(row, col).vertical && !(impl_->modeLineVisible && row == impl_->rows - 1);  // Cell::vertical参照
   if (!impl_->outputEnabled) return;
   const Cell &cell = impl_->cellAt(row, col);
   SDL_Rect box{Impl::kMarginX + col * impl_->cellWidth + impl_->offsetXForRow(row),
@@ -2214,7 +2221,7 @@ void GraphicalDisplay::renderCursor() {
   // スクリーンショット=iz/=ja「〜」、=jb/=jc「10.4」): 縦書きでは、カーソルの字も背景と同じrenderCell()
   // (〜等の回転、半角の並びの横倒し、縦中横)で、カーソルの枠の中だけに字の色を背景色にして描き直す。
   // 横倒しの並びは一番上のマスがまとめて描くので、同じ列の近くの桁のマスを全部、枠で切り抜いて描く。
-  if (impl_->verticalText && !(impl_->modeLineVisible && row == impl_->rows - 1)) {
+  if (cell.vertical && !(impl_->modeLineVisible && row == impl_->rows - 1)) {  // Cell::vertical参照
     SDL_Rect previousClip{};
     bool hadClip = SDL_RenderIsClipEnabled(impl_->renderer);
     if (hadClip) SDL_RenderGetClipRect(impl_->renderer, &previousClip);
@@ -2243,7 +2250,7 @@ void GraphicalDisplay::renderCursor() {
   // 明朝体。2026-10-11、直接のユーザー報告("ヒラギノ明朝 ProN W3って縦書きはいいんだが横書きだとフォントの大きさが
   // おかしい"、スクリーンショット=iu: M・O・U・D・W・m等だけ小さい): 明朝体の欧文は字ごとに幅が違うので、幅の広い字が
   // 半角1マスに収まらず縮めて描かれていた。半角(1マス幅)の字は明朝体にせず基本の等幅フォントで描く(縦書きは2マス幅)。
-  bool verticalCell = impl_->verticalText && !(impl_->modeLineVisible && row == impl_->rows - 1);
+  bool verticalCell = cell.vertical && !(impl_->modeLineVisible && row == impl_->rows - 1);  // Cell::vertical参照
   if (TTF_Font *serif = (cell.serif || impl_->serifEverywhere) && (isWide || verticalCell)  // renderCell()と同じ
                             ? serifFontFor(*impl_, codepoint) : nullptr)
     renderFont = serif;
