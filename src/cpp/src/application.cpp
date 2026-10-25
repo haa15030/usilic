@@ -19317,13 +19317,17 @@ bool Application::executePathInput(const std::string &path) {
   // 同じ理由で既にshell_.currentDirectory()に対して解決している
   // Shell自身のTab補完に合わせている。
   ResolvedPath resolved = pathResolver_.resolve(path, directoryMode_.currentDirectory());
+  // 2026-10-25、直接のユーザー依頼("タイプミス^Xd/temp^M等ではエラーメッセージ出して"): 以前は何も言わずに
+  // 元の画面へ戻っていた。^Je(No such EPUB)と同じく、入れたパスを添えて知らせる。
   if (!resolved.exists) {
     activeView().redraw();
+    showTransientNotice(activeView(), "No such file or directory: " + path);
     return false;
   }
   if (resolved.isDirectory) {
     if (!directoryMode_.enterDirectory(resolved.path)) {
       activeView().redraw();
+      showTransientNotice(activeView(), "Can't open " + path);
       return false;
     }
     currentMode_ = ApplicationMode::Directory;
@@ -19353,6 +19357,7 @@ bool Application::executePathInput(const std::string &path) {
   if (openExternallyIfApplicable(resolved.path)) return true;  // EXEC/画像のクイックルック(2026-09-27)
   if (!fileMode_.loadFile(resolved.path)) {
     activeView().redraw();
+    showTransientNotice(activeView(), "Can't open " + path);  // 上のNo such file or directoryと同じ
     return false;
   }
   currentMode_ = ApplicationMode::File;

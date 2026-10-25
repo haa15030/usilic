@@ -82,6 +82,7 @@ _TEMPLATES = [
     ("Can't open {}", '{} を開けません'),
     ('Cannot run: {}', '実行できません: {}'),
     ('No such EPUB: {}', 'EPUB がありません: {}'),
+    ('No such file or directory: {}', 'ファイルまたはディレクトリがありません: {}'),
     ('Register {} set', 'レジスタ {} に記録しました'),
     ('Register {} is empty', 'レジスタ {} は空です'),
     ('{} files marked', '{} 個のファイルを選択しました'),

@@ -1521,9 +1521,12 @@ class Application:
         }.get(kind)
 
     def execute_path_input(self, text, directory):
-        """^Xf・^Xdの^M(C++のexecutePathInput()): 無い物は何も言わずにそのまま、ディレクトリは(ls)、他は開く。"""
+        """^Xf・^Xdの^M(C++のexecutePathInput()): 無い物は知らせてそのまま、ディレクトリは(ls)、他は開く。"""
         path = self.resolve_path(text) if text else ''
-        if not path or not os.path.exists(path):
+        if not path:
+            return False
+        if not os.path.exists(path):
+            self.show_transient_notice('No such file or directory: ' + text)
             return False
         if directory and os.path.isdir(path):
             return self.enter_directory_listing(path.rstrip('/') + '/', keep_stack=True)

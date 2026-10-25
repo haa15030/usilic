@@ -32795,3 +32795,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **原因**: -gは毎フレーム、行の高さを縦書き用か横書き用か(GraphicalDisplay::setVerticalLineSpacing(app.verticalLayoutShown()))に合わせ、変わると窓の大きさが変わった時と同じApplication::handleResize()を呼ぶ。^X^D等の一覧を開くとモードがListBrowserになって横書きの行の高さへ、一覧で字を打つとモードは元のFILEへ戻り(一覧はプロンプトの裏に残す)縦書きの行の高さへ切り替わっていた。handleResize()は(1)今のモードの画面(縦書きの本文)を組み直して描き、(2)一覧のモードラインを汎用の形(非ハイライトのプロンプトと右端の戻り先が無い)で描き、(3)プロンプトは入力欄だけを描き直してラベルを落としていた。-cでも端末の大きさを変えると(2)(3)が起きる。
    - **修正**: -gはプロンプトの間は行の高さを切り替えない(閉じた後のフレームで切り替える)。handleResize()の最後で、直接入力の一覧はrefreshDirectEntryModeLine()で開いた時と同じモードラインに、プロンプトはラベル(drawPromptLabel())から描き直す。項目1075の修正(マスごとの縦書きの描き方、プロンプト中のドラッグ)はそのまま残す。
    - 確かめたこと: -cで一覧を開いた後・^Xd/の後に端末の大きさを変えて、モードラインが「DIR 1/1 END …  …/Kbt.epub」「DIR /  …/Kbt.epub」のままになること。make usilic・make install・make app。-gは未確認。
+1077. **^Xf・^Xdで無いパスを入れたらエラーメッセージ(2026-10-25)**
+   - **経緯**: 直接のユーザー依頼"タイプミス`^Xd/temp^M`等ではエラーメッセージ出して"(項目1076の確認の後)。
+   - **実装**: Application::executePathInput()は、無いパス・入れないディレクトリ・読めないファイルで何も言わずに元の画面へ戻っていた。^Jeの「No such EPUB: …」と同じく、「No such file or directory: 入れたパス」(日本語は「ファイルまたはディレクトリがありません: …」)・「Can't open 入れたパス」を一時的な知らせで出す。Python版(execute_path_input())も無いパスで同じ知らせ。src/HELP_.txt・HELP_en_.txtのDIRの節に1文。
+   - 確かめたこと: -cで^Xd/temp^Mの知らせ。Python unittest 82件。make usilic・make install・make app。
