@@ -913,6 +913,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // ^Ot(Command::ToggleEpubTypeface)の明朝体を、EPUB以外の画面では和文の全部に(epubContentShown()参照、2026-10-20、
   // 直接のユーザー判断"2.でいい")。ゴシック体にしている間はsetSerifSuppressed()が止める。
   display_.setSerifEverywhereProvider([this] { return !epubContentShown(); });
+  fileMode_.setEpubHorizontalLeadRows([this]() { return display_.rows() * 2; });  // 行の高さ・字の大きさが変わっても足りるように
   fileMode_.setEpubImageRows([this](const std::string &path, const std::string &name, int width) {
     return epubImageBandRows(path + "\n" + name, width);
   });
@@ -8854,6 +8855,12 @@ std::optional<std::pair<int, int>> Application::epubHorizontalRangeAt(int rawLin
 void Application::enterEpubHorizontal(const std::pair<int, int> &range, int rawLine, bool fromBelow, bool fromAbove) {
   epubHorizontalSection_ = range;
   syncEpubHorizontalPresentation();
+  // 2026-10-26: -gでは横書きの範囲へ入ると行の高さが横書き用に変わる。先に切り替えてから置く(縦書きへ戻る時の
+  // leaveEpubHorizontalIfOutside()と同じ。以前は置いた後で行の数が変わり、handleResize()で置き直していた)。
+  if (!promptActive()) {
+    display_.setVerticalLineSpacing(false);
+    layoutViews();
+  }
   rawLine = std::clamp(rawLine, range.first, range.second);
   const auto &lines = fileView_.lines();
   for (std::size_t i = 0; i < lines.size(); i++) {

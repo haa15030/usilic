@@ -720,6 +720,26 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path,
     }
   }
   if (epubImageRows_ && !noWrapMode_ && isEpubFile(path)) lines = expandEpubImageLines(std::move(lines), path, effectiveWidth);
+  // 2026-10-26、直接のユーザー報告(-g、"下から上がってくるのは途中から。...付録は=mt.pngの状態からスクロールがスタート
+  // する"): 縦書きの本の横書きの範囲(付録等)へ先へ入る時は、範囲の最初の行を画面の一番下に置いて下から上げる
+  // (Application::enterEpubHorizontal())が、本の頭に近い範囲は前の行が1画面分より少なく、画面の先頭より前へは
+  // 送れないので途中の行から始まっていた。足りない分の空の行を範囲の直前に足す。直前の行と同じ元の行番号にするので、
+  // 横書きでは範囲の外として描かれず、縦書きに組み直す時(Application::epubLogicalLines())はその行につながって何も足さない。
+  if (epubHorizontalLeadRows_ && !noWrapMode_ && isEpubFile(path) && !epubLayoutHints_.horizontal.empty()) {
+    int want = epubHorizontalLeadRows_();
+    for (auto range = epubLayoutHints_.horizontal.rbegin(); range != epubLayoutHints_.horizontal.rend(); ++range) {
+      int at = -1;
+      for (int i = 0; i < static_cast<int>(lines.size()); i++)
+        if (lines[i].rawLineNumber.value_or(0) >= range->first) {
+          at = i;
+          break;
+        }
+      if (at <= 0 || at >= want) continue;
+      ContentView::Line blank;
+      blank.rawLineNumber = lines[at - 1].rawLineNumber;
+      lines.insert(lines.begin() + at, static_cast<std::size_t>(want - at), blank);
+    }
+  }
   return lines;
 }
 

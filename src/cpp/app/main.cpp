@@ -4040,6 +4040,10 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         coastLevel = std::min(epubCoastLevel, guiSpeedMaxLevel());
         coastDirection = epubCoastDirection > 0 ? -1 : 1;
         pixelOffset = 0;
+        // 2026-10-26、直接のユーザー報告("下から上がってくるのは途中から。奥付では=ms.png...の状態からスクロールが
+        // スタートする"): 範囲の最初の行は画面の一番下の行に置いてある(Application::enterEpubHorizontal())ので、
+        // 1行分弱下へずらして始め、画面の下から1ドットずつ現れるようにする(正のpixelOffsetは内容を下へずらす)。
+        if (coastDirection < 0 && app.epubHorizontalEnteringFromBelow()) pixelOffset = std::max(0, gui.cellHeightPixels() - 1);
       }
       if (stop) {
         epubCoastLevel = 0;
