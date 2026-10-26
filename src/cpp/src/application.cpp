@@ -20843,7 +20843,13 @@ void Application::handleResize() {
   // 無条件に適用し、アクティブな方だけ追加でreflow()自身を呼んで
   // 実際に再描画する。
   int oldFileWidth = fileMode_.width();
-  fileMode_.setWidth(display_.columns());
+  // 2026-10-27、直接のユーザー報告(字間が縦横で違う時、付録等の横書きの範囲に出入りする時に"一瞬止まる"、試験用
+  // プログラムで1歩に270〜380ms): 縦書きの本で縦書きの画面を見せている間は、横書きの行は描かず、縦書きの列は
+  // 元の行につなぎ直して組む(epubLogicalLines())ので折り返しの幅に依らない。横書きの行は横書きの幅のまま
+  // 組み直さずに置いておき、横書きの範囲へ戻った時に幅が同じなら組み直さずに済ませる(窓の大きさが変わっていれば
+  // その時に組み直す)。
+  bool keepHorizontalWrap = currentMode_ == ApplicationMode::File && epubVerticalActive();
+  if (!keepHorizontalWrap) fileMode_.setWidth(display_.columns());
   manMode_.setWidth(display_.columns());
   std::optional<int> epubRaw;  // 縦書きは、今のページの最初の行を保って組み直す
   if (currentMode_ == ApplicationMode::File && epubVerticalActive()) epubRaw = epubVerticalCurrentRaw();
@@ -20852,7 +20858,7 @@ void Application::handleResize() {
   // 2026-10-26、直接のユーザー報告("「付録」から「まえがき」へ進む際、一瞬動きが停止するのはなぜ？"): -gで縦書きの本の
   // 横書きの範囲(付録・奥付)に出入りするたびに行の高さが変わってここを通り、幅は同じなのに本の全体を組み直していた
   // (試験用プログラムで1歩に約0.3秒)。折り返しは幅だけで決まるので、縦書きの本で幅が変わっていなければ組み直さない。
-  bool sameWidthEpub = oldFileWidth == display_.columns() && epubBookVertical();
+  bool sameWidthEpub = (oldFileWidth == display_.columns() || keepHorizontalWrap) && epubBookVertical();
   // 2026-10-27、直接のユーザー報告(アイコンからの起動だけで、まえがきから戻って付録へ入る時に付録の最後の行が上から
   // 降りてこない。ICON-LETTER-SPACINGが横書き-1・縦書き0、"LETTER-SPACINGが怪しい"): 字間が縦横で違うと、横書きの
   // 範囲に出入りするたびに桁の数も変わってここで組み直す。reflow()はカーソルの行は元の行へ付け直すが、画面の一番上の
