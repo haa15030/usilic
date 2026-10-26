@@ -2800,14 +2800,11 @@ class Application {
   struct EpubLeavePlacement {
     int raw;
     bool before, after;
-    int sectionLast, sectionEnd;
+    int sectionEnd;
     int first;  // 置いた時の右端の列
   };
   std::optional<EpubLeavePlacement> epubLeavePlacement_;
-  // 2026-10-26: 連続スクロールで、横書きの範囲(付録等)から前へ縦書きへ戻った時、範囲の直前の列(この番号)を右端に置き、
-  // その後ろ(範囲の後ろの章)の列は画面から外れるまで描かない(奥付から戻る時と同じく、前の章が右から1列ずつ現れる)。
-  std::optional<int> epubVerticalHideAfter_;
-  void placeEpubVerticalAfterLeaving(int raw, bool before, bool after, int sectionLast, int sectionEnd);
+  void placeEpubVerticalAfterLeaving(int raw, bool before, bool after, int sectionEnd);
 
  public:
   // 2026-09-29追加、直接のユーザー報告("奥付...ホイールを回すと縦方向の慣性スクロールに
