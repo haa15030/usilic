@@ -44,6 +44,9 @@ Debian 13への設置
 
      rsync -av src/web/ debian:/var/www/html/usilic-web/
 
+   src/web/の末尾の「/」を忘れない(シェルの補完で消えることがある)。無いとweb/ごと
+   送られ、/var/www/html/usilic-web/web/に入って動かない。
+
 3. .htaccessを効かせる。/etc/apache2/apache2.conf等の該当するDirectoryに
    AllowOverrideを足し、apache2を再起動する。
 
