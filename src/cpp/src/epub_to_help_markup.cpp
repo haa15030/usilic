@@ -894,11 +894,15 @@ class BodyConverter {
       changeStyle(bold_, open ? +1 : -1, "b");
     } else if (name == "i" || name == "em" || name == "cite") {
       changeStyle(italic_, open ? +1 : -1, "i");
+    } else if (name == "u") {
+      // 2026-10-26、直接のユーザー報告("HELPモード（HELP.epub）の注釈にアンダーラインが無い"): HELP.epubは注釈の
+      // 付く名前を<u>で書く(help_to_epub.cpp、項目1079)。下の2026-09-28の「<u>には付けない」をやめ、<u>は下線に。
+      changeStyle(underline_, open ? +1 : -1, "u");
     } else if (name == "a") {
       // 2026-09-28追加、直接のユーザー提案("選択できる章はタグジャンプとしての
       // アンダーラインを付加し returnで当該行へ飛んではどうか"): 本の中へのリンク
       // だけに下線を付け、リンク先の行を記録する(外部URLは飛べないので対象外)。
-      // 下線はリンク専用にするため、h1と<u>には付けない。
+      // 下線はリンク専用にするため、h1には付けない(<u>は2026-10-26から下線、上の分岐参照)。
       // 2026-10-24、直接のユーザー報告(=lr.png"注釈であることを示す1.がわかりにくい"): 本文の注釈への
       // リンク(epub:type="noteref"、KDPの注釈の形)の字は太字にする(下線/縦書きの傍線に加えて)。
       if (t.kind == XmlToken::Open && attr(t, "type").find("noteref") != std::string::npos) {

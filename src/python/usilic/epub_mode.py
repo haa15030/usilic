@@ -284,8 +284,8 @@ class _XhtmlParser(HTMLParser):
             names.append('bold')
         if any(t in _ITALIC for t, _, _ in self.stack):
             names.append('italic')
-        if any(_is_underlined_link(h) for h in self.hrefs):
-            names.append('underline')
+        if any(_is_underlined_link(h) for h in self.hrefs) or any(t == 'u' for t, _, _ in self.stack):
+            names.append('underline')  # <u>も下線(HELP.epubの注釈の付く名前、C++と同じ)
         if any(self.noterefs):
             names.append('note')  # 本文の注釈番号: 決まった色(C++の<note>)
         return tuple(names) or None

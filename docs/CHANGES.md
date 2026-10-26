@@ -32810,3 +32810,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 1080. **make help: HELPの4つを原稿から作って入れる(2026-10-26)**
    - **経緯**: ユーザーの質問"~/にあるHELP.txtとHELP_en.txtを更新しておけばHELPモードもmake installで最新になる？"への答え(make installはdoc/の物を写すだけ、HELP.1・HELP_en.1はMakefileに作る手順が無い)の後、直接のユーザー依頼"そうして"。
    - **実装**: src/cpp/Makefileにhelp-man(~/HELP.txt・~/HELP_en.txtからusilic -nでdoc/HELP.1・doc/HELP_en.1を作って入れる)と、help(help-epub・help-epub-en・help-manの全部)を足した。make helpで4つを作り直して入れた。
+1081. **EPUBの<u>を下線に(HELPモードの注釈の名前)(2026-10-26)**
+   - **経緯**: 直接のユーザー報告"HELPモード（HELP.epub）の注釈にアンダーラインが無い"(項目1079で注釈の付く名前を<u>にした後)。
+   - **実装**: epubToHelpMarkup()は2026-09-28から「下線はリンク専用、h1と<u>には付けない」としていたので、<u>が地の字だった。<u>は下線に(h1は今まで通り付けない)。Python版(_attr())も同じ。
+   - 確かめたこと: unittest 82件。make usilic・make install・make app。HELPモードの見た目は未確認。
