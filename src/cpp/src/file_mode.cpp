@@ -1116,7 +1116,7 @@ bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()>
   return true;
 }
 
-bool FileMode::reflow(int newWidth) {
+bool FileMode::reflow(int newWidth, bool draw) {
   // 2026-08-30、実際のユーザー報告("フォントはOKだが文字数がおかしい
   // 、HELPはOKだけどね"): pagerMode_(loadStream()経由、CLI引数での
   // ファイル起動)の間は、これまでこの下のreadAndWrap()がview_のみを
@@ -1160,8 +1160,10 @@ bool FileMode::reflow(int newWidth) {
     if (streamFd_ >= 0) readMoreIntoPipe(std::max(oldLineCount, 1));
     view_.setLines(convertPipeLines());
     view_.setCursorIndex(translateCursorAfterReflow(oldCursor, oldRawLine));
-    view_.redraw();
-    view_.syncVisibleCursor();
+    if (draw) {
+      view_.redraw();
+      view_.syncVisibleCursor();
+    }
     // 2026-09-20追加、"-gで今度は103ではなく100に来る"追跡用の一時
     // 診断ログ(既存のUSILICGUIDEBUG慣習に合わせる、graphical_display.cpp
     // 各所参照)――-gでは実機再現しか手段が無いため、次回の再現時に
@@ -1186,8 +1188,10 @@ bool FileMode::reflow(int newWidth) {
 
   view_.setLines(readAndWrap(currentFile_));
   view_.setCursorIndex(translateCursorAfterReflow(oldCursor, oldRawLine));
-  view_.redraw();
-  view_.syncVisibleCursor();
+  if (draw) {
+    view_.redraw();
+    view_.syncVisibleCursor();
+  }
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
     FILE *f = std::fopen(dbg, "a");
     if (f) {

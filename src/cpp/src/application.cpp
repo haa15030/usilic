@@ -8969,7 +8969,20 @@ bool Application::leaveEpubHorizontalIfOutside(bool scrolling, int edge) {
   epubHorizontalSection_.reset();
   syncEpubHorizontalPresentation();
   rebuildEpubVertical(raw);  // リサイズで組み直しが要る場合もあるので、組み直してから置く
-  if (before && !epubHorizontalSection_) {
+  epubLeavePlacement_.reset();
+  if (!epubHorizontalSection_) {
+    placeEpubVerticalAfterLeaving(raw, before, after, sectionLast, sectionEnd);
+    epubLeavePlacement_ = EpubLeavePlacement{raw, before, after, sectionLast, sectionEnd, epubVerticalFirst_};
+  }
+  activeView().redraw();
+  activeView().syncVisibleCursor();
+  return true;
+}
+
+// leaveEpubHorizontalIfOutside()で縦書きへ戻った時の、縦書きの画面の置き方。2026-10-26、handleResize()からも
+// (epubLeavePlacement_参照)。
+void Application::placeEpubVerticalAfterLeaving(int raw, bool before, bool after, int sectionLast, int sectionEnd) {
+  if (before) {
     int col = 0;
     for (std::size_t c = 0; c < epubVerticalCols_.size(); c++)
       if (!epubVerticalCols_[c].padding && epubVerticalCols_[c].rawLineNumber <= raw) col = static_cast<int>(c);
@@ -8984,7 +8997,7 @@ bool Application::leaveEpubHorizontalIfOutside(bool scrolling, int edge) {
     });
     if (epubChapterBreaks_ || !columnsAfter) setEpubVerticalView(col, col);
     else setEpubVerticalView(col - epubVerticalColumnsPerScreen(display_.columns()) + 1, col);
-  } else if (after && raw == sectionEnd && !epubChapterBreaks_ && !epubHorizontalSection_) {
+  } else if (after && raw == sectionEnd && !epubChapterBreaks_) {
     // 連続スクロールで慣性等で先へ出た時は、範囲の直後の列を右端に置く(前へ送って範囲へ入る所と同じ)。
     int col = -1;
     for (std::size_t c = 0; c < epubVerticalCols_.size(); c++)
@@ -8994,9 +9007,6 @@ bool Application::leaveEpubHorizontalIfOutside(bool scrolling, int edge) {
       }
     if (col >= 0) setEpubVerticalView(col, col);
   }
-  activeView().redraw();
-  activeView().syncVisibleCursor();
-  return true;
 }
 
 void Application::alignEpubVerticalCursorToLeftEdge() {
@@ -20792,7 +20802,9 @@ void Application::handleResize() {
   manMode_.setWidth(display_.columns());
   std::optional<int> epubRaw;  // 縦書きは、今のページの最初の行を保って組み直す
   if (currentMode_ == ApplicationMode::File && epubVerticalActive()) epubRaw = epubVerticalCurrentRaw();
-  if (currentMode_ == ApplicationMode::File) fileMode_.reflow(display_.columns());
+  // 縦書きの画面を見せている間は、裏の横書きの画面を組み直しても描かない(2026-10-26、直接のユーザー報告"一瞬だけ
+  // =ml.pngが表示される"、横書きとしか分からないほど一瞬、USILICGUIDEBUGのログで確認)。
+  if (currentMode_ == ApplicationMode::File) fileMode_.reflow(display_.columns(), /*draw=*/!epubRaw);
   if (currentMode_ == ApplicationMode::File) applyBannerLineHighlights();  // INFOは読み直すと反転の範囲が消えるので
   // 平文のHELP(roff版、helpRoff_参照)は、groffで今の幅に組み直して開き直す(行は今の割合の所へ)。
   // 書き直すのはopenPlainHelp()が作った一時ファイルだけ(インストールしたHELPは書き換えない)。
@@ -20814,7 +20826,17 @@ void Application::handleResize() {
       fileView_.redraw();
     }
   }
-  if (epubRaw) rebuildEpubVertical(*epubRaw);
+  std::optional<EpubLeavePlacement> leave;
+  leave.swap(epubLeavePlacement_);
+  if (epubRaw) {
+    int moved = leave ? epubVerticalFirst_ - leave->first : 0;
+    rebuildEpubVertical(*epubRaw);
+    // 横書きの範囲から戻った直後(epubLeavePlacement_参照): 戻った時の置き方をやり直し、その後に動いた分だけ送る
+    if (leave && std::abs(moved) <= 2) {
+      placeEpubVerticalAfterLeaving(leave->raw, leave->before, leave->after, leave->sectionLast, leave->sectionEnd);
+      if (moved) setEpubVerticalView(epubVerticalFirst_ + moved, epubVerticalCursor_ + moved);
+    }
+  }
   // 2026-10-26、直接のユーザー報告("「燈色の場　合冊版」のタイトルが１ドットずつではなく一行分一度に現れて、次の瞬間には
   // (画面の一番上に)なる"、=mj/=mk、USILICGUIDEBUGのログで確認): 縦書きから奥付等へ下から入った直後(範囲の最初の行を
   // 画面の一番下に置く、enterEpubHorizontal())に、行の高さが縦書き用から横書き用(LINE-HEIGHT)へ切り替わって行の数が

@@ -2792,6 +2792,19 @@ class Application {
   // enterEpubHorizontal()のfromBelowで入り、範囲の最初の行がまだ画面の一番上まで上がっていない間。キーで送っても
   // 画面の先頭が範囲の手前(空の行)なので、この間はカーソルの行だけで戻るかを決める(leaveEpubHorizontalIfOutside())。
   bool epubHorizontalFromBelow_ = false;
+  // 2026-10-26、直接のユーザー報告("「付録」から「目次」に戻る際...目次は一瞬表示されるので正しい位置への割り込み成功
+  // したように見えるのに、何らかの描き直しが起きて「まえがき」へ行ってしまう"、=mo.png、USILICGUIDEBUGのログで確認):
+  // -gでは横書きの範囲から縦書きへ戻った直後に行の高さが縦書き用へ切り替わり、handleResize()が縦書きの列を組み直して
+  // 今の列カーソルの行の所へ置き直すので、戻った時の置き方(目次の最後の列を左端に、等)が崩れていた。戻った時の置き方を
+  // 覚えておき、その直後(右端の列がほとんど動いていない間)に組み直したら置き直す。
+  struct EpubLeavePlacement {
+    int raw;
+    bool before, after;
+    int sectionLast, sectionEnd;
+    int first;  // 置いた時の右端の列
+  };
+  std::optional<EpubLeavePlacement> epubLeavePlacement_;
+  void placeEpubVerticalAfterLeaving(int raw, bool before, bool after, int sectionLast, int sectionEnd);
 
  public:
   // 2026-09-29追加、直接のユーザー報告("奥付...ホイールを回すと縦方向の慣性スクロールに
