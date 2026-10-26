@@ -2937,17 +2937,27 @@ void GraphicalDisplay::renderRuby(int row, int col) {
   SDL_Color fg = cell.fgColor != Display::kDefaultColor ? ansiColorToSdl(cell.fgColor) : impl_->fg;
   int x = Impl::kMarginX + col * impl_->cellWidth + impl_->offsetXForRow(row);
   int y = Impl::kMarginY + row * impl_->cellHeight;
+  double scale = 1.0;
   if (cell.size > 0) {  // 大きい字の親字はマス目から外れている(placeLargeGlyph())ので、読みも合わせる
     LargeGlyphPlacement place = impl_->largeGlyphPlacementAt(row, col);
-    if (cell.rubyVertical) y += static_cast<int>((place.start - row) * impl_->cellHeight);
-    else x += static_cast<int>((place.start - col) * impl_->cellWidth);
+    if (cell.rubyVertical) {
+      y += static_cast<int>((place.start - row) * impl_->cellHeight);
+    } else {
+      // 2026-10-26、直接のユーザー報告("スクロールを停止すると同ルビ（だけ）が消える"、=md.png、奥付の書名の「燈《ひ》」):
+      // 大きい字は字の大きさ(place.pitch倍)にマスの中央から広げて描く(scaleGlyphRect())ので、字の上端はマスの上端より
+      // 上にある。以前は読みをマスの上端に置いていたので、読みが字の中に重なって見えなくなっていた。字の上端に置き、
+      // 読みの幅・大きさも字に合わせる。
+      x += static_cast<int>((place.start - col) * impl_->cellWidth);
+      y -= static_cast<int>((place.pitch - 1) / 2 * impl_->cellHeight);
+      scale = place.pitch;
+    }
   }
-  drawRubyText(x, y, cell.ruby, cell.rubySpan, cell.rubyVertical, Color{fg.r, fg.g, fg.b}, cell.serif);
+  drawRubyText(x, y, cell.ruby, cell.rubySpan, cell.rubyVertical, Color{fg.r, fg.g, fg.b}, cell.serif, scale);
 }
 
 // renderRuby()と、スクロール中のrenderTextRun()の共通部分。(x, y)は親字の最初の字のマスの左上。
 void GraphicalDisplay::drawRubyText(int x, int y, const std::string &ruby, int span, bool vertical, Color color,
-                                    bool serif) {
+                                    bool serif, double scale) {
   SDL_Color fg{color.r, color.g, color.b, 255};
   int cw = impl_->cellWidth, ch = impl_->cellHeight;
   auto fontFor = [&](unsigned int codepoint) {
@@ -2984,12 +2994,13 @@ void GraphicalDisplay::drawRubyText(int x, int y, const std::string &ruby, int s
   SDL_Texture *texture = cachedGlyphTexture(*impl_, fontFor(decodeUtf8Codepoint(ruby)), ruby, TTF_STYLE_NORMAL,
                                             TTF_HINTING_NORMAL, fg, false, w, h);
   if (!texture || w <= 0 || h <= 0) return;
-  int rubyH = ch * 9 / 20;
-  double scale = static_cast<double>(rubyH) / h;
-  int maxW = span * cw + cw;  // 親字より少しはみ出すのは許す
-  if (w * scale > maxW) scale = static_cast<double>(maxW) / w;
-  int dw = static_cast<int>(w * scale), dh = static_cast<int>(h * scale);
-  SDL_Rect dst{x + (span * cw - dw) / 2, y - dh / 2, dw, dh};
+  int rubyH = static_cast<int>(ch * 9 / 20 * scale);
+  int baseW = static_cast<int>(span * cw * scale);  // 親字の幅(大きい字はscale倍)
+  double k = static_cast<double>(rubyH) / h;
+  int maxW = baseW + cw;  // 親字より少しはみ出すのは許す
+  if (w * k > maxW) k = static_cast<double>(maxW) / w;
+  int dw = static_cast<int>(w * k), dh = static_cast<int>(h * k);
+  SDL_Rect dst{x + (baseW - dw) / 2, y - dh / 2, dw, dh};
   SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
 }
 
@@ -4303,9 +4314,20 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       std::string reading = line.substr(baseEnd, readingEnd - baseEnd);
       for (const char *bracket : {"\xE3\x80\x8A", "\xE3\x80\x8B"})  // 《》
         for (std::size_t p; (p = reading.find(bracket)) != std::string::npos;) reading.erase(p, 3);
-      if (!reading.empty())
-        drawRubyText(Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y, reading, std::max(baseWidth, 1), false,
-                     fg, rubyRun(pos, Display::Attribute::Serif));
+      if (!reading.empty()) {
+        // 2026-10-26、直接のユーザー報告("「奥付」をスクロール中は本のタイトルの「ひ」のルビ位置がおかしい"、=mc.png):
+        // 大きい字の親字は、下の字の描画と同じくplaceLargeGlyph()の位置・倍率で描くので、読みも合わせる(renderRuby()参照)。
+        int rubyX = Impl::kMarginX + x * impl_->cellWidth, rubyY = Impl::kMarginY + y;
+        double scale = 1.0;
+        if (rubyRun(pos, Display::Attribute::Large) && x >= 0 && x < static_cast<int>(kinds.size())) {
+          LargeGlyphPlacement place = placeLargeGlyph(kinds, x);
+          rubyX = Impl::kMarginX + static_cast<int>(place.start * impl_->cellWidth);
+          rubyY -= static_cast<int>((place.pitch - 1) / 2 * impl_->cellHeight);
+          scale = place.pitch;
+        }
+        drawRubyText(rubyX, rubyY, reading, std::max(baseWidth, 1), false, fg, rubyRun(pos, Display::Attribute::Serif),
+                     scale);
+      }
     }
     int width = std::max(1, naturalWidth);
     std::string glyph = line.substr(pos, len);
