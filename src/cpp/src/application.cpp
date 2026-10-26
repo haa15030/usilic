@@ -4095,6 +4095,12 @@ bool Application::feedByteUngated(int byte, std::optional<KeyInput::SpecialKey> 
       return playRecordedMacro();
     }
   }
+  // 2026-10-26、直接のユーザー依頼("縦書きでの;/:は^[</^[>と同じく機能が逆のほうがいい"): 縦書きの本を読んでいる
+  // 間(奥付等の横書きの範囲も、^[</^[>と同じ)は、;(前の章)と:(次の章)を入れ替える(右から左へ読むので、
+  // 左の;で先へ)。usilicrcのMACROの;/:より前、キーそのものを入れ替える。
+  if (!special && (byte == ';' || byte == ':') && keyBindingPending_.bytes.empty() && !awaitingSequenceOrPromptByte() &&
+      currentMode_ == ApplicationMode::File && epubBookVertical() && !epubNoteActive())
+    byte = byte == ';' ? ':' : ';';
   const KeyBindings &bindings = configuration_.keyBindings();
   if (bindings.isIdentity()) return feedUntranslatedByte(byte, special);
   if (special) {

@@ -2064,6 +2064,10 @@ class Application:
     def feed_key_sequence(self, byte):
         """pending_keysへ足して割り当てと照合する(sequence_stateに'more'・'none'・'run')。"""
         self.sequence_state = 'run'
+        # 縦書きの本では;(前の章)と:(次の章)を入れ替える(C++のfeedByteUngated()、^[</^[>と同じく逆)
+        if not self.pending_keys and byte in (ord(';'), ord(':')) and self.prompt is None and \
+                self.current_mode == FILE and self.in_epub_body() and self.epub.right_to_left:
+            byte = ord(':') if byte == ord(';') else ord(';')
         self.pending_keys.append(byte)
         keys = self.pending_keys
         x_prefix, o_prefix = self.bindings.prefixes[0], self.bindings.prefixes[2]
