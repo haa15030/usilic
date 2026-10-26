@@ -1463,6 +1463,14 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
       view.setTopIndex(before + direction);
     }
     if (view.topIndex() == before) {  // still a real boundary even after trying to load more
+      // 横書きの範囲(付録等)の前後の行が1画面分より少なく、範囲が画面から外れる前に送れなくなった時は、縦書きへ
+      // 戻って列の慣性として続ける(Application::leaveEpubHorizontalAtEdge()参照、2026-10-26)。
+      if (app.epubHorizontalSectionActive() && app.leaveEpubHorizontalAtEdge(direction)) {
+        if (!app.epubVerticalDragActive()) return result;
+        columns = true;
+        viewPtr = &app.activeContentView();
+        continue;
+      }
       clearHoverAndRedraw(view);
       return result;
     }
@@ -3757,6 +3765,21 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       }
     }
 
+    // 2026-10-26追加(Application::leaveEpubHorizontalAtEdge()参照、直接のユーザー報告"-c の付録画面では下向きスクロールが
+    // 真ん中辺までが来たところで止まったまま目次画面すら出ない"): 横書きの範囲(付録等)で上下の慣性が端で送れなくなったら、
+    // 縦書きへ戻って同じ段階・向きの左右の慣性として続ける(下のsyncEpubHorizontalSection()で戻った時と同じ)。
+    auto leaveEpubHorizontalAtCoastEdge = [&]() {
+      if (!app.epubHorizontalSectionActive() || !app.leaveEpubHorizontalAtEdge(-coastDirection)) return false;
+      if (app.epubVerticalDragActive()) {
+        epubCoastLevel = coastLevel;
+        epubCoastDirection = coastDirection < 0 ? 1 : -1;
+        epubDragOffset = 0;
+      }
+      coastLevel = 0;
+      coastDirection = 0;
+      pixelOffset = 0;
+      return true;
+    };
     if (coastLevel > 0 && !dragging) {
       const fm::ScrollStep &step = guiSpeedStep(coastLevel);  // SPEED(-gではARROWを使わない、guiSpeedStep()参照)
       auto frameDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(16);
@@ -3906,6 +3929,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
             app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
             break;
           }
+          if (leaveEpubHorizontalAtCoastEdge()) break;
           coastLevel = 0;
           coastDirection = 0;
           pixelOffset = 0;
@@ -3926,6 +3950,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
             app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
             break;
           }
+          if (leaveEpubHorizontalAtCoastEdge()) break;
           // Hit a boundary -- stop rather than pin against the edge.
           // commitRowCrossings() itself left pixelOffset clamped to
           // +-(cellHeight-1) (its "pinned" value, meant for the

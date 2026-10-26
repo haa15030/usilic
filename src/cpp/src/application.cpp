@@ -8904,7 +8904,7 @@ bool Application::maybeEnterEpubHorizontal(int fromRaw, bool forward) {
 
 // 横書きの範囲で、カーソルが範囲の外へ出ていたら縦書きへ戻る(前へ出たらその行の最後の
 // 列、先へ出たらその行の最初の列)。EPUBの本文の外へ出ていたら(章の一覧等)範囲を忘れる。
-bool Application::leaveEpubHorizontalIfOutside(bool scrolling) {
+bool Application::leaveEpubHorizontalIfOutside(bool scrolling, int edge) {
   if (!epubHorizontalSection_) return false;
   if (currentMode_ != ApplicationMode::File || !epubBookVertical()) {
     epubHorizontalSection_.reset();
@@ -8949,6 +8949,15 @@ bool Application::leaveEpubHorizontalIfOutside(bool scrolling) {
                           : raw < epubHorizontalSection_->first ||
                                 (!epubHorizontalFromBelow_ && topRaw < epubHorizontalSection_->first);
   bool after = byVisibility ? lastIndex < top : raw > epubHorizontalSection_->second;
+  if (edge) {  // leaveEpubHorizontalAtEdge(): その向きに縦書きの本文の列がある時だけ(本の最後の奥付等では戻らない)
+    int first = epubHorizontalSection_->first, second = epubHorizontalSection_->second;
+    bool columnsThere = std::any_of(epubVerticalCols_.begin(), epubVerticalCols_.end(), [&](const auto &column) {
+      return !column.padding && (edge < 0 ? column.rawLineNumber < first : column.rawLineNumber > second);
+    });
+    if (!columnsThere) return false;
+    before = edge < 0;
+    after = edge > 0;
+  }
   if (!before && !after) return false;
   int sectionEnd = epubHorizontalSection_->second + 1;
   int sectionLast = epubHorizontalSection_->second;

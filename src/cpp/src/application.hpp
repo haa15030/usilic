@@ -2787,7 +2787,8 @@ class Application {
   bool enterEpubHorizontalAtEdge(int delta);
   bool enterEpubHorizontalAtBookEnd();  // ^[<で本の末尾の横書きの範囲(奥付等)の最下行へ
   // 縦書きへ戻ったらtrue。scrolling: 慣性・ドラッグ・ホイール(syncEpubHorizontalSection())。
-  bool leaveEpubHorizontalIfOutside(bool scrolling = false);
+  // edge(2026-10-26): -1/+1なら、範囲が画面に見えていても前/先へ出たものとして戻る(leaveEpubHorizontalAtEdge()参照)。
+  bool leaveEpubHorizontalIfOutside(bool scrolling = false, int edge = 0);
   // enterEpubHorizontal()のfromBelowで入り、範囲の最初の行がまだ画面の一番上まで上がっていない間。キーで送っても
   // 画面の先頭が範囲の手前(空の行)なので、この間はカーソルの行だけで戻るかを決める(leaveEpubHorizontalIfOutside())。
   bool epubHorizontalFromBelow_ = false;
@@ -2799,6 +2800,13 @@ class Application {
   // ホイール・ドラッグはキー/コマンドを通らない)。縦書きへ戻ったらtrue(呼び出し元は上下の
   // 慣性を止める)。
   bool syncEpubHorizontalSection() { return leaveEpubHorizontalIfOutside(/*scrolling=*/true); }
+  // 2026-10-26追加、直接のユーザー報告("-c の付録画面では下向きスクロールが真ん中辺までが来たところで止まったまま目次
+  // 画面すら出ない"): 慣性で横書きの範囲(付録等)の中から前(direction < 0)/先へ送れなくなった(画面の上端・下端)時、
+  // 縦書きへ戻る。範囲の前の行が1画面分より少ないと(-cでは表紙の画像も1行)、範囲が画面から外れる前に送れなくなって
+  // 止まっていた。戻ったらtrue。
+  bool leaveEpubHorizontalAtEdge(int direction) {
+    return leaveEpubHorizontalIfOutside(/*scrolling=*/true, direction < 0 ? -1 : 1);
+  }
   // 縦書きの本の中の横書きの範囲(奥付等)を見ている間true(app/main.cppが慣性を縦横の間で
   // 引き継ぐのに使う)。
   bool epubHorizontalSectionActive() const { return epubHorizontalSection_.has_value(); }
