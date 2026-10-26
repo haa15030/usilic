@@ -1350,6 +1350,21 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
       }
       int byte = keyInput.readByte();
       if (!byte) continue;  // spurious wakeup/timeout artifact
+      // 2026-10-26追加、直接のユーザー依頼("スクロール中の同キーが次章/前章にならない。章を移ったのちスクロールは
+      // 継続でよろしく"、runGuiPhase()の同じ日の追加と同じ): EPUBの慣性中の;/:は章を移り、移った先で同じ段階・
+      // 向きの慣性を続ける(縦書きの章なら列、横書きの範囲なら行)。
+      if ((byte == ';' || byte == ':') && app.epubChapterKeyActive()) {
+        // directionは列も行も+1で先へなので、そのまま使う。
+        view.setHoverIndex(std::nullopt);
+        app.feedByte(byte, std::nullopt);
+        if (!app.epubChapterKeyActive()) return result;
+        columns = app.epubVerticalDragActive();
+        if (!columns && app.epubVerticalScrollActive()) return result;
+        viewPtr = &app.activeContentView();
+        viewPtr->setHoverIndex(std::nullopt);
+        display.flush();
+        break;
+      }
       if (byte != 0x1b) {
         clearHoverAndRedraw(view);
         result.hadLeftoverByte = true;
@@ -3273,6 +3288,33 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           epubCoastDirection = 0;
           epubDragOffset = 0;
           gui.setContentOffsetX(0, 0);
+        }
+      } else if ((key->byte == ';' || key->byte == ':') && (coastLevel > 0 || epubCoastLevel > 0) &&
+                 app.epubChapterKeyActive()) {
+        // 2026-10-26追加、直接のユーザー依頼("スクロール中の同キーが次章/前章にならない。章を移ったのちスクロールは
+        // 継続でよろしく"): EPUBの慣性中の;/:は、慣性を止めずに章を移り、移った先で同じ段階・向きの慣性を続ける
+        // (縦書きの章なら左右、横書きの範囲なら上下)。以前は他のキーと同じく、左右の慣性のずれを残したまま章を移っていた。
+        consecutiveEscapes = 0;
+        int level = std::max(coastLevel, epubCoastLevel);
+        bool forward = epubCoastLevel > 0 ? epubCoastDirection > 0 : coastDirection < 0;  // それぞれの宣言コメント参照
+        syncCursorBeforeCoastStoppingKey(coastLevel, wasActivelyScrolling);
+        coastLevel = 0;
+        coastDirection = 0;
+        pixelOffset = 0;
+        epubCoastLevel = 0;
+        epubCoastDirection = 0;
+        epubDragOffset = 0;
+        gui.setContentOffsetX(0, 0);
+        app.feedByte(key->byte, std::nullopt);
+        if (app.epubChapterKeyActive()) {
+          if (app.epubVerticalDragActive()) {
+            epubCoastLevel = level;
+            epubCoastDirection = forward ? 1 : -1;
+          } else if (!app.epubVerticalScrollActive()) {
+            app.activeContentView().setHoverIndex(std::nullopt);
+            coastLevel = std::min(level, guiSpeedMaxLevel());
+            coastDirection = forward ? -1 : 1;
+          }
         }
       } else {
         consecutiveEscapes = 0;

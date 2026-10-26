@@ -2147,6 +2147,9 @@ class Application {
   // 横書きの本)では、慣性の速さの←を先へ(縦書きと同じ)、→を手前へにする(main.cppの左右のキー)。
   bool leftArrowAdvances() const;
   bool scrollEpubVertical(int delta);  // 右端の列が実際に動いたらtrue
+  // 2026-10-26追加: EPUBの本文(注釈の中を除く)を読んでいて、;/:で章を移れる(プロンプト等の途中でない)か。
+  // main.cppの慣性中の;/:(章を移って慣性を続ける)が使う。
+  bool epubChapterKeyActive();
   // 2026-09-29追加、直接のユーザー依頼("左右方向の画面ドラッグを実装で"): 縦書きの本文で
   // 左右ドラッグを受け付けるか(app/main.cpp、GraphicalDisplay::setContentOffsetX()参照)。
   bool epubVerticalDragActive() const;

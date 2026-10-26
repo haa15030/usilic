@@ -21157,6 +21157,11 @@ bool Application::openDroppedPaths(const std::vector<std::string> &paths) {
   return opened;
 }
 
+bool Application::epubChapterKeyActive() {
+  return currentMode_ == ApplicationMode::File && isEpubFile(fileMode_.currentFile()) && !epubNoteActive() &&
+         !awaitingSequenceOrPromptByte();
+}
+
 bool Application::epubContentShown() const {
   if (epubVerticalActive() || epubVerticalListActive()) return true;
   if (currentMode_ == ApplicationMode::File) return isEpubFile(fileMode_.currentFile());
