@@ -349,7 +349,7 @@ class GraphicalDisplay : public Display {
   static std::pair<int, int> lineHeightExtras();
   // 縦書きの画面を見せている間はtrue(メインのループが毎回渡す)。行の高さが変われば、窓の大きさはそのままで行数が
   // 変わり、consumeSizeChanged()がtrueになる。
-  void setVerticalLineSpacing(bool vertical);
+  void setVerticalLineSpacing(bool vertical) override;
   // 横書きの行の高さでの行数(縦書きの画面ではrows()が縦書きの字の送りの行数なので、窓の大きさを保存する時は
   // こちら、2026-10-16)。
   int horizontalRows() const;

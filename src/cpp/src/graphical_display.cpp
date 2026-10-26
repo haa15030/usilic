@@ -2637,7 +2637,10 @@ void GraphicalDisplay::reapplyLineHeightKeepingExtra() {
   if ((height == impl_->cellHeight && width == impl_->cellWidth) || height <= 0 || width <= 0) return;
   impl_->cellHeight = height;
   impl_->cellWidth = width;
-  clearGlyphCache(*impl_);
+  // 2026-10-26、直接のユーザー報告("「付録」から「まえがき」へ進む際、一瞬動きが停止するのはなぜ？"): 以前はここで
+  // 字の面のキャッシュを捨てていたので、縦書きの本の横書きの範囲(付録・奥付)に出入りして行の高さが変わるたびに、
+  // 次の描画で画面の字を全部描き直していた(試験用プログラムで約60ms)。字の面はフォント・字・装飾・色・回し方で決まり
+  // (GlyphCacheKey)、マスの大きさには依らない(マスへの収め方は描く時に決める)ので、捨てない。
   int w = 0, h = 0;
   SDL_GetWindowSize(impl_->window, &w, &h);
   handleWindowResized(w, h);

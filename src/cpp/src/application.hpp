@@ -2804,6 +2804,7 @@ class Application {
     int first;  // 置いた時の右端の列
   };
   std::optional<EpubLeavePlacement> epubLeavePlacement_;
+  std::tuple<int, int, bool> epubBuiltSize_{-1, -1, false};  // 縦書きの列を組んだ時の{行, 桁, -gか}(handleResize()が同じなら組み直さない)
   void placeEpubVerticalAfterLeaving(int raw, bool before, bool after, int sectionEnd);
 
  public:

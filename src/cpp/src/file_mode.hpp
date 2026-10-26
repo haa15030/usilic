@@ -288,6 +288,7 @@ class FileMode {
   // 実際に再描画する(次にloadFile()/loadStream()が呼ばれた時点で、
   // このwidth_を使って最初から正しく折り返されるので十分)。
   void setWidth(int newWidth) { width_ = newWidth; }
+  int width() const { return width_; }
 
   // モードラインの名前フィールド(通常は素のファイル名)と、その
   // trailing2フィールド(通常はファイルが属するディレクトリ、

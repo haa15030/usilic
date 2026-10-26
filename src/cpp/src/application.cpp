@@ -8967,6 +8967,12 @@ bool Application::leaveEpubHorizontalIfOutside(bool scrolling, int edge) {
     raw = epubHorizontalSection_->second + 1;
   epubHorizontalSection_.reset();
   syncEpubHorizontalPresentation();
+  // 2026-10-26(handleResize()の同じ日の直し参照): -gでは縦書きへ戻ると行の高さが縦書き用に変わる。先に切り替えてから
+  // 組み直す(以前は横書きの行の高さで組んだ直後に、行の高さが変わってもう一度組み直していた)。
+  if (!promptActive()) {
+    display_.setVerticalLineSpacing(true);
+    layoutViews();
+  }
   rebuildEpubVertical(raw);  // リサイズで組み直しが要る場合もあるので、組み直してから置く
   epubLeavePlacement_.reset();
   if (!epubHorizontalSection_) {
@@ -9121,6 +9127,7 @@ std::vector<Application::EpubLogicalLine> Application::epubLogicalLines(bool ski
 }
 
 void Application::rebuildEpubVertical(int rawLine) {
+  epubBuiltSize_ = {epubVerticalRows(), display_.columns(), display_.isGraphical()};  // handleResize()参照
   // 横書きの画面の行(折り返し済み)を、元の行番号ごとに論理行へつなぎ直す(epubLogicalLines())
   const EpubLayoutHints &hints = fileMode_.epubLayoutHints();
   std::set<int> alignEnd(hints.alignEnd.begin(), hints.alignEnd.end());
@@ -20808,13 +20815,18 @@ void Application::handleResize() {
   // setWidth()(redrawを伴わない軽量な更新)は非アクティブな方にも
   // 無条件に適用し、アクティブな方だけ追加でreflow()自身を呼んで
   // 実際に再描画する。
+  int oldFileWidth = fileMode_.width();
   fileMode_.setWidth(display_.columns());
   manMode_.setWidth(display_.columns());
   std::optional<int> epubRaw;  // 縦書きは、今のページの最初の行を保って組み直す
   if (currentMode_ == ApplicationMode::File && epubVerticalActive()) epubRaw = epubVerticalCurrentRaw();
   // 縦書きの画面を見せている間は、裏の横書きの画面を組み直しても描かない(2026-10-26、直接のユーザー報告"一瞬だけ
   // =ml.pngが表示される"、横書きとしか分からないほど一瞬、USILICGUIDEBUGのログで確認)。
-  if (currentMode_ == ApplicationMode::File) fileMode_.reflow(display_.columns(), /*draw=*/!epubRaw);
+  // 2026-10-26、直接のユーザー報告("「付録」から「まえがき」へ進む際、一瞬動きが停止するのはなぜ？"): -gで縦書きの本の
+  // 横書きの範囲(付録・奥付)に出入りするたびに行の高さが変わってここを通り、幅は同じなのに本の全体を組み直していた
+  // (試験用プログラムで1歩に約0.3秒)。折り返しは幅だけで決まるので、縦書きの本で幅が変わっていなければ組み直さない。
+  bool sameWidthEpub = oldFileWidth == display_.columns() && epubBookVertical();
+  if (currentMode_ == ApplicationMode::File && !sameWidthEpub) fileMode_.reflow(display_.columns(), /*draw=*/!epubRaw);
   if (currentMode_ == ApplicationMode::File) applyBannerLineHighlights();  // INFOは読み直すと反転の範囲が消えるので
   // 平文のHELP(roff版、helpRoff_参照)は、groffで今の幅に組み直して開き直す(行は今の割合の所へ)。
   // 書き直すのはopenPlainHelp()が作った一時ファイルだけ(インストールしたHELPは書き換えない)。
@@ -20838,7 +20850,8 @@ void Application::handleResize() {
   }
   std::optional<EpubLeavePlacement> leave;
   leave.swap(epubLeavePlacement_);
-  if (epubRaw) {
+  // 同じ大きさで組んであれば組み直さない(横書きの範囲から戻る時は先に行の高さを切り替えて組む、2026-10-26)
+  if (epubRaw && epubBuiltSize_ != std::make_tuple(epubVerticalRows(), display_.columns(), display_.isGraphical())) {
     int moved = leave ? epubVerticalFirst_ - leave->first : 0;
     rebuildEpubVertical(*epubRaw);
     // 横書きの範囲から戻った直後(epubLeavePlacement_参照): 戻った時の置き方をやり直し、その後に動いた分だけ送る

@@ -427,6 +427,9 @@ class Display {
   // 2026-10-26追加: keyの画像をrows行×cols桁の枠に収めた時(setContentImages()と同じく縦横比を保って中央)、画像の幅が
   // 枠の幅に占める割合(0〜1)。画像を描かない表示・読めない画像は1(枠いっぱい)。章毎の縦書きで、画像の後の余白の列を
   // 飛ばすのに使う(Application::stepEpubVerticalFirst()参照)。
+  // 2026-10-26追加: 縦書きの画面の行の高さ(-gのLINE-HEIGHTの縦書きの値)に切り替える(GraphicalDisplay参照)。
+  // -gのメインのループが毎フレーム渡すが、Applicationが縦書きへ戻る時に組み直す前に先に切り替えるのにも使う。
+  virtual void setVerticalLineSpacing(bool vertical) { (void)vertical; }
   virtual double contentImageWidthFraction(const std::string &key, int rows, int cols) {
     (void)key;
     (void)rows;
