@@ -9927,7 +9927,12 @@ bool Application::scrollEpubVertical(int delta) {
   // 範囲を越えたかは、章ごと(画面には右端の列の章だけを描く)なら右端の列で見る。連続スクロール(全部の章を描く)では、
   // 新しい列が現れる側――先へは左端、前へは右端――で見る(範囲の向こうの列が画面に現れる所で入る、
   // enterEpubHorizontalBetween()参照。2026-10-13、直接のユーザー報告"逆にたどると付録が無い"、-cのj/k)。
-  int edgeOffset = !epubChapterBreaks_ && delta > 0 ? epubVerticalColumnsPerScreen(display_.columns()) - 1 : 0;
+  // 2026-10-26、直接のユーザー報告(付録から目次へ戻った後、"←でスクロールの向きを変えると「目次の奥付」が右端へ消える
+  // まで何も現れず、右端へ消えたあとも、今度は「付録」が現れない"): 範囲の後ろの列を隠している間(epubVerticalHideAfter_)は、
+  // 左端はもう範囲の向こうなので、章ごとと同じく右端の列で見る(目次の最後の列が右端から消えた所で、付録が下から現れる)。
+  int edgeOffset = !epubChapterBreaks_ && delta > 0 && !epubVerticalHideAfter_
+                       ? epubVerticalColumnsPerScreen(display_.columns()) - 1
+                       : 0;
   int fromColumn = epubVerticalFirst_ + edgeOffset;
   if (!stepEpubVerticalFirst(delta)) return enterEpubHorizontalAtEdge(delta);
   if (enterEpubHorizontalBetween(fromColumn, epubVerticalFirst_ + edgeOffset, delta)) return true;
