@@ -3166,6 +3166,15 @@ void GraphicalDisplay::renderContentImages(const std::vector<ContentImage> &imag
   SDL_RenderSetClipRect(d.renderer, hadClip ? &previousClip : nullptr);
 }
 
+// Display::contentImageWidthFraction()参照。renderContentImages()と同じ収め方。
+double GraphicalDisplay::contentImageWidthFraction(const std::string &key, int rows, int cols) {
+  int w = 0, h = 0;
+  if (!contentImageTexture(key, &w, &h) || w <= 0 || h <= 0 || rows <= 0 || cols <= 0) return 1.0;
+  double boxW = static_cast<double>(cols) * impl_->cellWidth, boxH = static_cast<double>(rows) * impl_->cellHeight;
+  double scale = std::min(boxW / w, boxH / h);
+  return std::clamp(w * scale / boxW, 0.0, 1.0);
+}
+
 bool GraphicalDisplay::modeLineVisible() const { return impl_->modeLineVisible; }
 void GraphicalDisplay::setModeLineVisible(bool visible) { impl_->modeLineVisible = visible; }
 

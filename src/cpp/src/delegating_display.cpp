@@ -72,6 +72,9 @@ void DelegatingDisplay::setPendingRuby(const std::string &reading, int span, boo
 }
 void DelegatingDisplay::endContentEdgeCapture(int side) { backend_->endContentEdgeCapture(side); }
 void DelegatingDisplay::setContentImages(const std::vector<ContentImage> &images) { backend_->setContentImages(images); }
+double DelegatingDisplay::contentImageWidthFraction(const std::string &key, int rows, int cols) {
+  return backend_->contentImageWidthFraction(key, rows, cols);
+}
 void DelegatingDisplay::setImageProvider(ImageProvider provider) {
   imageProvider_ = std::move(provider);
   backend_->setImageProvider(imageProvider_);

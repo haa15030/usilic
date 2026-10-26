@@ -76,6 +76,7 @@ void GraphicalDisplay::beginContentEdgeCapture() {}
 void GraphicalDisplay::endContentEdgeCapture(int side) {}
 void GraphicalDisplay::renderContentEdge() {}
 void GraphicalDisplay::setContentImages(const std::vector<ContentImage> &images) {}
+double GraphicalDisplay::contentImageWidthFraction(const std::string &key, int rows, int cols) { return 1.0; }
 void GraphicalDisplay::setImageProvider(ImageProvider provider) {}
 SDL_Texture *GraphicalDisplay::contentImageTexture(const std::string &key, int *width, int *height) { return {}; }
 void GraphicalDisplay::renderContentImages(const std::vector<ContentImage> &images) {}

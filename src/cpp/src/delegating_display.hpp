@@ -99,6 +99,7 @@ class DelegatingDisplay : public Display {
   void setPendingRuby(const std::string &reading, int span, bool vertical) override;
   void endContentEdgeCapture(int side) override;
   void setContentImages(const std::vector<ContentImage> &images) override;
+  double contentImageWidthFraction(const std::string &key, int rows, int cols) override;
   void setImageProvider(ImageProvider provider) override;
   int cellPixelWidth() const override;
   int cellPixelHeight() const override;

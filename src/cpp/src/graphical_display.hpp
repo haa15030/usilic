@@ -256,6 +256,7 @@ class GraphicalDisplay : public Display {
   void drawRubyText(int x, int y, const std::string &ruby, int span, bool vertical, Color fg, bool serif, double scale = 1.0);
   void endContentEdgeCapture(int side) override;
   void setContentImages(const std::vector<ContentImage> &images) override;  // Display::setContentImages()参照
+  double contentImageWidthFraction(const std::string &key, int rows, int cols) override;
   void setImageProvider(ImageProvider provider) override;
   int cellPixelWidth() const override { return cellWidthPixels(); }
   int cellPixelHeight() const override { return cellHeightPixels(); }

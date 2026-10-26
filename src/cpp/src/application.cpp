@@ -9524,16 +9524,19 @@ std::pair<int, int> Application::epubVerticalShownRange(int first) const {
   // rebuildEpubVertical()の画像ページ参照)は、左右のスクロールで次の章が右端に来るまで1画面分が
   // 空のまま流れていた。画像ページだけの章は前後の章と続けて見せる(画像ページは1ページで完結
   // しているので、章の頭を右端でそろえる意味が無い)。
-  int perScreen = epubVerticalColumnsPerScreen(display_.columns());
-  auto imageOnly = [&](int f, int u) {
-    return u - f == perScreen && f < total && !epubVerticalCols_[f].image.empty();
-  };
-  if (imageOnly(from, until) && until < total) until = chapterAt(until).second;
-  if (from > 0) {
-    auto previous = chapterAt(from - 1);
-    if (imageOnly(previous.first, previous.second)) from = previous.first;
-  }
+  // 2026-10-26、直接のユーザー報告("章毎スクロールモード時の動作で気になるのは、表紙画像と本のタイトルは別の章の
+  // はずなのに一続きになって現れる点"、=mh.png): 上のつなげ方はやめ、画像の章も他の章と同じく分ける。画像の後の
+  // 空白は、画像の外の余白の列を飛ばして縮める(stepEpubVerticalFirst()参照)。
   return {from, until};
+}
+
+int Application::epubImagePageMarginColumns(int pageStart) {
+  if (pageStart < 0 || pageStart >= static_cast<int>(epubVerticalCols_.size()) || epubVerticalCols_[pageStart].image.empty())
+    return 0;
+  int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+  double fraction = display_.contentImageWidthFraction(fileMode_.currentFile() + "\n" + epubVerticalCols_[pageStart].image,
+                                                       epubVerticalRows(), epubVerticalColumnPitch() * perScreen);
+  return std::max(0, static_cast<int>(perScreen * (1.0 - fraction) / 2));
 }
 
 int Application::epubVerticalCurrentRaw() const {
@@ -9723,6 +9726,26 @@ bool Application::stepEpubVerticalFirst(int delta) {
     bool titlePage = target >= 0 && target < static_cast<int>(epubVerticalCols_.size()) &&
                      epubVerticalCols_[target].titlePage;
     setEpubVerticalFirst(titlePage && first >= 0 ? first : target);
+    // 2026-10-26、直接のユーザー依頼("画像のあとの空白ページだけ排除できない？"、表紙と扉を別の章として見せる
+    // (epubVerticalShownRange()参照)代わりに): 画像のページは画像を縦横比のまま中央に描くので、画像の外の左右に
+    // 空の列が残る。先へは画像が右端から抜けたら、前へは右端が左の余白に入ったら、余白を飛ばす。
+    if (int f = epubVerticalFirst_; f >= 0 && f < static_cast<int>(epubVerticalCols_.size()) &&
+                                    !epubVerticalCols_[f].image.empty()) {
+      int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+      int pageStart = f - epubVerticalCols_[f].imageSlice;
+      int margin = epubImagePageMarginColumns(pageStart);
+      if (margin > 0 && f - pageStart >= perScreen - margin) {
+        if (delta > 0) {
+          auto [skipFirst, skipTarget] = epubVerticalStep(pageStart + perScreen - 1, true);
+          if (skipTarget > f) {
+            titlePage = skipTarget < static_cast<int>(epubVerticalCols_.size()) && epubVerticalCols_[skipTarget].titlePage;
+            setEpubVerticalFirst(titlePage && skipFirst >= 0 ? skipFirst : skipTarget);
+          }
+        } else {
+          setEpubVerticalFirst(pageStart + perScreen - margin - 1);
+        }
+      }
+    }
     // 2026-09-30、直接のユーザー依頼("ブロックカーソルはスクロールの末尾ではなく先頭なので
     // 反映してほしい(縦スクロールの仕様)"): 横書きのj/k(ContentView::scrollLineDown()/
     // scrollLineUp())と同じく、列カーソルは送る向きの先頭――先へは画面の左端の、今の章の
@@ -20792,6 +20815,19 @@ void Application::handleResize() {
     }
   }
   if (epubRaw) rebuildEpubVertical(*epubRaw);
+  // 2026-10-26、直接のユーザー報告("「燈色の場　合冊版」のタイトルが１ドットずつではなく一行分一度に現れて、次の瞬間には
+  // (画面の一番上に)なる"、=mj/=mk、USILICGUIDEBUGのログで確認): 縦書きから奥付等へ下から入った直後(範囲の最初の行を
+  // 画面の一番下に置く、enterEpubHorizontal())に、行の高さが縦書き用から横書き用(LINE-HEIGHT)へ切り替わって行の数が
+  // 減り、置いた行が画面の外へ出て、カーソル(その行)を見せるために一番上へ送られていた。置き直す。
+  if (currentMode_ == ApplicationMode::File && epubHorizontalSection_ && epubHorizontalFromBelow_) {
+    const auto &lines = fileView_.lines();
+    for (int i = 0; i < static_cast<int>(lines.size()); i++)
+      if (lines[i].rawLineNumber.value_or(0) >= epubHorizontalSection_->first) {
+        fileView_.setCursorIndex(i);
+        fileView_.setTopIndex(std::max(0, i - std::max(1, fileView_.height()) + 1));
+        break;
+      }
+  }
   if (epubVerticalListActive()) refreshEpubTocVertical();
   if (currentMode_ == ApplicationMode::Man) manMode_.reflow(display_.columns());
   // DirectoryMode::applyColumnAutoDisplay()自身のコメント参照

@@ -2820,6 +2820,8 @@ class Application {
   void rebuildEpubVertical(int rawLine);
   void showEpubVerticalRaw(int rawLine);
   void setEpubVerticalFirst(int first);
+  // 画像のページ(pageStartから1画面分の列)の、画像の外の左右の余白の列の数(Display::contentImageWidthFraction())。
+  int epubImagePageMarginColumns(int pageStart);
   void setEpubVerticalView(int first, int cursor, std::optional<int> link = std::nullopt);
   int epubVerticalRows() const;
   int epubVerticalCurrentRaw() const;

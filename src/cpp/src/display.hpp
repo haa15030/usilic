@@ -424,6 +424,15 @@ class Display {
   // 裏の画面を描いている間(beginContentEdgeCapture()〜end)はその裏の画面の画像。-gだけが描き、
   // 端末は何もしない。
   virtual void setContentImages(const std::vector<ContentImage> &images) { (void)images; }
+  // 2026-10-26追加: keyの画像をrows行×cols桁の枠に収めた時(setContentImages()と同じく縦横比を保って中央)、画像の幅が
+  // 枠の幅に占める割合(0〜1)。画像を描かない表示・読めない画像は1(枠いっぱい)。章毎の縦書きで、画像の後の余白の列を
+  // 飛ばすのに使う(Application::stepEpubVerticalFirst()参照)。
+  virtual double contentImageWidthFraction(const std::string &key, int rows, int cols) {
+    (void)key;
+    (void)rows;
+    (void)cols;
+    return 1.0;
+  }
   // keyから画像のファイルのバイト列(JPEG/PNG等)を返す関数。取れなければnullopt。
   using ImageProvider = std::function<std::optional<std::string>(const std::string &key)>;
   virtual void setImageProvider(ImageProvider provider) { (void)provider; }
