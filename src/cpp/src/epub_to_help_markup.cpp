@@ -1646,18 +1646,10 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
   };
   std::map<std::string, ManifestItem> manifest;
   std::vector<std::string> spine;
-  std::string title, creator, ncxId;
-  std::string *capture = nullptr;
+  std::string ncxId;
   std::string opfDir = directoryOf(opfPath);
-  bool inMetadata = false;
   for (const auto &t : tokenizeXml(*opf)) {
     bool open = (t.kind == XmlToken::Open || t.kind == XmlToken::SelfClose);
-    if (t.kind == XmlToken::Open && t.name == "metadata") inMetadata = true;
-    if (t.kind == XmlToken::Close && t.name == "metadata") inMetadata = false;
-    if (t.kind == XmlToken::Open && inMetadata && t.name == "title" && title.empty()) capture = &title;
-    if (t.kind == XmlToken::Open && inMetadata && t.name == "creator" && creator.empty()) capture = &creator;
-    if (t.kind == XmlToken::Close && (t.name == "title" || t.name == "creator")) capture = nullptr;
-    if (t.kind == XmlToken::Text && capture) *capture += t.text;
     if (open && t.name == "item")
       manifest[attr(t, "id")] = {resolveHref(opfDir, attr(t, "href")), attr(t, "media-type"), attr(t, "properties")};
     if (open && t.name == "spine") ncxId = attr(t, "toc");
@@ -1687,50 +1679,12 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
       if (auto ncx = readMember(it->second.path)) parseNcx(*ncx, it->second.path, toc);
   }
 
+  // 2026-10-26、直接のユーザー判断("自前の扉自体をやめる"): 以前は本の情報(OPFのdc:title/dc:creator)から
+  // 書名・著者名のページを作って先頭(表紙の後)に足していたが、本自身の扉と同じ見た目で並んで二重に見えたのでやめた。
   std::string out;
-  title = collapseSpace(title);
-  creator = collapseSpace(creator);
-  // 本のタイトルは明朝体(2026-09-29、直接のユーザー指定)。下線はリンク専用(BodyConverterの"a"参照)
-  // 2026-10-01、直接のユーザー依頼("本の冒頭タイトルページも他の表紙と同じで"): 扉の書名
-  // (p.title、kReaderOverrideCss)と同じく大きい字にし、縦書きの本では扉と同じく1ページの中央に
-  // 置く(下のlayoutHints->centered)。
-  std::string header;
-  if (!title.empty()) header += "<serif><big><b>" + title + "</b></big></serif>\n";
-  if (!creator.empty()) header += creator + "\n";
-  int headerLines = static_cast<int>(std::count(header.begin(), header.end(), '\n'));
-  // 2026-10-20、直接のユーザー依頼("全EPUBで表紙を先頭にして"): 最初のページが画像だけ(表紙)なら、書名・著者名は
-  // その後に出す(本と同じく表紙が先頭)。headerFirstLineは書名の行(先頭の改行を除く前の行番号)。
-  int headerFirstLine = 0;
-  auto emitHeader = [&]() {
-    if (header.empty() || headerFirstLine > 0) return;
-    headerFirstLine = static_cast<int>(std::count(out.begin(), out.end(), '\n')) + 1;
-    out += header + "\n";
-  };
-  // 本文(<body>の中)に字が無く、画像(<img>・SVGの<image>)だけのページか。
-  auto isCoverPage = [](const std::string &xhtml) {
-    std::size_t body = xhtml.find("<body");
-    if (body == std::string::npos) return false;
-    bool image = false;
-    for (std::size_t i = body; i < xhtml.size();) {
-      if (xhtml[i] == '<') {
-        std::size_t end = xhtml.find('>', i);
-        if (end == std::string::npos) break;
-        if (xhtml.compare(i, 4, "<img") == 0 || xhtml.compare(i, 6, "<image") == 0 ||
-            xhtml.compare(i, 10, "<svg:image") == 0)
-          image = true;
-        i = end + 1;
-      } else {
-        if (!std::isspace(static_cast<unsigned char>(xhtml[i]))) return false;
-        i++;
-      }
-    }
-    return image;
-  };
-
   BodyConverter converter(out, readMember);
   converter.setBookVertical(epubIsRightToLeft(readMember));
   std::vector<std::string> convertedPaths;  // EpubLayoutHints::chapterFiles
-  bool firstPage = true;
   for (const auto &idref : spine) {
     auto it = manifest.find(idref);
     if (it == manifest.end()) continue;
@@ -1738,14 +1692,11 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
     if (item.mediaType.find("html") == std::string::npos && item.mediaType.find("xml") == std::string::npos) continue;
     auto xhtml = readMember(item.path);
     if (!xhtml) continue;
-    if (!(firstPage && isCoverPage(*xhtml))) emitHeader();
-    firstPage = false;
     auto tocIt = toc.find(item.path);
     converter.convert(*xhtml, item.path, tocIt == toc.end() ? nullptr : &tocIt->second);
     convertedPaths.push_back(item.path);
     if (!out.empty() && out.compare(out.size() - 2, 2, "\n\n") != 0) out += '\n';
   }
-  emitHeader();  // 表紙だけの本
   // expandHelpMarkup()は先頭の改行1個を読み飛ばすので、先頭の改行は落として
   // 行番号をその分ずらす(画面の行のrawLineNumberと一致させるため)。
   int leading = 0;
@@ -1786,17 +1737,6 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
       run->second = std::max(run->second, total);
     }
     flush();
-    // 本の冒頭の書名・著者名(上のheaderLines)は、縦書きの本では扉(縦書きの箱)と同じ扱い。
-    // 書名の行(headerFirstLine、表紙が先頭なら表紙の後)から。
-    // 2026-10-01、直接のユーザー報告("本のタイトルページだけ著者名が上"): 扉の著者名(p.author)は
-    // text-align: right(縦書きでは列の下端寄せ)なので、冒頭の著者名の行も下端に寄せる。
-    int headerFrom = headerFirstLine - leading;
-    if (headerLines > 0 && headerFrom >= 1 && epubIsRightToLeft(readMember)) {
-      auto at = std::find_if(layoutHints->centered.begin(), layoutHints->centered.end(),
-                             [&](const std::pair<int, int> &range) { return range.first > headerFrom; });
-      layoutHints->centered.insert(at, {headerFrom, headerFrom + headerLines - 1});
-      if (!creator.empty()) layoutHints->alignEnd.push_back(headerFrom + headerLines - 1);
-    }
     for (int line : converter.alignEndLines())
       if (line - leading >= 1) layoutHints->alignEnd.push_back(line - leading);
     for (int line : converter.centerLines())

@@ -26,7 +26,7 @@ TEST_CASE("epubToHelpMarkup: no container.xml or OPF means not convertible") {
   CHECK_FALSE(fm::epubToHelpMarkup(readerFor({{"META-INF/container.xml", kContainer}})));
 }
 
-TEST_CASE("epubToHelpMarkup: EPUB3 -- title/creator header, spine order, ruby, nav chapters") {
+TEST_CASE("epubToHelpMarkup: EPUB3 -- no title/creator header, spine order, ruby, nav chapters") {
   std::map<std::string, std::string> files = {
       {"META-INF/container.xml", kContainer},
       {"OEBPS/content.opf", R"(<package><metadata xmlns:dc="x"><dc:title>本の名前</dc:title><dc:creator>著者</dc:creator></metadata>
@@ -53,9 +53,6 @@ TEST_CASE("epubToHelpMarkup: EPUB3 -- title/creator header, spine order, ruby, n
   REQUIRE(out);
   CHECK(*out ==
         "<b>表紙</b> <serif>[image: title.jpg]</serif>\t\n"  // 空の見出し+画像だけの段落は1行にまとめる
-        "\n"
-        "<serif><big><b>本の名前</b></big></serif>\n"  // 最初のページが表紙なら書名・著者名はその後(2026-10-20)
-        "著者\n"
         "\n"
         "<serif><big>　燈の章</big></serif>\t\n"  // 目次が指す段落そのものが章の行
         "<serif>　<rb>燈</rb><rt>《ひ》</rt>色の場&<b>太字</b></serif>\n"  // 和文の間の改行は詰める

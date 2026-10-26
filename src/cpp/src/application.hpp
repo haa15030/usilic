@@ -3462,7 +3462,7 @@ private:
   ContentView epubTocVerticalView_;  // 縦書きの章の一覧(refreshEpubTocVertical()参照)
   // 2026-10-20、直接のユーザー提案("最初のbrew installが始まるとSHELL画面に切り替わって何の説明もないまま進行するので
   // 初期化中であることが少しでも伝われば...処理が終わりしだいHELPへ移行だが表紙画像は変わらないので"): 最初の起動の
-  // インストールの案内の間、SHELLの上に止めておくHELPの先頭(表紙の画像と、その下の書名・著者の行まで)。
+  // インストールの案内の間、SHELLの上に止めておくHELPの先頭(表紙の画像)。
   // startShellBanner()・stopShellBanner()、Shell::setTopReserve()参照。
   ContentView shellBannerView_;
   bool shellBannerActive_ = false;

@@ -21308,7 +21308,7 @@ void Application::startShellBanner() {
     banner.push_back(ContentView::Line{});
   }
   // 2026-10-20、直接のユーザー依頼(brewがソースから組み立てる間は出力が止まって見えるので"案内は出して"): 画像の下
-  // (HELPでは書名の行)に1行。
+  // に1行。
   ContentView::Line notice;
   notice.text = helpPath_ != helpBasePath_ ? "Installing the programs usilic uses. HELP opens when it finishes."
                                            : "usilic が使うプログラムをインストールしています。終わると HELP が開きます。";
