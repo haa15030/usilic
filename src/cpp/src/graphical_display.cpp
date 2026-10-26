@@ -2947,8 +2947,9 @@ void GraphicalDisplay::renderRuby(int row, int col) {
       // 大きい字は字の大きさ(place.pitch倍)にマスの中央から広げて描く(scaleGlyphRect())ので、字の上端はマスの上端より
       // 上にある。以前は読みをマスの上端に置いていたので、読みが字の中に重なって見えなくなっていた。字の上端に置き、
       // 読みの幅・大きさも字に合わせる。
+      // 同日、直接のユーザー報告("ルビが漢字と重なってしまっているのでもう少し上でいい"、=mi.png): 読みの下端を字の上端に。
       x += static_cast<int>((place.start - col) * impl_->cellWidth);
-      y -= static_cast<int>((place.pitch - 1) / 2 * impl_->cellHeight);
+      y -= static_cast<int>(((place.pitch - 1) / 2 + 9.0 / 40 * place.pitch) * impl_->cellHeight);
       scale = place.pitch;
     }
   }
@@ -4322,7 +4323,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
         if (rubyRun(pos, Display::Attribute::Large) && x >= 0 && x < static_cast<int>(kinds.size())) {
           LargeGlyphPlacement place = placeLargeGlyph(kinds, x);
           rubyX = Impl::kMarginX + static_cast<int>(place.start * impl_->cellWidth);
-          rubyY -= static_cast<int>((place.pitch - 1) / 2 * impl_->cellHeight);
+          rubyY -= static_cast<int>(((place.pitch - 1) / 2 + 9.0 / 40 * place.pitch) * impl_->cellHeight);  // renderRuby()と同じ
           scale = place.pitch;
         }
         drawRubyText(rubyX, rubyY, reading, std::max(baseWidth, 1), false, fg, rubyRun(pos, Display::Attribute::Serif),
