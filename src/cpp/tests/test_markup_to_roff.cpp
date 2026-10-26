@@ -163,11 +163,11 @@ TEST_CASE("convertMarkupToMsRoffSource: <b>X</b> becomes \\fBX\\fP (roff font-ch
   CHECK(msBody(convertMarkupToMsRoffSource("<b>AB</b>")) == "\\fBAB\\fR\n");
 }
 
-TEST_CASE("convertMarkupToMsRoffSource: <u>X</u> and <i>X</i> both become \\fIX\\fP (italic) -- "
-          "roff/troff has no underline primitive, matching convertMarkupToLegacyHelpText()'s own "
-          "identical unification of the two tags") {
+// 2026-10-26 (a direct user request): <u> (names with notes) stays \\fI (underlined in man), while <i> (paths
+// etc.) is plain text between the empty usilic-i/usilic-ie strings, so usilic -e can still tell the two apart.
+TEST_CASE("convertMarkupToMsRoffSource: <u>X</u> becomes \\fIX\\fR, <i>X</i> plain text between usilic-i marks") {
   CHECK(msBody(convertMarkupToMsRoffSource("<u>AB</u>")) == "\\fIAB\\fR\n");
-  CHECK(msBody(convertMarkupToMsRoffSource("<i>AB</i>")) == "\\fIAB\\fR\n");
+  CHECK(msBody(convertMarkupToMsRoffSource("<i>AB</i>")) == "\\*[usilic-i]AB\\*[usilic-ie]\n");
 }
 
 TEST_CASE("convertMarkupToMsRoffSource: <indentN>...</indent> becomes \".in Nn\" ... \".in 0\" -- "

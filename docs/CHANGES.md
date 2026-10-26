@@ -32803,3 +32803,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼"-e/-nでHELP.epub/HELP.1を作成するときも⊥→タブコードの変換処理を入れて"(et.plのtab_code()と同じ。原稿でタブを⊥で書く)。
    - **実装**: convertMarkupToMsRoffSource()の入口(-n・-eの両方が通る)で⊥をタブに。行末のタブは今まで通り章の題の印(usilic-tab)。テスト1件。
    - 確かめたこと: 小さな原稿の-nで、行末の⊥が\*[usilic-tab]、行の途中の⊥がタブ。make usilic・make install・make app。
+1079. **HELPの<u>(注釈の付く名前)と<i>(パス等)を-n・-eで区別(2026-10-26)**
+   - **経緯**: 直接のユーザー報告"usilic -e HELP.txt > …HELP.epubとかやっても文字装飾が反映されない"、"`.epub`と`.1`とでアンダーライン装飾箇所が違うのが気になるので~/.local/bin/bu.plの@p_Iと@p_Uを入れ替えたのにファイルやディレクトリに相変わらずアンダーラインが付いているのはなぜ？"。原因はconvertMarkupToMsRoffSource()が<u>も<i>も\\fIにしていたこと(-eはこのroffからEPUBを作るので区別が消える)。ユーザーの決め"HELP.epubでも注釈だけが<u>になっていて、man usilicでも同じ位置で<u>だがリンクとしては機能せず注釈の[1]も削除"。
+   - **実装**: -n: <u>は\\fI(manでは下線)のまま、<i>はgroffでは何も出ない文字列\\*[usilic-i]・\\*[usilic-ie]で囲んだ地の字に。-e: \\fIを<u>、usilic-iを<i>にし、注釈は<u>の名前に付ける(以前は<i>)。手書きの注釈(≡…∠)の中の<u>も<u>のまま。テストを直した。make help-epub・make help-epub-enでdoc/HELP.epub・doc/HELP.en.epubを作り直して入れた(<i>168か所、<u>52か所、注釈25)。
+   - 確かめたこと: -nをgroffに通してパスに下線が付かないこと。make usilic・make install・make app。C++のテストは未実行。

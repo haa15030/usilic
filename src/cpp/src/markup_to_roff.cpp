@@ -307,6 +307,9 @@ std::string convertMarkupToMsRoffSource(const std::string &source) {
          // 2026-10-25: 注釈の参照「‡」「‡6」(extractHelpNotes()参照)は\*[usilic-note]・\*[usilic-note 6]。groffでは
          // 何も出さず、usilic -e(convertMsRoffToHelpEpub())だけが注釈の番号にする。
          ".ds usilic-note\n"
+         // 2026-10-26: <i>(パス等)は地の字で、前後に何も出さない印(usilic -eだけが<i>にする)。<u>(注釈の付く
+         // 設定項目の名前)は\fI(manでは下線)。
+         ".ds usilic-i\n.ds usilic-ie\n"
          // 2026-10-10、直接のユーザー報告("~/HELP.txt平文表示と比べるとHELP.ja.1ではタブコードで始まる行で
          // 全角コロンの位置が左寄り"): manの既定のタブ位置は0.5i(5桁)ごとで、平文(8桁ごと)より左へずれる。
          // 平文と同じ8桁ごとにする。
@@ -450,6 +453,15 @@ std::string convertMarkupToMsRoffSource(const std::string &source) {
       // 終わりは\\fPではなく\\fR(中の仮名のJPM/JPGへの切り替えで「前のフォント」が変わるため)。
       std::string span;
       for (std::size_t j = contentStart; j < closePos; j++) span += markup[j] == '\\' ? std::string("\\e") : std::string(1, markup[j]);
+      // 2026-10-26、直接のユーザー依頼("HELP.epubでも注釈だけが<u>になっていて、man usilicでも同じ位置で<u>"):
+      // 以前は<u>も<i>も\fIにしていたので、-e(このroffからEPUBを作る)で区別できず、manでもパスまで下線だった。
+      if (isItalic) {
+        out += "\\*[usilic-i]";
+        out += japanese ? wrapMiscountedKana(span, 'R') : span;
+        out += "\\*[usilic-ie]";
+        i = closePos + closeTag.size();
+        continue;
+      }
       out += isBold ? "\\fB" : "\\fI";
       out += japanese ? wrapMiscountedKana(span, isBold ? 'B' : 'I') : span;
       out += "\\fR";

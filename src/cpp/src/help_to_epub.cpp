@@ -168,6 +168,14 @@ std::vector<Piece> tokenize(const std::string &s) {
       i = close + 1;
       continue;
     }
+    if (s.compare(i, 12, "\\*[usilic-i]") == 0 || s.compare(i, 13, "\\*[usilic-ie]") == 0) {
+      // <i>(パス等)の印(convertMarkupToMsRoffSource()のusilic-i参照)。\fI(注釈の付く名前、<u>)とは別の書体に。
+      bool end = s.compare(i, 13, "\\*[usilic-ie]") == 0;
+      flush();
+      pieces.push_back({Piece::Font, end ? "PATHEND" : "PATH", true});
+      i += end ? 13 : 12;
+      continue;
+    }
     if (s.compare(i, 14, "\\*[usilic-tab]") == 0) {
       flush();
       pieces.push_back({Piece::Literal, ""});
@@ -244,6 +252,7 @@ std::string inlineHtml(const std::vector<Piece> &pieces, int col0) {
       continue;
     }
     if (f == "R" && p.bracket) continue;  // \f[R]は\f[JPM]の後始末
+    if (f == "PATHEND") f = "R";
     if (f == "P") f = prev;
     if (!opened.empty()) {
       out += "</" + opened + ">";
@@ -251,7 +260,8 @@ std::string inlineHtml(const std::vector<Piece> &pieces, int col0) {
     }
     font = f;
     if (f == "B") opened = "b";
-    else if (f == "I") opened = "i";
+    else if (f == "I") opened = "u";     // 注釈の付く設定項目の名前(原稿の<u>、2026-10-26)
+    else if (f == "PATH") opened = "i";  // パス等(原稿の<i>、usilic-i)
     if (!opened.empty()) out += "<" + opened + ">";
   }
   if (!opened.empty()) out += "</" + opened + ">";
@@ -281,10 +291,10 @@ std::string inlineHtml(const std::vector<Piece> &pieces, int col0) {
 std::string inlineHtml(const std::string &s, int col0) { return inlineHtml(tokenize(s), col0); }
 
 // 注釈の文(原稿のmarkupのまま、convertMarkupToMsRoffSource()のextractHelpNotes()参照)の1行をXHTMLへ。
-// <b>・<i>はそのまま、<u>は<i>(本文と同じ)、ほかの「<」「&」は字として。
+// <b>・<i>・<u>はそのまま(本文と同じ)、ほかの「<」「&」は字として。
 std::string markupLineHtml(const std::string &s) {
   static const char *const tags[][2] = {{"<b>", "<b>"}, {"</b>", "</b>"}, {"<i>", "<i>"}, {"</i>", "</i>"},
-                                        {"<u>", "<i>"}, {"</u>", "</i>"}};
+                                        {"<u>", "<u>"}, {"</u>", "</u>"}};
   std::string out, text;
   auto flush = [&] {
     out += escapeHtml(text);
@@ -740,7 +750,7 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
     std::string linked;
     pos = 0;
     for (;;) {
-      std::size_t m = out.find("<i>", pos);
+      std::size_t m = out.find("<u>", pos);  // 注釈の付く名前は<u>(2026-10-26、以前は<i>)
       std::size_t dagger = out.find("\xE2\x80\xA1", pos);  // ‡(斜体の名前と同じ並びで番号を振る)
       if (dagger != std::string::npos && (m == std::string::npos || dagger < m)) {
         std::size_t d = dagger + 3;
@@ -761,7 +771,7 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
         continue;
       }
       if (m == std::string::npos) break;
-      std::size_t close = out.find("</i>", m + 3);
+      std::size_t close = out.find("</u>", m + 3);
       if (close == std::string::npos) break;
       std::string shown = out.substr(m + 3, close - m - 3);
       std::string item = halfWidth(shown);
@@ -790,7 +800,7 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       std::string rid = "r" + std::to_string(++refCount);
       backrefs[nid].push_back({fname, rid});
       linked += out.substr(pos, m - pos);
-      linked += "<i>" + shown + "</i><a id=\"" + rid + "\" href=\"notes.xhtml#" + nid + "\" epub:type=\"noteref\">" +
+      linked += "<u>" + shown + "</u><a id=\"" + rid + "\" href=\"notes.xhtml#" + nid + "\" epub:type=\"noteref\">" +
                 nid.substr(1) + "</a>";  // 名前の後ろに注釈番号(上の<b>の項目と同じ)
       pos = end;
     }
