@@ -8995,8 +8995,11 @@ void Application::placeEpubVerticalAfterLeaving(int raw, bool before, bool after
     bool columnsAfter = std::any_of(epubVerticalCols_.begin(), epubVerticalCols_.end(), [&](const auto &column) {
       return !column.padding && column.rawLineNumber > sectionLast;
     });
-    if (epubChapterBreaks_ || !columnsAfter) setEpubVerticalView(col, col);
-    else setEpubVerticalView(col - epubVerticalColumnsPerScreen(display_.columns()) + 1, col);
+    // 2026-10-26、直接のユーザー報告("目次には戻るけれども奥付との違いがまだある。「付録」が画面下へ消えた後、目次の章は、
+    // =mf.pngのようには現れず、「目次の奥付」がすでに画面左端にある"): 連続スクロールで範囲の後ろに列がある時も右端に
+    // 置き、範囲の後ろの列は画面から外れるまで描かない(epubVerticalHideAfter_)。
+    if (!epubChapterBreaks_ && columnsAfter) epubVerticalHideAfter_ = col;
+    setEpubVerticalView(col, col);
   } else if (after && raw == sectionEnd && !epubChapterBreaks_) {
     // 連続スクロールで慣性等で先へ出た時は、範囲の直後の列を右端に置く(前へ送って範囲へ入る所と同じ)。
     int col = -1;
@@ -9128,6 +9131,7 @@ std::vector<Application::EpubLogicalLine> Application::epubLogicalLines(bool ski
 }
 
 void Application::rebuildEpubVertical(int rawLine) {
+  epubVerticalHideAfter_.reset();  // 列の番号が変わる(戻った直後の組み直しはplaceEpubVerticalAfterLeaving()が付け直す)
   // 横書きの画面の行(折り返し済み)を、元の行番号ごとに論理行へつなぎ直す(epubLogicalLines())
   const EpubLayoutHints &hints = fileMode_.epubLayoutHints();
   std::set<int> alignEnd(hints.alignEnd.begin(), hints.alignEnd.end());
@@ -9359,6 +9363,10 @@ void Application::setEpubVerticalView(int first, int cursor, std::optional<int> 
   if (cursor >= first + perScreen) first = cursor - perScreen + 1;
   epubVerticalFirst_ = std::clamp(first, 0, last);
   epubVerticalCursor_ = cursor;
+  // 隠している列(epubVerticalHideAfter_)が画面から外れた、またはその先へ動いたら、隠すのをやめる
+  if (epubVerticalHideAfter_ &&
+      (epubVerticalFirst_ > *epubVerticalHideAfter_ || epubVerticalFirst_ + perScreen <= *epubVerticalHideAfter_ + 1))
+    epubVerticalHideAfter_.reset();
   // 2026-09-30、直接のユーザー依頼("複数リンクを含む行では^N^Pで選べるようにしたら？ -gの時は
   // 左クリックで選べればいい"): 列カーソルの行の、選んでいるリンク(EpubVerticalCell::link)。
   // 指定が無ければ列カーソルの列にある最初のリンク(無ければ選ばない――リンクのある段落の、
@@ -9515,7 +9523,8 @@ std::vector<Display::ContentImage> Application::epubVerticalImagesFor(int first,
 // 右端の列firstの章の列の範囲[from, until)(setEpubVerticalView()参照)。
 std::pair<int, int> Application::epubVerticalShownRange(int first) const {
   int total = static_cast<int>(epubVerticalCols_.size());
-  if (!epubChapterBreaks_) return {0, total};  // 連続スクロール(epubChapterBreaks_参照)
+  // 連続スクロール(epubChapterBreaks_参照)。横書きの範囲から前へ戻った直後は、範囲の後ろの列を描かない(epubVerticalHideAfter_)。
+  if (!epubChapterBreaks_) return {0, epubVerticalHideAfter_ ? std::min(total, *epubVerticalHideAfter_ + 1) : total};
   // 区切りで分けた章[from, until)と、その前後の区切り
   auto chapterAt = [&](int column) {
     int from = 0, until = total;
