@@ -387,6 +387,46 @@ var Reader = function (opt) {
     }
     pinch(document);
 
+    // ---- スクロールバー ----
+
+    // 2026-10-26、直接のユーザー依頼("Kat.epub等の大きめファイルでは移動が大変なのでスクロールバーを作って欲しい。
+    // 移動できさえすれば見た目はどうでもいい"): 操作ボタンの帯のすぐ上に、本の全体での位置のスライダーを置く。
+    // 動かすとその位置へ飛び、スクロールすると追いかける。縦書き(先へ進むとscrollLeftが減る)は右から左へ。
+    var bar = document.createElement('input');
+    bar.type = 'range';
+    bar.id = 'seek';
+    bar.min = 0;
+    bar.max = 1000;
+    bar.step = 1;
+    bar.value = 0;
+    document.body.appendChild(bar);
+    var seeking = false;
+    function scrollMax() {
+        return vertical() ? scroller.scrollHeight - scroller.clientHeight : scroller.scrollWidth - scroller.clientWidth;
+    }
+    function forwardSign() {
+        if (vertical()) return 1;
+        return opt.forward ? opt.forward() : -1;
+    }
+    function syncSeek() {
+        if (seeking) return;
+        var max = scrollMax();
+        bar.style.direction = forwardSign() < 0 ? 'rtl' : 'ltr';
+        bar.value = max > 0 ? Math.round(Math.abs(scrollPos()) / max * 1000) : 0;
+    }
+    bar.addEventListener('input', function () {
+        seeking = true;
+        inertia.stop();
+        setScrollPos(forwardSign() * scrollMax() * bar.value / 1000);
+    });
+    bar.addEventListener('change', function () { seeking = false; syncSeek(); });
+    ['pointerup', 'touchend'].forEach(function (t) {
+        bar.addEventListener(t, function () { seeking = false; });
+    });
+    scroller.addEventListener('scroll', syncSeek);
+    window.addEventListener('resize', syncSeek);
+    setTimeout(syncSeek, 500);
+
     font.apply(fontSize);
 
     return {

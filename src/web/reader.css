@@ -332,3 +332,16 @@ body.reader {
     cursor: default;
     opacity: 0.7;
 }
+
+/* 位置のスライダー(reader.jsの「スクロールバー」、2026-10-26) */
+#seek {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: calc(var(--bar-h) + env(safe-area-inset-bottom) + 2px);
+    width: calc(100% - 16px);
+    margin: 0;
+    height: 24px;
+    z-index: 5;  /* 記録の一覧等(10)の下、本文の上 */
+    opacity: 0.7;
+}
