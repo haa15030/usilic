@@ -2804,6 +2804,7 @@ class Application {
     int first;  // 置いた時の右端の列
   };
   std::optional<EpubLeavePlacement> epubLeavePlacement_;
+  void placeEpubHorizontalFromBelow(int startIndex);
   std::tuple<int, int, bool> epubBuiltSize_{-1, -1, false};  // 縦書きの列を組んだ時の{行, 桁, -gか}(handleResize()が同じなら組み直さない)
   void placeEpubVerticalAfterLeaving(int raw, bool before, bool after, int sectionEnd);
 
@@ -2824,9 +2825,6 @@ class Application {
   // 縦書きの本の中の横書きの範囲(奥付等)を見ている間true(app/main.cppが慣性を縦横の間で
   // 引き継ぐのに使う)。
   bool epubHorizontalSectionActive() const { return epubHorizontalSection_.has_value(); }
-  // 横書きの範囲へ下から入って、範囲の最初の行を画面の一番下に置いた所(まだ上へ上がりきっていない間)か(main.cppの
-  // 慣性の引き継ぎが、1行分下へずらして始める)。
-  bool epubHorizontalEnteringFromBelow() const { return epubHorizontalSection_.has_value() && epubHorizontalFromBelow_; }
   // 上下の慣性で横書きの範囲から前へ出て左右の慣性に引き継ぐ時(app/main.cpp): 前の章の
   // 最後の列(今の列カーソル)を画面の左端に置き、そこから右へ遡れるようにする。
   void alignEpubVerticalCursorToLeftEdge();

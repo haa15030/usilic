@@ -8852,6 +8852,22 @@ std::optional<std::pair<int, int>> Application::epubHorizontalRangeAt(int rawLin
 
 // 横書きの範囲へ入る: fileView_のカーソルをrawLineの行(範囲の外なら端)に置く。
 // 描き直しは呼び出し元(activeView()はもうfileView_)。
+// 横書きの範囲へ下から入る時の置き方(enterEpubHorizontal()・handleResize())。2026-10-26、直接のユーザー報告("=mj.pngの
+// ような表示が最初に一瞬出たのち消えると同時にドット単位で上がってくる"): 以前は範囲の最初の行(startIndex)を画面の
+// 一番下の行に置いていたので、入った時の描画でその行が一度見えていた。画面のすぐ下(まだ見えない所)に置き、カーソルは
+// その1行上(範囲の前の空の行、画面の一番下の行)。慣性・ホイールで送ると下から1ドットずつ現れる。範囲の前の行が
+// 足りなければ(FileMode::readAndWrap()が足すので普通は足りる)従来どおり一番下の行に置く。
+void Application::placeEpubHorizontalFromBelow(int startIndex) {
+  int height = std::max(1, fileView_.height());
+  if (startIndex - height >= 0) {
+    fileView_.setTopIndex(startIndex - height);
+    fileView_.setCursorIndex(startIndex - 1);
+  } else {
+    fileView_.setCursorIndex(startIndex);
+    fileView_.setTopIndex(std::max(0, startIndex - height + 1));
+  }
+}
+
 void Application::enterEpubHorizontal(const std::pair<int, int> &range, int rawLine, bool fromBelow, bool fromAbove) {
   epubHorizontalSection_ = range;
   syncEpubHorizontalPresentation();
@@ -8874,7 +8890,7 @@ void Application::enterEpubHorizontal(const std::pair<int, int> &range, int rawL
     // 2026-10-13、直接のユーザー依頼("最終章→奥付のときも章の冒頭が画面下から現れる表示で"): 縦書きの本文の最後の
     // 列が右端まで送られた後、範囲の最初の行が画面の一番下から現れ、送るにつれて上がっていく(上の行は空)。
     epubHorizontalFromBelow_ = fromBelow && rawLine == range.first;
-      if (epubHorizontalFromBelow_) fileView_.setTopIndex(std::max(0, startIndex - std::max(1, fileView_.height()) + 1));
+    if (epubHorizontalFromBelow_) placeEpubHorizontalFromBelow(startIndex);
     // 前へ送って本の途中の範囲(付録等)へ入る時は、範囲の最後の行が画面の一番上から現れ、送るにつれて下がっていく。
     if (fromAbove && rawLine == range.second) fileView_.setTopIndex(static_cast<int>(i));
     return;
@@ -8952,8 +8968,12 @@ bool Application::leaveEpubHorizontalIfOutside(bool scrolling, int edge) {
       lastIndex = i;
       break;
     }
-  bool before = byVisibility ? firstIndex >= top + std::max(1, fileView_.height())
-                          : raw < epubHorizontalSection_->first ||
+  // 下から入った直後は範囲の最初の行が画面のすぐ下にある(placeEpubHorizontalFromBelow())ので、もう1行下へ出るまでは
+  // 範囲の中とみなす。カーソルもその1行上(範囲の前の行)にある。
+  bool belowSlack = epubHorizontalFromBelow_;
+  bool before = byVisibility ? firstIndex >= top + std::max(1, fileView_.height()) + (belowSlack ? 1 : 0)
+                          : (raw < epubHorizontalSection_->first &&
+                             !(belowSlack && fileView_.cursorIndex() == firstIndex - 1)) ||
                                 (!epubHorizontalFromBelow_ && topRaw < epubHorizontalSection_->first);
   bool after = byVisibility ? lastIndex < top : raw > epubHorizontalSection_->second;
   if (edge) {  // leaveEpubHorizontalAtEdge(): その向きに縦書きの本文の列がある時だけ(本の最後の奥付等では戻らない)
@@ -20875,8 +20895,7 @@ void Application::handleResize() {
     const auto &lines = fileView_.lines();
     for (int i = 0; i < static_cast<int>(lines.size()); i++)
       if (lines[i].rawLineNumber.value_or(0) >= epubHorizontalSection_->first) {
-        fileView_.setCursorIndex(i);
-        fileView_.setTopIndex(std::max(0, i - std::max(1, fileView_.height()) + 1));
+        if (fileView_.topIndex() + std::max(1, fileView_.height()) != i) placeEpubHorizontalFromBelow(i);
         break;
       }
   }
