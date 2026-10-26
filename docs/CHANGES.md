@@ -32807,3 +32807,6 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告"usilic -e HELP.txt > …HELP.epubとかやっても文字装飾が反映されない"、"`.epub`と`.1`とでアンダーライン装飾箇所が違うのが気になるので~/.local/bin/bu.plの@p_Iと@p_Uを入れ替えたのにファイルやディレクトリに相変わらずアンダーラインが付いているのはなぜ？"。原因はconvertMarkupToMsRoffSource()が<u>も<i>も\\fIにしていたこと(-eはこのroffからEPUBを作るので区別が消える)。ユーザーの決め"HELP.epubでも注釈だけが<u>になっていて、man usilicでも同じ位置で<u>だがリンクとしては機能せず注釈の[1]も削除"。
    - **実装**: -n: <u>は\\fI(manでは下線)のまま、<i>はgroffでは何も出ない文字列\\*[usilic-i]・\\*[usilic-ie]で囲んだ地の字に。-e: \\fIを<u>、usilic-iを<i>にし、注釈は<u>の名前に付ける(以前は<i>)。手書きの注釈(≡…∠)の中の<u>も<u>のまま。テストを直した。make help-epub・make help-epub-enでdoc/HELP.epub・doc/HELP.en.epubを作り直して入れた(<i>168か所、<u>52か所、注釈25)。
    - 確かめたこと: -nをgroffに通してパスに下線が付かないこと。make usilic・make install・make app。C++のテストは未実行。
+1080. **make help: HELPの4つを原稿から作って入れる(2026-10-26)**
+   - **経緯**: ユーザーの質問"~/にあるHELP.txtとHELP_en.txtを更新しておけばHELPモードもmake installで最新になる？"への答え(make installはdoc/の物を写すだけ、HELP.1・HELP_en.1はMakefileに作る手順が無い)の後、直接のユーザー依頼"そうして"。
+   - **実装**: src/cpp/Makefileにhelp-man(~/HELP.txt・~/HELP_en.txtからusilic -nでdoc/HELP.1・doc/HELP_en.1を作って入れる)と、help(help-epub・help-epub-en・help-manの全部)を足した。make helpで4つを作り直して入れた。

@@ -145,7 +145,7 @@ INSTALL_NAME = usilic
 INSTALL_DIR  = $(PREFIX)/bin
 LIB_DIR      = $(PREFIX)/lib/usilic
 
-.PHONY: test usilic install clean app help-epub help-epub-en
+.PHONY: test usilic install clean app help-epub help-epub-en help-man help
 
 test: $(BUILD_DIR)/run_tests
 	$(BUILD_DIR)/run_tests
@@ -186,6 +186,14 @@ help-epub-en: $(BUILD_DIR)/usilic
 	USILIC_EPUB_RC=../usilicrc.en USILIC_EPUB_NOTES=../../doc/HELP.en.notes USILIC_EPUB_COVER=packaging/usilic_icon_256.png \
 	  $(BUILD_DIR)/usilic -e $(HELP_EN_TXT) > ../../doc/HELP.en.epub
 	install -d $(LIB_DIR) && install -m 644 ../../doc/HELP.en.epub $(LIB_DIR)/HELP.en.epub
+# 2026-10-26、直接のユーザー依頼(~/HELP.txt・~/HELP_en.txtを直したら、make 1回でHELPを全部最新に): -H・^T^Hの子が
+# 開く平文のHELP(HELP.1、英語はHELP_en.1)もusilic -nで原稿から作って入れる(以前は手で作ってdoc/に置いていた)。
+help-man: $(BUILD_DIR)/usilic
+	$(BUILD_DIR)/usilic -n $(HELP_TXT) > ../../doc/HELP.1
+	$(BUILD_DIR)/usilic -n $(HELP_EN_TXT) > ../../doc/HELP_en.1
+	install -d $(LIB_DIR) && install -m 644 ../../doc/HELP.1 ../../doc/HELP_en.1 $(LIB_DIR)/
+# make help: HELPの4つ(HELP.epub・HELP.en.epub・HELP.1・HELP_en.1)を原稿から作って入れる。
+help: help-epub help-epub-en help-man
 
 install: $(BUILD_DIR)/usilic
 	install -d $(INSTALL_DIR)
