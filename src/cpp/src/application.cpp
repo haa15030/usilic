@@ -20853,7 +20853,36 @@ void Application::handleResize() {
   // 横書きの範囲(付録・奥付)に出入りするたびに行の高さが変わってここを通り、幅は同じなのに本の全体を組み直していた
   // (試験用プログラムで1歩に約0.3秒)。折り返しは幅だけで決まるので、縦書きの本で幅が変わっていなければ組み直さない。
   bool sameWidthEpub = oldFileWidth == display_.columns() && epubBookVertical();
+  // 2026-10-27、直接のユーザー報告(アイコンからの起動だけで、まえがきから戻って付録へ入る時に付録の最後の行が上から
+  // 降りてこない。ICON-LETTER-SPACINGが横書き-1・縦書き0、"LETTER-SPACINGが怪しい"): 字間が縦横で違うと、横書きの
+  // 範囲に出入りするたびに桁の数も変わってここで組み直す。reflow()はカーソルの行は元の行へ付け直すが、画面の一番上の
+  // 行の番号は古い折り返しのままなので、enterEpubHorizontal()が一番上に置いた範囲の最後の行がずれていた。横書きの
+  // 範囲では、一番上の行(元の行と、その中の何行目か)を覚えておき、組み直した後で同じ所を一番上に置く。
+  std::optional<std::pair<int, int>> horizontalTop;
+  if (currentMode_ == ApplicationMode::File && !sameWidthEpub && epubHorizontalSection_ && epubBookVertical()) {
+    const auto &lines = fileView_.lines();
+    int top = fileView_.topIndex();
+    if (top >= 0 && top < static_cast<int>(lines.size())) {
+      int raw = lines[top].rawLineNumber.value_or(0), first = top;
+      while (first > 0 && lines[first - 1].rawLineNumber.value_or(0) == raw) first--;
+      horizontalTop = std::make_pair(raw, top - first);
+    }
+  }
   if (currentMode_ == ApplicationMode::File && !sameWidthEpub) fileMode_.reflow(display_.columns(), /*draw=*/!epubRaw);
+  if (horizontalTop) {
+    const auto &lines = fileView_.lines();
+    for (int i = 0; i < static_cast<int>(lines.size()); i++)
+      if (lines[i].rawLineNumber.value_or(0) >= horizontalTop->first) {
+        int top = i;
+        if (lines[i].rawLineNumber.value_or(0) == horizontalTop->first)
+          while (top - i < horizontalTop->second && top + 1 < static_cast<int>(lines.size()) &&
+                 lines[top + 1].rawLineNumber.value_or(0) == horizontalTop->first)
+            top++;
+        fileView_.setTopIndex(top);
+        break;
+      }
+    syncEpubHorizontalPresentation();  // 見せる行の範囲(setShownIndexRange())も新しい折り返しで
+  }
   if (currentMode_ == ApplicationMode::File) applyBannerLineHighlights();  // INFOは読み直すと反転の範囲が消えるので
   // 平文のHELP(roff版、helpRoff_参照)は、groffで今の幅に組み直して開き直す(行は今の割合の所へ)。
   // 書き直すのはopenPlainHelp()が作った一時ファイルだけ(インストールしたHELPは書き換えない)。
@@ -20898,6 +20927,10 @@ void Application::handleResize() {
         if (fileView_.topIndex() + std::max(1, fileView_.height()) != i) placeEpubHorizontalFromBelow(i);
         break;
       }
+  }
+  if (horizontalTop) {  // reflow()は古い一番上の行で描いてカーソルを置いていたので、置き直した所で描き直す
+    fileView_.redraw();
+    fileView_.syncVisibleCursor();
   }
   if (epubVerticalListActive()) refreshEpubTocVertical();
   if (currentMode_ == ApplicationMode::Man) manMode_.reflow(display_.columns());
