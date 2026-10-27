@@ -986,6 +986,7 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       "html { writing-mode: horizontal-tb; }\n"
       "body { font-family: serif; line-height: 1.7; margin: 0 1em; }\n"
       "h2 { font-size: 140%; font-family: sans-serif; margin: 1em 0 0.5em; }\n"
+      "h2.invisible { display: none; }\n"
       "h3 { font-size: 115%; font-family: sans-serif; margin: 1em 0 0.3em; padding-left: 2em; }\n"
       "p { margin: 0; }\n"
       "p.nh { margin-top: 1.2em; }\n"
@@ -1011,7 +1012,10 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
     files.push_back({"Images/usilic.png", coverPng});
     files.push_back({"Text/cover.xhtml",
                      xhtml(english ? "Cover" : "\xE8\xA1\xA8\xE7\xB4\x99",
-                           "<h2 id=\"cover\"></h2>\n<p><img alt=\"usilic\" src=\"../Images/usilic.png\"/></p>\n", lang)});
+                           // 2026-10-27、直接のユーザー依頼("HELPの冒頭、左上の「表紙」も「奥付」同様invisibleに"): 空の見出しだと
+                           // 目次の名前「表紙」を画像の前に出すので、名前を書いた見出しを隠す(章の一覧の名前には残る)。
+                           std::string("<h2 id=\"cover\" class=\"invisible\">") + (english ? "Cover" : "\xE8\xA1\xA8\xE7\xB4\x99") +
+                               "</h2>\n<p><img alt=\"usilic\" src=\"../Images/usilic.png\"/></p>\n", lang)});
     navItems += std::string("<li><a href=\"cover.xhtml\">") + (english ? "Cover" : "\xE8\xA1\xA8\xE7\xB4\x99") +  // 表紙
                 "</a></li>\n";
   }
