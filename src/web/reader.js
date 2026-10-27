@@ -117,7 +117,7 @@ var Reader = function (opt) {
     var inertia = Inertia(scroller, {
         axis: 'x',
         forward: function () { return opt.forward ? opt.forward() : -1; },
-        friction: function () { return decay ? 0.991 : 1; },  // 2026-10-27、直接のユーザー依頼"減衰は今の3倍くらいでいい"(0.997から)
+        friction: function () { return decay ? 0.955 : 1; },  // 2026-10-27、直接のユーザー依頼"減衰は今の3倍くらいでいい"(0.997から0.991)、"さらに5倍でいい"(0.955)
         toast: toast
     });
 
