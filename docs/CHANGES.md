@@ -32939,3 +32939,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー質問("HELP.epubには注釈に関する注釈があるんだが、他のEPUBビュアーはどうやってるのかな？　定番法があるならそれを採用したほうが良くない？")に、本文の注番号(epub:type="noteref")と注釈(<aside epub:type="footnote">)はすでに定番の形で、戻るリンクにもnoterefを付けている所だけが定番と違う(注釈をポップアップで出すビューアが戻るリンクも注釈への参照とみなすことがある)と説明し、直接のユーザー判断"1を入れて"。あわせて直接のユーザー依頼("HELPの注釈7は不要。-e/-m/-nは隠しオプションだしusilicがどうやって注釈を処理しているか興味のあるヤツはソースを見にいけばいいんで[7]は削除でよろしく")。入れ子の注釈は、ユーザーが他のビューアで試す。
    - **変更**: help_to_epub.cppで、注釈の頭の戻るリンクをepub:type="noteref"からrole="doc-backlink"(DPUB-ARIA)に。usilic自身の表示が変わらないよう、epub_to_help_markup.cppはrole="doc-backlink"のリンクもnoterefと同じ見た目(括弧・太字・注釈の色)にする。src/HELP_.txt・src/HELP_en_.txt(アシスタント用の原稿)から、HELP.epubの注釈の説明の行の‡と、注釈の文(≡〜∠の3行、「設定項目の注釈は、usilic -e が…」)を削除(原稿の‡はこの1つだけで、番号で指し直す所は無い)。doc/HELP.epub等は、ユーザーの原稿(~/HELP_.txt)からmake helpで作り直した(戻るリンクの直しのみ。注釈7はユーザーが原稿に取り込んだ後に消える)。
    - 確かめたこと: 作り直したHELP.epubの注釈の戻るリンクがrole="doc-backlink"。make usilic・make help・make install・make app。
+
+1104. **-g・-cの動作を確かめる試験用プログラムをリポジトリへ(src/cpp/tools/gui_harness.cpp・ptyrun.py、make harness)(2026-10-27)**
+   - **経緯**: フック(.claude/hooks/history_sync.py)と動作チェックのしかたの説明(直接のユーザー質問"HISTORY.mdへの保存の際のフックとは何なのか、-c/-g起動時の動作チェックはどうやってるのかについて解説して")の後、アシスタントのセッションの一時置き場(/private/tmp/…/scratchpad、再起動で消えることがある)にしか無かった試験用プログラムについて、直接のユーザー依頼"入れておいて"。
+   - **内容**: tools/gui_harness.cpp(-gを窓を出さずに動かす。SDLのダミーの映像ドライバ、ROWS/COLS/FSIZE/LSH/LH0等で窓・字・字間・行の高さ、coast+N/coast-Nで慣性の1歩ずつ、SNAPDIR/BMPで画面の絵、1歩ごとに位置と時間を標準エラーへ。app/main.cppの慣性の引き継ぎは通らない)と、Makefileのharness(build/harness、usilic本体と同じソースにapp/main.cppの代わりに組み込む)。tools/ptyrun.py(-cを疑似端末の中で動かし、キーを送って画面を文字で取り出す)。使い方は各ファイルの頭のコメント。
+   - 確かめたこと: make harnessで組み立て、Kbt.epubを80×40・18ptで開いて慣性の3歩を送れる。

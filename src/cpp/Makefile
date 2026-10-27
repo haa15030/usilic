@@ -126,6 +126,7 @@ LDLIBS := $(subst -lncurses,$(NCURSESW_LIBS),$(LDLIBS))
 endif
 endif
 APP_SRCS = $(wildcard $(APP_DIR)/*.cpp)
+TOOLS_DIR = tools
 TESTS    = $(wildcard $(TEST_DIR)/*.cpp)
 
 # 2026-08-25 (a direct user request, reversing the roles this comment
@@ -145,7 +146,7 @@ INSTALL_NAME = usilic
 INSTALL_DIR  = $(PREFIX)/bin
 LIB_DIR      = $(PREFIX)/lib/usilic
 
-.PHONY: test usilic install clean app help-epub help-epub-en help-man help
+.PHONY: test usilic install clean app help-epub help-epub-en help-man help harness
 
 test: $(BUILD_DIR)/run_tests
 	$(BUILD_DIR)/run_tests
@@ -304,6 +305,13 @@ $(BUILD_DIR)/run_tests: $(SRCS) $(TESTS) | $(BUILD_DIR)
 
 $(BUILD_DIR)/usilic: $(SRCS) $(APP_SRCS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(SRC_DIR) $(SRCS) $(APP_SRCS) -o $@ $(LDLIBS)
+
+# -g(GUI版)を窓を出さずに動かす試験用プログラム(tools/gui_harness.cpp参照、2026-10-27)。usilic本体と同じ
+# ソースから、app/main.cppの代わりにtools/gui_harness.cppを組み込む。
+harness: $(BUILD_DIR)/harness
+
+$(BUILD_DIR)/harness: $(SRCS) $(TOOLS_DIR)/gui_harness.cpp | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -I$(SRC_DIR) $(SRCS) $(TOOLS_DIR)/gui_harness.cpp -o $@ $(LDLIBS)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
