@@ -917,7 +917,10 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
     for (std::size_t k = 0; k < refs.size(); k++) {
       if (k) back += ' ';
       // 注釈の頭の戻りのリンク: 最初は注釈番号(本文の番号と同じ、Kbt.epubの形)、2つ目からは↩2 ↩3…
-      back += "<a epub:type=\"noteref\" href=\"" + refs[k].first + "#" + refs[k].second + "\">" +
+      // 2026-10-27、直接のユーザー判断("1を入れて"): EPUB 3の定番では注釈への参照だけがnoterefで、戻るリンクは普通のリンク
+      // (DPUB-ARIAのrole="doc-backlink")。noterefのままだと、注釈をポップアップで出すビューアが戻るリンクも注釈への
+      // 参照とみなすことがある。
+      back += "<a role=\"doc-backlink\" href=\"" + refs[k].first + "#" + refs[k].second + "\">" +
               (k == 0 ? nid.substr(1) : "\xE2\x86\xA9" + std::to_string(k + 1)) + "</a>";
     }
     std::string inner;

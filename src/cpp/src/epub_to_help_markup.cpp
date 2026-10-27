@@ -905,7 +905,9 @@ class BodyConverter {
       // 下線はリンク専用にするため、h1には付けない(<u>は2026-10-26から下線、上の分岐参照)。
       // 2026-10-24、直接のユーザー報告(=lr.png"注釈であることを示す1.がわかりにくい"): 本文の注釈への
       // リンク(epub:type="noteref"、KDPの注釈の形)の字は太字にする(下線/縦書きの傍線に加えて)。
-      if (t.kind == XmlToken::Open && attr(t, "type").find("noteref") != std::string::npos) {
+      // 2026-10-27: 注釈から本文へ戻るリンク(role="doc-backlink"、HELP.epubは以前noterefを付けていた)も同じ見た目に。
+      if (t.kind == XmlToken::Open && (attr(t, "type").find("noteref") != std::string::npos ||
+                                       attr(t, "role").find("doc-backlink") != std::string::npos)) {
         // 2026-10-25、直接のユーザー依頼(=lv.png"文字の大きさが同じなので項目名の一部のような印象"、=lw.pngの
         // Kindle本の「［2］」): 番号を括弧で囲み(括弧は番号の外、リンクの外)、番号は小さい字に。括弧は縦書きでは
         // 全角(縦書きの形﹇﹈、半角の[2]だと3字の英数字の並びとして横倒しになる)、横書きでは半角。
