@@ -9641,7 +9641,13 @@ std::pair<int, int> Application::epubVerticalStep(int cursor, bool forward, bool
     while (t >= 0 && t < n && epubVerticalCols_[t].titlePage) t += dir;
     jumped = true;
   }
-  while (t >= 0 && t < n && epubVerticalCols_[t].padding && !epubVerticalCols_[t].titlePage) {
+  // 2026-10-27、直接のユーザー報告("Kbt.epubの表紙から←を2回押すと2回目で扉の文字が一行右へずれる"): 画像のページ・
+  // 扉等をまたいで飛んだ時は、何も書かれていない列(表紙の画像のページと扉のページの間の空の行の列等)にも止まらない
+  // (止まるとそこが画面の右端になり、次の扉のページが1列ずれて描かれ、次の1歩で扉の頭へそろえ直されてずれて見えた)。
+  auto skippable = [&](const EpubVerticalColumn &col) {
+    return col.padding || (jumped && col.cells.empty() && col.image.empty());
+  };
+  while (t >= 0 && t < n && skippable(epubVerticalCols_[t]) && !epubVerticalCols_[t].titlePage) {
     t += dir;
     jumped = true;
   }
