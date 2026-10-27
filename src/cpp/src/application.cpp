@@ -8971,7 +8971,12 @@ bool Application::leaveEpubHorizontalIfOutside(bool scrolling, int edge) {
   // 下から入った直後は範囲の最初の行が画面のすぐ下にある(placeEpubHorizontalFromBelow())ので、もう1行下へ出るまでは
   // 範囲の中とみなす。カーソルもその1行上(範囲の前の行)にある。
   bool belowSlack = epubHorizontalFromBelow_;
-  bool before = byVisibility ? firstIndex >= top + std::max(1, fileView_.height()) + (belowSlack ? 1 : 0)
+  // 2026-10-27、直接のユーザー依頼("章毎スクロールでの縦書きでは、表紙へ戻る方向だと章タイトル（が章の冒頭）に到達
+  // すると次章の最後が右端から現れる。それに準ずるなら奥付と付録でも同じように"、それまでは章タイトルが下へ消える
+  // までスクロール): 章区切り(epubChapterBreaks_)では、範囲の頭が画面の上端より下へ出たら(頭を上端に置いた所から
+  // もう1歩前へ)戻す。下から入ってまだ上まで上がっていない間(belowSlack)は従来どおり。
+  bool chapterBefore = epubChapterBreaks_ && !belowSlack && top < firstIndex;
+  bool before = byVisibility ? chapterBefore || firstIndex >= top + std::max(1, fileView_.height()) + (belowSlack ? 1 : 0)
                           : (raw < epubHorizontalSection_->first &&
                              !(belowSlack && fileView_.cursorIndex() == firstIndex - 1)) ||
                                 (!epubHorizontalFromBelow_ && topRaw < epubHorizontalSection_->first);
