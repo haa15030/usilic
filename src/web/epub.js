@@ -153,6 +153,30 @@
         style.textContent = 'html{overflow:hidden!important;touch-action:none;-webkit-text-size-adjust:100%}';
         (doc.head || doc.documentElement).appendChild(style);
         reader.attach(doc, ch.frame.contentWindow);
+        // 2026-10-27、直接のユーザー報告("外部リンク（小説家になろう等）が繋がらない。Kat.epubの「あとがき」とか。一度でも
+        // 踏むと以後は減衰スクロールになってしまい..."): 外のサイトへのリンクは章のiframeの中で開こうとして(枠の中で開く
+        // のを断るサイトでは繋がらない)、章の文書がiframeから外れてスクロールの仕組み(attach())も外れていた。別のタブで
+        // 開き、章のiframeは動かさない。スクロールした直後のclick(scroll.jsが止める)は除く。
+        doc.addEventListener('click', function (e) {
+            if (e.defaultPrevented || e.button !== 0) {
+                return;
+            }
+            var a = e.target.closest ? e.target.closest('a[href]') : null;
+            if (!a) {
+                return;
+            }
+            var url;
+            try {
+                url = new URL(a.getAttribute('href'), doc.baseURI);
+            } catch (err) {
+                return;
+            }
+            if (url.origin === location.origin || !/^https?:$/.test(url.protocol)) {
+                return;
+            }
+            e.preventDefault();
+            window.open(url.href, '_blank', 'noopener');
+        });
         measure(ch);
         if (ch.vertical) {
             sidelineRight(doc);
