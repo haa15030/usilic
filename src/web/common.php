@@ -50,6 +50,7 @@ function reader_bar()
 <button id="list">記録一覧</button>
 <button id="slower" class="small">V−</button>
 <button id="faster" class="small">V＋</button>
+<button id="friction" class="small">減衰</button>
 <button id="page-left" class="small">＜</button>
 <button id="page-right" class="small">＞</button>
 <button id="smaller" class="small">A−</button>

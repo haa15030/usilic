@@ -105,11 +105,19 @@ var Reader = function (opt) {
 
     // 2026-10-15、直接のユーザー依頼("減速ボタンは廃棄でよろしく"、"減り方は常時０でよろしく"): 「減速 大/中/小」の
     // ボタンは無くし、フリックした後は減速せず、離した時の速さのまま流れ続ける(タップか端で止まる)。
+    // 2026-10-27、直接のユーザー依頼("スクロールの減衰も必要かなと。「V+」の右隣に減衰有り無しトグルボタン「減衰」を
+    // 置いてみて。OFFの時は薄地で表示"): 「減衰」をONにすると、以前の「減速 中」と同じ割合で減速する。
+    var decay = load('decay', '0') === '1';
+    var decayBtn = document.getElementById('friction');
+    function showDecay() {
+        if (decayBtn) decayBtn.classList.toggle('off', !decay);
+    }
+    showDecay();
 
     var inertia = Inertia(scroller, {
         axis: 'x',
         forward: function () { return opt.forward ? opt.forward() : -1; },
-        friction: function () { return 1; },
+        friction: function () { return decay ? 0.997 : 1; },
         toast: toast
     });
 
@@ -284,6 +292,14 @@ var Reader = function (opt) {
     // V−/V＋: 矢印キー(↑/↓)と同じく1段ずつ。止まっていればV＋で先へ、V−で戻るを最低速で流し始める。
     onTap(document.getElementById('slower'), function () { inertia.coast(-1); });
     onTap(document.getElementById('faster'), function () { inertia.coast(1); });
+    if (decayBtn) {
+        onTap(decayBtn, function () {
+            decay = !decay;
+            save('decay', decay ? '1' : '0');
+            showDecay();
+            toast(decay ? '減衰 ON' : '減衰 OFF');
+        });
+    }
     // ＜/＞: 画面1枚分、見た目の向きのまま(縦書きは＜で先へ)
     onTap(document.getElementById('page-left'), function () { inertia.page(-1); });
     onTap(document.getElementById('page-right'), function () { inertia.page(1); });
@@ -424,6 +440,10 @@ var Reader = function (opt) {
         bar.addEventListener(t, function () { seeking = false; });
     });
     scroller.addEventListener('scroll', syncSeek);
+    // 2026-10-27、直接のユーザー依頼("スクロールバーは、慣性スクロールが停止しているときだけ表示"): 慣性で流れている間は隠す。
+    setInterval(function () {
+        bar.style.visibility = inertia.moving() && !seeking ? 'hidden' : '';
+    }, 150);
     window.addEventListener('resize', syncSeek);
     setTimeout(syncSeek, 500);
 

@@ -345,3 +345,8 @@ body.reader {
     z-index: 5;  /* 記録の一覧等(10)の下、本文の上 */
     opacity: 0.7;
 }
+
+/* 「減衰」がOFFの時は薄地(reader.jsのshowDecay()、2026-10-27) */
+#bar button.off {
+    opacity: 0.4;
+}
