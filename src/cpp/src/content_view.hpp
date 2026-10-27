@@ -782,7 +782,11 @@ class ContentView {
   int maxTopIndex() const;
   bool isIndexShown(int index) const {
     if (shownIndexRange_ && (index < shownIndexRange_->first || index >= shownIndexRange_->second)) return false;
-    return chapterStarts_.empty() || chapterOf(index) == chapterOf(topIndex_);
+    // 2026-10-27、直接のユーザー報告("「スクロール：章毎」に切り替えた後、目次→付録／付録→目次で空白行が大量に出る"):
+    // 縦書きの本の横書きの範囲へ下から入ると、画面の上端はまだ範囲の前の行(描かない行)にあり、範囲の章は頭が上端に
+    // 来るまで描かれなかった。見せる範囲の前の行は描かないので、上端の章は見せる範囲の最初の行から数える。
+    int top = shownIndexRange_ ? std::max(topIndex_, shownIndexRange_->first) : topIndex_;
+    return chapterStarts_.empty() || chapterOf(index) == chapterOf(top);
   }
   // 2026-10-03追加、直接のユーザー依頼(EPUBの「連続スクロール/章区切り」、横書きの章区切り): 章の頭の
   // 行の添字(昇順)。空でなければ、画面の上端の行の章だけを描く(次の章は頭が上端に来るまで描かない、
