@@ -3281,7 +3281,10 @@ class Application {
   bool executeSelectedKeyLine();  // KEYの^M: 選んでいる行のキーを、KEYを開く前の画面で実行する
   bool jumpFromKeyToHelp();       // Command::KeyJumpToHelp参照
   bool openPlainHelp(std::optional<int> rawLine = std::nullopt);
-  std::optional<std::string> helpEpubPath() const;  // Command::StartHelp参照
+  std::optional<std::string> helpEpubPath() const;  // Command::StartHelp参照(HELP.1から作る、2026-10-29)
+  std::string helpRoffSourcePath() const;            // helpEpubPath()の元(HELP.1・HELP_en.1)
+  std::string generatedHelpEpubPath() const;         // helpEpubPath()が作る~/.usilic/HELP.epub
+  bool isGeneratedHelpEpub(const std::string &path) const;
 public:
   // 実行ファイルの場所から見た<PREFIX>/lib/usilic/(末尾に/、main.cppが設定する)。HELPを~/.local/lib/usilic/・
   // /usr/local/lib/usilic/に無い時に探す(2026-10-05、MSYS2でPREFIXを変えて入れた時のため)。

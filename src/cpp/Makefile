@@ -177,16 +177,13 @@ HELP_TXT ?= $(HOME)/HELP.txt
 help-epub: $(BUILD_DIR)/usilic
 	USILIC_EPUB_RC=../usilicrc USILIC_EPUB_NOTES=../../doc/HELP.notes USILIC_EPUB_COVER=packaging/usilic_icon_256.png \
 	  $(BUILD_DIR)/usilic -e $(HELP_TXT) > ../../doc/HELP.epub
-	# 2026-10-21、直接のユーザー報告("make help-epubとやってもHELPが最新にならない"): usilicが読むのは入れた方なので、
-	# 作ったらその場で入れる(make installを待たない)。
-	install -d $(LIB_DIR) && install -m 644 ../../doc/HELP.epub $(LIB_DIR)/HELP.epub
+	# 2026-10-29: ^HのHELPはusilicがHELP.1から作る(Application::helpEpubPath())ので、doc/HELP.epubは確かめ用で入れない。
 # 2026-10-19、直接のユーザー依頼(^Ojで英語にした^HのHELPが古い平文だった): 英語版HELP.en.epub(^Ojの後の^H)。原稿は
 # src/HELP_en_.txtからユーザーのスクリプトで作る~/HELP_en.txt、注釈はusilicrc.enのコメントとdoc/HELP.en.notes。
 HELP_EN_TXT ?= $(HOME)/HELP_en.txt
 help-epub-en: $(BUILD_DIR)/usilic
 	USILIC_EPUB_RC=../usilicrc.en USILIC_EPUB_NOTES=../../doc/HELP.en.notes USILIC_EPUB_COVER=packaging/usilic_icon_256.png \
 	  $(BUILD_DIR)/usilic -e $(HELP_EN_TXT) > ../../doc/HELP.en.epub
-	install -d $(LIB_DIR) && install -m 644 ../../doc/HELP.en.epub $(LIB_DIR)/HELP.en.epub
 # 2026-10-26、直接のユーザー依頼(~/HELP.txt・~/HELP_en.txtを直したら、make 1回でHELPを全部最新に): -H・^T^Hの子が
 # 開く平文のHELP(HELP.1、英語はHELP_en.1)もusilic -nで原稿から作って入れる(以前は手で作ってdoc/に置いていた)。
 help-man: $(BUILD_DIR)/usilic
@@ -218,9 +215,11 @@ install: $(BUILD_DIR)/usilic
 	if [ -f ../../doc/HELP.1 ]; then install -m 644 ../../doc/HELP.1 $(LIB_DIR)/HELP.1; fi
 	# 2026-10-14: usilic -e(HELPのEPUB版)の注釈の文。HELPの原稿の隣に無ければここを読む。
 	install -m 644 ../../doc/HELP.notes $(LIB_DIR)/HELP.notes
-	# 2026-10-18: HELPのEPUB版(^Hで開く、make help-epubで作る)。
-	if [ -f ../../doc/HELP.epub ]; then install -m 644 ../../doc/HELP.epub $(LIB_DIR)/HELP.epub; fi
-	if [ -f ../../doc/HELP.en.epub ]; then install -m 644 ../../doc/HELP.en.epub $(LIB_DIR)/HELP.en.epub; fi
+	install -m 644 ../../doc/HELP.en.notes $(LIB_DIR)/HELP.en.notes
+	# 2026-10-18〜10-28: HELPのEPUB版(doc/HELP.epub)を入れていた。2026-10-29、直接のユーザー依頼("HELP.epubは同梱
+	# せず、内部的にHELP.1からHELP.epubを作成して表示"): usilicが~/.usilic/HELP.epubをHELP.1から作る
+	# (Application::helpEpubPath())ので入れず、以前に入れたものは消す。
+	rm -f $(LIB_DIR)/HELP.epub $(LIB_DIR)/HELP.en.epub
 	# 2026-10-04: EPUBのWebのリンクのPdf(usilicrcのURL節)。Playwrightの準備はtools/url2pdf自身のコメント参照。
 	install -m 755 tools/url2pdf $(LIB_DIR)/url2pdf
 	install -m 644 tools/url2pdf.py $(LIB_DIR)/url2pdf.py

@@ -1,4 +1,5 @@
 #include "application.hpp"
+#include "help_to_epub.hpp"
 #include "usilicrc_file.hpp"
 
 #include "epub_vertical.hpp"
@@ -8764,6 +8765,7 @@ bool Application::openEpubQuietly(const std::string &path) {
   epubHorizontalSection_.reset();
   syncEpubHorizontalPresentation();
   bool firstTime = !history_.positionFor(PositionCategory::File, path);
+  if (isGeneratedHelpEpub(path)) fileMode_.skipNextRecentPush();  // HELP(helpEpubPath()参照)は履歴に積まない
   if (!fileMode_.loadFile(path, readingAbortCheck())) return false;
   fileMode_.annotations().clear();
   // 2026-10-18、直接のユーザー報告(^HのHELP.epub、"モード名が「HELP」じゃない"、"「モード名」とはmode-lineの一番
@@ -18937,7 +18939,8 @@ bool Application::runExternalUsilicPager(const std::string &command) {
       history_.pushRecent(RingCategory::RecentDirectory, (normal == "/" ? normal : normal + "/") + kUsilicTag);
     } else {
       files.push_back(word);
-      if (std::filesystem::exists(normal, ec)) history_.pushRecent(RingCategory::RecentFile, normal + kUsilicTag);
+      if (std::filesystem::exists(normal, ec) && !isGeneratedHelpEpub(normal))  // HELPの子(helpEpubPath())は積まない
+        history_.pushRecent(RingCategory::RecentFile, normal + kUsilicTag);
     }
   }
   auto join = [&](const std::vector<std::string> &paths) {
@@ -20284,14 +20287,72 @@ void Application::reopenHelpInOtherLanguage(const HelpLanguageView &view) {
 }
 
 // HELPのEPUB版(Command::StartHelp参照): helpPath_の隣(無ければ/usr/local/lib/usilic/)の"<HELPの名前>.epub"。
-std::optional<std::string> Application::helpEpubPath() const {
-  std::string name = std::filesystem::path(helpPath_).filename().string() + ".epub";
+// 2026-10-29、直接のユーザー依頼("HELP表示はHELP.epubを開いているだけなので通常ファイル扱いとなって^J^Jの対象に
+// なってしまう。そこでHELP.epubは同梱せず、内部的にHELP.1からHELP.epubを作成して表示する形にしてみて…つまり
+// HELP.epubがUSILIC履歴に残るのは、ユーザーがusilic -e HELP.1を実行して作成したHELP.epubにアクセスしたときだけ"):
+// HELP.epubは入れず(make install)、HELPのroff版(HELP.1、英語はHELP_en.1)から、このusilicの中で(usilic -eと同じ
+// convertMsRoffToHelpEpub())~/.usilic/HELP.epub(英語はHELP.en.epub)を作って開く。HELP.1の方が新しければ作り
+// 直す。注釈の元(HELP.notes・usilicrc)と表紙はHELP.1に埋め込んである(usilic -n)。埋め込みの無い古いHELP.1なら、
+// HELP.1と同じ場所のusilicrc・HELP.notesを使う。groffは要らない(HELPのroff版をgroffで組めない時も作れる)。
+// 作ったHELP.epubは履歴に積まない(openEpubQuietly()・runExternalUsilicPager()、isGeneratedHelpEpub())。
+std::string Application::helpRoffSourcePath() const {
+  std::string name = std::filesystem::path(helpPath_).filename().string();
+  std::string roffName = name.size() > 3 && name.compare(name.size() - 3, 3, ".en") == 0
+                             ? name.substr(0, name.size() - 3) + "_en.1"
+                             : name + ".1";  // reloadHelpText()と同じ
   std::error_code ec;
-  for (const std::string &path : {std::filesystem::path(helpPath_).parent_path().string() + "/" + name,
-                                  installLibDirectory_.empty() ? std::string() : installLibDirectory_ + name,
-                                  "/usr/local/lib/usilic/" + name})
-    if (std::filesystem::is_regular_file(path, ec)) return path;
-  return std::nullopt;
+  for (const std::string &path : {std::filesystem::path(helpPath_).parent_path().string() + "/" + roffName,
+                                  installLibDirectory_.empty() ? std::string() : installLibDirectory_ + roffName,
+                                  "/usr/local/lib/usilic/" + roffName})
+    if (!path.empty() && std::filesystem::is_regular_file(path, ec)) return path;
+  return std::string();
+}
+
+std::string Application::generatedHelpEpubPath() const {
+  return std::filesystem::path(usilicrcPath_).parent_path().string() + "/" +
+         std::filesystem::path(helpPath_).filename().string() + ".epub";
+}
+
+bool Application::isGeneratedHelpEpub(const std::string &path) const {
+  std::error_code ec;
+  return !path.empty() && std::filesystem::equivalent(path, generatedHelpEpubPath(), ec);
+}
+
+std::optional<std::string> Application::helpEpubPath() const {
+  std::string source = helpRoffSourcePath();
+  if (source.empty()) return std::nullopt;
+  std::string out = generatedHelpEpubPath();
+  std::error_code ec;
+  auto sourceTime = std::filesystem::last_write_time(source, ec);
+  if (ec) return std::nullopt;
+  auto outTime = std::filesystem::last_write_time(out, ec);
+  if (!ec && outTime >= sourceTime) return out;
+  auto read = [](const std::string &path) {
+    std::ifstream in(path, std::ios::binary);
+    std::ostringstream text;
+    if (in) text << in.rdbuf();
+    return text.str();
+  };
+  std::string roff = read(source);
+  if (roff.empty() || roff[0] != '.') return std::nullopt;
+  std::string dir = std::filesystem::path(source).parent_path().string() + "/";
+  bool english = std::filesystem::path(helpPath_).filename().string() != "HELP";
+  std::string epub = convertMsRoffToHelpEpub(roff, read(dir + (english ? "usilicrc.en" : "usilicrc")),
+                                             read(dir + (english ? "HELP.en.notes" : "HELP.notes")));
+  if (epub.empty()) return std::nullopt;
+  std::string temp = out + ".tmp" + std::to_string(::getpid());
+  {
+    std::ofstream file(temp, std::ios::binary | std::ios::trunc);
+    if (!file) return std::nullopt;
+    file.write(epub.data(), static_cast<std::streamsize>(epub.size()));
+    if (!file) return std::nullopt;
+  }
+  std::filesystem::rename(temp, out, ec);
+  if (ec) {
+    std::filesystem::remove(temp, ec);
+    return std::nullopt;
+  }
+  return out;
 }
 
 // 平文のHELP(helpPath_のファイルをそのまま、HELP.epubが無ければ^H、^J^Oh)。rawLineがあればその行へ。KEYから来たなら^GでKEYへ戻る。

@@ -33027,3 +33027,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼"^O^Cでは、画面が変わるモードキー(^[s等)が押されたら離れ小島も含めて^[w処理をしたうえでモードをそちらへ切り替えてほしい"。以前は^[の後の英字・^Xの続きは(^[w・^[t・^X␣・^X^C等を除き)何もせず捨て、^Jの続きは確定せずにCOPYを抜けていた。
    - **変更**: copyThenLeave()(^[wと同じく範囲を離れ小島も含めて確定し、ヤンクバッファ・クリップボードへ入れてCOPYを抜ける)。^[の後の英字(w・t、移動・編集のv・f・b・dを除く)、^Xの続き(␣・^C・^Gを除く)、^Jの続き(^J^Gを除く)は、copyThenLeave()の後でそのキーを通常どおり実行する。
    - 確かめたこと: make usilic。
+
+1121. **HELP.epubを入れず、usilicがHELP.1から~/.usilic/HELP.epubを作って開く(履歴に積まない)(2026-10-29)**
+   - **経緯**: 直接のユーザー依頼"HELP表示はHELP.epubを開いているだけなので通常ファイル扱いとなって^J^Jの対象になってしまう。そこでHELP.epubは同梱せず、内部的にHELP.1からHELP.epubを作成して表示する形にしてみて(forkした子プロセスでusilic -e HELP.1を実行し出力をHELPにするとか)。つまりHELP.epubがUSILIC履歴に残るのは、ユーザーがusilic -e HELP.1を実行して作成したHELP.epubにアクセスしたときだけ"。
+   - **変更**: Application::helpEpubPath()は、HELPのroff版(helpRoffSourcePath()、HELP.1・英語はHELP_en.1、reloadHelpText()と同じ場所)から、同じプロセスの中で(子プロセスは使わず、usilic -eと同じconvertMsRoffToHelpEpub())~/.usilic/HELP.epub(英語はHELP.en.epub、generatedHelpEpubPath())を作って返す。HELP.1の方が新しい時だけ作り直す。注釈の元と表紙はHELP.1に埋め込んである(項目1105・1106・1108)。埋め込みの無い古いHELP.1なら、同じ場所のusilicrc(usilicrc.en)・HELP.notes(HELP.en.notes)を使う。groffは要らないので、groffの入る前の最初の起動でもEPUBのHELPになる。作ったHELP.epubは履歴に積まない(openEpubQuietly()のskipNextRecentPush()、HELPの子を開くrunExternalUsilicPager()のFILEの記録、isGeneratedHelpEpub())。make install・make help-epub(-en)はHELP.epub・HELP.en.epubを入れず、以前に入れたものを消す。HELP.en.notesも入れる。
+   - 確かめたこと: make usilic。-cで~/.usilic/historyの無いHOMEから起動すると、~/.usilic/HELP.epubが作られHELPとして開き、historyのFILE_HISTORY・USILIC_HISTORYにHELP.epubが入らない。
