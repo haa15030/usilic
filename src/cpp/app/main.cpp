@@ -5886,7 +5886,16 @@ int main(int argc, char **argv) {
   configuration.setUserLocateDatabasePath(usilicDir + "locate.db");
 
   std::string historyText;  // stays empty (see hasSavedHistory below) when consultHistoryOnStart is false
+  // 2026-10-29、直接のユーザー依頼("初回起動の仕様を変えようと思う。ページャー起動のHELPモードにしたい"、
+  // "~/.usilic/historyが無いときは、初回のページャー起動に限り、EGREP等も含めた既定リストを書き込むことにより
+  // historyを作成"、.steering/20261029-first-start-pager-help/): 引数無しの起動で~/.usilic/historyが無ければ、
+  // HELP(EPUB)をページャーとして開く初回の起動(下のscheduleHelpInParent()の所)。historyは読み書きする。
+  bool firstPagerStart = false;
   if (consultHistoryOnStart) {
+    {
+      std::error_code ec;
+      firstPagerStart = !std::filesystem::exists(usilicDir + "history", ec);
+    }
     // 2026-09-20追加、直接のユーザー依頼("大きめの方針転換...historyへの
     // その場反映は^R発動のHISTORY以外でお願いしたい"): 元々の⑦提案
     // ("FILE/DIR/PROGRAMに項目が加わるたびに同ファイルへ記録")を、
@@ -5938,6 +5947,13 @@ int main(int argc, char **argv) {
       // TUTORIALが来るよう、TUTORIAL.enを先に積む。
       // 2026-10-02: TUTORIALはHELPへ改名し^Hで開くので、FILE履歴への事前登録はやめた
       // (.steering/20261002-help-key-usilicrc-reorg/)。
+      // 2026-10-29: 初回の起動(firstPagerStart)は、既定値のままのhistoryをその場で書き出して作る(次の起動から
+      // 普段の起動になる。終了を待たないので、初回の途中で別のusilicを起動しても初回にはならない)。
+      if (firstPagerStart) {
+        std::error_code ec;
+        std::filesystem::create_directories(usilicDir, ec);
+        saveHistoryToDisk(history, usilicDir, configuration.charsetExplicitlySet());
+      }
     }
   }
 
@@ -6428,8 +6444,15 @@ int main(int argc, char **argv) {
     // 2026-10-20、直接のユーザー提案("最初の起動では子のHELPを出さずに親がHELPで起動。次回以降は-H/-K起動または
     // 稼働中^T^H/^T^Kで子のHELP/KEYを出す、すべての子は自身を終了可"): 最初の起動は親自身がHELPを開き、-Hは
     // HELPの子、-Kは(子のKEYの窓自身でなければ)KEYの子を開く。
-    bool firstStart = consultHistoryOnStart && historyText.empty();
-    if (firstStart && !app.helpLoadedPath_.empty()) app.scheduleHelpInParent();
+    // 2026-10-29、直接のユーザー依頼(.steering/20261029-first-start-pager-help/): 最初の起動(~/.usilic/historyが
+    // 無かった)は、親が開くHELP(HELP.epub)をページャーとして(行頭がタブのキーだけ、^Gで(ls)へ出ない、qで終了、
+    // インストールの間とその後のSHELLは機能限定、Application::setFirstStartPager()参照)。以前の判定は
+    // 「historyが空」で、HELPはふつうの起動の中で開いていた。
+    if (firstPagerStart && !app.helpLoadedPath_.empty()) {
+      app.setPagerLaunch(true);
+      app.setFirstStartPager(true);
+      app.scheduleHelpInParent();
+    }
     bool keyChild = openKeyAtStart && gTransientParentPid <= 0;
     if ((openHelpChild && !app.helpLoadedPath_.empty()) || keyChild)
       app.scheduleHelpChildren(openHelpChild && !app.helpLoadedPath_.empty(), keyChild);

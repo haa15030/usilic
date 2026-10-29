@@ -1242,7 +1242,7 @@ void Shell::handlePromptDetected(const std::string &tailBeforeMark) {
   // (docs/CHANGES.md、LOGセクション)は後で、ログに記録された
   // プロンプト行を、ユーザーがプロンプトで同じプレーンテキストの
   // 文字列を手で入力したものと区別できる。
-  static const std::string kPromptDisplayName = "usilic-1.5b";
+  const std::string &kPromptDisplayName = promptName_;  // setPromptName()参照(既定は"usilic-1.5b")
   promptPlain_ = kPromptDisplayName + ":" + tailBeforeMark;
   updateCommandLineField();
   commandLine_.setText("");

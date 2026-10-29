@@ -283,6 +283,9 @@ class Shell {
   // かもしれないscrollback_の変更「後」ならどこでも必要
   // ――定義自身のコメント参照。
   void redrawPromptRow();
+  // プロンプトの名前(既定は"usilic-1.5b"、2026-10-29: 最初の起動の機能限定SHELLは"USILIC"、
+  // Application::setFirstStartPager()参照)。次にプロンプトを描く時から。
+  void setPromptName(const std::string &name) { promptName_ = name; }
 
   // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装
   // (old/src/key.c::make_list()/input_key()参照): TABで候補が複数
@@ -606,6 +609,7 @@ class Shell {
   int viewportRows_ = 0, columns_ = 0;
   int topReserve_ = 0;  // setTopReserve()
   std::string promptPlain_;  // 現在のプロンプトテキスト、埋め込みエスケープコード無し(幅計算用)
+  std::string promptName_ = "usilic-1.5b";  // setPromptName()参照
   std::string promptDecorated_;  // 同じテキストに太字のエスケープコードを付けたもの――redrawPromptRow()参照
 
   std::string currentDirectory_;

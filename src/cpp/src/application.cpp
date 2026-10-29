@@ -4235,7 +4235,38 @@ std::size_t Application::recordedMacroLength() const { return recordedMacro_.siz
 // Rightはコマンドラインのカーソルを動かす;Up/Down/PageUp/PageDown
 // (スクロールバックのページ送り/コマンド履歴)は、ここではまだ意図的
 // に処理していない。
+// setFirstStartPager()参照(2026-10-29、直接のユーザー依頼"機能限定SHELL(ダウンロード過程の表示およびls等の実行
+// 以外は何もできず、^GでEPUBへ戻る以外どこへも行けず…)"、"インストールの間は^[/^M以外は受け付けない…異常時は
+// ^[^[^Mで"、パスワードのため字・^Hも): 最初の起動のSHELLで、そのバイトをfeedShellByte()の本体へ渡すか。
+// ^[^[^M(即終了)はmain.cppがここより前に見る。
+bool Application::limitedShellAllows(int byte, std::optional<KeyInput::SpecialKey> special) {
+  if (special) return false;  // 矢印等
+  bool installing = shellOffer_.has_value();  // インストールの案内(pollShellOfferFollowUp())が続いている間
+  bool printable = byte >= 0x20;  // DEL(0x7f)・UTF-8の字も
+  if (installing) {
+    limitedShellLeaderJ_ = false;
+    return printable || byte == 0x08 || byte == kCarriageReturn;
+  }
+  if (std::exchange(limitedShellLeaderJ_, false)) {
+    if (byte == 's') handleCommand(Command::RestartShell);  // ^Js: SHELLを再起動
+    return false;
+  }
+  if (byte == kLeaderJ) {
+    limitedShellLeaderJ_ = true;
+    return false;
+  }
+  if (printable) return true;
+  switch (byte) {  // コマンド行の編集・^C(割り込み)・^D・^G(EPUBへ戻る)・^P/^N(出力をたどる)・^M
+    case 0x01: case 0x02: case 0x03: case 0x04: case 0x05: case 0x06: case kControlG: case 0x08: case 0x0b:
+    case kCarriageReturn: case 0x0e: case 0x10: case 0x15: case kControlW: case 0x19: case kControlUnderscore:
+      return true;
+    default:
+      return false;  // ^[・^X・^O・^R・^T・^I・^Q等のusilicのキー
+  }
+}
+
 bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  if (firstStartPager_ && !limitedShellAllows(byte, special)) return true;
   // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装、Shell::tabArmed_
   // 自身の宣言コメント参照(legacyの`f_list`フラグと同じ役割): TAB
   // 以外の任意のバイトを処理する「前」に、必ずここでリセットする
@@ -6015,6 +6046,11 @@ bool Application::handleCommandImpl(Command command) {
       // 2026-10-02追加、直接のユーザー報告("ページャー起動じゃないのに通常ファイル閲覧時`q`で終わる"):
       // 以前は(ls)以外ならどの画面でも終わっていた。ページャーとして起動したファイル
       // (FileMode::isPagerMode()、引数のファイル・標準入力)を見ている時だけにする。
+      // 2026-10-29: 最初の起動(setFirstStartPager())はHELP.epubの本文・章の一覧から終わる(次の起動から普段の画面)。
+      if (firstStartPager_ && (currentMode_ == ApplicationMode::File || currentMode_ == ApplicationMode::Cut)) {
+        requestImmediateExit();
+        return true;
+      }
       if (currentMode_ != ApplicationMode::File || !fileMode_.isPagerMode()) return false;
       if (endsWithParentOnly_) {  // -H/-KのHELP・KEYの子は自身では終わらない(StartExitと同じ、2026-10-12)
         showTransientNotice(activeView(), "Ends with the parent");
@@ -11153,7 +11189,12 @@ bool Application::returnFromCutContent() {
 bool Application::returnFromCut() {
   // 2026-10-12: ページャーとして起動した時(pagerLaunch_)は(ls)を読み込んでいないので、EPUBの章の一覧の^Gで
   // 空の(ls)へ出ていた。ページャーではディレクトリへ行かない(gatePagerKey()と同じ依頼)ので、その場に留まる。
-  if (pagerLaunch_ && cutOrigin_ == CutOrigin::Epub && cutReturnMode_ == ApplicationMode::Directory) return false;
+  // 2026-10-29: 最初の起動(setFirstStartPager())では、シェルが動いていれば(インストールの後)機能限定SHELLへ
+  // (SHELLの^Gでこの章の一覧へ戻る)。
+  if (pagerLaunch_ && cutOrigin_ == CutOrigin::Epub && cutReturnMode_ == ApplicationMode::Directory) {
+    if (firstStartPager_ && shellStarted_ && shell_.alive()) return ensureShellActive();
+    return false;
+  }
   saveKeyCursor();
   saveCutFilePosition();
   if (cutOrigin_ == CutOrigin::Key && keyOverEpubReturnMode_ && cutReturnMode_ == ApplicationMode::File) {

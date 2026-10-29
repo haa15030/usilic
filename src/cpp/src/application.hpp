@@ -1676,6 +1676,9 @@ class Application {
   // まずApplicationを本物の^[sシーケンス経由でShellモードにする
   // ことなく、Shellへの入力を駆動できる。
   bool feedShellByte(int byte, std::optional<KeyInput::SpecialKey> special);
+  bool limitedShellAllows(int byte, std::optional<KeyInput::SpecialKey> special);  // setFirstStartPager()参照
+  bool firstStartPager_ = false;
+  bool limitedShellLeaderJ_ = false;  // 機能限定SHELLで^Jを押した(次がsなら^Js)
 
   bool promptActive() const;
   // 自身の定義コメント(application.cpp)参照: promptActive()に
@@ -3285,6 +3288,14 @@ public:
   void setInstallLibDirectory(const std::string &dir) { installLibDirectory_ = dir; }
   // ページャーとして起動したか(ファイル引数・標準入力、main()のconsultHistoryOnStartの逆)。startKey()参照。
   void setPagerLaunch(bool pager) { pagerLaunch_ = pager; }
+  // 2026-10-29、直接のユーザー依頼(.steering/20261029-first-start-pager-help/): 最初の起動(~/.usilic/historyが
+  // 無かった、main.cpp)。HELP(EPUB)をページャーとして開き、qで終わる。SHELLは機能限定(limitedShellAllows()):
+  // インストールの間は字・^H・^Mだけ、その後はコマンド行の編集・^G・^Jsだけ。プロンプトの名前は「USILIC」。
+  // EPUBの章の一覧の^Gは、シェルが動いていればそのSHELLへ(returnFromCut())。
+  void setFirstStartPager(bool on) {
+    firstStartPager_ = on;
+    if (on) shell_.setPromptName("USILIC");
+  }
   // -K(main.cpp、-H・最初の起動のKEYのウィンドウ): KEYを「：」を含む行だけの一覧にする(keyListOnly()参照)。
   void setKeyColonListLaunch(bool on) { keyColonListLaunch_ = on; }
   // ^Od(Command::ToggleWheelDirection)でホイールの向きを逆にしているか(main.cppのscrollByWheel()等が見る)。
