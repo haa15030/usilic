@@ -32995,3 +32995,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告"同じ結果一覧では、^J^Wがバッファではなくファイル全体を出力。しかもHELP自体わりと大きいため、続けて^G^J^Wとやってもビープ音しか鳴らない。SHELL busyの意味のメッセージよろしく"。Grepの一覧の^J^Wは、2026-08-24の依頼(FGREPはモードラインが守備範囲なので背景の画面をcat)で背景のファイルを出していたが、^O^S・^O^J^S(occur)の一致した行の一覧は一覧そのものが内容。SHELLが前のコマンドを実行中の時の「(SHELL busy)」はモードラインへ直に書いていたので、その後の描き直しですぐ消えていた。
    - **変更**: occurの一覧(grepOccurList_、startGrep…のoccur)の^J^Wは一覧の行を出す(名前が無いので作業用のw.N)。showShellBusyNotice()はベルとshowTransientNotice()の"SHELL busy (the previous command has not finished)"(次のキーまで残る)。
    - 確かめたこと: make usilic(一覧の^J^W・SHELL busyの表示は実機で)。
+
+1115. **右下の「USILIC」が慣性スクロール中に反転、^Ouの子の本の章の一覧の戻り値(2026-10-29)**
+   - **経緯**: 直接のユーザー報告"ページャー時右下表示「USILIC」が慣性スクロール時はハイライト表示になる"、"^Ouで起動した子プロセスのHELP.epubで^Gの時の戻り値が「111057」(子プロセスなので正しくは非ハイライトの「USILIC」)"。
+   - **原因と変更**: ドラッグ・慣性の間のモードライン(ContentView::scrollModeLineSegments())の右下の透かしは太字にするだけのはずが、Display::ModeLineSegment::standoutの既定(true)のままだったので反転していた→standout=false。ページャーとして開いた本の章の一覧のモードラインは、戻り値欄に(ls)のディレクトリ(ページャーでは空)を出し、右下の透かしを出していなかった→pagerLaunch_なら戻り値欄を空にして透かし(子は「USILIC」)を出す。
+   - 確かめたこと: make usilic。

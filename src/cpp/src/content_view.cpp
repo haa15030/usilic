@@ -1642,6 +1642,9 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments(bool t
       if (gap > 0) segments.push_back({std::string(static_cast<std::size_t>(gap), ' '), false});
       Display::ModeLineSegment watermarkSegment;
       watermarkSegment.text = watermark;
+      // 2026-10-29、直接のユーザー報告("ページャー時右下表示「USILIC」が慣性スクロール時はハイライト表示になる"):
+      // ModeLineSegment::standoutの既定はtrueなので、止まっている時(太字だけ)と同じく反転を外す。
+      watermarkSegment.standout = false;
       watermarkSegment.bold = true;
       segments.push_back(watermarkSegment);
     }

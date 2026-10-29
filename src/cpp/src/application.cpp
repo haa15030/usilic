@@ -1537,6 +1537,13 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       // ^Gの戻り先。章の一覧の^Gは(ls)へ戻る(returnFromCut())ので、本のパスではなく
       // (ls)のディレクトリを出す。
       fields.trailing3 = directoryMode_.currentDirectory();
+      // 2026-10-29、直接のユーザー報告("^Ouで起動した子プロセスのHELP.epubで^Gの時の戻り値が「111057」(子プロセス
+      // なので正しくは非ハイライトの「USILIC」)"): ページャーとして開いた本の章の一覧の^Gはどこへも戻らない
+      // (returnFromCut())ので、戻り値欄は空にし、本文と同じく右下の透かし(子は「USILIC」)を出す。
+      if (pagerLaunch_) {
+        fields.trailing3.clear();
+        fields.rightWatermark = ContentView::programWatermark();
+      }
       return fields;
     }
     // HELP自身の最上位(ネストしていない)モードライン(2026-08-23
