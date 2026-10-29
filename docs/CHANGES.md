@@ -33032,3 +33032,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼"HELP表示はHELP.epubを開いているだけなので通常ファイル扱いとなって^J^Jの対象になってしまう。そこでHELP.epubは同梱せず、内部的にHELP.1からHELP.epubを作成して表示する形にしてみて(forkした子プロセスでusilic -e HELP.1を実行し出力をHELPにするとか)。つまりHELP.epubがUSILIC履歴に残るのは、ユーザーがusilic -e HELP.1を実行して作成したHELP.epubにアクセスしたときだけ"。
    - **変更**: Application::helpEpubPath()は、HELPのroff版(helpRoffSourcePath()、HELP.1・英語はHELP_en.1、reloadHelpText()と同じ場所)から、同じプロセスの中で(子プロセスは使わず、usilic -eと同じconvertMsRoffToHelpEpub())~/.usilic/HELP.epub(英語はHELP.en.epub、generatedHelpEpubPath())を作って返す。HELP.1の方が新しい時だけ作り直す。注釈の元と表紙はHELP.1に埋め込んである(項目1105・1106・1108)。埋め込みの無い古いHELP.1なら、同じ場所のusilicrc(usilicrc.en)・HELP.notes(HELP.en.notes)を使う。groffは要らないので、groffの入る前の最初の起動でもEPUBのHELPになる。作ったHELP.epubは履歴に積まない(openEpubQuietly()のskipNextRecentPush()、HELPの子を開くrunExternalUsilicPager()のFILEの記録、isGeneratedHelpEpub())。make install・make help-epub(-en)はHELP.epub・HELP.en.epubを入れず、以前に入れたものを消す。HELP.en.notesも入れる。
    - 確かめたこと: make usilic。-cで~/.usilic/historyの無いHOMEから起動すると、~/.usilic/HELP.epubが作られHELPとして開き、historyのFILE_HISTORY・USILIC_HISTORYにHELP.epubが入らない。
+
+1122. **1つ前のファイルとの行き来(^J^J)では、履歴にA,B,A,B…と積まない(2026-10-30)**
+   - **経緯**: 直接のユーザー報告"HELP_.txtを修正した後、できたHELP.epubを確認するのに^Lで済むところを敢えて^J^Jでやってみたら^RにA,B,A...が延々連なっていた"。項目1012は保存のたびに同じ操作を積み直す不具合で、^J^Jの行き来そのものは、2026-08-04の判断(legacyのfind_hist()と同じく直前と同じものだけを除く)どおり、毎回積んでいた。
+   - **変更**: History::pushRecentImpl()・mirrorToUsilicImpl()は、積もうとするものが1つ前(末尾の1つ手前)と同じなら、積み足さずに末尾の2つを入れ替える(A→B→Aは[B,A])。^J^J・^Gの行き来は末尾の2つの入れ替えで保たれる。それより古いものへの再訪問([A,B,C,A])は従来どおり積む。
+   - 確かめたこと: make usilic。

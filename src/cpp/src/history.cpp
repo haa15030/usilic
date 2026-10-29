@@ -225,6 +225,11 @@ void History::mirrorToUsilicImpl(RingCategory source, const std::string &name) {
   }
   auto &ring = rings_[RingCategory::Usilic];
   if (!ring.empty() && ring.back() == entry) return;
+  // 1つ前との行き来は入れ替えるだけ(pushRecentImpl()参照)。
+  if (ring.size() >= 2 && ring[ring.size() - 2] == entry) {
+    std::swap(ring[ring.size() - 2], ring.back());
+    return;
+  }
   ring.push_back(entry);
   // 3種(FILE/DIR/MAN)を1本にまとめるので、保持数もそれに合わせて3倍にする。
   if (ring.size() > limitFor(RingCategory::Usilic)) ring.pop_front();
@@ -252,8 +257,15 @@ void History::pushRecentImpl(RingCategory category, const std::string &name) {
   // 2026-10-17、直接のユーザー報告("^J^T^Rの履歴一覧には同じ内容は登録しない"): TOOL・SHELLで実行した
   // コマンドの履歴は、同じものが前にあればそれを消してから末尾へ積む(実行順の一覧に同じ行が並ばない)。
   if (category == RingCategory::ShellCommand) ring.erase(std::remove(ring.begin(), ring.end(), name), ring.end());
-  ring.push_back(name);
-  if (ring.size() > limitFor(category)) ring.pop_front();
+  // 2026-10-30、直接のユーザー報告(^J^Jで2つのファイルを行き来すると^RにA,B,A,B…が延々連なる): 1つ前と同じ
+  // ものは、積み足さずに末尾の2つを入れ替える(A→B→Aは[B,A]、^J^Jの行き来は保たれる)。それより古いものへの
+  // 再訪問は、2026-08-04の判断どおり[A,B,C,A]と積む。
+  if (ring.size() >= 2 && ring[ring.size() - 2] == name)
+    std::swap(ring[ring.size() - 2], ring.back());
+  else {
+    ring.push_back(name);
+    if (ring.size() > limitFor(category)) ring.pop_front();
+  }
 
   // 2026-08-27の追加、直接のユーザー報告("旧では同時にDIR履歴に
   // も所在地記載がなされる...^Tに限らずLOCATE、DUその他（ls）経由でな
