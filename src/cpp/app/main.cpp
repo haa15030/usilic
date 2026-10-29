@@ -5076,6 +5076,21 @@ bool tryHandoffToParentShell(int argc, char **argv) {
 #endif
 }
 
+// 2026-10-29、直接のユーザー報告("アイコン起動で…フォントの種類・行間・字間が…^T^H/^T^Kで起動した子プロセスへも
+// 継承されない"): 子(HELP・KEY・^Ou等の外部起動)は-g付きで起動されるので、アイコンからの起動の判定(制御端末が
+// 無い)を通らず、ICON-FONT等ではなく-gの設定を読んでいた。アイコンから起動した親は$USILIC_ICON_LAUNCHを置き
+// (子へ受け継がれる)、それがあれば子もアイコンからの起動の設定を使う。
+#ifndef _WIN32  // 呼ぶのはmacOS・Linux等のアイコンからの起動の判定の後だけ
+void iconLaunchInherited() {
+  if (std::getenv("USILIC_ICON_LAUNCH")) {
+    fm::Configuration::setIconLaunch(true);
+    fm::History::setIconLaunch(true);
+  } else if (fm::Configuration::iconLaunch()) {
+    ::setenv("USILIC_ICON_LAUNCH", "1", 1);
+  }
+}
+#endif
+
 // usilic -e・-nが読むusilicrc・HELP.notes(2026-10-29、-eの中から切り出し): $USILIC_EPUB_RC・$USILIC_EPUB_NOTESが
 // あればそれ、無ければ~/.local/lib/usilic/(make installが最新にする)、/usr/local/lib/usilic/、HELPの原稿と同じ
 // ディレクトリの順に探す(原稿の隣の古い写しより先に)。
@@ -5564,6 +5579,7 @@ int main(int argc, char **argv) {
       fm::History::setIconLaunch(true);
     }
   }
+  iconLaunchInherited();
 #else
   // 2026-10-16、直接のユーザー依頼(Ubuntuのアイコンからの起動): Linux等でも、制御端末が一切無ければ(デスクトップの
   // ランチャー等)、上のmacOSと同じくGUIを既定にする(CUIでは何も表示できない)。GUI無しのビルドはCUIのまま。
@@ -5578,6 +5594,7 @@ int main(int argc, char **argv) {
       fm::History::setIconLaunch(true);
     }
   }
+  iconLaunchInherited();
 #endif
   if (!forceCui && !forceGui) forceCui = true;
 #endif
