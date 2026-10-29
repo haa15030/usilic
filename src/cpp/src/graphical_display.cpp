@@ -4447,6 +4447,9 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       if (TTF_Font *serif = (wantSerif || impl_->serifEverywhere) && isWide ? serifFontFor(*impl_, codepoint) : nullptr)
         renderFont = serif;  // 明朝体(半角はrenderCell()と同じく等幅フォント、2026-10-11)
       renderFont = verticalFormFontFor(*impl_, renderFont, codepoint);
+      // 2026-10-29、直接のユーザー報告("注釈から戻る記号が慣性スクロール中は豆腐になる"): 止まっている時の
+      // renderCell()と同じく、どのフォントにも無い記号(「↩」等)は記号のフォントで(symbolFontFor())。
+      renderFont = symbolFontFor(*impl_, renderFont, codepoint);
       // renderCell()自身のもの(`if (cell.bold) style |= TTF_STYLE_BOLD;`
       // 等)と同じスタイルの計算――この関数は以前は`attributes`に
       // 関わらず常にTTF_STYLE_NORMALをレンダリングしていた(この関数
