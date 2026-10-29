@@ -32976,3 +32976,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **原因**: 横書きのリンクは、行(元の行)の中の下線の並びを数えて行き先(EpubLayoutHints::lineLinks)のn番目を選ぶ(Application::epubHorizontalLinks())。項目1081で<u>(HELP.epubの注釈の付く名前)も下線にしたため、「FONT」の下線もリンクとして数えられ、同じ行の後ろのリンクの番号がずれていた。行き先の数を超えたリンクは選べず(-gのクリックは無反応)、^Mは行の最初のリンクへ落ちた([4])。URL[8]は、ずれた先が同じ段落の小説サイトのWebリンクだった。
    - **変更**: epub_to_help_markup.cppで、<u>の下線も行き先の並びに"u:"(リンクではない印)として、下線と同じ順で入れる。epubHorizontalLinks()は"u:"の下線を数えるだけでリンクに入れない。
    - 確かめたこと: make usilic。-cでHELP.epubの同じ段落の2行目・3行目の^Mが[6](usilicrc の FONT)、narou2epub[7]・URL[8]の行がそれぞれ[7]・[8]を開く。
+
+1111. **最初の起動で^[s・^J.・^J,・^JsからSHELL(機能限定)へ(2026-10-29)**
+   - **経緯**: 項目1109の後、直接のユーザー報告"^[s、^J.、^Js等が皆「ページャーでは使えません」"(ページャーのキーはHELPの行頭がタブの行のキーだけで、SHELLのキーはその中に無い)。
+   - **変更**: Application::pagerAllowedKeys()に、最初の起動(firstStartPager_)の時だけ^[s・^Js・^J.・^J,を足す(SHELLは機能限定のまま)。機能限定SHELLの中のlimitedShellAllows()も、^Jの後の.・,を通す(^J.で(ls)の位置=起動したディレクトリへcd、^J,でls -l)。src/HELP_.txt・src/HELP_en_.txtの初回起動の説明を合わせた。
+   - 確かめたこと: make usilic。-cで~/.usilic/historyの無いHOMEから起動し、^[sでプロンプト「USILIC:」のSHELLへ、^X^Fは効かず、lsを実行でき、^GでHELPへ戻る。

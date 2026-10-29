@@ -4029,6 +4029,11 @@ const std::vector<std::vector<int>> &Application::pagerAllowedKeys() {
     // 同日、直接のユーザー依頼(HELPを作り直さなくても): HELP/KEYの子(^T^H / ^T^K、launchHelpChild()参照)も。
     pagerAllowedKeys_.push_back({0x14, 0x08});
     pagerAllowedKeys_.push_back({0x14, 0x0b});
+    // 2026-10-29、直接のユーザー報告(最初の起動で"^[s、^J.、^Js等が皆「ページャーでは使えません」"): 最初の起動
+    // (setFirstStartPager())では、機能限定SHELLへ行くキーも。
+    if (firstStartPager_)
+      for (std::vector<int> keys : {std::vector<int>{kEscape, 's'}, {kLeaderJ, 's'}, {kLeaderJ, '.'}, {kLeaderJ, ','}})
+        pagerAllowedKeys_.push_back(keys);
   }
   return pagerAllowedKeys_;
 }
@@ -4249,6 +4254,8 @@ bool Application::limitedShellAllows(int byte, std::optional<KeyInput::SpecialKe
   }
   if (std::exchange(limitedShellLeaderJ_, false)) {
     if (byte == 's') handleCommand(Command::RestartShell);  // ^Js: SHELLを再起動
+    if (byte == '.') handleCommand(Command::ShellChangeDirectory);  // ^J.: (ls)の位置(起動したディレクトリ)へcd
+    if (byte == ',') handleCommand(Command::ShellRunLsL);  // ^J,: ls -l
     return false;
   }
   if (byte == kLeaderJ) {
