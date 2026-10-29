@@ -32981,3 +32981,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 項目1109の後、直接のユーザー報告"^[s、^J.、^Js等が皆「ページャーでは使えません」"(ページャーのキーはHELPの行頭がタブの行のキーだけで、SHELLのキーはその中に無い)。
    - **変更**: Application::pagerAllowedKeys()に、最初の起動(firstStartPager_)の時だけ^[s・^Js・^J.・^J,を足す(SHELLは機能限定のまま)。機能限定SHELLの中のlimitedShellAllows()も、^Jの後の.・,を通す(^J.で(ls)の位置=起動したディレクトリへcd、^J,でls -l)。src/HELP_.txt・src/HELP_en_.txtの初回起動の説明を合わせた。
    - 確かめたこと: make usilic。-cで~/.usilic/historyの無いHOMEから起動し、^[sでプロンプト「USILIC:」のSHELLへ、^X^Fは効かず、lsを実行でき、^GでHELPへ戻る。
+
+1112. **本文の「Archive of Our Own」もWebのリンクに(2026-10-29)**
+   - **経緯**: 直接のユーザー報告"Archive of Our Ownにリンクが無い"。^J^Eの既定のURLには2026-10-23に入れたが、EPUBの本文中の小説サイトの名前をリンクにする一覧(epubNovelSiteLinks())には入れていなかった。
+   - **変更**: C++のepubNovelSiteLinks()とPython版のNOVEL_SITE_LINKSに「Archive of Our Own」→https://archiveofourown.org/。

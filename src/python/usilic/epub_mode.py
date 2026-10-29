@@ -34,7 +34,7 @@ HR_TEXT = '-' * 40  # 区切り線(中央に置く、C++と同じ)
 # 本文の中の小説サイトの名前は、<a>の外ならそのサイトへのリンクにする(C++のepubNovelSiteLinks())。
 NOVEL_SITE_LINKS = (('小説家になろう', 'https://syosetu.com/'), ('小説を読もう', 'https://yomou.syosetu.com/'),
                     ('ノクターンノベルズ', 'https://noc.syosetu.com/'), ('カクヨム', 'https://kakuyomu.jp/'),
-                    ('青空文庫', 'https://www.aozora.gr.jp/'))
+                    ('青空文庫', 'https://www.aozora.gr.jp/'), ('Archive of Our Own', 'https://archiveofourown.org/'))
 
 
 def _is_underlined_link(href):

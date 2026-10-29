@@ -1626,6 +1626,9 @@ const std::vector<std::pair<std::string, std::string>> &epubNovelSiteLinks() {
        "https://noc.syosetu.com/"},  // ノクターンノベルズ
       {"\xE3\x82\xAB\xE3\x82\xAF\xE3\x83\xA8\xE3\x83\xA0", "https://kakuyomu.jp/"},  // カクヨム
       {"\xE9\x9D\x92\xE7\xA9\xBA\xE6\x96\x87\xE5\xBA\xAB", "https://www.aozora.gr.jp/"},  // 青空文庫
+      // 2026-10-29、直接のユーザー報告("Archive of Our Ownにリンクが無い"): ^J^Eの既定のURL(項目、2026-10-23)には
+      // 入れたが、本文の名前のリンクには入れていなかった。
+      {"Archive of Our Own", "https://archiveofourown.org/"},
   };
   return sites;
 }
