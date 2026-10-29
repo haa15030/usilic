@@ -19,5 +19,10 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
                                     const std::string &notesText, std::string *summary = nullptr,
                                     std::vector<std::string> *unnoted = nullptr, const std::string &coverPng = {});
 // coverPng(2026-10-20): 表紙の画像(PNGのバイト列、usilic.appのアイコン)。空でなければ最初のページを表紙にする。
+// 空なら、roffにusilic -nが埋め込んだ表紙(".\" usilic-cover-line …"、base64)を使う(2026-10-29)。
+
+// 表紙の画像をHELP.1に埋め込むためのbase64(2026-10-29)。decodeBase64()は'='・改行等の字を読み飛ばす。
+std::string encodeBase64(const std::string &bytes);
+std::string decodeBase64(const std::string &text);
 
 }  // namespace fm

@@ -32959,3 +32959,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼"-e/-m/-nを隠しオプションとしていた理由は、ソースがHELP.txt(<indentN></indent>の独自仕様)だからだが、HELP.1がソースなら問題ないので-eを正式オプションとしたい"(項目1105・1106でHELP.1だけから注釈まで揃ったEPUBが作れるようになったため)。-m/-nは引き続き隠しオプション。
    - **変更**: -hの使い方に"-e HELP.1  write HELP.1 as an EPUB to stdout and exit"。-eの引数が無い時のエラーの例をHELP.1に。src/HELP_.txt・src/HELP_en_.txt(アシスタント用の原稿)の起動オプションの-hの前に-eの説明(表紙の画像は付かないことも)。
    - 確かめたこと: make usilic・make install。usilic -hの末尾に-e、引数無しのusilic -eのエラー。
+
+1108. **HELP.1に表紙の画像も埋め込み、手で実行したusilic -eでも表紙付きのHELP.epubに(2026-10-29)**
+   - **経緯**: 項目1107で-eの説明に「表紙の画像は付かない」と書いたところ、直接のユーザー報告・依頼"miniマシンでpullして作ったHELP.epubに表紙が付かない謎が解けた。手で作っても同じにして"(表紙はmake help-epubが$USILIC_EPUB_COVERで渡す時だけ付いていた)。
+   - **変更**: usilic -nが、$USILIC_EPUB_COVERの画像をbase64(1行76字)でHELP.1の末尾にroffのコメント(".\" usilic-cover-line …")で入れる。help_to_epub.cppは、表紙の画像が渡されなければこれを表紙にする。base64の変換はencodeBase64()・decodeBase64()(help_to_epub.hpp)。make help-manはpackaging/usilic_icon_256.pngを渡す。src/HELP_.txt・src/HELP_en_.txtの-eの説明から「表紙の画像は付きません」を消し、表紙もHELP.1に入っていると。HELP.1は約1,040行(約100KB)増え約249KB。
+   - 確かめたこと: make usilic・make install。doc/HELP.1を作り直し(差分は末尾の1038行だけ、groff -Tutf8 -msの出力は前後で同じ)、環境変数を渡さずHOMEも空のディレクトリにしたusilic -e doc/HELP.1のEPUBが、従来のmake help-epubと同じ作り方のもの(表紙付き)とdcterms:modified以外一致。

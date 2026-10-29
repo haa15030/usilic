@@ -190,10 +190,12 @@ help-epub-en: $(BUILD_DIR)/usilic
 # 2026-10-26、直接のユーザー依頼(~/HELP.txt・~/HELP_en.txtを直したら、make 1回でHELPを全部最新に): -H・^T^Hの子が
 # 開く平文のHELP(HELP.1、英語はHELP_en.1)もusilic -nで原稿から作って入れる(以前は手で作ってdoc/に置いていた)。
 help-man: $(BUILD_DIR)/usilic
-	# 2026-10-29: 注釈の元のHELP.notes・usilicrc(英語はHELP.en.notes・usilicrc.en)もHELP.1へroffのコメントで
-	# 埋め込む(usilic -e HELP.1だけで注釈まで同じHELP.epubになる)。
-	USILIC_EPUB_RC=../usilicrc USILIC_EPUB_NOTES=../../doc/HELP.notes $(BUILD_DIR)/usilic -n $(HELP_TXT) > ../../doc/HELP.1
-	USILIC_EPUB_RC=../usilicrc.en USILIC_EPUB_NOTES=../../doc/HELP.en.notes $(BUILD_DIR)/usilic -n $(HELP_EN_TXT) > ../../doc/HELP_en.1
+	# 2026-10-29: 注釈の元のHELP.notes・usilicrc(英語はHELP.en.notes・usilicrc.en)と表紙の画像もHELP.1へroffの
+	# コメントで埋め込む(usilic -e HELP.1だけで表紙・注釈まで同じHELP.epubになる)。
+	USILIC_EPUB_RC=../usilicrc USILIC_EPUB_NOTES=../../doc/HELP.notes USILIC_EPUB_COVER=packaging/usilic_icon_256.png \
+	  $(BUILD_DIR)/usilic -n $(HELP_TXT) > ../../doc/HELP.1
+	USILIC_EPUB_RC=../usilicrc.en USILIC_EPUB_NOTES=../../doc/HELP.en.notes USILIC_EPUB_COVER=packaging/usilic_icon_256.png \
+	  $(BUILD_DIR)/usilic -n $(HELP_EN_TXT) > ../../doc/HELP_en.1
 	install -d $(LIB_DIR) && install -m 644 ../../doc/HELP.1 ../../doc/HELP_en.1 $(LIB_DIR)/
 # make help: HELPの4つ(HELP.epub・HELP.en.epub・HELP.1・HELP_en.1)を原稿から作って入れる。
 help: help-epub help-epub-en help-man

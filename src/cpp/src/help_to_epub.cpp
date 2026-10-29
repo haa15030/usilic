@@ -474,10 +474,52 @@ class ZipWriter {
 
 }  // namespace
 
+std::string encodeBase64(const std::string &bytes) {
+  static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  for (std::size_t i = 0; i < bytes.size(); i += 3) {
+    unsigned v = static_cast<unsigned char>(bytes[i]) << 16;
+    if (i + 1 < bytes.size()) v |= static_cast<unsigned char>(bytes[i + 1]) << 8;
+    if (i + 2 < bytes.size()) v |= static_cast<unsigned char>(bytes[i + 2]);
+    out += table[(v >> 18) & 63];
+    out += table[(v >> 12) & 63];
+    out += i + 1 < bytes.size() ? table[(v >> 6) & 63] : '=';
+    out += i + 2 < bytes.size() ? table[v & 63] : '=';
+  }
+  return out;
+}
+
+std::string decodeBase64(const std::string &text) {
+  std::string out;
+  unsigned v = 0;
+  int bits = 0;
+  for (char c : text) {
+    int d = c >= 'A' && c <= 'Z' ? c - 'A' : c >= 'a' && c <= 'z' ? c - 'a' + 26 : c >= '0' && c <= '9' ? c - '0' + 52
+          : c == '+' ? 62 : c == '/' ? 63 : -1;
+    if (d < 0) continue;  // '='・空白等
+    v = (v << 6) | static_cast<unsigned>(d);
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out += static_cast<char>((v >> bits) & 0xFF);
+    }
+  }
+  return out;
+}
+
 std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &usilicrcText,
                                     const std::string &notesText, std::string *summary,
-                                    std::vector<std::string> *unnoted, const std::string &coverPng) {
+                                    std::vector<std::string> *unnoted, const std::string &givenCover) {
   std::vector<std::string> lines = splitLines(roff);
+  // 2026-10-29、直接のユーザー依頼("手で作っても同じにして"、手で実行したusilic -eのHELP.epubに表紙が無かった):
+  // 表紙の画像が渡されなければ、usilic -nがroffのコメント(".\" usilic-cover-line …")で埋め込んだものを使う。
+  std::string coverPng = givenCover;
+  if (coverPng.empty()) {
+    std::string encoded;
+    for (const auto &l : lines)
+      if (l.compare(0, 22, ".\\\" usilic-cover-line ") == 0) encoded += l.substr(22);
+    coverPng = decodeBase64(encoded);
+  }
   // 2026-10-19、直接のユーザー依頼(英語のHELP、HELP.en.epub): usilic -nが英語の原稿の.THに付ける"User Commands"
   // (convertMarkupToMsRoffSource()参照)があれば英語。言語の指定と、注釈・目次・既定値の見出しを英語にする。
   bool english = false;

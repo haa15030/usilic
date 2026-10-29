@@ -5387,6 +5387,16 @@ int main(int argc, char **argv) {
         std::string l;
         while (std::getline(lines, l)) std::cout << ".\\\" usilic-rc-line" << (l.empty() ? "" : " " + l) << "\n";
       }
+      // 2026-10-29、直接のユーザー依頼("手で作っても同じにして"): 表紙の画像($USILIC_EPUB_COVER、make help-manが
+      // 渡す)もbase64で(1行76字)。-eは$USILIC_EPUB_COVERが無ければこれを表紙にする。
+      if (const char *given = std::getenv("USILIC_EPUB_COVER")) {
+        std::ifstream file(given, std::ios::binary);
+        std::ostringstream bytes;
+        if (file) bytes << file.rdbuf();
+        std::string encoded = fm::encodeBase64(bytes.str());
+        for (std::size_t k = 0; k < encoded.size(); k += 76)
+          std::cout << ".\\\" usilic-cover-line " << encoded.substr(k, 76) << "\n";
+      }
       return 0;
     } else if (std::strcmp(argv[i], "-e") == 0) {
       // 2026-10-14、直接のユーザー依頼("HELPモードを正式にHELP.epubとしたい（注釈を見れるので）。usilic -e HELP.txt >
