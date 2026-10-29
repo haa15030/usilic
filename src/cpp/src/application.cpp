@@ -14601,6 +14601,15 @@ bool Application::startEpubMarkList() {
 // 合わせて別々のキーへ分離した。^Spaceは日本語変換エンジン(ATOK等)の
 // 入力モード切り替えキーと衝突することがあるための変更。CopyMode
 // 自身のコメント参照。
+// ^[wと同じく範囲(離れ小島も)を確定してヤンクバッファ・クリップボードへ入れ、COPYを抜ける(2026-10-29、
+// feedCopyByte()の^[・^X・^Jの続きのモードキー)。
+void Application::copyThenLeave() {
+  copyMode_.confirmMark();
+  promptEditor_.setKillBuffer(copyMode_.clipboardText());
+  copyTextToSystemClipboard(copyMode_.clipboardText());
+  returnFromCopy();
+}
+
 bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> special) {
   // "^[N"/"^[gg"(goto-line)自身の桁蓄積――application.hpp自身の
   // copyGotoLineDigitsPending_のコメント参照。
@@ -14715,6 +14724,14 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
       copyGotoLineGPending_ = true;
       return true;
     }
+    // 2026-10-29、直接のユーザー依頼("^O^Cでは、画面が変わるモードキー(^[s等)が押されたら離れ小島も含めて^[w
+    // 処理をしたうえでモードをそちらへ切り替えてほしい"): ^[の後のw・t以外の英字は、^[wと同じく確定してから
+    // COPYを抜け、そのキーを通常どおり実行する(copyThenLeave())。
+    if (!special && std::isalpha(byte) && !std::strchr("wtvfbd", byte)) {  // ^[v・^[f等(移動・編集)は除く
+      copyThenLeave();
+      dispatchByte(kEscape, std::nullopt);
+      return dispatchByte(byte, special);
+    }
     bool wasRectangle = copyMode_.rectangleMarkActive();
     if (!special && byte == 'w') {
       copyMode_.confirmMark();
@@ -14767,6 +14784,11 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
     } else if (!special && byte == kControlC) {
       returnFromCopy();
       handleCommand(Command::StartExit);
+    } else if (!special && byte != kControlG) {
+      // 2026-10-29(上の^[の後の英字と同じ依頼): ^Xの続き(^X^F等)も、確定してからCOPYを抜けて通常どおり実行する。
+      copyThenLeave();
+      dispatchByte(kLeaderX, std::nullopt);
+      return dispatchByte(byte, special);
     }
     return true;
   }
@@ -14780,7 +14802,8 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
     copyLeaderJPending_ = false;
     if (!special && byte == kControlG) return true;  // ^J^Gは取り消し(COPYのまま)
     // ^Jの続きは、COPYを抜けてから通常の^Jとして処理する(^J^O e等の3打目以降も通常どおり)
-    returnFromCopy();
+    // 2026-10-29: 抜ける前に^[wと同じく確定する(上の^[の後の英字と同じ依頼)。
+    copyThenLeave();
     dispatchByte(kLeaderJ, std::nullopt);
     return dispatchByte(byte, special);
   }

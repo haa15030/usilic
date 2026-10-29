@@ -3488,6 +3488,7 @@ private:
   // 別物――feedCopyByte()はそもそもresolveCommand()のテーブルを
   // 一切経由しない独立した語彙であるため。
   bool copyEscapePending_ = false;
+  void copyThenLeave();  // feedCopyByte()のモードキー(2026-10-29)
   // feedCopyByte()自身のコメント参照(2026-09-07追加、直接のユーザー
   // 要望"①emacsには矩形範囲指定の機能があるのであれを移植して
   // ほしい...emacs同様^X␣で発動"): copyEscapePending_と全く同じ
