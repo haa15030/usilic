@@ -4125,6 +4125,15 @@ bool Application::feedByteUngated(int byte, std::optional<KeyInput::SpecialKey> 
 bool Application::feedCanonicalByte(int byte) { return feedUntranslatedByte(byte, std::nullopt); }
 
 bool Application::feedUntranslatedByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  // 2026-10-29、直接のユーザー依頼("^O^S/^O^J^Sの検索結果一覧では^]が利かない。^]はどこでもキー(^J^C/^J^Bと
+  // 同等)でよろしく"): ^]は、どの画面・プロンプトでも^J^C(カレントディレクトリへ)と同じ。以前は(ls)等のふつうの
+  // キーの表(Command::GoToFileSelector)にしか無かった。^Xや^Q(そのまま入れる)等の続きの1打の時は除く。
+  if (!special && byte == 0x1d && !escPending_ && !leaderJPending_ && !leaderJOPending_ && !leaderXPending_ &&
+      !leaderXRPending_ && !leaderOPending_ && registerPending_ == RegisterAction::None && !gotoLineGPending_ &&
+      !gotoLineDigitsPending_ && !promptEditor_.quotedInsertPending() && !shell_.commandLine().quotedInsertPending()) {
+    feedUntranslatedByte(kLeaderJ, std::nullopt);
+    return feedUntranslatedByte(kControlC, std::nullopt);
+  }
   clearTransientNotice();  // showTransientNotice()自身の宣言コメント参照(どのキーでも消える)
   bool outermost = stdinPagerCheckDepth_ == 0;
   bool wasStdin = outermost && stdinPagerActive();

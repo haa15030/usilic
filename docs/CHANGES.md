@@ -32985,3 +32985,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 1112. **本文の「Archive of Our Own」もWebのリンクに(2026-10-29)**
    - **経緯**: 直接のユーザー報告"Archive of Our Ownにリンクが無い"。^J^Eの既定のURLには2026-10-23に入れたが、EPUBの本文中の小説サイトの名前をリンクにする一覧(epubNovelSiteLinks())には入れていなかった。
    - **変更**: C++のepubNovelSiteLinks()とPython版のNOVEL_SITE_LINKSに「Archive of Our Own」→https://archiveofourown.org/。
+
+1113. **^]をどこでも^J^Cと同じに(2026-10-29)**
+   - **経緯**: 直接のユーザー報告・依頼"HELP本文(以外でも再現)での^O^S/^O^J^Sの検索結果一覧では^]が利かない。^]はどこでもキー(^J^C/^J^Bと同等)でよろしく"。^]は(ls)等のふつうのキーの表(Command::GoToFileSelector)にしか無く、一覧・プロンプト・SHELL等では効かなかった。
+   - **変更**: Application::feedUntranslatedByte()の頭で、^]を^J^Cの2打として渡す(^X・^J・^[等の続きの1打、^Qの直後は除く)。
+   - 確かめたこと: make usilic。-cでHELPから^]で(ls)へ。
