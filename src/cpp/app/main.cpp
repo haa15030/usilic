@@ -4026,8 +4026,12 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         auto frameDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(16);
         do {
           epubDragOffset += epubCoastDirection;
-          if (epubDragOffset >= pitch) stop = !shiftEpubColumn(1);
-          else if (epubDragOffset <= -pitch) stop = !shiftEpubColumn(-1);
+          // 2026-10-30、直接のユーザー報告(=mx・=my.png、横書きの慣性ではカーソルが送る向きの端の行にあるのに、縦書きでは
+          // 1列遅れる): 以前は1列の幅を越えてから列を送っていたので、端から入ってくる列が見えている間、列カーソルは
+          // その1つ内側の列に残っていた。送る向きへ半列を越えたら送る(ずれは反対側へ半列、上下の慣性の行と同じ見え方)。
+          int half = (pitch + 1) / 2;
+          if (epubCoastDirection > 0 && epubDragOffset >= half) stop = !shiftEpubColumn(1);
+          else if (epubCoastDirection < 0 && epubDragOffset <= -half) stop = !shiftEpubColumn(-1);
           if (!app.epubVerticalDragActive()) stop = true;  // 横書きの範囲へ入った(下で上下の慣性へ)
           if (stop) break;
           performScrollStepDelay(step);
