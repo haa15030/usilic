@@ -33010,3 +33010,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告"~/.local/lib/usilic/HELP.1を開くとモード名が「HELP」になる(正しくは「/Users/haa15030/.local/lib/usilic/HELP.1」)"。startPagerFileList()は、開いたroffがHELPのroff版と同じファイルならモード名を「HELP」にしていた(2026-10-11、HELPの子のため)。
    - **変更**: 「HELP」はHELPの子(受け渡しの"help"を持つ、-H・^T^H)の時だけ。
    - 確かめたこと: make usilic。
+
+1118. **ページャーの親から開いたKEYの子は、ページャーで使えるキーだけ(-P)(2026-10-29)**
+   - **経緯**: 直接のユーザー報告"初回起動のEPUBページャーから^T^K等で起動した子プロセスKEYでは、親(EPUB)では使えないキーまで表示され"。KEYの子(-K)は親が何であっても「：」を含む行の一覧だった。
+   - **変更**: Application::launchKeyChild()は、親がページャー(pagerLaunch_)なら"usilic -K -P"。-P(裏オプション)のKEYの子はsetPagerLaunch(true)で、親のKEYと同じく行頭がタブの行(ページャーで使えるキー)だけ。
+   - 未対応: 同じ報告の"親が終了しても消えない"は、終了時に子を終わらせる処理(terminateChildren())に初回起動に特有の抜け道が見当たらず、再現の手順をユーザーに確認中。
+   - 確かめたこと: make usilic。

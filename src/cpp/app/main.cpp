@@ -5241,6 +5241,7 @@ int main(int argc, char **argv) {
   bool forceCui = false;
   bool forceGui = false;
   bool openHelpChild = false;  // -H(下の初回起動と同じく、起動後に子のusilicでHELPを開く)
+  bool keyOfPagerParent = false;  // -P(下の-K参照)
   bool openKeyAtStart = false;  // -K(裏オプション、-Hの子のKEYのウィンドウ用): 起動後にFileManagerのKEYを開く
   std::vector<RcOption> rcOptions;  // -s/-S、-d/-D、-f/-F、-w/-W、-b/-B、-l/-L(RcOption参照)
   std::vector<char *> positionalArgs;
@@ -5249,6 +5250,9 @@ int main(int argc, char **argv) {
     else if (std::strcmp(argv[i], "-g") == 0) forceGui = true;
     else if (std::strcmp(argv[i], "-H") == 0) openHelpChild = true;
     else if (std::strcmp(argv[i], "-K") == 0) openKeyAtStart = true;
+    // -P(裏オプション、2026-10-29): -KのKEYの子で、親がページャー(最初の起動のHELP等)。KEYをページャーで使える
+    // キー(HELPの行頭がタブの行)だけにする(Application::launchKeyChild()が付ける)。
+    else if (std::strcmp(argv[i], "-P") == 0) keyOfPagerParent = true;
     else if (std::strcmp(argv[i], "-z") == 0) {  // gStartFontPointSize参照
       int size = i + 1 < argc ? std::atoi(argv[i + 1]) : 0;
       if (size < 4 || size > 200) {
@@ -6458,7 +6462,7 @@ int main(int argc, char **argv) {
       app.scheduleHelpChildren(openHelpChild && !app.helpLoadedPath_.empty(), keyChild);
     // -K(子のKEYのウィンドウ自身): HELPの「：」を含む行だけのKEY(キーの発動・h・^G無し、keyListOnly()参照)を開く。
     if (openKeyAtStart && !keyChild) {
-      app.setPagerLaunch(false);
+      app.setPagerLaunch(keyOfPagerParent);  // -P: ページャーの親のKEY(keySourceLines()・startKey()は行頭のタブで切る)
       app.setKeyColonListLaunch(true);
       app.handleCommand(fm::Command::StartKey);
     }

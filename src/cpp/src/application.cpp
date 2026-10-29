@@ -21715,12 +21715,15 @@ bool Application::launchHelpChild() {
 bool Application::launchKeyChild() {
 #ifdef _WIN32
   setExternalWindowSlot(2);
-  launchWindowsUsilicChild({"-K"});  // launchWindowsUsilicChild()参照
+  // 2026-10-29: ページャー(最初の起動のHELP等)の親なら-Pも(ページャーで使えるキーだけのKEY、main.cppの-P参照)。
+  launchWindowsUsilicChild(pagerLaunch_ ? std::vector<std::string>{"-K", "-P"} : std::vector<std::string>{"-K"});
   setExternalWindowSlot(0);
   return true;
 #endif
   setExternalWindowSlot(2);
-  runExternalUsilicPager("usilic -K");
+  // 2026-10-29、直接のユーザー報告("初回起動のEPUBページャーから^T^K等で起動した子プロセスKEYでは、親(EPUB)では
+  // 使えないキーまで表示され"): ページャーの親なら-P(子のKEYも、親のKEYと同じく行頭がタブのキーだけ)。
+  runExternalUsilicPager(pagerLaunch_ ? "usilic -K -P" : "usilic -K");
   setExternalWindowSlot(0);
   return true;
 }
