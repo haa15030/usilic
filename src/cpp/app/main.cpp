@@ -5377,6 +5377,14 @@ int main(int argc, char **argv) {
         while (std::getline(lines, l))
           if (l.empty() || l[0] != '#') std::cout << ".\\\" usilic-notes-line" << (l.empty() ? "" : " " + l) << "\n";
       }
+      // 2026-10-29、直接のユーザー依頼("usilicrcから読むやつもHELP.1に入れて"): 注釈のもう1つの元のusilicrcも
+      // (コメントの後ろの既定値も注釈に入るので、"#"の行も含めて丸ごと)。-eはこれがあれば外のusilicrcを読まない。
+      std::string rc = readHelpCompanion("usilicrc", markupPath);
+      if (!rc.empty()) {
+        std::istringstream lines(rc);
+        std::string l;
+        while (std::getline(lines, l)) std::cout << ".\\\" usilic-rc-line" << (l.empty() ? "" : " " + l) << "\n";
+      }
       return 0;
     } else if (std::strcmp(argv[i], "-e") == 0) {
       // 2026-10-14、直接のユーザー依頼("HELPモードを正式にHELP.epubとしたい（注釈を見れるので）。usilic -e HELP.txt >
@@ -5399,7 +5407,7 @@ int main(int argc, char **argv) {
       // $USILIC_EPUB_RC・$USILIC_EPUB_NOTESで渡す(インストール済みの古い写しを読まないように)。
       auto find = [&](const std::string &name) { return readHelpCompanion(name, markupPath); };
       // 2026-10-18: -nが作ったroff(doc/HELP.ja.1、"."で始まる)もそのまま受ける(make installがHELP.epubを作るため)。
-      // 2026-10-29: HELP.1にはHELP.notesが埋め込んであり(-n参照)、HELP.notesが無くても同じ注釈になる。
+      // 2026-10-29: HELP.1にはHELP.notes・usilicrcが埋め込んであり(-n参照)、どちらが無くても同じ注釈になる。
       std::string source = buffer.str();
       std::string roff = !source.empty() && source[0] == '.' ? source : fm::convertMarkupToMsRoffSource(source);
       std::string summary;

@@ -32949,3 +32949,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー質問・依頼"HELP.1からHELP.epubの作成はできる？ 可能ならHELP.notesをHELP.1に「注釈」として取り込んでほしい"。-eは元から"."で始まるroff(HELP.1)も受けるが、注釈の文のうちHELP.notesの分は別のファイルから読んでいた。
    - **変更**: usilic -nが、HELP.notes(-eと同じ探し方、$USILIC_EPUB_NOTES優先)の"#"以外の行を、HELP.1の末尾にroffのコメント(".\" usilic-notes-line …")で入れる(groff・manの表示は変わらない)。help_to_epub.cppはroffのこのコメントもHELP.notesとして読む(外のHELP.notesの後に読むので、同じ"@名前"は埋め込みの方が勝つ)。make help-manはリポジトリのdoc/HELP.notes(英語はdoc/HELP.en.notes)を渡す。main.cppの-eのusilicrc・HELP.notesの探し方はreadHelpCompanion()に切り出して-nと共用。注釈のもう1つの元、usilicrcのコメントは今まで通り-eがusilicrcから読む。
    - 確かめたこと: make usilic。~/HELP.txtからusilic -nでdoc/HELP.1を作り直し(差分は末尾のコメント17行だけ)、USILIC_EPUB_NOTES=/dev/nullでusilic -e doc/HELP.1としたEPUBが、従来のusilic -e ~/HELP.txt(doc/HELP.notes付き)と中身まで一致(24 notes)。~/HELP_en.txtが無いのでmake help-manの英語版は作れず、doc/HELP_en.1は元のまま。
+
+1106. **HELP.1にusilicrcも埋め込み、注釈の元を2つともHELP.1の中に(2026-10-29)**
+   - **経緯**: 項目1105の後、直接のユーザー依頼"usilicrcから読むやつもHELP.1に入れて"。
+   - **変更**: usilic -nが、usilicrc(-eと同じ探し方、$USILIC_EPUB_RC優先)を丸ごと(注釈には見出しの後の「#」の行と、その後ろの既定値の行の両方を使うので)HELP.1の末尾にroffのコメント(".\" usilic-rc-line …")で入れる。help_to_epub.cppは、これがあれば外のusilicrcの代わりに読む(HELP.notesと違い置き換え。足すと既定値の行が重複するため)。make help-manはリポジトリのsrc/usilicrc(英語はsrc/usilicrc.en)を渡す。
+   - 確かめたこと: make usilic。~/HELP.txtからdoc/HELP.1を作り直し(差分は末尾の589行だけ、groff -Tutf8 -msの出力は前後で同じ)、USILIC_EPUB_RC=/dev/null USILIC_EPUB_NOTES=/dev/nullでusilic -e doc/HELP.1としたEPUBが、従来の作り方のものとdcterms:modified(作った時刻)以外一致(24 notes)。

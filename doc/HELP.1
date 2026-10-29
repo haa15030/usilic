@@ -2084,3 +2084,592 @@ groff(1)、man(1)
 .\" usilic-notes-line @SHELL
 .\" usilic-notes-line SHELL で動かすシェルは、環境変数 $SHELL のシェルです。$SHELL が bash・zsh・tcsh・csh 以外（未設定も）の時は bash を使います。
 .\" usilic-notes-line Windows では、Git Bash（MSYSTEM のある環境）から起動した時はその bash.exe、それ以外は cmd.exe（%ComSpec%）を使います。
+.\" usilic-rc-line # usilicrc  version 1.5b
+.\" usilic-rc-line # -------------------------------------------------------------
+.\" usilic-rc-line # 空行と、'#' で始まる行(および行中の '#' 以降)は無視されます。
+.\" usilic-rc-line # 行頭が以下の見出しの行が節の始まりで、節の中身の行はタブ(または空白)で
+.\" usilic-rc-line # 始めます。それ以外の文字で始まる行はエラーになります。
+.\" usilic-rc-line #
+.\" usilic-rc-line # ARCHIVE, FILTER, LAUNCH, GREP, PROGRAM, EDITOR, BUFFER, CODE, LINE,
+.\" usilic-rc-line # WAIT, COPY, MOVE, DELETE, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT,
+.\" usilic-rc-line # LINE-HEIGHT, LETTER-SPACING, ICON-FONT, ICON-LINE-HEIGHT, ICON-LETTER-SPACING,
+.\" usilic-rc-line # URL, KEY, MACRO
+.\" usilic-rc-line #
+.\" usilic-rc-line # 英語のコメント付きの同じ内容のファイルが usilicrc.en です。
+.\" usilic-rc-line # -------------------------------------------------------------
+.\" usilic-rc-line
+.\" usilic-rc-line ARCHIVE
+.\" usilic-rc-line # 書式: 新しいsuffix  組み込みのsuffix
+.\" usilic-rc-line #
+.\" usilic-rc-line # 組み込みのアーカイブの suffix(下の一覧)に、新しい suffix を別名として
+.\" usilic-rc-line # 追加します。アーカイブの一覧や取り出しは形式ごとに専用の処理なので、
+.\" usilic-rc-line # 新しい形式(コマンドや一覧の読み方)をここで定義することはできません。
+.\" usilic-rc-line # 使えるのは、.epub や .cbz のように中身が既存の形式であるファイルだけ
+.\" usilic-rc-line # です。ここで足した別名は、ARC モード(開く、一覧、取り出し、^Oa、
+.\" usilic-rc-line # アーカイブの中のアーカイブ)の全てで効きます。
+.\" usilic-rc-line # .epub は組み込みで .zip の別名です。(ls) の [Enter] では EPUB モード(章の
+.\" usilic-rc-line # 一覧と本文、縦横は本の指定どおり)で開き、^Oe で ARC として中身を一覧、
+.\" usilic-rc-line # ^Oa で展開できます。
+.\" usilic-rc-line #
+.\" usilic-rc-line # 組み込みの suffix:
+.\" usilic-rc-line #  .tar        tar tvf
+.\" usilic-rc-line #  .tgz        gzip -dc | tar tvf -   (.tar.gz .taz .tar.z も同じ)
+.\" usilic-rc-line #  .tar.bz2    bzip2 -dc | tar tvf -  (.tbz2 も同じ)
+.\" usilic-rc-line #  .tar.xz     xz -dc | tar tvf -     (.txz も同じ)
+.\" usilic-rc-line #  .tar.zst    zstd -dc | tar tvf -   (.tzst も同じ)
+.\" usilic-rc-line #  .lzh        lha
+.\" usilic-rc-line #  .zip        unzip -l               (.jar も同じ)
+.\" usilic-rc-line #  .rpm        rpm -qplv
+.\" usilic-rc-line #  .deb        ar tv
+.\" usilic-rc-line #  .rar        lsar -l
+.\" usilic-rc-line #  .7z         7z l
+.\" usilic-rc-line #
+.\" usilic-rc-line # 例:
+.\" usilic-rc-line
+.\" usilic-rc-line #	.cbz	.zip
+.\" usilic-rc-line #	.apk	.zip
+.\" usilic-rc-line #	.cbr	.rar
+.\" usilic-rc-line
+.\" usilic-rc-line FILTER
+.\" usilic-rc-line # 書式: suffix  program  (option)
+.\" usilic-rc-line #
+.\" usilic-rc-line # suffix を持つ file の内容を、program を実行して平文で表示します。
+.\" usilic-rc-line
+.\" usilic-rc-line 	.gz	gzip	-dc
+.\" usilic-rc-line 	.bz2	bzip2	-dc
+.\" usilic-rc-line 	.z	gzip	-dc
+.\" usilic-rc-line 	.xz	xz	-dc
+.\" usilic-rc-line 	.lzma	xz	-dc
+.\" usilic-rc-line 	.zst	zstd	-dc
+.\" usilic-rc-line
+.\" usilic-rc-line LAUNCH
+.\" usilic-rc-line # 書式: suffix  program  (option)
+.\" usilic-rc-line #
+.\" usilic-rc-line # suffix を持つ file を引数にして program を起動します。
+.\" usilic-rc-line #
+.\" usilic-rc-line # macOS の注意: アプリ名だけ(例: IINA)は $PATH 上のコマンドではないので
+.\" usilic-rc-line # 起動できません。open を使います(下の .mp4 の例)。open -a の直後には
+.\" usilic-rc-line # アプリ名が要るので、`open -a ファイル` はファイルをアプリ名とみなして
+.\" usilic-rc-line # エラーになります。既定のアプリで開くなら -a を付けずに open だけです。
+.\" usilic-rc-line # info は Homebrew では texinfo に入っています(brew install texinfo)。
+.\" usilic-rc-line #
+.\" usilic-rc-line # macOS では、ここに無い suffix のファイルでも、CODE でバイナリと判定され、
+.\" usilic-rc-line # 画像・PDF か、クイックルックが扱える種類(qlmanage -m plugins の一覧。
+.\" usilic-rc-line # .numbers .key .pages .docx .xlsx、音声、動画、フォントなど)のものは、
+.\" usilic-rc-line # その旨を表示する代わりにクイックルック(qlmanage -p)で開きます。
+.\" usilic-rc-line
+.\" usilic-rc-line #	.mp4	open
+.\" usilic-rc-line #	.mp4	open	-a	IINA
+.\" usilic-rc-line 	.xcf	open 	-a	GIMP
+.\" usilic-rc-line 	.info	info	-f
+.\" usilic-rc-line 	.info.gz info	-f
+.\" usilic-rc-line
+.\" usilic-rc-line GREP
+.\" usilic-rc-line # 書式: 文字列
+.\" usilic-rc-line #
+.\" usilic-rc-line # EGREP と PART(正規表現)の ^R の一覧の先頭に、この順で載せておく検索文字列
+.\" usilic-rc-line # (もう一度 ^R で履歴)。
+.\" usilic-rc-line # (空白を含む文字列は "" で囲みます。)
+.\" usilic-rc-line #
+.\" usilic-rc-line # HELP の EGREP の章の正規表現一覧と同じ順に、HELP 自身の本文に
+.\" usilic-rc-line # マッチする例を並べています。macOS(BSD grep)と Linux(GNU grep)の両方の
+.\" usilic-rc-line # grep -E で同じ意味になるように、\d/\D は [0-9]/[^0-9] で書き、grep -E に
+.\" usilic-rc-line # 無い最短一致(*?/+?)・(?:...)・先読み/後読みの例はありません。
+.\" usilic-rc-line #
+.\" usilic-rc-line
+.\" usilic-rc-line 	"^  [0-9]+\."            # ^     : 章の見出し(1. 2. ...)
+.\" usilic-rc-line 	）$                       # $     : 全角の閉じ括弧で終わる行
+.\" usilic-rc-line 	\bls\b                   # \b    : 単独の ls
+.\" usilic-rc-line 	usilic\B                 # \B    : usilicrc の usilic
+.\" usilic-rc-line 	m.n                      # .     : man
+.\" usilic-rc-line 	\^[JOX][a-z]             # [ ]   : ^Jp ^Ou ^Xd など
+.\" usilic-rc-line 	"\^[^JOX ]"              # [^ ]  : ^M ^[ ^K など
+.\" usilic-rc-line 	[a-z]+\(1\)              # [a-z] : usilic(1) man(1) など
+.\" usilic-rc-line 	[0-9]\.[0-9]\.           # \d    : 節番号 2.2. など
+.\" usilic-rc-line 	[0-9]+[^0-9][0-9]+       # \D    : 01/66 1.5 0x20 など
+.\" usilic-rc-line 	\w+rc\b                  # \w    : usilicrc
+.\" usilic-rc-line 	\^\W                     # \W    : ^[ ^@
+.\" usilic-rc-line 	\^J\s                    # \s    : ^J b
+.\" usilic-rc-line 	~/\S+                    # \S    : ~/.usilic/history など
+.\" usilic-rc-line 	-[a-z]*v[a-z]*           # *     : -rvi -vf など
+.\" usilic-rc-line 	[0-9]+%                  # +     : 48% など
+.\" usilic-rc-line 	\.tar(\.gz)?             # ?     : .tar .tar.gz
+.\" usilic-rc-line 	[0-9]{4}                 # {n}   : 1918 2000 など
+.\" usilic-rc-line 	"^[^	].*	"              # \t    : HELP の章の見出し(行頭がタブでなく、タブを含む行)
+.\" usilic-rc-line 	[0-9]{2,}                # {n,}  : 2桁以上の数
+.\" usilic-rc-line 	\b[a-z]{2,3}\(1\)        # {n,m} : ls(1) man(1) vi(1) など
+.\" usilic-rc-line 	CP|MV|RM                 # |     : CP MV RM
+.\" usilic-rc-line 	\.(gz|bz2|xz|zst)        # ( )   : 圧縮形式の suffix
+.\" usilic-rc-line 	~/\.usilic/              # \.    : ~/.usilic/
+.\" usilic-rc-line 	\(\?                     # \?    : (?: (?= など
+.\" usilic-rc-line
+.\" usilic-rc-line PROGRAM
+.\" usilic-rc-line # 書式: program  (option)
+.\" usilic-rc-line #
+.\" usilic-rc-line # PROGRAM で起動する program の一覧。
+.\" usilic-rc-line
+.\" usilic-rc-line 	jed
+.\" usilic-rc-line 	mg
+.\" usilic-rc-line 	vi
+.\" usilic-rc-line 	emacs
+.\" usilic-rc-line 	less
+.\" usilic-rc-line 	man
+.\" usilic-rc-line 	info
+.\" usilic-rc-line 	top
+.\" usilic-rc-line 	lv
+.\" usilic-rc-line 	lv -Oe
+.\" usilic-rc-line 	lv -Ir
+.\" usilic-rc-line 	qlmanage -p
+.\" usilic-rc-line
+.\" usilic-rc-line EDITOR
+.\" usilic-rc-line # 書式: エディター
+.\" usilic-rc-line #
+.\" usilic-rc-line # EDIT で起動するエディター。環境変数 EDITOR があればそちらを優先します。
+.\" usilic-rc-line
+.\" usilic-rc-line 	pico
+.\" usilic-rc-line #	vi
+.\" usilic-rc-line #	jed
+.\" usilic-rc-line
+.\" usilic-rc-line BUFFER
+.\" usilic-rc-line # 書式: サイズ
+.\" usilic-rc-line #
+.\" usilic-rc-line # バッファへ読み込む最大サイズ(単位は MB、1〜100。既定は 64)。これを超える
+.\" usilic-rc-line # file は ^M 等で開くと全体を読み込まず、^O^M と同じく画面に出る分だけ
+.\" usilic-rc-line # 読み込む方法で開きます。一覧(ls、DU、LOCATE、アーカイブの内容)や
+.\" usilic-rc-line # アーカイブから取り出した file、MAN、^[^M(そのまま読む)は、ここまでで
+.\" usilic-rc-line # 読み込みを止めます。どちらの場合も「Not enough buffer」を表示します
+.\" usilic-rc-line # (どれかのキーで消えます)。usilic -b で試し、usilic -B でここへ書き込めます。
+.\" usilic-rc-line
+.\" usilic-rc-line 	64
+.\" usilic-rc-line
+.\" usilic-rc-line CODE
+.\" usilic-rc-line # 書式: code0  code1 ...
+.\" usilic-rc-line #
+.\" usilic-rc-line # 上の suffix を持たない file に、ここに無い 0x20 未満の制御コードが含まれて
+.\" usilic-rc-line # いれば、バイナリファイルとみなして file(1) を実行し、その制御コードと
+.\" usilic-rc-line # ファイルの種類を表示します(code0 が 0 ならこの判定をしません)。
+.\" usilic-rc-line #
+.\" usilic-rc-line
+.\" usilic-rc-line # ^A(TAGS)  ^G(BEL)  \b  \t  \n  \f  \r  ^N(SO)  ^O(SI)  ^Z(EOF)  ^[(ESC)  ^_(info)
+.\" usilic-rc-line    1         7        8   9  10  12  13  14      15      26       27       31
+.\" usilic-rc-line
+.\" usilic-rc-line LINE
+.\" usilic-rc-line # 書式: 行数
+.\" usilic-rc-line #
+.\" usilic-rc-line # 履歴(FILE、DIR、MAN、LOCATE、FGREP、EGREP、SHELL のコマンド)を種類ごとに
+.\" usilic-rc-line # 残す最大の行数。これを超えると古い行から消えます(USILIC はその 3 倍)。
+.\" usilic-rc-line # 0 は無制限です(既定)。履歴はメモリの面では何年分でも問題にならない
+.\" usilic-rc-line # 規模ですが、~/.usilic/history は項目が増えるたびに全体を書き直すので、
+.\" usilic-rc-line # 保存が重く感じるようになったら上限を付けてください。usilic -l で試し、
+.\" usilic-rc-line # usilic -L でここへ書き込めます。
+.\" usilic-rc-line
+.\" usilic-rc-line 	0
+.\" usilic-rc-line
+.\" usilic-rc-line WAIT
+.\" usilic-rc-line # 書式: wait
+.\" usilic-rc-line #
+.\" usilic-rc-line # マクロを wait(単位は 10 msec)の間隔で実行します。usilic -w で試し、
+.\" usilic-rc-line # usilic -W でここへ書き込めます。EDIT でこのファイルを直すと、保存した時に
+.\" usilic-rc-line # 読み直すのでその場で効きます(ほかのエディタで直した時は、^Xs で読み直します)。
+.\" usilic-rc-line
+.\" usilic-rc-line 	1
+.\" usilic-rc-line
+.\" usilic-rc-line CP
+.\" usilic-rc-line # 書式: cp  (option)
+.\" usilic-rc-line #
+.\" usilic-rc-line # CP のコマンド。(既定: cp -vR)
+.\" usilic-rc-line #
+.\" usilic-rc-line # macOS の cp は、拡張属性とリソースフォーク(Finder のタグ・コメント、
+.\" usilic-rc-line # ダウンロード元の URL 等)も一緒にコピーします。コピー先が拡張属性を持てない
+.\" usilic-rc-line # 所(FAT・exFAT の USB メモリ、一部の NAS 等)では、それを「._ファイル名」と
+.\" usilic-rc-line # いうファイルに入れて隣に置きます(Finder と同じ。MV でディスクをまたぐ時も)。
+.\" usilic-rc-line # Windows や Linux で見ると、この「._」が中身の無いファイルのように見えます。
+.\" usilic-rc-line # それでも既定では -X(拡張属性をコピーしない)を付けません。
+.\" usilic-rc-line #  1. 落とした付加情報は戻せません(余分な「._」は dot_clean 等で後から
+.\" usilic-rc-line #     消せます)。
+.\" usilic-rc-line #  2. 「._」ができるのは拡張属性を持てない所へコピーする時だけです(Mac の中の
+.\" usilic-rc-line #     APFS へのコピーではできません)。
+.\" usilic-rc-line # 「._」が要らなければ cp -vRX と書いてください。Linux の cp(GNU)は -vR では
+.\" usilic-rc-line # 元々拡張属性をコピーしません。
+.\" usilic-rc-line #
+.\" usilic-rc-line
+.\" usilic-rc-line #	cp -vRi
+.\" usilic-rc-line
+.\" usilic-rc-line MV
+.\" usilic-rc-line # 書式: mv  (option)
+.\" usilic-rc-line #
+.\" usilic-rc-line # MV のコマンド。(既定: mv -v)
+.\" usilic-rc-line #
+.\" usilic-rc-line
+.\" usilic-rc-line #	mv -vi
+.\" usilic-rc-line
+.\" usilic-rc-line RM
+.\" usilic-rc-line # 書式: rm  (option)
+.\" usilic-rc-line #
+.\" usilic-rc-line # RM のコマンド。(既定: rm -vr)
+.\" usilic-rc-line #
+.\" usilic-rc-line
+.\" usilic-rc-line #	rm -vri
+.\" usilic-rc-line
+.\" usilic-rc-line SERIF
+.\" usilic-rc-line # 書式: フォントファイル
+.\" usilic-rc-line #
+.\" usilic-rc-line # -g で明朝体(serif)に使うフォント。EPUB の本文等、CSS で明朝体と指定された
+.\" usilic-rc-line # 字をこのフォントで描きます。上から順に試し、使える最初のものを使います。
+.\" usilic-rc-line # 無ければ組み込みの候補(ヒラギノ明朝 ProN、Noto Serif CJK 等)を使います。
+.\" usilic-rc-line
+.\" usilic-rc-line #	/System/Library/Fonts/ヒラギノ明朝 ProN.ttc
+.\" usilic-rc-line
+.\" usilic-rc-line SANS-SERIF
+.\" usilic-rc-line # 書式: フォントファイル
+.\" usilic-rc-line #
+.\" usilic-rc-line # -g でゴシック体(sans-serif)に使う和文のフォント。画面の全角の字(EPUB で
+.\" usilic-rc-line # ゴシック体と指定された字を含む)をこのフォントで描きます。上から順に試し、
+.\" usilic-rc-line # 使える最初のものを使います。無ければ組み込みの候補(ヒラギノ角ゴシック、
+.\" usilic-rc-line # Noto Sans CJK 等)を使います。
+.\" usilic-rc-line
+.\" usilic-rc-line #	/System/Library/Fonts/ヒラギノ角ゴシック W4.ttc
+.\" usilic-rc-line
+.\" usilic-rc-line SPEED
+.\" usilic-rc-line # 書式: usec1  usec2 ...  (段1〜10)
+.\" usilic-rc-line #
+.\" usilic-rc-line # 慣性スクロールの段ごとの速さ。1 行(-g では 1 ドット)進むごとに待つ時間を
+.\" usilic-rc-line # 段 1(最も遅い)から順に、単位 usec で書きます。足りない段は組み込みの値の
+.\" usilic-rc-line # ままです。usilic -s で試し、usilic -S でここへ書き込めます。
+.\" usilic-rc-line
+.\" usilic-rc-line 	90000 20000 10000 5000 3000 2000 1000 500 200 100
+.\" usilic-rc-line
+.\" usilic-rc-line DRAG
+.\" usilic-rc-line # 書式: dot1  dot2 ...  (段1〜10)
+.\" usilic-rc-line #
+.\" usilic-rc-line # 画面をドラッグして離した時に、その直前の動きの量(ドット)がいくつ以上なら
+.\" usilic-rc-line # 段 1、段 2 ...の慣性スクロールになるか。usilic -d で試し、usilic -D でここへ
+.\" usilic-rc-line # 書き込めます。端末(CUI)では使いません(行数で決まる組み込みの値です)。
+.\" usilic-rc-line
+.\" usilic-rc-line 	1 2 4 8 16 30 40 50 60 70
+.\" usilic-rc-line
+.\" usilic-rc-line ARROW
+.\" usilic-rc-line # 書式: usec1  usec2 ...  (段1〜、10 個より多くてもよい)
+.\" usilic-rc-line #
+.\" usilic-rc-line # CUI(-c)の慣性スクロールの段ごとの速さ(書式は SPEED と同じ)。横書きの画面
+.\" usilic-rc-line # の矢印キーと、縦書きの EPUB の左右の両方に使います。マウスのドラッグで始めた
+.\" usilic-rc-line # 慣性は 2 つ速い方へずらした段(下の値なら 25000)から始まり、その後の矢印
+.\" usilic-rc-line # キーでは全部の段を使えます。この節が無ければ SPEED の値。-g の画面では使わず、
+.\" usilic-rc-line # SPEED の値で動きます。
+.\" usilic-rc-line #
+.\" usilic-rc-line # ドット単位でスクロールする -g と違い、CUI は行単位でスクロールするので、
+.\" usilic-rc-line # ドラッグの速さをそのまま慣性につなげると、読むのに向いた低速が使えません。
+.\" usilic-rc-line # そこでドラッグで始めた慣性は 2 段速い方から始め、低速は矢印キーで合わせる
+.\" usilic-rc-line # ようにしています。usilic -s のような試すオプションは無いので、ここの値を
+.\" usilic-rc-line # 直して調整してください。
+.\" usilic-rc-line
+.\" usilic-rc-line 	200000 100000 25000 10000 5000 2000 1000 500 200 100 50 20
+.\" usilic-rc-line
+.\" usilic-rc-line FONT
+.\" usilic-rc-line # 書式: フォントファイル
+.\" usilic-rc-line #
+.\" usilic-rc-line # -g の画面の基本の(半角の)等幅フォント。全角の字は SANS-SERIF、明朝体は
+.\" usilic-rc-line # SERIF のフォントで描きます。無ければ組み込みの候補を使います。usilic -f で
+.\" usilic-rc-line # 試し、usilic -F でここへ書き込めます。
+.\" usilic-rc-line
+.\" usilic-rc-line #	/Library/Fonts/MS-Gothic.ttf
+.\" usilic-rc-line
+.\" usilic-rc-line LINE-HEIGHT
+.\" usilic-rc-line # 書式: 横書き  縦書き
+.\" usilic-rc-line #
+.\" usilic-rc-line # -g の画面の 1 行の高さを、字の大きさに対する倍率で書きます(CSS の
+.\" usilic-rc-line # line-height と同じ)。横書きは行と行の間、縦書きの EPUB は 1 行に 1 字を
+.\" usilic-rc-line # 置くので字と字の間になります(1.0 で「……」がつながります)。縦書きの画面
+.\" usilic-rc-line # ではそちらの値に切り替わり、窓の大きさはそのままで行数が変わります。縦書き
+.\" usilic-rc-line # を省けば横書きと同じ値。
+.\" usilic-rc-line # この節が無ければ、フォントの行の高さを使います。
+.\" usilic-rc-line # EDIT でこのファイルを直すと、保存した時に読み直すのでその場で効きます(ほかの
+.\" usilic-rc-line # エディタで直した時は、^Xs で読み直します)。-g の画面では ^[[ / ^[] で、今の
+.\" usilic-rc-line # 向き(横書き・縦書き)の行の高さを 1 ドットずつ増減できます(ここには書き込み
+.\" usilic-rc-line # ません。増減した分は次の起動にも引き継ぎ、このファイルを読み直すとここの値に
+.\" usilic-rc-line # 戻ります)。
+.\" usilic-rc-line
+.\" usilic-rc-line 	1.2  1.0
+.\" usilic-rc-line
+.\" usilic-rc-line LETTER-SPACING
+.\" usilic-rc-line # 書式: 横書き  縦書き
+.\" usilic-rc-line #
+.\" usilic-rc-line # -g の画面の字間(半角 1 字の幅)に足すドット数(負の数で狭める、日本語の字間は
+.\" usilic-rc-line # その 2 倍)。縦書きの画面ではそちらの値に切り替わります。縦書きを省けば横書きと
+.\" usilic-rc-line # 同じ値。-g の画面で ^[{ / ^[} を押すと、今の向きの字間を 1 ドットずつ増減して
+.\" usilic-rc-line # その場でここへ書き込みます(子の HELP・KEY の窓も同じ字間で開きます)。
+.\" usilic-rc-line # この節に値が無ければ、前回の終了時の字間を使います。
+.\" usilic-rc-line # EDIT でこのファイルを直すと、保存した時に読み直すのでその場で効きます(ほかの
+.\" usilic-rc-line # エディタで直した時は、^Xs で読み直します)。
+.\" usilic-rc-line
+.\" usilic-rc-line 	0  0
+.\" usilic-rc-line
+.\" usilic-rc-line ICON-FONT
+.\" usilic-rc-line # 書式: フォントファイル
+.\" usilic-rc-line #
+.\" usilic-rc-line # アイコン(usilic.app 等)から起動した時だけに使う FONT。値が無ければ FONT の
+.\" usilic-rc-line # 値を使います。アイコンから起動した画面で ^Of で基本のフォントを選ぶと、FONT
+.\" usilic-rc-line # ではなくこちらへ書き込みます。フォントの大きさ・窓の大きさ・^[[ / ^[] で増減
+.\" usilic-rc-line # した行の高さも、アイコンからの起動と -g とで別々に覚えます(色は共通)。
+.\" usilic-rc-line
+.\" usilic-rc-line ICON-LINE-HEIGHT
+.\" usilic-rc-line # 書式: 横書き  縦書き
+.\" usilic-rc-line #
+.\" usilic-rc-line # アイコンから起動した時だけに使う LINE-HEIGHT。値が無ければ LINE-HEIGHT の値。
+.\" usilic-rc-line
+.\" usilic-rc-line ICON-LETTER-SPACING
+.\" usilic-rc-line # 書式: 横書き  縦書き
+.\" usilic-rc-line #
+.\" usilic-rc-line # アイコンから起動した時だけに使う LETTER-SPACING。値が無ければ LETTER-SPACING
+.\" usilic-rc-line # の値。アイコンから起動した画面の ^[{ / ^[} は、LETTER-SPACING ではなくこちらへ
+.\" usilic-rc-line # 書き込みます。
+.\" usilic-rc-line
+.\" usilic-rc-line URL
+.\" usilic-rc-line # 書式: 名前  program  (option)
+.\" usilic-rc-line #
+.\" usilic-rc-line # EPUB の本文の Web のリンク(http 等)を [Enter]・クリックで踏んだ時の対処。
+.\" usilic-rc-line # 書いた順に ^Ow で巡回し、名前(4文字)を mode-line に表示します。最初の行が
+.\" usilic-rc-line # 既定です。ただし小説サイト(「小説家になろう」・「小説を読もう」・
+.\" usilic-rc-line # 「ノクターンノベルズ」・「カクヨム」・「青空文庫」)の入口は、作品の番号を
+.\" usilic-rc-line # 探す所なので常に Open で開きます(^Ow は「Open only」)。名前は次のどれかです。
+.\" usilic-rc-line #   Open  program に URL を渡して起動(既定のブラウザで開く等)
+.\" usilic-rc-line #   Pdf   program(url2pdf)でページ全体を縦長の 1 ページの PDF にして
+.\" usilic-rc-line #         ~/Downloads へ保存し、クイックルックで開く(Linux は xdg-open)。
+.\" usilic-rc-line #         画面無しの Chromium を Playwright で動かすので、次の準備が
+.\" usilic-rc-line #         要ります(Linux ではさらに playwright install-deps(要 sudo)と
+.\" usilic-rc-line #         日本語フォント)。
+.\" usilic-rc-line #           python3 -m venv ~/.local/lib/usilic/venv
+.\" usilic-rc-line #           ~/.local/lib/usilic/venv/bin/pip install playwright
+.\" usilic-rc-line #           ~/.local/lib/usilic/venv/bin/python -m playwright install chromium
+.\" usilic-rc-line #   Dump  program に URL を渡した出力を usilic の画面で読む(^G で本へ戻る)
+.\" usilic-rc-line #   Term  program に URL を渡して端末で起動(LAUNCH と同じ、終われば本へ戻る)
+.\" usilic-rc-line #   Copy  program の標準入力へ URL を渡す(クリップボードへコピー)
+.\" usilic-rc-line #   Look  クイックルック(macOS だけ、program は不要)
+.\" usilic-rc-line #   Epub  usilic-web(src/web/README)の URL なら、本棚の一覧から選んだ本を
+.\" usilic-rc-line #         ~/.local/usilic-web/texts へ落として開く(curl が要ります)。
+.\" usilic-rc-line #         「小説家になろう」・「カクヨム」・青空文庫(図書カード)の作品のリンクなら、
+.\" usilic-rc-line #         program(narou2epub)で
+.\" usilic-rc-line #         ~/.usilic/data に EPUB を作って開く(SHELL で動く)。lxml・
+.\" usilic-rc-line #         ebooklib・requests・Pillow が要ります(~/.local/lib/usilic/narou2epub
+.\" usilic-rc-line #         のコメント参照)
+.\" usilic-rc-line # この節が無ければ下の内容(Linux は Open が xdg-open、Copy が
+.\" usilic-rc-line # xclip -selection clipboard、Look は無し。Windows は Open が explorer.exe、
+.\" usilic-rc-line # Copy が clip.exe、Look は無し。Pdf は url2pdf、Epub は narou2epub がある時
+.\" usilic-rc-line # だけ)を使います。
+.\" usilic-rc-line
+.\" usilic-rc-line #	Open	open
+.\" usilic-rc-line #	Pdf	~/.local/lib/usilic/url2pdf
+.\" usilic-rc-line #	Dump	w3m -dump
+.\" usilic-rc-line #	Term	w3m
+.\" usilic-rc-line #	Copy	pbcopy
+.\" usilic-rc-line #	Look
+.\" usilic-rc-line #	Epub	~/.local/lib/usilic/narou2epub
+.\" usilic-rc-line
+.\" usilic-rc-line KEY
+.\" usilic-rc-line # キーの割り当て。
+.\" usilic-rc-line #
+.\" usilic-rc-line # 書式: F-n  キー    (接頭キー F-0〜F-4 の定義)
+.\" usilic-rc-line #       K-n  キー    (機能 K-n のキー)
+.\" usilic-rc-line #
+.\" usilic-rc-line # K-n の番号は機能ごとの ID で、HELP の記載順に振ってあります(KEY の一覧も
+.\" usilic-rc-line # その順)。行の順序や番号の並びに意味は無く、行を並べ替えてもキーと機能の
+.\" usilic-rc-line # 組み合わせは変わりません。キーを変えると、その機能は新しい
+.\" usilic-rc-line # キーでだけ動き、元のキーは効かなくなります(元のキーを別の機能に
+.\" usilic-rc-line # 割り当てることもできます)。キーを空にすると、その機能は割り当て無しに
+.\" usilic-rc-line # なります。行を消した番号は、既定のキーのまま(接頭キー F-n を変えていれば
+.\" usilic-rc-line # 新しい接頭キー)で動きます。
+.\" usilic-rc-line #
+.\" usilic-rc-line # キーの書き方:
+.\" usilic-rc-line #   F-n    接頭キー F-n
+.\" usilic-rc-line #   C-x    Ctrl+x(C-a〜C-z、C-[ C-\ C-] C-^ C-_、C-SPC)
+.\" usilic-rc-line #   ESC    esc      SPC  space
+.\" usilic-rc-line #   N      数字(1 桁目の 0〜9 で機能が決まり、2 桁目以降は続けて打つ数字。末尾のみ。
+.\" usilic-rc-line #          ^JN や ^[N のように N を使う機能だけ)
+.\" usilic-rc-line #   その他 その 1 文字(# は書けません)
+.\" usilic-rc-line #
+.\" usilic-rc-line # プロンプトの入力中、SHELL 画面、文字を入力する一覧では、F-0/F-1/F-2/F-4
+.\" usilic-rc-line # または ESC で始まるキーだけが置き換わります(1 文字のキーや ^C で始まる
+.\" usilic-rc-line # キーは、そこでは文字や入力の中断として扱われます)。同じキーを二つの機能に
+.\" usilic-rc-line # 割り当てたり、あるキーが別のキーの頭になっていたりすると、usilicrc の
+.\" usilic-rc-line # エラーとして後の方が割り当て無しになります。
+.\" usilic-rc-line #
+.\" usilic-rc-line     F-0   C-x     # ^X
+.\" usilic-rc-line     F-1   C-j     # ^J
+.\" usilic-rc-line     F-2   C-o     # ^O
+.\" usilic-rc-line     F-3   C-c     # ^C
+.\" usilic-rc-line     F-4   C-j C-o # ^J^O
+.\" usilic-rc-line
+.\" usilic-rc-line     K-1   j       # j     画面を1行下へ
+.\" usilic-rc-line     K-2   k       # k     画面を1行上へ
+.\" usilic-rc-line     K-3   C-n     # ^N    カーソルを1行下へ
+.\" usilic-rc-line     K-4   C-p     # ^P    カーソルを1行上へ
+.\" usilic-rc-line     K-5   SPC     # ␣     ページ送り/クイックルック
+.\" usilic-rc-line     K-6   C-v     # ^V    ページ送り
+.\" usilic-rc-line     K-7   C-f     # ^F    ページ送り
+.\" usilic-rc-line     K-8   b       # b     ページ戻し
+.\" usilic-rc-line     K-9   C-b     # ^B    ページ戻し
+.\" usilic-rc-line     K-10  ESC v   # ^[v   ページ戻し
+.\" usilic-rc-line     K-11  ESC <   # ^[<   先頭へ
+.\" usilic-rc-line     K-12  ESC >   # ^[>   末尾へ
+.\" usilic-rc-line     K-13  ESC N   # ^[N   N行目へ
+.\" usilic-rc-line     K-14  F-0 F-0 # ^X^X  大きく移動する前の行と行き来
+.\" usilic-rc-line     K-15  n       # n     次のfile(pager)
+.\" usilic-rc-line     K-16  p       # p     前のfile(pager)
+.\" usilic-rc-line     K-17  x       # x     最初のfile(pager)
+.\" usilic-rc-line     K-18  f       # f     最後のfile(pager)
+.\" usilic-rc-line     K-19  q       # q     pagerの終了
+.\" usilic-rc-line     K-20  C-g     # ^G    前のモードへ戻る
+.\" usilic-rc-line     K-21  C-l     # ^L    再表示
+.\" usilic-rc-line     K-22  C-z     # ^Z    サスペンド
+.\" usilic-rc-line     K-23  F-2 f   # ^Of   mode-line の表示/非表示
+.\" usilic-rc-line     K-24  F-1 C-c # ^J^C  カレントディレクトリへ
+.\" usilic-rc-line     K-25  C-]     # ^]    カレントディレクトリへ(^J^Cと同じ)
+.\" usilic-rc-line     K-26  F-1 C-b # ^J^B  親ディレクトリへ
+.\" usilic-rc-line     K-27  F-1 N   # ^JN   N番目のディレクトリへ
+.\" usilic-rc-line     K-28  C-m     # ^M    開く/表示
+.\" usilic-rc-line     K-29  F-2 C-m # ^O^M  1行ずつ読む
+.\" usilic-rc-line     K-30  ESC C-m # ^[^M  そのまま読む
+.\" usilic-rc-line     K-31  F-1 F-1 # ^J^J  以前のfileへ
+.\" usilic-rc-line     K-32  F-2 o   # ^Oo   ls の表示形式
+.\" usilic-rc-line     K-33  F-2 l   # ^Ol   ls のソートキー巡回
+.\" usilic-rc-line     K-34  F-2 C-l # ^O^L  再表示(SHELL内から)/ls のソート順を逆順に
+.\" usilic-rc-line     K-35  .       # .     選択/非選択
+.\" usilic-rc-line     K-36  C-SPC   # ^SPC  選択/非選択
+.\" usilic-rc-line     K-37  F-2 y   # ^Oy   全選択
+.\" usilic-rc-line     K-38  F-2 n   # ^On   全解除
+.\" usilic-rc-line     K-40  F-2 c   # ^Oc   CP
+.\" usilic-rc-line     K-41  F-2 m   # ^Om   MV
+.\" usilic-rc-line     K-42  F-2 r   # ^Or   RM
+.\" usilic-rc-line     K-43  F-1 t   # ^Jt   TOOL: 入力
+.\" usilic-rc-line     K-44  F-1 C-t # ^J^T  TOOL: 一覧
+.\" usilic-rc-line     K-45  F-2 u   # ^Ou   選択したfileの一覧(USILIC)
+.\" usilic-rc-line     K-46  F-2 a   # ^Oa   ARC: 展開
+.\" usilic-rc-line     K-47  F-1 e   # ^Je   EPUB: 入力
+.\" usilic-rc-line     K-48  F-1 C-e # ^J^E  EPUB: 一覧
+.\" usilic-rc-line     K-49  F-2 e   # ^Oe   ARC: .epubの中身
+.\" usilic-rc-line     K-50  C-r     # ^R    履歴一覧
+.\" usilic-rc-line     K-51  C-s     # ^S    逐次検索
+.\" usilic-rc-line     K-52  F-1 C-s # ^J^S  EGREP
+.\" usilic-rc-line     K-53  F-1 p   # ^Jp   PART: バッファ
+.\" usilic-rc-line     K-106 F-1 C-p # ^J^P  PART: 一覧(file "文字列"の履歴)
+.\" usilic-rc-line     K-55  F-1 d   # ^Jd   DU: 集計
+.\" usilic-rc-line     K-56  F-1 C-d # ^J^D  DU: 結果へ戻る
+.\" usilic-rc-line     K-57  F-1 l   # ^Jl   LOCATE: データベース作成
+.\" usilic-rc-line     K-58  F-1 C-l # ^J^L  LOCATE
+.\" usilic-rc-line     K-59  F-1 m   # ^Jm   MAN: 入力
+.\" usilic-rc-line     K-60  F-1 C-m # ^J^M  MAN: 一覧
+.\" usilic-rc-line     K-61  F-0 f   # ^Xf   FILE: 入力
+.\" usilic-rc-line     K-62  F-0 C-f # ^X^F  FILE: 一覧
+.\" usilic-rc-line     K-63  F-0 d   # ^Xd   DIR: 入力
+.\" usilic-rc-line     K-64  F-0 C-d # ^X^D  DIR: 一覧
+.\" usilic-rc-line     K-65  F-2 C-c # ^O^C  COPY
+.\" usilic-rc-line     K-66  F-2 C-y # ^O^Y  ペースト
+.\" usilic-rc-line     K-67  ESC e   # ^[e   EDIT(eはMACRO)
+.\" usilic-rc-line     K-68  ESC s   # ^[s   SHELLへ
+.\" usilic-rc-line     K-69  F-1 s   # ^Js   SHELLを再起動
+.\" usilic-rc-line     K-70  ESC l   # ^[l   SHELLのログ
+.\" usilic-rc-line     K-71  F-1 .   # ^J.   SHELL: カレントディレクトリへcd
+.\" usilic-rc-line     K-72  F-1 ,   # ^J,   SHELL: ls -l
+.\" usilic-rc-line     K-73  F-1 w   # ^Jw   SHELL: アクセス名
+.\" usilic-rc-line     K-74  F-1 C-w # ^J^W  SHELL: バッファの内容
+.\" usilic-rc-line     K-75  F-2 /   # ^O/   検索(SHELL内から)
+.\" usilic-rc-line     K-76  F-2 C-f # ^O^F  ページ送り(SHELL内から)
+.\" usilic-rc-line     K-77  F-2 C-b # ^O^B  ページ戻し(SHELL内から)
+.\" usilic-rc-line     K-78  ESC u   # ^[u   USILIC: 目次
+.\" usilic-rc-line     K-79  F-1 C-u # ^J^U  USILIC: 種類ごとの一覧
+.\" usilic-rc-line     K-80  F-1 u   # ^Ju   USILIC: 時系列
+.\" usilic-rc-line     K-81  F-0 C-w # ^X^W  バッファを作業fileへ保存
+.\" usilic-rc-line     K-82  C-i     # ^I    INFO
+.\" usilic-rc-line     K-83  F-1 C-i # ^J^I  INFO(SHELL内から)
+.\" usilic-rc-line     K-84  F-4 u   # ^J^Ou ~/.usilic/usilicrc
+.\" usilic-rc-line     K-85  F-4 e   # ^J^Oe ERROR
+.\" usilic-rc-line     K-86  F-4 s   # ^J^Os SHELLのログ
+.\" usilic-rc-line     K-88  F-4 d   # ^J^Od ~/.usilic/data/
+.\" usilic-rc-line     K-89  F-4 w   # ^J^Ow WORK
+.\" usilic-rc-line     K-90  C-h     # ^H    HELP
+.\" usilic-rc-line     K-91  F-1 C-h # ^J^H  プロンプトからHELP
+.\" usilic-rc-line     K-92  F-2 j   # ^Oj   HELP の言語切替
+.\" usilic-rc-line     K-107 F-2 d   # ^Od   ホイールの向きの切り替え
+.\" usilic-rc-line     K-93  C-k     # ^K    KEY
+.\" usilic-rc-line     K-94  F-1 C-k # ^J^K  プロンプトからKEY
+.\" usilic-rc-line     K-95  F-0 (   # ^X(   マクロの記録開始
+.\" usilic-rc-line     K-96  F-0 )   # ^X)   マクロの記録終了
+.\" usilic-rc-line     K-97  F-0 e   # ^Xe   マクロの実行
+.\" usilic-rc-line     K-98  F-0 s   # ^Xs   usilicrcの読み直し・マクロの保存と一覧
+.\" usilic-rc-line     K-99  F-0 C-c # ^X^C  EXIT
+.\" usilic-rc-line     K-100 ESC ESC # ^[^[  EXIT
+.\" usilic-rc-line     K-101 F-2 s   # ^Os   EPUB: 章区切り/連続スクロール
+.\" usilic-rc-line     K-102 F-2 w   # ^Ow   EPUB: Webのリンクの対処を巡回(URL)
+.\" usilic-rc-line     K-108 F-2 C-e # ^O^E  EPUB: 記録の一覧(縦書きのCOPYで範囲指定して記録)
+.\" usilic-rc-line     K-109 ESC [   # ^[[   -g: 行の高さを1ドット広げる
+.\" usilic-rc-line     K-110 ESC ]   # ^[]   -g: 行の高さを1ドット狭める
+.\" usilic-rc-line     K-112 ESC {   # ^[{   -g: 字間を1ドット広げる
+.\" usilic-rc-line     K-113 ESC }   # ^[}   -g: 字間を1ドット狭める
+.\" usilic-rc-line     K-111 F-2 t   # ^Ot   明朝体・ゴシック体の切り換え(-g、EPUB以外は和文)
+.\" usilic-rc-line     K-103 F-1 C-a # ^J^A  ARC: 一覧(アーカイブだけのFILE履歴)
+.\" usilic-rc-line     K-104 F-1 C-f # ^J^F  -g: フォント一覧(FONT・SANS-SERIF・SERIF)
+.\" usilic-rc-line     K-105 h       # h     KEYから平文のHELPの当該位置へ(KEYの外では平文のHELP)
+.\" usilic-rc-line #
+.\" usilic-rc-line # K-114〜 は、以前はキーの割り当てが無かった(本体に書いてあった)キーです(2026-10-23)。
+.\" usilic-rc-line # K-132〜K-138 は COPY の中だけ、K-139〜K-155 はプロンプトの入力中だけのキーで、そこでは
+.\" usilic-rc-line # 同じ既定のキーの K-n(^F なら K-7)の代わりに働きます。COPY やプロンプトの ^N/^P・^G・^M・
+.\" usilic-rc-line # ^R・^S・^@・^[N 等は、K-3・K-4・K-20・K-28 等と共有です(そちらを変えると一緒に変わります)。
+.\" usilic-rc-line     K-114 ESC g g # ^[gg  指定行へ(^[N と同じ)
+.\" usilic-rc-line     K-115 C-u     # ^U    次のコマンドの回数
+.\" usilic-rc-line     K-116 F-0 z   # ^Xz   直前のコマンドをもう一度
+.\" usilic-rc-line     K-117 F-0 r m # ^Xrm  ブックマークを置く
+.\" usilic-rc-line     K-118 F-0 r b # ^Xrb  ブックマークへ飛ぶ
+.\" usilic-rc-line     K-119 F-0 r l # ^Xrl  ブックマークの一覧
+.\" usilic-rc-line     K-120 F-0 r SPC # ^Xr␣  今の場所をレジスタへ
+.\" usilic-rc-line     K-121 F-0 r C-SPC # ^Xr^␣ 今の場所をレジスタへ(^Xr␣ と同じ)
+.\" usilic-rc-line     K-122 F-0 r j # ^Xrj  レジスタの場所へ飛ぶ
+.\" usilic-rc-line     K-123 F-2 C-s # ^O^S  一致した行の一覧(FGREP)
+.\" usilic-rc-line     K-124 F-2 F-1 C-s # ^O^J^S一致した行の一覧(EGREP)
+.\" usilic-rc-line     K-125 %       # %     (ls): 名前が正規表現に合うファイルを選ぶ
+.\" usilic-rc-line     K-126 *       # *     (ls): 拡張子が同じファイルを選ぶ
+.\" usilic-rc-line     K-127 C-t n   # ^Tn   次の窓へ
+.\" usilic-rc-line     K-128 C-t p   # ^Tp   前の窓へ
+.\" usilic-rc-line     K-129 C-t C-h # ^T^H  HELP の窓
+.\" usilic-rc-line     K-130 C-t C-k # ^T^K  KEY の窓
+.\" usilic-rc-line     K-131 e       # e     ^Xe の直後: マクロをもう一度(1 文字)
+.\" usilic-rc-line     K-132 C-f     # ^F    COPY: 1文字進む
+.\" usilic-rc-line     K-133 C-b     # ^B    COPY: 1文字戻る
+.\" usilic-rc-line     K-134 C-a     # ^A    COPY: 行頭へ
+.\" usilic-rc-line     K-135 C-e     # ^E    COPY: 行末へ
+.\" usilic-rc-line     K-136 F-0 SPC # ^X␣   COPY: 矩形の範囲
+.\" usilic-rc-line     K-137 ESC w   # ^[w   COPY: クリップボードへ
+.\" usilic-rc-line     K-138 ESC t   # ^[t   COPY: TOOL のプロンプトへ
+.\" usilic-rc-line     K-139 C-a     # ^A    入力: 行頭へ
+.\" usilic-rc-line     K-140 C-e     # ^E    入力: 行末へ
+.\" usilic-rc-line     K-141 C-f     # ^F    入力: 1文字進む
+.\" usilic-rc-line     K-142 C-b     # ^B    入力: 1文字戻る
+.\" usilic-rc-line     K-143 C-d     # ^D    入力: カーソルの字を削除
+.\" usilic-rc-line     K-144 C-h     # ^H    入力: 前の字を削除(DEL も)
+.\" usilic-rc-line     K-145 C-u     # ^U    入力: 行頭まで削除
+.\" usilic-rc-line     K-146 C-k     # ^K    入力: 行末まで削除
+.\" usilic-rc-line     K-147 C-y     # ^Y    入力: 削除した字を入れ直す
+.\" usilic-rc-line     K-148 C-_     # ^_    入力: 取り消し
+.\" usilic-rc-line     K-149 C-q     # ^Q    入力: 次の字をそのまま入れる
+.\" usilic-rc-line     K-150 C-i     # ^I    入力: パスの補完
+.\" usilic-rc-line     K-151 C-w     # ^W    入力: 以前のディレクトリ(CP/MV の転送先)
+.\" usilic-rc-line     K-152 ESC f   # ^[f   入力: 1語進む
+.\" usilic-rc-line     K-153 ESC b   # ^[b   入力: 1語戻る
+.\" usilic-rc-line     K-154 ESC d   # ^[d   入力: 1語削除
+.\" usilic-rc-line     K-155 ESC C-h # ^[^H  入力: 前の1語を削除(^[DEL も)
+.\" usilic-rc-line
+.\" usilic-rc-line MACRO
+.\" usilic-rc-line # キーボードマクロ。
+.\" usilic-rc-line #
+.\" usilic-rc-line # 書式: M-n  キー  K-n ...   (キーを押すと K-n の機能を順に実行)
+.\" usilic-rc-line #
+.\" usilic-rc-line # ^X( 〜 ^X) で記録したキーは、^Xe の直後の ^Xs で「--」の行へ書き足し、
+.\" usilic-rc-line # 尋ねられたキー(1文字)で M-n として保存します(その場で効きます)。
+.\" usilic-rc-line # 実行の間隔は WAIT で指定します。
+.\" usilic-rc-line 	M-1  ;	K-20 K-4 K-28			# ^G^P^M	前の項目を開く
+.\" usilic-rc-line 	M-2  :	K-20 K-3 K-28			# ^G^N^M	次の項目を開く
+.\" usilic-rc-line 	M-3  [	K-35 K-4			# .^P		選択して上へ
+.\" usilic-rc-line 	M-4  ]	K-35 K-3			# .^N		選択して下へ
+.\" usilic-rc-line 	M-5  e	K-67				# ^[e		EDIT
+.\" usilic-rc-line 	M-6  l	K-86 K-53 "^usilic-1.5b:" K-28	# ^J^Os^Jp^usilic-1.5b:^M
+.\" usilic-rc-line 	     	     	  		  	# INFOのshellをプロンプトでPART
+.\" usilic-rc-line 	--

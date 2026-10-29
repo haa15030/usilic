@@ -597,9 +597,21 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
   // そのまま)。2026-10-19、直接のユーザー依頼("KEYの注釈だけ設定値がないのはやはり違和感なので…入るなら試しに
   // 入れてみて"): 以前は割り当て表が長いのでKEYだけ入れなかったが、KEYも入れる。
   std::map<std::string, std::vector<std::string>> rcDefaults;
+  // 2026-10-29、直接のユーザー依頼("usilicrcから読むやつもHELP.1に入れて"): usilic -nがroffのコメント
+  // (".\" usilic-rc-line …")で埋め込んだusilicrcがあれば、外のusilicrcの代わりにそれを読む(足し合わせると
+  // 既定値の行が重複するので、HELP.notesと違い置き換え)。
+  std::string rcText;
+  bool rcEmbedded = false;
+  for (const auto &l : lines)
+    if (l.compare(0, 18, ".\\\" usilic-rc-line") == 0 && (l.size() == 18 || l[18] == ' ')) {
+      if (rcEmbedded) rcText += "\n";
+      rcText += l.size() > 19 ? l.substr(19) : std::string();
+      rcEmbedded = true;
+    }
+  if (!rcEmbedded) rcText = usilicrcText;
   {
     std::string item, section;
-    for (const auto &l : splitLines(usilicrcText)) {
+    for (const auto &l : splitLines(rcText)) {
       std::size_t n = 0;
       while (n < l.size() && (isUpper(l[n]) || (n > 0 && l[n] == '-'))) n++;
       bool heading = n > 0 && strip(l.substr(n)).empty();
