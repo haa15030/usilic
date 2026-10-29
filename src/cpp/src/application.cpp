@@ -4270,17 +4270,24 @@ std::size_t Application::recordedMacroLength() const { return recordedMacro_.siz
 // ^[^[^Mで"、パスワードのため字・^Hも): 最初の起動のSHELLで、そのバイトをfeedShellByte()の本体へ渡すか。
 // ^[^[^M(即終了)はmain.cppがここより前に見る。
 bool Application::limitedShellAllows(int byte, std::optional<KeyInput::SpecialKey> special) {
-  if (special) return false;  // 矢印等
+  // 2026-10-30、直接のユーザー報告("^[sでひらいた「USILIC:プロンプト」で^J3とかやっても無反応なのでここでは「それ」
+  // (「ページャーでは使えません」)が必要"): 使えないキーは、ページャーと同じ知らせを出して捨てる。
+  auto refuse = [this] {
+    showTransientNotice(activeView(), "Not available in pager");
+    return false;
+  };
+  if (special) return refuse();  // 矢印等
   bool installing = shellOffer_.has_value();  // インストールの案内(pollShellOfferFollowUp())が続いている間
   bool printable = byte >= 0x20;  // DEL(0x7f)・UTF-8の字も
   if (installing) {
     limitedShellLeaderJ_ = false;
-    return printable || byte == 0x08 || byte == kCarriageReturn;
+    return printable || byte == 0x08 || byte == kCarriageReturn || refuse();
   }
   if (std::exchange(limitedShellLeaderJ_, false)) {
     if (byte == 's') handleCommand(Command::RestartShell);  // ^Js: SHELLを再起動
-    if (byte == '.') handleCommand(Command::ShellChangeDirectory);  // ^J.: (ls)の位置(起動したディレクトリ)へcd
-    if (byte == ',') handleCommand(Command::ShellRunLsL);  // ^J,: ls -l
+    else if (byte == '.') handleCommand(Command::ShellChangeDirectory);  // ^J.: (ls)の位置(起動したディレクトリ)へcd
+    else if (byte == ',') handleCommand(Command::ShellRunLsL);  // ^J,: ls -l
+    else refuse();
     return false;
   }
   if (byte == kLeaderJ) {
@@ -4293,7 +4300,7 @@ bool Application::limitedShellAllows(int byte, std::optional<KeyInput::SpecialKe
     case kCarriageReturn: case 0x0e: case 0x10: case 0x15: case kControlW: case 0x19: case kControlUnderscore:
       return true;
     default:
-      return false;  // ^[・^X・^O・^R・^T・^I・^Q等のusilicのキー
+      return refuse();  // ^[・^X・^O・^R・^T・^I・^Q等のusilicのキー
   }
 }
 
