@@ -33047,3 +33047,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告(=mx.png・=my.png、横書きの慣性ではカーソルが送る向きの端(一番下)の行にあるのに、縦書きでは一番左の列の1つ右の列にある)。左右の慣性(main.cppのepubCoastLevel)は1列の幅を越えてから列を送っていたので、端から入ってくる列が見えている間、列カーソルはその1つ内側の列に残っていた。
    - **変更**: 送る向きへ半列を越えたら列を送る(ずれは反対側へ半列)。止まった時のそろえ直し(ずれを0に)は半列以内になる。
    - 確かめたこと: make usilic(-gの見た目は未確認)。
+
+1125. **SHELLで開いた子(usilic等)の後の^J^Wで、プロンプトが空になる(2026-10-30)**
+   - **経緯**: 直接のユーザー報告(HELPで^J^W^A^D^D^Dusilic^M→開いたファイルで^J^W、でプロンプトが空)。SHELLの出力はSHELLを見ている間しか読まないので、子が終わった後のプロンプトは^J^WでSHELLへ戻った後に届き、Shell::handlePromptDetected()が^J^Wの入れた"cat …"を消していた。SHELLで開いた子のページャー(pagerReturnsToShell()、閉じると子が終わる)からも同じ。「SHELL busy」はSHELLの外の出来事なので出ない。
+   - **変更**: Shell::setCommandTextAfterPrompt()。shellInsertBufferContent()は、SHELLに読んでいない出力がある時・子のページャーから戻る時、コマンドを次のプロンプトにも入れる。打ち直して送れば(submitLine())捨てる。
+   - 確かめたこと: make usilic。-cで上の操作をすると、プロンプトに"cat '…/.usilic/data/HELP.epub'"が出る。

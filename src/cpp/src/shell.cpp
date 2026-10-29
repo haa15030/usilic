@@ -1155,6 +1155,7 @@ void Shell::resetSessionState() {
   currentDirectory_.clear();
   scrollback_.setLines({});
   commandLine_.setText("");
+  commandTextAfterPrompt_.clear();
   awaitingRealPrompt_ = false;  // 自身の宣言コメント参照、新しいセッションは常に真っ新から始まる
   tentativeLivePrompt_ = false;  // 同上
 }
@@ -1245,7 +1246,8 @@ void Shell::handlePromptDetected(const std::string &tailBeforeMark) {
   const std::string &kPromptDisplayName = promptName_;  // setPromptName()参照(既定は"usilic-1.5b")
   promptPlain_ = kPromptDisplayName + ":" + tailBeforeMark;
   updateCommandLineField();
-  commandLine_.setText("");
+  commandLine_.setText(commandTextAfterPrompt_);
+  commandTextAfterPrompt_.clear();
 
   promptDecorated_ = display_.attributeEscape(Display::Attribute::Bold) + kPromptDisplayName + ":" +
                       display_.attributeEscape(Display::Attribute::BoldOff) + tailBeforeMark;
@@ -1804,6 +1806,7 @@ void Shell::submitLine() {
   }
 
   commandLine_.setText("");
+  commandTextAfterPrompt_.clear();  // 打ち直して送ったので、次のプロンプトには入れない
   // 2026-09-06追加、同じユーザー報告のもう1つの症状("aと打ったとたん
   // ブロックカーソルがcat直下位置へ移動してそこからの入力となり
   // (正しくはもちろん画面左端から)"): awaitingRealPrompt_の間、

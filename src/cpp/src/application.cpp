@@ -12447,6 +12447,12 @@ bool Application::shellInsertBufferContent() {
   if (!out) return false;
   for (const auto &line : source.lines()) out << line.text << "\n";
   out.close();
+  // 2026-10-30、直接のユーザー報告(HELPで^J^W→catをusilicに書き換えて^M→開いたファイルで^J^W、でプロンプトが空):
+  // SHELLの出力はSHELLを見ている間しか読まないので、SHELLで開いた子(usilic等)が終わった後のプロンプトは、戻った
+  // 後で届いてコマンド行を空にしていた。SHELLで開いた子のページャー(pagerReturnsToShell())からも、閉じて戻るので
+  // 子が終わってプロンプトが出る。どちらも、コマンドはそのプロンプトに入れる(Shell::setCommandTextAfterPrompt())。
+  bool promptPending = (currentMode_ == ApplicationMode::File && fileMode_.pagerReturnsToShell()) ||
+                       (shell_.alive() && shell_.outputReady(0));
   if (!ensureShellActive()) return false;
   // 2026-08-27修正、実際の報告+再現("↑「[」等がエスケープされて
   // ない"): savePath(実際のアーカイブエントリ自身のベース名から構築
@@ -12468,6 +12474,7 @@ bool Application::shellInsertBufferContent() {
     lastShellInsertCommand_ = "type " + cmdQuoteArg(windowsPath);
   }
   shell_.commandLine().setText(lastShellInsertCommand_);
+  if (promptPending) shell_.setCommandTextAfterPrompt(lastShellInsertCommand_);
   shell_.commandLine().redraw();
   return true;
 }

@@ -286,6 +286,9 @@ class Shell {
   // プロンプトの名前(既定は"usilic-1.5b"、2026-10-29: 最初の起動の機能限定SHELLは"USILIC"、
   // Application::setFirstStartPager()参照)。次にプロンプトを描く時から。
   void setPromptName(const std::string &name) { promptName_ = name; }
+  // 2026-10-30、直接のユーザー報告(SHELLで開いた子のページャーで^J^Wするとプロンプトが空): 次にプロンプトが戻った時、
+  // 空にする代わりにコマンド行へ入れる文字列(handlePromptDetected()参照)。
+  void setCommandTextAfterPrompt(const std::string &text) { commandTextAfterPrompt_ = text; }
 
   // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装
   // (old/src/key.c::make_list()/input_key()参照): TABで候補が複数
@@ -614,6 +617,7 @@ class Shell {
 
   std::string currentDirectory_;
   bool busy_ = false;
+  std::string commandTextAfterPrompt_;  // setCommandTextAfterPrompt()参照
 
   int promptGeneration_ = 0;
 
