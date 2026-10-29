@@ -1,6 +1,7 @@
 #include "file_mode.hpp"
 
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -915,6 +916,7 @@ bool FileMode::reload() {
       int fd = ::open(path.c_str(), O_RDONLY);
       if (fd < 0) return false;
       loadStream(fd, /*ownsFd=*/true, path, view_.height(), noWrapMode_);
+      loadWholeIfSmallFile();
       pagerLabel_ = label;
     }
     pagerReturnsToShell_ = returnsToShell;
@@ -1029,6 +1031,16 @@ bool FileMode::loadTransformedPagerFile(const std::string &path, int initialLine
   }
   view_.setUseFixedWidthPosition(false);
   return true;
+}
+
+void FileMode::loadWholeIfSmallFile() {
+  constexpr off_t kWholePagerFileLimit = 16 * 1024 * 1024;
+  struct stat st {};
+  if (streamFd_ < 0 || ::fstat(streamFd_, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size > kWholePagerFileLimit)
+    return;
+  for (int guard = 0; guard < 100000 && ensureLoadedThrough(std::numeric_limits<int>::max() / 2, true); guard++) {
+  }
+  view_.setUseFixedWidthPosition(false);
 }
 
 bool FileMode::loadContentAsPipe(const std::string &content) {

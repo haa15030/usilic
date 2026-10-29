@@ -2572,6 +2572,7 @@ bool Application::loadPagerFile(const std::string &path) {
   int fd = ::open(path.c_str(), O_RDONLY);
   if (fd < 0) return false;
   fileMode_.loadStream(fd, /*ownsFd=*/true, path, display_.rows());
+  fileMode_.loadWholeIfSmallFile();
   return true;
 }
 

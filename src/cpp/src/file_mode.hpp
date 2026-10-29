@@ -212,6 +212,10 @@ class FileMode {
   // roffの文書等をloadAndTransformContent()でgroffに組んだ平文を、CLIのページャー(loadStream()、名前は`path`)
   // として開く。モードラインのバイト数の後ろに通したプログラム("(groff)")を出し、幅が変われば組み直す。
   bool loadTransformedPagerFile(const std::string &path, int initialLineBudget, const std::string &label = "");
+  // 2026-10-30、直接のユーザー報告("usilic ~/.usilic/usilicrc"の位置が"00001/00056"): 引数で開いた普通のファイル
+  // (loadStream())は、大きくなければ(kWholePagerFileLimit以下)最後まで読み、位置をFILEと同じ桁合わせの形にする。
+  // 5桁固定は、行数が最後まで分からない標準入力・パイプ・大きなファイル用。
+  void loadWholeIfSmallFile();
   // モードラインに出す、表示に通したプログラム(contentProgram_)を後から決める(2026-10-11、平文のHELPの"(groff)"、
   // 一時ファイルに書いたものを読むのでloadAndTransformContent()では分からない)。
   // reflow()の読み直しでcontentProgram_が作り直されても残るよう別に持ち、次のloadFile()で消す。
