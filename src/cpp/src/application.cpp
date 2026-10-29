@@ -10884,6 +10884,7 @@ void Application::clearGrepJumpHighlight() {
       rebuildEpubVertical(fileRawLineAtCursor());  // 縦書きの字の強調も消す(deactivateGrepInPlace()と同じ)
   }
   grepJumpHighlightView_ = nullptr;
+  helpJumpRequest_.clear();
 }
 
 // buildGrepInPlaceOccurrences()自身の宣言コメント(application.hpp、
@@ -21066,6 +21067,8 @@ void Application::handleResize() {
       horizontalTop = std::make_pair(raw, top - first);
     }
   }
+  bool rejumpHelp = currentMode_ == ApplicationMode::File && !sameWidthEpub && !helpJumpRequest_.empty() &&
+                    grepJumpHighlightView_ == &fileView_ && fileView_.cursorIndex() == helpJumpIndex_;
   if (currentMode_ == ApplicationMode::File && !sameWidthEpub) fileMode_.reflow(display_.columns(), /*draw=*/!epubRaw);
   if (horizontalTop) {
     const auto &lines = fileView_.lines();
@@ -21082,6 +21085,13 @@ void Application::handleResize() {
     syncEpubHorizontalPresentation();  // 見せる行の範囲(setShownIndexRange())も新しい折り返しで
   }
   if (currentMode_ == ApplicationMode::File) applyBannerLineHighlights();  // INFOは読み直すと反転の範囲が消えるので
+  // 2026-10-30、直接のユーザー報告(^T^KのKEYでhを押して新しく開いたHELPの窓では違う位置へ飛ぶ、別のキーでhも違う、
+  // 3度目以降は正しい): 子の窓は開いた後で大きさが決まり、組み直すと、飛んだ行の印(行の番号)と中央寄せが古い
+  // 折り返しのまま残っていた。印が残っていて、カーソルが飛んだ行のままなら、同じ行へ飛び直す。
+  if (rejumpHelp) {
+    std::string request = helpJumpRequest_;
+    jumpHelpToKeyLine(request);
+  }
   // 平文のHELP(roff版、helpRoff_参照)は、groffで今の幅に組み直して開き直す(行は今の割合の所へ)。
   // 書き直すのはopenPlainHelp()が作った一時ファイルだけ(インストールしたHELPは書き換えない)。
   if (currentMode_ == ApplicationMode::File && !helpRoff_.empty() && !plainHelpPath_.empty() &&
@@ -22024,6 +22034,8 @@ bool Application::jumpHelpToKeyLine(const std::string &request) {
   fileView_.centerOnCursor();
   fileView_.setGrepMatchHighlight({ContentView::GrepHighlightMatch{found, {span}}}, found, span);
   grepJumpHighlightView_ = &fileView_;
+  helpJumpRequest_ = request;
+  helpJumpIndex_ = found;
   fileView_.redraw();
   return true;
 }

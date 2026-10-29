@@ -1823,6 +1823,9 @@ class Application {
   std::string childPidFile_;  // registerAsChild()のファイル
   // HELPの子: `request`("番目:16進の文字列"、-Kのhが送るもの)の行へ飛び、^Sと同じ強調を付ける。
   bool jumpHelpToKeyLine(const std::string &request);
+  // 2026-10-30: 最後にjumpHelpToKeyLine()で飛んだ行(印が残っている間)。窓の大きさが変わって組み直したら当て直す。
+  std::string helpJumpRequest_;
+  int helpJumpIndex_ = -1;  // その時のカーソルの行(動いた後なら当て直さない)
   long parentPid_ = 0;          // 外部起動された子の親のPID(USILIC_TRANSIENT)。0なら親無し
   // 2026-10-12、直接のユーザー依頼("子プロセスusilicが自死できないのは-H/-Kのみで"): -H・最初の起動で開いた
   // HELP・KEYの子(USILIC_WINDOW_SLOT)だけ、^X^C・qで終われず親と一緒に終わる。^Ou・^Jt等の子は自分で終われる。
