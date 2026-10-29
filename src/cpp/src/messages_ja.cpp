@@ -56,6 +56,7 @@ const std::vector<std::pair<std::string, std::string>> &exactMessages() {
       {"Plain text only", "平文だけで使えます"},
       {"Scroll: chapter", "スクロール: 章ごと"},
       {"Scroll: continuous", "スクロール: 連続"},
+      {"SHELL busy (the previous command has not finished)", "SHELL は使用中です（前のコマンドが終わっていません）"},
       {"SHELL/prompt only", "SHELL・プロンプトだけで使えます"},
       {"Type e to repeat macro", "e でマクロを繰り返します"},
       {"Wheel: normal", "ホイール: 順"},

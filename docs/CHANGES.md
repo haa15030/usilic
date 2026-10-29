@@ -33052,3 +33052,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告(HELPで^J^W^A^D^D^Dusilic^M→開いたファイルで^J^W、でプロンプトが空)。SHELLの出力はSHELLを見ている間しか読まないので、子が終わった後のプロンプトは^J^WでSHELLへ戻った後に届き、Shell::handlePromptDetected()が^J^Wの入れた"cat …"を消していた。SHELLで開いた子のページャー(pagerReturnsToShell()、閉じると子が終わる)からも同じ。「SHELL busy」はSHELLの外の出来事なので出ない。
    - **変更**: Shell::setCommandTextAfterPrompt()。shellInsertBufferContent()は、SHELLに読んでいない出力がある時・子のページャーから戻る時、コマンドを次のプロンプトにも入れる。打ち直して送れば(submitLine())捨てる。
    - 確かめたこと: make usilic。-cで上の操作をすると、プロンプトに"cat '…/.usilic/data/HELP.epub'"が出る。
+
+1126. **「SHELL busy」を日本語に(2026-10-30)**
+   - **経緯**: 直接のユーザー依頼"「SHELL busy」はusilicが出すメッセージなので日本語化して"。
+   - **変更**: messages_ja.cppに「SHELL は使用中です（前のコマンドが終わっていません）」。
+   - 確かめたこと: make usilic。
