@@ -32944,3 +32944,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: フック(.claude/hooks/history_sync.py)と動作チェックのしかたの説明(直接のユーザー質問"HISTORY.mdへの保存の際のフックとは何なのか、-c/-g起動時の動作チェックはどうやってるのかについて解説して")の後、アシスタントのセッションの一時置き場(/private/tmp/…/scratchpad、再起動で消えることがある)にしか無かった試験用プログラムについて、直接のユーザー依頼"入れておいて"。
    - **内容**: tools/gui_harness.cpp(-gを窓を出さずに動かす。SDLのダミーの映像ドライバ、ROWS/COLS/FSIZE/LSH/LH0等で窓・字・字間・行の高さ、coast+N/coast-Nで慣性の1歩ずつ、SNAPDIR/BMPで画面の絵、1歩ごとに位置と時間を標準エラーへ。app/main.cppの慣性の引き継ぎは通らない)と、Makefileのharness(build/harness、usilic本体と同じソースにapp/main.cppの代わりに組み込む)。tools/ptyrun.py(-cを疑似端末の中で動かし、キーを送って画面を文字で取り出す)。使い方は各ファイルの頭のコメント。
    - 確かめたこと: make harnessで組み立て、Kbt.epubを80×40・18ptで開いて慣性の3歩を送れる。
+
+1105. **HELP.1にHELP.notesを埋め込み、usilic -e HELP.1だけで注釈まで同じHELP.epubに(2026-10-29)**
+   - **経緯**: 直接のユーザー質問・依頼"HELP.1からHELP.epubの作成はできる？ 可能ならHELP.notesをHELP.1に「注釈」として取り込んでほしい"。-eは元から"."で始まるroff(HELP.1)も受けるが、注釈の文のうちHELP.notesの分は別のファイルから読んでいた。
+   - **変更**: usilic -nが、HELP.notes(-eと同じ探し方、$USILIC_EPUB_NOTES優先)の"#"以外の行を、HELP.1の末尾にroffのコメント(".\" usilic-notes-line …")で入れる(groff・manの表示は変わらない)。help_to_epub.cppはroffのこのコメントもHELP.notesとして読む(外のHELP.notesの後に読むので、同じ"@名前"は埋め込みの方が勝つ)。make help-manはリポジトリのdoc/HELP.notes(英語はdoc/HELP.en.notes)を渡す。main.cppの-eのusilicrc・HELP.notesの探し方はreadHelpCompanion()に切り出して-nと共用。注釈のもう1つの元、usilicrcのコメントは今まで通り-eがusilicrcから読む。
+   - 確かめたこと: make usilic。~/HELP.txtからusilic -nでdoc/HELP.1を作り直し(差分は末尾のコメント17行だけ)、USILIC_EPUB_NOTES=/dev/nullでusilic -e doc/HELP.1としたEPUBが、従来のusilic -e ~/HELP.txt(doc/HELP.notes付き)と中身まで一致(24 notes)。~/HELP_en.txtが無いのでmake help-manの英語版は作れず、doc/HELP_en.1は元のまま。

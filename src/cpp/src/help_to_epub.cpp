@@ -622,10 +622,16 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
     }
   }
   // HELP.notes: "@設定項目"(例 "@URL")の行の後に注釈の文を書くと、usilicrcのコメントの代わりにそれを使う。
+  // 2026-10-29、直接のユーザー依頼("HELP.notesをHELP.1に「注釈」として取り込んでほしい"): usilic -nがroffのコメント
+  // (".\" usilic-notes-line …")で埋め込んだHELP.notesも読む。後に読む埋め込みの方が、同じ"@名前"では勝つ。
+  std::string notesAll = notesText;
+  for (const auto &l : lines)
+    if (l.compare(0, 22, ".\\\" usilic-notes-line ") == 0) notesAll += "\n" + l.substr(22);
+    else if (l == ".\\\" usilic-notes-line") notesAll += "\n";
   std::map<std::string, std::vector<std::string>> written;
   {
     std::optional<std::string> key;
-    for (const auto &l : splitLines(notesText)) {
+    for (const auto &l : splitLines(notesAll)) {
       if (!l.empty() && l[0] == '#') continue;
       if (!l.empty() && l[0] == '@') {
         key = strip(l.substr(1));

@@ -5076,6 +5076,33 @@ bool tryHandoffToParentShell(int argc, char **argv) {
 #endif
 }
 
+// usilic -e・-nが読むusilicrc・HELP.notes(2026-10-29、-eの中から切り出し): $USILIC_EPUB_RC・$USILIC_EPUB_NOTESが
+// あればそれ、無ければ~/.local/lib/usilic/(make installが最新にする)、/usr/local/lib/usilic/、HELPの原稿と同じ
+// ディレクトリの順に探す(原稿の隣の古い写しより先に)。
+std::string readHelpCompanion(const std::string &name, const std::string &markupPath) {
+  auto read = [](const std::string &path, std::string *text) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) return false;
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    *text = buffer.str();
+    return true;
+  };
+  std::string text;
+  if (const char *given = std::getenv(name == "usilicrc" ? "USILIC_EPUB_RC" : "USILIC_EPUB_NOTES")) {
+    read(given, &text);
+    return text;
+  }
+  std::vector<std::string> dirs;
+  if (const char *home = std::getenv("HOME")) dirs.push_back(std::string(home) + "/.local/lib/usilic");
+  dirs.push_back("/usr/local/lib/usilic");
+  std::string markupDir = std::filesystem::path(markupPath).parent_path().string();
+  dirs.push_back(markupDir.empty() ? "." : markupDir);
+  for (const auto &dir : dirs)
+    if (read(dir + "/" + name, &text)) return text;
+  return std::string();
+}
+
 }  // namespace
 
 // 2026-10-02新設、直接のユーザー依頼(.steering/20261002-help-key-usilicrc-reorg/): usilicrcの設定を
@@ -5340,6 +5367,16 @@ int main(int argc, char **argv) {
       std::ostringstream buffer;
       buffer << in.rdbuf();
       std::cout << fm::convertMarkupToMsRoffSource(buffer.str());
+      // 2026-10-29、直接のユーザー依頼("HELP.1からHELP.epubの作成はできる？ 可能ならHELP.notesをHELP.1に「注釈」
+      // として取り込んでほしい"): HELP.notes(-eと同じ探し方)をroffのコメントで末尾に入れる(groffでは出ない)。
+      // usilic -e HELP.1はこれを読むので、HELP.1だけで注釈まで同じHELP.epubになる("#"の行は入れない)。
+      std::string notes = readHelpCompanion("HELP.notes", markupPath);
+      if (!notes.empty()) {
+        std::istringstream lines(notes);
+        std::string l;
+        while (std::getline(lines, l))
+          if (l.empty() || l[0] != '#') std::cout << ".\\\" usilic-notes-line" << (l.empty() ? "" : " " + l) << "\n";
+      }
       return 0;
     } else if (std::strcmp(argv[i], "-e") == 0) {
       // 2026-10-14、直接のユーザー依頼("HELPモードを正式にHELP.epubとしたい（注釈を見れるので）。usilic -e HELP.txt >
@@ -5358,30 +5395,11 @@ int main(int argc, char **argv) {
       }
       std::ostringstream buffer;
       buffer << in.rdbuf();
-      std::vector<std::string> dirs;
-      if (const char *home = std::getenv("HOME")) dirs.push_back(std::string(home) + "/.local/lib/usilic");
-      dirs.push_back("/usr/local/lib/usilic");
-      std::string markupDir = std::filesystem::path(markupPath).parent_path().string();
-      dirs.push_back(markupDir.empty() ? "." : markupDir);
       // 2026-10-18: 開発中にdoc/HELP.epubを作る時(make help-epub)は、リポジトリのusilicrcとHELP.notesを
       // $USILIC_EPUB_RC・$USILIC_EPUB_NOTESで渡す(インストール済みの古い写しを読まないように)。
-      auto find = [&](const std::string &name) {
-        if (const char *given = std::getenv(name == "usilicrc" ? "USILIC_EPUB_RC" : "USILIC_EPUB_NOTES")) {
-          std::ifstream file(given, std::ios::binary);
-          std::ostringstream text;
-          if (file) text << file.rdbuf();
-          return text.str();
-        }
-        for (const auto &dir : dirs) {
-          std::ifstream file(dir + "/" + name, std::ios::binary);
-          if (!file) continue;
-          std::ostringstream text;
-          text << file.rdbuf();
-          return text.str();
-        }
-        return std::string();
-      };
+      auto find = [&](const std::string &name) { return readHelpCompanion(name, markupPath); };
       // 2026-10-18: -nが作ったroff(doc/HELP.ja.1、"."で始まる)もそのまま受ける(make installがHELP.epubを作るため)。
+      // 2026-10-29: HELP.1にはHELP.notesが埋め込んであり(-n参照)、HELP.notesが無くても同じ注釈になる。
       std::string source = buffer.str();
       std::string roff = !source.empty() && source[0] == '.' ? source : fm::convertMarkupToMsRoffSource(source);
       std::string summary;
