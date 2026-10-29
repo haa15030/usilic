@@ -33005,3 +33005,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告"注釈から戻る記号が慣性スクロール中は豆腐になる"。止まっている時の描画(renderCell())は、どのフォントにも無い記号を記号のフォントで描く(symbolFontFor()、2026-10-20)が、スクロール中の描画(renderTextRun()の字ごとのフォント選び)にはそれが抜けていた。
    - **変更**: スクロール中の字のフォント選びにもsymbolFontFor()を足す。
    - 確かめたこと: make usilic(-gの表示は実機で)。
+
+1117. **HELP.1を開いた時のモード名を「HELP」にしない(HELPの子だけ)(2026-10-29)**
+   - **経緯**: 直接のユーザー報告"~/.local/lib/usilic/HELP.1を開くとモード名が「HELP」になる(正しくは「/Users/haa15030/.local/lib/usilic/HELP.1」)"。startPagerFileList()は、開いたroffがHELPのroff版と同じファイルならモード名を「HELP」にしていた(2026-10-11、HELPの子のため)。
+   - **変更**: 「HELP」はHELPの子(受け渡しの"help"を持つ、-H・^T^H)の時だけ。
+   - 確かめたこと: make usilic。

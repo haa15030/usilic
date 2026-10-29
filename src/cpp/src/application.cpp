@@ -2453,7 +2453,11 @@ bool Application::startPagerFileList(const std::vector<std::string> &paths) {
       fileReturnMode_ = ApplicationMode::Directory;
       // HELP(reloadHelpText()が読んだroff版)そのものなら、モードラインの名前は「HELP」(2026-10-11)。
       std::error_code ec;
-      bool isHelp = !helpLoadedPath_.empty() && std::filesystem::equivalent(paths.front(), helpLoadedPath_, ec);
+      // 2026-10-29、直接のユーザー報告("~/.local/lib/usilic/HELP.1を開くとモード名が「HELP」になる(正しくは
+      // 「/Users/…/HELP.1」)"): 「HELP」はHELPの子(-H・^T^H、受け渡しの"help"を持つ)の時だけ。
+      bool helpChild = channelPath_.size() >= 5 && channelPath_.compare(channelPath_.size() - 5, 5, "/help") == 0;
+      bool isHelp = helpChild && !helpLoadedPath_.empty() &&
+                    std::filesystem::equivalent(paths.front(), helpLoadedPath_, ec);
       if (!fileMode_.loadTransformedPagerFile(paths.front(), display_.rows(), isHelp ? "HELP" : "")) return false;
       pagerFileList_ = paths;
       pagerFileIndex_ = 0;
