@@ -5273,6 +5273,7 @@ int main(int argc, char **argv) {
       // この明示的な-hフラグ専用にした。
       // 2026-10-03、直接のユーザー報告("-hの表示が旧来のまま"): 2026-10-02に-s/-d等へ改名・新設した
       // オプションも並べる。裏オプションの-m/-nは載せない。
+      // 2026-10-29、直接のユーザー依頼("HELP.1がソースなら問題ないので-eを正式オプションとしたい"): -eは載せる。
       std::cout << "usage: usilic [options] [<file] [file] [directory]\n"
                    "  -c            CUI (terminal) mode\n"
                    "  -g            GUI (window) mode\n"
@@ -5284,7 +5285,8 @@ int main(int argc, char **argv) {
                    "  -w wait       macro WAIT (x 10 msec)\n"
                    "  -b MB         BUFFER size (1-100)\n"
                    "  -l lines      history LINE count\n"
-                   "  -S -D -F -W -B -L   same as lowercase, and also write it to ~/.usilic/usilicrc\n";
+                   "  -S -D -F -W -B -L   same as lowercase, and also write it to ~/.usilic/usilicrc\n"
+                   "  -e HELP.1     write HELP.1 as an EPUB to stdout and exit\n";
       return 0;
     } else if (std::strlen(argv[i]) == 2 && std::strchr("sSdD", argv[i][1]) && argv[i][0] == '-') {
       // 2026-10-02、直接のユーザー依頼(.steering/20261002-help-key-usilicrc-reorg/): 旧-u/-iを
@@ -5392,7 +5394,7 @@ int main(int argc, char **argv) {
       // (convertMsRoffToHelpEpub()参照)。注釈に使うusilicrcとHELP.notesは、~/.local/lib/usilic/(make installが
       // 最新にする)、/usr/local/lib/usilic/、HELPの原稿と同じディレクトリの順に探す(原稿の隣の古い写しより先に)。
       if (i + 1 >= argc) {
-        std::cerr << "usilic: -e requires a markup file path (e.g. -e HELP.txt > ~/.local/lib/usilic/HELP.epub).\n";
+        std::cerr << "usilic: -e requires a HELP.1 path (e.g. -e ~/.local/lib/usilic/HELP.1 > HELP.epub).\n";
         return 1;
       }
       std::string markupPath = argv[++i];

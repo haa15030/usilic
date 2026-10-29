@@ -32954,3 +32954,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 項目1105の後、直接のユーザー依頼"usilicrcから読むやつもHELP.1に入れて"。
    - **変更**: usilic -nが、usilicrc(-eと同じ探し方、$USILIC_EPUB_RC優先)を丸ごと(注釈には見出しの後の「#」の行と、その後ろの既定値の行の両方を使うので)HELP.1の末尾にroffのコメント(".\" usilic-rc-line …")で入れる。help_to_epub.cppは、これがあれば外のusilicrcの代わりに読む(HELP.notesと違い置き換え。足すと既定値の行が重複するため)。make help-manはリポジトリのsrc/usilicrc(英語はsrc/usilicrc.en)を渡す。
    - 確かめたこと: make usilic。~/HELP.txtからdoc/HELP.1を作り直し(差分は末尾の589行だけ、groff -Tutf8 -msの出力は前後で同じ)、USILIC_EPUB_RC=/dev/null USILIC_EPUB_NOTES=/dev/nullでusilic -e doc/HELP.1としたEPUBが、従来の作り方のものとdcterms:modified(作った時刻)以外一致(24 notes)。
+
+1107. **usilic -eを正式オプションに(-hの使い方とHELPの起動オプションに載せる)(2026-10-29)**
+   - **経緯**: 直接のユーザー依頼"-e/-m/-nを隠しオプションとしていた理由は、ソースがHELP.txt(<indentN></indent>の独自仕様)だからだが、HELP.1がソースなら問題ないので-eを正式オプションとしたい"(項目1105・1106でHELP.1だけから注釈まで揃ったEPUBが作れるようになったため)。-m/-nは引き続き隠しオプション。
+   - **変更**: -hの使い方に"-e HELP.1  write HELP.1 as an EPUB to stdout and exit"。-eの引数が無い時のエラーの例をHELP.1に。src/HELP_.txt・src/HELP_en_.txt(アシスタント用の原稿)の起動オプションの-hの前に-eの説明(表紙の画像は付かないことも)。
+   - 確かめたこと: make usilic・make install。usilic -hの末尾に-e、引数無しのusilic -eのエラー。
