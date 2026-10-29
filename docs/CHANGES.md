@@ -32990,3 +32990,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告・依頼"HELP本文(以外でも再現)での^O^S/^O^J^Sの検索結果一覧では^]が利かない。^]はどこでもキー(^J^C/^J^Bと同等)でよろしく"。^]は(ls)等のふつうのキーの表(Command::GoToFileSelector)にしか無く、一覧・プロンプト・SHELL等では効かなかった。
    - **変更**: Application::feedUntranslatedByte()の頭で、^]を^J^Cの2打として渡す(^X・^J・^[等の続きの1打、^Qの直後は除く)。
    - 確かめたこと: make usilic。-cでHELPから^]で(ls)へ。
+
+1114. **^O^S・^O^J^Sの一覧の^J^Wは一覧そのものを、SHELL busyは消えない表示に(2026-10-29)**
+   - **経緯**: 直接のユーザー報告"同じ結果一覧では、^J^Wがバッファではなくファイル全体を出力。しかもHELP自体わりと大きいため、続けて^G^J^Wとやってもビープ音しか鳴らない。SHELL busyの意味のメッセージよろしく"。Grepの一覧の^J^Wは、2026-08-24の依頼(FGREPはモードラインが守備範囲なので背景の画面をcat)で背景のファイルを出していたが、^O^S・^O^J^S(occur)の一致した行の一覧は一覧そのものが内容。SHELLが前のコマンドを実行中の時の「(SHELL busy)」はモードラインへ直に書いていたので、その後の描き直しですぐ消えていた。
+   - **変更**: occurの一覧(grepOccurList_、startGrep…のoccur)の^J^Wは一覧の行を出す(名前が無いので作業用のw.N)。showShellBusyNotice()はベルとshowTransientNotice()の"SHELL busy (the previous command has not finished)"(次のキーまで残る)。
+   - 確かめたこと: make usilic(一覧の^J^W・SHELL busyの表示は実機で)。

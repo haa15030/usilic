@@ -12375,7 +12375,10 @@ bool Application::shellInsertBufferContent() {
   // そのためGrepの結果画面からの^J^Wは、まさにその裏に実際に見えて
   // いるもの(マッチしたスニペット行の一握りだけでなく、例えば「元の」
   // HELPの章のページ)から押されたかのように振る舞う。
-  ApplicationMode effectiveMode = (currentMode_ == ApplicationMode::Grep) ? grepReturnMode_ : currentMode_;
+  // 2026-10-29、直接のユーザー報告("^O^S/^O^J^Sの検索結果一覧…^J^Wがバッファではなくファイル全体を出力"): ^O^S・
+  // ^O^J^Sの一致した行の一覧(grepOccurList_)は、上の理屈と違い一覧そのものが内容なので、一覧を出す。
+  ApplicationMode effectiveMode =
+      (currentMode_ == ApplicationMode::Grep && !grepOccurList_) ? grepReturnMode_ : currentMode_;
   std::string modeName;
   if (effectiveMode == ApplicationMode::Directory) {
     std::string dir = directoryMode_.currentDirectory();
@@ -16954,15 +16957,11 @@ std::string Application::promptLabelText(PromptKind kind) const {
 // 事実上消え、この通知が意味を持つ場面自体がほぼ無くなっていた
 // (pollPagerExitNotice()自身のコメント参照)。
 void Application::showShellBusyNotice() {
-  int row = std::max(0, display_.rows() - 1);
-  display_.moveCursor(row, 0);
+  // 2026-10-29、直接のユーザー報告(^O^Sの一覧で"^G^J^Wとやってもビープ音しか鳴らない。SHELL busyの意味の
+  // メッセージよろしく"): 以前はモードラインへ直に書いていたので、その後の画面の描き直しですぐ消えていた。
+  // 次のキーまで残る一時的な表示(showTransientNotice())にする。
   display_.putChar(0x07);
-  display_.write(" (");
-  display_.setAttribute(Display::Attribute::Bold);
-  display_.write("SHELL busy");
-  display_.setAttribute(Display::Attribute::BoldOff);
-  display_.write(") ");
-  display_.flush();
+  showTransientNotice(activeView(), "SHELL busy (the previous command has not finished)");
 }
 
 // 2026-09-25追加、直接のユーザー要望("SHELLプロンプトが戻っていない
@@ -17841,6 +17840,7 @@ bool Application::executeGrep(const std::string &pattern) {
   // だけで判定する(startGrepPrompt()自身のコメントも参照、EGREP用の
   // 候補一覧起動(startRegexPromptList())自体をこの統一で廃止した)。
   bool occur = std::exchange(grepOccurPending_, false);
+  grepOccurList_ = occur;  // shellInsertBufferContent()参照
   if (!occur && isGrepInPlaceEligibleMode(grepReturnMode_)) {
     grepInPlaceOriginMode_ = grepReturnMode_;
     return activateGrepInPlace();

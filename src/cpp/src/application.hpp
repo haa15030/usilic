@@ -3461,6 +3461,7 @@ private:
   // occur(2026-10-10、^T^S・^T^J^S、2026-10-12に^O^S・^O^J^Sへ): 次のexecuteGrep()をin-placeにせず、一致した行の
   // 一覧(ApplicationMode::Grep)にする。leaderOJPending_は^Oの後の^Jを見た。
   bool grepOccurPending_ = false;
+  bool grepOccurList_ = false;  // 今のGrepの一覧が^O^S・^O^J^Sの一致した行の一覧か(shellInsertBufferContent()参照)
   // GREPの結果一覧から^Mで飛んだ先の画面(FILE・(ls)・MAN・LOCATE・DU・SHELL以外、それらは各自の戻り先で扱う)。
   // その画面の^Gで一覧へ戻し、戻り値の欄に「FGREP: 文字列」を出す(2026-10-10)。
   std::optional<ApplicationMode> grepJumpMode_;
