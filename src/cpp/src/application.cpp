@@ -4044,8 +4044,11 @@ const std::vector<std::vector<int>> &Application::pagerAllowedKeys() {
     pagerAllowedKeys_.push_back({0x14, 0x0b});
     // 2026-10-29、直接のユーザー報告(最初の起動で"^[s、^J.、^Js等が皆「ページャーでは使えません」"): 最初の起動
     // (setFirstStartPager())では、機能限定SHELLへ行くキーも。
+    // 2026-10-30、直接のユーザー報告(最初の起動で"^Iが「ページャーでは使えません」"、HELPの冒頭は^IのINFOで引数を
+    // 確かめられると案内している): ^I(INFO、^GでHELPへ戻る)も。
     if (firstStartPager_)
-      for (std::vector<int> keys : {std::vector<int>{kEscape, 's'}, {kLeaderJ, 's'}, {kLeaderJ, '.'}, {kLeaderJ, ','}})
+      for (std::vector<int> keys :
+           {std::vector<int>{kEscape, 's'}, {kLeaderJ, 's'}, {kLeaderJ, '.'}, {kLeaderJ, ','}, {0x09}})
         pagerAllowedKeys_.push_back(keys);
   }
   return pagerAllowedKeys_;
@@ -5492,6 +5495,9 @@ bool Application::handleCommandImpl(Command command) {
         if (fileMode_.currentFile() == bannerFilePath() && !infoPreviousFilePath_.empty()) {
           std::string target = infoPreviousFilePath_;
           infoPreviousFilePath_.clear();
+          // 2026-10-30(最初の起動のページャーで^I→^G): HELP(作ったHELP.epub)は^Hと同じ開き方で(モード名「HELP」・
+          // ページャーの戻り値のまま)。
+          if (isGeneratedHelpEpub(target)) return handleCommand(Command::StartHelp);
           if (fileMode_.loadFile(target)) {
             currentMode_ = ApplicationMode::File;
             fileReturnMode_ = ApplicationMode::Directory;

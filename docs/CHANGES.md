@@ -33057,3 +33057,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼"「SHELL busy」はusilicが出すメッセージなので日本語化して"。
    - **変更**: messages_ja.cppに「SHELL は使用中です（前のコマンドが終わっていません）」。
    - 確かめたこと: make usilic。
+
+1127. **最初の起動のページャーで^I(INFO)を使えるように(2026-10-30)**
+   - **経緯**: 直接のユーザー報告(最初の起動のHELP(EPUB)のページャーで"^Iが「ページャーでは使えません」")。HELPの冒頭は^IのINFOで引数を確かめられると案内している。
+   - **変更**: 最初の起動(firstStartPager_)のpagerAllowedKeys()に^I。INFOからの^Gは、戻り先が作ったHELP.epub(isGeneratedHelpEpub())なら^Hと同じ開き方(Command::StartHelp)で戻す(以前のloadFile()ではモード名が「HELP.epub」、戻り値がディレクトリになった)。
+   - 確かめたこと: make usilic。-cで最初の起動→^I→^Gで「HELP 0001/1216 TOP … EPUB」に戻る。
