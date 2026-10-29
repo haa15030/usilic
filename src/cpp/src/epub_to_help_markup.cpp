@@ -897,6 +897,11 @@ class BodyConverter {
     } else if (name == "u") {
       // 2026-10-26、直接のユーザー報告("HELPモード（HELP.epub）の注釈にアンダーラインが無い"): HELP.epubは注釈の
       // 付く名前を<u>で書く(help_to_epub.cpp、項目1079)。下の2026-09-28の「<u>には付けない」をやめ、<u>は下線に。
+      // 2026-10-29、直接のユーザー報告("FONT[6]が無反応"、"URL[8]で「小説家になろう」サイトがSafariで開く"): リンクは
+      // 下線の並びを数えて行き先(EpubLayoutHints::lineLinks)のn番目を選ぶので、<u>の下線もリンクに数えられ、同じ
+      // 行の後ろのリンクが1つずつずれていた。<u>の下線も行き先の並びに"u:"(リンクではない印)として入れて揃える。
+      if (open && underline_ == 0 && !linkTarget_) plainUnderlinePending_ = true;
+      if (!open) plainUnderlinePending_ = false;
       changeStyle(underline_, open ? +1 : -1, "u");
     } else if (name == "a") {
       // 2026-09-28追加、直接のユーザー提案("選択できる章はタグジャンプとしての
@@ -1228,6 +1233,10 @@ class BodyConverter {
         continue;
       }
       resolveAnchorsHere();
+      if (plainUnderlinePending_) {  // <u>の下線(上の"u"の分岐参照)
+        links_.push_back({currentLineNumber(), "u:"});
+        plainUnderlinePending_ = false;
+      }
       if (linkTarget_ && !linkLineRecorded_) {
         links_.push_back({currentLineNumber(), *linkTarget_});
         linkLineRecorded_ = true;
@@ -1501,6 +1510,7 @@ class BodyConverter {
   std::vector<LinkRecord> links_;
   std::optional<std::string> linkTarget_;  // 開いている<a href>のリンク先
   bool linkLineRecorded_ = false;
+  bool plainUnderlinePending_ = false;  // <u>を開いて、まだ字が出ていない("u"の分岐参照)
   std::size_t counted_ = 0;
   int newlines_ = 0;
   const std::vector<TocEntry> *tocEntries_ = nullptr;
@@ -1765,6 +1775,10 @@ std::optional<std::string> epubToHelpMarkup(const EpubMemberReader &readMember, 
     links->clear();
     const auto &anchors = converter.anchors();
     for (const auto &link : converter.links()) {
+      if (link.target == "u:") {  // <u>の下線(リンクではない、下線の数を揃えるための印)
+        if (layoutHints && link.line - leading >= 1) layoutHints->lineLinks[link.line - leading].push_back(link.target);
+        continue;
+      }
       if (layoutHints && link.line - leading >= 1)  // 行のリンクすべて(EpubLayoutHints::lineLinks)
         layoutHints->lineLinks[link.line - leading].push_back(link.target.compare(0, 4, "url:") == 0 ? link.target
                                                                                                       : std::string());

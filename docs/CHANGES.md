@@ -32970,3 +32970,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: main.cppで、引数無しの起動で~/.usilic/historyが無ければ(firstPagerStart)、既定値のhistoryをその場で書き出し、HELPがあればsetPagerLaunch(true)・Application::setFirstStartPager(true)の上で親がHELP(HELP.epub)を開く(以前の判定は「historyが空」で、HELPはふつうの起動の中で開いていた)。historyは普段どおり読み書きする。Applicationは、firstStartPager_の間: feedShellByte()の頭のlimitedShellAllows()でSHELLのキーを絞る(インストールの案内が続く間は字・DEL・^H・^Mだけ、その後はコマンド行の編集・^C・^D・^G・^P/^N・^M・^Js、^[・^X・^O・^R・^T・^I等は捨てる)。EPUBの章の一覧の^Gは、シェルが動いていれば機能限定SHELLへ(returnFromCut())。qはEPUBの本文・章の一覧から終了(QuitPager)。SHELLのプロンプトの名前はShell::setPromptName()で「USILIC」。src/HELP_.txt・src/HELP_en_.txtの冒頭に初回起動の説明。
    - 注意: LOGのCUT(^[l)は"usilic-1.5b:"で区切るので、初回のSHELLのログ("USILIC:")は区切られない(暫定の名前のため)。
    - 確かめたこと: make usilic・make install(実機の初回起動はユーザーが確かめる)。
+
+1110. **EPUBの横書きのリンクが<u>の下線の分だけずれていた(FONT[6]が無反応、URL[8]で小説サイトが開く)(2026-10-29)**
+   - **経緯**: 直接のユーザー報告"FONT[6]が無反応"、"URL[8]で「小説家になろう」サイトがSafariで開く"(項目1109の初回起動を使ってみて)。-cで再現: 「^J^F では…SANS-SERIF[4] / SERIF[5]…FONT[6]…FONT[6]…」の段落で、2行目・3行目のFONT[6]の^Mが[4]を開いた。ページャーに限らず^HのHELPでも同じ。
+   - **原因**: 横書きのリンクは、行(元の行)の中の下線の並びを数えて行き先(EpubLayoutHints::lineLinks)のn番目を選ぶ(Application::epubHorizontalLinks())。項目1081で<u>(HELP.epubの注釈の付く名前)も下線にしたため、「FONT」の下線もリンクとして数えられ、同じ行の後ろのリンクの番号がずれていた。行き先の数を超えたリンクは選べず(-gのクリックは無反応)、^Mは行の最初のリンクへ落ちた([4])。URL[8]は、ずれた先が同じ段落の小説サイトのWebリンクだった。
+   - **変更**: epub_to_help_markup.cppで、<u>の下線も行き先の並びに"u:"(リンクではない印)として、下線と同じ順で入れる。epubHorizontalLinks()は"u:"の下線を数えるだけでリンクに入れない。
+   - 確かめたこと: make usilic。-cでHELP.epubの同じ段落の2行目・3行目の^Mが[6](usilicrc の FONT)、narou2epub[7]・URL[8]の行がそれぞれ[7]・[8]を開く。

@@ -10219,8 +10219,15 @@ std::vector<Application::EpubHorizontalLink> Application::epubHorizontalVisibleL
 
 // fileView_の行[from, to)のリンク(下線の並び)を上から順に。番号(ordinal)は元の行の頭から数える
 // (折り返した行をまたぐ下線は同じリンク)。見せない行(ContentView::setShownIndexRange())は除く。
+// <u>の下線(行き先が"u:"、2026-10-29、EpubLayoutHints::lineLinks参照)は数えるだけで、リンクには入れない。
 std::vector<Application::EpubHorizontalLink> Application::epubHorizontalLinks(int from, int to) const {
   std::vector<EpubHorizontalLink> out;
+  const auto &lineLinks = fileMode_.epubLayoutHints().lineLinks;
+  auto plainUnderline = [&](int raw, int ordinal) {
+    auto it = lineLinks.find(raw);
+    return it != lineLinks.end() && ordinal >= 0 && ordinal < static_cast<int>(it->second.size()) &&
+           it->second[ordinal] == "u:";
+  };
   const auto &lines = fileView_.lines();
   int total = static_cast<int>(lines.size());
   int top = std::max(0, from);
@@ -10253,7 +10260,8 @@ std::vector<Application::EpubHorizontalLink> Application::epubHorizontalLinks(in
     for (std::size_t k = 0; k < merged.size(); k++) {
       bool continues = k == 0 && previousUnderline && merged[k].first <= firstByte;
       if (!continues) ordinal++;
-      if (i >= top && fileView_.isIndexShown(i)) out.push_back({i, merged[k].first, merged[k].second, raw, ordinal});
+      if (i >= top && fileView_.isIndexShown(i) && !plainUnderline(raw, ordinal))
+        out.push_back({i, merged[k].first, merged[k].second, raw, ordinal});
     }
     std::size_t lastVisible = text.find_last_not_of(' ');
     int endByte = lastVisible == std::string::npos ? 0 : static_cast<int>(lastVisible) + 1;
