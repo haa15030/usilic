@@ -3426,7 +3426,10 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     // gotoLineGPending_のコメント参照。数字が直接続けば(^[N)そのまま
     // gotoLineDigitsPending_へ、'g'が続けば(^[gg、Emacs自身のM-g g)
     // まず2バイト目の'g'を待つ状態へ。
-    if (byte >= '0' && byte <= '9') {
+    // 2026-10-31、直接のユーザー依頼("行間・字間・左右の余白をまとめてデフォルトへ戻すキーとして^[0を実装してほしい。
+    // ^[Nは本来N行目へジャンプだが、0行なんて無いんで大丈夫かなと"): ^[0は行へ飛ぶ数字の頭にはしない。
+    if (byte == '0') return resetSpacingAndMargins();
+    if (byte >= '1' && byte <= '9') {
       gotoLineDigitsPending_ = true;
       gotoLineFieldWidth_ = static_cast<int>(activeContentView().naturalPositionText().size());
       gotoLineDigits_.assign(1, static_cast<char>(byte));
@@ -8429,6 +8432,22 @@ bool Application::takeFontListRequest() {
 }
 
 int Application::takeLineHeightAdjustRequest() { return std::exchange(lineHeightAdjustRequest_, 0); }
+bool Application::takeSpacingResetRequest() { return std::exchange(spacingResetRequest_, false); }
+
+// ^[0(2026-10-31、escPending_の'0'参照): EPUBの余白(上下左右)を0に戻し(historyにも)、-gの行間・字間(足したドット)は
+// main.cppがtakeSpacingResetRequest()を見て戻す。
+bool Application::resetSpacingAndMargins() {
+  spacingResetRequest_ = true;
+  bool marginsChanged = epubMarginTop_ || epubMarginBottom_ || fileMode_.epubMarginLeft() || fileMode_.epubMarginRight();
+  if (marginsChanged) {
+    epubMarginTop_ = epubMarginBottom_ = 0;
+    fileMode_.setEpubMargins(0, 0);
+    saveEpubMargins();
+    epubMarginReflow_ = true;
+    handleResize();
+  }
+  return true;
+}
 int Application::takeLetterSpacingAdjustRequest() { return std::exchange(letterSpacingAdjustRequest_, 0); }
 
 

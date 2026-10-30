@@ -1908,6 +1908,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     if (app.takeFontListRequest()) app.showNotice("Font list: -g only");  // ^J^F(buildFontList()参照)
     if (app.takeLineHeightAdjustRequest()) app.showNotice("LINE-HEIGHT: -g only");  // ^[[ / ^[]
     if (app.takeLetterSpacingAdjustRequest()) app.showNotice("LETTER-SPACING: -g only");  // ^[{ / ^[}
+    if (app.takeSpacingResetRequest()) app.showNotice("Margins: default");  // ^[0(行間・字間は-gだけ)
     // See Application::awaitingLocateUpdateDb()'s own comment: this
     // loop's own poll() below already ticks every ~100ms regardless of
     // input, so a detached `updatedb` launched by ^Jl is noticed and
@@ -2812,6 +2813,11 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       std::snprintf(ratioText, sizeof ratioText, "%.2f", ratio);
       app.showNotice(std::string(app.verticalLayoutShown() ? "LINE-HEIGHT (vertical): " : "LINE-HEIGHT: ") +
                      std::to_string(pixels) + " dots (" + ratioText + ")");
+    }
+    // ^[0(2026-10-31、Application::takeSpacingResetRequest()参照): 行間・字間を既定へ(余白はApplicationが戻した)。
+    if (app.takeSpacingResetRequest()) {
+      gui.resetSpacing();
+      app.showNotice("LINE-HEIGHT / LETTER-SPACING / margins: default");
     }
     // ^[{ / ^[}(2026-10-20、Application::takeLetterSpacingAdjustRequest()参照): 今の向きの字間をドット単位で。
     if (int delta = app.takeLetterSpacingAdjustRequest()) {

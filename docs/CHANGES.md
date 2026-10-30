@@ -33177,3 +33177,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **原因**: (1)アイコンからの起動は、まず端末の大きさ(端末が無いので既定の行数)で前回のファイルを開いてhistoryの位置へ戻し、その後でGUIの窓の大きさへ組み直す(tryEnterGuiPhase()のhandleResize()→FileMode::reflow())。reflow()はカーソルの元の行は保つが、画面の上から何行目にいたかは保たないので、GUIの行数で置き直されなかった。開いた時もhistoryの「上から何行目」(GUIで終えた時の値)が端末の行数を超えると捨てていた。(2)上から0行目(最上行)は戻していなかった(`offset > 0`)ので、カーソルの行が画面の一番下に来ていた。
    - **直し**: historyの位置を置く処理をFileMode::placeSavedPosition()に括り出し、0行目も戻し、画面に収まらなければ一番下の行に置く。開いた後にカーソルも画面も動いていないうちにreflow()が来たら(restoredPosition_・restoredPlacement_)、同じhistoryの位置を新しい行・高さで置き直す。
    - 確かめたこと: make usilic・make install・make app。実機は未確認。
+1151. **^[0で行間・字間・余白をまとめて既定へ(2026-10-31)**
+   - **依頼**: 直接のユーザー依頼("行間・字間・左右の余白をまとめてデフォルトへ戻すキーとして^[0を実装してほしい。^[Nは本来N行目へジャンプだが、0行なんて無いんで大丈夫かなと。")。
+   - **変更**: ^[の直後の0は行へ飛ぶ数字の頭にせず(^[1〜^[9は従来どおり)、Application::resetSpacingAndMargins()。EPUBの余白(横書きの左右・縦書きの上下)を0に戻してhistoryにも書き、組み直す。-gでは実行ループがtakeSpacingResetRequest()を見てGraphicalDisplay::resetSpacing()(^[[ / ^[]・^[{ / ^[}で足したドットを縦横とも0に)。-cでは余白だけ戻して「Margins: default」。GUI無しのビルド用のgraphical_display_stub.cppはtools/gen_graphical_display_stub.pyで作り直した(前からの抜けも一緒に入った)。HELPの原稿(src/HELP_.txt・HELP_en_.txt)にキーと説明を足した(ページャーのHELPで使えるキーはHELPの表から)。
+   - 確かめたこと: make usilic・make install・make app。実機は未確認。

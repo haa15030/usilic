@@ -2666,6 +2666,12 @@ std::pair<int, int> GraphicalDisplay::letterSpacingExtras() {
   return {fm::letterSpacingExtraPixels(false), fm::letterSpacingExtraPixels(true)};
 }
 
+void GraphicalDisplay::resetSpacing() {
+  setLineHeightExtras(0, 0);
+  setLetterSpacingExtras(0, 0);
+  reapplyLineHeightKeepingExtra();
+}
+
 int GraphicalDisplay::horizontalColumns() const {
   if (!impl_->verticalSpacing || !impl_->window) return impl_->columns;
   int natural = impl_->naturalCellWidth > 0 ? impl_->naturalCellWidth : impl_->cellWidth;

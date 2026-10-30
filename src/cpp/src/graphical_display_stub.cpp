@@ -42,16 +42,21 @@ int GraphicalDisplay::rows() const { return {}; }
 int GraphicalDisplay::columns() const { return {}; }
 void GraphicalDisplay::setSize(int rows, int columns) {}
 void GraphicalDisplay::handleWindowResized(int newPixelWidth, int newPixelHeight) {}
+void GraphicalDisplay::setSerifEverywhereProvider(std::function<bool()> provider) {}
+void GraphicalDisplay::setSerifSuppressed(bool suppressed) {}
 void GraphicalDisplay::setLineHeightRatios(double horizontal, double vertical) {}
 void GraphicalDisplay::setVerticalLineSpacing(bool vertical) {}
 std::pair<int, double> GraphicalDisplay::adjustLineHeight(int deltaPixels) { return {}; }
+void GraphicalDisplay::setLineHeightExtras(int horizontal, int vertical) {}
+std::pair<int, int> GraphicalDisplay::lineHeightExtras() { return {}; }
 void GraphicalDisplay::reapplyLineHeight() {}
 void GraphicalDisplay::reapplyLineHeightKeepingExtra() {}
-int GraphicalDisplay::horizontalRows() const { return {}; }
 std::pair<int, int> GraphicalDisplay::adjustLetterSpacing(int deltaPixels) { return {}; }
 void GraphicalDisplay::setLetterSpacingExtras(int horizontal, int vertical) {}
 std::pair<int, int> GraphicalDisplay::letterSpacingExtras() { return {}; }
+void GraphicalDisplay::resetSpacing() {}
 int GraphicalDisplay::horizontalColumns() const { return {}; }
+int GraphicalDisplay::horizontalRows() const { return {}; }
 bool GraphicalDisplay::consumeSizeChanged() { return {}; }
 void GraphicalDisplay::adjustFontSize(int deltaPoints) {}
 bool GraphicalDisplay::setFont(FontKind kind, const std::string &path) { return {}; }
@@ -71,15 +76,15 @@ void GraphicalDisplay::setScrolledCursor(std::optional<std::pair<int, int>> line
 void GraphicalDisplay::setPendingRuby(const std::string &reading, int span, bool vertical) {}
 void GraphicalDisplay::renderRuby(int row, int col) {}
 void GraphicalDisplay::drawRubyText(int x, int y, const std::string &ruby, int span, bool vertical, Color color,
-                                    bool serif) {}
+                                    bool serif, double scale) {}
 void GraphicalDisplay::beginContentEdgeCapture() {}
 void GraphicalDisplay::endContentEdgeCapture(int side) {}
 void GraphicalDisplay::renderContentEdge() {}
 void GraphicalDisplay::setContentImages(const std::vector<ContentImage> &images) {}
-double GraphicalDisplay::contentImageWidthFraction(const std::string &key, int rows, int cols) { return 1.0; }
 void GraphicalDisplay::setImageProvider(ImageProvider provider) {}
 SDL_Texture *GraphicalDisplay::contentImageTexture(const std::string &key, int *width, int *height) { return {}; }
 void GraphicalDisplay::renderContentImages(const std::vector<ContentImage> &images) {}
+double GraphicalDisplay::contentImageWidthFraction(const std::string &key, int rows, int cols) { return {}; }
 bool GraphicalDisplay::modeLineVisible() const { return {}; }
 void GraphicalDisplay::setModeLineVisible(bool visible) {}
 void GraphicalDisplay::open() {}
