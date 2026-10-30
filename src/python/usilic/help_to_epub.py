@@ -69,6 +69,45 @@ def join_markup_lines_at_breaks(source):
     return ''.join(out)
 
 
+def convert_markup_to_legacy_help_text(source):
+    """convertMarkupToLegacyHelpText()(usilic -m): <b>は重ね打ち、<u>・<i>は下線の重ね打ち、<indentN>は
+    U+FEFFをN+1個(</indent>は1個)。"""
+    markup = join_markup_lines_at_breaks(source)
+    out, i, n = [], 0, len(markup)
+    while i < n:
+        length = _indent_open_length(markup, i)
+        if length:
+            out.append('\ufeff' * (int(markup[i + 7:i + length - 1]) + 1))
+            i += length
+            if i < n and markup[i] == '\n':
+                i += 1
+            continue
+        if markup.startswith('</indent>', i):
+            if out and out[-1].endswith('\n'):
+                out[-1] = out[-1][:-1]
+            out.append('\ufeff')
+            i += 9
+            continue
+        tag = None
+        for open_tag, close_tag in (('<b>', '</b>'), ('<u>', '</u>'), ('<i>', '</i>')):
+            if markup.startswith(open_tag, i):
+                tag = (open_tag, close_tag)
+                break
+        if tag:
+            close_pos = markup.find(tag[1], i + 3)
+            if close_pos < 0:
+                out.append(tag[0])
+                i += 3
+                continue
+            content = markup[i + 3:close_pos]
+            out.append(''.join(ch + '\b' + ch if tag[0] == '<b>' else '_\b' + ch for ch in content))
+            i = close_pos + 4
+            continue
+        out.append(markup[i])
+        i += 1
+    return ''.join(out)
+
+
 MISCOUNTED_KANA = frozenset([
     0x304C, 0x304E, 0x3050, 0x3052, 0x3054, 0x3056, 0x3058, 0x305A, 0x305C, 0x305E, 0x3060, 0x3062,
     0x3065, 0x3067, 0x3069, 0x3070, 0x3071, 0x3073, 0x3074, 0x3076, 0x3077, 0x3079, 0x307A, 0x307C,

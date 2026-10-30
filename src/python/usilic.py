@@ -20,9 +20,208 @@ from usilic.display import TerminalDisplay  # noqa: E402
 from usilic.key_input import KeyInput  # noqa: E402
 
 
+USAGE = """usage: usilic [options] [<file] [file] [directory]
+  -c            CUI (terminal) mode
+  -g            GUI (window) mode (not in this Python version: starts in CUI)
+  -H            also open HELP in a child usilic
+  -s usec ...   scroll SPEED per level (1-10)
+  -d dot ...    flick DRAG thresholds per level (1-10)
+  -f file       FONT file for -g
+  -z pt         font size for -g (default: last size, or 18)
+  -w wait       macro WAIT (x 10 msec)
+  -b MB         BUFFER size (1-100)
+  -l lines      history LINE count
+  -S -D -F -W -B -L   same as lowercase, and also write it to ~/.usilic/usilicrc
+  -e HELP.1     write HELP.1 as an EPUB to stdout and exit
+"""
+
+
+def read_help_companion(name, markup_path):
+    """C++のreadHelpCompanion(): $USILIC_EPUB_RC・$USILIC_EPUB_NOTES・$USILIC_EPUB_COVER、無ければ
+    ~/.local/lib/usilic/、/usr/local/lib/usilic/、原稿と同じディレクトリの順に探す。"""
+    variable = ('USILIC_EPUB_RC' if name.startswith('usilicrc') else
+                'USILIC_EPUB_NOTES' if name.startswith('HELP.') else 'USILIC_EPUB_COVER')
+    binary = name.endswith('.png')
+
+    def read(path):
+        try:
+            with open(path, 'rb') as f:
+                data = f.read()
+            return data if binary else data.decode('utf-8', 'replace')
+        except OSError:
+            return None
+    given = os.environ.get(variable)
+    if given:
+        return read(given) or (b'' if binary else '')
+    for directory in (os.path.join(os.path.expanduser('~'), '.local', 'lib', 'usilic'), '/usr/local/lib/usilic',
+                      os.path.dirname(markup_path) or '.'):
+        text = read(os.path.join(directory, name))
+        if text is not None:
+            return text
+    return b'' if binary else ''
+
+
+def help_companions(roff, markup_path):
+    """C++のreadHelpCompanions(): 英語の原稿ならusilicrc.en・HELP.en.notes。表紙はusilic_icon_256.png。"""
+    from usilic import help_to_epub
+    english = help_to_epub.is_english_roff(roff)
+    return (read_help_companion('usilicrc.en' if english else 'usilicrc', markup_path),
+            read_help_companion('HELP.en.notes' if english else 'HELP.notes', markup_path),
+            read_help_companion('usilic_icon_256.png', markup_path))
+
+
+def getline_split(text):
+    """std::getline()で読んだ行(最後の改行の後ろの空の行は無し)。"""
+    lines = text.split('\n') if text else []
+    if lines and lines[-1] == '':
+        lines.pop()
+    return lines
+
+
+def run_text_option(option, path):
+    """-m・-n・-e(画面を使わずに標準出力へ書いて終わる、C++のmain()と同じ)。"""
+    from usilic import help_to_epub
+    try:
+        with open(path, encoding='utf-8', errors='replace') as f:
+            source = f.read()
+    except OSError:
+        print('usilic: %s: cannot read %s.' % (option, path), file=sys.stderr)
+        return 1
+    out = sys.stdout.buffer
+    if option == '-m':
+        out.write(help_to_epub.convert_markup_to_legacy_help_text(source).encode('utf-8'))
+        return 0
+    if option == '-n':
+        roff = help_to_epub.convert_markup_to_ms_roff_source(source)
+        rc, notes, cover = help_companions(roff, path)
+        lines = [roff]
+        for l in getline_split(notes):
+            if not l or l[0] != '#':
+                lines.append('.\\" usilic-notes-line' + (' ' + l if l else '') + '\n')
+        for l in getline_split(rc):
+            lines.append('.\\" usilic-rc-line' + (' ' + l if l else '') + '\n')
+        if cover:
+            import base64
+            encoded = base64.b64encode(cover).decode('ascii')
+            for k in range(0, len(encoded), 76):
+                lines.append('.\\" usilic-cover-line ' + encoded[k:k + 76] + '\n')
+        out.write(''.join(lines).encode('utf-8'))
+        return 0
+    roff = source if source.startswith('.') else help_to_epub.convert_markup_to_ms_roff_source(source)
+    rc, notes, cover = help_companions(roff, path)
+    epub, summary, unnoted = help_to_epub.convert_ms_roff_to_help_epub(roff, rc, notes, cover)
+    out.write(epub)
+    out.flush()
+    print('usilic -e: ' + summary, file=sys.stderr)
+    if unnoted:
+        print('usilic -e: no note: ' + ' '.join(unnoted), file=sys.stderr)
+    return 0
+
+
+def parse_options(argv):
+    """C++のmain()のオプション。(オプションの辞書, 位置引数, 終了コード(すぐ終わるなら))。"""
+    options = {'help_child': False, 'key_child': False, 'key_of_pager_parent': False, 'rc': []}
+    positional = []
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in ('-c', '-g'):
+            pass
+        elif a == '-H':
+            options['help_child'] = True
+        elif a == '-K':
+            options['key_child'] = True
+        elif a == '-P':
+            options['key_of_pager_parent'] = True
+        elif a == '-z':
+            value = argv[i + 1] if i + 1 < len(argv) else ''
+            if not value.isdigit() or not 4 <= int(value) <= 200:
+                print('usilic: -z requires a font size in points (4-200, e.g. -z 20).', file=sys.stderr)
+                return options, positional, 1
+            i += 1
+        elif a == '-h':
+            sys.stdout.write(USAGE)
+            return options, positional, 0
+        elif len(a) == 2 and a[0] == '-' and a[1] in 'sSdD':
+            values = []
+            while i + 1 < len(argv) and argv[i + 1].isdigit():
+                values.append(argv[i + 1])
+                i += 1
+            if not values:
+                print('usilic: -%s requires one or more %s.' % (
+                    a[1], 'microsecond values (e.g. -s 90000 20000 10000)' if a[1] in 'sS'
+                    else 'pixel-distance values (e.g. -d 1 2 4 8 16)'), file=sys.stderr)
+                return options, positional, 1
+            options['rc'].append((a[1], values))
+        elif len(a) == 2 and a[0] == '-' and a[1] in 'fFwWbBlL':
+            numeric = a[1] not in 'fF'
+            if i + 1 >= len(argv) or (numeric and not argv[i + 1].isdigit()):
+                print('usilic: -%s requires %s.' % (
+                    a[1], 'a number' if numeric else 'a font file path (e.g. -f /Library/Fonts/MS-Gothic.ttf)'),
+                    file=sys.stderr)
+                return options, positional, 1
+            options['rc'].append((a[1], [argv[i + 1]]))
+            i += 1
+        elif a in ('-m', '-n', '-e'):
+            if i + 1 >= len(argv):
+                print('usilic: %s requires a %s path.' % (a, 'HELP.1' if a == '-e' else 'markup file'), file=sys.stderr)
+                return options, positional, 1
+            return options, positional, run_text_option(a, argv[i + 1])
+        else:
+            positional.append(a)
+        i += 1
+    return options, positional, None
+
+
+def apply_rc_options(configuration, rc_options):
+    """C++のapplyRcOptions(): 小文字はこの起動だけ、大文字は~/.usilic/usilicrcへも書く。"""
+    from usilic import mouse, usilicrc_file
+    home = os.path.expanduser('~')
+    for letter, values in rc_options:
+        lower = letter.lower()
+        if lower == 's':
+            levels = len(mouse.SCROLL_SPEED) - 1
+            if len(values) > levels:
+                print('usilic: -%s only tunes %d levels; the extra %d trailing value(s) will be ignored.' % (
+                    letter, levels, len(values) - levels), file=sys.stderr)
+            configuration.speed_values = [int(v) for v in values[:levels]]
+            current = mouse.SCROLL_SPEED[1:]
+            section = 'SPEED'
+            saved = [' '.join(str(int(values[k]) if k < len(values) else current[k]) for k in range(levels))]
+        elif lower == 'd':
+            configuration.drag_values = [int(v) for v in values]
+            section, saved = 'DRAG', [' '.join(values)]
+        elif lower == 'f':
+            configuration.font_path = values[0]
+            section, saved = 'FONT', [values[0]]
+        elif lower == 'w':
+            configuration.wait_centiseconds = int(values[0])
+            section, saved = 'WAIT', [values[0]]
+        elif lower == 'b':
+            if not 1 <= int(values[0]) <= 100:
+                print('usilic: -%s: value out of range (1-100): %s' % (letter, values[0]), file=sys.stderr)
+                continue
+            configuration.buffer_megabytes = int(values[0])
+            section, saved = 'BUFFER', [values[0]]
+        elif lower == 'l':
+            configuration.retention_count = int(values[0])
+            section, saved = 'LINE', [values[0]]
+        else:
+            continue
+        if letter != lower and not usilicrc_file.set_section(home, section, saved):
+            print('usilic: -%s: cannot write %s to %s' % (letter, section, usilicrc_file.user_path(home)),
+                  file=sys.stderr)
+
+
 def main():
     locale.setlocale(locale.LC_ALL, '')
-    args = sys.argv[1:]
+    options, args, code = parse_options(sys.argv[1:])
+    if code is not None:
+        return code
+    from usilic import usilicrc_file
+    home = os.path.expanduser('~')
+    usilicrc_file.ensure_user(home)  # 無ければ既定のusilicrcを写す、既定の方が新しければ置き換える(C++と同じ)
+    usilicrc_file.update_user_if_older(home)
     # usilicの中から起動した子(^Ou・^Jtのusilic等、C++のUSILIC_TRANSIENT=親のPID): 右下は「USILIC」
     transient = os.environ.pop('USILIC_TRANSIENT', '')
     if transient.isdigit() and int(transient) > 1:
@@ -52,6 +251,7 @@ def main():
         display = TerminalDisplay(screen)
         configuration = Configuration()
         configuration.load_default_file()  # ~/.usilic/usilicrc(無ければ~/.local/lib/usilic/usilicrc)
+        apply_rc_options(configuration, options['rc'])  # -s・-S等(オプション > usilicrc > 組み込み)
         app = Application(display, KeyInput(0), configuration)
         app.layout()
         if stdin_stream is not None and not args:

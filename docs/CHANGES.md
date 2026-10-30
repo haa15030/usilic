@@ -33117,3 +33117,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼("python3版でも現状CUIの全機能を使えるようにして。"、.steering/20261030-python-cui-catchup/)。Python版の^HはインストールされたHELP.epubを開いていたが、HELP.epubは項目1121から入れない。
    - **変更**: help_to_epub.py(C++のconvertMarkupToMsRoffSource()・joinMarkupLinesAtBreaks()・convertMsRoffToHelpEpub()を写したもの)。help_text.help_epub_path()はHELP.1(英語はHELP_en.1)から~/.usilic/HELP.epub(HELP.en.epub)を作り、HELP.1の方が新しければ作り直す(C++のhelpEpubPath())。作ったHELPは名前「HELP」(項目1117)、戻り値も「HELP」(項目1130)。ページャーで使えるキーは、HELPの行頭がタブの行のキーと^M・^K・^Og・^Oj・^[[等・^T^H・^T^K(C++のpagerAllowedKeys()、項目1135)。^OjはKEY・平文のHELPもその場で切り換える。
    - 確かめたこと: ~/HELP.txt・~/HELP_en.txtから作ったroffの本文と、HELP.1から作ったEPUBの中身(modifiedの時刻以外)がC++のusilic -n・-eと同じ。擬似端末で^H→^Ojで英語のHELP。unittest 85件。
+
+1139. **Python版: 起動オプション(-h・-s・-d・-f・-z・-w・-b・-l、大文字はusilicrcへ、-e・-n・-m)(2026-10-30)**
+   - **経緯**: 項目1138と同じ依頼の続き(.steering/20261030-python-cui-catchup/)。Python版は引数をファイル・ディレクトリとしか見ていなかった。
+   - **変更**: usilic.pyのparse_options()・apply_rc_options()(C++のmain()・applyRcOptions()と同じ)。小文字はこの起動だけ、大文字は~/.usilic/usilicrcの節へも書く(usilicrc_file.py、C++のsetSection()を写したもの)。起動時に~/.usilic/usilicrcが無ければ写し、インストールされた方が新しければ控えを取って置き換える(ensureUser()・updateUserIfOlder())。-e・-n・-mは画面を使わずに標準出力へ(注釈の元・表紙はC++と同じ探し方、英語の原稿は.enの方)。-c・-gは受け付ける(この版はCUIだけ)。
+   - 確かめたこと: ~/HELP.txt・~/HELP_en.txtの-n・-mの出力がC++と同じバイト列。-W 12 -S 80000 -L 500でusilicrcのWAIT・SPEED(全段)・LINEが書き換わる。unittest 85件。
