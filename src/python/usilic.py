@@ -18,6 +18,7 @@ from usilic.application import Application  # noqa: E402
 from usilic.configuration import Configuration  # noqa: E402
 from usilic.display import TerminalDisplay  # noqa: E402
 from usilic.key_input import KeyInput  # noqa: E402
+from usilic import help_text, messages_ja  # noqa: E402
 
 
 USAGE = """usage: usilic [options] [<file] [file] [directory]
@@ -271,8 +272,15 @@ def main():
             usilic_dir = os.path.join(os.path.expanduser('~'), '.usilic')
             # ^Ouで開いた外のusilicは、その場限りの(ls)(履歴は読み書きしない、C++と同じ)
             ephemeral = os.environ.pop('USILIC_NO_HISTORY', '') == '1' or bool(transient)
+            # 最初の起動(~/.usilic/historyが無い、C++のfirstPagerStart): HELP(EPUB)をページャーとして開き、qで
+            # 終わる。historyは既定値のままその場で作る(次の起動から普段の画面)。
+            first_start = not ephemeral and not os.path.exists(os.path.join(usilic_dir, 'history'))
+            if first_start:
+                os.makedirs(usilic_dir, exist_ok=True)
             history = (hist.load_from_disk(usilic_dir, configuration.retention_count)
                        if os.path.isdir(usilic_dir) and not ephemeral else None)
+            if first_start and history is not None:
+                hist.save_to_disk(history, usilic_dir)
             if history is not None:
                 history.on_ring_pushed = lambda category: (
                     hist.save_to_disk(history, usilic_dir) if category != hist.SHELL_COMMAND else None)
@@ -284,6 +292,16 @@ def main():
                 started = app.start_resuming_session(last, '.')
             if not started:
                 return 'usilic: cannot list ' + (args[0] if args else '.')
+            if not ephemeral:  # 足りないプログラムのインストールの案内(実行ループの最初でSHELLへ)
+                from usilic import install_offer
+                offer = install_offer.plan(usilic_dir)
+                if offer:
+                    app.pending_shell_offer = (offer[0], offer[1], 3, offer[2])
+            if first_start and help_text.help_roff_path(messages_ja.japanese()):
+                app.pager_launch = True
+                app.first_start_pager = True
+                app.shell.display_name = 'USILIC'
+                app.help_in_parent_pending = True
 
             def on_exit():
                 app.save_positions()

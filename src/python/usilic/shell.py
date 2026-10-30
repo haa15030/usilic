@@ -40,6 +40,8 @@ class Shell:
         self.pending = ''        # まだ改行の来ていない行
         self.prompt = ''         # 今のプロンプト(表示用、「usilic-1.5b:~/x$ 」)
         self.prompt_ready = False
+        self.prompt_generation = 0   # プロンプトが出た回数(C++のpromptGeneration())
+        self.display_name = PROMPT_DISPLAY_NAME  # プロンプトの名前(最初の起動は「USILIC」、C++のsetPromptName())
         self.current_directory = ''
         self.byte_count = 0
         self._decoder = codecs.getincrementaldecoder('utf-8')('replace')
@@ -175,11 +177,12 @@ class Shell:
             body = inner[len(PROGRAM_NAME) + 1:]
             directory = body[:-2] if body.endswith('$ ') or body.endswith('# ') else body
             self.current_directory = os.path.expanduser(directory)
-            self.prompt = PROMPT_DISPLAY_NAME + ':' + body
+            self.prompt = self.display_name + ':' + body
         else:
             self.prompt = inner
         self.pending = self.pending[end + len(PROMPT_MARK):]
         self.prompt_ready = True
+        self.prompt_generation += 1
 
     def submit_line(self, command):
         """Shell::submitLine(): プロンプトとコマンドを行として残し、bashへ送る。"""
@@ -209,7 +212,7 @@ class Shell:
             for i, piece in enumerate(pieces):
                 out.append(Line(piece, number, ends_with_newline=(i == len(pieces) - 1), shell_command=command))
         live = (self.prompt if self.prompt_ready else self.pending) + command_text
-        bold = len(PROMPT_DISPLAY_NAME) + 1 if self.prompt_ready and self.prompt.startswith(PROMPT_DISPLAY_NAME + ':') else 0
+        bold = len(self.display_name) + 1 if self.prompt_ready and self.prompt.startswith(self.display_name + ':') else 0
         for piece in wrap_text(expand_tabs(live), width):
             # 打っている行のプロンプトの「usilic-1.5b:」は太字(C++のSHELLのプロンプトの行)
             attributes = [(0, min(bold, len(piece)), 'bold')] if bold else []

@@ -115,6 +115,11 @@ class Application:
         self.external_markers = []   # 新しいウィンドウの子が終わると消えるファイル(C++のexternalPagerMarkers_)
         self.help_jump_on_start = None  # 親が開き直したHELPの子が起動したら飛ぶ行(USILIC_HELP_JUMP)
         self.children_pending = (False, False)  # -H・-Kで開くHELP・KEYの子(実行ループの最初で)
+        self.pending_shell_offer = None  # 起動時のインストールの案内(実行ループの最初で、C++のpendingShellOffer_)
+        self.shell_offer = None      # 置いたコマンドの続き(C++のshellOffer_)
+        self.help_in_parent_pending = False  # 最初の起動: 実行ループの最初でHELPを開く
+        self.limited_leader_j = False  # 機能限定SHELLの^Jの後
+        self.limited_escapes = 0     # 機能限定SHELLの^[^[^M(すぐ終わる)
         self.pager_numbers_cache = None  # pager_key_numbers()
         self.pager_files = []       # n/p/x/fで切り替えるfile
         self.pager_index = 0
@@ -1939,6 +1944,82 @@ class Application:
         self.jump_highlight = (view, view.cursor_index, text, start)
         return True
 
+    # --- 最初の起動(C++のsetFirstStartPager()・limitedShellAllows()・offerShellCommand()) ---
+    def limited_shell_key(self, byte, special):
+        """最初の起動の機能限定SHELL: インストールの間は字・^H・^Mだけ、その後はコマンド行の編集・^C・^D・^G・
+        ^P/^N・^M・^Js・^J.・^J,だけ。使えないキーは「ページャーでは使えません」。^[^[^Mはすぐ終わる。"""
+        def refuse():
+            self.show_transient_notice('Not available in pager')
+            return False
+        if special is not None:
+            return refuse()
+        if byte == ESC:
+            self.limited_escapes += 1
+            return refuse() if self.limited_escapes > 2 else True
+        escapes, self.limited_escapes = self.limited_escapes, 0
+        if escapes >= 2 and byte == CR:
+            self.wants_exit = True
+            return True
+        if escapes:
+            return refuse()
+        printable = byte >= 0x20
+        if self.shell_offer is not None:  # インストールの案内が続いている間
+            self.limited_leader_j = False
+            if printable or byte in (0x08, CR):
+                return self.feed_shell_byte(byte)
+            return refuse()
+        if self.limited_leader_j:
+            self.limited_leader_j = False
+            number = {ord('s'): 69, ord('.'): 71, ord(','): 72}.get(byte)
+            return self.handle_key_number(number, None) if number else refuse()
+        if byte == CTRL_J:
+            self.limited_leader_j = True
+            return True
+        if printable or byte in (0x01, 0x02, 0x03, 0x04, 0x05, 0x06, CTRL_G, 0x08, 0x0B, CR, 0x0E, 0x10, 0x15, 0x17,
+                                 0x19, 0x1F):
+            return self.feed_shell_byte(byte)
+        return refuse()
+
+    def offer_shell_command(self, command, follow_up=None, retries=2):
+        """SHELLへ切り替え、`command`を入力欄に置く(プロンプトが出たら実行する)。続きがあれば、プロンプトが戻るたびに
+        follow_up()の行を実行する(最大retries回、C++のoffer_shell_command()・pollShellOfferFollowUp())。"""
+        if not self.ensure_shell():
+            return False
+        if self.current_mode != SHELL:
+            self.enter_mode(SHELL)
+        self.command_line.set_text(command)
+        self.shell_offer = {'follow_up': follow_up, 'offered': command, 'generation': self.shell.prompt_generation,
+                            'retries': retries} if follow_up else None
+        if self.shell.prompt_ready:  # もうプロンプトが出ていれば(起動を待ち合わせ済み)、そのまま実行する
+            self.feed_shell_byte(CR)
+        self.refresh_shell_view()
+        return True
+
+    def poll_shell_offer(self):
+        offer = self.shell_offer
+        if offer is None:
+            return False
+        if not self.shell.alive():
+            self.shell_offer = None
+            return False
+        if self.shell.prompt_generation == offer['generation']:
+            return False
+        offer['generation'] = self.shell.prompt_generation
+        if self.command_line.text == offer['offered']:  # 置いた行は^Mを待たずに、プロンプトが出たら実行する
+            self.feed_shell_byte(CR)
+            return True
+        following = offer['follow_up']()
+        if not following or offer['retries'] <= 0:
+            self.shell_offer = None
+            if self.first_start_pager and not following and self.current_mode == SHELL:
+                self.go_back()  # 最初の起動: 全部入れ終えたらHELPへ戻る(C++のfinishFirstStartInstall())
+            return True
+        offer['retries'] -= 1
+        offer['offered'] = following
+        self.command_line.set_text(following)
+        self.feed_shell_byte(CR)
+        return True
+
     # --- 子のウィンドウ(^T^H・^T^K・-H・-K、C++のlaunchHelpChild()・launchKeyChild()・pollChildChannel()) ---
     @staticmethod
     def encode_help_request(key, nth):
@@ -2025,6 +2106,16 @@ class Application:
         """親がいなくなれば終わる。受け渡しのFIFOの行を処理する。新しいウィンドウの子が終われば知らせを消す。"""
         if self.parent_pid > 1 and children.parent_gone(self.parent_pid):
             self.wants_exit = True
+            return True
+        if self.help_in_parent_pending:  # 最初の起動: 親自身がHELPをページャーとして開く
+            self.help_in_parent_pending = False
+            self.start_help()
+            self.redraw()
+        if self.pending_shell_offer is not None:
+            command, follow_up, retries, on_offered = self.pending_shell_offer
+            self.pending_shell_offer = None
+            if self.offer_shell_command(command, follow_up, retries) and on_offered:
+                on_offered()
             return True
         if any(self.children_pending):
             help_child, key_child = self.children_pending
@@ -2147,6 +2238,8 @@ class Application:
                     self.file_mode.ensure_loaded_through(int(digits) + self.file_view.height)
                 self.active_view().go_to_line(int(digits))
             return True
+        if self.first_start_pager and self.current_mode == SHELL and not self.pending_keys:
+            return self.limited_shell_key(byte, special)
         if special is not None:
             self.pending_keys = []
             return self.handle_special(special)
@@ -2647,6 +2740,10 @@ class Application:
                 return True
             return self.go_back()
         if mode == TOC:
+            if self.first_start_pager and self.shell_started and self.shell.alive():
+                self.enter_mode(SHELL)  # 最初の起動: インストールの後は機能限定SHELLへ(C++のreturnFromCut())
+                self.refresh_shell_view()
+                return True
             if self.pager_launch:
                 self.current_mode = FILE
                 return True
@@ -5276,6 +5373,7 @@ class Application:
                     if self.current_mode == SHELL:
                         self.go_back()
                 self.check_shell_run()
+                self.poll_shell_offer()
                 if self.current_mode == SHELL:
                     self.refresh_shell_view()
                 self.redraw()

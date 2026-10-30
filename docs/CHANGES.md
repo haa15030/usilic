@@ -33127,3 +33127,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 項目1138と同じ依頼の続き(.steering/20261030-python-cui-catchup/)。Python版は^T^H・^T^Kが無く、^Ou・^Jtのusilicは画面を明け渡して前面で動かすだけだった。
    - **変更**: children.py(C++のopenInNewTerminalWindow()・openChildChannel()・sendToChannel()・registerAsChild()・terminateChildren()を写したもの)。子のusilicは端末の新しいウィンドウで(macOSはTerminal.app・iTerm2、親の右隣にHELP、その下にKEY、他は右下へずらす。Linuxはgnome-terminal等)、開けなければ(ssh等)前面で。^T^H・-HはHELPの子、^T^K・-KはKEYの子(ページャーの親なら-P)。KEYの子の^Mは親でそのキーを動かし、hはHELPの子のその行へ(いなければHELPの子を開き直して飛ぶ)。子は親がいなくなれば終わり、親は終わる前に子を終わらせる。^Ou・^Jtのusilic・USILICの一覧の「(usilic)」も同じ起動。
    - 確かめたこと: SSH_TTYを立てた擬似端末で^T^K→前面でKEYの子(右下「USILIC」)。新しいウィンドウでの起動は未確認。unittest 85件。
+
+1141. **Python版: 最初の起動(ページャーのHELP・機能限定SHELL)と、足りないプログラムのインストールの案内(2026-10-30)**
+   - **経緯**: 項目1138と同じ依頼の続き(.steering/20261030-python-cui-catchup/)。Python版には最初の起動(項目1109・1111・1127・1128)も、起動時のインストールの案内(groff等、~/.usilic/install-offered)も無かった。
+   - **変更**: ~/.usilic/historyが無ければ、historyをその場で作り、HELP(作ったHELP.epub)をページャーとして開く(qで終わる)。SHELLのプロンプトは「USILIC」、機能限定(インストールの間は字・^H・^Mだけ、その後はコマンド行の編集・^C・^D・^G・^P/^N・^M・^Js・^J.・^J,、他は「ページャーでは使えません」、^[^[^Mですぐ終わる)。インストールの後は章の一覧の^GでSHELLへ。install_offer.py(C++のofferGroffInstallOnce()を写したもの)は、見つからないプログラム(macOSはbrew、他はapt)を、まだ案内していないものだけSHELLで実行し、プロンプトが戻るたびに残りを入れ直す(最大3回)。最初の起動では入れ終えたらHELPへ戻る。
+   - 確かめたこと: 擬似端末で、historyの無いHOMEからページャーのHELP→^[sで「USILIC:」のSHELL→^Xで「ページャーでは使えません」→^GでHELP→qで終わる。案内のコマンドを差し替えて、2段のコマンドが続けて実行されHELPへ戻る。unittest 85件。
