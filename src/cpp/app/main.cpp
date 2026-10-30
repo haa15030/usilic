@@ -5835,6 +5835,13 @@ int main(int argc, char **argv) {
   // directory-looking token(s) (flags never start with ~).
   // 2026-10-23: INFOの1行目は「OS名 : コマンドライン」なので、プログラム名(argv[0]の名前だけ)から。
   std::string bootOptions = argc > 0 ? std::filesystem::path(argv[0]).filename().string() : std::string("usilic");
+  // 2026-10-30、直接のユーザー依頼(アイコンからの起動では"^Iの最上行を`usilic.app`にして"): .appの中の実行ファイル
+  // (…/usilic.app/Contents/MacOS/usilic)なら、プログラム名は.appの名前。
+  if (argc > 0) {
+    std::string self = argv[0];
+    std::size_t contents = self.find(".app/Contents/MacOS/");
+    if (contents != std::string::npos) bootOptions = std::filesystem::path(self.substr(0, contents + 4)).filename().string();
+  }
   for (int i = 1; i < argc; i++) {
     std::string token = argv[i];
     if (homeEnv && (token == "~" || (token.size() > 1 && token[0] == '~' && token[1] == '/'))) {

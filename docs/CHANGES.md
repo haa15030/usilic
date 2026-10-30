@@ -33077,3 +33077,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告(~/.usilic/historyを消してアイコンから起動、"INFOの戻り値が`/Users/haa15030/`となっていて実際に^Gで(ls)へ脱獄できてしまう。戻り値HELPでよろしく")。EPUBの章の一覧(Cut)等、本文(File)以外から^Iを押すと、戻り先(infoPreviousFilePath_)が空になり、^Gは(ls)へ戻っていた。
    - **変更**: executeShowUsilicBanner()は、EPUBの章の一覧からならその本を戻り先にし、最初の起動(firstStartPager_)で戻り先が無ければHELP(helpEpubPath())にする。戻り先が作ったHELP.epubなら、モードラインの戻り値は「HELP」(^Gは項目1127のとおり^Hと同じ開き方で戻る)。
    - 確かめたこと: make usilic。-cで最初の起動→(本文・章の一覧のどちらでも)^Iで「INFO 1/6 TOP 628 HELP」、^Gで「HELP … EPUB」。
+
+1131. **アイコンから起動したINFOの1行目のプログラム名を「usilic.app」に(2026-10-30)**
+   - **経緯**: 直接のユーザー依頼(アイコンからの起動では"^Iの最上行を`usilic.app`にして")。
+   - **変更**: main.cppのbootOptionsは、argv[0]が.appの中の実行ファイル(…/usilic.app/Contents/MacOS/usilic)なら、プログラム名を.appの名前にする。
+   - 確かめたこと: make usilic(アイコンからの起動は未確認)。
