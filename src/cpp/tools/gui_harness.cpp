@@ -13,7 +13,7 @@
 //   LH0         行の高さを既定(LINE-HEIGHT無し)にする(無ければ横書き1.2・縦書き1.0)
 //   SNAPDIR     coastの1歩ごとの画面をf1.bmp, f2.bmp…として保存、BMP 最後の画面を保存
 //   操作: x1b等(16進の1バイト)、文字列(1字ずつ)、coast+N/coast-N(慣性の1歩をN回、先へ/前へ。1歩ごとに
-//         STEP/TIMEの行を標準エラーへ)、tcoast+N/tcoast-N(1行・1列ずつ)、snap:path(その時の画面を保存)、flush
+//         STEP/TIMEの行を標準エラーへ)、tcoast+N/tcoast-N(1行・1列ずつ)、snap:path(その時の画面を保存)、click:行,桁(左クリック)、flush
 #include "application.hpp"
 #include "graphical_display.hpp"
 #include "key_input.hpp"
@@ -111,6 +111,12 @@ int main(int argc, char **argv) {
         std::fprintf(stderr, "TIME %d %lldms\n", j, (long long)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count());
         if (const char *d = std::getenv("SNAPDIR")) snap((std::string(d) + "/f" + std::to_string(++frameNo) + ".bmp").c_str());
       }
+      continue;
+    }
+    if (k.rfind("click:", 0) == 0) {  // click:行,桁(0から、左クリック)
+      int row = 0, column = 0;
+      std::sscanf(k.c_str() + 6, "%d,%d", &row, &column);
+      std::fprintf(stderr, "CLICK %d,%d -> %d\n", row, column, app.handleMouseClick(row, column));
       continue;
     }
     if (k.rfind("snap:", 0) == 0) { gd.flush(); gd.flush(); gd.flush(); snap(k.c_str() + 5); continue; }
