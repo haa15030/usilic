@@ -58,6 +58,7 @@ _EXACT = {
     'No Open in URL (usilicrc)': 'usilicrc の URL に Open がありません',
     'Opened in a new window': '新しいウィンドウで開きました',
     'Parent not reachable': '親に届きません',
+    'SHELL busy (the previous command has not finished)': 'SHELL は使用中です（前のコマンドが終わっていません）',
     'Wheel: normal': 'ホイール: 順',
     'Wheel: reversed': 'ホイール: 逆',
     'Window not reachable': 'ウィンドウに届きません',

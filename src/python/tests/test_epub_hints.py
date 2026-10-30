@@ -70,12 +70,10 @@ class HintsTest(unittest.TestCase):
 
     def test_header_after_cover_and_title_page(self):
         texts = [l.text.split('\u2060')[0] for l in self.lines]  # 章の行の印(U+2060と空白)は除いて
-        # 表紙が先頭、書名・著者名はその後(表紙のファイルの後に空行、C++と同じ)
-        self.assertEqual(texts[:4], ['[image: cover.jpg]', '', '書名　一', '著者'])
+        # 表紙が先頭、その後は本自身の扉(自前の書名・著者名の扉は足さない、C++の項目1094)
+        self.assertEqual(texts[:4], ['[image: cover.jpg]', '', '書名', '著者'])
         h = self.book.hints
-        self.assertIn((self.raw['書名　一'], self.raw['著者']), h.centered)        # 冒頭の書名・著者名は扉と同じ
         self.assertIn((self.raw['書名'], self.raw['書名'] + 1), h.centered)        # 横書きの中の縦書きの箱
-        self.assertIn(self.raw['著者'], h.align_end)
 
     def test_colophon_is_horizontal_and_hidden_heading(self):
         h = self.book.hints

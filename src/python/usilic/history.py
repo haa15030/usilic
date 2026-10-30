@@ -188,6 +188,9 @@ class History:
         ring = self.rings.setdefault(USILIC, [])
         if ring and ring[-1] == entry:
             return
+        if len(ring) >= 2 and ring[-2] == entry:  # 1つ前との行き来は入れ替えるだけ(_push_recent_impl()参照)
+            ring[-2], ring[-1] = ring[-1], ring[-2]
+            return
         ring.append(entry)
         self._trim(USILIC)
 
@@ -198,8 +201,12 @@ class History:
             return
         if category == SHELL_COMMAND:
             ring[:] = [n for n in ring if n != name]
-        ring.append(name)
-        self._trim(category)
+        # 1つ前と同じものは積み足さずに末尾の2つを入れ替える(^J^Jの行き来でA,B,A,B…と積まない、C++の項目1122)
+        if len(ring) >= 2 and ring[-2] == name:
+            ring[-2], ring[-1] = ring[-1], ring[-2]
+        else:
+            ring.append(name)
+            self._trim(category)
         if category == RECENT_FILE and not name.endswith(USILIC_TAG):
             path_part = name
             if len(path_part) >= 4 and path_part[-1] in '"/':  # 「パス "パターン"」の合成形はパスの部分だけ

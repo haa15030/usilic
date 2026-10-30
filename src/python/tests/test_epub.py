@@ -34,15 +34,15 @@ class EpubTest(unittest.TestCase):
             self.assertEqual(book.title, '本')
             lines, toc = book.render(40)
             texts = [l.text.split('\u2060')[0] for l in lines]  # 章の行の印(U+2060と空白)は除いて
-            # 冒頭に書名と空の行(C++のepubToHelpMarkup()のheader)。CSSは本文のファイルが読み込む物だけ
-            # ファイルの終わりが空行でなければ空行を1つ置く(C++のepubToHelpMarkup()、同じ本でC++も8行)
-            self.assertEqual(texts, ['本', '', '第一章', '  本文の太字と漢字《かんじ》。', '', '節', '[image: pic.png]', ''])
-            self.assertEqual(lines[2].attributes, [(0, 3, 'bold')])
-            self.assertIn((5, 7, 'bold'), lines[3].attributes)   # 字下げの分ずれる
+            # 自前の扉(書名・著者名)は足さない(C++の項目1094)。CSSは本文のファイルが読み込む物だけ
+            # ファイルの終わりが空行でなければ空行を1つ置く(C++のepubToHelpMarkup())
+            self.assertEqual(texts, ['第一章', '  本文の太字と漢字《かんじ》。', '', '節', '[image: pic.png]', ''])
+            self.assertEqual(lines[0].attributes, [(0, 3, 'bold')])
+            self.assertIn((5, 7, 'bold'), lines[1].attributes)   # 字下げの分ずれる
             self.assertEqual([(t, depth) for _, t, depth in book.toc], [('第一章', 0), ('節', 1)])
-            # 章の一覧(C++のCUT): 章の行の字、最初の章より前(書名)は「--」
-            self.assertEqual(toc, [0, 2, 5])
-            self.assertEqual(book.chapter_titles, ['--', '第一章', '節'])
+            # 章の一覧(C++のCUT): 章の行の字
+            self.assertEqual(toc, [0, 3])
+            self.assertEqual(book.chapter_titles, ['第一章', '節'])
 
 
 if __name__ == '__main__':

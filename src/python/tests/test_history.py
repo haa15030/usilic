@@ -59,12 +59,20 @@ class HistoryTest(unittest.TestCase):
             session.push_recent(H.RECENT_FILE, '/x/A')
             H.save_to_disk(session, d)
             session.push_recent(H.RECENT_FILE, '/x/B')
+            session.push_recent(H.RECENT_FILE, '/x/C')
             session.push_recent(H.RECENT_FILE, '/x/A')
             H.save_to_disk(session, d)
             disk = H.load_from_disk(d)
-            self.assertEqual(disk.recent_entries(H.RECENT_FILE), ['/x/A', '/x/B', '/x/A'])
+            self.assertEqual(disk.recent_entries(H.RECENT_FILE), ['/x/A', '/x/B', '/x/C', '/x/A'])
             self.assertTrue(os.path.exists(os.path.join(d, 'history.old')))
             self.assertFalse(os.path.exists(os.path.join(d, 'history.lock')))
+
+    def test_back_and_forth_swaps(self):
+        """1つ前との行き来(^J^J)は積まずに入れ替える(C++の項目1122)。"""
+        h = H.History()
+        for name in ('/x/A', '/x/B', '/x/A', '/x/B', '/x/A'):
+            h.push_recent(H.RECENT_FILE, name)
+        self.assertEqual(h.recent_entries(H.RECENT_FILE), ['/x/B', '/x/A'])
 
 
 if __name__ == '__main__':

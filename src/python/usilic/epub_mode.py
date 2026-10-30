@@ -392,7 +392,8 @@ class _XhtmlParser(HTMLParser):
         if tag == 'rt':
             self.in_rt += 1
         if tag == 'a':
-            noteref = 'noteref' in (a.get('epub:type') or a.get('type') or '')
+            # 注釈から本文へ戻るリンク(role="doc-backlink"、HELP.epub、C++の項目1103)も同じ見た目に
+            noteref = 'noteref' in (a.get('epub:type') or a.get('type') or '') or 'doc-backlink' in (a.get('role') or '')
             if noteref:  # 注釈番号は括弧で囲む(括弧はリンクの外、縦書きは全角、C++と同じ)
                 self._add('［' if self._vertical_now() else '[')
             self.hrefs.append(a.get('href'))
@@ -761,10 +762,8 @@ class EpubBook:
         hints = EpubHints()
         kinds, heading_raws, links = {}, set(), []   # 元の行→種類、章の行、(元の行, 行き先)
         anchor_raws, header = {}, (0, 0)
+        # 2026-10-30(C++の項目1094): 本の情報(OPF)から作る自前の扉(書名・著者名)は足さない(本自身の扉と二重に見えた)。
         documents = [(href,) + self._with_toc_labels(href, self.documents[href]) for href in self.spine]
-        at = 1 if self.cover_first else 0
-        if self._header_blocks():
-            documents.insert(min(at, len(documents)), (None, self._header_blocks(), {}))
         pending = []  # 字の出る行を待っているアンカー(C++のresolveAnchorsHere()、空の行は指さない)
         chapters, hidden_label = [], None  # 章の一覧(行, 名前)、まだ使っていない隠した見出しの字
 
@@ -800,6 +799,16 @@ class EpubBook:
                             links.append((number, target))
                     text += piece
                     pos += len(piece)
+                # 2026-10-30(C++の項目1132): <u>FONT</u>[6]のように、リンクでない下線のすぐ後ろ(間が無いか"["だけ)に
+                # 本の中へのリンクが続くなら、その下線も同じリンクにする(クリック・^Mで注釈へ)。
+                for start, end, name in list(runs):
+                    if name != 'underline' or any(s <= start < e for s, e, _ in line_links):
+                        continue
+                    for s, e, target in line_links:
+                        if s >= end and text[end:s] in ('', '[') and not re.match(r'[a-z]+:', target):
+                            line_links.append((start, end, target))
+                            break
+                line_links.sort()
                 if not block.pre:
                     stripped = text.lstrip(' ')
                     shift = len(text) - len(stripped)

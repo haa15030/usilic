@@ -425,7 +425,8 @@ class Application:
                 fields.split_layout_when_crowded = True
                 return fields, position
             if self.pager_launch:  # ページャー(C++のpagerMode_)。組んだ物(.md)の位置はFILEと同じ形、他は5桁
-                pos = self.notice or (mode_line.format if fm.transformed else mode_line.format_fixed_width)(
+                pos = self.notice or (mode_line.format if fm.transformed or fm.whole_loaded
+                                      else mode_line.format_fixed_width)(
                     *self.position_numbers(view))
                 return F(fm.current_file, str(fm.byte_count), False, PROGRAM_LABEL, fm.label or ''), pos
             if fm.origin is not None:  # USILICの一覧から開いたfile: 名前はパスのまま、後ろに印
@@ -510,6 +511,8 @@ class Application:
             if self.vertical_list_active():  # 縦書きの章の一覧: 位置は「選んでいる章/章の数」
                 position = self.notice or '%02d/%02d' % (view.cursor_index + 1, max(1, len(view.lines)))
                 fields = F('EPUB', str(self.content_byte_count()), True, '', '縦書き')
+            elif self.pager_launch:  # ページャーの本の章の一覧は^Gでどこへも戻らない: 戻り値は無く透かし(C++の項目1115)
+                return F(name, str(self.content_byte_count()), False, PROGRAM_LABEL), position
             else:  # 大きさは本文の行のバイト数(C++のcontentByteCount(fileView_))
                 fields = F(name, str(self.content_byte_count()), True)
             fields.trailing3 = directory
@@ -1059,7 +1062,10 @@ class Application:
             return True
         if is_markdown_file(path) and self.open_markdown(path, push=False):
             return True
-        return self.file_mode.load_file(path, self.wrap_width(), self.file_view.height)
+        if not self.file_mode.load_file(path, self.wrap_width(), self.file_view.height):
+            return False
+        self.file_mode.load_whole_if_small_file(path)
+        return True
 
     # --- ファイルを開く ---
     def resolve_path(self, text, base=None):
@@ -2168,7 +2174,17 @@ class Application:
             return self.handle_paste(special.text)
         if self.coast is not None and special in ('Up', 'Down', 'Left', 'Right'):
             return self.adjust_coast_by_arrow(special)  # 慣性中の矢印: 速さ・向き
+        # EPUBの慣性スクロール中の;/:は、章を移ってから同じ段階・向きの慣性を続ける(C++の項目1083)
+        keep_coast = self.coast if (self.coast is not None and special is None and byte in (ord(';'), ord(':'))
+                                    and self.current_mode == FILE and self.epub is not None) else None
         self.coast = self.drag = None  # キーで慣性・ドラッグは終わる
+        if keep_coast is not None:
+            result = self.feed_key(byte, special)
+            if self.current_mode == FILE and self.epub is not None:
+                keep_coast['due'] = time.monotonic()
+                keep_coast['columns'] = self.vertical_scroll_active()
+                self.coast = keep_coast
+            return result
         self.click_targets_cursor = False
         if self.macro_repeat_armed:  # ^Xeの直後のe(K-131)は、記録したマクロをもう一度(MACRO節のeより先に)
             self.macro_repeat_armed = False
@@ -2207,6 +2223,11 @@ class Application:
 
     def feed_canonical(self, byte, special):
         """既定のキー列の1キー(読み替えた後、マクロの再生・KEYの^Mから)。"""
+        # ^]は、どの画面・プロンプトでも^J^C(カレントディレクトリへ)と同じ(C++の項目1113)。^X等の続きの1打は除く。
+        if special is None and byte == 0x1D and not self.pending_keys and self.goto_digits is None \
+                and self.register_state is None and not self.limited_leader_j:
+            self.feed_canonical(CTRL_J, None)
+            return self.feed_canonical(0x03, None)
         if self.macro_recording is not None and not self.playing and special is None:
             self.macro_recording.append(byte)
         self.notice = None
@@ -3766,11 +3787,23 @@ class Application:
                 c.go_to_row(len(c.view.lines) - 1)
             elif byte == ord('v'):
                 c.move_row(-c.view.height)
+            elif chr(byte).isalpha() and chr(byte) not in 'wtvfbd':
+                # ^[sのようなモードキー: ^[wと同じく確定してからCOPYを抜け、そのキーを通常どおり(C++の項目1120)
+                self.copy_then_leave()
+                self.feed_canonical(ESC, None)
+                return self.feed_canonical(byte, None)
             return True
         if prefix == 'X':
             if byte == ord(' '):
                 c.toggle(True)
+            elif byte != CTRL_G:  # ^X^F等も確定してから抜けて通常どおり
+                self.copy_then_leave()
+                self.feed_canonical(CTRL_X, None)
+                return self.feed_canonical(byte, None)
             return True
+        if byte == CTRL_J:  # ^Jの続き(^Js等)も確定してから抜ける
+            self.copy_then_leave()
+            return self.feed_canonical(CTRL_J, None)
         if byte == ESC:
             self.copy_prefix = 'ESC'
         elif byte == CTRL_X:
@@ -3790,6 +3823,14 @@ class Application:
         elif byte == 0x16:
             c.move_row(c.view.height)
         return True
+
+    def copy_then_leave(self):
+        """^[wと同じく範囲(離れ小島も)を確定してヤンクバッファ・クリップボードへ入れ、COPYを抜ける(C++のcopyThenLeave())。"""
+        text = self.copy.confirmed_text() if self.copy is not None else ''
+        self.end_copy()
+        if text:
+            pr.PROMPT_KILL['text'] = text
+            self.deliver_copied_text(text, False, notice=False)
 
     def end_copy(self):
         """COPYを抜ける。下のモードの位置はCOPYに入る前のまま(C++はCOPYを写し(copyView_)の上でする)。"""
@@ -3997,10 +4038,30 @@ class Application:
             if number == 73:  # ^Jw: バッファ名
                 name = self.file_mode.current_file if origin == FILE else self.directory_mode.current_directory
                 self.last_shell_insert = shlex.quote(name)
-            else:  # ^J^W: バッファの内容を~/.usilic/data/へ保存して「cat ファイル名」
+            else:  # ^J^W: バッファの内容を~/.usilic/data/へ保存して「cat ファイル名」(C++のshellInsertBufferContent())
+                if self.shell.alive() and not self.shell.prompt_ready:  # 前のコマンドがまだ終わっていない
+                    self.show_transient_notice('SHELL busy (the previous command has not finished)')
+                    return False
                 view = self.active_view() if self.current_mode != SHELL else {
                     FILE: self.file_view, DIRECTORY: self.directory_view}.get(origin, self.directory_view)
-                path = os.path.join(self.data_directory(), origin)
+                # 名前: (ls)はディレクトリ名、FILEはファイル名(.epubは.txtに、C++の項目1134)、ARCは選んだ中身の名前。
+                # 他(一致した行の一覧等、一覧そのものが中身)は作業ファイル。
+                name = ''
+                if origin == DIRECTORY:
+                    name = os.path.basename(self.directory_mode.current_directory.rstrip('/'))
+                elif origin == FILE:
+                    name = os.path.basename(self.file_mode.current_file)
+                    if is_epub_file(name):
+                        name = os.path.splitext(name)[0] + '.txt'
+                elif origin == ARCHIVE and self.archives:
+                    entry = self.archives[-1].selected_entry()
+                    name = os.path.basename(getattr(entry, 'name', '') or '') if entry else ''
+                if name:
+                    path = os.path.join(self.data_directory(), name)
+                    if self.history is not None:
+                        self.history.push_recent(hist.RECENT_DIRECTORY, self.data_directory().rstrip('/') + '/')
+                else:
+                    path = self.allocate_work_file()
                 with open(path, 'w', encoding='utf-8', errors='surrogateescape') as f:
                     for line in view.lines:
                         f.write(line.text + '\n')

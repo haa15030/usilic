@@ -38,6 +38,7 @@ class FileMode:
         self.history = None      # (ls)から開いた時だけ(ページャーでは履歴に触れない)
         self.label = None        # モードラインの「(gzip)」等(FILTERのプログラム、C++の「(groff)」)
         self.transformed = False  # ページャーで組んで見せている(.md、C++のpagerTransformed_)
+        self.whole_loaded = False  # 引数の小さい普通のファイルを全部読んだ(位置はFILEと同じ形、load_whole_if_small_file())
         self.origin = None        # (名前, 印): USILICの一覧から開いた時のモードライン(C++のpushWithNameOverride())
         self.tail = None         # モードラインの最後の欄(Noneなら(ls)のディレクトリ、「ARC: …」等)
         self.renderer = None     # 幅が変わった時に組み直す関数(EPUB・MAN等、widthを受け取り行の並びを返す)
@@ -53,6 +54,17 @@ class FileMode:
         except OSError:
             return False
         return self.load_stream(stream, path, width, initial_lines)
+
+    def load_whole_if_small_file(self, path):
+        """引数で開いた普通のファイルが16MB以下なら全部読む(位置はFILEと同じ桁合わせの形に、C++の項目1123)。"""
+        try:
+            small = os.path.isfile(path) and os.path.getsize(path) <= 16 * 1024 * 1024
+        except OSError:
+            small = False
+        if small:
+            self.load_all()
+            self.whole_loaded = True
+        return small
 
     def load_bytes(self, data, name, width):
         """メモリの中身(アーカイブの中のfile・FILTERの出力)を全部読む。"""
@@ -74,6 +86,7 @@ class FileMode:
     def load_stream(self, stream, name, width, initial_lines):
         self.label = self.tail = self.renderer = None
         self.transformed = False
+        self.whole_loaded = False
         self.origin = None
         self.record_history = True
         self.stream, self.current_file, self.width = stream, name, width
