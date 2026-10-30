@@ -10305,6 +10305,17 @@ std::vector<Application::EpubHorizontalLink> Application::epubHorizontalLinks(in
       if (!continues) ordinal++;
       if (i >= top && fileView_.isIndexShown(i) && !plainUnderline(raw, ordinal))
         out.push_back({i, merged[k].first, merged[k].second, raw, ordinal});
+      // 2026-10-30、直接のユーザー依頼("-c起動でも-g同様、注釈のFONT（アンダーライン箇所）でも注釈へ飛んでほしい"):
+      // HELP.epubの<u>FONT</u>[6]のように、<u>の下線のすぐ後ろ(間が無いか"["だけ)に注釈の番号のリンクが続くなら、
+      // その下線もそのリンク(次の番号)として選べる・飛べるようにする。
+      else if (i >= top && fileView_.isIndexShown(i) && k + 1 < merged.size()) {
+        auto it = lineLinks.find(raw);
+        std::string gap = text.substr(static_cast<std::size_t>(merged[k].second),
+                                      static_cast<std::size_t>(std::max(0, merged[k + 1].first - merged[k].second)));
+        if (it != lineLinks.end() && ordinal + 1 < static_cast<int>(it->second.size()) &&
+            it->second[ordinal + 1].compare(0, 5, "line:") == 0 && (gap.empty() || gap == "["))
+          out.push_back({i, merged[k].first, merged[k].second, raw, ordinal + 1});
+      }
     }
     std::size_t lastVisible = text.find_last_not_of(' ');
     int endByte = lastVisible == std::string::npos ? 0 : static_cast<int>(lastVisible) + 1;
