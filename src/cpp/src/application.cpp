@@ -12845,9 +12845,17 @@ bool Application::executeShowUsilicBanner() {
     if (currentMode_ == ApplicationMode::File && fileMode_.currentFile() != bannerFilePath()) {
       saveFilePosition();
       infoPreviousFilePath_ = fileMode_.currentFile();
+    } else if ((currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
+               cutOrigin_ == CutOrigin::Epub && !fileMode_.currentFile().empty()) {
+      // 2026-10-30、直接のユーザー報告(最初の起動のアイコン起動で"INFOの戻り値が`/Users/haa15030/`となっていて実際に
+      // ^Gで(ls)へ脱獄できてしまう。戻り値HELPでよろしく"): EPUBの章の一覧からも、その本へ戻る。
+      infoPreviousFilePath_ = fileMode_.currentFile();
     } else {
       infoPreviousFilePath_.clear();
     }
+    // 最初の起動(ページャー)では、どこからでも(ls)へは行かずHELPへ戻る。
+    if (infoPreviousFilePath_.empty() && firstStartPager_)
+      if (std::optional<std::string> epub = helpEpubPath()) infoPreviousFilePath_ = *epub;
   }
   // 2026-10-23、直接のユーザー依頼("モードラインでの区別が付かなくなったためINFOの「Boot Options : 」を
   // 「OS名：コマンドライン」にしたらどうかな？"、例「macOS Sequoia 15.7.8 : usilic -c」): 1行目のラベルはOS名
@@ -13003,7 +13011,9 @@ bool Application::executeShowUsilicBanner() {
   // 反映する。
   fileMode_.annotations().pushWithNameOverride(
       FileMode::FileAnnotationKind::Search, "INFO",
-      infoPreviousFilePath_.empty() ? directoryMode_.currentDirectory() : infoPreviousFilePath_);
+      infoPreviousFilePath_.empty()                ? directoryMode_.currentDirectory()
+      : isGeneratedHelpEpub(infoPreviousFilePath_) ? std::string("HELP")  // ^GはHELPへ(Command::Back参照)
+                                                   : infoPreviousFilePath_);
   // 2026-08-28修正、実際の報告+再現("usilic -c ~/git/usilic→^I→
   // 名前欄が「INFO」ではなく「usilic」、戻り値が「~/.usilic/」の
   // まま"): 上のloadFile()は既に内部で一度、FileMode自身の「デフォル
