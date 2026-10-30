@@ -33122,3 +33122,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 項目1138と同じ依頼の続き(.steering/20261030-python-cui-catchup/)。Python版は引数をファイル・ディレクトリとしか見ていなかった。
    - **変更**: usilic.pyのparse_options()・apply_rc_options()(C++のmain()・applyRcOptions()と同じ)。小文字はこの起動だけ、大文字は~/.usilic/usilicrcの節へも書く(usilicrc_file.py、C++のsetSection()を写したもの)。起動時に~/.usilic/usilicrcが無ければ写し、インストールされた方が新しければ控えを取って置き換える(ensureUser()・updateUserIfOlder())。-e・-n・-mは画面を使わずに標準出力へ(注釈の元・表紙はC++と同じ探し方、英語の原稿は.enの方)。-c・-gは受け付ける(この版はCUIだけ)。
    - 確かめたこと: ~/HELP.txt・~/HELP_en.txtの-n・-mの出力がC++と同じバイト列。-W 12 -S 80000 -L 500でusilicrcのWAIT・SPEED(全段)・LINEが書き換わる。unittest 85件。
+
+1140. **Python版: 子のウィンドウ(^T^H・^T^K・-H・-K・-P)と親子の受け渡し(2026-10-30)**
+   - **経緯**: 項目1138と同じ依頼の続き(.steering/20261030-python-cui-catchup/)。Python版は^T^H・^T^Kが無く、^Ou・^Jtのusilicは画面を明け渡して前面で動かすだけだった。
+   - **変更**: children.py(C++のopenInNewTerminalWindow()・openChildChannel()・sendToChannel()・registerAsChild()・terminateChildren()を写したもの)。子のusilicは端末の新しいウィンドウで(macOSはTerminal.app・iTerm2、親の右隣にHELP、その下にKEY、他は右下へずらす。Linuxはgnome-terminal等)、開けなければ(ssh等)前面で。^T^H・-HはHELPの子、^T^K・-KはKEYの子(ページャーの親なら-P)。KEYの子の^Mは親でそのキーを動かし、hはHELPの子のその行へ(いなければHELPの子を開き直して飛ぶ)。子は親がいなくなれば終わり、親は終わる前に子を終わらせる。^Ou・^Jtのusilic・USILICの一覧の「(usilic)」も同じ起動。
+   - 確かめたこと: SSH_TTYを立てた擬似端末で^T^K→前面でKEYの子(右下「USILIC」)。新しいウィンドウでの起動は未確認。unittest 85件。

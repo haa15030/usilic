@@ -18,6 +18,7 @@ from . import mode_line, utf8
 from . import history as hist
 from . import help_text
 from . import os_name
+from . import children
 from . import bookmarks as bm
 from . import macro as mc
 from . import messages_ja
@@ -108,6 +109,12 @@ class Application:
         self.return_stack = []      # ^Gの戻り先(モード)
         self.pager_launch = False   # 引数のfile・標準入力で起動した(Application::pagerLaunch_)
         self.first_start_pager = False  # 最初の起動のHELP(C++のfirstStartPager_)
+        self.parent_pid = 0          # 外部起動の子なら親のusilicのPID(C++のparentPid_)
+        self.channel = children.Channel()  # 親子の受け渡しのFIFO(C++のchannelPath_)
+        self.key_colon_list_launch = False  # -KのKEYの子(C++のkeyColonListLaunch_)
+        self.external_markers = []   # 新しいウィンドウの子が終わると消えるファイル(C++のexternalPagerMarkers_)
+        self.help_jump_on_start = None  # 親が開き直したHELPの子が起動したら飛ぶ行(USILIC_HELP_JUMP)
+        self.children_pending = (False, False)  # -H・-Kで開くHELP・KEYの子(実行ループの最初で)
         self.pager_numbers_cache = None  # pager_key_numbers()
         self.pager_files = []       # n/p/x/fで切り替えるfile
         self.pager_index = 0
@@ -487,7 +494,8 @@ class Application:
         if mode == KEY:  # CUTの一覧(cutView_)の欄
             if self.grep_active:
                 position = self.grep.position_text()
-            return F('KEY', str(self.key_byte_count), True, '', directory), position
+            return F('KEY', str(self.key_byte_count), True, '', 'USILIC' if self.key_colon_list_launch else directory), \
+                position
         if mode == HELP:  # 平文のHELP(FILEの欄)
             fields = F('HELP', str(self.help_byte_count), True, '', directory, trailing2_kind=mode_line.PATH)
             fields.split_layout_when_crowded = True
@@ -1856,6 +1864,10 @@ class Application:
             self.show_transient_notice('HELP not found: %s (make install)' % 'HELP.1')
             return False
         lines = help_text.key_source_lines(found[0])
+        if self.pager_launch:  # ページャーのKEYは行頭がタブのキーだけ(C++のkeySourceLines()、-Pの子も)
+            raws = found[3]
+            lines = [l for l in lines if l.raw_line_number and l.raw_line_number <= len(raws) and
+                     raws[l.raw_line_number - 1].startswith('\t')]
         self.key_byte_count = help_text.key_list_byte_count(lines, found[3], self.wrap_width())
         cursor = self.key_view.cursor_index
         # C++のKEY(CUTの見出し): 反転は「：」の手前まで、キーでない見出しの行は反転しない、字の装飾は無し
@@ -1888,6 +1900,10 @@ class Application:
         if line is None or not help_text.is_key_assignment_label(line.text):
             return False
         keys = help_text.key_bytes_from_label(line.text)
+        if self.key_colon_list_launch and self.parent_pid > 0:  # -KのKEYの子: 親で動かす(C++のexecuteSelectedKeyLine())
+            if not children.send(self.parent_pid, 'keys', 'K - ' + bytes(b & 0xFF for b in keys).hex() + '\n'):
+                self.show_transient_notice('Parent not reachable')
+            return True
         self.go_back()
         for b in keys:  # 表記はKEY節で変えたキー(rewrite_help_text())なので、利用者のキーとして読み替えを通す
             self.feed_key(b, None)
@@ -1901,6 +1917,10 @@ class Application:
             return False
         found = self.plain_help()
         request = help_text.key_line_request(found[3], line.raw_line_number) if found else None
+        if self.key_colon_list_launch and self.parent_pid > 0:  # -KのKEYの子: 親(HELPの子)へ
+            if request and not children.send(self.parent_pid, 'keys', 'H ' + self.encode_help_request(*request) + '\n'):
+                self.show_transient_notice('Parent not reachable')
+            return True
         path = help_text.help_epub_path(japanese())
         if request and path and self.open_epub(path, name='HELP'):
             return self.jump_help_to_key_line(*request)
@@ -1918,6 +1938,129 @@ class Application:
         start = len(text) - len(text.lstrip(' \t\u00a0'))
         self.jump_highlight = (view, view.cursor_index, text, start)
         return True
+
+    # --- 子のウィンドウ(^T^H・^T^K・-H・-K、C++のlaunchHelpChild()・launchKeyChild()・pollChildChannel()) ---
+    @staticmethod
+    def encode_help_request(key, nth):
+        return '%d:%s' % (nth, key.encode('utf-8').hex())
+
+    @staticmethod
+    def decode_help_request(text):
+        nth, _, key = text.partition(':')
+        try:
+            return bytes.fromhex(key).decode('utf-8', 'replace'), int(nth)
+        except ValueError:
+            return None
+
+    def setup_children(self, parent_pid, window_slot):
+        """外部起動の子なら親のディレクトリに自分のFIFO(HELPの子は"help")、親なら"keys"を開く。"""
+        self.parent_pid = parent_pid
+        if parent_pid > 1:
+            self.channel.open(parent_pid, 'help' if window_slot == 1 else 'w.%d' % os.getpid())
+            self.channel.register_as_child(parent_pid)
+        else:
+            self.channel.open(os.getpid(), 'keys')
+
+    def launch_external_usilic(self, args, directory=None, slot=0, cascade=0, extra_env=None):
+        """子のusilic(C++のlaunchExternalUsilic()): 端末の新しいウィンドウで、開けなければ画面を明け渡して前面で。"""
+        owner = self.parent_pid if self.parent_pid > 0 else os.getpid()
+        env = {'USILIC_TRANSIENT': str(owner)}
+        if slot:
+            env['USILIC_WINDOW_SLOT'] = str(slot)
+        env.update(extra_env or {})
+        command = ' '.join('%s=%s' % (k, shlex.quote(v)) for k, v in env.items()) + ' ' + \
+            ' '.join(shlex.quote(a) for a in [sys.executable, USILIC_SCRIPT] + list(args))
+        marker = children.open_in_new_terminal_window(directory, 'unset USILIC USILIC_HANDOFF; ' + command, slot,
+                                                      cascade)
+        if marker:
+            self.external_markers.append(marker)
+            self.show_transient_notice('Opened in a new window')
+            return True
+        return self.run_external([sys.executable, USILIC_SCRIPT] + list(args), cwd=directory or None,
+                                 env=dict(os.environ, **env))
+
+    def help_child_target(self):
+        path = help_text.help_epub_path(japanese())
+        if path:
+            return path
+        found = self.plain_help()
+        return found[2] if found else None
+
+    def launch_help_child(self, jump=None):
+        """^T^H・-H: HELP(作ったHELP.epub、無ければ平文のHELP)を子のウィンドウで。"""
+        target = self.help_child_target()
+        if not target:
+            self.show_transient_notice('HELP not found: %s (make install)' % 'HELP.1')
+            return False
+        return self.launch_external_usilic([target], slot=1,
+                                           extra_env={'USILIC_HELP_JUMP': jump} if jump else None)
+
+    def launch_key_child(self):
+        """^T^K・-K: KEYを子のウィンドウで(ページャーの親なら-P、ページャーで使えるキーだけ)。"""
+        return self.launch_external_usilic(['-K', '-P'] if self.pager_launch else ['-K'], slot=2)
+
+    def forward_help_request(self, request):
+        """KEYの子のh: HELPの子へ回す。いなければHELPの子を開き直し、起動したらその行へ(C++のforwardHelpRequest())。"""
+        if children.send(os.getpid(), 'help', 'H ' + request + '\n'):
+            return True
+        return self.launch_help_child(jump=request)
+
+    def jump_help_request(self, request):
+        """HELPの子: 送られた行へ(開いているHELPの本の中で)。"""
+        decoded = self.decode_help_request(request)
+        if decoded is None:
+            return False
+        path = help_text.help_epub_path(japanese())
+        if path and not self.in_epub_body() and not self.open_epub(path, name='HELP'):
+            return False
+        return self.jump_help_to_key_line(*decoded)
+
+    def execute_remote_keys(self, keys):
+        """KEYの子の^M: そのキーを今の画面で(利用者のキーとして、C++のexecuteRemoteKeys())。"""
+        for b in keys:
+            self.feed_key(b, None)
+        return True
+
+    def poll_children(self):
+        """親がいなくなれば終わる。受け渡しのFIFOの行を処理する。新しいウィンドウの子が終われば知らせを消す。"""
+        if self.parent_pid > 1 and children.parent_gone(self.parent_pid):
+            self.wants_exit = True
+            return True
+        if any(self.children_pending):
+            help_child, key_child = self.children_pending
+            self.children_pending = (False, False)
+            if help_child:
+                self.launch_help_child()
+            if key_child:
+                self.launch_key_child()
+            return True
+        if self.help_jump_on_start is not None:
+            request, self.help_jump_on_start = self.help_jump_on_start, None
+            self.jump_help_request(request)
+            return True
+        handled = False
+        for line in self.channel.read_lines():
+            if line.startswith('K ') and len(line) > 4:
+                try:
+                    keys = list(bytes.fromhex(line[4:]))
+                except ValueError:
+                    keys = []
+                if keys:
+                    self.execute_remote_keys(keys)
+                handled = True
+            elif line.startswith('H '):
+                if self.channel.is_help():
+                    self.jump_help_request(line[2:])
+                else:
+                    self.forward_help_request(line[2:])
+                handled = True
+        if self.external_markers:
+            left = [m for m in self.external_markers if os.path.exists(m)]
+            if len(left) != len(self.external_markers) and self.notice == localized('Opened in a new window'):
+                self.notice = None
+                handled = True
+            self.external_markers = left
+        return handled
 
     # --- キー ---
     def pending_prefix_label(self):
@@ -2386,6 +2529,10 @@ class Application:
                                         self.open_path(self.strip_tags(i)))
         if number == 105:  # h(KEYからHELPへ)
             return self.jump_from_key_to_help() if mode == KEY else False
+        if number == 129:  # ^T^H: HELPを子のウィンドウで(-Hと同じ)
+            return self.launch_help_child()
+        if number == 130:  # ^T^K: KEYを子のウィンドウで(-Kと同じ)
+            return self.launch_key_child()
         return False
 
     def move(self, number, view):
@@ -2478,6 +2625,8 @@ class Application:
     def back(self):
         """^G(モードごと)。"""
         mode = self.current_mode
+        if mode == KEY and self.key_colon_list_launch:  # -KのKEYの子は戻り先を持たない(C++と同じ)
+            return False
         if mode == DIRECTORY:
             if self.directory_mode.annotation == 'DIR' and self.return_stack and self.return_stack[-1] == LIST:
                 self.directory_mode.annotation = ''  # ^X^Dの一覧から入った所: 元のディレクトリへ戻ってから一覧へ
@@ -3162,8 +3311,7 @@ class Application:
         directory, self.tool_directory = self.tool_directory, ''
         programs = [p[0] for p in self.configuration.programs if p]
         if words[0] == 'usilic':
-            return self.run_external([sys.executable, USILIC_SCRIPT] + shlex.split(command)[1:], cwd=directory or None,
-                                     env=dict(os.environ, USILIC_TRANSIENT=str(os.getpid())))
+            return self.launch_external_usilic(shlex.split(command)[1:], directory or None)
         if words[0] in programs:
             return self.run_external(['sh', '-c', command], cwd=directory or None)
         if not self.ensure_shell():
@@ -3182,9 +3330,8 @@ class Application:
         indices = sorted(d.marks) or [d.view.cursor_index]
         paths = [os.path.join(d.current_directory, d.entries[i].name.rstrip('*@=%|'))
                  for i in indices if i < len(d.entries) and d.entries[i].name not in ('./', '../')]
-        for path in paths:
-            env = dict(os.environ, USILIC_NO_HISTORY='1', USILIC_TRANSIENT=str(os.getpid()))
-            self.run_external([sys.executable, USILIC_SCRIPT, path], env=env)
+        for k, path in enumerate(paths):  # 1つずつ別々の子で(2つ目から右下へずらす、C++のexternalCascade_)
+            self.launch_external_usilic([path], cascade=k, extra_env={'USILIC_NO_HISTORY': '1'})
             if self.history is not None:
                 category = hist.RECENT_DIRECTORY if os.path.isdir(path) else hist.RECENT_FILE
                 self.history.push_recent(category, path.rstrip('/') + ('/' if os.path.isdir(path) else '') +
@@ -3256,8 +3403,7 @@ class Application:
             return self.execute_man(item[:-len(' (man)')])
         if item.endswith(hist.USILIC_TAG):
             path = item[:-len(hist.USILIC_TAG)]
-            env = dict(os.environ, USILIC_NO_HISTORY='1', USILIC_TRANSIENT=str(os.getpid()))
-            return self.run_external([sys.executable, USILIC_SCRIPT, path], env=env)
+            return self.launch_external_usilic([path], extra_env={'USILIC_NO_HISTORY': '1'})
         spec = self.part_spec(item)
         if spec or not os.path.exists(item):  # 無い物(「パス "文字列"」等)はFILEの履歴の開き方で
             return self.open_recent_file_entry(item)
@@ -5136,12 +5282,17 @@ class Application:
             key = self.key_input.read_key(timeout=0) if self.key_input.fd in readable or self.key_input.pending else None
             if key is None:
                 self.poll_prefix_echo()
+                if self.poll_children():
+                    self.redraw()
                 continue
             self.prefix_shown = False
             self.feed_key(*key)
             self.redraw()
         if getattr(self.display, 'mouse_on', False):
             self.display.set_mouse_tracking(False)
+        if self.parent_pid <= 0:
+            self.channel.terminate_children()  # 子のHELP・KEY等も終わらせる(C++のterminateChildren())
+        self.channel.close()
         self.shell.terminate()
         while len(self.archives) > 1:  # 入れ子のアーカイブの一時ファイル
             self.archive_back()

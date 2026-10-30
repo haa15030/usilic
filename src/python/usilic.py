@@ -224,9 +224,13 @@ def main():
     usilicrc_file.update_user_if_older(home)
     # usilicの中から起動した子(^Ou・^Jtのusilic等、C++のUSILIC_TRANSIENT=親のPID): 右下は「USILIC」
     transient = os.environ.pop('USILIC_TRANSIENT', '')
-    if transient.isdigit() and int(transient) > 1:
+    parent_pid = int(transient) if transient.isdigit() else 0
+    if parent_pid > 1:
         from usilic import application
         application.PROGRAM_LABEL = 'USILIC'
+    window_slot = os.environ.pop('USILIC_WINDOW_SLOT', '')
+    window_slot = int(window_slot) if window_slot.isdigit() else 0
+    help_jump = os.environ.pop('USILIC_HELP_JUMP', '') or None  # 親が開き直したHELPの子が飛ぶ行
     stdin_stream = None
     if not sys.stdin.isatty():
         # 標準入力のページャー: データは元の標準入力から読み、キーと画面は端末(/dev/tty)へ(C++版と同じ)。
@@ -266,7 +270,7 @@ def main():
             # setOnRingPushed()と同じくコマンドの履歴は除く)。
             usilic_dir = os.path.join(os.path.expanduser('~'), '.usilic')
             # ^Ouで開いた外のusilicは、その場限りの(ls)(履歴は読み書きしない、C++と同じ)
-            ephemeral = os.environ.pop('USILIC_NO_HISTORY', '') == '1'
+            ephemeral = os.environ.pop('USILIC_NO_HISTORY', '') == '1' or bool(transient)
             history = (hist.load_from_disk(usilic_dir, configuration.retention_count)
                        if os.path.isdir(usilic_dir) and not ephemeral else None)
             if history is not None:
@@ -293,6 +297,15 @@ def main():
                 history.set_session_state(resumed)
                 hist.save_to_disk(history, usilic_dir)
             app.on_exit = on_exit
+        app.setup_children(parent_pid, window_slot)  # 親子の受け渡しのFIFO(C++のopenChildChannel())
+        app.help_jump_on_start = help_jump
+        key_child = options['key_child'] and parent_pid <= 1
+        app.children_pending = (options['help_child'], key_child)  # -H・-K(実行ループの最初で開く)
+        if options['key_child'] and not key_child:  # -K(子のKEYのウィンドウ自身): 「：」の行だけのKEY
+            app.pager_launch = options['key_of_pager_parent']  # -P: ページャーの親のKEY(行頭がタブのキーだけ)
+            app.key_colon_list_launch = True
+            app.start_key()
+        signal.signal(signal.SIGTERM, lambda signum, frame: setattr(app, 'wants_exit', True))
         signal.signal(signal.SIGWINCH, on_winch)
         try:
             app.run(resized)
