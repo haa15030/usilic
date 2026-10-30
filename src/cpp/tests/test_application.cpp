@@ -157,7 +157,7 @@ struct Fixture {
     // confirmation): ChildProcess::run() attaches no real terminal, so
     // `-i` would hang waiting on stdin -- same override
     // test_cp_mv_rm_mode.cpp's own tests already use.
-    configuration.loadRcText("PROGRAM\n echo\nDELETE\n rm -vr\n", true);
+    configuration.loadRcText("PROGRAM\n echo\nRM\n rm -vr\n", true);
 
     // A real archive (built via the actual `tar` CLI, matching
     // ArchiveMode's own test precedent) for the ARC-related tests.
@@ -10273,7 +10273,7 @@ TEST_CASE_FIXTURE(Fixture, "CP: a destination typed without a trailing slash sti
 // feature existed.
 TEST_CASE_FIXTURE(Fixture, "CP: a failed copy leaves the view on the (unchanged) source directory") {
   REQUIRE(app.start(path()));
-  configuration.loadRcText("COPY\n false\n", true);  // always fails, regardless of arguments
+  configuration.loadRcText("CP\n false\n", true);  // always fails, regardless of arguments
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));

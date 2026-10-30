@@ -347,20 +347,21 @@ TEST_CASE("GREP directive: parsed as a no-op for backward-compat with existing u
 
 TEST_CASE("CP/MV/RM directives override the default command, only in file-manager mode") {
   Configuration config;
-  REQUIRE(config.loadRcText("COPY\n cp -vRi --reflink=auto\n", true));
+  REQUIRE(config.loadRcText("CP\n cp -vRi --reflink=auto\n", true));
   CHECK(config.commandFor(ConfiguredRole::Cp).argv ==
         std::vector<std::string>{"cp", "-vRi", "--reflink=auto"});
 
   Configuration pagerConfig;
   auto before = pagerConfig.commandFor(ConfiguredRole::Cp).argv;
-  REQUIRE(pagerConfig.loadRcText("COPY\n cp --something-else\n", /*fileManagerMode=*/false));
+  REQUIRE(pagerConfig.loadRcText("CP\n cp --something-else\n", /*fileManagerMode=*/false));
   CHECK(pagerConfig.commandFor(ConfiguredRole::Cp).argv == before);  // unaffected outside file-manager mode
 }
 
-// 2026-10-18: 節名はCOPY/MOVE/DELETE・GREP(以前のCP/MV/RM・EGREPは2026-10-19から読まない)。
-TEST_CASE("COPY/MOVE/DELETE and GREP are the section names") {
+// 2026-10-18: 節名はCOPY/MOVE/DELETE・GREP(以前のCP/MV/RM・EGREPは2026-10-19から読まない)。2026-10-27にCP/MV/RMへ
+// 戻した(HELPの「COPY：文字列コピー」の章のCOPYがusilicrcのCOPYの注釈になっていた)。
+TEST_CASE("CP/MV/RM and GREP are the section names") {
   Configuration config;
-  REQUIRE(config.loadRcText("COPY\n cp -R\nMOVE\n mv -f\nDELETE\n rm -r\nGREP\n a.c\n", true));
+  REQUIRE(config.loadRcText("CP\n cp -R\nMV\n mv -f\nRM\n rm -r\nGREP\n a.c\n", true));
   CHECK(config.errors().empty());
   CHECK(config.commandFor(ConfiguredRole::Cp).argv == std::vector<std::string>{"cp", "-R"});
   CHECK(config.commandFor(ConfiguredRole::Mv).argv == std::vector<std::string>{"mv", "-f"});

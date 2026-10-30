@@ -54,8 +54,9 @@ const std::vector<std::string> &directiveKeywords() {
       // 2026-10-16: "FILTER"・"LAUNCH"は以前の"FILE"・"EXEC"。
       "ARCHIVE", "FILTER", "LAUNCH", "EDITOR", "SHELL", "GREP", "PROGRAM", "BUFFER", "CODE",
       // "LINE"は2026-10-02にHISTORYから改名(.steering/20261002-help-key-usilicrc-reorg/)。
-      // "COPY"・"MOVE"・"DELETE"は2026-10-18に"CP"・"MV"・"RM"から改名。
-      "LINE",    "WAIT", "SCROLL", "LS",     "KEY",   "COPY", "MOVE",    "DELETE",
+      // "COPY"・"MOVE"・"DELETE"は2026-10-18に"CP"・"MV"・"RM"から改名。2026-10-27に"CP"・"MV"・"RM"へ戻した(直接の
+      // ユーザー報告"「COPY：文字列コピー」の章にあるCOPYが全部usilicrcのCOPY設定（ファイル複写）への注釈になっている")。
+      "LINE",    "WAIT", "SCROLL", "LS",     "KEY",   "CP",   "MV",      "RM",
       // 2026-09-12追加、直接のユーザー依頼(columnThreshold()自身の
       // コメント参照): このC++移植自身の新設ディレクティブなので
       // legacy str.cのusilicrc[]には対応物が無い――既存の並びの

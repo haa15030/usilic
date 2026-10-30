@@ -33181,3 +33181,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **依頼**: 直接のユーザー依頼("行間・字間・左右の余白をまとめてデフォルトへ戻すキーとして^[0を実装してほしい。^[Nは本来N行目へジャンプだが、0行なんて無いんで大丈夫かなと。")。
    - **変更**: ^[の直後の0は行へ飛ぶ数字の頭にせず(^[1〜^[9は従来どおり)、Application::resetSpacingAndMargins()。EPUBの余白(横書きの左右・縦書きの上下)を0に戻してhistoryにも書き、組み直す。-gでは実行ループがtakeSpacingResetRequest()を見てGraphicalDisplay::resetSpacing()(^[[ / ^[]・^[{ / ^[}で足したドットを縦横とも0に)。-cでは余白だけ戻して「Margins: default」。GUI無しのビルド用のgraphical_display_stub.cppはtools/gen_graphical_display_stub.pyで作り直した(前からの抜けも一緒に入った)。HELPの原稿(src/HELP_.txt・HELP_en_.txt)にキーと説明を足した(ページャーのHELPで使えるキーはHELPの表から)。
    - 確かめたこと: make usilic・make install・make app。実機は未確認。
+1152. **usilicrcの節の名前COPY・MOVE・DELETEをCP・MV・RMへ戻す(2026-10-27、コミットは2026-10-31)**
+   - **経緯**: 直接のユーザー報告(2026-10-27、"HELPを読んでいて、「COPY：文字列コピー」の章にあるCOPYが全部usilicrcのCOPY設定（ファイル複写）への注釈になっていることに気づいて、HELPの原稿中、COPY、MOVE、DELETEをCP、MV、RMに戻したんだが、usilircも変更しなくてはと同じ修正を施したところ、HELPの注釈が壊れた。")。HELPの注釈は本文の語のうちusilicrcの節の名前に当たるものに付くので、COPYの節があるとCOPYモードの説明がみな注釈になる。
+   - **変更**: Configuration::directiveKeywords()の節の名前をCP・MV・RMへ(2026-10-18の改名を戻す)。src/usilicrc・~/.usilic/usilicrc・~/.local/lib/usilic/usilicrcはユーザーが直した。その日はアシスタントが直しかけたところで週の利用の上限に入り、docs/HISTORY.md:53473〜53475の間のやり取り(依頼と「usilicrcの節の名前を、コードがどう扱っているかを調べます。」)は記録から抜けている(セッションのJSONLで確認)。configuration.cppの直しはユーザーが入れた。試験(test_configuration・test_cp_mv_rm_mode・test_application)の節の名前もCP・MV・RMに。
+   - 確かめたこと: run_testsのCP/MV/RMの試験とtest_cp_mv_rm_mode.cppの試験が通る。

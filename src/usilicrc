@@ -186,7 +186,7 @@ WAIT
 
 	1
 
-COPY
+CP
 # 書式: cp  (option)
 #
 # CP のコマンド。(既定: cp -vR)
@@ -207,7 +207,7 @@ COPY
 
 #	cp -vRi
 
-MOVE
+MV
 # 書式: mv  (option)
 #
 # MV のコマンド。(既定: mv -v)
@@ -215,7 +215,7 @@ MOVE
 
 #	mv -vi
 
-DELETE
+RM
 # 書式: rm  (option)
 #
 # RM のコマンド。(既定: rm -vr)
