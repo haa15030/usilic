@@ -4169,6 +4169,16 @@ void GraphicalDisplay::raise() {
   SDL_ShowWindow(impl_->window);
   SDL_RaiseWindow(impl_->window);
   activateThisApplication();  // mac_cursor.hpp参照
+#ifdef __APPLE__
+  // 2026-10-31(forceActivateThisApplication()参照): 少し待っても(0.3秒)入力のフォーカスが来なければ、System Events
+  // に前面にしてもらう。
+  for (int waited = 0; waited < 30; waited++) {
+    SDL_PumpEvents();
+    if (SDL_GetWindowFlags(impl_->window) & SDL_WINDOW_INPUT_FOCUS) return;
+    SDL_Delay(10);
+  }
+  forceActivateThisApplication();
+#endif
 }
 
 // NSCursor.openHand(mac_cursor.hppのextractOpenHandCursorImage())から

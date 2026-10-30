@@ -33162,3 +33162,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - historyを読まない起動(ページャー・子)でも、historyの基本のフォント・明朝体・ゴシック体・行間・字間・EPUBの余白は使う(書き戻しはしない)。以前はusilicrcのFONT・LETTER-SPACING等で効いていた。
    - HELPの原稿(src/HELP_.txt・HELP_en_.txt): 節の名前を挙げていた行(^[[ / ^[]・^J^F・-f・行の高さ)を書き直し、余白の「終了すると元に戻ります」を「次回の起動にも引き継ぎます」に(項目1146)。
    - 確かめたこと: 試験用のHOME(前のusilicrcとhistory)で-cを起動して終えると、historyに明朝体・ゴシック体のファイルが入り、usilicrcは控え(.bak)を取って8つの節の無いものに置き換わった。usilicrc::updateUserIfOlder()の試験を直した(-S等の節は引き継ぎ、FONTは引き継がない)。Python版のunittestは通る。
+1148. **^OgでGUIとの行き来を繰り返すと、2回目以降はGUIの窓が端末の後ろに開く(2026-10-31)**
+   - **経緯**: 直接のユーザー報告("usilicで起動後、^OgでGUIとの行き来をしていると2回目以降はCUI画面が手前に来てしまう。")。
+   - **原因**: 項目787のactivateThisApplication()(NSRunningApplicationのactivateWithOptions・NSAppのactivateIgnoringOtherApps)は、macOS 14から効かない(前面化は前面のアプリが譲る形になった、ビルドの警告も"will have no effect")。1回目は起動したばかりのアプリとして前に出られるが、GUI→CUIで端末をosascriptで前に出した後の2回目以降は断られる。
+   - **直し**: GraphicalDisplay::raise()は、SDL_RaiseWindow()とactivateThisApplication()の後、0.3秒待っても窓に入力のフォーカスが来なければ、System Eventsにこのプロセスを前面にしてもらう(forceActivateThisApplication()、mac_cursor.mm、osascriptの`set frontmost of (first process whose unix id is PID) to true`)。初回はSystem Eventsの操作の許可を聞かれることがある。
+   - 確かめたこと: make usilic・make install・make app。実機の^Ogの行き来は未確認。

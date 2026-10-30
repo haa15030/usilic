@@ -15,4 +15,6 @@ void systemBeep() {}
 
 void activateThisApplication() {}
 
+void forceActivateThisApplication() {}
+
 }  // namespace fm

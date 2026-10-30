@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#include <unistd.h>
 
 #include "mac_cursor.hpp"
 
@@ -67,6 +68,17 @@ void systemBeep() { NSBeep(); }
 void activateThisApplication() {
   [[NSRunningApplication currentApplication] activateWithOptions:NSApplicationActivateIgnoringOtherApps];
   [NSApp activateIgnoringOtherApps:YES];
+}
+
+void forceActivateThisApplication() {
+  NSString *script = [NSString
+      stringWithFormat:@"tell application \"System Events\" to set frontmost of (first process whose unix id is %d) to true",
+                       static_cast<int>(getpid())];
+  @try {
+    NSTask *task = [NSTask launchedTaskWithLaunchPath:@"/usr/bin/osascript" arguments:@[ @"-e", script ]];
+    [task waitUntilExit];
+  } @catch (NSException *) {
+  }
 }
 
 }  // namespace fm

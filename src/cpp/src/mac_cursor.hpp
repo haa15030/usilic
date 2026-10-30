@@ -64,4 +64,10 @@ void systemBeep();
 // GraphicalDisplay::raise()参照)。SDL_RaiseWindow()だけでは、端末が前面のアプリのままだと前に出ないことがある。
 void activateThisApplication();
 
+// activateThisApplication()が効かなかった時の奥の手(2026-10-31、直接のユーザー報告"^OgでGUIとの行き来をしていると
+// 2回目以降はCUI画面が手前に来てしまう")。macOS 14からアプリの前面化は前面のアプリが譲る形になり、^Ogの2回目以降
+// (端末をosascriptで前に出した後)はactivateWithOptionsが断られる。System Eventsにこのプロセスを前面にしてもらう
+// (osascript、終わるまで待つ)。
+void forceActivateThisApplication();
+
 }  // namespace fm
