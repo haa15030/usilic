@@ -109,7 +109,21 @@ cmd | python3 src/python/usilic.py         # 標準入力のページャー
 
 - .md・.markdownは文字装飾付き(C++版と同じく、見出し・強調・コード・リンク・引用・リスト・表・フェンス)
 
-この版に無い物: GUI(-g)の物、窓の行き来(^Tn・^Tp・^T^H・^T^K)。
+## 第6段(2026-10-30)で足したもの(C++版の10/24〜10/30の分、.steering/20261030-python-cui-catchup/)
+
+- HELP: HELP.1(英語はHELP_en.1)から~/.usilic/HELP.epub(HELP.en.epub)を作って開く(`help_to_epub.py`、C++と同じ
+  EPUB)。^OjはHELP(EPUB・平文)・KEYをその場で切り換える。ページャーで使えるキーはHELPの行頭がタブの表から
+- 起動オプション: `-h -c -g -H -K -P -s -d -f -z -w -b -l`と大文字(usilicrcへ書く)、`-e`(HELP.1→EPUB)・`-n`・`-m`。
+  ~/.usilic/usilicrcが無ければ写し、インストールされた方が新しければ控えを取って置き換える
+- 子のウィンドウ: ^T^H・-H(HELP)、^T^K・-K(KEY、^Mは親で実行、hはHELPの子のその行へ)。^Ou・^Jtのusilicも、
+  端末の新しいウィンドウ(Terminal.app・iTerm2・gnome-terminal等)で開く(開けなければ前面で)
+- 最初の起動(~/.usilic/historyが無い): ページャーのHELP、機能限定SHELL(プロンプトは「USILIC」)。足りない
+  プログラムのインストールの案内(`install_offer.py`、~/.usilic/install-offered)
+- ^]はどこでも^J^C、^J^Wの保存の名前・SHELL busy、COPYの中のモードキー、^J^Jの行き来を履歴に積まない、
+  引数の小さいファイルの位置の形、EPUBの自前の扉をやめる、<u>FONT</u>[6]の下線のリンク、慣性中の;/:
+
+この版に無い物: GUI(-g)の物、窓の行き来(^Tn・^Tp)。縦書きの本の連続スクロールで横書きの範囲(付録)に出入りする
+所の細かい動き(C++の項目1085・1089・1090)。
 
 ## C++版との対応
 
