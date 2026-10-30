@@ -216,6 +216,8 @@ install: $(BUILD_DIR)/usilic
 	# 2026-10-14: usilic -e(HELPのEPUB版)の注釈の文。HELPの原稿の隣に無ければここを読む。
 	install -m 644 ../../doc/HELP.notes $(LIB_DIR)/HELP.notes
 	install -m 644 ../../doc/HELP.en.notes $(LIB_DIR)/HELP.en.notes
+	# 2026-10-30: HELPの表紙(手でusilic -n・-eを使った時も、$$USILIC_EPUB_COVERが無ければこれ)。
+	install -m 644 packaging/usilic_icon_256.png $(LIB_DIR)/usilic_icon_256.png
 	# 2026-10-18〜10-28: HELPのEPUB版(doc/HELP.epub)を入れていた。2026-10-29、直接のユーザー依頼("HELP.epubは同梱
 	# せず、内部的にHELP.1からHELP.epubを作成して表示"): usilicが~/.usilic/HELP.epubをHELP.1から作る
 	# (Application::helpEpubPath())ので入れず、以前に入れたものは消す。

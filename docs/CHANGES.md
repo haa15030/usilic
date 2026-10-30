@@ -33102,3 +33102,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告("usilic.appで起動後のHELPでは^Ojで英語表示にならない。KEYではなった")。HELPの子の窓・最初の起動のHELPはページャーで、使えるキーはHELPの行頭がタブのキー(pagerAllowedKeys())だけ。^OjはHELPの節の④の行(行頭がタブでない)なので「ページャーでは使えません」になっていた。
    - **変更**: pagerAllowedKeys()に^Ojを足す(^Og・^Otと同じ)。
    - 確かめたこと: make usilic・make install。-cで`usilic ~/.usilic/HELP.epub`(ページャー)から^Ojを押すと英語のHELP(HELP.en.epub)になる(直す前は「ページャーでは使えません」)。
+
+1136. **手で作ったHELP_en.1にも英語の注釈と表紙を(2026-10-30)**
+   - **経緯**: 直接のユーザー質問("doc/HELP.1等の問題はどうかな？"、"HELP_enに異常あり？")。手で`usilic -n ~/HELP_en.txt`として作ったdoc/HELP_en.1に、日本語のusilicrc・HELP.notesが埋め込まれていた(英語のHELPの注釈が日本語になる)。表紙は$USILIC_EPUB_COVER(make help-manが渡す)が無いと入らず、doc/HELP.1・HELP_en.1のどちらにも無かった。
+   - **変更**: main.cppのreadHelpCompanions()。-n・-eは、roffの.THが"User Commands"(英語)ならusilicrc.en・HELP.en.notesを読む。表紙は$USILIC_EPUB_COVERが無ければ、注釈と同じ探し方でusilic_icon_256.pngを読む。make installはpackaging/usilic_icon_256.pngを$(LIB_DIR)へ入れる。
+   - 確かめたこと: make usilic・make install。環境変数無しの`usilic -n ~/HELP.txt`・`~/HELP_en.txt`のどちらにも表紙(1038行)が入り、英語の方の注釈・usilicrcは英語(usilicrc.enの613行)。英語の方の`usilic -e`は「no note: CP MV RM」と出る(usilicrc.enにCP・MV・RMの項目が無い)。

@@ -5108,7 +5108,10 @@ std::string readHelpCompanion(const std::string &name, const std::string &markup
     return true;
   };
   std::string text;
-  if (const char *given = std::getenv(name == "usilicrc" ? "USILIC_EPUB_RC" : "USILIC_EPUB_NOTES")) {
+  const char *variable = name.rfind("usilicrc", 0) == 0     ? "USILIC_EPUB_RC"
+                         : name.rfind("HELP.", 0) == 0      ? "USILIC_EPUB_NOTES"
+                                                            : "USILIC_EPUB_COVER";
+  if (const char *given = std::getenv(variable)) {
     read(given, &text);
     return text;
   }
@@ -5120,6 +5123,25 @@ std::string readHelpCompanion(const std::string &name, const std::string &markup
   for (const auto &dir : dirs)
     if (read(dir + "/" + name, &text)) return text;
   return std::string();
+}
+
+// 2026-10-30、直接のユーザー報告("doc/HELP.1等の問題"、手でusilic -nで作ったHELP_en.1に日本語の注釈が入り、表紙も
+// 無かった): -n・-eが使うHELPの注釈の元と表紙。英語の原稿(-nが.THに"User Commands"を付ける)ならusilicrc.en・
+// HELP.en.notes。表紙は$USILIC_EPUB_COVERが無ければ、make installが入れるusilic_icon_256.png(同じ探し方)。
+struct HelpCompanions {
+  std::string rc, notes, cover;
+};
+HelpCompanions readHelpCompanions(const std::string &roff, const std::string &markupPath) {
+  bool english = false;
+  std::istringstream lines(roff);
+  for (std::string l; std::getline(lines, l);)
+    if (l.compare(0, 4, ".TH ") == 0) {
+      english = l.find("\"User Commands\"") != std::string::npos;
+      break;
+    }
+  return {readHelpCompanion(english ? "usilicrc.en" : "usilicrc", markupPath),
+          readHelpCompanion(english ? "HELP.en.notes" : "HELP.notes", markupPath),
+          readHelpCompanion("usilic_icon_256.png", markupPath)};
 }
 
 }  // namespace
@@ -5391,11 +5413,13 @@ int main(int argc, char **argv) {
       }
       std::ostringstream buffer;
       buffer << in.rdbuf();
-      std::cout << fm::convertMarkupToMsRoffSource(buffer.str());
+      std::string roffSource = fm::convertMarkupToMsRoffSource(buffer.str());
+      std::cout << roffSource;
+      HelpCompanions companions = readHelpCompanions(roffSource, markupPath);
       // 2026-10-29、直接のユーザー依頼("HELP.1からHELP.epubの作成はできる？ 可能ならHELP.notesをHELP.1に「注釈」
       // として取り込んでほしい"): HELP.notes(-eと同じ探し方)をroffのコメントで末尾に入れる(groffでは出ない)。
       // usilic -e HELP.1はこれを読むので、HELP.1だけで注釈まで同じHELP.epubになる("#"の行は入れない)。
-      std::string notes = readHelpCompanion("HELP.notes", markupPath);
+      const std::string &notes = companions.notes;
       if (!notes.empty()) {
         std::istringstream lines(notes);
         std::string l;
@@ -5404,7 +5428,7 @@ int main(int argc, char **argv) {
       }
       // 2026-10-29、直接のユーザー依頼("usilicrcから読むやつもHELP.1に入れて"): 注釈のもう1つの元のusilicrcも
       // (コメントの後ろの既定値も注釈に入るので、"#"の行も含めて丸ごと)。-eはこれがあれば外のusilicrcを読まない。
-      std::string rc = readHelpCompanion("usilicrc", markupPath);
+      const std::string &rc = companions.rc;
       if (!rc.empty()) {
         std::istringstream lines(rc);
         std::string l;
@@ -5412,11 +5436,8 @@ int main(int argc, char **argv) {
       }
       // 2026-10-29、直接のユーザー依頼("手で作っても同じにして"): 表紙の画像($USILIC_EPUB_COVER、make help-manが
       // 渡す)もbase64で(1行76字)。-eは$USILIC_EPUB_COVERが無ければこれを表紙にする。
-      if (const char *given = std::getenv("USILIC_EPUB_COVER")) {
-        std::ifstream file(given, std::ios::binary);
-        std::ostringstream bytes;
-        if (file) bytes << file.rdbuf();
-        std::string encoded = fm::encodeBase64(bytes.str());
+      if (!companions.cover.empty()) {
+        std::string encoded = fm::encodeBase64(companions.cover);
         for (std::size_t k = 0; k < encoded.size(); k += 76)
           std::cout << ".\\\" usilic-cover-line " << encoded.substr(k, 76) << "\n";
       }
@@ -5440,7 +5461,6 @@ int main(int argc, char **argv) {
       buffer << in.rdbuf();
       // 2026-10-18: 開発中にdoc/HELP.epubを作る時(make help-epub)は、リポジトリのusilicrcとHELP.notesを
       // $USILIC_EPUB_RC・$USILIC_EPUB_NOTESで渡す(インストール済みの古い写しを読まないように)。
-      auto find = [&](const std::string &name) { return readHelpCompanion(name, markupPath); };
       // 2026-10-18: -nが作ったroff(doc/HELP.ja.1、"."で始まる)もそのまま受ける(make installがHELP.epubを作るため)。
       // 2026-10-29: HELP.1にはHELP.notes・usilicrcが埋め込んであり(-n参照)、どちらが無くても同じ注釈になる。
       std::string source = buffer.str();
@@ -5448,15 +5468,10 @@ int main(int argc, char **argv) {
       std::string summary;
       std::vector<std::string> unnoted;
       // 2026-10-20: 表紙の画像(usilic.appのアイコン、make help-epubが$USILIC_EPUB_COVERで渡す)。無ければ表紙無し。
-      std::string cover;
-      if (const char *given = std::getenv("USILIC_EPUB_COVER")) {
-        std::ifstream file(given, std::ios::binary);
-        std::ostringstream bytes;
-        if (file) bytes << file.rdbuf();
-        cover = bytes.str();
-      }
-      std::string epub = fm::convertMsRoffToHelpEpub(roff, find("usilicrc"), find("HELP.notes"), &summary, &unnoted,
-                                                     cover);
+      // 2026-10-30: 英語ならusilicrc.en・HELP.en.notes、表紙はインストールしたものも(readHelpCompanions())。
+      HelpCompanions companions = readHelpCompanions(roff, markupPath);
+      std::string epub = fm::convertMsRoffToHelpEpub(roff, companions.rc, companions.notes, &summary, &unnoted,
+                                                     companions.cover);
       std::cout.write(epub.data(), static_cast<std::streamsize>(epub.size()));
       std::cout.flush();
       std::cerr << "usilic -e: " << summary << "\n";
