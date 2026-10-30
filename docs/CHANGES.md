@@ -33092,3 +33092,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー指摘"HELP本文には「ARCHIVE に .epub の suffix 設定がなされても ARC では開けませんが」とあるのでusilicrcのARCHIVEでは使えないことになり、ARCHIVE[16]の注釈で「使えるのは、.epub や」とあるのはマズい"。
    - **変更**: src/usilicrc・usilicrc.enのARCHIVEのコメントの例を「.cbz(中身は .zip)」だけにする(.epubは組み込みで.zipの別名、という後の説明はそのまま)。ユーザーのコミットしていない編集(COPY→CP等)は含めずに、この行だけをコミットした。
    - 確かめたこと: 無し(HELP.1の注釈はmake help-manで作り直した時に変わる)。
+
+1134. **EPUBの^J^Wで保存するファイルの名前を.txtに(2026-10-30)**
+   - **経緯**: 直接のユーザー依頼("(ls)のリストと同じでいてほしいので.txtに変えて")。HELP.epubを見ている時の^J^Wは、本文のテキストを~/.usilic/data/HELP.epubとして書いていたので、(ls)ではEPUBとして扱われていた。
+   - **変更**: shellInsertBufferContent()は、FILEで見ているのが.epubなら、名前を同じ名前の.txtにする(HELP.epub→HELP.txt)。
+   - 確かめたこと: make usilic。-cでHELPから^J^Wを押すと、SHELLのコマンドが`cat '…/.usilic/data/HELP.txt'`。

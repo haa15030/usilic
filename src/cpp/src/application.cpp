@@ -12425,6 +12425,9 @@ bool Application::shellInsertBufferContent() {
     modeName = std::filesystem::path(dir).filename().string();
   } else if (effectiveMode == ApplicationMode::File) {
     modeName = std::filesystem::path(fileMode_.currentFile()).filename().string();
+    // 2026-10-30、直接のユーザー依頼("(ls)のリストと同じでいてほしいので.txtに変えて"): EPUBは本文のテキストを
+    // 書くので、HELP.epubなら~/.usilic/data/HELP.txt(.epubのままだと(ls)・^MでEPUBとして扱われる)。
+    if (isEpubFile(modeName)) modeName = std::filesystem::path(modeName).stem().string() + ".txt";
   } else if (effectiveMode == ApplicationMode::ArchiveContent) {
     // 2026-08-19追加、直接のユーザー報告/スクリーンショット(=di):
     // "=di→^J^W→/Users/haa15030/.usilic/saved/国際報道２０２６...ts"
