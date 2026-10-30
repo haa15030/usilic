@@ -4039,6 +4039,9 @@ const std::vector<std::vector<int>> &Application::pagerAllowedKeys() {
     for (int c : {'[', ']', '{', '}'}) pagerAllowedKeys_.push_back({kEscape, c});
     pagerAllowedKeys_.push_back({kLeaderJ, 0x06});
     pagerAllowedKeys_.push_back({kLeaderO, 't'});
+    // 2026-10-30、直接のユーザー報告("usilic.appで起動後のHELPでは^Ojで英語表示にならない。KEYではなった"): HELPの子・
+    // 最初の起動のHELPはページャーなので、HELPの節の^Oj(日本語/英語、行頭がタブでない)も。
+    pagerAllowedKeys_.push_back({kLeaderO, 'j'});
     // 同日、直接のユーザー依頼(HELPを作り直さなくても): HELP/KEYの子(^T^H / ^T^K、launchHelpChild()参照)も。
     pagerAllowedKeys_.push_back({0x14, 0x08});
     pagerAllowedKeys_.push_back({0x14, 0x0b});

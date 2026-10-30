@@ -33097,3 +33097,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼("(ls)のリストと同じでいてほしいので.txtに変えて")。HELP.epubを見ている時の^J^Wは、本文のテキストを~/.usilic/data/HELP.epubとして書いていたので、(ls)ではEPUBとして扱われていた。
    - **変更**: shellInsertBufferContent()は、FILEで見ているのが.epubなら、名前を同じ名前の.txtにする(HELP.epub→HELP.txt)。
    - 確かめたこと: make usilic。-cでHELPから^J^Wを押すと、SHELLのコマンドが`cat '…/.usilic/data/HELP.txt'`。
+
+1135. **ページャーのHELPでも^Ojで日本語/英語を切り換え(2026-10-30)**
+   - **経緯**: 直接のユーザー報告("usilic.appで起動後のHELPでは^Ojで英語表示にならない。KEYではなった")。HELPの子の窓・最初の起動のHELPはページャーで、使えるキーはHELPの行頭がタブのキー(pagerAllowedKeys())だけ。^OjはHELPの節の④の行(行頭がタブでない)なので「ページャーでは使えません」になっていた。
+   - **変更**: pagerAllowedKeys()に^Ojを足す(^Og・^Otと同じ)。
+   - 確かめたこと: make usilic・make install。-cで`usilic ~/.usilic/HELP.epub`(ページャー)から^Ojを押すと英語のHELP(HELP.en.epub)になる(直す前は「ページャーでは使えません」)。
