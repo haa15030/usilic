@@ -33153,3 +33153,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - History::epubMargins()/setEpubMargins(): {縦書きの上, 下, 横書きの左, 右}。USILICの行の末尾(epubSansSerif等と同じ形、古いhistoryなら0)。変えるたびにhandleEpubMarginKey()がsaveEpubMargins()で書き、Applicationのコンストラクタで読む。
    - EPUBのCSSの余白(margin・padding)の反映はユーザーの判断で取り消し(項目1144の「別に」)。
    - 確かめたこと: History単体で書いて読み戻すと同じ値、古いhistory(値無し)なら0。
+1147. (2026-10-30、直接のユーザー依頼"値さえちゃんと継承されるならその場で調整できればいいかなと。FONTも同様でusilicrcの設定は一度も参照したことがない。そこでusilicrcから下記を削除した場合、不都合がないか調べてほしい。SERIF、SANS-SERIF、FONT、LINE-HEIGHT、LETTER-SPACING、ICON-FONT、ICON-LINE-HEIGHT、ICON-LETTER-SPACING"、調べた結果を受けて"全部まとめて進めて。") usilicrcからこの8つの節を削除し、フォント・行間・字間は~/.usilic/history(その場で調整した値)だけで引き継ぐ。
+   - 節: src/usilicrc・usilicrc.enから削除。Configurationはキーワードだけ残して中身を読み飛ばす(前からのusilicrcでもエラーにしない、SHELLと同じ)。Configuration::fontPath()・lineHeightRatios()・letterSpacingExtras()・serifFontCandidates()等と、usilicrcを読み直した時の行間・字間の当て直し(takeLineHeightReloadRequest())は無くした。
+   - フォント: ^J^Fで選んだ基本のフォントはHistory::GuiPreferences::fontPath(アイコンからの起動は別の組、以前のICON-FONTの代わり)、明朝体・ゴシック体はHistory::setFontFamilyPaths()(USILICの行の末尾)。以前は起動のたびにusilicrcのFONTでhistoryの値を上書きしていた。-Fはhistoryへ、-fはこの起動だけ(gSessionFontPath)。-gの親から開いた子へは、親の今の明朝体・ゴシック体をUSILIC_GUI_FRAMEの後ろに\x1fで区切って渡す(基本のフォントは前からUSILICFONT)。^T^M等のシェル経由の起動ではUSILIC_GUI_FRAMEを引用符で囲むようにした。
+   - 行間: LINE-HEIGHTの既定値(横書き1.2、縦書き1.0)を決め打ちに。^[[ / ^[]で足した分は前からhistory。
+   - 字間: ^[{ / ^[}でusilicrcのLETTER-SPACINGへ書くのをやめた(子へはGuiFrame::spacing、値は前からhistory)。
+   - 前の値の移し替え: historyに明朝体・ゴシック体がまだ無ければ(History::fontFamiliesSaved())、置き換える前の~/.usilic/usilicrcのSERIF・SANS-SERIF・FONTの最初の値を一度だけ移す。historyを書かない起動(ページャー・子)では移せないので、その時はusilicrcを置き換えない。usilicrc自身が書く節を引き継ぐ一覧(usilicrc::updateUserIfOlder()、Python版のOWN_SECTIONS)からFONT・SANS-SERIF・SERIFを外した。
+   - historyを読まない起動(ページャー・子)でも、historyの基本のフォント・明朝体・ゴシック体・行間・字間・EPUBの余白は使う(書き戻しはしない)。以前はusilicrcのFONT・LETTER-SPACING等で効いていた。
+   - HELPの原稿(src/HELP_.txt・HELP_en_.txt): 節の名前を挙げていた行(^[[ / ^[]・^J^F・-f・行の高さ)を書き直し、余白の「終了すると元に戻ります」を「次回の起動にも引き継ぎます」に(項目1146)。
+   - 確かめたこと: 試験用のHOME(前のusilicrcとhistory)で-cを起動して終えると、historyに明朝体・ゴシック体のファイルが入り、usilicrcは控え(.bak)を取って8つの節の無いものに置き換わった。usilicrc::updateUserIfOlder()の試験を直した(-S等の節は引き継ぎ、FONTは引き継がない)。Python版のunittestは通る。

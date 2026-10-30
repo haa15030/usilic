@@ -16,6 +16,8 @@ namespace fm {
 namespace usilicrc {
 
 std::string userPath(const std::string &home);
+// 節の値の行(前後の空白を除いたもの)。節が無ければnullopt。
+std::optional<std::vector<std::string>> sectionValues(const std::string &text, const std::string &section);
 // インストールされた既定のusilicrc(上の順で最初に見つかったもの)。無ければnullopt。
 std::optional<std::string> installedPath(const std::string &home);
 // 2026-10-09: 実行ファイルの場所から見た<PREFIX>/lib/usilic/(main.cppのinstallLibDir)も、~/.local/lib/usilic/の

@@ -2003,11 +2003,8 @@ class Application {
   int takeLineHeightAdjustRequest();
   // ^[{ / ^[}(K-112/K-113、2026-10-20): 同じく字間(マスの幅)。GraphicalDisplay::adjustLetterSpacing()へ渡す。
   int takeLetterSpacingAdjustRequest();
-  // usilicrcを読み直した時(reloadUsilicrcKeys())に、読み直したLINE-HEIGHT(横書き, 縦書き)を一度だけ返す。
-  // main.cppがその場で当て直す。
-  std::optional<std::pair<double, double>> takeLineHeightReloadRequest();
-  // usilicrcのLETTER-SPACING(Configuration::letterSpacingExtras())。takeLineHeightReloadRequest()の時にも当て直す。
-  std::optional<std::pair<int, int>> letterSpacingFromRc() const { return configuration_.letterSpacingExtras(); }
+  // ~/.usilic/history(main.cppの^J^Fが選んだフォントを書く、2026-10-30)。
+  History &history() { return history_; }
 
   // 「表示」行/列でのマウスクリック(この座標空間と現在の
   // Directoryモード限定のスコープについてはクラスコメント自身の
@@ -3008,7 +3005,6 @@ class Application {
   bool fontListRequested_ = false;
   int lineHeightAdjustRequest_ = 0;      // takeLineHeightAdjustRequest()参照
   int letterSpacingAdjustRequest_ = 0;   // takeLetterSpacingAdjustRequest()参照
-  bool lineHeightReloadRequested_ = false;  // takeLineHeightReloadRequest()参照
   bool fontListActive_ = false;
   // ^J^Fの一覧を最後に離れた時のカーソル(2026-10-11、直接のユーザー報告"^J^Fの一覧でカーソル位置が保存されてない")。
   // 次に開いた時はここから(一覧の行数が同じ時だけ、違えば今のフォントの行)。-1なら未設定。

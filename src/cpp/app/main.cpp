@@ -1798,8 +1798,14 @@ struct GuiFrame {
   // 外枠)からは渡さない。
   bool spacing = false;
   int lineExtra[2] = {0, 0}, letterExtra[2] = {0, 0};
+  // 2026-10-30(フォントをusilicrcからhistoryへ移した、applyFontChoice()参照): 親の今の明朝体・ゴシック体のフォントの
+  // ファイル(数の後ろに\x1fで区切って)。子は起動時にusilicrcを読んでいたが、historyは親の終了まで書かれない。基本の
+  // フォントは前からUSILICFONT(Application::setGuiFontProvider())で渡る。
+  std::string fonts[2];
 };
 GuiFrame gGuiFrame;
+// この起動だけの基本のフォント(-f)。historyのGuiPreferences::fontPathより先に使い、historyへは書かない。^J^Fで選ぶと空に。
+std::string gSessionFontPath;
 // -z pt(2026-10-18、直接のユーザー依頼"文字サイズの小さい明朝体は見栄えが悪いので-g起動時のデフォルトフォントサイズを
 // 暫定20pt...にしてほしい（起動オプションで設定可）"): -gの窓の字の大きさ。0は指定無し(端末に重ねない起動は前回の
 // 大きさ、無ければkDefaultGuiPointSize。端末に重ねる-gは端末の字の大きさ)。端末に重ねる-g・^Ogでも-zがあればその大きさ
@@ -1819,6 +1825,8 @@ std::string guiFrameText(fm::GraphicalDisplay &gui) {
   auto [lineH, lineV] = fm::GraphicalDisplay::lineHeightExtras();
   auto [letterH, letterV] = fm::GraphicalDisplay::letterSpacingExtras();
   out << ',' << lineH << ',' << lineV << ',' << letterH << ',' << letterV;  // GuiFrame::spacing
+  for (auto kind : {fm::GraphicalDisplay::FontKind::Serif, fm::GraphicalDisplay::FontKind::SansSerif})
+    out << '\x1f' << gui.currentFontPath(kind);  // GuiFrame::fonts
   return out.str();
 }
 bool transientParentGone() {
@@ -1900,9 +1908,6 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     if (app.takeFontListRequest()) app.showNotice("Font list: -g only");  // ^J^F(buildFontList()参照)
     if (app.takeLineHeightAdjustRequest()) app.showNotice("LINE-HEIGHT: -g only");  // ^[[ / ^[]
     if (app.takeLetterSpacingAdjustRequest()) app.showNotice("LETTER-SPACING: -g only");  // ^[{ / ^[}
-    // 端末の画面には行の高さが無いが、^Ogで-gへ切り替えた時に読み直した値で開くよう、倍率だけは入れておく。
-    if (auto ratios = app.takeLineHeightReloadRequest())
-      fm::GraphicalDisplay::setLineHeightRatios(ratios->first, ratios->second);
     // See Application::awaitingLocateUpdateDb()'s own comment: this
     // loop's own poll() below already ticks every ~100ms regardless of
     // input, so a detached `updatedb` launched by ^Jl is noticed and
@@ -2586,35 +2591,31 @@ std::vector<fm::FontListEntry> buildFontList(const fm::GraphicalDisplay &gui) {
   return entries;
 }
 
-// ^Ofの一覧で選ばれたフォントを、その場で反映してusilicrcの節へ書く(-Fと同じ、applyRcOptions()参照)。
+// ^J^Fの一覧で選ばれたフォントを、その場で反映して~/.usilic/historyへ書く(2026-10-30、以前はusilicrcの節へ)。
+// 基本のフォントはGuiPreferences::fontPath(アイコンからの起動は別の組、History::setIconLaunch())、明朝体・
+// ゴシック体はHistory::setFontFamilyPaths()。
 void applyFontChoice(fm::Application &app, fm::GraphicalDisplay &gui, const std::string &chosenSection,
                      const std::string &path) {
-  // アイコンからの起動では、基本のフォントはICON-FONTへ(Configuration::setIconLaunch()参照、2026-10-22)。
-  const bool icon = fm::Configuration::iconLaunch();
-  std::string section = icon && chosenSection == "FONT" ? "ICON-FONT" : chosenSection;
-  if (section == "FONT:terminal") {  // 端末のフォント(buildFontList()参照): 切り替えて、usilicrcのFONTを空に
+  fm::History &history = app.history();
+  if (chosenSection == "FONT:terminal" || chosenSection == "FONT") {
     if (!gui.setFont(fm::GraphicalDisplay::FontKind::Base, path)) {
       app.showNotice("Cannot use this font");
       return;
     }
-    const char *home = std::getenv("HOME");
-    // アイコンからの起動でICON-FONTを空にするとFONTへ戻るので、そのフォントのファイルを書く。
-    const char *fontSection = icon ? "ICON-FONT" : "FONT";
-    if (!fm::usilicrc::setSection(home ? home : "", fontSection,
-                                  icon ? std::vector<std::string>{path} : std::vector<std::string>{}))
-      app.showNotice(std::string("Cannot write ") + fontSection + " to usilicrc");
+    gSessionFontPath.clear();  // -f(gSessionFontPath参照)より、ここで選んだもの
+    fm::History::GuiPreferences prefs = history.guiPreferences();
+    // 端末のフォント(buildFontList()参照)は空(次も端末のフォント)。アイコンからの起動には端末が無いので、そのファイル。
+    prefs.fontPath = chosenSection == "FONT" || fm::Configuration::iconLaunch() ? path : std::string();
+    history.setGuiPreferences(prefs);
     return;
   }
-  auto kind = section == "FONT" || section == "ICON-FONT" ? fm::GraphicalDisplay::FontKind::Base
-              : section == "SANS-SERIF" ? fm::GraphicalDisplay::FontKind::SansSerif
-                                        : fm::GraphicalDisplay::FontKind::Serif;
-  if (!gui.setFont(kind, path)) {
+  bool serif = chosenSection == "SERIF";
+  if (!gui.setFont(serif ? fm::GraphicalDisplay::FontKind::Serif : fm::GraphicalDisplay::FontKind::SansSerif, path)) {
     app.showNotice("Cannot use this font");
     return;
   }
-  const char *home = std::getenv("HOME");
-  if (!fm::usilicrc::setSection(home ? home : "", section, {path}))
-    app.showNotice("Cannot write " + section + " to usilicrc");
+  history.setFontFamilyPaths(serif ? path : history.serifFontPath(), serif ? history.sansSerifFontPath() : path);
+  fm::GraphicalDisplay::setFontFamilyCandidates({history.serifFontPath()}, {history.sansSerifFontPath()});  // ^Og等で開き直す時も
 }
 
 void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
@@ -2818,23 +2819,8 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       app.showNotice(std::string(app.verticalLayoutShown() ? "LETTER-SPACING (vertical): " : "LETTER-SPACING: ") +
                      (extra > 0 ? "+" : "") + std::to_string(extra) + " dots (" + std::to_string(width) +
                      " dots per column)");
-      // 2026-10-21、直接のユーザー依頼("字間の設定項目(リアルタイム更新)をusilicrcに追加"、^T^Hで開いたHELPが前回の
-      // 保存値のままだった): その場でusilicrcのLETTER-SPACINGへ書き込む(子は起動時にusilicrcを読む)。
-      auto [horizontal, vertical] = fm::GraphicalDisplay::letterSpacingExtras();
-      const char *home = std::getenv("HOME");
-      const char *section = fm::Configuration::letterSpacingSection();  // アイコンからの起動はICON-LETTER-SPACING
-      if (!fm::usilicrc::setSection(home ? home : "", section,
-                                    {std::to_string(horizontal) + "  " + std::to_string(vertical)}))
-        app.showNotice(std::string("Cannot write ") + section + " to usilicrc");
-    }
-    // usilicrcを読み直した(EDITでusilicrcを直した・^Xs)なら、LINE-HEIGHTをその場で当て直す。
-    if (auto ratios = app.takeLineHeightReloadRequest()) {
-      fm::GraphicalDisplay::setLineHeightRatios(ratios->first, ratios->second);
-      gui.reapplyLineHeight();
-      if (auto extras = app.letterSpacingFromRc()) {  // LETTER-SPACINGも(2026-10-21)
-        fm::GraphicalDisplay::setLetterSpacingExtras(extras->first, extras->second);
-        gui.adjustLetterSpacing(0);
-      }
+      // 2026-10-30: 2026-10-21からusilicrcのLETTER-SPACINGへも書いていたが、節ごと廃止した。値は終了時に
+      // ~/.usilic/historyへ、子のHELP・KEYへはUSILIC_GUI_FRAME(GuiFrame::spacing)で渡る。
     }
     // See Application::awaitingLocateUpdateDb()'s own comment: this is
     // exactly the call whose ABSENCE (before this fix) let a real ^G
@@ -4510,6 +4496,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   // "-f <path>"で明示指定された以上、実端末の自動マッチや保存済み
   // rows/columns/fontPointSizeとは違い、常にユーザーの意図が最優先
   // されるべきため(resolveGuiFontPath()自身の優先順位コメント参照)。
+  if (!gSessionFontPath.empty()) savedGui.fontPath = gSessionFontPath;  // -f(gSessionFontPath参照)
   std::string fontPath = resolveGuiFontPath(appearance, savedGui.fontPath);
   // 2026-10-16(runGuiPhase()の後の、端末に重ねる起動の保存のコメント参照): 重ねる端末が無く、usilicrcのFONTも
   // USILICFONTも無ければ、最後に-gで重ねた端末のフォント。
@@ -5158,11 +5145,12 @@ struct RcOption {
 // usilicrcを読んだ後で、rcOptionsを書いた順に当てる。優先順位は「オプション > usilicrc > 組み込み」。
 // 書き込みに失敗したら標準エラーへ出すだけで起動は続ける。
 void applyRcOptions(fm::Configuration &configuration, const std::vector<RcOption> &rcOptions, const std::string &home,
-                    std::string *fontPath) {
+                    std::string *fontPath, bool *saveFont) {
   if (!configuration.speedValues().empty()) fm::applyScrollSpeedOverride(configuration.speedValues());
   if (!configuration.arrowSpeedValues().empty()) fm::applyArrowSpeedOverride(configuration.arrowSpeedValues());
   if (!configuration.dragValues().empty()) fm::applyReleaseDistanceOverride(configuration.dragValues());
-  *fontPath = configuration.fontPath();
+  fontPath->clear();
+  *saveFont = false;
   auto numbers = [](const std::vector<std::string> &values) {
     std::vector<long> out;
     for (const auto &v : values) out.push_back(std::atol(v.c_str()));
@@ -5197,11 +5185,10 @@ void applyRcOptions(fm::Configuration &configuration, const std::vector<RcOption
         saved.push_back(line);
         break;
       }
-      case 'f':
+      case 'f':  // -Fはusilicrcではなくhistoryへ(2026-10-30、main()が書く)
         *fontPath = option.values.front();
-        section = "FONT";
-        saved.push_back(*fontPath);
-        break;
+        *saveFont = save;
+        continue;
       case 'w':
         configuration.overrideWait(value);
         section = "WAIT";
@@ -5691,6 +5678,12 @@ int main(int argc, char **argv) {
                         &f.lineExtra[0], &f.lineExtra[1], &f.letterExtra[0], &f.letterExtra[1]);
     f.valid = (n == 13 || n == 17) && f.rows > 0 && f.columns > 0 && f.pointSize > 0;
     f.spacing = f.valid && n == 17;
+    std::string text = frame;
+    for (std::size_t at = text.find('\x1f'), k = 0; at != std::string::npos && k < 2; k++) {
+      std::size_t next = text.find('\x1f', at + 1);
+      f.fonts[k] = text.substr(at + 1, next == std::string::npos ? std::string::npos : next - at - 1);
+      at = next;
+    }
     gGuiFrame = f;
     ::unsetenv("USILIC_GUI_FRAME");
   }
@@ -5905,22 +5898,37 @@ int main(int argc, char **argv) {
   fm::usilicrc::setInstallLibDirectory(installLibDir);
   // 2026-10-02追加(fm::usilicrc::ensureUser()参照): ~/.usilic/usilicrcが無ければ既定のものをコピーする。
   if (homeEnv) fm::usilicrc::ensureUser(homeEnv);
+  // 2026-10-30、直接のユーザー依頼(usilicrcのSERIF・SANS-SERIF・FONT・LINE-HEIGHT・LETTER-SPACING・ICON-*を削除):
+  // ^J^Fで選んだフォントは~/.usilic/historyへ移した。前のusilicrcのFONT・SERIF・SANS-SERIFの値は、historyにまだ
+  // 無ければ下で一度だけ移す。historyを書かない起動(ページャー等)では移せないので、そこではusilicrcを置き換えない。
+  std::string legacyFont, legacySerif, legacySans;
+  bool legacyFontSection = false;
+  {
+    std::string userRc = readFileIfExists(usilicDir + "usilicrc");
+    auto first = [&](const char *section, bool *found = nullptr) {
+      auto values = fm::usilicrc::sectionValues(userRc, section);
+      if (found) *found = values.has_value();
+      return values && !values->empty() ? values->front() : std::string();
+    };
+    legacyFont = first("FONT", &legacyFontSection);
+    legacySerif = first("SERIF");
+    legacySans = first("SANS-SERIF");
+  }
+  bool legacyFontValues = !legacyFont.empty() || !legacySerif.empty() || !legacySans.empty();
   // 2026-10-08: インストールされた既定のusilicrcの方が新しければ、控えを取ってから~/.usilic/usilicrcを
   // 置き換える(fm::usilicrc::updateUserIfOlder()参照)。
-  if (homeEnv) fm::usilicrc::updateUserIfOlder(homeEnv);
+  if (homeEnv && !(legacyFontValues && !consultHistoryOnStart)) fm::usilicrc::updateUserIfOlder(homeEnv);
   std::string rcText = readFileIfExists(usilicDir + "usilicrc");
   if (rcText.empty() && homeEnv) rcText = readFileIfExists(std::string(homeEnv) + "/.local/lib/usilic/usilicrc");
   if (rcText.empty() && !installLibDir.empty()) rcText = readFileIfExists(installLibDir + "usilicrc");
   if (rcText.empty()) rcText = readFileIfExists("/usr/local/lib/usilic/usilicrc");
   if (!rcText.empty()) configuration.loadRcText(rcText, /*fileManagerMode=*/true);
-  std::string rcFontPath;  // FONT、-f/-F(applyRcOptions()参照)
-  applyRcOptions(configuration, rcOptions, homeEnv ? std::string(homeEnv) : std::string(), &rcFontPath);
-  // usilicrcのSERIF/SANS-SERIF(2026-09-29、GraphicalDisplay::setFontFamilyCandidates()参照)。
-  fm::GraphicalDisplay::setFontFamilyCandidates(configuration.serifFontCandidates(),
-                                                configuration.sansSerifFontCandidates());
-  // usilicrcのLINE-HEIGHT(2026-10-16、GraphicalDisplay::setLineHeightRatios()参照)。
-  fm::GraphicalDisplay::setLineHeightRatios(configuration.lineHeightRatios().first,
-                                            configuration.lineHeightRatios().second);
+  std::string rcFontPath;  // -f/-F(applyRcOptions()参照)
+  bool saveRcFont = false;  // -F
+  applyRcOptions(configuration, rcOptions, homeEnv ? std::string(homeEnv) : std::string(), &rcFontPath, &saveRcFont);
+  // 行の高さの倍率(GraphicalDisplay::setLineHeightRatios()参照): 2026-10-16からusilicrcのLINE-HEIGHTだったが、
+  // 2026-10-30に節を廃止し、その既定値(横書き1.2、縦書き1.0)を決め打ちにした。^[[ / ^[]で足した分はhistory。
+  fm::GraphicalDisplay::setLineHeightRatios(1.2, 1.0);
   // usilicrcのHISTORY(History::setRetentionCount()自身のコメント参照、2026-09-25)。
   history.setRetentionCount(configuration.historyRetentionCount());
 
@@ -6004,25 +6012,57 @@ int main(int argc, char **argv) {
     }
   }
 
-  // "-f <path>"(上のオプション解析参照)は、読み込んだhistoryの
-  // GuiPreferences.fontPathをここで直ちに上書きする――こうすることで
-  // (1) このセッション自身のGUIフォント解決(resolveGuiFontPath()の
-  // 呼び出し側、savedGui.fontPath参照)にすぐ反映され、(2) 末尾の
-  // consultHistoryOnStart由来のhistory書き出しにも自然に乗る(引数
-  // 無し起動の場合のみ、次回のダブルクリック起動でも効き続ける)。
-  //
-  // 2026-10-02変更(applyRcOptions()参照): フォントはusilicrcのFONT(と-f/-F)で決め、historyに保存
-  // された値は使わない――毎回の起動でここで上書きする(FONTが無ければ空=組み込みの候補)。
+  // historyを読まない起動(ページャー・子、consultHistoryOnStart参照)でも、その場で調整して終了時にhistoryへ
+  // 残した値(フォント・行間・字間・EPUBの余白)は使う(2026-10-30、以前はusilicrcのFONT等で)。書き戻しはしない。
+  if (!consultHistoryOnStart) {
+    std::string text = readFileIfExists(usilicDir + "history");
+    if (!text.empty()) {
+      fm::History saved;
+      saved.loadHistoryText(text, configuration.charsetExplicitlySet());
+      fm::History::GuiPreferences from = saved.guiPreferences(), prefs = history.guiPreferences();
+      prefs.fontPath = from.fontPath;
+      prefs.terminalFontPath = from.terminalFontPath;
+      prefs.lineHeightExtraHorizontal = from.lineHeightExtraHorizontal;
+      prefs.lineHeightExtraVertical = from.lineHeightExtraVertical;
+      prefs.letterSpacingExtraHorizontal = from.letterSpacingExtraHorizontal;
+      prefs.letterSpacingExtraVertical = from.letterSpacingExtraVertical;
+      history.setGuiPreferences(prefs);
+      history.setFontFamilyPaths(saved.serifFontPath(), saved.sansSerifFontPath());
+      history.setEpubMargins(saved.epubMargins());
+      if (!saved.fontFamiliesSaved()) history.setFontFamilyPaths(legacySerif, legacySans);
+    }
+  } else if (!history.fontFamiliesSaved()) {
+    // 前のusilicrcのSERIF・SANS-SERIF・FONTを一度だけ移す(上のlegacyFont等)。アイコンからの起動の組には移さない。
+    history.setFontFamilyPaths(legacySerif, legacySans);
+    if (legacyFontSection && !fm::Configuration::iconLaunch()) {
+      fm::History::GuiPreferences prefs = history.guiPreferences();
+      prefs.fontPath = legacyFont;
+      history.setGuiPreferences(prefs);
+    }
+  }
+  // -F(applyRcOptions()参照)はhistoryの基本のフォントへ(以前はusilicrcのFONTへ)、-fはこの起動だけ(gSessionFontPath)。
+  if (!rcFontPath.empty()) {
+    if (saveRcFont) {
+      fm::History::GuiPreferences prefs = history.guiPreferences();
+      prefs.fontPath = rcFontPath;
+      history.setGuiPreferences(prefs);
+    } else {
+      gSessionFontPath = rcFontPath;
+    }
+  }
+  // ^J^Fで選んだ明朝体・ゴシック体(GraphicalDisplay::setFontFamilyCandidates()参照、空なら組み込みの候補)。-gの親から
+  // 開いた子は親の今のフォント(GuiFrame::fonts)。
+  {
+    std::string serif = gGuiFrame.valid && !gGuiFrame.fonts[0].empty() ? gGuiFrame.fonts[0] : history.serifFontPath();
+    std::string sans = gGuiFrame.valid && !gGuiFrame.fonts[1].empty() ? gGuiFrame.fonts[1] : history.sansSerifFontPath();
+    fm::GraphicalDisplay::setFontFamilyCandidates(serif.empty() ? std::vector<std::string>{} : std::vector<std::string>{serif},
+                                                  sans.empty() ? std::vector<std::string>{} : std::vector<std::string>{sans});
+  }
   {
     fm::History::GuiPreferences prefs = history.guiPreferences();
-    prefs.fontPath = rcFontPath;
-    history.setGuiPreferences(prefs);
-    // ^[[ / ^[]で足した行の高さを前回から引き継ぐ(2026-10-18、History::GuiPreferences参照)。
+    // ^[[ / ^[]で足した行の高さを前回から引き継ぐ(2026-10-18、History::GuiPreferences参照)。^[{ / ^[}の字間も。
     fm::GraphicalDisplay::setLineHeightExtras(prefs.lineHeightExtraHorizontal, prefs.lineHeightExtraVertical);
     fm::GraphicalDisplay::setLetterSpacingExtras(prefs.letterSpacingExtraHorizontal, prefs.letterSpacingExtraVertical);
-    // usilicrcのLETTER-SPACINGに値があればそちら(^[{ / ^[}がその場で書き込むので、子のHELP・KEYも親と同じ字間、2026-10-21)。
-    if (auto extras = configuration.letterSpacingExtras())
-      fm::GraphicalDisplay::setLetterSpacingExtras(extras->first, extras->second);
     if (gGuiFrame.spacing) {  // -gの親から開いた子: 親の今の行間・字間(GuiFrame::spacing)
       fm::GraphicalDisplay::setLineHeightExtras(gGuiFrame.lineExtra[0], gGuiFrame.lineExtra[1]);
       fm::GraphicalDisplay::setLetterSpacingExtras(gGuiFrame.letterExtra[0], gGuiFrame.letterExtra[1]);
@@ -6195,7 +6235,8 @@ int main(int argc, char **argv) {
     // savedGui.fontPathをここでも尊重する理由はtryEnterGuiPhase()自身の
     // コメントと同じ: "-f <path>"で明示指定された以上、実端末の自動
     // マッチより優先されるべきため。
-    std::string fontPath = resolveGuiFontPath(appearance, history.guiPreferences().fontPath);
+    std::string fontPath =
+        resolveGuiFontPath(appearance, gSessionFontPath.empty() ? history.guiPreferences().fontPath : gSessionFontPath);
     // 2026-08-11: a real report of FOUR separate rendering-quality
     // experiments (forced bold, TTF_HINTING_LIGHT, TTF_HINTING_NONE,
     // alpha-channel gamma boost) all landing as "変化無し" (no visible

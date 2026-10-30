@@ -8424,10 +8424,6 @@ bool Application::takeFontListRequest() {
 int Application::takeLineHeightAdjustRequest() { return std::exchange(lineHeightAdjustRequest_, 0); }
 int Application::takeLetterSpacingAdjustRequest() { return std::exchange(letterSpacingAdjustRequest_, 0); }
 
-std::optional<std::pair<double, double>> Application::takeLineHeightReloadRequest() {
-  if (!std::exchange(lineHeightReloadRequested_, false)) return std::nullopt;
-  return configuration_.lineHeightRatios();
-}
 
 // 2026-10-14、直接のユーザー依頼("^J^Eの一覧に最初から「http://localhost/usilic-web」が入っていて、ブラウザ
 // から同URLを入れたときはブラウザで、EPUBから踏んだときは~/.local/usilic-web/texts/へダウンロードしたのちEPUB
@@ -19148,7 +19144,7 @@ void Application::launchExternalUsilic(const std::string &directory, const std::
   std::string run = "USILIC_TRANSIENT=" + std::to_string(owner) +
                     (externalWindowSlot_ > 0 ? " USILIC_WINDOW_SLOT=" + std::to_string(externalWindowSlot_) : "") +
                     (externalExtraEnv_.empty() ? "" : " " + externalExtraEnv_) +
-                    (frameText.empty() ? "" : " USILIC_GUI_FRAME=" + frameText) +
+                    (frameText.empty() ? "" : " USILIC_GUI_FRAME=" + shellQuoteArg(frameText)) +
                     (fontPath.empty() ? "" : " USILICFONT=" + shellQuoteArg(fontPath)) +
                     " " + (selfExecutablePath_.empty() ? std::string("usilic") : shellQuoteArg(selfExecutablePath_)) +
                     std::string(hasUiFlag ? "" : (graphical ? " -g" : " -c")) + args;
@@ -21122,7 +21118,6 @@ void Application::reloadUsilicrcKeys() {
   if (text.empty()) return;
   configuration_.reloadKeysAndMacros(text);
   keyBindingPending_ = {};
-  lineHeightReloadRequested_ = true;  // LINE-HEIGHTもその場で(takeLineHeightReloadRequest()参照)
   reloadHelpText();
 }
 

@@ -6,9 +6,7 @@
 # other line is an error.
 #
 # ARCHIVE, FILTER, LAUNCH, GREP, PROGRAM, EDITOR, BUFFER, CODE, LINE,
-# WAIT, COPY, MOVE, DELETE, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT,
-# LINE-HEIGHT, LETTER-SPACING, ICON-FONT, ICON-LINE-HEIGHT, ICON-LETTER-SPACING,
-# URL, KEY, MACRO
+# WAIT, COPY, MOVE, DELETE, SPEED, DRAG, ARROW, URL, KEY, MACRO
 #
 # usilicrc is the same file with Japanese comments.
 # -------------------------------------------------------------
@@ -232,27 +230,6 @@ DELETE
 
 #	rm -vri
 
-SERIF
-# Format: `font file'
-#
-# The serif (Mincho) font for -g.  Characters that CSS specifies as serif,
-# such as EPUB body text, are drawn with it.  Lines are tried from the top
-# and the first usable one is used; otherwise built-in candidates
-# (Hiragino Mincho ProN, Noto Serif CJK, ...) are used.
-
-#	/System/Library/Fonts/ヒラギノ明朝 ProN.ttc
-
-SANS-SERIF
-# Format: `font file'
-#
-# The sans-serif (Gothic) font for Japanese in -g.  Full-width characters on
-# screen (including those that EPUB CSS specifies as sans-serif) are drawn
-# with it.  Lines are tried from the top and the first usable one is used;
-# otherwise built-in candidates (Hiragino Kaku Gothic, Noto Sans CJK, ...)
-# are used.
-
-#	/System/Library/Fonts/ヒラギノ角ゴシック W4.ttc
-
 SPEED
 # Format: `usec1' `usec2' ...  (levels 1-10)
 #
@@ -291,72 +268,6 @@ ARROW
 # usilic -s to try values, so edit the values here.
 
 	200000 100000 25000 10000 5000 2000 1000 500 200 100 50 20
-
-FONT
-# Format: `font file'
-#
-# The basic (half-width) monospace font of the -g window.  Full-width
-# characters use the SANS-SERIF font and mincho (serif) uses SERIF.  Without
-# this setting, built-in candidates are used.  Try one with usilic -f;
-# usilic -F writes it here.
-
-#	/Library/Fonts/MS-Gothic.ttf
-
-LINE-HEIGHT
-# Format: `horizontal  vertical'
-#
-# The height of one line of the -g window, as a ratio to the character size
-# (as CSS line-height).  Horizontal text uses it between lines; a vertical
-# EPUB puts one character per line, so there it is the space between
-# characters (1.0 joins up the dots of "……").  The vertical value is used while a vertical screen is shown,
-# and the number of lines changes with the window size unchanged.  Without
-# the vertical value it is the same as the horizontal one.  Without this
-# section the font's own line height is used.
-# Editing this file with EDIT applies it at once, since usilic reads it again
-# when it is saved (after editing it with another editor, ^Xs reads it again).
-# In the -g window, ^[[ / ^[] make the line height of the current direction
-# (horizontal or vertical) 1 dot taller / shorter (not written here; the change
-# carries over to the next launch, and reading this file again goes back to the
-# values here).
-
-	1.2  1.0
-
-LETTER-SPACING
-# Format: `horizontal  vertical'
-#
-# Dots added to the letter spacing (the width of one half-width character) of
-# the -g window (a negative number narrows it; Japanese spacing is twice that).
-# The vertical value is used while a vertical screen is shown; without it, it is
-# the same as the horizontal one.  In the -g window, ^[{ / ^[} change the letter
-# spacing of the current direction by 1 dot and write it here at once (child
-# HELP and KEY windows open with the same spacing).
-# Without a value in this section, the spacing at the last exit is used.
-# Editing this file with EDIT applies it at once, since usilic reads it again
-# when it is saved (after editing it with another editor, ^Xs reads it again).
-
-	0  0
-
-ICON-FONT
-# Format: `font file'
-#
-# FONT used only when usilic is started from an icon (usilic.app etc.).
-# Without a value, the value of FONT is used.  Choosing the base font with ^Of
-# in a window started from an icon writes here instead of FONT.  The font size,
-# the window size and the line height changed with ^[[ / ^[] are also
-# remembered separately for an icon start and -g (the colors are shared).
-
-ICON-LINE-HEIGHT
-# Format: `horizontal  vertical'
-#
-# LINE-HEIGHT used only when started from an icon.  Without a value, the value
-# of LINE-HEIGHT.
-
-ICON-LETTER-SPACING
-# Format: `horizontal  vertical'
-#
-# LETTER-SPACING used only when started from an icon.  Without a value, the
-# value of LETTER-SPACING.  ^[{ / ^[} in a window started from an icon write
-# here instead of LETTER-SPACING.
 
 URL
 # Format: `name  program  (option)'
@@ -545,7 +456,7 @@ KEY
     K-113 ESC }   # ^[}   -g: letter spacing 1 dot narrower
     K-111 F-2 t   # ^Ot   serif/sans-serif switch (-g, Japanese text outside EPUB)
     K-103 F-1 C-a # ^J^A  ARC: list (archives in the FILE history)
-    K-104 F-1 C-f # ^J^F  -g: font list (FONT, SANS-SERIF, SERIF)
+    K-104 F-1 C-f # ^J^F  -g: font list
     K-105 h       # h     From KEY to that line of plain HELP (else plain HELP)
 #
 # K-114 and later had no key assignment before (they were written in the program, 2026-10-23).

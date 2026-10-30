@@ -61,19 +61,19 @@ const std::vector<std::string> &directiveKeywords() {
       // legacy str.cのusilicrc[]には対応物が無い――既存の並びの
       // 末尾に追記する(既存インデックスの番号を一切ずらさないため)。
       "COLUMN",
-      // 2026-09-29追加(serifFontCandidates()自身のコメント参照)。
+      // 2026-09-29追加、2026-10-30廃止(loadRcText()で読み飛ばす)。
       "SERIF", "SANS-SERIF",
-      // 2026-10-02追加(Configuration::speedValues()/macros()参照)。
+      // 2026-10-02追加(Configuration::speedValues()/macros()参照)。FONTは2026-10-30廃止。
       "SPEED", "DRAG", "FONT", "MACRO",
       // 2026-10-04追加(urlHandlers()参照)。
       "URL",
       // 2026-10-08追加(arrowSpeedValues()参照)。
       "ARROW",
-      // 2026-10-16追加(lineHeightRatios()参照)。
+      // 2026-10-16追加、2026-10-30廃止。
       "LINE-HEIGHT",
-      // 2026-10-21追加(letterSpacingExtras()参照)。
+      // 2026-10-21追加、2026-10-30廃止。
       "LETTER-SPACING",
-      // 2026-10-22追加(Configuration::setIconLaunch()参照): アイコンからの起動だけのFONT・LINE-HEIGHT・LETTER-SPACING。
+      // 2026-10-22追加(アイコンからの起動だけのFONT・LINE-HEIGHT・LETTER-SPACING)、2026-10-30廃止。
       "ICON-FONT", "ICON-LINE-HEIGHT", "ICON-LETTER-SPACING",
   };
   return kKeywords;
@@ -726,14 +726,18 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         if (auto v = nextDigitToken(lines, i)) columnThreshold_ = std::atoi(v->c_str());
         break;
       }
+      // SERIF・SANS-SERIF・FONT・LINE-HEIGHT・LETTER-SPACING・ICON-FONT・ICON-LINE-HEIGHT・ICON-LETTER-SPACINGは
+      // 2026-10-30廃止(speedValues()の前のコメント参照)。前からのusilicrcがそのまま読めるよう、キーワードは残して
+      // 中身は読み飛ばす(SHELLと同じ)。
       case 18:    // SERIF
-      case 19: {  // SANS-SERIF(serifFontCandidates()自身のコメント参照)
-        auto &candidates = (index == 18) ? serifFontCandidates_ : sansSerifFontCandidates_;
-        candidates.clear();
-        while (auto data = nextDataLine(lines, i)) {
-          std::string path = *data;
-          while (!path.empty() && (path.back() == ' ' || path.back() == '\t')) path.pop_back();
-          if (!path.empty()) candidates.push_back(path);  // フォントファイルの絶対パス
+      case 19:    // SANS-SERIF
+      case 22:    // FONT
+      case 26:    // LINE-HEIGHT
+      case 27:    // LETTER-SPACING
+      case 28:    // ICON-FONT
+      case 29:    // ICON-LINE-HEIGHT
+      case 30: {  // ICON-LETTER-SPACING
+        while (nextDataLine(lines, i)) {
         }
         break;
       }
@@ -751,55 +755,6 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
             }
             values.push_back(std::atol(token.c_str()));
           }
-        break;
-      }
-      case 26:    // LINE-HEIGHT(lineHeightRatios()参照): 横書き 縦書き(縦書きを省けば横書きと同じ)
-      case 29: {  // ICON-LINE-HEIGHT(書式は同じ)
-        std::vector<double> ratios;
-        while (auto data = nextDataLine(lines, i))
-          for (const auto &token : tokenize(*data)) {
-            char *end = nullptr;
-            double value = std::strtod(token.c_str(), &end);
-            if (token.empty() || *end != '\0' || value <= 0.0 || value > 10.0) {
-              errors_.push_back("LINE-HEIGHT: not a ratio: " + token);
-              continue;
-            }
-            ratios.push_back(value);
-          }
-        if (!ratios.empty()) {
-          std::pair<double, double> value{ratios[0], ratios.size() > 1 ? ratios[1] : ratios[0]};
-          if (index == 29) iconLineHeightRatios_ = value;
-          else lineHeightRatios_ = value;
-        }
-        break;
-      }
-      case 27:    // LETTER-SPACING(letterSpacingExtras()参照): 横書き 縦書き(ドット、縦書きを省けば横書きと同じ)
-      case 30: {  // ICON-LETTER-SPACING(書式は同じ)
-        std::vector<int> extras;
-        while (auto data = nextDataLine(lines, i))
-          for (const auto &token : tokenize(*data)) {
-            char *end = nullptr;
-            long value = std::strtol(token.c_str(), &end, 10);
-            if (token.empty() || *end != '\0' || value < -100 || value > 100) {
-              errors_.push_back("LETTER-SPACING: not a number of dots: " + token);
-              continue;
-            }
-            extras.push_back(static_cast<int>(value));
-          }
-        if (!extras.empty()) {
-          auto value = std::make_pair(extras[0], extras.size() > 1 ? extras[1] : extras[0]);
-          if (index == 30) iconLetterSpacingExtras_ = value;
-          else letterSpacingExtras_ = value;
-        }
-        break;
-      }
-      case 22:    // FONT
-      case 28: {  // ICON-FONT(書式は同じ)
-        while (auto data = nextDataLine(lines, i)) {
-          std::string path = *data;
-          while (!path.empty() && (path.back() == ' ' || path.back() == '\t')) path.pop_back();
-          if (!path.empty()) (index == 28 ? iconFontPath_ : fontPath_) = path;
-        }
         break;
       }
       case 23: {  // MACRO(macros()自身のコメント参照)
@@ -928,12 +883,6 @@ void Configuration::reloadKeysAndMacros(const std::string &rcText) {
   keyEntrySpecs_ = fresh.keyEntrySpecs_;
   macros_ = fresh.macros_;
   keyBindings_ = fresh.keyBindings_;
-  // 2026-10-17、直接のユーザー依頼("LINE-HEIGHTでは0.1単位かつ即時反映"): LINE-HEIGHTも読み直す(-gの画面へは
-  // main.cppが当て直す)。節が無ければ既定(フォントの高さ)へ戻る。
-  lineHeightRatios_ = fresh.lineHeightRatios_;
-  letterSpacingExtras_ = fresh.letterSpacingExtras_;  // LETTER-SPACINGも(2026-10-21)
-  iconLineHeightRatios_ = fresh.iconLineHeightRatios_;  // ICON-LINE-HEIGHT・ICON-LETTER-SPACINGも(2026-10-22)
-  iconLetterSpacingExtras_ = fresh.iconLetterSpacingExtras_;
   // 同日、直接のユーザー依頼("WAITもusilicrc編集で即時反映"): マクロの間隔(使う時に読む)も。
   waitIntervalMicros_ = fresh.waitIntervalMicros_;
 }

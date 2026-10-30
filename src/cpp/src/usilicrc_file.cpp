@@ -113,8 +113,8 @@ bool ensureUser(const std::string &home) {
 
 namespace {
 bool writeAtomically(const std::string &path, const std::string &text);  // 下で定義
+}  // namespace
 
-// 節の値の行(前後の空白を除いたもの)。節が無ければnullopt。
 std::optional<std::vector<std::string>> sectionValues(const std::string &text, const std::string &section) {
   std::vector<std::string> lines = splitKeepingLines(text);
   auto header = findHeader(lines, section);
@@ -129,7 +129,6 @@ std::optional<std::vector<std::string>> sectionValues(const std::string &text, c
   }
   return values;
 }
-}  // namespace
 
 std::string updateUserIfOlder(const std::string &home) {
   if (home.empty()) return {};
@@ -149,10 +148,11 @@ std::string updateUserIfOlder(const std::string &home) {
   if (std::filesystem::exists(backup, ec)) backup = user + "." + stamp + ".bak";
   if (!std::filesystem::copy_file(user, backup, ec) || ec) return {};
   // 2026-10-16、直接のユーザー報告(Windows、"^J^Fの設定が保存されてなかったみたい"): usilic自身が書き込む節
-  // (^J^FのFONT・SANS-SERIF・SERIF、-s等の起動オプションで保存するもの、setSection()の呼び出し元)は、
-  // 置き換えても前の値を引き継ぐ。以前は新しい版(Windowsではzipを展開し直すたび)で起動すると消えていた。
+  // (-S等の起動オプションで保存するもの、setSection()の呼び出し元)は、置き換えても前の値を引き継ぐ。以前は新しい版
+  // (Windowsではzipを展開し直すたび)で起動すると消えていた。^J^FのFONT・SANS-SERIF・SERIFは2026-10-30に
+  // ~/.usilic/historyへ移した(前の値はmain.cppが置き換える前に一度だけ移す)。
   std::string userText = readFile(user), installedText = readFile(*installed), merged = installedText;
-  for (const char *section : {"FONT", "SANS-SERIF", "SERIF", "SPEED", "DRAG", "WAIT", "BUFFER", "LINE"}) {
+  for (const char *section : {"SPEED", "DRAG", "WAIT", "BUFFER", "LINE"}) {
     auto mine = sectionValues(userText, section);
     if (mine && *mine != sectionValues(installedText, section).value_or(std::vector<std::string>{}))
       merged = replaceSection(merged, section, *mine, installedText);

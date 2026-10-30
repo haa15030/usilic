@@ -7,8 +7,8 @@ import os
 import shutil
 import time
 
-# usilic自身が書き込む節(置き換えても前の値を引き継ぐ)
-OWN_SECTIONS = ('FONT', 'SANS-SERIF', 'SERIF', 'SPEED', 'DRAG', 'WAIT', 'BUFFER', 'LINE')
+# usilic自身が書き込む節(置き換えても前の値を引き継ぐ)。FONT・SANS-SERIF・SERIFは2026-10-30にC++版で~/.usilic/historyへ移した
+OWN_SECTIONS = ('SPEED', 'DRAG', 'WAIT', 'BUFFER', 'LINE')
 
 
 def user_path(home):

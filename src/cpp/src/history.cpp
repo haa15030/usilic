@@ -367,6 +367,15 @@ void History::setEpubMargins(const std::array<int, 4> &margins) {
 }
 void History::setEpubMarginsImpl(const std::array<int, 4> &margins) { epubMargins_ = margins; }
 
+void History::setFontFamilyPaths(const std::string &serif, const std::string &sansSerif) {
+  journal_.emplace_back([serif, sansSerif](History &h) { h.setFontFamilyPathsImpl(serif, sansSerif); });
+  setFontFamilyPathsImpl(serif, sansSerif);
+}
+void History::setFontFamilyPathsImpl(const std::string &serif, const std::string &sansSerif) {
+  serifFontPath_ = serif;
+  sansSerifFontPath_ = sansSerif;
+}
+
 int History::lsMode() const { return lsMode_; }
 void History::setLsMode(int mode) {
   journal_.emplace_back([mode](History &h) { h.setLsModeImpl(mode); });
@@ -667,6 +676,10 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     epubMargins_ = {};
     if (toks.size() > 33)
       for (int k = 0; k < 4; k++) epubMargins_[k] = std::max(0, std::atoi(toks[30 + k].c_str()));
+    // 明朝体・ゴシック体のフォント(2026-10-30、serifFontPath()参照)――同じ理由でさらに末尾に。
+    fontFamiliesSaved_ = toks.size() > 35;
+    serifFontPath_ = fontFamiliesSaved_ ? decodeField(toks[34]) : std::string();
+    sansSerifFontPath_ = fontFamiliesSaved_ ? decodeField(toks[35]) : std::string();
   }
 
   complete_ = (i < lines.size() && !lines[i].empty() && lines[i][0] == kSubEof);
@@ -760,7 +773,7 @@ std::string History::serialize(const std::string &programName, const std::string
          std::to_string(iconGuiPreferences_.letterSpacingExtraHorizontal) + " " +
          std::to_string(iconGuiPreferences_.letterSpacingExtraVertical) + " " + std::to_string(epubMargins_[0]) + " " +
          std::to_string(epubMargins_[1]) + " " + std::to_string(epubMargins_[2]) + " " + std::to_string(epubMargins_[3]) +
-         "\n";
+         " " + encodeField(serifFontPath_) + " " + encodeField(sansSerifFontPath_) + "\n";
   out += std::string(1, kSubEof) + "\n";
   return out;
 }

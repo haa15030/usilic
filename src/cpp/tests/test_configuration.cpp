@@ -254,16 +254,15 @@ TEST_CASE("BUFFER/LINE/WAIT/COLUMN: single-integer directives; SCROLL/LS are ski
   CHECK(config.errors().empty());
 }
 
-TEST_CASE("SPEED/DRAG/FONT directives") {
+TEST_CASE("SPEED/DRAG directives, and the removed FONT is skipped") {
   Configuration config;
   REQUIRE(config.loadRcText(
       "SPEED\n\t90000 20000 10000\n"
-      "DRAG\n\t1 2 4\n"
-      "FONT\n#\t/a.ttf\n\t/b.ttf\n",
+      "FONT\n#\t/a.ttf\n\t/b.ttf\n"
+      "DRAG\n\t1 2 4\n",
       true));
   CHECK(config.speedValues() == std::vector<long>{90000, 20000, 10000});
   CHECK(config.dragValues() == std::vector<long>{1, 2, 4});
-  CHECK(config.fontPath() == "/b.ttf");
 }
 
 TEST_CASE("MACRO directive: M-n key K-numbers, skipping the -- marker and empty entries") {
@@ -506,25 +505,18 @@ TEST_CASE("Configuration: FILTER/LAUNCH section names (the former FILE/EXEC are 
   CHECK_FALSE(old.loadRcText("FILTER\n\t.gz\tgzip\t-dc\n", true));
 }
 
-TEST_CASE("ICON-FONT/ICON-LINE-HEIGHT/ICON-LETTER-SPACING are used only for an icon launch") {
+TEST_CASE("the removed font and spacing sections (2026-10-30) still load without errors") {
   Configuration config;
   std::string rc =
-      "FONT\n"
-      "\t/a.ttf\n"
-      "LINE-HEIGHT\n"
-      "\t1.2  1.0\n"
-      "LETTER-SPACING\n"
-      "\t0  0\n"
-      "ICON-FONT\n"
-      "\t/b.ttf\n"
-      "ICON-LETTER-SPACING\n"
-      "\t2  1\n";
+      "SERIF\n\t/s.ttc\n"
+      "SANS-SERIF\n\t/g.ttc\n"
+      "FONT\n\t/a.ttf\n"
+      "LINE-HEIGHT\n\t1.2  1.0\n"
+      "LETTER-SPACING\n\t0  0\n"
+      "ICON-FONT\n\t/b.ttf\n"
+      "ICON-LINE-HEIGHT\n"
+      "ICON-LETTER-SPACING\n\t2  1\n"
+      "WAIT\n\t3\n";
   REQUIRE(config.loadRcText(rc, true));
-  CHECK(config.fontPath() == "/a.ttf");
-  CHECK(config.letterSpacingExtras() == std::make_optional(std::make_pair(0, 0)));
-  Configuration::setIconLaunch(true);
-  CHECK(config.fontPath() == "/b.ttf");
-  CHECK(config.letterSpacingExtras() == std::make_optional(std::make_pair(2, 1)));
-  CHECK(config.lineHeightRatios() == std::make_pair(1.2, 1.0));  // ICON-LINE-HEIGHTが無ければLINE-HEIGHT
-  Configuration::setIconLaunch(false);
+  CHECK(config.errors().empty());
 }
