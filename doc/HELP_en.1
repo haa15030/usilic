@@ -1,4 +1,4 @@
-.TH USILIC 1 "2026\[u002D]10\[u002D]27" "usilic 1.5b" "User Commands"
+.TH USILIC 1 "2026\[u002D]10\[u002D]30" "usilic 1.5b" "User Commands"
 .\" usilic -n: -m(usilic自身の表示)と同じ見た目にするための前置き
 .nr PO 0
 .po 0
@@ -43,7 +43,10 @@ usilic [-c|-g] [-f font] [-s usec ...] [-d dot ...]
 \fBDESCRIPTION\fR
 .br
 .in 4n
-usilic works as a pager when started with standard input or regular files as arguments, and as a file manager when given a directory argument. After startup, the arguments can be checked on the first line ("OS name : command line") of the \fBINFO\fR screen shown by ^I (hold control and press "I"). The very first start opens in the \fBHELP\fR \fBmode\fR described below. From then on -H or ^T^H opens \fBHELP\fR, and -K or ^T^K opens \fBKEY\fR (all the key assignments), in another window, so try working while referring to the main functions and their usage.
+usilic works as a pager when started with standard input or regular files as arguments, and as a file manager when given a directory argument. After startup, the arguments can be checked on the first line ("OS name : command line") of the \fBINFO\fR screen shown by ^I (hold control and press "I"), but the very first start always opens as a pager in the \fBHELP\fR \fBmode\fR, whatever the arguments. If required programs need to be installed, it switches to \fBSHELL\fR meanwhile and returns to \fBHELP\fR when it finishes (during the install, keys other than typing characters, ^H and ^M do nothing; in an emergency, quit with ^[^[^M).
+.br
+.sp
+From \fBHELP\fR, ^[s, ^J., ^J, and ^Js (after the install, also ^G on the chapter list) move to a limited \fBSHELL\fR (prompt \fBUSILIC\fR, only commands such as ls), and ^G returns to \fBHELP\fR. Quit once with q and start again, and the usual screen of usilic appears. From then on, start with -H, or press ^T^H after startup, to open \fBHELP\fR, and -K or ^T^K opens \fBKEY\fR (all the key assignments), in another window, so try working while referring to the main functions and their usage.
 .br
 .sp
 In a terminal that supports the mouse, scrolling by dragging the screen and with the wheel can be used. In addition, the left/right cursor keys start automatic scrolling, after which the up/down cursor keys adjust its speed.
@@ -52,7 +55,7 @@ In a terminal that supports the mouse, scrolling by dragging the screen and with
 Note that in this manual page opened in \fBMAN\fR \fBmode\fR, moving to the previous / next chapter with the ; / : keys (defined in \fBMACRO\fR \fBmode\fR below) and following the notes shown underlined cannot be used.
 .br
 .sp
-The main notations used in this text are as follows.
+The main notations used in the text of \fBHELP\fR are as follows.
 .in 0
 .sp
 .in 7n
@@ -68,17 +71,17 @@ The main notations used in this text are as follows.
 .in 7n
 .in 19n
 .ti 7n
-       \*[usilic-i]~/\*[usilic-ie] : home directory (shown by "echo $HOME" enter)
+       ~/ : home directory (shown by "echo $HOME" enter)
 .in 0
 .in 7n
 .in 19n
 .ti 7n
-       \*[usilic-i]./\*[usilic-ie] : current directory (. also works when typing)
+       ./ : current directory (. also works when typing)
 .in 0
 .in 7n
 .in 19n
 .ti 7n
-      \*[usilic-i]../\*[usilic-ie] : parent directory (.. as well)
+      ../ : parent directory (.. as well)
 .in 0
 .in 7n
 .in 19n
@@ -133,7 +136,7 @@ The main notations used in this text are as follows.
 .in 7n
 .in 19n
 .ti 7n
-\*[usilic-i]usilic(1)\*[usilic-ie] : the usilic command itself
+usilic(1) : the usilic command itself
 .in 0
 .in 7n
 .in 19n
@@ -143,7 +146,7 @@ The main notations used in this text are as follows.
 .in 7n
 .in 19n
 .ti 7n
-     「」 : messages printed by \*[usilic-i]usilic(1)\*[usilic-ie]
+     「」 : messages printed by usilic(1)
 .in 0
 .in 7n
 .in 19n
@@ -153,7 +156,7 @@ The main notations used in this text are as follows.
 .in 7n
 .in 19n
 .ti 7n
-      GUI : \*[usilic-i]usilic(1)\*[usilic-ie] started with the -g option
+      GUI : usilic(1) started with the -g option
 .in 0
 .in 7n
 .in 19n
@@ -238,14 +241,15 @@ Guide            ：manual, key assignments\*[usilic-tab]
 .in 0
 .sp
 .in 8n
-Shows the regular file $PREFIX/lib/usilic/HELP.en.epub (\*[usilic-i]~/.local/lib/usilic/\*[usilic-ie]HELP.en.epub etc.) as an \fBEPUB\fR. This \fBmode\fR shows text laid out according to the CSS bundled in HELP.en.epub, so on a screen started with the -c option, changing the line spacing, the kind and size of the font etc. cannot be used. On Windows, which starts only in GUI, this is no problem; elsewhere, restart as needed with ^Og (the CUI / GUI toggle key) or the -g option.
+Shows the regular file $PREFIX/lib/usilic/HELP.en.epub (\*[usilic-i]~\*[usilic-ie]/\*[usilic-i].local\*[usilic-ie]/\*[usilic-i]lib\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/HELP.en.epub etc.) as an \fBEPUB\fR. Except with the -g (GUI) option or a start from the icon, the font type, size, line spacing, letter spacing and so on cannot be changed. On Windows, which starts only in GUI, this is no problem; elsewhere, restart as needed with ^Og (the CUI / GUI toggle key) or the -g option.
 .br
 .sp
-^G (or a right click of the mouse) in the text moves to the list of chapters. This is the contents file following \*[usilic-i]nav.xhtml\*[usilic-ie] in the .epub format (required by the EPUB3 specification); for text without contents such as HELP.en.epub, \*[usilic-i]usilic(1)\*[usilic-ie] treats lines ending with an added tab code as chapter titles, so typing ^O^J^S^Q^I$^M (show the list of lines ending with a tab code searched with \fBEGREP\fR) gives the same list. By the way, ^Jp^Q^I$^M (split the \fBHELP\fR screen with \fBPART\fR) also shows a list that looks the same, but a manual is easier to follow when read straight through, so \fBHELP\fR does not use it. Moving to the previous / next chapter with the ; / : keys works the same, though, in any \fBEPUB\fR including HELP.en.epub.
+^G (or a right click of the mouse) in the text of \fBHELP\fR moves to the list of chapters. This is the contents file following \*[usilic-i]nav.xhtml\*[usilic-ie] in the .epub format (required by the EPUB3 specification); for text without contents such as HELP.en.epub, usilic(1) treats lines ending with an added tab code as chapter titles, so typing ^O^J^S^Q^I$^M (show the list of lines ending with a tab code searched with \fBEGREP\fR) gives the same list. By the way, ^Jp^Q^I$^M (split the \fBHELP\fR screen with \fBPART\fR) also shows a list that looks the same, but a manual is easier to follow when read straight through, so \fBHELP\fR does not use it. Moving to the previous / next chapter with the ; / : keys works the same, though, in any \fBEPUB\fR including HELP.en.epub.
 .br
 .sp
-^Os on the \fBHELP\fR screen switches the scroll \fBmode\fR between continuous and per chapter (only one chapter on the screen). 
+^Os on the \fBHELP\fR screen switches the scroll \fBmode\fR between continuous and per chapter (only one chapter on the screen).
 .br
+.sp
 ^[[ / ^[] change \fILINE-HEIGHT\fR, and ^[{ / ^[} change \fILETTER-SPACING\fR, to increase / decrease the line spacing and the letter spacing (the width of one half-width character) respectively (twice that for Japanese). The setting is kept for the next start.
 .br
 .sp
@@ -255,10 +259,10 @@ Shows the regular file $PREFIX/lib/usilic/HELP.en.epub (\*[usilic-i]~/.local/lib
 ^J^F shows the list of \fBFONT\fR (monospaced) and \fISANS-SERIF\fR / \fISERIF\fR (with Japanese) fonts found by fc-list (the current font is underlined). When started from a terminal, \fBFONT\fR begins with "terminal font"; choosing it empties \fIFONT\fR and goes back to the terminal's font. Choosing with ^M or a left click switches at once and writes it to the \fIFONT\fR setting.
 .br
 .sp
-In HELP.en.epub, the blue numbers (such as [1]) after the names of the setting items in \*[usilic-i]usilicrc\*[usilic-ie] are mainly links to notes; ^M (or a click) jumps to one, and ^G (or a right click of the mouse) returns to the original place\*[usilic-note].
+In HELP.en.epub, the blue numbers (such as [1]) after the names of the setting items in \*[usilic-i]usilicrc\*[usilic-ie] are mainly links to notes; ^M (or a click) jumps to one, and ^G (or a right click of the mouse) returns to the original place.
 .br
 .sp
-^T^H opens \fBHELP\fR in another window as a child-process \*[usilic-i]usilic(1)\*[usilic-ie] (same as -H). Operations in the child \*[usilic-i]usilic(1)\*[usilic-ie] are not kept in the history, so the child's history lists are almost empty.
+^T^H opens \fBHELP\fR in another window as a child-process usilic(1) (same as -H). Operations in the child usilic(1) are not kept in the history, so the child's history lists are almost empty.
 .in 0
 .sp
 .in 4n
@@ -286,7 +290,86 @@ In HELP.en.epub, the blue numbers (such as [1]) after the names of the setting i
 It looks like \fBHELP\fR after ^O^S : ^M (\fBFGREP\fR with a full-width colon), but ^M (or a left click) on the highlighted area runs the function shown, and the h key jumps to the place in \fBHELP\fR that explains it.
 .br
 .sp
-^T^K opens \fBKEY\fR in another window as a child-process \*[usilic-i]usilic(1)\*[usilic-ie] (same as -K). A \*[usilic-i]usilic(1)\*[usilic-ie] started this way as a pager (next chapter) shows "\fBUSILIC\fR" instead of "\fBusilic-1.5b\fR" at the bottom right, and "(parent's PID)" is added at the end of the first line (the command line) in \fBINFO\fR (to tell it from the original \*[usilic-i]usilic(1)\*[usilic-ie]).
+^T^K opens \fBKEY\fR in another window as a child-process usilic(1) (same as -K). A usilic(1) started this way as a pager (next chapter) shows "USILIC" in the bottom right area of the screen, and "(parent's PID)" is added at the end of the first line (the command line) in \fBINFO\fR (to tell it from the original usilic(1)).
+.in 0
+.sp
+.in 4n
+.in 19n
+.ti 4n
+\fBEPUB\fR         ：view Epub files\*[usilic-tab]
+.in 0
+.in 19n
+.ti 0n
+\*[usilic-tab]	      ^Os：switch the scroll \fBmode\fR
+.in 0
+.in 19n
+.ti 0n
+\*[usilic-tab]	     ^O^C：record a range (vertical text)
+.in 0
+.in 19n
+.ti 0n
+\*[usilic-tab]	      ^Je：type a file name
+.in 0
+.in 19n
+.ti 0n
+\*[usilic-tab]	     ^J^E：choose from the history list
+.in 0
+.in 19n
+.ti 0n
+\*[usilic-tab]	     ^J^F：choose from the font list
+.in 0
+.in 19n
+.ti 0n
+\*[usilic-tab]	      ^Ow：cycle how Web links are opened
+.in 0
+.sp
+.in 8n
+Typing a work number (N1234AB etc.) of "Shosetsuka ni Naro", its sister site "Shosetsu wo Yomo!" or the adult "Nocturne Novels" or its work URL (https://ncode.syosetu.com/n1234ab/ etc.), a Kakuyomu work ID (digits only) or work URL (https://kakuyomu.jp/works/ID), the URL of an Aozora Bunko library card (https://www.aozora.gr.jp/cards/person number/card work number.html), or the URL of an Archive of Our Own work (https://archiveofourown.org/works/work number) makes it into an \fBEPUB\fR with \fInarou2epub\fR and opens it (needs Epub in \fIURL\fR); typing an http(s) URL handles it in the current ^Ow \fBmode\fR, the same as a Web link in the text. The ^J^E list also shows no files other than .epub, except for URLs of usilic-web (see src/web/README): one typed at ^Je appears in the ^J^E list too, and http://localhost/usilic-web/ is there from the start. The entrance URLs of "Shosetsuka ni Naro", "Nocturne Novels", Kakuyomu, Aozora Bunko and Archive of Our Own are also there from the start, and choosing one opens it in the current ^Ow \fBmode\fR (in a browser etc. when the \fBmode\fR is Epub).
+.br
+.sp
+When the current \fBmode\fR of ^Ow is Epub, it shows the list of the server's bookshelf, and the chosen book is downloaded to \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].local\*[usilic-ie]/\*[usilic-i]usilic-web\*[usilic-ie]/\*[usilic-i]texts\*[usilic-ie]/ and then opened. On localhost a book already there is opened from there; in the other \fBmode\fRs, it opens in a browser etc.
+.br
+.sp
+Web links (http etc.) are handled according to the \fIURL\fR setting; each ^Ow switches to the next of the \fBmode\fRs below and shows its name on the mode-line (any key clears it). The default is "Open", and it returns to the default after handling a link.
+.br
+.sp
+^O^C in vertical text starts COPY (COPY is shown on the mode-line); the range dragged with the mouse is highlighted, and releasing the button asks Record?(y/n). y records the string and its place in \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/\*[usilic-i]epub-marks.txt\*[usilic-ie] (in the same "book.epub:path of chapter:place: string" format as the records of usilic-web), and any other key keeps the range without recording (^G ends COPY).
+.in 0
+.sp
+.in 14n
+.in 21n
+.ti 14n
+Open : open in the default browser
+.in 0
+.in 14n
+.in 21n
+.ti 14n
+Pdf  : save the whole page as a single tall PDF page in \*[usilic-i]~\*[usilic-ie]/\*[usilic-i]Downloads\*[usilic-ie] and open it in Quick Look (needs Playwright, see \fIURL\fR)
+.in 0
+.in 14n
+.in 21n
+.ti 14n
+Dump : read the output of w3m -dump on the usilic(1) screen (^G back to the book)
+.in 0
+.in 14n
+.in 21n
+.ti 14n
+Term : open in a terminal browser (w3m)
+.in 0
+.in 14n
+.in 21n
+.ti 14n
+Copy : copy the URL to the clipboard
+.in 0
+.in 14n
+.in 21n
+.ti 14n
+Look : open in Quick Look (macOS only)
+.in 0
+.in 14n
+.in 21n
+.ti 14n
+Epub : for a link to a "Shosetsuka ni Naro", Kakuyomu, Aozora Bunko or Archive of Our Own work, make an \fBEPUB\fR with \fInarou2epub\fR in the same directory as the book being read and open it (it runs in \fBSHELL\fR so you can watch it, and ^G goes back). 
 .in 0
 .sp
 .in 19n
@@ -295,13 +378,16 @@ Viewing files    ：pager\*[usilic-tab]
 .in 0
 .sp
 .in 8n
-When started with file arguments ("usilic file"^M) or through standard input without arguments ("usilic < file"^M etc.), \*[usilic-i]usilic(1)\*[usilic-ie] works as a pager for viewing files. When started with several file arguments, n/p move to the next/previous file, x/f to the first/last file, and q quits. After startup, \*[usilic-i]usilic(1)\*[usilic-ie] shows a status line like the one below (mode-line below) on the bottom line of the screen.
+When started with file arguments ("usilic file"^M) or through standard input without arguments ("usilic < file"^M etc.), usilic(1) works as a pager for viewing files. When started with several file arguments, n/p move to the next/previous file, x/f to the first/last file, and q quits.
+.br
+.sp
+After startup, usilic(1) shows a status line like the one below (mode-line below) on the bottom line of the screen.
 .in 0
 .sp
 .in 12n
-/Users/usilic/.usilic/usilicrc 00030/00062 48% 23107 usilic-1.5b
+ /\*[usilic-i]Users\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/\*[usilic-i]usilicrc\*[usilic-ie] 00030/00062 48% 23107 usilic-1.5b
 .br
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~~~ ~~~ ~~~~~ ~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~~~ ~~  ~~~~~ ~~~~~~~~~~~
 .br
 (1)                            (2)         (3) (4)   (5)
 .br
@@ -314,12 +400,12 @@ When started with file arguments ("usilic file"^M) or through standard input wit
 .in 12n
 .in 18n
 .ti 12n
-(2) : current line / total lines
+(2) : current line/total lines
 .in 0
 .in 12n
 .in 18n
 .ti 12n
-(3) : current page / total pages * 100
+(3) : current page／total pages＊100
 .in 0
 .in 12n
 .in 18n
@@ -329,11 +415,11 @@ When started with file arguments ("usilic file"^M) or through standard input wit
 .in 12n
 .in 18n
 .ti 12n
-(5) : version
+(5) : version (USILIC for a child process)
 .in 0
 .sp
 .in 8n
-The main keys that work in the pager are as follows (the same while viewing a file in the file manager). When started as a pager, only the keys on the lines of this \fBHELP\fR that start with a tab (these, plus those in the \fBFGREP\fR, \fBEGREP\fR, \fBEPUB\fR and other chapters) and ^M can be used.
+The main keys that work in the pager are as follows (the same while viewing a file in the file manager). When started as a pager, only the keys on the lines of the text that start with a tab code (these, plus those in the \fBFGREP\fR, \fBEGREP\fR, \fBEPUB\fR and other chapters) and ^M can be used.
 .in 0
 .sp
 .in 19n
@@ -470,7 +556,7 @@ The place ^X^X returns to (the mark) is put with ^␣, and also automatically on
 .in 0
 .sp
 .in 8n
-The ^U count works with moving and repeating commands such as ^N/^P, j/k, page scrolls, n/p and ^Xe. ^Xz repeats the last command, including its ^U count. Registers (one character such as a) and bookmarks record a line of a file (the same line in a vertical book too) or a directory of \fB(ls)\fR. Registers last while usilic runs; bookmarks are kept in \*[usilic-i]~/.usilic/bookmarks\*[usilic-ie]. ^Xrm asks for a name (the file name by default); in the ^Xrb list, choose with ^N/^P and jump with ^M. ^M on a name prefixed with - deletes that bookmark.
+The ^U count works with moving and repeating commands such as ^N/^P, j/k, page scrolls, n/p and ^Xe. ^Xz repeats the last command, including its ^U count. Registers (one character such as a) and bookmarks record a line of a file (the same line in a vertical book too) or a directory of \fB(ls)\fR. Registers last while usilic runs; bookmarks are kept in \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/\*[usilic-i]bookmarks\*[usilic-ie]. ^Xrm asks for a name (the file name by default); in the ^Xrb list, choose with ^N/^P and jump with ^M. ^M on a name prefixed with - deletes that bookmark.
 .in 0
 .sp
 .in 19n
@@ -479,15 +565,15 @@ File management  ：file manager\*[usilic-tab]
 .in 0
 .sp
 .in 8n
-When started with neither standard input nor arguments, if you were viewing HELP.1 when you last quit, for example, the mode-line looks like this.
+When started with neither standard input nor arguments, if you were viewing \*[usilic-i]HELP.1\*[usilic-ie] when you last quit, for example, the mode-line looks like this.
 .in 0
 .sp
 .in 12n
- HELP.1 0021/1135 43% 101170 (groff) /Users/usilic/.local/lib/usilic/
+ \*[usilic-i]HELP.1\*[usilic-ie] 0021/1135 43% 101170 (groff) /\*[usilic-i]Users\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/\*[usilic-i].local\*[usilic-ie]/\*[usilic-i]lib\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/
 .br
-~~~~~~ ~~~~~~~~~~~~~ ~~~~~~ ~~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~ ~~~~~~~~~~~~  ~~~~~~ ~~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 .br
-(1)       (2)       (3)    (4)       (5)
+(1)    (2)           (3)    (4)     (5)
 .in 0
 .sp
 .in 12n
@@ -498,7 +584,7 @@ When started with neither standard input nor arguments, if you were viewing HELP
 .in 12n
 .in 18n
 .ti 12n
-(2) : current line / total lines / current page / total pages * 100
+(2) : current line/total lines current page／total pages＊100
 .in 0
 .in 12n
 .in 18n
@@ -521,18 +607,18 @@ The previous \fBmode\fR name is shown at mode-line(5) above, and ^G moves there.
 .in 0
 .sp
 .in 12n
- /Users/usilic/.local/lib/ 01/66 43% 2000 (ls) usilic-1.5b
+ /\*[usilic-i]Users\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/\*[usilic-i].local\*[usilic-ie]/\*[usilic-i]lib\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/ 01/66 43% 2000 (ls) usilic-1.5b
 .br
-~~~~~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~ ~~~~ ~~~~ ~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~  ~~~~ ~~~~ ~~~~~~~~~~~
 .br
-(1)                       (2)       (3)  (4)  (5)
+(1)                              (2)       (3)  (4)  (5)
 .in 0
 .sp
 .in 8n
-When (1) ends with "/" and (5) is a non-reversed "\fBusilic-1.5b\fR" (\fB(ls)\fR below), pressing ^G repeatedly goes back and forth between the previous directories. In an externally started \*[usilic-i]usilic(1)\*[usilic-ie] (^Ou of \fBUSILIC\fR), (5) is a non-reversed "\fBUSILIC\fR".
+When (1) ends with "/" and (5) is a non-reversed "usilic-1.5b" (\fB(ls)\fR below), pressing ^G repeatedly goes back and forth between the previous directories. In an externally started usilic(1) (^Ou of \fBUSILIC\fR), (5) is a non-reversed "USILIC".
 .br
 .sp
-In \fB(ls)\fR, a line starting with "d" ("drwxr-xr-x ..." etc.) and ending with "/" is a directory. ^M moves there, and selecting "\*[usilic-i]./\*[usilic-ie]" or ^Xd"."^M (\fBDIR\fR) refreshes the listing of the current directory. The following keys can also be used to change directories.
+In \fB(ls)\fR, a line starting with "d" ("drwxr-xr-x ..." etc.) and ending with "/" is a directory. ^M moves there, and selecting "./" or ^Xd"."^M (\fBDIR\fR) refreshes the listing of the current directory. The following keys can also be used to change directories.
 .in 0
 .sp
 .in 10n
@@ -546,7 +632,7 @@ In \fB(ls)\fR, a line starting with "d" ("drwxr-xr-x ..." etc.) and ending with 
    ^J^C：move to the current directory
 .in 0
 .in 19n
-Moves to \fB(ls)\fR of the current directory even while viewing a file or while \fBSHELL\fR is running. Pressing ^] or ^J^C again in \fB(ls)\fR refreshes the listing, just like selecting "\*[usilic-i]./\*[usilic-ie]".
+Moves to \fB(ls)\fR of the current directory even while viewing a file or while \fBSHELL\fR is running. Pressing ^] or ^J^C again in \fB(ls)\fR refreshes the listing, just like selecting "./".
 .in 0
 .sp
 .in 10n
@@ -568,7 +654,7 @@ Counting the leading "/" (slash) of the displayed string as 0, moves to the dire
 .in 0
 .sp
 .in 23n
-\*[usilic-i]/Users/usilic/.local/lib/usilic/\*[usilic-ie]
+/\*[usilic-i]Users\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/\*[usilic-i].local\*[usilic-ie]/\*[usilic-i]lib\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/
 .in 0
 .sp
 .in 19n
@@ -576,7 +662,7 @@ Counting the leading "/" (slash) of the displayed string as 0, moves to the dire
 .in 0
 .sp
 .in 23n
-\*[usilic-i]/Users/usilic/\*[usilic-ie]
+/\*[usilic-i]Users\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/
 .in 0
 .sp
 .in 19n
@@ -584,7 +670,7 @@ and ^J^B instead of ^J2 to the parent directory
 .in 0
 .sp
 .in 23n
-\*[usilic-i]/Users/usilic/.local/lib/\*[usilic-ie]
+/\*[usilic-i]Users\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/\*[usilic-i].local\*[usilic-ie]/\*[usilic-i]lib\*[usilic-ie]/
 .in 0
 .sp
 .in 19n
@@ -592,7 +678,7 @@ respectively. When the input is on the mode-line at the bottom of the screen and
 .in 0
 .sp
 .in 23n
-\*[usilic-i]/Users/usilic/.usilic/usilicrc\*[usilic-ie]
+/\*[usilic-i]Users\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/\*[usilic-i]usilicrc\*[usilic-ie]
 .in 0
 .sp
 .in 19n
@@ -600,7 +686,7 @@ respectively. When the input is on the mode-line at the bottom of the screen and
 .in 0
 .sp
 .in 23n
-\*[usilic-i]/Users/usilic/\*[usilic-ie]
+/\*[usilic-i]Users\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/
 .in 0
 .sp
 .in 19n
@@ -616,16 +702,16 @@ respectively. When the input is on the mode-line at the bottom of the screen and
 A line starting with "-" ("-rxwr-xr-x ..." etc.) is a file (regular file). ^M shows the contents of the file, and if the file's suffix is set in \fIFILTER\fR, shows the output of the given program (a .gz file through "gzip -dc", etc.).
 .br
 .sp
-For a suffix set in \fILAUNCH\fR, \*[usilic-i]usilic(1)\*[usilic-ie] leaves its screen once and runs the given program (an .info file with "info -f", etc.).
+For a suffix set in \fILAUNCH\fR, usilic(1) leaves its screen once and runs the given program (an .info file with "info -f", etc.).
 .br
 .sp
-When the file size exceeds the value set by \fIBUFFER\fR, the message "Not enough buffer" is shown and the file is opened the same way as ^O^M, reading only what fits on the screen (any key clears the message).
+When the file size exceeds the value set by \fIBUFFER\fR, the message "Not enough buffer" is shown and the file is opened the same way as ^O^M (described later), reading only what fits on the screen (any key clears the message).
 .br
 .sp
-For a file judged binary by the \fICODE\fR setting, the first control code found and the file type from \*[usilic-i]file(1)\*[usilic-ie] are shown. On macOS, however, images, PDFs and the kinds Quick Look can handle (\*[usilic-i].numbers\*[usilic-ie] \*[usilic-i].docx\*[usilic-ie] etc., see below) open in Quick Look instead of the \*[usilic-i]file(1)\*[usilic-ie] display, and videos (.mp4 .mov .mkv etc.) open not in Quick Look but in IINA (VLC if missing, the default app if neither). Videos selected with .[] are passed together and played in turn (␣ as well), and a setting in \fILAUNCH\fR takes priority (on WSL2 the Windows default app handles them).
+For a file judged binary by the \fICODE\fR setting, the first control code found and the file type from file(1) are shown. On macOS, however, images, PDFs and the kinds Quick Look can handle (.numbers .docx etc., see below) open in Quick Look instead of the file(1) display, and videos (.mp4 .mov .mkv etc.) open not in Quick Look but in IINA (VLC if missing, the default app if neither). Videos selected with .[] are passed together and played in turn (␣ as well), and a setting in \fILAUNCH\fR takes priority (on WSL2 the Windows default app handles them).
 .br
 .sp
-In GUI, image files (\*[usilic-i].jpg\*[usilic-ie] \*[usilic-i].jpeg\*[usilic-ie] \*[usilic-i].png\*[usilic-ie] \*[usilic-i].gif\*[usilic-ie] \*[usilic-i].bmp\*[usilic-ie], only the first frame of a GIF) are shown on the \*[usilic-i]usilic(1)\*[usilic-ie] screen (shrunk to fit the width and height of the screen; small images are not enlarged). Pressing ^L while showing one reloads it, which helps to check an image you have exported again (reopening also reloads it).
+In GUI, image files (.jpg .jpeg .png .gif .bmp, only the first frame of a GIF) are shown on the usilic(1) screen (shrunk to fit the width and height of the screen; small images are not enlarged). Pressing ^L while showing one reloads it, which helps to check an image you have exported again (reopening also reloads it).
 .in 0
 .sp
 .in 10n
@@ -661,7 +747,7 @@ Switching the \fB(ls)\fR display
 .in 10n
 .in 19n
 .ti 10n
-    ^Oo：switch the \*[usilic-i]ls(1)\*[usilic-ie] format
+    ^Oo：switch the ls(1) format
 .in 0
 .in 10n
 .in 19n
@@ -675,54 +761,54 @@ Switching the \fB(ls)\fR display
 .in 0
 .sp
 .in 12n
-^Oo switches the \*[usilic-i]ls(1)\*[usilic-ie] output format, but when the file names are shorter than 16 bytes, the display is fixed to file names only. Each ^Ol switches the order of the \*[usilic-i]ls(1)\*[usilic-ie] output through Date ⇒ Size ⇒ Kind ⇒ Name, and ^O^L sorts in reverse.
+^Oo switches the ls(1) output format, but when the file names are shorter than 8 bytes, the display is fixed to file names only. Each ^Ol switches the order of the ls(1) output through Date ⇒ Size ⇒ Kind ⇒ Name, and ^O^L sorts in reverse.
 .in 0
 .sp
-.in 8n
+.in 4n
 Selecting files
 .in 0
-.in 14n
-.in 19n
-.ti 14n
+.in 8n
+.in 13n
+.ti 8n
   .：toggle selection of the current line
 .in 0
-.in 14n
-.in 19n
-.ti 14n
+.in 8n
+.in 13n
+.ti 8n
  ^␣：toggle selection of the current line (only this one in the \fBFILE\fR and \fBDIR\fR lists)
 .in 0
-.in 14n
-.in 19n
-.ti 14n
+.in 8n
+.in 13n
+.ti 8n
   [：select the current line, then up (\fBMACRO\fR)
 .in 0
-.in 14n
-.in 19n
-.ti 14n
+.in 8n
+.in 13n
+.ti 8n
   ]：select the current line, then down (\fBMACRO\fR)
 .in 0
-.in 14n
-.in 19n
-.ti 14n
+.in 8n
+.in 13n
+.ti 8n
 ^Oy：select all lines
 .in 0
-.in 14n
-.in 19n
-.ti 14n
+.in 8n
+.in 13n
+.ti 8n
 ^On：deselect all lines
 .in 0
-.in 14n
-.in 19n
-.ti 14n
+.in 8n
+.in 13n
+.ti 8n
   %：select lines whose name matches a regular expression (\fB(ls)\fR only)
 .in 0
-.in 14n
-.in 19n
-.ti 14n
+.in 8n
+.in 13n
+.ti 8n
   *：select lines with the same extension (\fB(ls)\fR only; the cursor line's extension by default)
 .in 0
 .sp
-.in 12n
+.in 8n
 In \fB(ls)\fR, a selected line gets an underline and becomes a target of file operations/viewing/extraction (without a selection, viewing/running applies to the cursor line). The same operations work in the \fBLOCATE\fR, \fBDU\fR, \fBFILE\fR, \fBDIR\fR and \fBUSILIC\fR lists. After \fBCP\fR/\fBMV\fR/\fBARC\fR, the processed files are underlined in \fB(ls)\fR of the copy/move/extract destination (a temporary selection). It is a target of ^Jt etc. just like a normal selection. The temporary selection disappears with ^L, and can also be removed with . or ^On.
 .in 0
 .sp
@@ -742,11 +828,11 @@ In \fB(ls)\fR, a selected line gets an underline and becomes a target of file op
           ^Om：move
 .in 0
 .sp
-.in 10n
-^Oc/^Om shows the prompt "Destination? " on the mode-line. Type the copy/move destination and run with ^M (^M alone means \*[usilic-i]~/.usilic/data/\*[usilic-ie], other relative paths are based on the current directory, and ^W inserts a previous directory name). The work is done in \fBSHELL\fR; on success, after moving to \fB(ls)\fR of the destination, the processed files are underlined there too. Nothing is done when nothing is selected.
+.in 8n
+^Oc/^Om shows the prompt "Destination? " on the mode-line. Type the copy/move destination and run with ^M (^M alone means \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/\*[usilic-i]data\*[usilic-ie]/, other relative paths are based on the current directory, and ^W inserts a previous directory name). The work is done in \fBSHELL\fR; on success, after moving to \fB(ls)\fR of the destination, the processed files are underlined there too. Nothing is done when nothing is selected.
 .br
 .sp
-On macOS extended attributes are copied too, so copying to a USB stick etc. may bring along files starting with "._" (\fICOPY\fR). On Windows it is done with copy, xcopy and move of cmd.exe (del and rmdir for \fBRM\fR), and the \fICOPY\fR, \fIMOVE\fR and \fIDELETE\fR settings are not used.
+On macOS extended attributes are copied too, so copying to a USB stick etc. may bring along files starting with "._" (\fICP\fR). On Windows it is done with copy, xcopy and move of cmd.exe (del and rmdir for \fBRM\fR), and the \fICP\fR, \fIMV\fR and \fIRM\fR settings are not used.
 .in 0
 .sp
 .in 4n
@@ -760,57 +846,8 @@ On macOS extended attributes are copied too, so copying to a USB stick etc. may 
           ^Or：delete
 .in 0
 .sp
-.in 10n
+.in 8n
 Typing "y"^M at the ^Or prompt "Delete? (y/n)" deletes the selected files. Any other input does nothing. If a target violates permissions (read-only etc.), "Permission denied" is shown and nothing is done. The progress remains in \fBSHELL\fR and can be checked with ^[s or ^O^Js.
-.in 0
-.sp
-.in 4n
-.in 19n
-.ti 4n
-\fBTOOL\fR         ：run a program\*[usilic-tab]
-.in 0
-.in 19n
-.ti 0n
-\*[usilic-tab]	      ^Jt：type a program name
-.in 0
-.in 19n
-.ti 0n
-\*[usilic-tab]	     ^J^T：choose from the history list
-.in 0
-.sp
-.in 10n
-The ^Jt prompt is shown with the file name of the cursor line (all of the selection, if any) already in it, so type the program name in front and run it with ^M. A program listed in \fIPROGRAM\fR runs after leaving the \*[usilic-i]usilic(1)\*[usilic-ie] screen once, and you come back to the original screen when it ends. A program not in the list runs in \fBSHELL\fR. If you start in \fBSHELL\fR an app that changes the terminal settings, such as an editor, restart \fBSHELL\fR with ^Js. A command starting with "usilic" does not run in \fBSHELL\fR even if it is not in \fIPROGRAM\fR; it starts another \*[usilic-i]usilic(1)\*[usilic-ie] as an external pager (treated like ^Ou of \fBUSILIC\fR below, and kept in history with "(usilic)"). ^J^T shows a sorted list of the programs run so far from \fBTOOL\fR and \fBSHELL\fR, and ^R then shows the history in the order run.
-.in 0
-.sp
-.in 4n
-.in 19n
-.ti 4n
-\fBUSILIC\fR       ：view files\*[usilic-tab]
-.in 0
-.in 4n
-.in 19n
-.ti 4n
-          ^Ou：view
-.in 0
-.in 4n
-.in 19n
-.ti 4n
-          ^Tn：bring the next window to the front (the original and external \*[usilic-i]usilic(1)\*[usilic-ie]s)
-.in 0
-.in 4n
-.in 19n
-.ti 4n
-          ^Tp：bring the previous window to the front (likewise)
-.in 0
-.sp
-.in 10n
-^Ou shows the underlined files (the cursor line if nothing is selected) in a window of another \*[usilic-i]usilic(1)\*[usilic-ie] started as an external pager. In CUI on Linux too, when a display (X11 or Wayland) is available, it opens in a new window of the current terminal (GNOME Terminal, Konsole, xterm etc., or whichever is found if unknown). In other CUI cases (e.g. over SSH), quitting the external pager brings you back to the original screen.
-.br
-.sp
-Several files and directories open one by one in separate windows (over SSH etc., the next one opens when the previous one quits). A directory opens in an \fB(ls)\fR just for that occasion (history is neither read nor written, and the original \*[usilic-i]usilic(1)\*[usilic-ie] keeps running). ^Tn / ^Tp bring the original \*[usilic-i]usilic(1)\*[usilic-ie] and the externally started windows to the front in turn (usable from any of those windows).
-.br
-.sp
-When the original \*[usilic-i]usilic(1)\*[usilic-ie] exits, everything it started externally exits too (each can also be quit on its own with q, ^X^C etc.). The files and directories started externally stay in the original \*[usilic-i]usilic(1)\*[usilic-ie]'s \fBUSILIC\fR, ^X^F and ^X^D histories with "(usilic)" appended, so you can reopen them later (they are not used as the place ^J^J or ^G returns to, nor by ^W in the \fBCP\fR/\fBMV\fR destination). In lists such as \fBLOCATE\fR, the selection (the highlighted line if none) is shown the same way.
 .in 0
 .sp
 .in 4n
@@ -828,111 +865,84 @@ When the original \*[usilic-i]usilic(1)\*[usilic-ie] exits, everything it starte
 .ti 4n
          ^J^A：choose from the history list
 .in 0
+.in 4n
+.in 19n
+.ti 4n
+          ^Oe：EPUB content list
+.in 0
+.in 4n
+.in 19n
+.ti 4n
+         ^O^E：list of the records
+.in 0
 .sp
-.in 10n
-Selecting a file with one of the suffixes below with ^M in \fB(ls)\fR shows its content list (^O^M also shows the list, but items cannot be selected). Choose one with ^M to view its contents (an archive inside shows its own list). As in \fB(ls)\fR, ␣ shows the file of the cursor line in Quick Look, and after selecting several with the .[] keys, ^Oa extracts them to the destination you give (the whole archive if nothing is selected). ^Oa on a file with the same suffix in \fB(ls)\fR also extracts the whole archive.
+.in 8n
+Selecting a file with one of the suffixes below with ^M in \fB(ls)\fR shows its content list (^O^M also shows the list, but items cannot be selected). Choose one with ^M to view its contents (an archive inside shows its own list).
+.in 0
+.sp
+.in 12n
+\&.tar .tar.gz .tgz .taz .tar.z .tar.bz2 .tbz2 .tar.xz .txz .tar.zst .tzst .lzh .zip .jar .rpm .deb .rar .7z
+.in 0
+.sp
+.in 8n
+As in \fB(ls)\fR, ␣ shows the file of the cursor line in Quick Look, and after selecting several with the .[] keys, ^Oa extracts them to the destination you give (the whole archive if nothing is selected). ^Oa on a file with the same suffix in \fB(ls)\fR also extracts the whole archive.
 .br
-As with \fBCP\fR/\fBMV\fR, ^M alone without a destination extracts to \*[usilic-i]~/.usilic/data/\*[usilic-ie], but \fBARC\fR cannot start when several files are selected in \fB(ls)\fR. A file whose content list cannot be read is opened as a normal file. On Windows, everything except zip is handled with the tar.exe that comes with Windows (\*[usilic-i].rpm\*[usilic-ie] \*[usilic-i].deb\*[usilic-ie] cannot be handled).
+.sp
+As with \fBCP\fR/\fBMV\fR, ^M alone without a destination extracts to \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/\*[usilic-i]data\*[usilic-ie]/, but \fBARC\fR cannot start when several files are selected in \fB(ls)\fR. A file whose content list cannot be read is opened as a normal file. On Windows, everything except zip is handled with the tar.exe that comes with Windows (.rpm .deb cannot be handled).
 .br
 .sp
 ^J^A lists only the archive files in the access history (\fBFILE\fR), and choosing one shows its content list (.epub goes to the ^J^E list).
+.br
+.sp
+Choosing an .epub file with ^M in \fB(ls)\fR starts \fBEPUB\fR (choosing an .epub with ^O^M shows, as with \fBARC\fR, a list whose items cannot be selected). Even if the .epub suffix is set in \fIARCHIVE\fR, \fBARC\fR does not open it, but choosing the .epub with ^Oe lets you choose an item from the content list and view it as with \fBARC\fR (without layout). The .epub lists opened this way are shown with ^O^E, and in the \fBFILE\fR history list, (epub) or (unzip) respectively is added after the file name. The ^Je prompt accepts only .epub files in the current directory (no history list is shown, so try completing with ^I).
+.br
+.sp
+.in 4n
+.in 19n
+.ti 4n
+\fBTOOL\fR         ：run a program\*[usilic-tab]
+.in 0
+.in 19n
+.ti 0n
+\*[usilic-tab]	      ^Jt：type a program name
+.in 0
+.in 19n
+.ti 0n
+\*[usilic-tab]	     ^J^T：choose from the history list
 .in 0
 .sp
-.in 14n
-\*[usilic-i].tar\*[usilic-ie] \*[usilic-i].tar.gz\*[usilic-ie] \*[usilic-i].tgz\*[usilic-ie] \*[usilic-i].taz\*[usilic-ie] \*[usilic-i].tar.z\*[usilic-ie] \*[usilic-i].tar.bz2\*[usilic-ie] \*[usilic-i].tbz2\*[usilic-ie] \*[usilic-i].tar.xz\*[usilic-ie] \*[usilic-i].txz\*[usilic-ie] \*[usilic-i].tar.zst\*[usilic-ie] \*[usilic-i].tzst\*[usilic-ie] \*[usilic-i].lzh\*[usilic-ie] \*[usilic-i].zip\*[usilic-ie] \*[usilic-i].jar\*[usilic-ie] \*[usilic-i].rpm\*[usilic-ie] \*[usilic-i].deb\*[usilic-ie] \*[usilic-i].rar\*[usilic-ie] \*[usilic-i].7z\*[usilic-ie]
+.in 8n
+The ^Jt prompt is shown with the file name of the cursor line (all of the selection, if any) already in it, so type the program name in front and run it with ^M. A program listed in \fIPROGRAM\fR runs after leaving the usilic(1) screen once, and you come back to the original screen when it ends. A program not in the list runs in \fBSHELL\fR. If you start in \fBSHELL\fR an app that changes the terminal settings, such as an editor, restart \fBSHELL\fR with ^Js. A command starting with "usilic" does not run in \fBSHELL\fR even if it is not in \fIPROGRAM\fR; it starts another usilic(1) as an external pager (treated like ^Ou of \fBUSILIC\fR below, and kept in history with "(usilic)"). ^J^T shows a sorted list of the programs run so far from \fBTOOL\fR and \fBSHELL\fR, and ^R then shows the history in the order run.
 .in 0
 .sp
 .in 4n
 .in 19n
 .ti 4n
-\fBEPUB\fR         ：view Epub files\*[usilic-tab]
+\fBUSILIC\fR       ：view files\*[usilic-tab]
 .in 0
+.in 4n
 .in 19n
-.ti 0n
-\*[usilic-tab]	      ^Oe：content list
+.ti 4n
+          ^Ou：view
 .in 0
+.in 4n
 .in 19n
-.ti 0n
-\*[usilic-tab]	      ^Os：switch the scroll \fBmode\fR
+.ti 4n
+          ^Tn：bring the next window to the front (the original and external usilic(1)s)
 .in 0
+.in 4n
 .in 19n
-.ti 0n
-\*[usilic-tab]	     ^O^C：record a range (vertical text)
-.in 0
-.in 19n
-.ti 0n
-\*[usilic-tab]	     ^O^E：list of the records
-.in 0
-.in 19n
-.ti 0n
-\*[usilic-tab]	      ^Je：type a file name
-.in 0
-.in 19n
-.ti 0n
-\*[usilic-tab]	     ^J^E：choose from the history list
-.in 0
-.in 19n
-.ti 0n
-\*[usilic-tab]	     ^J^F：choose from the font list
-.in 0
-.in 19n
-.ti 0n
-\*[usilic-tab]	      ^Ow：cycle how Web links are opened
+.ti 4n
+          ^Tp：bring the previous window to the front (likewise)
 .in 0
 .sp
-.in 10n
-Choosing an .epub file with ^M in \fB(ls)\fR starts the e-book reading \fBmode\fR (choosing an .epub with ^O^M shows, as with \fBARC\fR, a list whose items cannot be selected). Even if the .epub suffix is set in \fIARCHIVE\fR, \fBARC\fR does not open it, but choosing the .epub with ^Oe lets you choose an item from the content list and view it as with \fBARC\fR (without layout).
+.in 8n
+^Ou shows the underlined files (the cursor line if nothing is selected) in a window of another usilic(1) started as an external pager. In CUI on Linux too, when a display (X11 or Wayland) is available, it opens in a new window of the current terminal (GNOME Terminal, Konsole, xterm etc., or whichever is found if unknown). In other CUI cases (e.g. over SSH), quitting the external pager brings you back to the original screen.
 .br
 .sp
-In the \fBFILE\fR history list, (epub) or (unzip) respectively is added after the file name. The ^Je prompt accepts only .epub files in the current directory (no history list is shown, so try completing with ^I).
+Several files and directories open one by one in separate windows (over SSH etc., the next one opens when the previous one quits). A directory opens in an \fB(ls)\fR just for that occasion (history is neither read nor written, and the original usilic(1) keeps running). ^Tn / ^Tp bring the original usilic(1) and the externally started windows to the front in turn (usable from any of those windows). 
 .br
-.sp
-Typing a work number (N1234AB etc.) of "Shosetsuka ni Naro", its sister site "Shosetsu wo Yomo!" or the adult "Nocturne Novels" or its work URL (https://ncode.syosetu.com/n1234ab/ etc.), a Kakuyomu work ID (digits only) or work URL (https://kakuyomu.jp/works/ID), the URL of an Aozora Bunko library card (https://www.aozora.gr.jp/cards/person number/card work number.html), or the URL of an Archive of Our Own work (https://archiveofourown.org/works/work number) makes it into an \fBEPUB\fR with \fInarou2epub\fR and opens it (needs Epub in \fIURL\fR); typing an http(s) URL handles it in the current ^Ow \fBmode\fR, the same as a Web link in the text. The ^J^E list also shows no files other than .epub, except for URLs of usilic-web (see src/web/README): one typed at ^Je appears in the ^J^E list too, and http://localhost/usilic-web/ is there from the start. The entrance URLs of "Shosetsuka ni Naro", "Nocturne Novels", Kakuyomu, Aozora Bunko and Archive of Our Own are also there from the start, and choosing one opens it in the current ^Ow \fBmode\fR (in a browser etc. when the \fBmode\fR is Epub).
-.br
-.sp
-When the current \fBmode\fR of ^Ow is Epub, it shows the list of the server's bookshelf, and the chosen book is downloaded to \*[usilic-i]~/\*[usilic-ie].local/usilic-web/texts/ and then opened. On localhost a book already there is opened from there; in the other \fBmode\fRs, it opens in a browser etc.
-.br
-.sp
-Web links (http etc.) are handled according to the \fIURL\fR setting; each ^Ow switches to the next of the \fBmode\fRs below and shows its name on the mode-line (any key clears it). The default is "Open", and it returns to the default after handling a link.
-.br
-.sp
-^O^C in vertical text starts \fICOPY\fR (\fICOPY\fR is shown on the mode-line); the range dragged with the mouse is highlighted, and releasing the button asks Record?(y/n). y records the string and its place in \*[usilic-i]~/.usilic/\*[usilic-ie]epub-marks.txt (in the same "book.epub:path of chapter:place: string" format as the records of usilic-web), and any other key keeps the range without recording (^G ends \fICOPY\fR).
-.in 0
-.sp
-.in 14n
-.in 21n
-.ti 14n
-Open : open in the default browser
-.in 0
-.in 14n
-.in 21n
-.ti 14n
-Pdf  : save the whole page as a single tall PDF page in \*[usilic-i]~/Downloads\*[usilic-ie] and open it in Quick Look (needs Playwright, see \fIURL\fR)
-.in 0
-.in 14n
-.in 21n
-.ti 14n
-Dump : read the output of w3m -dump on the usilic screen (^G back to the book)
-.in 0
-.in 14n
-.in 21n
-.ti 14n
-Term : open in a terminal browser (w3m)
-.in 0
-.in 14n
-.in 21n
-.ti 14n
-Copy : copy the URL to the clipboard
-.in 0
-.in 14n
-.in 21n
-.ti 14n
-Look : open in Quick Look (macOS only)
-.in 0
-.in 14n
-.in 21n
-.ti 14n
-Epub : for a link to a "Shosetsuka ni Naro", Kakuyomu, Aozora Bunko or Archive of Our Own work, make an \fBEPUB\fR with \fInarou2epub\fR (see below) in the same directory as the book being read and open it (it runs in \fBSHELL\fR so you can watch it, and ^G goes back). 
+When the original usilic(1) exits, everything it started externally exits too (each can also be quit on its own with q, ^X^C etc.). The files and directories started externally stay in the original usilic(1)'s \fBUSILIC\fR, ^X^F and ^X^D histories with "(usilic)" appended, so you can reopen them later (they are not used as the place ^J^J or ^G returns to, nor by ^W in the \fBCP\fR/\fBMV\fR destination). In lists such as \fBLOCATE\fR, the selection (the highlighted line if none) is shown the same way.
 .in 0
 .sp
 .in 19n
@@ -941,7 +951,7 @@ Modes            ： can start outside \fB(ls)\fR too\*[usilic-tab]
 .in 0
 .sp
 .in 4n
-Before starting a new \fBmode\fR, \*[usilic-i]usilic(1)\*[usilic-ie] pushes the current mode-line on a stack and then updates the screen (^G returns to the last one pushed). The stack is cleared when you choose a directory in \fB(ls)\fR or change directories with ^J2 etc., and the label "\fBusilic-1.5b\fR" is shown at mode-line(5). Choosing a directory in a list such as \fBLOCATE\fR or \fBDU\fR gives the \fB(ls)\fR screen, and choosing a further directory there also clears the stack. Pressing the same key that started the \fBmode\fR inside that \fBmode\fR, such as ^J^L during \fBLOCATE\fR, discards the history in between (^G still returns to where the \fBmode\fR was first started) and starts the \fBmode\fR again.
+Before starting a new \fBmode\fR, usilic(1) pushes the current mode-line on a stack and then updates the screen (^G returns to the last one pushed). The stack is cleared when you choose a directory in \fB(ls)\fR or change directories with ^J2 etc., and the label "usilic-1.5b" is shown at mode-line(5). Choosing a directory in a list such as \fBLOCATE\fR or \fBDU\fR gives the \fB(ls)\fR screen, and choosing a further directory there also clears the stack. Pressing the same key that started the \fBmode\fR inside that \fBmode\fR, such as ^J^L during \fBLOCATE\fR, discards the history in between (^G still returns to where the \fBmode\fR was first started) and starts the \fBmode\fR again.
 .in 0
 .sp
 .in 4n
@@ -955,8 +965,8 @@ Before starting a new \fBmode\fR, \*[usilic-i]usilic(1)\*[usilic-ie] pushes the 
            ^R：show the history list
 .in 0
 .sp
-.in 10n
-Pressing ^R at the \fBFILE\fR, \fBDIR\fR, \fBMAN\fR, \fBLOCATE\fR, \fBFGREP\fR, \fBEGREP\fR, \fBPART\fR or \fBSHELL\fR prompt shows the \fBHISTORY\fR list of the strings saved in the order typed (newest on the bottom line). Pressing ^M on the cursor line, or just typing, puts that string into the prompt. Strings typed from \fBTOOL\fR and \fBSHELL\fR are saved in the \fBTOOL\fR list, and ^R shows the list of commands run. Pressing ^R again on the list switches between the sorted list without duplicates and the \fBHISTORY\fR list in the order typed. In \fBEGREP\fR and \fBPART\fR, the first ^R shows a list with the regular expression examples written in \fIGREP\fR at the top (the cursor on the regular expression used last). The history is saved in \*[usilic-i]~/.usilic/history\*[usilic-ie] and can be used after the next start. The number of lines kept for each kind is set by \fILINE\fR (unlimited by default).
+.in 8n
+Pressing ^R at the \fBFILE\fR, \fBDIR\fR, \fBMAN\fR, \fBLOCATE\fR, \fBFGREP\fR, \fBEGREP\fR, \fBPART\fR or \fBSHELL\fR prompt shows the \fBHISTORY\fR list of the strings saved in the order typed (newest on the bottom line). Pressing ^M on the cursor line, or just typing, puts that string into the prompt. Strings typed from \fBTOOL\fR and \fBSHELL\fR are saved in the \fBTOOL\fR list, and ^R shows the list of commands run. Pressing ^R again on the list switches between the sorted list without duplicates and the \fBHISTORY\fR list in the order typed. In \fBEGREP\fR and \fBPART\fR, the first ^R shows a list with the regular expression examples written in \fIGREP\fR at the top (the cursor on the regular expression used last). The history is saved in \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/\*[usilic-i]history\*[usilic-ie] and can be used after the next start. The number of lines kept for each kind is set by \fILINE\fR (unlimited by default).
 .in 0
 .sp
 .in 4n
@@ -986,7 +996,7 @@ F/\fBEGREP\fR      ：search for strings
 \*[usilic-tab]	   ^O^J^S：list of matching lines (extended regular expression)
 .in 0
 .sp
-.in 10n
+.in 8n
 The incremental search of ^S searches with grep -F (\fBFGREP\fR). Each time a character is typed a literal search is done, and ^M confirms it. When nothing matches, "No String" is shown.
 .br
 .sp
@@ -1001,179 +1011,179 @@ From the body of a vertical \fBEPUB\fR, the list is vertical too.
 ^G goes back to the list, then to the original screen. For extended regular expressions, examples of the main metacharacters (special characters) that mean the same in both BSD grep on macOS and GNU grep on Linux are registered in the list shown by ^J^S. They are as follows.
 .br
 .sp
-.in 10n
+.in 8n
 Positions and boundaries
 .in 0
-.in 14n
-.in 19n
-.ti 14n
+.in 12n
+.in 17n
+.ti 12n
  ^ : start of a line (e.g. ^A matches an A at the start of a line)
 .in 0
-.in 14n
-.in 19n
-.ti 14n
+.in 12n
+.in 17n
+.ti 12n
  $ : end of a line (e.g. Z$ matches a Z at the end of a line)
 .in 0
-.in 14n
-.in 19n
-.ti 14n
+.in 12n
+.in 17n
+.ti 12n
 \eb : word boundary (e.g. \ebcat\eb matches "cat" alone, not in "concatenate")
 .in 0
-.in 14n
-.in 19n
-.ti 14n
+.in 12n
+.in 17n
+.ti 12n
 \eB : anything but a word boundary
 .in 0
 .sp
-.in 10n
+.in 8n
 Any character, sets of characters (character classes)
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
     . : any one character except a newline
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
   [ ] : any one of the characters in the brackets (e.g. [abc] is one of a, b, c)
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
  [^ ] : one character not in the brackets (e.g. [^0-9] is one non-digit)
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
 [a-z] : a range (e.g. [a-z] is a lowercase letter, [0-9] a digit)
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
    \ed : any digit (same as [0-9])
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
    \eD : any character but a digit (same as [^0-9])
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
    \ew : letters, digits and underscore (about the same as [a-zA-Z0-9_])
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
    \eW : anything but letters, digits and underscore
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
    \es : any white space (space, tab, newline etc.)
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
    \eS : any character but white space
 .in 0
 .sp
-.in 10n
+.in 8n
 Number of repetitions (quantifiers)
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
     * : 0 or more times (may be absent, or any number)
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
     + : 1 or more times (at least once)
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
     ? : 0 or 1 time (may or may not be there)
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
   {n} : exactly n times (e.g. \ed{4} is 4 digits)
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
  {n,} : n or more times
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
 {n,m} : at least n and at most m times
 .in 0
 .sp
-.in 10n
+.in 8n
 Grouping and alternation (OR)
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
     | : OR (e.g. cat|dog is "cat" or "dog")
 .in 0
-.in 14n
-.in 22n
-.ti 14n
+.in 12n
+.in 20n
+.ti 12n
   ( ) : grouping; makes a string one unit that can be reused (captured) later
 .in 0
 .sp
-.in 10n
+.in 8n
 Escaping (\e)
 .in 0
-.in 14n
-.in 19n
-.ti 14n
+.in 12n
+.in 17n
+.ti 12n
 \e. : search for a dot itself
 .in 0
-.in 14n
-.in 19n
-.ti 14n
+.in 12n
+.in 17n
+.ti 12n
 \e? : search for a question mark itself
 .in 0
-.in 14n
-.in 19n
-.ti 14n
+.in 12n
+.in 17n
+.ti 12n
 \e( : search for a parenthesis itself
 .in 0
 .sp
-.in 10n
+.in 8n
 grep -E has no lazy matching (*? +?), non-capturing groups (?:), or lookahead/lookbehind ((?=)(?!)(?<=)(?<!)).
 .br
 .sp
-.in 10n
+.in 8n
 Reference
 .in 0
-.in 14n
-In basic regular expressions (plain grep), some metacharacters must be written with a \e (backslash). \*[usilic-i]usilic(1)\*[usilic-ie] searches do not use them, but they are listed here for when you meet them in other tools.
+.in 12n
+In basic regular expressions (plain grep), some metacharacters must be written with a \e (backslash). usilic(1) searches do not use them, but they are listed here for when you meet them in other tools.
 .in 0
-.in 18n
-.in 30n
-.ti 18n
+.in 16n
+.in 28n
+.ti 16n
        ¥+ : 1 or more times
 .in 0
-.in 18n
-.in 30n
-.ti 18n
+.in 16n
+.in 28n
+.ti 16n
        ¥? : present or not
 .in 0
-.in 18n
-.in 30n
-.ti 18n
+.in 16n
+.in 28n
+.ti 16n
 ¥( ... ¥) : group several characters into one
 .in 0
-.in 18n
-.in 30n
-.ti 18n
+.in 16n
+.in 28n
+.ti 16n
   ¥{n,m¥} : n to m times
 .in 0
 .sp
@@ -1211,7 +1221,7 @@ When the file shown in \fBFILE\fR is split, ^G returns to that file, and the \fB
 .in 4n
 .in 19n
 .ti 4n
-          ^Jd：total the disk usage with \*[usilic-i]du(1)\*[usilic-ie]
+          ^Jd：total the disk usage with du(1)
 .in 0
 .in 4n
 .in 19n
@@ -1220,7 +1230,7 @@ When the file shown in \fBFILE\fR is split, ^G returns to that file, and the \fB
 .in 0
 .sp
 .in 8n
-When \fBDU\fR is started with ^Jd, \*[usilic-i]du(1)\*[usilic-ie] is run on the current directory and a list sorted by size is shown. Pressing ^G while totalling interrupts it and moves to the result so far.
+When \fBDU\fR is started with ^Jd, du(1) is run on the current directory and a list sorted by size is shown. Pressing ^G while totalling interrupts it and moves to the result so far.
 .br
 .sp
 ^J^D only goes to the existing result, so the list is not updated even if the current directory has changed.
@@ -1237,7 +1247,7 @@ Pressing ^Jd in the \fBDU\fR list totals again for the cursor line, and for a fi
 .in 4n
 .in 19n
 .ti 4n
-          ^Jl：build the database for \*[usilic-i]locate(1)\*[usilic-ie]
+          ^Jl：build the database for locate(1)
 .in 0
 .in 4n
 .in 19n
@@ -1246,7 +1256,7 @@ Pressing ^Jd in the \fBDU\fR list totals again for the cursor line, and for a fi
 .in 0
 .sp
 .in 8n
-At the mode-line prompt, "\*[usilic-i].tgz\*[usilic-ie]"^M, for example, shows the names of all files in the system with the \*[usilic-i].tgz\*[usilic-ie] suffix. The prompt holds the previous search string, so ^M as it is shows the previous result without searching again.
+At the mode-line prompt, ".tgz"^M, for example, shows the names of all files in the system with the .tgz suffix. The prompt holds the previous search string, so ^M as it is shows the previous result without searching again.
 .br
 .sp
 ^Jl builds (updates) the database. Pressing ^G while building interrupts it, and you can search with the database built so far.
@@ -1269,7 +1279,7 @@ At the mode-line prompt, "\*[usilic-i].tgz\*[usilic-ie]"^M, for example, shows t
 .in 0
 .sp
 .in 8n
-When the typed string matches an existing page, the manual is shown with \*[usilic-i]man(1)\*[usilic-ie].
+When the typed string matches an existing page, the manual is shown with man(1).
 .br
 .sp
 ^J^M shows the manual page chosen from the history list, or the one for a newly typed string.
@@ -1312,7 +1322,7 @@ Shows the file typed on the mode-line, or chosen from the list of files accessed
 .in 0
 .sp
 .in 8n
-Moves to the directory typed on the mode-line, or chosen from the list of directories accessed so far. ^G returns to the list, but typing a directory-changing key such as ^J^C, ^J^B or ^J2 leaves \fBDIR\fR. In both \fBFILE\fR and \fBDIR\fR, a path that does not exist shows "No such file or directory" and returns to the previous screen.
+Moves to the directory typed on the mode-line, or chosen from the list of directories accessed so far. ^G returns to the list, but typing a directory-changing key such as ^J^C, ^J^B or ^J2 leaves \fBDIR\fR. In both \fBFILE\fR and \fBDIR\fR, a path that does not exist shows "No such file or directory" and returns to the previous screen. 
 .in 0
 .sp
 .in 4n
@@ -1407,7 +1417,7 @@ The keys pressed from ^X( to ^X) are recorded (the \fBmode\fR name on the mode-l
 .in 4n
 .in 19n
 .ti 4n
-\fICOPY\fR         ：copy strings\*[usilic-tab]
+COPY         ：copy strings\*[usilic-tab]
 .in 0
 .in 19n
 .ti 0n
@@ -1435,7 +1445,7 @@ The keys pressed from ^X( to ^X) are recorded (the \fBmode\fR name on the mode-l
 .in 0
 .sp
 .in 8n
-Copies strings on the screen other than the mode-line to the clipboard. After ^O^C, move the cursor with ^N/^P/^F/^B/^A/^E (or the arrow keys); after starting a range with ^@, the area highlighted as the cursor moves becomes the area to copy. After ending the range with ^@, another ^@ creates more areas, and the same toggling works with ^X␣ (rectangular range). ^[N (N is a number) moves to line N, and ^G cancels \fICOPY\fR. ^[t also copies all areas to the clipboard, but then ends \fICOPY\fR, opens the \fBTOOL\fR prompt (^Jt), pastes the copied text, and waits for a program name. File names, URLs etc. on the screen can be edited into a form to pass to a program and run as they are with ^M. Several non-rectangular areas are joined with a space instead of a newline (the highlighted J). All the areas made are copied to the clipboard with ^[w and can be pasted with ^O^Y. On macOS they are also copied to the system clipboard, so they can be pasted into other apps, but when "Universal Clipboard" is on, they also reach the other devices of the same Apple Account. To avoid unexpected strings being pasted, turn "Handoff" off in "System Settings" ⇒ "General" ⇒ "AirDrop   Handoff".
+Copies strings on the screen other than the mode-line to the clipboard. After ^O^C, move the cursor with ^N/^P/^F/^B/^A/^E (or the arrow keys); after starting a range with ^@, the area highlighted as the cursor moves becomes the area to copy. After ending the range with ^@, another ^@ creates more areas, and the same toggling works with ^X␣ (rectangular range). ^[N (N is a number) moves to line N, and ^G cancels COPY. ^[t also copies all areas to the clipboard, but then ends COPY, opens the \fBTOOL\fR prompt (^Jt), pastes the copied text, and waits for a program name. File names, URLs etc. on the screen can be edited into a form to pass to a program and run as they are with ^M. Several non-rectangular areas are joined with a space instead of a newline (the highlighted J). All the areas made are copied to the clipboard with ^[w and can be pasted with ^O^Y. On macOS they are also copied to the system clipboard, so they can be pasted into other apps, but when "Universal Clipboard" is on, they also reach the other devices of the same Apple Account. To avoid unexpected strings being pasted, turn "Handoff" off in "System Settings" ⇒ "General" ⇒ "AirDrop   Handoff".
 .in 0
 .sp
 .in 4n
@@ -1449,7 +1459,7 @@ Copies strings on the screen other than the mode-line to the clipboard. After ^O
 .in 0
 .sp
 .in 8n
-When the file name (mode-line(1)) is a file and the program name (mode-line(5)) is blank, starts the editor defined in \*[usilic-i]usilicrc\*[usilic-ie]. The current line number N is passed to the editor with the +N option, so an editor that accepts this option is convenient. \*[usilic-i]pico(1)\*[usilic-ie] is set by default.
+When the file name (mode-line(1)) is a file and the program name (mode-line(5)) is blank, starts the editor defined in \*[usilic-i]usilicrc\*[usilic-ie]. The current line number N is passed to the editor with the +N option, so an editor that accepts this option is convenient. pico(1) is set by default.
 .in 0
 .sp
 .in 4n
@@ -1509,7 +1519,7 @@ When the file name (mode-line(1)) is a file and the program name (mode-line(5)) 
 .in 0
 .sp
 .in 8n
-^J. sets the current directory of the \fBSHELL\fR prompt to the place of \fB(ls)\fR (^J, runs "ls -l"). ^J^W saves the buffer contents in \*[usilic-i]~/.usilic/data/\*[usilic-ie] (or WORK) and inserts "cat file name" into the prompt. Inside \fBSHELL\fR, ^O/ searches the output, ^O^F/^O^B page down/up, ^O^L redraws, and ^J^I gives \fBINFO\fR. ^G returns to the original \fBmode\fR. When the prompt has not come back because of an abnormal state or a running program, trying a function that uses the \fBSHELL\fR prompt, such as \fBCP\fR or \fBTOOL\fR, or \fBEXIT\fR switches to the \fBSHELL\fR screen. When \*[usilic-i]usilic(1)\*[usilic-ie] is started at the \fBSHELL\fR prompt with a pipe ("ls | usilic"^M) or a file argument ("usilic file"^M), the contents are shown in the current \*[usilic-i]usilic(1)\*[usilic-ie] with the file name "(stdin)" or "file" respectively, and with a directory argument ("usilic directory"^M) it becomes \fB(ls)\fR of that directory. The output of "man bash"^M etc. is also shown as "(stdin)", since a temporary PAGER environment variable turns it into piped input to \*[usilic-i]usilic(1)\*[usilic-ie]. This feature uses the shell's process ID to authenticate the \*[usilic-i]socket(2)\*[usilic-ie] used for switching \fBmode\fRs, so if \*[usilic-i]su(1)\*[usilic-ie] etc. is run at the \fBSHELL\fR prompt, the \fBmode\fR does not switch from that prompt (see \*[usilic-i]socket(2)\*[usilic-ie] in the NOTES chapter). The \fBSHELL\fR of \*[usilic-i]usilic(1)\*[usilic-ie] is a virtual terminal provided for file operations such as \fBCP\fR/\fBMV\fR/\fBRM\fR, so it has only minimal features, and programs that control terminal settings, such as editors and pagers, do not work properly. A program whose name is in the \fIPROGRAM\fR list, however, runs after switching the screen to \fBTOOL\fR. If you start another such program by mistake, quit it with a key if possible, or otherwise restart \fBSHELL\fR with ^Js. The supported shells are bash, zsh, tcsh and csh. The shell that started usilic (the environment variable \fBSHELL\fR) is used, and bash when started from any other shell (on Windows, Git Bash's bash when started from Git Bash, otherwise cmd.exe).
+^J. sets the current directory of the \fBSHELL\fR prompt to the place of \fB(ls)\fR (^J, runs "ls -l"). ^J^W saves the buffer contents in \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/\*[usilic-i]data\*[usilic-ie]/ (or WORK) and inserts "cat file name" into the prompt. Inside \fBSHELL\fR, ^O/ searches the output, ^O^F/^O^B page down/up, ^O^L redraws, and ^J^I gives \fBINFO\fR. ^G returns to the original \fBmode\fR. When the prompt has not come back because of an abnormal state or a running program, trying a function that uses the \fBSHELL\fR prompt, such as \fBCP\fR or \fBTOOL\fR, or \fBEXIT\fR switches to the \fBSHELL\fR screen. When usilic(1) is started at the \fBSHELL\fR prompt with a pipe ("ls | usilic"^M) or a file argument ("usilic file"^M), the contents are shown in the current usilic(1) with the file name "(stdin)" or "file" respectively, and with a directory argument ("usilic directory"^M) it becomes \fB(ls)\fR of that directory. The output of "man bash"^M etc. is also shown as "(stdin)", since a temporary PAGER environment variable turns it into piped input to usilic(1). This feature uses the shell's process ID to authenticate the socket(2) used for switching \fBmode\fRs, so if su(1) etc. is run at the \fBSHELL\fR prompt, the \fBmode\fR does not switch from that prompt (see socket(2) in the NOTES chapter). The \fBSHELL\fR of usilic(1) is a virtual terminal provided for file operations such as \fBCP\fR/\fBMV\fR/\fBRM\fR, so it has only minimal features, and programs that control terminal settings, such as editors and pagers, do not work properly. A program whose name is in the \fIPROGRAM\fR list, however, runs after switching the screen to \fBTOOL\fR. If you start another such program by mistake, quit it with a key if possible, or otherwise restart \fBSHELL\fR with ^Js. The supported shells are bash, zsh, tcsh and csh. The shell that started usilic (the environment variable \fBSHELL\fR) is used, and bash when started from any other shell (on Windows, Git Bash's bash when started from Git Bash, otherwise cmd.exe).
 .in 0
 .sp
 .in 8n
@@ -1523,7 +1533,7 @@ Command line     ： mainly at prompts\*[usilic-tab]
 .br
 .sp
 .in 8n
-The keys below can be used only at a prompt starting with "\fBusilic-1.5b\fR:" (a temporary PS1 environment variable).
+The keys below can be used only at a prompt starting with "usilic-1.5b:" (a temporary PS1 environment variable).
 .in 0
 .in 10n
 .in 19n
@@ -1603,7 +1613,7 @@ The keys below can also be used at the text input prompts of \fBSHELL\fR and the
 .in 4n
 .in 19n
 .ti 4n
-\fBINFO\fR         ：\*[usilic-i]usilic(1)\*[usilic-ie] information\*[usilic-tab]
+\fBINFO\fR         ：usilic(1) information\*[usilic-tab]
 .in 0
 .in 4n
 .in 19n
@@ -1617,13 +1627,13 @@ The keys below can also be used at the text input prompts of \fBSHELL\fR and the
 .in 0
 .sp
 .in 8n
-Shows the following information about \*[usilic-i]usilic(1)\*[usilic-ie].
+Shows the following information about usilic(1).
 .in 0
 .sp
 .in 12n
 .in 27n
 .ti 12n
-OS name : the command line it was started with (e.g. "macOS Sequoia 15.7.8 : usilic -c"; followed by "(parent's PID)" in an externally started \*[usilic-i]usilic(1)\*[usilic-ie])
+OS name : the command line it was started with (e.g. "macOS Sequoia 15.7.8 : usilic -c"; followed by "(parent's PID)" in an externally started usilic(1))
 .in 0
 .in 12n
 .in 27n
@@ -1643,7 +1653,7 @@ Startup file : settings file
 .in 12n
 .in 27n
 .ti 12n
-        DATA : \fB(ls)\fR of \*[usilic-i]~/.usilic/data/\*[usilic-ie]
+        DATA : \fB(ls)\fR of \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/\*[usilic-i]data\*[usilic-ie]/
 .in 0
 .in 12n
 .in 27n
@@ -1658,7 +1668,7 @@ Each of them can also be opened directly with the keys below.
 .in 12n
 .in 19n
 .ti 12n
-^J^Ou：\*[usilic-i]~/.usilic/usilicrc\*[usilic-ie]
+^J^Ou：\*[usilic-i]~\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/\*[usilic-i]usilicrc\*[usilic-ie]
 .in 0
 .in 12n
 .in 19n
@@ -1673,7 +1683,7 @@ Each of them can also be opened directly with the keys below.
 .in 12n
 .in 19n
 .ti 12n
-^J^Od：\fB(ls)\fR of \*[usilic-i]~/.usilic/data/\*[usilic-ie]
+^J^Od：\fB(ls)\fR of \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/\*[usilic-i]data\*[usilic-ie]/
 .in 0
 .in 12n
 .in 19n
@@ -1696,7 +1706,7 @@ Each of them can also be opened directly with the keys below.
 .in 0
 .sp
 .in 8n
-Shows "Exit? (y/n)" on the mode-line, and "y"^M quits \*[usilic-i]usilic(1)\*[usilic-ie]. When \*[usilic-i]usilic(1)\*[usilic-ie] is started with a directory argument, each \fBmode\fR reads information such as the cursor position at the last quit from \*[usilic-i]~/.usilic/history\*[usilic-ie] and restores the same state. When a \fBmode\fR ends, the state is saved to the same file for the next run, and \*[usilic-i]usilic(1)\*[usilic-ie] itself, when started with neither standard input nor arguments, restores the state at the last quit. All of this history goes through the single file \*[usilic-i]~/.usilic/history\*[usilic-ie], so to start several \*[usilic-i]usilic(1)\*[usilic-ie] with the same arguments, \*[usilic-i]kill(1)\*[usilic-ie] the running \*[usilic-i]usilic(1)\*[usilic-ie] and start again. If you are switched to the \fBSHELL\fR screen in the "ＳＨＥＬＬ busy" state, end the program and then run \fBEXIT\fR again with the ^X^C or ^[^[ key.
+Shows "Exit? (y/n)" on the mode-line, and "y"^M quits usilic(1). When usilic(1) is started with a directory argument, each \fBmode\fR reads information such as the cursor position at the last quit from \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/\*[usilic-i]history\*[usilic-ie] and restores the same state. When a \fBmode\fR ends, the state is saved to the same file for the next run, and usilic(1) itself, when started with neither standard input nor arguments, restores the state at the last quit. All of this history goes through the single file \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/\*[usilic-i]history\*[usilic-ie], so to start several usilic(1) with the same arguments, kill(1) the running usilic(1) and start again. If you are switched to the \fBSHELL\fR screen in the "ＳＨＥＬＬ busy" state, end the program and then run \fBEXIT\fR again with the ^X^C or ^[^[ key.
 .in 0
 .sp
 SETTINGS\*[usilic-tab]
@@ -1705,7 +1715,7 @@ SETTINGS\*[usilic-tab]
 \*[usilic-i]usilicrc\*[usilic-ie]
 .in 0
 .in 8n
-\*[usilic-i]usilic(1)\*[usilic-ie] reads \*[usilic-i]~/.usilic/usilicrc\*[usilic-ie] at startup to set up its environment. If the file does not exist, \*[usilic-i]usilicrc\*[usilic-ie] is copied from \*[usilic-i]~/.local/lib/usilic/\*[usilic-ie] to \*[usilic-i]~/.usilic/\*[usilic-ie] and then read. For the setting items and their contents, see the comments in that file.
+usilic(1) reads \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/\*[usilic-i]usilicrc\*[usilic-ie] at startup to set up its environment. If the file does not exist, \*[usilic-i]usilicrc\*[usilic-ie] is copied from \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].local\*[usilic-ie]/\*[usilic-i]lib\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/ to \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/ and then read. For the setting items and their contents, see the comments in that file.
 .in 0
 .sp
 BOOT OPTIONS\*[usilic-tab]
@@ -1727,29 +1737,29 @@ usilic [file] [< file ...] [directory]
 -g : start in a GUI window
 .in 0
 .in 9n
-On macOS, when usilic.app is opened from the Finder (no terminal), it starts in GUI even without this option. -c and -g cannot be given together.
+On macOS, when \*[usilic-i]usilic.app\*[usilic-ie] is opened from the Finder (no terminal), it starts in GUI even without this option. -c and -g cannot be given together.
 .in 0
 .sp
 .in 4n
 .in 9n
 .ti 4n
--H : start with \fBHELP\fR open in a child \*[usilic-i]usilic(1)\*[usilic-ie]
+-H : start with \fBHELP\fR open in a child usilic(1)
 .in 0
 .in 9n
-Starts as if ^Jt"usilic \*[usilic-i]~/.local/lib/usilic/\*[usilic-ie]\fBHELP\fR_en.1"^M had been run (\fBHELP\fR.1 when LANG is ja_JP.UTF-8, and \fBHELP\fR itself then starts in Japanese). The parent starts as usual in the \fB(ls)\fR of the current directory or the screen at the last quit, and the child shows \fBHELP\fR as a plain-text pager (\fBmode\fR line (groff)), so you can refer to the child while working in the parent. The child window opens to the right of the parent, aligned with its top (to the left of the parent at the right edge of the screen). The parent comes to the front last. In GUI the children open with the same size, font and colors as the parent; in Terminal.app they open with the same profile as the parent. A child can also end by itself (q, ^X^C, ^[^[, or closing the GUI window). While running, ^T^H opens the same child.
+Starts as if ^Jt"usilic \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].local\*[usilic-ie]/\*[usilic-i]lib\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/HELP_en.1"^M had been run (\*[usilic-i]HELP.1\*[usilic-ie] when LANG is ja_JP.UTF-8, and \fBHELP\fR itself then starts in Japanese). The parent starts as usual in the \fB(ls)\fR of the current directory or the screen at the last quit, and the child shows \fBHELP\fR as a plain-text pager (\fBmode\fR line (groff)), so you can refer to the child while working in the parent. The child window opens to the right of the parent, aligned with its top (to the left of the parent at the right edge of the screen). The parent comes to the front last. In GUI the children open with the same size, font and colors as the parent; in Terminal.app they open with the same profile as the parent. A child can also end by itself (q, ^X^C, ^[^[, or closing the GUI window). While running, ^T^H opens the same child.
 .in 0
 .sp
 .in 4n
 .in 9n
 .ti 4n
--K : start with \fBKEY\fR open in a child \*[usilic-i]usilic(1)\*[usilic-ie]
+-K : start with \fBKEY\fR open in a child usilic(1)
 .in 0
 .in 9n
 Like \fBHELP\fR with -H, opens \fBKEY\fR (a list of only the lines containing "：", highlighted up to the "："; ^M runs the key in the parent's screen, and h moves the \fBHELP\fR child to that line) in a child window. While running, ^T^K opens the same child.
 .in 0
 .sp
 .in 4n
-The options below change a \*[usilic-i]usilicrc\*[usilic-ie] setting for this run only. The uppercase ones do the same and also write the value to the setting in \*[usilic-i]~/.usilic/usilicrc\*[usilic-ie], so it applies afterwards without the option.
+The options below change a \*[usilic-i]usilicrc\*[usilic-ie] setting for this run only. The uppercase ones do the same and also write the value to the setting in \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/\*[usilic-i]usilicrc\*[usilic-ie], so it applies afterwards without the option.
 .in 0
 .sp
 .in 4n
@@ -1816,6 +1826,15 @@ The default when started from a terminal. Inertial scrolling with the mouse is i
 .in 4n
 .in 9n
 .ti 4n
+-e file : make an \fBEPUB\fR from \fBHELP\fR.1 and exit
+.in 0
+.in 9n
+Writes \fBHELP\fR.1 as an \fBEPUB\fR to the standard output and exits. For example, usilic -e \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].local\*[usilic-ie]/\*[usilic-i]lib\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/\fBHELP\fR_en.1 > ~/\fBHELP\fR.en.epub makes an \fBEPUB\fR with the same contents as the \fBHELP\fR of ^H. The cover image and the note texts (the \*[usilic-i]usilicrc\*[usilic-ie] comments, default values, etc.) are inside \fBHELP\fR.1 too, so \fBHELP\fR.1 alone is enough.
+.in 0
+.sp
+.in 4n
+.in 9n
+.ti 4n
 -h : show the usage and exit
 .in 0
 .sp
@@ -1826,7 +1845,7 @@ GUI (-g)
 Starting
 .in 0
 .in 12n
-Started with -g, \*[usilic-i]usilic(1)\*[usilic-ie] runs in a window separate from the terminal. It quits when the window is closed or ^C is pressed in the terminal that started it (also when started as a pager).
+Started with -g, usilic(1) runs in a window separate from the terminal. It quits when the window is closed or ^C is pressed in the terminal that started it (also when started as a pager).
 .in 0
 .sp
 .in 8n
@@ -1868,7 +1887,7 @@ Moving the mouse moves the cursor line with it, and a click on the highlighted p
 Dropping files
 .in 0
 .in 12n
-Dropping a file from the Finder onto the window opens that file (\fB(ls)\fR of it for a directory). When several files are dropped, they are opened through a list of the files, with the file on the top line open (^G to the list). The same happens when usilic.app is chosen with "Open With" in the Finder.
+Dropping a file from the Finder onto the window opens that file (\fB(ls)\fR of it for a directory). When several files are dropped, they are opened through a list of the files, with the file on the top line open (^G to the list). The same happens when \*[usilic-i]usilic.app\*[usilic-ie] is chosen with "Open With" in the Finder.
 .in 0
 .sp
 .in 8n
@@ -1884,17 +1903,17 @@ NOTES\*[usilic-tab]
 Environment\*[usilic-tab]
 .in 0
 .in 8n
-When usilic starts for the first time, it creates the work directories \*[usilic-i]~/.usilic/\*[usilic-ie] and \*[usilic-i]/tmp/.usilic/\*[usilic-ie] (defined in \*[usilic-i]config.sh\*[usilic-ie] of the source). \*[usilic-i]usilic(1)\*[usilic-ie] uses the "ＵＳＩＬＩＣ" environment variable to tell whether the current terminal is \fBSHELL\fR. In particular, \*[usilic-i]usilic(1)\*[usilic-ie] cannot start as a file manager in a terminal where this variable is defined. To use it as a pager, "export PAGER=usilic"^M in the terminal lets you read the output of \*[usilic-i]dvi2tty(1)\*[usilic-ie] or \*[usilic-i]man(1)\*[usilic-ie] in \*[usilic-i]usilic(1)\*[usilic-ie]. In \fBSHELL\fR, however, the value of this "PAGER" environment variable cannot be changed.
+When usilic starts for the first time, it creates the work directories \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/ and /\*[usilic-i]tmp\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/ (defined in \*[usilic-i]config.sh\*[usilic-ie] of the source). usilic(1) uses the "USILIC" environment variable to tell whether the current terminal is \fBSHELL\fR. In particular, usilic(1) cannot start as a file manager in a terminal where this variable is defined. To use it as a pager, "export PAGER=usilic"^M in the terminal lets you read the output of dvi2tty(1) or man(1) in usilic(1). In \fBSHELL\fR, however, the value of this "PAGER" environment variable cannot be changed.
 .in 0
 .sp
 .in 4n
 Kanji code\*[usilic-tab]
 .in 0
 .in 8n
-File contents are shown in UTF-8 (the environment variable ＵＳＩＬＩＣCHARSET can change it to euc, sjis, jis or ascii). Lines that are valid UTF-8 are shown as they are, and lines containing the sjis (shift-jis), euc or 7bit-jis (ISO-2022-JP) kanji code are converted to UTF-8 (sjis and jis via euc). The code is judged line by line: jis is decided as soon as its escape sequence is found, and for sjis and euc the line is checked to its end and the code found more often is chosen. So lines that use many one-byte half-width kana etc. may not be judged correctly.
+File contents are shown in UTF-8 (the environment variable USILICCHARSET can change it to euc, sjis, jis or ascii). Lines that are valid UTF-8 are shown as they are, and lines containing the sjis (shift-jis), euc or 7bit-jis (ISO-2022-JP) kanji code are converted to UTF-8 (sjis and jis via euc). The code is judged line by line: jis is decided as soon as its escape sequence is found, and for sjis and euc the line is checked to its end and the code found more often is chosen. So lines that use many one-byte half-width kana etc. may not be judged correctly.
 .br
 .sp
-When ＵＳＩＬＩＣCHARSET is ascii, nothing is converted. ^[M (raw display) also does this conversion for what is shown on the screen, but ^X^W on a file opened with ^[M saves the original contents before conversion, without wrapping at the screen width and in the kanji code as it is, so use it when you want to keep e.g. a diff file containing sjis code in its original kanji code (^X^W on a file opened with ^M etc. saves the converted UTF-8 text on the screen).
+When USILICCHARSET is ascii, nothing is converted. ^[M (raw display) also does this conversion for what is shown on the screen, but ^X^W on a file opened with ^[M saves the original contents before conversion, without wrapping at the screen width and in the kanji code as it is, so use it when you want to keep e.g. a diff file containing sjis code in its original kanji code (^X^W on a file opened with ^M etc. saves the converted UTF-8 text on the screen).
 .br
  
 .br
@@ -1902,17 +1921,17 @@ When ＵＳＩＬＩＣCHARSET is ascii, nothing is converted. ^[M (raw display)
 Interprocess communication\*[usilic-tab]
 .in 0
 .in 8n
-\*[usilic-i]socket(2)\*[usilic-ie]
+socket(2)
 .in 0
 .in 12n
-When the output of a program is redirected to \*[usilic-i]usilic(1)\*[usilic-ie] at the shell prompt of the \fBSHELL\fR chapter, that \*[usilic-i]usilic(1)\*[usilic-ie] (a child process of the shell) creates a \*[usilic-i]socket(2)\*[usilic-ie] whose file name contains the shell's process ID, and writes the redirected contents there. The \*[usilic-i]usilic(1)\*[usilic-ie] that started the shell (the parent process of the shell), on finding that \*[usilic-i]socket(2)\*[usilic-ie], reads the redirected contents from it with the file name "(stdin)". When \*[usilic-i]usilic(1)\*[usilic-ie] is started with a file argument from the shell prompt, a file with the same name is used instead of a \*[usilic-i]socket(2)\*[usilic-ie].
+When the output of a program is redirected to usilic(1) at the shell prompt of the \fBSHELL\fR chapter, that usilic(1) (a child process of the shell) creates a socket(2) whose file name contains the shell's process ID, and writes the redirected contents there. The usilic(1) that started the shell (the parent process of the shell), on finding that socket(2), reads the redirected contents from it with the file name "(stdin)". When usilic(1) is started with a file argument from the shell prompt, a file with the same name is used instead of a socket(2).
 .in 0
 .sp
 .in 8n
-\*[usilic-i]pipe(8)\*[usilic-ie]
+pipe(8)
 .in 0
 .in 12n
-Apart from the \*[usilic-i]socket(2)\*[usilic-ie] above, interprocess communication through \*[usilic-i]pipe(8)\*[usilic-ie] is used with the child process \*[usilic-i]fork(2)\*[usilic-ie]ed to read the contents of a file into the buffer.
+Apart from the socket(2) above, interprocess communication through pipe(8) is used with the child process fork(2)ed to read the contents of a file into the buffer.
 .in 0
 .sp
 .in 4n
@@ -1926,25 +1945,25 @@ The \e (backslash) used in regular expressions of \fBEGREP\fR, \fBPART\fR etc. c
 Web pages to PDF
 .in 0
 .in 8n
-The two scripts below in \*[usilic-i]~/.local/lib/usilic/\*[usilic-ie] (installed by make install) make a Web page into a single tall PDF page as high as the whole page (the text can be selected). They run a headless Chromium with Playwright, so the preparation in \fIURL\fR above is needed, and urls2pdf also needs pypdf.
+The two scripts below in \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].local\*[usilic-ie]/\*[usilic-i]lib\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/ (installed by make install) make a Web page into a single tall PDF page as high as the whole page (the text can be selected). They run a headless Chromium with Playwright, so the preparation in \fIURL\fR above is needed, and urls2pdf also needs pypdf.
 .in 0
 .sp
 .in 12n
-\*[usilic-i]~/.local/lib/usilic/venv/bin/pip\*[usilic-ie] install pypdf
+\*[usilic-i]~\*[usilic-ie]/\*[usilic-i].local\*[usilic-ie]/\*[usilic-i]lib\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/\*[usilic-i]venv\*[usilic-ie]/\*[usilic-i]bin\*[usilic-ie]/\*[usilic-i]pip\*[usilic-ie] install pypdf
 .in 0
 .sp
 .in 8n
 url2pdf URL [directory]
 .in 0
 .in 12n
-Makes the page at URL into a PDF, saves it as "page title.pdf" in directory (\*[usilic-i]~/Downloads\*[usilic-ie] if omitted), and prints its path (with -2 etc. added if the name exists). Pdf for Web links in \fBEPUB\fR (see \fBEPUB\fR above) uses this.
+Makes the page at URL into a PDF, saves it as "page title.pdf" in directory (\*[usilic-i]~\*[usilic-ie]/\*[usilic-i]Downloads\*[usilic-ie] if omitted), and prints its path (with -2 etc. added if the name exists). Pdf for Web links in \fBEPUB\fR (see \fBEPUB\fR above) uses this.
 .in 0
 .sp
 .in 8n
 urls2pdf [option] URL
 .in 0
 .in 12n
-Makes each link target in the table-of-contents page URL into a PDF, and combines them into one PDF with the contents page itself first (with a bookmark for each chapter). Links are collected from the page after Chromium shows it, so links made by JavaScript are also taken. By default, links to the same site in the main text (inside <main>, <article> etc., or else including the headings, up to just before the number of links jumps by merging with a sidebar etc.) are taken in the order they appear. Links forbidden by robots.txt are not taken, and pages that need a login cannot be taken. The PDF of each link is saved in \*[usilic-i]~/Downloads\*[usilic-ie]/contents title/, the combined PDF in \*[usilic-i]~/Downloads\*[usilic-ie]/contents title.pdf, and the path of the combined PDF is printed at the end (progress on standard error).
+Makes each link target in the table-of-contents page URL into a PDF, and combines them into one PDF with the contents page itself first (with a bookmark for each chapter). Links are collected from the page after Chromium shows it, so links made by JavaScript are also taken. By default, links to the same site in the main text (inside <main>, <article> etc., or else including the headings, up to just before the number of links jumps by merging with a sidebar etc.) are taken in the order they appear. Links forbidden by robots.txt are not taken, and pages that need a login cannot be taken. The PDF of each link is saved in \*[usilic-i]~\*[usilic-ie]/\*[usilic-i]Downloads\*[usilic-ie]/contents title/, the combined PDF in \*[usilic-i]~\*[usilic-ie]/\*[usilic-i]Downloads\*[usilic-ie]/contents title.pdf, and the path of the combined PDF is printed at the end (progress on standard error).
 .in 0
 .sp
 .in 16n
@@ -2003,7 +2022,7 @@ For example,
 .in 0
 .sp
 .in 16n
-\*[usilic-i]~/.local/lib/usilic/urls2pdf\*[usilic-ie] -l https://example.com/guide/
+\*[usilic-i]~\*[usilic-ie]/\*[usilic-i].local\*[usilic-ie]/\*[usilic-i]lib\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/\*[usilic-i]urls2pdf\*[usilic-ie] -l https://example.com/guide/
 .in 0
 .sp
 .in 12n
@@ -2017,35 +2036,35 @@ Making \fBEPUB\fRs from "Shosetsuka ni Naro", Kakuyomu, Aozora Bunko and Archive
 \fInarou2epub\fR N-code|Kakuyomu work ID|work URL|Aozora Bunko library card URL|Archive of Our Own work URL ... [-o directory]
 .in 0
 .in 12n
-Makes a "Shosetsuka ni Naro" work (also novel18.syosetu.com works such as Nocturne Novels, passing the age check), a Kakuyomu work or an Aozora Bunko work (the URL of the library card or the XHTML version; made from the XHTML version with ruby, with gaiji turned into Unicode characters where possible) into a vertical EPUB3, saves it in directory (\*[usilic-i]~/.usilic/data/\*[usilic-ie] if omitted, opened with ^J^Od) as "title_N-code(work ID)_date.epub" and prints its path (progress goes to standard error; it waits 2-7 seconds between pages, so it takes time in proportion to the number of episodes). Works for both serials and short stories, with the cover, title page, synopsis, each episode's foreword/text/afterword and illustrations (for Kakuyomu, the catchphrase and introduction as the synopsis, and only the text of each episode). For a work on Archive of Our Own (an English-language fan fiction site), it does not extract the text but downloads the horizontal \fBEPUB\fR the site itself provides as it is and saves it as "ao3-work number-title.epub" (adult works are fetched after passing the confirmation; works shown only to logged-in users cannot be downloaded).
+Makes a "Shosetsuka ni Naro" work (also novel18.syosetu.com works such as Nocturne Novels, passing the age check), a Kakuyomu work or an Aozora Bunko work (the URL of the library card or the XHTML version; made from the XHTML version with ruby, with gaiji turned into Unicode characters where possible) into a vertical EPUB3, saves it in directory (\*[usilic-i]~\*[usilic-ie]/\*[usilic-i].usilic\*[usilic-ie]/\*[usilic-i]data\*[usilic-ie]/ if omitted, opened with ^J^Od) as "title_N-code(work ID)_date.epub" and prints its path (progress goes to standard error; it waits 2-7 seconds between pages, so it takes time in proportion to the number of episodes). Works for both serials and short stories, with the cover, title page, synopsis, each episode's foreword/text/afterword and illustrations (for Kakuyomu, the catchphrase and introduction as the synopsis, and only the text of each episode). For a work on Archive of Our Own (an English-language fan fiction site), it does not extract the text but downloads the horizontal \fBEPUB\fR the site itself provides as it is and saves it as "ao3-work number-title.epub" (adult works are fetched after passing the confirmation; works shown only to logged-in users cannot be downloaded).
 .br
 .sp
-Run inside \fBSHELL\fR (e.g. ^Jt"\*[usilic-i]~/.local/lib/usilic/narou2epub\*[usilic-ie] n1234ab"^M), it opens the finished \fBEPUB\fR in the \fBEPUB\fR screen as it is. Epub for Web links in \fBEPUB\fR (see \fBEPUB\fR above) also uses it. It is a modified NarouToEpub3 (Apache License 2.0, \*[usilic-i]~/.local/lib/usilic/narou2epub-assets/LICENSE\*[usilic-ie]) and needs the following preparation. Use the \fBEPUB\fRs you make only for your own enjoyment and do not distribute them (the copyright of each work belongs to its author).
+Run inside \fBSHELL\fR (e.g. ^Jt"\*[usilic-i]~\*[usilic-ie]/\*[usilic-i].local\*[usilic-ie]/\*[usilic-i]lib\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/\*[usilic-i]narou2epub\*[usilic-ie] n1234ab"^M), it opens the finished \fBEPUB\fR in the \fBEPUB\fR screen as it is. Epub for Web links in \fBEPUB\fR (see \fBEPUB\fR above) also uses it. It is a modified NarouToEpub3 (Apache License 2.0, \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].local\*[usilic-ie]/\*[usilic-i]lib\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/\*[usilic-i]narou2epub-assets\*[usilic-ie]/\*[usilic-i]LICENSE\*[usilic-ie]) and needs the following preparation. Use the \fBEPUB\fRs you make only for your own enjoyment and do not distribute them (the copyright of each work belongs to its author).
 .in 0
 .sp
 .in 16n
-python3 -m venv \*[usilic-i]~/.local/lib/usilic/venv\*[usilic-ie]
+python3 -m venv \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].local\*[usilic-ie]/\*[usilic-i]lib\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/\*[usilic-i]venv\*[usilic-ie]
 .br
-\*[usilic-i]~/.local/lib/usilic/venv/bin/pip\*[usilic-ie] install lxml ebooklib requests Pillow
+\*[usilic-i]~\*[usilic-ie]/\*[usilic-i].local\*[usilic-ie]/\*[usilic-i]lib\*[usilic-ie]/\*[usilic-i]usilic\*[usilic-ie]/\*[usilic-i]venv\*[usilic-ie]/\*[usilic-i]bin\*[usilic-ie]/\*[usilic-i]pip\*[usilic-ie] install lxml ebooklib requests Pillow
 .in 0
 .sp
 .in 4n
 Required software\*[usilic-tab]
 .in 0
 .in 8n
-\*[usilic-i]usilic(1)\*[usilic-ie] uses external programs such as \*[usilic-i]groff(1)\*[usilic-ie] (formatting \fBHELP\fR and \fBMAN\fR), \*[usilic-i]mg(1)\*[usilic-ie], \*[usilic-i]info(1)\*[usilic-ie], \*[usilic-i]7zz(1)\*[usilic-ie] (\*[usilic-i].7z\*[usilic-ie] in \fBARC\fR) and \*[usilic-i]w3m(1)\*[usilic-ie] (Dump/Term for Web links in \fBEPUB\fR). On macOS, IPA Gothic (font-ipafont), the default font of GUI, is also needed (when installed, it becomes the default font when \*[usilic-i]~/\*[usilic-ie]Applications/usilic.app is clicked to start). At the first start, if any of them are missing, it switches to \fBSHELL\fR and runs the install command ("HOMEBREW_NO_ASK=1 brew install ..." on macOS, "sudo apt install -y ..." on Ubuntu) automatically (in GUI, the cover of \fBHELP\fR and an "installing" notice are shown above, and \fBHELP\fR opens when it finishes. Each one is offered only once).
+usilic(1) uses external programs such as groff(1) (formatting \fBHELP\fR and \fBMAN\fR), mg(1), info(1), 7zz(1) (.7z in \fBARC\fR) and w3m(1) (Dump/Term for Web links in \fBEPUB\fR). On macOS, IPA Gothic (font-ipafont), the default font of GUI, is also needed (when installed, it becomes the default font when \*[usilic-i]~\*[usilic-ie]/\*[usilic-i]Applications\*[usilic-ie]/\*[usilic-i]usilic.app\*[usilic-ie] is clicked to start). At the first start, if any of them are missing, it switches to \fBSHELL\fR and runs the install command ("HOMEBREW_NO_ASK=1 brew install ..." on macOS, "sudo apt install -y ..." on Ubuntu) automatically (in GUI, the cover of \fBHELP\fR and an "installing" notice are shown above, and \fBHELP\fR opens when it finishes. Each one is offered only once).
 .br
 .sp
-On macOS without Homebrew (brew), the install command of Homebrew itself (the one at https://brew.sh) is put instead. Homebrew is installed after asking for your password, and when the prompt comes back, "brew install ..." is run next. To install by hand, run the command at https://brew.sh in a terminal and then add brew to PATH as the guidance shown says (on Apple Silicon, append "eval "$(/opt/homebrew/bin/brew shellenv)"" to \*[usilic-i]~/.zprofile\*[usilic-ie]).
+On macOS without Homebrew (brew), the install command of Homebrew itself (the one at https://brew.sh) is put instead. Homebrew is installed after asking for your password, and when the prompt comes back, "brew install ..." is run next. To install by hand, run the command at https://brew.sh in a terminal and then add brew to PATH as the guidance shown says (on Apple Silicon, append "eval "$(/\*[usilic-i]opt\*[usilic-ie]/\*[usilic-i]homebrew\*[usilic-ie]/\*[usilic-i]bin\*[usilic-ie]/\*[usilic-i]brew\*[usilic-ie] shellenv)"" to \*[usilic-i]~\*[usilic-ie]/\*[usilic-i].zprofile\*[usilic-ie]).
 .br
 .sp
 Homebrew and building usilic itself (make) need the Xcode Command Line Tools (compiler, git etc.). The Homebrew installer installs them if missing, but to install them first, run "xcode-select --install" in a terminal (Xcode itself from the App Store is not needed). Whether the Command Line Tools are installed can be checked by whether "xcode-select -p"^M prints a path. If brew or make fails with "invalid active developer path" etc. after updating macOS, reinstall them with "xcode-select --install"^M.
 .br
 .sp
-On Windows it runs in WSL2 (Ubuntu inside Windows). The build steps are the same as Linux, and the GUI window appears on the Windows desktop through WSLg (Japanese text needs fonts-noto-cjk, which is added to the guidance at the first start if missing). On WSL2, videos and Web links in \fBEPUB\fR (Open) open in the Windows default app, and the contents of \fICOPY\fR go to the Windows clipboard.
+On Windows it runs in WSL2 (Ubuntu inside Windows). The build steps are the same as Linux, and the GUI window appears on the Windows desktop through WSLg (Japanese text needs fonts-noto-cjk, which is added to the guidance at the first start if missing). On WSL2, videos and Web links in \fBEPUB\fR (Open) open in the Windows default app, and the contents of COPY go to the Windows clipboard.
 .br
 .sp
-In Git Bash, \*[usilic-i]usilic(1)\*[usilic-ie] built with MSYS2 runs (GUI and \fBLOCATE\fR cannot be used). Opening outside and the clipboard connect to the Windows side as on WSL2. See docs/BUILD.md in the source for the build steps.
+In Git Bash, usilic(1) built with MSYS2 runs (GUI and \fBLOCATE\fR cannot be used). Opening outside and the clipboard connect to the Windows side as on WSL2. See docs/BUILD.md in the source for the build steps.
 .in 0
 .sp
 AUTHOR\*[usilic-tab]
@@ -2057,9 +2076,613 @@ usilic@X.com
 SEE ALSO\*[usilic-tab]
 .in 0
 .in 4n
-\*[usilic-i]groff(1)\*[usilic-ie], \*[usilic-i]man(1)\*[usilic-ie]
+groff(1), man(1)
 .in 0
-.\" usilic-note-begin
-.\" usilic-note-line 　usilic -e makes the notes on the setting items automatically from the comments in <i>usilicrc</i> when it builds HELP.en.epub. Other notes join the same numbering when the <b>HELP</b> source has the character U+2021 where a note is referenced and U+2261 and U+2220 before and after the text of the note; to refer to the same note again, write after U+2021 the number of that note in the source in half-width digits. This note itself is written that way.
 .br
 .if !d an-footer .pl \n(nlu+1v
+.\" usilic-notes-line
+.\" usilic-notes-line @narou2epub
+.\" usilic-notes-line 「小説家になろう」（ノクターンノベルズ等も）・「カクヨム」・「青空文庫」の作品を縦書きの EPUB3 にするプログラム（~/.local/lib/usilic/narou2epub、make install で入ります）。
+.\" usilic-notes-line narou2epub Nコード|カクヨムの作品ID|作品の URL|青空文庫の図書カードの URL ... [-o directory]
+.\" usilic-notes-line directory（省略時は ~/.usilic/data/）へ「題名_Nコード（作品ID）_日付.epub」で保存し、そのパスを出力します。SHELL の中で実行すると、作り終えた EPUB をそのまま開きます。
+.\" usilic-notes-line
+.\" usilic-notes-line 事前に次の準備が必要です。
+.\" usilic-notes-line python3 -m venv ~/.local/lib/usilic/venv
+.\" usilic-notes-line ~/.local/lib/usilic/venv/bin/pip install lxml ebooklib requests Pillow
+.\" usilic-notes-line
+.\" usilic-notes-line 作った EPUB は個人で楽しむためだけに使い、他人に配布しないでください（作品の著作権は作者にあります）。
+.\" usilic-notes-line
+.\" usilic-notes-line @usilicrc
+.\" usilic-notes-line
+.\" usilic-notes-line @SHELL
+.\" usilic-notes-line SHELL で動かすシェルは、環境変数 $SHELL のシェルです。$SHELL が bash・zsh・tcsh・csh 以外（未設定も）の時は bash を使います。
+.\" usilic-notes-line Windows では、Git Bash（MSYSTEM のある環境）から起動した時はその bash.exe、それ以外は cmd.exe（%ComSpec%）を使います。
+.\" usilic-rc-line # usilicrc  version 1.5b
+.\" usilic-rc-line # -------------------------------------------------------------
+.\" usilic-rc-line # 空行と、'#' で始まる行(および行中の '#' 以降)は無視されます。
+.\" usilic-rc-line # 行頭が以下の見出しの行が節の始まりで、節の中身の行はタブ(または空白)で
+.\" usilic-rc-line # 始めます。それ以外の文字で始まる行はエラーになります。
+.\" usilic-rc-line #
+.\" usilic-rc-line # ARCHIVE, FILTER, LAUNCH, GREP, PROGRAM, EDITOR, BUFFER, CODE, LINE,
+.\" usilic-rc-line # WAIT, COPY, MOVE, DELETE, SERIF, SANS-SERIF, SPEED, DRAG, ARROW, FONT,
+.\" usilic-rc-line # LINE-HEIGHT, LETTER-SPACING, ICON-FONT, ICON-LINE-HEIGHT, ICON-LETTER-SPACING,
+.\" usilic-rc-line # URL, KEY, MACRO
+.\" usilic-rc-line #
+.\" usilic-rc-line # 英語のコメント付きの同じ内容のファイルが usilicrc.en です。
+.\" usilic-rc-line # -------------------------------------------------------------
+.\" usilic-rc-line
+.\" usilic-rc-line ARCHIVE
+.\" usilic-rc-line # 書式: 新しいsuffix  組み込みのsuffix
+.\" usilic-rc-line #
+.\" usilic-rc-line # 組み込みのアーカイブの suffix(下の一覧)に、新しい suffix を別名として
+.\" usilic-rc-line # 追加します。アーカイブの一覧や取り出しは形式ごとに専用の処理なので、
+.\" usilic-rc-line # 新しい形式(コマンドや一覧の読み方)をここで定義することはできません。
+.\" usilic-rc-line # 使えるのは、.cbz(中身は .zip)のように中身が既存の形式であるファイルだけ
+.\" usilic-rc-line # です。ここで足した別名は、ARC モード(開く、一覧、取り出し、^Oa、
+.\" usilic-rc-line # アーカイブの中のアーカイブ)の全てで効きます。
+.\" usilic-rc-line # .epub は組み込みで .zip の別名です。(ls) の [Enter] では EPUB モード(章の
+.\" usilic-rc-line # 一覧と本文、縦横は本の指定どおり)で開き、^Oe で ARC として中身を一覧、
+.\" usilic-rc-line # ^Oa で展開できます。
+.\" usilic-rc-line #
+.\" usilic-rc-line # 組み込みの suffix:
+.\" usilic-rc-line #  .tar        tar tvf
+.\" usilic-rc-line #  .tgz        gzip -dc | tar tvf -   (.tar.gz .taz .tar.z も同じ)
+.\" usilic-rc-line #  .tar.bz2    bzip2 -dc | tar tvf -  (.tbz2 も同じ)
+.\" usilic-rc-line #  .tar.xz     xz -dc | tar tvf -     (.txz も同じ)
+.\" usilic-rc-line #  .tar.zst    zstd -dc | tar tvf -   (.tzst も同じ)
+.\" usilic-rc-line #  .lzh        lha
+.\" usilic-rc-line #  .zip        unzip -l               (.jar も同じ)
+.\" usilic-rc-line #  .rpm        rpm -qplv
+.\" usilic-rc-line #  .deb        ar tv
+.\" usilic-rc-line #  .rar        lsar -l
+.\" usilic-rc-line #  .7z         7z l
+.\" usilic-rc-line #
+.\" usilic-rc-line # 例:
+.\" usilic-rc-line
+.\" usilic-rc-line #	.cbz	.zip
+.\" usilic-rc-line #	.apk	.zip
+.\" usilic-rc-line #	.cbr	.rar
+.\" usilic-rc-line
+.\" usilic-rc-line FILTER
+.\" usilic-rc-line # 書式: suffix  program  (option)
+.\" usilic-rc-line #
+.\" usilic-rc-line # suffix を持つ file の内容を、program を実行して平文で表示します。
+.\" usilic-rc-line
+.\" usilic-rc-line 	.gz	gzip	-dc
+.\" usilic-rc-line 	.bz2	bzip2	-dc
+.\" usilic-rc-line 	.z	gzip	-dc
+.\" usilic-rc-line 	.xz	xz	-dc
+.\" usilic-rc-line 	.lzma	xz	-dc
+.\" usilic-rc-line 	.zst	zstd	-dc
+.\" usilic-rc-line
+.\" usilic-rc-line LAUNCH
+.\" usilic-rc-line # 書式: suffix  program  (option)
+.\" usilic-rc-line #
+.\" usilic-rc-line # suffix を持つ file を引数にして program を起動します。
+.\" usilic-rc-line #
+.\" usilic-rc-line # macOS の注意: アプリ名だけ(例: IINA)は $PATH 上のコマンドではないので
+.\" usilic-rc-line # 起動できません。open を使います(下の .mp4 の例)。open -a の直後には
+.\" usilic-rc-line # アプリ名が要るので、`open -a ファイル` はファイルをアプリ名とみなして
+.\" usilic-rc-line # エラーになります。既定のアプリで開くなら -a を付けずに open だけです。
+.\" usilic-rc-line # info は Homebrew では texinfo に入っています(brew install texinfo)。
+.\" usilic-rc-line #
+.\" usilic-rc-line # macOS では、ここに無い suffix のファイルでも、CODE でバイナリと判定され、
+.\" usilic-rc-line # 画像・PDF か、クイックルックが扱える種類(qlmanage -m plugins の一覧。
+.\" usilic-rc-line # .numbers .key .pages .docx .xlsx、音声、動画、フォントなど)のものは、
+.\" usilic-rc-line # その旨を表示する代わりにクイックルック(qlmanage -p)で開きます。
+.\" usilic-rc-line
+.\" usilic-rc-line #	.mp4	open
+.\" usilic-rc-line #	.mp4	open	-a	IINA
+.\" usilic-rc-line 	.xcf	open 	-a	GIMP
+.\" usilic-rc-line 	.info	info	-f
+.\" usilic-rc-line 	.info.gz info	-f
+.\" usilic-rc-line
+.\" usilic-rc-line GREP
+.\" usilic-rc-line # 書式: 文字列
+.\" usilic-rc-line #
+.\" usilic-rc-line # EGREP と PART(正規表現)の ^R の一覧の先頭に、この順で載せておく検索文字列
+.\" usilic-rc-line # (もう一度 ^R で履歴)。
+.\" usilic-rc-line # (空白を含む文字列は "" で囲みます。)
+.\" usilic-rc-line #
+.\" usilic-rc-line # HELP の EGREP の章の正規表現一覧と同じ順に、HELP 自身の本文に
+.\" usilic-rc-line # マッチする例を並べています。macOS(BSD grep)と Linux(GNU grep)の両方の
+.\" usilic-rc-line # grep -E で同じ意味になるように、\d/\D は [0-9]/[^0-9] で書き、grep -E に
+.\" usilic-rc-line # 無い最短一致(*?/+?)・(?:...)・先読み/後読みの例はありません。
+.\" usilic-rc-line #
+.\" usilic-rc-line
+.\" usilic-rc-line 	"^  [0-9]+\."            # ^     : 章の見出し(1. 2. ...)
+.\" usilic-rc-line 	）$                       # $     : 全角の閉じ括弧で終わる行
+.\" usilic-rc-line 	\bls\b                   # \b    : 単独の ls
+.\" usilic-rc-line 	usilic\B                 # \B    : usilicrc の usilic
+.\" usilic-rc-line 	m.n                      # .     : man
+.\" usilic-rc-line 	\^[JOX][a-z]             # [ ]   : ^Jp ^Ou ^Xd など
+.\" usilic-rc-line 	"\^[^JOX ]"              # [^ ]  : ^M ^[ ^K など
+.\" usilic-rc-line 	[a-z]+\(1\)              # [a-z] : usilic(1) man(1) など
+.\" usilic-rc-line 	[0-9]\.[0-9]\.           # \d    : 節番号 2.2. など
+.\" usilic-rc-line 	[0-9]+[^0-9][0-9]+       # \D    : 01/66 1.5 0x20 など
+.\" usilic-rc-line 	\w+rc\b                  # \w    : usilicrc
+.\" usilic-rc-line 	\^\W                     # \W    : ^[ ^@
+.\" usilic-rc-line 	\^J\s                    # \s    : ^J b
+.\" usilic-rc-line 	~/\S+                    # \S    : ~/.usilic/history など
+.\" usilic-rc-line 	-[a-z]*v[a-z]*           # *     : -rvi -vf など
+.\" usilic-rc-line 	[0-9]+%                  # +     : 48% など
+.\" usilic-rc-line 	\.tar(\.gz)?             # ?     : .tar .tar.gz
+.\" usilic-rc-line 	[0-9]{4}                 # {n}   : 1918 2000 など
+.\" usilic-rc-line 	"^[^	].*	"              # \t    : HELP の章の見出し(行頭がタブでなく、タブを含む行)
+.\" usilic-rc-line 	[0-9]{2,}                # {n,}  : 2桁以上の数
+.\" usilic-rc-line 	\b[a-z]{2,3}\(1\)        # {n,m} : ls(1) man(1) vi(1) など
+.\" usilic-rc-line 	CP|MV|RM                 # |     : CP MV RM
+.\" usilic-rc-line 	\.(gz|bz2|xz|zst)        # ( )   : 圧縮形式の suffix
+.\" usilic-rc-line 	~/\.usilic/              # \.    : ~/.usilic/
+.\" usilic-rc-line 	\(\?                     # \?    : (?: (?= など
+.\" usilic-rc-line
+.\" usilic-rc-line PROGRAM
+.\" usilic-rc-line # 書式: program  (option)
+.\" usilic-rc-line #
+.\" usilic-rc-line # PROGRAM で起動する program の一覧。
+.\" usilic-rc-line
+.\" usilic-rc-line 	jed
+.\" usilic-rc-line 	mg
+.\" usilic-rc-line 	vi
+.\" usilic-rc-line 	emacs
+.\" usilic-rc-line 	less
+.\" usilic-rc-line 	man
+.\" usilic-rc-line 	info
+.\" usilic-rc-line 	top
+.\" usilic-rc-line 	lv
+.\" usilic-rc-line 	lv -Oe
+.\" usilic-rc-line 	lv -Ir
+.\" usilic-rc-line 	qlmanage -p
+.\" usilic-rc-line
+.\" usilic-rc-line EDITOR
+.\" usilic-rc-line # 書式: エディター
+.\" usilic-rc-line #
+.\" usilic-rc-line # EDIT で起動するエディター。環境変数 EDITOR があればそちらを優先します。
+.\" usilic-rc-line
+.\" usilic-rc-line 	pico
+.\" usilic-rc-line #	vi
+.\" usilic-rc-line #	jed
+.\" usilic-rc-line
+.\" usilic-rc-line BUFFER
+.\" usilic-rc-line # 書式: サイズ
+.\" usilic-rc-line #
+.\" usilic-rc-line # バッファへ読み込む最大サイズ(単位は MB、1〜100。既定は 64)。これを超える
+.\" usilic-rc-line # file は ^M 等で開くと全体を読み込まず、^O^M と同じく画面に出る分だけ
+.\" usilic-rc-line # 読み込む方法で開きます。一覧(ls、DU、LOCATE、アーカイブの内容)や
+.\" usilic-rc-line # アーカイブから取り出した file、MAN、^[^M(そのまま読む)は、ここまでで
+.\" usilic-rc-line # 読み込みを止めます。どちらの場合も「Not enough buffer」を表示します
+.\" usilic-rc-line # (どれかのキーで消えます)。usilic -b で試し、usilic -B でここへ書き込めます。
+.\" usilic-rc-line
+.\" usilic-rc-line 	64
+.\" usilic-rc-line
+.\" usilic-rc-line CODE
+.\" usilic-rc-line # 書式: code0  code1 ...
+.\" usilic-rc-line #
+.\" usilic-rc-line # 上の suffix を持たない file に、ここに無い 0x20 未満の制御コードが含まれて
+.\" usilic-rc-line # いれば、バイナリファイルとみなして file(1) を実行し、その制御コードと
+.\" usilic-rc-line # ファイルの種類を表示します(code0 が 0 ならこの判定をしません)。
+.\" usilic-rc-line #
+.\" usilic-rc-line
+.\" usilic-rc-line # ^A(TAGS)  ^G(BEL)  \b  \t  \n  \f  \r  ^N(SO)  ^O(SI)  ^Z(EOF)  ^[(ESC)  ^_(info)
+.\" usilic-rc-line    1         7        8   9  10  12  13  14      15      26       27       31
+.\" usilic-rc-line
+.\" usilic-rc-line LINE
+.\" usilic-rc-line # 書式: 行数
+.\" usilic-rc-line #
+.\" usilic-rc-line # 履歴(FILE、DIR、MAN、LOCATE、FGREP、EGREP、SHELL のコマンド)を種類ごとに
+.\" usilic-rc-line # 残す最大の行数。これを超えると古い行から消えます(USILIC はその 3 倍)。
+.\" usilic-rc-line # 0 は無制限です(既定)。履歴はメモリの面では何年分でも問題にならない
+.\" usilic-rc-line # 規模ですが、~/.usilic/history は項目が増えるたびに全体を書き直すので、
+.\" usilic-rc-line # 保存が重く感じるようになったら上限を付けてください。usilic -l で試し、
+.\" usilic-rc-line # usilic -L でここへ書き込めます。
+.\" usilic-rc-line
+.\" usilic-rc-line 	0
+.\" usilic-rc-line
+.\" usilic-rc-line WAIT
+.\" usilic-rc-line # 書式: wait
+.\" usilic-rc-line #
+.\" usilic-rc-line # マクロを wait(単位は 10 msec)の間隔で実行します。usilic -w で試し、
+.\" usilic-rc-line # usilic -W でここへ書き込めます。EDIT でこのファイルを直すと、保存した時に
+.\" usilic-rc-line # 読み直すのでその場で効きます(ほかのエディタで直した時は、^Xs で読み直します)。
+.\" usilic-rc-line
+.\" usilic-rc-line 	1
+.\" usilic-rc-line
+.\" usilic-rc-line CP
+.\" usilic-rc-line # 書式: cp  (option)
+.\" usilic-rc-line #
+.\" usilic-rc-line # CP のコマンド。(既定: cp -vR)
+.\" usilic-rc-line #
+.\" usilic-rc-line # macOS の cp は、拡張属性とリソースフォーク(Finder のタグ・コメント、
+.\" usilic-rc-line # ダウンロード元の URL 等)も一緒にコピーします。コピー先が拡張属性を持てない
+.\" usilic-rc-line # 所(FAT・exFAT の USB メモリ、一部の NAS 等)では、それを「._ファイル名」と
+.\" usilic-rc-line # いうファイルに入れて隣に置きます(Finder と同じ。MV でディスクをまたぐ時も)。
+.\" usilic-rc-line # Windows や Linux で見ると、この「._」が中身の無いファイルのように見えます。
+.\" usilic-rc-line # それでも既定では -X(拡張属性をコピーしない)を付けません。
+.\" usilic-rc-line #  1. 落とした付加情報は戻せません(余分な「._」は dot_clean 等で後から
+.\" usilic-rc-line #     消せます)。
+.\" usilic-rc-line #  2. 「._」ができるのは拡張属性を持てない所へコピーする時だけです(Mac の中の
+.\" usilic-rc-line #     APFS へのコピーではできません)。
+.\" usilic-rc-line # 「._」が要らなければ cp -vRX と書いてください。Linux の cp(GNU)は -vR では
+.\" usilic-rc-line # 元々拡張属性をコピーしません。
+.\" usilic-rc-line #
+.\" usilic-rc-line
+.\" usilic-rc-line #	cp -vRi
+.\" usilic-rc-line
+.\" usilic-rc-line MV
+.\" usilic-rc-line # 書式: mv  (option)
+.\" usilic-rc-line #
+.\" usilic-rc-line # MV のコマンド。(既定: mv -v)
+.\" usilic-rc-line #
+.\" usilic-rc-line
+.\" usilic-rc-line #	mv -vi
+.\" usilic-rc-line
+.\" usilic-rc-line RM
+.\" usilic-rc-line # 書式: rm  (option)
+.\" usilic-rc-line #
+.\" usilic-rc-line # RM のコマンド。(既定: rm -vr)
+.\" usilic-rc-line #
+.\" usilic-rc-line
+.\" usilic-rc-line #	rm -vri
+.\" usilic-rc-line
+.\" usilic-rc-line SERIF
+.\" usilic-rc-line # 書式: フォントファイル
+.\" usilic-rc-line #
+.\" usilic-rc-line # -g で明朝体(serif)に使うフォント。EPUB の本文等、CSS で明朝体と指定された
+.\" usilic-rc-line # 字をこのフォントで描きます。上から順に試し、使える最初のものを使います。
+.\" usilic-rc-line # 無ければ組み込みの候補(ヒラギノ明朝 ProN、Noto Serif CJK 等)を使います。
+.\" usilic-rc-line
+.\" usilic-rc-line #	/System/Library/Fonts/ヒラギノ明朝 ProN.ttc
+.\" usilic-rc-line
+.\" usilic-rc-line SANS-SERIF
+.\" usilic-rc-line # 書式: フォントファイル
+.\" usilic-rc-line #
+.\" usilic-rc-line # -g でゴシック体(sans-serif)に使う和文のフォント。画面の全角の字(EPUB で
+.\" usilic-rc-line # ゴシック体と指定された字を含む)をこのフォントで描きます。上から順に試し、
+.\" usilic-rc-line # 使える最初のものを使います。無ければ組み込みの候補(ヒラギノ角ゴシック、
+.\" usilic-rc-line # Noto Sans CJK 等)を使います。
+.\" usilic-rc-line
+.\" usilic-rc-line #	/System/Library/Fonts/ヒラギノ角ゴシック W4.ttc
+.\" usilic-rc-line
+.\" usilic-rc-line SPEED
+.\" usilic-rc-line # 書式: usec1  usec2 ...  (段1〜10)
+.\" usilic-rc-line #
+.\" usilic-rc-line # 慣性スクロールの段ごとの速さ。1 行(-g では 1 ドット)進むごとに待つ時間を
+.\" usilic-rc-line # 段 1(最も遅い)から順に、単位 usec で書きます。足りない段は組み込みの値の
+.\" usilic-rc-line # ままです。usilic -s で試し、usilic -S でここへ書き込めます。
+.\" usilic-rc-line
+.\" usilic-rc-line 	90000 20000 10000 5000 3000 2000 1000 500 200 100
+.\" usilic-rc-line
+.\" usilic-rc-line DRAG
+.\" usilic-rc-line # 書式: dot1  dot2 ...  (段1〜10)
+.\" usilic-rc-line #
+.\" usilic-rc-line # 画面をドラッグして離した時に、その直前の動きの量(ドット)がいくつ以上なら
+.\" usilic-rc-line # 段 1、段 2 ...の慣性スクロールになるか。usilic -d で試し、usilic -D でここへ
+.\" usilic-rc-line # 書き込めます。端末(CUI)では使いません(行数で決まる組み込みの値です)。
+.\" usilic-rc-line
+.\" usilic-rc-line 	1 2 4 8 16 30 40 50 60 70
+.\" usilic-rc-line
+.\" usilic-rc-line ARROW
+.\" usilic-rc-line # 書式: usec1  usec2 ...  (段1〜、10 個より多くてもよい)
+.\" usilic-rc-line #
+.\" usilic-rc-line # CUI(-c)の慣性スクロールの段ごとの速さ(書式は SPEED と同じ)。横書きの画面
+.\" usilic-rc-line # の矢印キーと、縦書きの EPUB の左右の両方に使います。マウスのドラッグで始めた
+.\" usilic-rc-line # 慣性は 2 つ速い方へずらした段(下の値なら 25000)から始まり、その後の矢印
+.\" usilic-rc-line # キーでは全部の段を使えます。この節が無ければ SPEED の値。-g の画面では使わず、
+.\" usilic-rc-line # SPEED の値で動きます。
+.\" usilic-rc-line #
+.\" usilic-rc-line # ドット単位でスクロールする -g と違い、CUI は行単位でスクロールするので、
+.\" usilic-rc-line # ドラッグの速さをそのまま慣性につなげると、読むのに向いた低速が使えません。
+.\" usilic-rc-line # そこでドラッグで始めた慣性は 2 段速い方から始め、低速は矢印キーで合わせる
+.\" usilic-rc-line # ようにしています。usilic -s のような試すオプションは無いので、ここの値を
+.\" usilic-rc-line # 直して調整してください。
+.\" usilic-rc-line
+.\" usilic-rc-line 	200000 100000 25000 10000 5000 2000 1000 500 200 100 50 20
+.\" usilic-rc-line
+.\" usilic-rc-line FONT
+.\" usilic-rc-line # 書式: フォントファイル
+.\" usilic-rc-line #
+.\" usilic-rc-line # -g の画面の基本の(半角の)等幅フォント。全角の字は SANS-SERIF、明朝体は
+.\" usilic-rc-line # SERIF のフォントで描きます。無ければ組み込みの候補を使います。usilic -f で
+.\" usilic-rc-line # 試し、usilic -F でここへ書き込めます。
+.\" usilic-rc-line
+.\" usilic-rc-line #	/Library/Fonts/MS-Gothic.ttf
+.\" usilic-rc-line
+.\" usilic-rc-line LINE-HEIGHT
+.\" usilic-rc-line # 書式: 横書き  縦書き
+.\" usilic-rc-line #
+.\" usilic-rc-line # -g の画面の 1 行の高さを、字の大きさに対する倍率で書きます(CSS の
+.\" usilic-rc-line # line-height と同じ)。横書きは行と行の間、縦書きの EPUB は 1 行に 1 字を
+.\" usilic-rc-line # 置くので字と字の間になります(1.0 で「……」がつながります)。縦書きの画面
+.\" usilic-rc-line # ではそちらの値に切り替わり、窓の大きさはそのままで行数が変わります。縦書き
+.\" usilic-rc-line # を省けば横書きと同じ値。
+.\" usilic-rc-line # この節が無ければ、フォントの行の高さを使います。
+.\" usilic-rc-line # EDIT でこのファイルを直すと、保存した時に読み直すのでその場で効きます(ほかの
+.\" usilic-rc-line # エディタで直した時は、^Xs で読み直します)。-g の画面では ^[[ / ^[] で、今の
+.\" usilic-rc-line # 向き(横書き・縦書き)の行の高さを 1 ドットずつ増減できます(ここには書き込み
+.\" usilic-rc-line # ません。増減した分は次の起動にも引き継ぎ、このファイルを読み直すとここの値に
+.\" usilic-rc-line # 戻ります)。
+.\" usilic-rc-line
+.\" usilic-rc-line 	1.2  1.0
+.\" usilic-rc-line
+.\" usilic-rc-line LETTER-SPACING
+.\" usilic-rc-line # 書式: 横書き  縦書き
+.\" usilic-rc-line #
+.\" usilic-rc-line # -g の画面の字間(半角 1 字の幅)に足すドット数(負の数で狭める、日本語の字間は
+.\" usilic-rc-line # その 2 倍)。縦書きの画面ではそちらの値に切り替わります。縦書きを省けば横書きと
+.\" usilic-rc-line # 同じ値。-g の画面で ^[{ / ^[} を押すと、今の向きの字間を 1 ドットずつ増減して
+.\" usilic-rc-line # その場でここへ書き込みます(子の HELP・KEY の窓も同じ字間で開きます)。
+.\" usilic-rc-line # この節に値が無ければ、前回の終了時の字間を使います。
+.\" usilic-rc-line # EDIT でこのファイルを直すと、保存した時に読み直すのでその場で効きます(ほかの
+.\" usilic-rc-line # エディタで直した時は、^Xs で読み直します)。
+.\" usilic-rc-line
+.\" usilic-rc-line 	0  0
+.\" usilic-rc-line
+.\" usilic-rc-line ICON-FONT
+.\" usilic-rc-line # 書式: フォントファイル
+.\" usilic-rc-line #
+.\" usilic-rc-line # アイコン(usilic.app 等)から起動した時だけに使う FONT。値が無ければ FONT の
+.\" usilic-rc-line # 値を使います。アイコンから起動した画面で ^Of で基本のフォントを選ぶと、FONT
+.\" usilic-rc-line # ではなくこちらへ書き込みます。フォントの大きさ・窓の大きさ・^[[ / ^[] で増減
+.\" usilic-rc-line # した行の高さも、アイコンからの起動と -g とで別々に覚えます(色は共通)。
+.\" usilic-rc-line
+.\" usilic-rc-line ICON-LINE-HEIGHT
+.\" usilic-rc-line # 書式: 横書き  縦書き
+.\" usilic-rc-line #
+.\" usilic-rc-line # アイコンから起動した時だけに使う LINE-HEIGHT。値が無ければ LINE-HEIGHT の値。
+.\" usilic-rc-line
+.\" usilic-rc-line ICON-LETTER-SPACING
+.\" usilic-rc-line # 書式: 横書き  縦書き
+.\" usilic-rc-line #
+.\" usilic-rc-line # アイコンから起動した時だけに使う LETTER-SPACING。値が無ければ LETTER-SPACING
+.\" usilic-rc-line # の値。アイコンから起動した画面の ^[{ / ^[} は、LETTER-SPACING ではなくこちらへ
+.\" usilic-rc-line # 書き込みます。
+.\" usilic-rc-line
+.\" usilic-rc-line URL
+.\" usilic-rc-line # 書式: 名前  program  (option)
+.\" usilic-rc-line #
+.\" usilic-rc-line # EPUB の本文の Web のリンク(http 等)を [Enter]・クリックで踏んだ時の対処。
+.\" usilic-rc-line # 書いた順に ^Ow で巡回し、名前(4文字)を mode-line に表示します。最初の行が
+.\" usilic-rc-line # 既定です。ただし小説サイト(「小説家になろう」・「小説を読もう」・
+.\" usilic-rc-line # 「ノクターンノベルズ」・「カクヨム」・「青空文庫」)の入口は、作品の番号を
+.\" usilic-rc-line # 探す所なので常に Open で開きます(^Ow は「Open only」)。名前は次のどれかです。
+.\" usilic-rc-line #   Open  program に URL を渡して起動(既定のブラウザで開く等)
+.\" usilic-rc-line #   Pdf   program(url2pdf)でページ全体を縦長の 1 ページの PDF にして
+.\" usilic-rc-line #         ~/Downloads へ保存し、クイックルックで開く(Linux は xdg-open)。
+.\" usilic-rc-line #         画面無しの Chromium を Playwright で動かすので、次の準備が
+.\" usilic-rc-line #         要ります(Linux ではさらに playwright install-deps(要 sudo)と
+.\" usilic-rc-line #         日本語フォント)。
+.\" usilic-rc-line #           python3 -m venv ~/.local/lib/usilic/venv
+.\" usilic-rc-line #           ~/.local/lib/usilic/venv/bin/pip install playwright
+.\" usilic-rc-line #           ~/.local/lib/usilic/venv/bin/python -m playwright install chromium
+.\" usilic-rc-line #   Dump  program に URL を渡した出力を usilic の画面で読む(^G で本へ戻る)
+.\" usilic-rc-line #   Term  program に URL を渡して端末で起動(LAUNCH と同じ、終われば本へ戻る)
+.\" usilic-rc-line #   Copy  program の標準入力へ URL を渡す(クリップボードへコピー)
+.\" usilic-rc-line #   Look  クイックルック(macOS だけ、program は不要)
+.\" usilic-rc-line #   Epub  usilic-web(src/web/README)の URL なら、本棚の一覧から選んだ本を
+.\" usilic-rc-line #         ~/.local/usilic-web/texts へ落として開く(curl が要ります)。
+.\" usilic-rc-line #         「小説家になろう」・「カクヨム」・青空文庫(図書カード)の作品のリンクなら、
+.\" usilic-rc-line #         program(narou2epub)で
+.\" usilic-rc-line #         ~/.usilic/data に EPUB を作って開く(SHELL で動く)。lxml・
+.\" usilic-rc-line #         ebooklib・requests・Pillow が要ります(~/.local/lib/usilic/narou2epub
+.\" usilic-rc-line #         のコメント参照)
+.\" usilic-rc-line # この節が無ければ下の内容(Linux は Open が xdg-open、Copy が
+.\" usilic-rc-line # xclip -selection clipboard、Look は無し。Windows は Open が explorer.exe、
+.\" usilic-rc-line # Copy が clip.exe、Look は無し。Pdf は url2pdf、Epub は narou2epub がある時
+.\" usilic-rc-line # だけ)を使います。
+.\" usilic-rc-line
+.\" usilic-rc-line #	Open	open
+.\" usilic-rc-line #	Pdf	~/.local/lib/usilic/url2pdf
+.\" usilic-rc-line #	Dump	w3m -dump
+.\" usilic-rc-line #	Term	w3m
+.\" usilic-rc-line #	Copy	pbcopy
+.\" usilic-rc-line #	Look
+.\" usilic-rc-line #	Epub	~/.local/lib/usilic/narou2epub
+.\" usilic-rc-line
+.\" usilic-rc-line KEY
+.\" usilic-rc-line # キーの割り当て。
+.\" usilic-rc-line #
+.\" usilic-rc-line # 書式: F-n  キー    (接頭キー F-0〜F-4 の定義)
+.\" usilic-rc-line #       K-n  キー    (機能 K-n のキー)
+.\" usilic-rc-line #
+.\" usilic-rc-line # K-n の番号は機能ごとの ID で、HELP の記載順に振ってあります(KEY の一覧も
+.\" usilic-rc-line # その順)。行の順序や番号の並びに意味は無く、行を並べ替えてもキーと機能の
+.\" usilic-rc-line # 組み合わせは変わりません。キーを変えると、その機能は新しい
+.\" usilic-rc-line # キーでだけ動き、元のキーは効かなくなります(元のキーを別の機能に
+.\" usilic-rc-line # 割り当てることもできます)。キーを空にすると、その機能は割り当て無しに
+.\" usilic-rc-line # なります。行を消した番号は、既定のキーのまま(接頭キー F-n を変えていれば
+.\" usilic-rc-line # 新しい接頭キー)で動きます。
+.\" usilic-rc-line #
+.\" usilic-rc-line # キーの書き方:
+.\" usilic-rc-line #   F-n    接頭キー F-n
+.\" usilic-rc-line #   C-x    Ctrl+x(C-a〜C-z、C-[ C-\ C-] C-^ C-_、C-SPC)
+.\" usilic-rc-line #   ESC    esc      SPC  space
+.\" usilic-rc-line #   N      数字(1 桁目の 0〜9 で機能が決まり、2 桁目以降は続けて打つ数字。末尾のみ。
+.\" usilic-rc-line #          ^JN や ^[N のように N を使う機能だけ)
+.\" usilic-rc-line #   その他 その 1 文字(# は書けません)
+.\" usilic-rc-line #
+.\" usilic-rc-line # プロンプトの入力中、SHELL 画面、文字を入力する一覧では、F-0/F-1/F-2/F-4
+.\" usilic-rc-line # または ESC で始まるキーだけが置き換わります(1 文字のキーや ^C で始まる
+.\" usilic-rc-line # キーは、そこでは文字や入力の中断として扱われます)。同じキーを二つの機能に
+.\" usilic-rc-line # 割り当てたり、あるキーが別のキーの頭になっていたりすると、usilicrc の
+.\" usilic-rc-line # エラーとして後の方が割り当て無しになります。
+.\" usilic-rc-line #
+.\" usilic-rc-line     F-0   C-x     # ^X
+.\" usilic-rc-line     F-1   C-j     # ^J
+.\" usilic-rc-line     F-2   C-o     # ^O
+.\" usilic-rc-line     F-3   C-c     # ^C
+.\" usilic-rc-line     F-4   C-j C-o # ^J^O
+.\" usilic-rc-line
+.\" usilic-rc-line     K-1   j       # j     画面を1行下へ
+.\" usilic-rc-line     K-2   k       # k     画面を1行上へ
+.\" usilic-rc-line     K-3   C-n     # ^N    カーソルを1行下へ
+.\" usilic-rc-line     K-4   C-p     # ^P    カーソルを1行上へ
+.\" usilic-rc-line     K-5   SPC     # ␣     ページ送り/クイックルック
+.\" usilic-rc-line     K-6   C-v     # ^V    ページ送り
+.\" usilic-rc-line     K-7   C-f     # ^F    ページ送り
+.\" usilic-rc-line     K-8   b       # b     ページ戻し
+.\" usilic-rc-line     K-9   C-b     # ^B    ページ戻し
+.\" usilic-rc-line     K-10  ESC v   # ^[v   ページ戻し
+.\" usilic-rc-line     K-11  ESC <   # ^[<   先頭へ
+.\" usilic-rc-line     K-12  ESC >   # ^[>   末尾へ
+.\" usilic-rc-line     K-13  ESC N   # ^[N   N行目へ
+.\" usilic-rc-line     K-14  F-0 F-0 # ^X^X  大きく移動する前の行と行き来
+.\" usilic-rc-line     K-15  n       # n     次のfile(pager)
+.\" usilic-rc-line     K-16  p       # p     前のfile(pager)
+.\" usilic-rc-line     K-17  x       # x     最初のfile(pager)
+.\" usilic-rc-line     K-18  f       # f     最後のfile(pager)
+.\" usilic-rc-line     K-19  q       # q     pagerの終了
+.\" usilic-rc-line     K-20  C-g     # ^G    前のモードへ戻る
+.\" usilic-rc-line     K-21  C-l     # ^L    再表示
+.\" usilic-rc-line     K-22  C-z     # ^Z    サスペンド
+.\" usilic-rc-line     K-23  F-2 f   # ^Of   mode-line の表示/非表示
+.\" usilic-rc-line     K-24  F-1 C-c # ^J^C  カレントディレクトリへ
+.\" usilic-rc-line     K-25  C-]     # ^]    カレントディレクトリへ(^J^Cと同じ)
+.\" usilic-rc-line     K-26  F-1 C-b # ^J^B  親ディレクトリへ
+.\" usilic-rc-line     K-27  F-1 N   # ^JN   N番目のディレクトリへ
+.\" usilic-rc-line     K-28  C-m     # ^M    開く/表示
+.\" usilic-rc-line     K-29  F-2 C-m # ^O^M  1行ずつ読む
+.\" usilic-rc-line     K-30  ESC C-m # ^[^M  そのまま読む
+.\" usilic-rc-line     K-31  F-1 F-1 # ^J^J  以前のfileへ
+.\" usilic-rc-line     K-32  F-2 o   # ^Oo   ls の表示形式
+.\" usilic-rc-line     K-33  F-2 l   # ^Ol   ls のソートキー巡回
+.\" usilic-rc-line     K-34  F-2 C-l # ^O^L  再表示(SHELL内から)/ls のソート順を逆順に
+.\" usilic-rc-line     K-35  .       # .     選択/非選択
+.\" usilic-rc-line     K-36  C-SPC   # ^SPC  選択/非選択
+.\" usilic-rc-line     K-37  F-2 y   # ^Oy   全選択
+.\" usilic-rc-line     K-38  F-2 n   # ^On   全解除
+.\" usilic-rc-line     K-40  F-2 c   # ^Oc   CP
+.\" usilic-rc-line     K-41  F-2 m   # ^Om   MV
+.\" usilic-rc-line     K-42  F-2 r   # ^Or   RM
+.\" usilic-rc-line     K-43  F-1 t   # ^Jt   TOOL: 入力
+.\" usilic-rc-line     K-44  F-1 C-t # ^J^T  TOOL: 一覧
+.\" usilic-rc-line     K-45  F-2 u   # ^Ou   選択したfileの一覧(USILIC)
+.\" usilic-rc-line     K-46  F-2 a   # ^Oa   ARC: 展開
+.\" usilic-rc-line     K-47  F-1 e   # ^Je   EPUB: 入力
+.\" usilic-rc-line     K-48  F-1 C-e # ^J^E  EPUB: 一覧
+.\" usilic-rc-line     K-49  F-2 e   # ^Oe   ARC: .epubの中身
+.\" usilic-rc-line     K-50  C-r     # ^R    履歴一覧
+.\" usilic-rc-line     K-51  C-s     # ^S    逐次検索
+.\" usilic-rc-line     K-52  F-1 C-s # ^J^S  EGREP
+.\" usilic-rc-line     K-53  F-1 p   # ^Jp   PART: バッファ
+.\" usilic-rc-line     K-106 F-1 C-p # ^J^P  PART: 一覧(file "文字列"の履歴)
+.\" usilic-rc-line     K-55  F-1 d   # ^Jd   DU: 集計
+.\" usilic-rc-line     K-56  F-1 C-d # ^J^D  DU: 結果へ戻る
+.\" usilic-rc-line     K-57  F-1 l   # ^Jl   LOCATE: データベース作成
+.\" usilic-rc-line     K-58  F-1 C-l # ^J^L  LOCATE
+.\" usilic-rc-line     K-59  F-1 m   # ^Jm   MAN: 入力
+.\" usilic-rc-line     K-60  F-1 C-m # ^J^M  MAN: 一覧
+.\" usilic-rc-line     K-61  F-0 f   # ^Xf   FILE: 入力
+.\" usilic-rc-line     K-62  F-0 C-f # ^X^F  FILE: 一覧
+.\" usilic-rc-line     K-63  F-0 d   # ^Xd   DIR: 入力
+.\" usilic-rc-line     K-64  F-0 C-d # ^X^D  DIR: 一覧
+.\" usilic-rc-line     K-65  F-2 C-c # ^O^C  COPY
+.\" usilic-rc-line     K-66  F-2 C-y # ^O^Y  ペースト
+.\" usilic-rc-line     K-67  ESC e   # ^[e   EDIT(eはMACRO)
+.\" usilic-rc-line     K-68  ESC s   # ^[s   SHELLへ
+.\" usilic-rc-line     K-69  F-1 s   # ^Js   SHELLを再起動
+.\" usilic-rc-line     K-70  ESC l   # ^[l   SHELLのログ
+.\" usilic-rc-line     K-71  F-1 .   # ^J.   SHELL: カレントディレクトリへcd
+.\" usilic-rc-line     K-72  F-1 ,   # ^J,   SHELL: ls -l
+.\" usilic-rc-line     K-73  F-1 w   # ^Jw   SHELL: アクセス名
+.\" usilic-rc-line     K-74  F-1 C-w # ^J^W  SHELL: バッファの内容
+.\" usilic-rc-line     K-75  F-2 /   # ^O/   検索(SHELL内から)
+.\" usilic-rc-line     K-76  F-2 C-f # ^O^F  ページ送り(SHELL内から)
+.\" usilic-rc-line     K-77  F-2 C-b # ^O^B  ページ戻し(SHELL内から)
+.\" usilic-rc-line     K-78  ESC u   # ^[u   USILIC: 目次
+.\" usilic-rc-line     K-79  F-1 C-u # ^J^U  USILIC: 種類ごとの一覧
+.\" usilic-rc-line     K-80  F-1 u   # ^Ju   USILIC: 時系列
+.\" usilic-rc-line     K-81  F-0 C-w # ^X^W  バッファを作業fileへ保存
+.\" usilic-rc-line     K-82  C-i     # ^I    INFO
+.\" usilic-rc-line     K-83  F-1 C-i # ^J^I  INFO(SHELL内から)
+.\" usilic-rc-line     K-84  F-4 u   # ^J^Ou ~/.usilic/usilicrc
+.\" usilic-rc-line     K-85  F-4 e   # ^J^Oe ERROR
+.\" usilic-rc-line     K-86  F-4 s   # ^J^Os SHELLのログ
+.\" usilic-rc-line     K-88  F-4 d   # ^J^Od ~/.usilic/data/
+.\" usilic-rc-line     K-89  F-4 w   # ^J^Ow WORK
+.\" usilic-rc-line     K-90  C-h     # ^H    HELP
+.\" usilic-rc-line     K-91  F-1 C-h # ^J^H  プロンプトからHELP
+.\" usilic-rc-line     K-92  F-2 j   # ^Oj   HELP の言語切替
+.\" usilic-rc-line     K-107 F-2 d   # ^Od   ホイールの向きの切り替え
+.\" usilic-rc-line     K-93  C-k     # ^K    KEY
+.\" usilic-rc-line     K-94  F-1 C-k # ^J^K  プロンプトからKEY
+.\" usilic-rc-line     K-95  F-0 (   # ^X(   マクロの記録開始
+.\" usilic-rc-line     K-96  F-0 )   # ^X)   マクロの記録終了
+.\" usilic-rc-line     K-97  F-0 e   # ^Xe   マクロの実行
+.\" usilic-rc-line     K-98  F-0 s   # ^Xs   usilicrcの読み直し・マクロの保存と一覧
+.\" usilic-rc-line     K-99  F-0 C-c # ^X^C  EXIT
+.\" usilic-rc-line     K-100 ESC ESC # ^[^[  EXIT
+.\" usilic-rc-line     K-101 F-2 s   # ^Os   EPUB: 章区切り/連続スクロール
+.\" usilic-rc-line     K-102 F-2 w   # ^Ow   EPUB: Webのリンクの対処を巡回(URL)
+.\" usilic-rc-line     K-108 F-2 C-e # ^O^E  EPUB: 記録の一覧(縦書きのCOPYで範囲指定して記録)
+.\" usilic-rc-line     K-109 ESC [   # ^[[   -g: 行の高さを1ドット広げる
+.\" usilic-rc-line     K-110 ESC ]   # ^[]   -g: 行の高さを1ドット狭める
+.\" usilic-rc-line     K-112 ESC {   # ^[{   -g: 字間を1ドット広げる
+.\" usilic-rc-line     K-113 ESC }   # ^[}   -g: 字間を1ドット狭める
+.\" usilic-rc-line     K-111 F-2 t   # ^Ot   明朝体・ゴシック体の切り換え(-g、EPUB以外は和文)
+.\" usilic-rc-line     K-103 F-1 C-a # ^J^A  ARC: 一覧(アーカイブだけのFILE履歴)
+.\" usilic-rc-line     K-104 F-1 C-f # ^J^F  -g: フォント一覧(FONT・SANS-SERIF・SERIF)
+.\" usilic-rc-line     K-105 h       # h     KEYから平文のHELPの当該位置へ(KEYの外では平文のHELP)
+.\" usilic-rc-line #
+.\" usilic-rc-line # K-114〜 は、以前はキーの割り当てが無かった(本体に書いてあった)キーです(2026-10-23)。
+.\" usilic-rc-line # K-132〜K-138 は COPY の中だけ、K-139〜K-155 はプロンプトの入力中だけのキーで、そこでは
+.\" usilic-rc-line # 同じ既定のキーの K-n(^F なら K-7)の代わりに働きます。COPY やプロンプトの ^N/^P・^G・^M・
+.\" usilic-rc-line # ^R・^S・^@・^[N 等は、K-3・K-4・K-20・K-28 等と共有です(そちらを変えると一緒に変わります)。
+.\" usilic-rc-line     K-114 ESC g g # ^[gg  指定行へ(^[N と同じ)
+.\" usilic-rc-line     K-115 C-u     # ^U    次のコマンドの回数
+.\" usilic-rc-line     K-116 F-0 z   # ^Xz   直前のコマンドをもう一度
+.\" usilic-rc-line     K-117 F-0 r m # ^Xrm  ブックマークを置く
+.\" usilic-rc-line     K-118 F-0 r b # ^Xrb  ブックマークへ飛ぶ
+.\" usilic-rc-line     K-119 F-0 r l # ^Xrl  ブックマークの一覧
+.\" usilic-rc-line     K-120 F-0 r SPC # ^Xr␣  今の場所をレジスタへ
+.\" usilic-rc-line     K-121 F-0 r C-SPC # ^Xr^␣ 今の場所をレジスタへ(^Xr␣ と同じ)
+.\" usilic-rc-line     K-122 F-0 r j # ^Xrj  レジスタの場所へ飛ぶ
+.\" usilic-rc-line     K-123 F-2 C-s # ^O^S  一致した行の一覧(FGREP)
+.\" usilic-rc-line     K-124 F-2 F-1 C-s # ^O^J^S一致した行の一覧(EGREP)
+.\" usilic-rc-line     K-125 %       # %     (ls): 名前が正規表現に合うファイルを選ぶ
+.\" usilic-rc-line     K-126 *       # *     (ls): 拡張子が同じファイルを選ぶ
+.\" usilic-rc-line     K-127 C-t n   # ^Tn   次の窓へ
+.\" usilic-rc-line     K-128 C-t p   # ^Tp   前の窓へ
+.\" usilic-rc-line     K-129 C-t C-h # ^T^H  HELP の窓
+.\" usilic-rc-line     K-130 C-t C-k # ^T^K  KEY の窓
+.\" usilic-rc-line     K-131 e       # e     ^Xe の直後: マクロをもう一度(1 文字)
+.\" usilic-rc-line     K-132 C-f     # ^F    COPY: 1文字進む
+.\" usilic-rc-line     K-133 C-b     # ^B    COPY: 1文字戻る
+.\" usilic-rc-line     K-134 C-a     # ^A    COPY: 行頭へ
+.\" usilic-rc-line     K-135 C-e     # ^E    COPY: 行末へ
+.\" usilic-rc-line     K-136 F-0 SPC # ^X␣   COPY: 矩形の範囲
+.\" usilic-rc-line     K-137 ESC w   # ^[w   COPY: クリップボードへ
+.\" usilic-rc-line     K-138 ESC t   # ^[t   COPY: TOOL のプロンプトへ
+.\" usilic-rc-line     K-139 C-a     # ^A    入力: 行頭へ
+.\" usilic-rc-line     K-140 C-e     # ^E    入力: 行末へ
+.\" usilic-rc-line     K-141 C-f     # ^F    入力: 1文字進む
+.\" usilic-rc-line     K-142 C-b     # ^B    入力: 1文字戻る
+.\" usilic-rc-line     K-143 C-d     # ^D    入力: カーソルの字を削除
+.\" usilic-rc-line     K-144 C-h     # ^H    入力: 前の字を削除(DEL も)
+.\" usilic-rc-line     K-145 C-u     # ^U    入力: 行頭まで削除
+.\" usilic-rc-line     K-146 C-k     # ^K    入力: 行末まで削除
+.\" usilic-rc-line     K-147 C-y     # ^Y    入力: 削除した字を入れ直す
+.\" usilic-rc-line     K-148 C-_     # ^_    入力: 取り消し
+.\" usilic-rc-line     K-149 C-q     # ^Q    入力: 次の字をそのまま入れる
+.\" usilic-rc-line     K-150 C-i     # ^I    入力: パスの補完
+.\" usilic-rc-line     K-151 C-w     # ^W    入力: 以前のディレクトリ(CP/MV の転送先)
+.\" usilic-rc-line     K-152 ESC f   # ^[f   入力: 1語進む
+.\" usilic-rc-line     K-153 ESC b   # ^[b   入力: 1語戻る
+.\" usilic-rc-line     K-154 ESC d   # ^[d   入力: 1語削除
+.\" usilic-rc-line     K-155 ESC C-h # ^[^H  入力: 前の1語を削除(^[DEL も)
+.\" usilic-rc-line
+.\" usilic-rc-line MACRO
+.\" usilic-rc-line # キーボードマクロ。
+.\" usilic-rc-line #
+.\" usilic-rc-line # 書式: M-n  キー  K-n ...   (キーを押すと K-n の機能を順に実行)
+.\" usilic-rc-line #
+.\" usilic-rc-line # ^X( 〜 ^X) で記録したキーは、^Xe の直後の ^Xs で「--」の行へ書き足し、
+.\" usilic-rc-line # 尋ねられたキー(1文字)で M-n として保存します(その場で効きます)。
+.\" usilic-rc-line # 実行の間隔は WAIT で指定します。
+.\" usilic-rc-line 	M-1  ;	K-20 K-4 K-28			# ^G^P^M	前の項目を開く
+.\" usilic-rc-line 	M-2  :	K-20 K-3 K-28			# ^G^N^M	次の項目を開く
+.\" usilic-rc-line 	M-3  [	K-35 K-4			# .^P		選択して上へ
+.\" usilic-rc-line 	M-4  ]	K-35 K-3			# .^N		選択して下へ
+.\" usilic-rc-line 	M-5  e	K-67				# ^[e		EDIT
+.\" usilic-rc-line 	M-6  l	K-86 K-53 "^usilic-1.5b:" K-28	# ^J^Os^Jp^usilic-1.5b:^M
+.\" usilic-rc-line 	     	     	  		  	# INFOのshellをプロンプトでPART
+.\" usilic-rc-line 	--
