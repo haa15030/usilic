@@ -21571,8 +21571,12 @@ ApplicationMode Application::currentMode() const { return currentMode_; }
 Charset::Encoding Application::encoding() const { return encoding_; }
 
 bool Application::awaitingSequenceOrPromptByte() const {
+  // 2026-10-30、直接のユーザー報告("^[を認識していないみたいで慣性スクロールが始まってしまう"): ^[+矢印の後の↑/↓
+  // (epubMarginSide_)と、usilicrcのKEY節・ページャーの制限が^[を溜めている間(escPending_はまだ立たない)も含める。
+  // 含めないと、app/main.cppが矢印を慣性スクロールの開始・速さの変更に取ってしまう。
   return escPending_ || leaderJPending_ || gotoLineGPending_ || gotoLineDigitsPending_ ||
-         promptKind_ != PromptKind::None;
+         promptKind_ != PromptKind::None || epubMarginSide_.has_value() || !keyBindingPending_.bytes.empty() ||
+         !pagerKeyBuffer_.empty();
 }
 DirectoryMode &Application::directoryMode() { return directoryMode_; }
 FileMode &Application::fileMode() { return fileMode_; }
