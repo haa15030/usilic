@@ -359,9 +359,9 @@ class GraphicalDisplay : public Display {
   // ^[{ / ^[}で足したドット数(横書き・縦書き)。起動時(create()より前)に前回の値を戻し、終わりに保存する。
   static void setLetterSpacingExtras(int horizontal, int vertical);
   static std::pair<int, int> letterSpacingExtras();
-  // ^[0(2026-10-31、Application::takeSpacingResetRequest()参照): ^[[ / ^[]・^[{ / ^[}で足した分を縦横とも捨て、
-  // 今の向きの行の高さとマスの幅を当て直す。
-  void resetSpacing();
+  // ^[0(2026-10-31、Application::takeSpacingResetRequest()参照): ^[[ / ^[]・^[{ / ^[}で足した分(横書き・縦書き)を
+  // 置き換え、今の向きの行の高さとマスの幅を当て直す。既定へは{0, 0}・{0, 0}。
+  void setSpacingExtras(std::pair<int, int> lineHeight, std::pair<int, int> letterSpacing);
   // 横書きのマスの幅での桁数(horizontalRows()と同じく、窓の大きさを保存する時用)。
   int horizontalColumns() const;
 

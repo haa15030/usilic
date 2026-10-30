@@ -2,6 +2,7 @@
 
 #include <sys/types.h>  // pid_t(MSYS2では他のヘッダ経由で入らない、2026-10-05)
 
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <map>
@@ -2003,9 +2004,9 @@ class Application {
   int takeLineHeightAdjustRequest();
   // ^[{ / ^[}(K-112/K-113、2026-10-20): 同じく字間(マスの幅)。GraphicalDisplay::adjustLetterSpacing()へ渡す。
   int takeLetterSpacingAdjustRequest();
-  // ^[0(2026-10-31): 行間・字間・EPUBの余白をまとめて既定へ。余白はその場で戻し、-gの行間・字間はmain.cppが
-  // これを受け取ってGraphicalDisplay::resetSpacing()で戻す。
-  bool takeSpacingResetRequest();
+  // ^[0(2026-10-31): 行間・字間・EPUBの余白をまとめて既定へ(1)、もう一度で元へ(-1)、トグル。余白はその場で戻し、
+  // -gの行間・字間はmain.cppがこれを受け取ってGraphicalDisplay::setSpacingExtras()で変える。無ければ0。
+  int takeSpacingResetRequest();
   bool resetSpacingAndMargins();
   // ~/.usilic/history(main.cppの^J^Fが選んだフォントを書く、2026-10-30)。
   History &history() { return history_; }
@@ -3009,7 +3010,8 @@ class Application {
   bool fontListRequested_ = false;
   int lineHeightAdjustRequest_ = 0;      // takeLineHeightAdjustRequest()参照
   int letterSpacingAdjustRequest_ = 0;   // takeLetterSpacingAdjustRequest()参照
-  bool spacingResetRequest_ = false;     // takeSpacingResetRequest()参照
+  int spacingResetRequest_ = 0;          // takeSpacingResetRequest()参照
+  std::optional<std::array<int, 4>> marginsBeforeReset_;  // ^[0の前の余白(上・下・左・右)、resetSpacingAndMargins()参照
   bool fontListActive_ = false;
   // ^J^Fの一覧を最後に離れた時のカーソル(2026-10-11、直接のユーザー報告"^J^Fの一覧でカーソル位置が保存されてない")。
   // 次に開いた時はここから(一覧の行数が同じ時だけ、違えば今のフォントの行)。-1なら未設定。

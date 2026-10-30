@@ -2666,9 +2666,9 @@ std::pair<int, int> GraphicalDisplay::letterSpacingExtras() {
   return {fm::letterSpacingExtraPixels(false), fm::letterSpacingExtraPixels(true)};
 }
 
-void GraphicalDisplay::resetSpacing() {
-  setLineHeightExtras(0, 0);
-  setLetterSpacingExtras(0, 0);
+void GraphicalDisplay::setSpacingExtras(std::pair<int, int> lineHeight, std::pair<int, int> letterSpacing) {
+  setLineHeightExtras(lineHeight.first, lineHeight.second);
+  setLetterSpacingExtras(letterSpacing.first, letterSpacing.second);
   reapplyLineHeightKeepingExtra();
 }
 

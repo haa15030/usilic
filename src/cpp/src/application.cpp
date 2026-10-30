@@ -3492,17 +3492,21 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 1ドット広げる(^[[)・狭める(^[])。HELPの「^[[ / ^[] … 行間の増減」の順。画面はmain.cppが変える。
       case '[':
         lineHeightAdjustRequest_++;
+        marginsBeforeReset_.reset();  // ^[0で戻す値は捨てる(resetSpacingAndMargins()参照)
         return true;
       case ']':
         lineHeightAdjustRequest_--;
+        marginsBeforeReset_.reset();
         return true;
       // 2026-10-20、直接のユーザー依頼("字間の調整はできる？ ^[{/^[}とか"): 同じく字間を1ドット広げる(^[{)・
       // 狭める(^[})。
       case '{':
         letterSpacingAdjustRequest_++;
+        marginsBeforeReset_.reset();
         return true;
       case '}':
         letterSpacingAdjustRequest_--;
+        marginsBeforeReset_.reset();
         return true;
       // (ESC i: 2026-09-10追加、2026-09-19削除) ESC iは
       // Command::StartIncrementalGrepの元々の専用キーだったが、直接の
@@ -8427,16 +8431,32 @@ bool Application::takeFontListRequest() {
 }
 
 int Application::takeLineHeightAdjustRequest() { return std::exchange(lineHeightAdjustRequest_, 0); }
-bool Application::takeSpacingResetRequest() { return std::exchange(spacingResetRequest_, false); }
+int Application::takeSpacingResetRequest() { return std::exchange(spacingResetRequest_, 0); }
 
 // ^[0(2026-10-31、escPending_の'0'参照): EPUBの余白(上下左右)を0に戻し(historyにも)、-gの行間・字間(足したドット)は
-// main.cppがtakeSpacingResetRequest()を見て戻す。
+// main.cppがtakeSpacingResetRequest()を見て戻す。同日、直接のユーザー依頼("うっかりミスもありうるので戻せるようにも
+// しておきたい。...トグルキーということで（二度目の^[0で元に戻る）。-cでは無効でいい"): 戻す前の余白を覚えておき
+// (marginsBeforeReset_)、次の^[0で戻す。その間に行間・字間・余白を変えたら覚えた値は捨て、次の^[0はまた既定へ。
 bool Application::resetSpacingAndMargins() {
-  spacingResetRequest_ = true;
-  bool marginsChanged = epubMarginTop_ || epubMarginBottom_ || fileMode_.epubMarginLeft() || fileMode_.epubMarginRight();
-  if (marginsChanged) {
-    epubMarginTop_ = epubMarginBottom_ = 0;
-    fileMode_.setEpubMargins(0, 0);
+  if (!display_.isGraphical()) {
+    showTransientNotice(activeView(), "^[0: -g only");
+    return true;
+  }
+  std::array<int, 4> current = {epubMarginTop_, epubMarginBottom_, fileMode_.epubMarginLeft(),
+                                fileMode_.epubMarginRight()};
+  std::array<int, 4> next = {0, 0, 0, 0};
+  if (marginsBeforeReset_) {
+    next = *marginsBeforeReset_;
+    marginsBeforeReset_.reset();
+    spacingResetRequest_ = -1;
+  } else {
+    marginsBeforeReset_ = current;
+    spacingResetRequest_ = 1;
+  }
+  if (next != current) {
+    epubMarginTop_ = next[0];
+    epubMarginBottom_ = next[1];
+    fileMode_.setEpubMargins(next[2], next[3]);
     saveEpubMargins();
     epubMarginReflow_ = true;
     handleResize();
@@ -9278,6 +9298,7 @@ bool Application::handleEpubMarginKey(KeyInput::SpecialKey side, KeyInput::Speci
     if (delta > 0 && contentHeight - epubVerticalMarginTop() - epubVerticalMarginBottom() - 1 < 4) return false;
     if (next == margin) return false;
     margin = next;
+    marginsBeforeReset_.reset();  // ^[0で戻す値は捨てる(resetSpacingAndMargins()参照)
     saveEpubMargins();
     handleResize();  // 列の高さが変わる(epubBuiltSize_と違うので組み直す)
     return true;
@@ -9287,6 +9308,7 @@ bool Application::handleEpubMarginKey(KeyInput::SpecialKey side, KeyInput::Speci
     int &margin = side == K::Left ? left : right;
     if (margin + delta < 0 || (delta > 0 && display_.columns() - left - right - 1 < 20)) return false;
     margin += delta;
+    marginsBeforeReset_.reset();
     fileMode_.setEpubMargins(left, right);
     saveEpubMargins();
     epubMarginReflow_ = true;
