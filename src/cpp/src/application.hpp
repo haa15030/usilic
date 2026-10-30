@@ -2845,6 +2845,7 @@ class Application {
   int epubImagePageMarginColumns(int pageStart);
   void setEpubVerticalView(int first, int cursor, std::optional<int> link = std::nullopt);
   int epubVerticalRows() const;
+  int epubVerticalMarginRows() const;  // 縦書きの上下の余白の行(epubVerticalRows()の後のコメント参照)
   int epubVerticalCurrentRaw() const;
   void syncEpubVerticalToFile();
   void saveFilePosition();  // fileMode_.saveCursorPosition()の前に縦書きの位置を合わせる

@@ -31,6 +31,7 @@ namespace fm {
 // loadFileAsPipe()もこれを共有する――ファイル名だけ違う「読み込み
 // 経路」であって、折り返し方針自体はloadFileNoWrap()と揃えたいため。
 constexpr int kNoWrapWidth = 1 << 20;
+constexpr int kEpubMarginColumns = 2;  // 横書きのEPUBの左右の余白(readAndWrap()参照)
 
 // 2026-09-04追加、直接のユーザー依頼("usilic ~/git/usilic/src/HELP.txt
 // をサポートして"): CLIのファイル引数起動(usilic HELP.txt/usilic
@@ -657,6 +658,14 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path,
   // スクロール自体は実装しない(less -Sと同じ「画面幅で切り詰める」
   // 挙動、水平スクロールバー等の新規UIは無い)。
   int effectiveWidth = noWrapMode_ ? kNoWrapWidth : width_;
+  // 2026-10-30、直接のユーザー依頼("EPUB画面で縦書きなら上下、横なら左右にマージンを入れられる？...HELPは右に
+  // 偏っているのですこしでも中央へ寄せられたら"): 横書きのEPUBは左右にkEpubMarginColumns桁ずつ空ける(幅を
+  // 狭く組み、下で行の頭に空白を足す)。縦書きの上下はApplication::epubVerticalMarginRows()。
+  epubMarginColumns_ = 0;
+  if (!noWrapMode_ && isEpubFile(path) && width_ >= 40) {
+    epubMarginColumns_ = kEpubMarginColumns;
+    effectiveWidth -= 2 * epubMarginColumns_;
+  }
   PipeBuffer pipe(encoding_, effectiveWidth, 64L * 1024 * 1024, /*detectOverstrike=*/!rawControlCodesMode_);
   // 2026-09-25追加、直接のユーザー質問("^Mは中断できないの？"): 時間が
   // かかるのは読み込みそのものより、この画面用の行への組み立て(折り返し/
@@ -721,6 +730,15 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path,
     }
   }
   if (epubImageRows_ && !noWrapMode_ && isEpubFile(path)) lines = expandEpubImageLines(std::move(lines), path, effectiveWidth);
+  if (epubMarginColumns_ > 0)  // 左の余白(上のepubMarginColumns_参照)。画像の行と空の行はそのまま
+    for (auto &line : lines) {
+      if (!line.imageKey.empty() || line.text.empty()) continue;
+      line.text.insert(0, static_cast<std::size_t>(epubMarginColumns_), ' ');
+      for (auto &run : line.attributes) {
+        run.start += epubMarginColumns_;
+        run.end += epubMarginColumns_;
+      }
+    }
   // 2026-10-26、直接のユーザー報告(-g、"下から上がってくるのは途中から。...付録は=mt.pngの状態からスクロールがスタート
   // する"): 縦書きの本の横書きの範囲(付録等)へ先へ入る時は、範囲の最初の行を画面の一番下に置いて下から上げる
   // (Application::enterEpubHorizontal())が、本の頭に近い範囲は前の行が1画面分より少なく、画面の先頭より前へは

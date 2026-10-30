@@ -249,6 +249,12 @@ class ContentView {
   // このビューが画面上でどこに住んでいるか(row0..row0+height-1)、
   // 何行分の高さか。
   void setViewport(int row0, int height);
+  // ビューポートの上のtop行・下のbottom行を、描くたびに空にする(縦書きのEPUBの上下の余白、2026-10-30、
+  // Application::layoutViews()参照)。
+  void setMarginRows(int top, int bottom) {
+    marginTop_ = top;
+    marginBottom_ = bottom;
+  }
 
   void setLines(std::vector<Line> lines);
   // 2026-10-03追加(Display::ContentImage参照、EPUBの縦書きの画像ページ): この画面の本文に描く画像の
@@ -1533,6 +1539,7 @@ class ContentView {
   bool markedRowUsesUnderline_ = false;
 
   int row0_ = 0, height_ = 0;
+  int marginTop_ = 0, marginBottom_ = 0;  // setMarginRows()参照
   std::function<void()> afterRedraw_;  // setAfterRedraw()
   ModeLineFieldsProvider modeLineFieldsProvider_;
   bool useFixedWidthPosition_ = false;

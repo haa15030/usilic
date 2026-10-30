@@ -2244,8 +2244,13 @@ void Application::layoutViews() {
   underlineView_.setViewport(0, contentHeight);
   listBrowserView_.setViewport(0, contentHeight);
   copyView_.setViewport(0, contentHeight);
-  epubVerticalView_.setViewport(0, contentHeight);
-  epubTocVerticalView_.setViewport(0, contentHeight);
+  // 縦書きは上下に余白(epubVerticalMarginRows())。モードラインはいつもの行に
+  int margin = epubVerticalMarginRows();
+  for (ContentView *view : {&epubVerticalView_, &epubTocVerticalView_}) {
+    view->setViewport(margin, epubVerticalRows());
+    view->setMarginRows(margin, margin);
+    view->setModeLineRow(display_.modeLineVisible() ? std::optional<int>(contentHeight) : std::nullopt);
+  }
   promptEditor_.setField(display_.rows() - 1, 0, std::max(1, display_.columns()));
 }
 
@@ -9190,7 +9195,16 @@ int Application::fileRawLineAtCursor() const {
 }
 
 int Application::epubVerticalRows() const {
-  return display_.modeLineVisible() ? std::max(1, display_.rows() - 1) : std::max(1, display_.rows());
+  int contentHeight = display_.modeLineVisible() ? std::max(1, display_.rows() - 1) : std::max(1, display_.rows());
+  return std::max(1, contentHeight - 2 * epubVerticalMarginRows());
+}
+
+// 2026-10-30、直接のユーザー依頼("EPUB画面で縦書きなら上下...にマージンを入れられる？　縦書き小説ではモードラインに
+// 隣接ではやはり読みづらく"): 縦書きの上下に空ける行の数。縦書きのビューはこの行だけ下から始め(layoutViews())、
+// 列の高さ(epubVerticalRows())はその2倍だけ低い。行の少ない画面では空けない。
+int Application::epubVerticalMarginRows() const {
+  int contentHeight = display_.modeLineVisible() ? display_.rows() - 1 : display_.rows();
+  return contentHeight >= 12 ? 1 : 0;
 }
 
 std::vector<Application::EpubLogicalLine> Application::epubLogicalLines(bool skipHorizontal) const {
@@ -9213,11 +9227,17 @@ std::vector<Application::EpubLogicalLine> Application::epubLogicalLines(bool ski
       line.text = "[image: " + line.imageKey.substr(line.imageKey.find('\n') + 1) + "]";
       line.attributes.clear();
     }
-    int pad = 0;
+    // 横書きの左の余白(FileMode::epubMarginColumns())も取り除く
+    std::size_t found = 0;
+    int margin = fileMode_.epubMarginColumns();
+    if (margin > 0 && line.text.compare(0, static_cast<std::size_t>(margin), std::string(margin, ' ')) == 0)
+      found = static_cast<std::size_t>(margin);
     if (center.count(raw) || hints.indent.count(raw)) {
-      std::size_t found = line.text.find_first_not_of(' ');
+      found = line.text.find_first_not_of(' ');
       if (found == std::string::npos) found = line.text.size();
-      pad = static_cast<int>(found);
+    }
+    int pad = static_cast<int>(found);
+    if (pad > 0) {
       line.text.erase(0, found);
       for (auto &run : line.attributes) {
         run.start = std::max(0, run.start - pad);
@@ -9620,7 +9640,7 @@ std::vector<Display::ContentImage> Application::epubVerticalImagesFor(int first,
     int pageStart = c - column.imageSlice;
     if (!pages.insert(pageStart).second) continue;
     int k0 = pageStart - first;
-    out.push_back({fileMode_.currentFile() + "\n" + column.image, 0, display_.columns() - pitch * (k0 + perScreen),
+    out.push_back({fileMode_.currentFile() + "\n" + column.image, epubVerticalMarginRows(), display_.columns() - pitch * (k0 + perScreen),
                    epubVerticalRows(), pitch * perScreen});
   }
   return out;
@@ -10225,6 +10245,7 @@ bool Application::openSelectedEpubAsArchive() {
 // もう一度クリックするとactivateEpubVerticalColumn()(横書きのリンク行と同じ
 // 「1回目で選択、2回目で開く」)。
 bool Application::clickEpubVertical(int row, int column) {
+  row -= epubVerticalMarginRows();  // 上の余白(layoutViews())
   int k = epubVerticalColumnAt(column, display_.columns());
   long c = static_cast<long>(epubVerticalFirst_) + k;
   if (k < 0 || c >= static_cast<long>(epubVerticalCols_.size())) return false;
@@ -14398,6 +14419,7 @@ void Application::endEpubSelect() {
 
 // 画面の行・桁の字のマス(列の番号, 列の上からのマス)。列の間(行間)や画面の外は近い列・マスへ寄せる。
 std::pair<long, int> Application::epubSelectCellAt(int row, int column) const {
+  row -= epubVerticalMarginRows();  // 上の余白(layoutViews())
   int columns = display_.columns();
   int fromRight = std::max(0, columns - 1 - column);
   int k = std::min(fromRight / epubVerticalColumnPitch(), epubVerticalColumnsPerScreen(columns) - 1);

@@ -2578,6 +2578,11 @@ bool ContentView::renderContentRows() {
     }
     display_.setContentImages(images);
   }
+  for (int row = row0_ - marginTop_; row < row0_ + height_ + marginBottom_; row++) {  // setMarginRows()参照
+    if (row >= row0_ && row < row0_ + height_) continue;
+    display_.moveCursor(row, 0);
+    display_.clearToEndOfLine();
+  }
   int highlighted = hoverIndex_.has_value() ? *hoverIndex_ : cursorIndex_;
   int rowOffset = bottomAnchorRowOffset();
   bool renderedAny = false;
