@@ -1129,27 +1129,9 @@ bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()>
   // K-48自身のRecentDirectoryの対応物に対するDirectoryMode::
   // enterDirectory()の同一のpushRecent()呼び出し参照。
   if (!skipRecentPushNow_) history_.pushRecent(RingCategory::RecentFile, currentFile_);
-  if (auto pos = history_.positionFor(PositionCategory::File, currentFile_)) {
-    int idx = pos->row;
-    int last = static_cast<int>(view_.lines().size()) - 1;
-    // 2026-10-07、直接のユーザー報告("34x55でインデント修正中、HELP.txtを`平文`と`「：」でCUT`の間で^J^J
-    // しながら確認しているんだが前者のカーソル位置が保存されない"): rowは折り返した後の行なので、ファイルを
-    // 直して折り返しが変わると(行数が違えば)別の所へ戻っていた。その時は元のファイルの行(lineNumber、
-    // saveCursorPosition()参照)で探す。
-    if (pos->lineNumber > 0 && pos->totalRows != last + 1) {
-      const auto &lines = view_.lines();
-      for (int i = 0; i <= last; i++)
-        if (lines[i].rawLineNumber && *lines[i].rawLineNumber >= pos->lineNumber) {
-          idx = i;
-          break;
-        }
-    }
-    if (idx < 0) idx = 0;
-    if (idx > last) idx = (last < 0) ? 0 : last;
-    view_.setCursorIndex(idx);
-    // 画面の上から何行目にいたか(top)も戻す(同じ高さに収まる時だけ)。
-    int offset = static_cast<int>(pos->top);
-    if (offset > 0 && offset < view_.height()) view_.setTopIndex(idx - offset);
+  restoredPosition_ = history_.positionFor(PositionCategory::File, currentFile_);
+  if (restoredPosition_) {
+    placeSavedPosition(*restoredPosition_);
   } else {
     view_.setCursorIndex(0);
   }
@@ -1163,6 +1145,32 @@ bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()>
   // 行+列選択は、両方とも本物のカーソル位置に依存する)。
   view_.syncVisibleCursor();
   return true;
+}
+
+// restoredPosition_の宣言のコメント参照。
+void FileMode::placeSavedPosition(const History::CursorPosition &pos) {
+  int idx = pos.row;
+  int last = static_cast<int>(view_.lines().size()) - 1;
+  // 2026-10-07、直接のユーザー報告("34x55でインデント修正中、HELP.txtを`平文`と`「：」でCUT`の間で^J^J
+  // しながら確認しているんだが前者のカーソル位置が保存されない"): rowは折り返した後の行なので、ファイルを
+  // 直して折り返しが変わると(行数が違えば)別の所へ戻っていた。その時は元のファイルの行(lineNumber、
+  // saveCursorPosition()参照)で探す。
+  if (pos.lineNumber > 0 && pos.totalRows != last + 1) {
+    const auto &lines = view_.lines();
+    for (int i = 0; i <= last; i++)
+      if (lines[i].rawLineNumber && *lines[i].rawLineNumber >= pos.lineNumber) {
+        idx = i;
+        break;
+      }
+  }
+  if (idx < 0) idx = 0;
+  if (idx > last) idx = (last < 0) ? 0 : last;
+  view_.setCursorIndex(idx);
+  // 画面の上から何行目にいたか(top)も戻す。2026-10-31: 一番上(0)も戻す(以前は0の時は戻さず、カーソルが一番下に
+  // 来ていた、=nc→=nd)。今の画面に収まらなければ一番下の行に。
+  int offset = std::min(static_cast<int>(pos.top), std::max(0, view_.height() - 1));
+  view_.setTopIndex(idx - offset);
+  restoredPlacement_ = {view_.cursorIndex(), view_.topIndex()};
 }
 
 bool FileMode::reflow(int newWidth, bool draw) {
@@ -1234,9 +1242,15 @@ bool FileMode::reflow(int newWidth, bool draw) {
   width_ = newWidth;
   int oldCursor = view_.cursorIndex();
   std::optional<int> oldRawLine = rawLineNumberAt(oldCursor);
+  bool unmoved = restoredPosition_ && restoredPlacement_ == std::make_pair(oldCursor, view_.topIndex());
 
   view_.setLines(readAndWrap(currentFile_));
-  view_.setCursorIndex(translateCursorAfterReflow(oldCursor, oldRawLine));
+  if (unmoved) {
+    placeSavedPosition(*restoredPosition_);  // restoredPosition_の宣言のコメント参照
+  } else {
+    restoredPosition_.reset();
+    view_.setCursorIndex(translateCursorAfterReflow(oldCursor, oldRawLine));
+  }
   if (draw) {
     view_.redraw();
     view_.syncVisibleCursor();
@@ -1443,6 +1457,7 @@ std::vector<ContentView::Line> FileMode::convertPipeLines() const {
 bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, int initialLineBudget,
                            bool noWrap) {
   closeStream();
+  restoredPosition_.reset();  // historyの位置で開いたものではない(placeSavedPosition()参照)
   view_.setCursorHighlightEnabled(false);
   noWrapMode_ = noWrap;  // 自身の宣言コメント参照(file_mode.hpp) -- 前回のセッションからの取り残しを防ぐ明示的な上書き
   pagerMode_ = true;

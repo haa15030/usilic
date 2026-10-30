@@ -33172,3 +33172,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **原因**: (1)Terminal.app・iTerm2からの-gは、端末の色・窓の位置が分かると「始めから終わりまでGUI」の起動(main()のguiOwnsWholeSession)に入っていた。この起動は端末へ戻る作りが無く(setGuiToggleReturnsToTerminal()を立てない)、^Ogは「Already in GUI」。(2)アイコンからの起動(端末無し)は、そもそも戻る端末が無い。
    - **直し**: (1)端末からの-gはguiOwnsWholeSessionに入らず、^Ogを1回押したのと同じtryEnterGuiPhase()で開く(端末の窓の位置・大きさも渡すので、重ね方は^Ogと同じ)。^Ogで下の端末へ戻れる。(2)戻る端末の無いいちばん上の親の^Og(Command::ToggleGuiMode)は、端末の新しいウィンドウ(openInNewTerminalWindow())で引数無しの`usilic -c`を起動する。新しい方は起動時に~/.usilic/pidのこのプロセスをSIGTERMで終わらせ(終わる時にhistoryへ今の画面を保存する)、それを読んで同じ画面から始める。子(HELP・KEYの窓)は親がいなくなると終わる。引数付きの起動(historyに今の画面を保存しない)では、前回の引数無しの起動の画面になる。
    - 確かめたこと: make usilic・make install・make app。実機は未確認。
+1150. **アイコンからの起動で、前回の画面の位置(カーソル・画面の上から何行目か)がずれる(2026-10-31)**
+   - **経緯**: 直接のユーザー報告("アイコン起動では今の表示画面が継承されない場合がある。カーソル位置が最下行の時は、=na.png 同じ位置だが、=nb.png 同じ画面でカーソル位置が最上行だと、=nc.png 位置が狂う。=nd.png")。HELP.epubで、最下行(0066)で終えると次はカーソルが0047に、最上行(0045)で終えると0045が画面の一番下に来ていた。
+   - **原因**: (1)アイコンからの起動は、まず端末の大きさ(端末が無いので既定の行数)で前回のファイルを開いてhistoryの位置へ戻し、その後でGUIの窓の大きさへ組み直す(tryEnterGuiPhase()のhandleResize()→FileMode::reflow())。reflow()はカーソルの元の行は保つが、画面の上から何行目にいたかは保たないので、GUIの行数で置き直されなかった。開いた時もhistoryの「上から何行目」(GUIで終えた時の値)が端末の行数を超えると捨てていた。(2)上から0行目(最上行)は戻していなかった(`offset > 0`)ので、カーソルの行が画面の一番下に来ていた。
+   - **直し**: historyの位置を置く処理をFileMode::placeSavedPosition()に括り出し、0行目も戻し、画面に収まらなければ一番下の行に置く。開いた後にカーソルも画面も動いていないうちにreflow()が来たら(restoredPosition_・restoredPlacement_)、同じhistoryの位置を新しい行・高さで置き直す。
+   - 確かめたこと: make usilic・make install・make app。実機は未確認。

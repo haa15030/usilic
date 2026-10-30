@@ -646,6 +646,13 @@ class FileMode {
   // カーソルが指す「生の」行番号を保つための一対のヘルパー。
   std::optional<int> rawLineNumberAt(int index) const;
   int translateCursorAfterReflow(int beforeCursor, std::optional<int> beforeRawLine) const;
+  // 2026-10-31、直接のユーザー報告("アイコン起動では今の表示画面が継承されない場合がある"): historyの位置
+  // (カーソルの行と、画面の上から何行目か)を今の行と画面の高さで置く(loadFileImpl())。アイコンからの起動は
+  // 端末の大きさで開いてからGUIの大きさへ組み直すので、開いた後にカーソルも画面も動いていなければ、
+  // reflow()で同じ位置を新しい大きさで置き直す(restoredPosition_・restoredPlacement_)。
+  void placeSavedPosition(const History::CursorPosition &pos);
+  std::optional<History::CursorPosition> restoredPosition_;
+  std::pair<int, int> restoredPlacement_{-1, -1};  // 置いた直後の(カーソル, 一番上の行)
 
   ContentView &view_;
   History &history_;
