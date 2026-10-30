@@ -33185,3 +33185,6 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告(2026-10-27、"HELPを読んでいて、「COPY：文字列コピー」の章にあるCOPYが全部usilicrcのCOPY設定（ファイル複写）への注釈になっていることに気づいて、HELPの原稿中、COPY、MOVE、DELETEをCP、MV、RMに戻したんだが、usilircも変更しなくてはと同じ修正を施したところ、HELPの注釈が壊れた。")。HELPの注釈は本文の語のうちusilicrcの節の名前に当たるものに付くので、COPYの節があるとCOPYモードの説明がみな注釈になる。
    - **変更**: Configuration::directiveKeywords()の節の名前をCP・MV・RMへ(2026-10-18の改名を戻す)。src/usilicrc・~/.usilic/usilicrc・~/.local/lib/usilic/usilicrcはユーザーが直した。その日はアシスタントが直しかけたところで週の利用の上限に入り、docs/HISTORY.md:53473〜53475の間のやり取り(依頼と「usilicrcの節の名前を、コードがどう扱っているかを調べます。」)は記録から抜けている(セッションのJSONLで確認)。configuration.cppの直しはユーザーが入れた。試験(test_configuration・test_cp_mv_rm_mode・test_application)の節の名前もCP・MV・RMに。
    - 確かめたこと: run_testsのCP/MV/RMの試験とtest_cp_mv_rm_mode.cppの試験が通る。
+1153. **アイコンからの起動の^Ogは「Already in GUI」に戻す(2026-10-31、項目1149の手直し)**
+   - **依頼**: 直接のユーザー依頼("言い忘れたけど、アイコン起動は元の端末がないので^Ogは無効でいい。「すでにGUIです」でよろしく。")。
+   - **変更**: 項目1149の(2)(戻る端末の無いいちばん上の親の^Ogで、端末の新しいウィンドウに`usilic -c`を起動する)をやめ、以前と同じく「Already in GUI」を出すだけにした。端末からの-gで^Ogが使える(1)はそのまま。
