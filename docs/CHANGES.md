@@ -33112,3 +33112,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告("GUI起動でもFONT[6]のアンダーラインで注釈へ飛ばなくなった")を確かめるため。
    - **変更**: tools/gui_harness.cppの操作に`click:行,桁`(0から、Application::handleMouseClick())を足す。
    - 確かめたこと: make harness。HELP.epubの「選ぶと FONT[6]」の行で、FONTの字・6の字のどちらをクリックしても注釈[6](usilicrc の FONT)へ飛ぶ(-cの端末のマウスのクリックも同じ)。/Applications/usilic.appは08:49のビルド(項目1132の前)のままだったので、make appで作り直した。
+
+1138. **Python版: HELPをHELP.1から作って開く、ページャーのキーをHELPの表から、^OjをKEY・平文のHELPでも(2026-10-30)**
+   - **経緯**: 直接のユーザー依頼("python3版でも現状CUIの全機能を使えるようにして。"、.steering/20261030-python-cui-catchup/)。Python版の^HはインストールされたHELP.epubを開いていたが、HELP.epubは項目1121から入れない。
+   - **変更**: help_to_epub.py(C++のconvertMarkupToMsRoffSource()・joinMarkupLinesAtBreaks()・convertMsRoffToHelpEpub()を写したもの)。help_text.help_epub_path()はHELP.1(英語はHELP_en.1)から~/.usilic/HELP.epub(HELP.en.epub)を作り、HELP.1の方が新しければ作り直す(C++のhelpEpubPath())。作ったHELPは名前「HELP」(項目1117)、戻り値も「HELP」(項目1130)。ページャーで使えるキーは、HELPの行頭がタブの行のキーと^M・^K・^Og・^Oj・^[[等・^T^H・^T^K(C++のpagerAllowedKeys()、項目1135)。^OjはKEY・平文のHELPもその場で切り換える。
+   - 確かめたこと: ~/HELP.txt・~/HELP_en.txtから作ったroffの本文と、HELP.1から作ったEPUBの中身(modifiedの時刻以外)がC++のusilic -n・-eと同じ。擬似端末で^H→^Ojで英語のHELP。unittest 85件。

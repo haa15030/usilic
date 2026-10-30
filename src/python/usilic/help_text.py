@@ -50,8 +50,71 @@ def find_in_library(name):
     return None
 
 
+def help_roff_path(japanese):
+    """HELPのroff版(日本語はHELP.1、英語はHELP_en.1、C++のhelpRoffSourcePath())。"""
+    return find_in_library('HELP.1' if japanese else 'HELP_en.1')
+
+
+def generated_help_epub_path(japanese):
+    """help_epub_path()が作る~/.usilic/HELP.epub(英語はHELP.en.epub、C++のgeneratedHelpEpubPath())。"""
+    return os.path.join(os.path.expanduser('~'), '.usilic', 'HELP.epub' if japanese else 'HELP.en.epub')
+
+
+def is_generated_help_epub(path):
+    """作ったHELP.epub(どちらの言語も)か。履歴に積まない(C++のisGeneratedHelpEpub())。"""
+    if not path:
+        return False
+    for japanese in (True, False):
+        try:
+            if os.path.samefile(path, generated_help_epub_path(japanese)):
+                return True
+        except OSError:
+            pass
+    return False
+
+
 def help_epub_path(japanese):
-    return find_in_library('HELP.epub' if japanese else 'HELP.en.epub')
+    """HELPのEPUB版(C++のhelpEpubPath()、項目1121): HELP.epubは入れず、HELP.1(英語はHELP_en.1)から
+    ~/.usilic/HELP.epub(HELP.en.epub)を作って開く。HELP.1の方が新しければ作り直す。注釈の元と表紙はHELP.1に
+    埋め込んである(usilic -n)。埋め込みの無い古いHELP.1なら、HELP.1と同じ場所のusilicrc・HELP.notesを使う。"""
+    from . import help_to_epub
+    source = help_roff_path(japanese)
+    if not source:
+        return None
+    out = generated_help_epub_path(japanese)
+    try:
+        if os.path.getmtime(out) >= os.path.getmtime(source):
+            return out
+    except OSError:
+        pass
+
+    def read(path):
+        try:
+            with open(path, encoding='utf-8', errors='replace') as f:
+                return f.read()
+        except OSError:
+            return ''
+    roff = read(source)
+    if not roff.startswith('.'):
+        return None
+    directory = os.path.dirname(source)
+    english = not japanese
+    epub = help_to_epub.convert_ms_roff_to_help_epub(
+        roff, read(os.path.join(directory, 'usilicrc.en' if english else 'usilicrc')),
+        read(os.path.join(directory, 'HELP.en.notes' if english else 'HELP.notes')))[0]
+    temp = '%s.tmp%d' % (out, os.getpid())
+    try:
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        with open(temp, 'wb') as f:
+            f.write(epub)
+        os.replace(temp, out)
+    except OSError:
+        try:
+            os.remove(temp)
+        except OSError:
+            pass
+        return None
+    return out
 
 
 def plain_help_lines(width, japanese, configuration):

@@ -33,7 +33,7 @@ from .epub_mode import EpubBook, is_epub_file
 from .markdown import is_markdown_file, render_markdown, pager_byte_count as markdown_pager_byte_count
 from .file_mode import FileMode
 from .grep_mode import GrepMode, FIXED, REGEX, match_spans
-from .key_bindings import CTRL_SPACE, DIGIT, prefix_label
+from .key_bindings import CTRL_SPACE, DIGIT, prefix_label, ALL as ALL_CONTEXT
 from .line_editor import LineEditor
 from .list_browser_mode import ListBrowserMode
 from .locate_mode import LocateMode
@@ -107,6 +107,8 @@ class Application:
         self.current_mode = DIRECTORY
         self.return_stack = []      # ^Gの戻り先(モード)
         self.pager_launch = False   # 引数のfile・標準入力で起動した(Application::pagerLaunch_)
+        self.first_start_pager = False  # 最初の起動のHELP(C++のfirstStartPager_)
+        self.pager_numbers_cache = None  # pager_key_numbers()
         self.pager_files = []       # n/p/x/fで切り替えるfile
         self.pager_index = 0
         self.start_directory = os.getcwd()
@@ -560,6 +562,8 @@ class Application:
         if mode == DIRECTORY:
             return self.directory_mode.current_directory
         if mode == FILE:
+            if self.epub is not None and self.epub_name == 'HELP' and self.file_mode.current_file == self.epub.path:
+                return 'HELP'  # 作ったHELPの本(C++の項目1130)
             return self.file_mode.current_file
         if mode == INFO:
             return 'INFO'
@@ -1362,6 +1366,8 @@ class Application:
             return False
         self.remember_previous_file()
         self.epub = book
+        if name is None and help_text.is_generated_help_epub(path):  # 作ったHELP(C++の項目1117)
+            name = 'HELP'
         self.epub_name = name or os.path.basename(path)
         width = self.wrap_width()
         lines, self.epub_toc_lines = book.render(width)
@@ -2101,10 +2107,42 @@ class Application:
             self.count = None
             return False
         digit = keys[-1] if self.bindings.sequence_for(number)[-1] == DIGIT else None
-        if self.pager_launch and number not in PAGER_KEYS:
+        if self.pager_launch and number not in self.pager_key_numbers():
             self.show_transient_notice('Not available in pager')
             return False
         return self.run_command(number, digit)
+
+    def pager_key_numbers(self):
+        """ページャーで使えるK-番号(C++のpagerAllowedKeys()): HELPの行頭がタブの「キー：説明」の行のキー(「（^Xrl も
+        同じ）」のキーも)と、^M・^K・^Og・^Oj・^[[ ^[] ^[{ ^[}・^J^F・^Ot・^T^H・^T^K。最初の起動(first_start_pager)
+        では機能限定SHELLへ行く^[s・^Js・^J.・^J,と^I(INFO)も。"""
+        key = (japanese(), self.first_start_pager)
+        if self.pager_numbers_cache is not None and self.pager_numbers_cache[0] == key:
+            return self.pager_numbers_cache[1]
+        numbers = set(PAGER_KEYS) | {28, 93, 92, 109, 110, 112, 113, 129, 130}
+        numbers |= {n for n, seq in self.bindings.sequences.items()
+                    if seq in ([0x0F, ord('g')], [0x0F, ord('t')], [0x0A, 0x06])}
+        found = self.plain_help()
+        for raw in (found[3] if found else []):
+            if not raw.startswith('\t') or help_text.FULL_COLON not in raw:
+                continue
+            labels = [raw]
+            same = raw.find('も同じ')
+            opening = raw.rfind('（', 0, same) if same >= 0 else -1
+            if opening >= 0:
+                labels.append(raw[opening + 1:same])
+            for label in labels:
+                keys = help_text.key_bytes_from_label(label)
+                pending, translated = [[], None], []
+                for b in keys:
+                    translated += self.bindings.feed(b, ALL_CONTEXT, pending)
+                state, number = self.bindings.match(translated or keys)
+                if state == 'done':
+                    numbers.add(number)
+        if self.first_start_pager:
+            numbers |= {68, 69, 71, 72, 82}
+        self.pager_numbers_cache = (key, numbers)
+        return numbers
 
     def run_command(self, number, digit):
         """K-番号の機能を^Uの回数だけ(移動等)。^Xzのために覚える。"""
@@ -3741,6 +3779,21 @@ class Application:
     def toggle_language(self):
         """^Oj: 日本語/英語(HELPを見ていればその言語のHELPへ)。"""
         messages_ja.set_japanese(not japanese())
+        if self.current_mode == KEY:  # KEYはその場で切り換えた言語の一覧に(C++のreopenHelpInOtherLanguage())
+            cursor = self.key_view.cursor_index
+            self.current_mode = self.return_stack.pop() if self.return_stack else DIRECTORY
+            self.key_view.cursor_index = cursor
+            return self.start_key()
+        if self.current_mode == HELP:  # 平文のHELPは全体の中の割合の位置へ
+            fraction = self.help_view.cursor_index / max(1, len(self.help_view.lines))
+            back = list(self.return_stack)
+            self.current_mode = self.return_stack.pop() if self.return_stack else DIRECTORY
+            if self.open_plain_help(None):
+                self.return_stack = back
+                self.help_view.cursor_index = int(fraction * len(self.help_view.lines))
+                self.help_view.clamp()
+                self.center_on(self.help_view, self.help_view.cursor_index)
+            return True
         if self.in_epub_body() and self.epub_name == 'HELP':
             fraction = self.file_view.cursor_index / max(1, len(self.file_view.lines))
             back = list(self.return_stack)
