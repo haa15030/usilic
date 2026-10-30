@@ -2850,6 +2850,7 @@ class Application {
   int epubVerticalMarginBottom() const;
   // ^[+矢印+↑/↓(handleEpubMarginKey()): EPUBの余白の増減。
   bool handleEpubMarginKey(KeyInput::SpecialKey side, KeyInput::SpecialKey change);
+  void saveEpubMargins();  // 今の余白を~/.usilic/historyへ(次の起動はコンストラクタで読む)
   static std::optional<KeyInput::SpecialKey> epubMarginSideOf(KeyInput::SpecialKey key);
   int epubVerticalCurrentRaw() const;
   void syncEpubVerticalToFile();

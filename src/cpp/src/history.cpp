@@ -360,6 +360,13 @@ void History::setEpubSansSerif(bool sansSerif) {
 }
 void History::setEpubSansSerifImpl(bool sansSerif) { epubSansSerif_ = sansSerif; }
 
+std::array<int, 4> History::epubMargins() const { return epubMargins_; }
+void History::setEpubMargins(const std::array<int, 4> &margins) {
+  journal_.emplace_back([margins](History &h) { h.setEpubMarginsImpl(margins); });
+  setEpubMarginsImpl(margins);
+}
+void History::setEpubMarginsImpl(const std::array<int, 4> &margins) { epubMargins_ = margins; }
+
 int History::lsMode() const { return lsMode_; }
 void History::setLsMode(int mode) {
   journal_.emplace_back([mode](History &h) { h.setLsModeImpl(mode); });
@@ -656,6 +663,10 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
       iconGuiPreferences_.letterSpacingExtraHorizontal = std::atoi(toks[28].c_str());
       iconGuiPreferences_.letterSpacingExtraVertical = std::atoi(toks[29].c_str());
     }
+    // EPUBの余白(2026-10-30、epubMargins()参照)――同じ理由でさらに末尾に。無ければ0。
+    epubMargins_ = {};
+    if (toks.size() > 33)
+      for (int k = 0; k < 4; k++) epubMargins_[k] = std::max(0, std::atoi(toks[30 + k].c_str()));
   }
 
   complete_ = (i < lines.size() && !lines[i].empty() && lines[i][0] == kSubEof);
@@ -747,7 +758,9 @@ std::string History::serialize(const std::string &programName, const std::string
          std::to_string(iconGuiPreferences_.lineHeightExtraHorizontal) + " " +
          std::to_string(iconGuiPreferences_.lineHeightExtraVertical) + " " +
          std::to_string(iconGuiPreferences_.letterSpacingExtraHorizontal) + " " +
-         std::to_string(iconGuiPreferences_.letterSpacingExtraVertical) + "\n";
+         std::to_string(iconGuiPreferences_.letterSpacingExtraVertical) + " " + std::to_string(epubMargins_[0]) + " " +
+         std::to_string(epubMargins_[1]) + " " + std::to_string(epubMargins_[2]) + " " + std::to_string(epubMargins_[3]) +
+         "\n";
   out += std::string(1, kSubEof) + "\n";
   return out;
 }

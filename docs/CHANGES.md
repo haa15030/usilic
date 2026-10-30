@@ -33149,3 +33149,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 1145. (2026-10-30、直接のユーザー報告"-c/-g ともに^[を認識していないみたいで慣性スクロールが始まってしまう。不可解なのは横書きでちゃんと機能する時もある。縦書きでは一度も無い。") EPUBの余白のキー(項目1144)で、^[や辺の矢印の後の矢印を慣性スクロールに取られていた。
    - 原因: app/main.cpp(-gのキーの処理と-cのrunCoastLoop()の開始)は、Application::awaitingSequenceOrPromptByte()が偽なら矢印を慣性スクロールの開始・速さの変更に取る。これがescPending_等しか見ておらず、(1)^[+矢印の後の↑/↓を待っている間(epubMarginSide_)、(2)usilicrcのKEY節が^[を溜めている間(keyBindingPending_、^[gg等の続きを待つのでescPending_はまだ立たない)、(3)ページャーの制限が^[を溜めている間(pagerKeyBuffer_)を知らなかった。縦書きの本文では↑↓が慣性の開始なので(1)で必ず取られ、横書きは←→が開始なので(2)(3)の時だけ取られていた(-cで^[と矢印がひと続きに届いてShift+矢印になった時は通っていた)。
    - 直し: awaitingSequenceOrPromptByte()にこの3つを足した。試験用プログラム(build/harness)はapp/main.cppを通らないので、項目1144の確認では見えなかった。
+1146. (2026-10-30、直接のユーザー依頼"EPUBの余白CSSの件は...取り消しでいい。小説投稿サイトならこれで充分。あとはhistoryに残して次回も同じ設定になればいい（今はならんみたいだけど）。") EPUBの余白(項目1144)を~/.usilic/historyに残し、次の起動でも同じにする。
+   - History::epubMargins()/setEpubMargins(): {縦書きの上, 下, 横書きの左, 右}。USILICの行の末尾(epubSansSerif等と同じ形、古いhistoryなら0)。変えるたびにhandleEpubMarginKey()がsaveEpubMargins()で書き、Applicationのコンストラクタで読む。
+   - EPUBのCSSの余白(margin・padding)の反映はユーザーの判断で取り消し(項目1144の「別に」)。
+   - 確かめたこと: History単体で書いて読み戻すと同じ値、古いhistory(値無し)なら0。

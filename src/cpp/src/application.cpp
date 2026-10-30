@@ -853,6 +853,13 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       editMode_(keyInput, configuration),
       execMode_(keyInput, &history),
       copyMode_(copyView_) {
+  // EPUBの余白(^[+矢印、handleEpubMarginKey())は前回の終了時のまま(2026-10-30、~/.usilic/history)。
+  {
+    std::array<int, 4> margins = history.epubMargins();
+    epubMarginTop_ = margins[0];
+    epubMarginBottom_ = margins[1];
+    fileMode_.setEpubMargins(margins[2], margins[3]);
+  }
   layoutViews();
   // 2026-10-03(EPUBの画像、.steering/20261003-epub-image-page/): 画像のバイト列のプロバイダと、横書きの
   // 画像の帯の行数(FileMode::setEpubImageRows())。どちらも本の種類によらず1回だけ渡す(-gかどうかは
@@ -9254,6 +9261,7 @@ bool Application::handleEpubMarginKey(KeyInput::SpecialKey side, KeyInput::Speci
     if (delta > 0 && contentHeight - epubVerticalMarginTop() - epubVerticalMarginBottom() - 1 < 4) return false;
     if (next == margin) return false;
     margin = next;
+    saveEpubMargins();
     handleResize();  // 列の高さが変わる(epubBuiltSize_と違うので組み直す)
     return true;
   }
@@ -9263,11 +9271,17 @@ bool Application::handleEpubMarginKey(KeyInput::SpecialKey side, KeyInput::Speci
     if (margin + delta < 0 || (delta > 0 && display_.columns() - left - right - 1 < 20)) return false;
     margin += delta;
     fileMode_.setEpubMargins(left, right);
+    saveEpubMargins();
     epubMarginReflow_ = true;
     handleResize();  // 幅を狭く/広く組み直す
     return true;
   }
   return false;
+}
+
+// 2026-10-30、直接のユーザー依頼("historyに残して次回も同じ設定になればいい"): 今の余白を~/.usilic/historyへ。
+void Application::saveEpubMargins() {
+  history_.setEpubMargins({epubMarginTop_, epubMarginBottom_, fileMode_.epubMarginLeft(), fileMode_.epubMarginRight()});
 }
 
 std::vector<Application::EpubLogicalLine> Application::epubLogicalLines(bool skipHorizontal) const {

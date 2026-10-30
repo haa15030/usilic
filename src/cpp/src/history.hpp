@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <deque>
 #include <functional>
 #include <map>
@@ -240,6 +241,10 @@ class History {
   // (USILICのトレーラーの末尾)。既定は明朝体(本の指定どおり)。
   bool epubSansSerif() const;
   void setEpubSansSerif(bool sansSerif);
+  // 2026-10-30: EPUBの余白(^[+矢印、Application::handleEpubMarginKey())。{縦書きの上, 下, 横書きの左, 右}。
+  // epubSansSerif()と同じ永続化の形。既定は無し(全部0)。
+  std::array<int, 4> epubMargins() const;
+  void setEpubMargins(const std::array<int, 4> &margins);
   int lsMode() const;
   void setLsMode(int mode);
   // 未設定(新規の履歴)の場合、または読み込み時に環境の文字コードが
@@ -354,6 +359,7 @@ class History {
   bool smoothScrollEnabled_ = false;
   bool modeLineVisible_ = true;
   bool epubSansSerif_ = false;  // epubSansSerif()参照
+  std::array<int, 4> epubMargins_{};  // epubMargins()参照
   int lsMode_ = 0;
   GuiPreferences guiPreferences_;
   bool hasIconGuiPreferences_ = false;
@@ -380,6 +386,7 @@ class History {
   void setSmoothScrollEnabledImpl(bool enabled);
   void setModeLineVisibleImpl(bool visible);
   void setEpubSansSerifImpl(bool sansSerif);
+  void setEpubMarginsImpl(const std::array<int, 4> &margins);
   void setLsModeImpl(int mode);
   void setSavedCharsetImpl(Charset::Encoding encoding);
   void setGuiPreferencesImpl(const GuiPreferences &preferences, bool icon);
