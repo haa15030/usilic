@@ -580,8 +580,15 @@ class FileMode {
   // 2026-10-26: 縦書きの本の横書きの範囲(付録等)の前に、最低限あってほしい行の数(画面の行数から、Application)。
   // readAndWrap()参照。
   void setEpubHorizontalLeadRows(std::function<int()> rows) { epubHorizontalLeadRows_ = std::move(rows); }
-  // 2026-10-30: 横書きのEPUBの左右の余白の桁(readAndWrap()が幅をこの2倍だけ狭く組み、行の頭に空白で足した数、
-  // 0なら無し)。縦書きに組み直す時(Application::epubLogicalLines())に取り除く。
+  // 2026-10-30: 横書きのEPUBの左右の余白の桁(Application::handleEpubMarginKey()が変える、既定は無し)。
+  // readAndWrap()は幅をleft+rightだけ狭く組み、行の頭に空白をleft個足す。
+  void setEpubMargins(int left, int right) {
+    epubMarginLeft_ = left;
+    epubMarginRight_ = right;
+  }
+  int epubMarginLeft() const { return epubMarginLeft_; }
+  int epubMarginRight() const { return epubMarginRight_; }
+  // 直近のreadAndWrap()が実際に行の頭に足した空白の数。縦書きに組み直す時(Application::epubLogicalLines())に取り除く。
   int epubMarginColumns() const { return epubMarginColumns_; }
   // 読み込みを始める前(開けると分かった後、描く前)に呼ぶ関数。Applicationが、前に見ていたファイル
   // だけに関わる表示の状態(縦書きのEPUBの横書きの範囲で見せる行の範囲等)を消すのに使う(2026-10-06)。
@@ -666,6 +673,7 @@ class FileMode {
                                                      int width) const;
   EpubImageRows epubImageRows_;  // setEpubImageRows()参照
   std::function<int()> epubHorizontalLeadRows_;  // setEpubHorizontalLeadRows()参照
+  int epubMarginLeft_ = 0, epubMarginRight_ = 0;  // setEpubMargins()参照
   mutable int epubMarginColumns_ = 0;  // epubMarginColumns()参照
   std::function<void()> beforeLoad_;  // setBeforeLoad()参照
   std::string currentFile_;

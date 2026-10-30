@@ -2845,7 +2845,12 @@ class Application {
   int epubImagePageMarginColumns(int pageStart);
   void setEpubVerticalView(int first, int cursor, std::optional<int> link = std::nullopt);
   int epubVerticalRows() const;
-  int epubVerticalMarginRows() const;  // 縦書きの上下の余白の行(epubVerticalRows()の後のコメント参照)
+  // 縦書きの上・下の余白の行(epubMarginTop_・epubMarginBottom_を、列に4行は残るよう縮めたもの)
+  int epubVerticalMarginTop() const;
+  int epubVerticalMarginBottom() const;
+  // ^[+矢印+↑/↓(handleEpubMarginKey()): EPUBの余白の増減。
+  bool handleEpubMarginKey(KeyInput::SpecialKey side, KeyInput::SpecialKey change);
+  static std::optional<KeyInput::SpecialKey> epubMarginSideOf(KeyInput::SpecialKey key);
   int epubVerticalCurrentRaw() const;
   void syncEpubVerticalToFile();
   void saveFilePosition();  // fileMode_.saveCursorPosition()の前に縦書きの位置を合わせる
@@ -3473,6 +3478,13 @@ private:
   // その画面の^Gで一覧へ戻し、戻り値の欄に「FGREP: 文字列」を出す(2026-10-10)。
   std::optional<ApplicationMode> grepJumpMode_;
   bool leaderOJPending_ = false;
+  // 2026-10-30、直接のユーザー依頼("デフォルトは余白無し、キーアサインとしては横書きでは^[←↑/^[←↓で左端を増/減
+  // (右端は^[のあと→)、縦書きでは^[↑↑/^[↑↓で上端を増/減(下端は^[のあと↓)、usilicrcは関与せず"): EPUBの余白。
+  // 横書きの左右の桁はFileMode::setEpubMargins()、縦書きの上下の行はここ。usilicrcには書かず、起動している間だけ。
+  // epubMarginSide_は^[+矢印の後、↑/↓を待っている間の矢印。
+  int epubMarginTop_ = 0, epubMarginBottom_ = 0;
+  std::optional<KeyInput::SpecialKey> epubMarginSide_;
+  bool epubMarginReflow_ = false;  // 横書きの余白を変えたので、handleResize()で幅が同じでも組み直す
   ContentView listBrowserView_;
   // ^O^C(COPY): CopyMode自身の凍結されたスナップショットの裏付け
   // となるビュー――startCopy()自身のコメント参照。

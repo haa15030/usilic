@@ -2244,12 +2244,10 @@ void Application::layoutViews() {
   underlineView_.setViewport(0, contentHeight);
   listBrowserView_.setViewport(0, contentHeight);
   copyView_.setViewport(0, contentHeight);
-  // 縦書きは上下に余白(epubVerticalMarginRows())。モードラインはいつもの行に
-  int margin = epubVerticalMarginRows();
+  // 縦書きは上下に余白(epubMarginTop_参照)。モードラインはいつもの行に(ContentView::setMarginRows())
   for (ContentView *view : {&epubVerticalView_, &epubTocVerticalView_}) {
-    view->setViewport(margin, epubVerticalRows());
-    view->setMarginRows(margin, margin);
-    view->setModeLineRow(display_.modeLineVisible() ? std::optional<int>(contentHeight) : std::nullopt);
+    view->setViewport(epubVerticalMarginTop(), epubVerticalRows());
+    view->setMarginRows(epubVerticalMarginTop(), epubVerticalMarginBottom());
   }
   promptEditor_.setField(display_.rows() - 1, 0, std::max(1, display_.columns()));
 }
@@ -2857,6 +2855,18 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // 2026-10-10、直接のユーザー依頼(EmacsのoccurをFGREP/EGREPで、"暫定^T^Sと^T^J^S"): 今の画面の中で一致した
   // 行の一覧を出し、^Mでその行へ飛ぶ(従来のGREPの結果一覧、in-placeにしない)。
   // 2026-10-12、直接のユーザー依頼("^T^S→^O^S、^T^J^S→^O^J^S"): ^O^Sは下の^Oのswitch、^O^J^Sはここ。
+  if (epubMarginSide_) {  // ^[+矢印の後の↑/↓(handleEpubMarginKey())、他のキーは取り消し
+    KeyInput::SpecialKey side = *epubMarginSide_;
+    epubMarginSide_.reset();
+    return special && handleEpubMarginKey(side, *special);
+  }
+  // ^[+矢印を素早く押すとひと続きに届き、KeyInputはShift+矢印として返す(readEscapeSequence()参照)。Shift+矢印も同じ
+  if (special && !escPending_) {
+    if (auto side = epubMarginSideOf(*special); side && *special != *side) {
+      epubMarginSide_ = side;
+      return true;
+    }
+  }
   if (leaderOJPending_) {
     leaderOJPending_ = false;
     if (!special && byte == 0x13) return startOccurPrompt(GrepSyntax::Regex);
@@ -3400,8 +3410,11 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
   if (escPending_) {
     escPending_ = false;
     // ^[+矢印はEPUBの章送りだったが、2026-10-19に廃止(直接のユーザー依頼"縦横で矢印の向きが変わる紛らわしさと、
-    // すでに`;`/`:`キーがあるので廃止でいい")。何もしない。
-    if (special) return false;
+    // すでに`;`/`:`キーがあるので廃止でいい")。2026-10-30からはEPUBの余白(続く↑/↓で増減、handleEpubMarginKey())。
+    if (special) {
+      epubMarginSide_ = epubMarginSideOf(*special);
+      return epubMarginSide_.has_value();
+    }
     // "^[N"/"^[gg"(goto-line)自身の入口――上のgotoLineDigitsPending_/
     // gotoLineGPending_のコメント参照。数字が直接続けば(^[N)そのまま
     // gotoLineDigitsPending_へ、'g'が続けば(^[gg、Emacs自身のM-g g)
@@ -4068,7 +4081,10 @@ const std::vector<std::vector<int>> &Application::pagerAllowedKeys() {
 std::optional<bool> Application::gatePagerKey(int byte, std::optional<KeyInput::SpecialKey> special) {
   if (!pagerLaunch_ || keyColonListLaunch_) return std::nullopt;
   if (special) {
+    // ^[+矢印(EPUBの余白、handleEpubMarginKey())は、溜めていた^[を先に渡す
+    bool escape = pagerKeyBuffer_ == std::vector<int>{kEscape};
     pagerKeyBuffer_.clear();
+    if (escape) feedByteUngated(kEscape, std::nullopt);
     return std::nullopt;
   }
   if (pagerKeyBuffer_.empty() &&
@@ -9196,15 +9212,62 @@ int Application::fileRawLineAtCursor() const {
 
 int Application::epubVerticalRows() const {
   int contentHeight = display_.modeLineVisible() ? std::max(1, display_.rows() - 1) : std::max(1, display_.rows());
-  return std::max(1, contentHeight - 2 * epubVerticalMarginRows());
+  return std::max(1, contentHeight - epubVerticalMarginTop() - epubVerticalMarginBottom());
 }
 
-// 2026-10-30、直接のユーザー依頼("EPUB画面で縦書きなら上下...にマージンを入れられる？　縦書き小説ではモードラインに
-// 隣接ではやはり読みづらく"): 縦書きの上下に空ける行の数。縦書きのビューはこの行だけ下から始め(layoutViews())、
-// 列の高さ(epubVerticalRows())はその2倍だけ低い。行の少ない画面では空けない。
-int Application::epubVerticalMarginRows() const {
+// 2026-10-30(epubMarginTop_参照): 縦書きの上・下に空ける行。縦書きのビューは上の行だけ下から始め(layoutViews())、
+// 列の高さ(epubVerticalRows())はその分だけ低い。窓が小さくなって列に4行残らなければ、下から先に縮める。
+int Application::epubVerticalMarginTop() const {
   int contentHeight = display_.modeLineVisible() ? display_.rows() - 1 : display_.rows();
-  return contentHeight >= 12 ? 1 : 0;
+  return std::clamp(epubMarginTop_, 0, std::max(0, contentHeight - 4));
+}
+
+int Application::epubVerticalMarginBottom() const {
+  int contentHeight = display_.modeLineVisible() ? display_.rows() - 1 : display_.rows();
+  return std::clamp(epubMarginBottom_, 0, std::max(0, contentHeight - 4 - epubVerticalMarginTop()));
+}
+
+// 矢印(Shift+矢印も)の向き。矢印でなければ無し。
+std::optional<KeyInput::SpecialKey> Application::epubMarginSideOf(KeyInput::SpecialKey key) {
+  using K = KeyInput::SpecialKey;
+  switch (key) {
+    case K::Up: case K::ShiftUp: return K::Up;
+    case K::Down: case K::ShiftDown: return K::Down;
+    case K::Left: case K::ShiftLeft: return K::Left;
+    case K::Right: case K::ShiftRight: return K::Right;
+    default: return std::nullopt;
+  }
+}
+
+// ^[+矢印(side)の後の↑(増やす)/↓(減らす)。横書きのEPUBの画面では←が左・→が右の桁、縦書き(本文と章の一覧)では
+// ↑が上・↓が下の行。今の向きでない側(縦書きでの←等)は何もしない。
+bool Application::handleEpubMarginKey(KeyInput::SpecialKey side, KeyInput::SpecialKey change) {
+  using K = KeyInput::SpecialKey;
+  if (change != K::Up && change != K::Down) return false;
+  int delta = change == K::Up ? 1 : -1;
+  bool vertical = (currentMode_ == ApplicationMode::File && epubVerticalActive()) || epubVerticalListActive();
+  bool horizontal = currentMode_ == ApplicationMode::File && !vertical && isEpubFile(fileMode_.currentFile());
+  if (vertical && (side == K::Up || side == K::Down)) {
+    int &margin = side == K::Up ? epubMarginTop_ : epubMarginBottom_;
+    int contentHeight = display_.modeLineVisible() ? display_.rows() - 1 : display_.rows();
+    int next = std::max(0, std::min(margin, side == K::Up ? epubVerticalMarginTop() : epubVerticalMarginBottom()) + delta);
+    if (delta > 0 && contentHeight - epubVerticalMarginTop() - epubVerticalMarginBottom() - 1 < 4) return false;
+    if (next == margin) return false;
+    margin = next;
+    handleResize();  // 列の高さが変わる(epubBuiltSize_と違うので組み直す)
+    return true;
+  }
+  if (horizontal && (side == K::Left || side == K::Right)) {
+    int left = fileMode_.epubMarginLeft(), right = fileMode_.epubMarginRight();
+    int &margin = side == K::Left ? left : right;
+    if (margin + delta < 0 || (delta > 0 && display_.columns() - left - right - 1 < 20)) return false;
+    margin += delta;
+    fileMode_.setEpubMargins(left, right);
+    epubMarginReflow_ = true;
+    handleResize();  // 幅を狭く/広く組み直す
+    return true;
+  }
+  return false;
 }
 
 std::vector<Application::EpubLogicalLine> Application::epubLogicalLines(bool skipHorizontal) const {
@@ -9640,7 +9703,7 @@ std::vector<Display::ContentImage> Application::epubVerticalImagesFor(int first,
     int pageStart = c - column.imageSlice;
     if (!pages.insert(pageStart).second) continue;
     int k0 = pageStart - first;
-    out.push_back({fileMode_.currentFile() + "\n" + column.image, epubVerticalMarginRows(), display_.columns() - pitch * (k0 + perScreen),
+    out.push_back({fileMode_.currentFile() + "\n" + column.image, epubVerticalMarginTop(), display_.columns() - pitch * (k0 + perScreen),
                    epubVerticalRows(), pitch * perScreen});
   }
   return out;
@@ -10245,7 +10308,7 @@ bool Application::openSelectedEpubAsArchive() {
 // もう一度クリックするとactivateEpubVerticalColumn()(横書きのリンク行と同じ
 // 「1回目で選択、2回目で開く」)。
 bool Application::clickEpubVertical(int row, int column) {
-  row -= epubVerticalMarginRows();  // 上の余白(layoutViews())
+  row -= epubVerticalMarginTop();  // 上の余白(layoutViews())
   int k = epubVerticalColumnAt(column, display_.columns());
   long c = static_cast<long>(epubVerticalFirst_) + k;
   if (k < 0 || c >= static_cast<long>(epubVerticalCols_.size())) return false;
@@ -14419,7 +14482,7 @@ void Application::endEpubSelect() {
 
 // 画面の行・桁の字のマス(列の番号, 列の上からのマス)。列の間(行間)や画面の外は近い列・マスへ寄せる。
 std::pair<long, int> Application::epubSelectCellAt(int row, int column) const {
-  row -= epubVerticalMarginRows();  // 上の余白(layoutViews())
+  row -= epubVerticalMarginTop();  // 上の余白(layoutViews())
   int columns = display_.columns();
   int fromRight = std::max(0, columns - 1 - column);
   int k = std::min(fromRight / epubVerticalColumnPitch(), epubVerticalColumnsPerScreen(columns) - 1);
@@ -21101,6 +21164,8 @@ void Application::handleResize() {
   // 横書きの範囲(付録・奥付)に出入りするたびに行の高さが変わってここを通り、幅は同じなのに本の全体を組み直していた
   // (試験用プログラムで1歩に約0.3秒)。折り返しは幅だけで決まるので、縦書きの本で幅が変わっていなければ組み直さない。
   bool sameWidthEpub = (oldFileWidth == display_.columns() || keepHorizontalWrap) && epubBookVertical();
+  if (epubMarginReflow_ && !keepHorizontalWrap) sameWidthEpub = false;  // 横書きの余白を変えた(handleEpubMarginKey())
+  epubMarginReflow_ = false;
   // 2026-10-27、直接のユーザー報告(アイコンからの起動だけで、まえがきから戻って付録へ入る時に付録の最後の行が上から
   // 降りてこない。ICON-LETTER-SPACINGが横書き-1・縦書き0、"LETTER-SPACINGが怪しい"): 字間が縦横で違うと、横書きの
   // 範囲に出入りするたびに桁の数も変わってここで組み直す。reflow()はカーソルの行は元の行へ付け直すが、画面の一番上の

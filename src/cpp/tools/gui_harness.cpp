@@ -13,7 +13,8 @@
 //   LH0         行の高さを既定(LINE-HEIGHT無し)にする(無ければ横書き1.2・縦書き1.0)
 //   SNAPDIR     coastの1歩ごとの画面をf1.bmp, f2.bmp…として保存、BMP 最後の画面を保存
 //   操作: x1b等(16進の1バイト)、文字列(1字ずつ)、coast+N/coast-N(慣性の1歩をN回、先へ/前へ。1歩ごとに
-//         STEP/TIMEの行を標準エラーへ)、tcoast+N/tcoast-N(1行・1列ずつ)、snap:path(その時の画面を保存)、click:行,桁(左クリック)、flush
+//         STEP/TIMEの行を標準エラーへ)、tcoast+N/tcoast-N(1行・1列ずつ)、snap:path(その時の画面を保存)、click:行,桁(左クリック)、
+//         up/down/left/right(矢印キー)、flush
 #include "application.hpp"
 #include "graphical_display.hpp"
 #include "key_input.hpp"
@@ -117,6 +118,14 @@ int main(int argc, char **argv) {
       int row = 0, column = 0;
       std::sscanf(k.c_str() + 6, "%d,%d", &row, &column);
       std::fprintf(stderr, "CLICK %d,%d -> %d\n", row, column, app.handleMouseClick(row, column));
+      continue;
+    }
+    if (k == "up" || k == "down" || k == "left" || k == "right") {  // 矢印キー
+      KeyInput::SpecialKey key = k == "up" ? KeyInput::SpecialKey::Up : k == "down" ? KeyInput::SpecialKey::Down
+                                 : k == "left" ? KeyInput::SpecialKey::Left : KeyInput::SpecialKey::Right;
+      std::fprintf(stderr, "KEY %s -> %d\n", k.c_str(), app.feedByte(0, key));
+      gd.setVerticalLineSpacing(app.verticalLayoutShown());
+      if (gd.consumeSizeChanged()) app.handleResize();
       continue;
     }
     if (k.rfind("snap:", 0) == 0) { gd.flush(); gd.flush(); gd.flush(); snap(k.c_str() + 5); continue; }

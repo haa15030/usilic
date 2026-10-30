@@ -466,7 +466,7 @@ void ContentView::syncVisibleCursor() {
   // 見た目の好みではなく実際に間違った場所にあったことの、独立した
   // OSレベルの証拠。
   if (cursorAtModeLineTrailingEnd_ && lastModeLineTrailingEndColumn_ >= 0) {
-    display_.setVisibleCursor(modeLineRow_.value_or(row0_ + height_), lastModeLineTrailingEndColumn_);
+    display_.setVisibleCursor(modeLineRow_.value_or(row0_ + height_ + marginBottom_), lastModeLineTrailingEndColumn_);
     return;
   }
   if (!cursorHighlightEnabled_) {
@@ -2110,7 +2110,7 @@ void ContentView::renderModeLine() {
   std::string positionText = positionTextOverride_ ? *positionTextOverride_
                               : useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total)
                                                         : ModeLine::format(current, total);
-  int modeLineRow = modeLineRow_.value_or(row0_ + height_);
+  int modeLineRow = modeLineRow_.value_or(row0_ + height_ + marginBottom_);
 
   display_.moveCursor(modeLineRow, 0);
   display_.clearToEndOfLine();
@@ -2444,7 +2444,7 @@ void ContentView::renderModeLine() {
 // ――それはここで直接計算された明示的な列位置で直接描画する――
 // ので、幅ベースの兄弟へ切り替えることは安全である。
 void ContentView::renderSplitModeLine(const ModeLineFields &fields, const std::string &positionText) {
-  int modeLineRow = modeLineRow_.value_or(row0_ + height_);
+  int modeLineRow = modeLineRow_.value_or(row0_ + height_ + marginBottom_);
   int cols = display_.columns();
   if (cols <= 0) return;
 

@@ -31,7 +31,6 @@ namespace fm {
 // loadFileAsPipe()もこれを共有する――ファイル名だけ違う「読み込み
 // 経路」であって、折り返し方針自体はloadFileNoWrap()と揃えたいため。
 constexpr int kNoWrapWidth = 1 << 20;
-constexpr int kEpubMarginColumns = 2;  // 横書きのEPUBの左右の余白(readAndWrap()参照)
 
 // 2026-09-04追加、直接のユーザー依頼("usilic ~/git/usilic/src/HELP.txt
 // をサポートして"): CLIのファイル引数起動(usilic HELP.txt/usilic
@@ -659,12 +658,12 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path,
   // 挙動、水平スクロールバー等の新規UIは無い)。
   int effectiveWidth = noWrapMode_ ? kNoWrapWidth : width_;
   // 2026-10-30、直接のユーザー依頼("EPUB画面で縦書きなら上下、横なら左右にマージンを入れられる？...HELPは右に
-  // 偏っているのですこしでも中央へ寄せられたら"): 横書きのEPUBは左右にkEpubMarginColumns桁ずつ空ける(幅を
-  // 狭く組み、下で行の頭に空白を足す)。縦書きの上下はApplication::epubVerticalMarginRows()。
+  // 偏っているのですこしでも中央へ寄せられたら"): 横書きのEPUBは左右に余白(setEpubMargins())を空ける(幅を
+  // 狭く組み、下で行の頭に空白を足す)。縦書きの上下はApplication::epubVerticalMarginTop()。
   epubMarginColumns_ = 0;
-  if (!noWrapMode_ && isEpubFile(path) && width_ >= 40) {
-    epubMarginColumns_ = kEpubMarginColumns;
-    effectiveWidth -= 2 * epubMarginColumns_;
+  if (!noWrapMode_ && isEpubFile(path) && width_ - epubMarginLeft_ - epubMarginRight_ >= 20) {
+    epubMarginColumns_ = epubMarginLeft_;
+    effectiveWidth -= epubMarginLeft_ + epubMarginRight_;
   }
   PipeBuffer pipe(encoding_, effectiveWidth, 64L * 1024 * 1024, /*detectOverstrike=*/!rawControlCodesMode_);
   // 2026-09-25追加、直接のユーザー質問("^Mは中断できないの？"): 時間が

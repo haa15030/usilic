@@ -250,7 +250,7 @@ class ContentView {
   // 何行分の高さか。
   void setViewport(int row0, int height);
   // ビューポートの上のtop行・下のbottom行を、描くたびに空にする(縦書きのEPUBの上下の余白、2026-10-30、
-  // Application::layoutViews()参照)。
+  // Application::layoutViews()参照)。モードラインは下の余白のさらに下の行。
   void setMarginRows(int top, int bottom) {
     marginTop_ = top;
     marginBottom_ = bottom;
