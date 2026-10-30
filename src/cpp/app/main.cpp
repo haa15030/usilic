@@ -6231,7 +6231,9 @@ int main(int argc, char **argv) {
     if (gTerminalFontPath.empty()) gTerminalFontPath = fm::resolveLinuxFontPath(appearance->fontName);
   }
   auto bounds = (forceCui || !appearance) ? std::nullopt : queryRealTerminalWindowBounds();
-  if (appearance && bounds) {
+  // 2026-10-31、直接のユーザー報告("-g起動では^Ogが利かない"): 端末からの-gは、この「始めから終わりまでGUI」の
+  // 起動(^Ogで端末へ戻れない)ではなく、下のforceGuiの起動(^Ogを1回押したのと同じtryEnterGuiPhase())で開く。
+  if (appearance && bounds && !forceGui) {
     // savedGui.fontPathをここでも尊重する理由はtryEnterGuiPhase()自身の
     // コメントと同じ: "-f <path>"で明示指定された以上、実端末の自動
     // マッチより優先されるべきため。
@@ -6608,7 +6610,7 @@ int main(int argc, char **argv) {
       // 2026-10-16、直接のユーザー依頼(Ubuntu、"もう重ねなくていい。直す案で作ってみて"): 端末に重ねられない時
       // (Linuxは端末の窓の位置を調べられない)も、読み取れた端末の色・フォント(appearance)で開き、終わりに
       // 保存する(^Ogと同じ、tryEnterGuiPhase()の終わりの保存)。アイコンからの起動はその保存した設定で開く。
-      if (!tryEnterGuiPhase(app, display, *terminalDisplay, history, appearance)) {
+      if (!tryEnterGuiPhase(app, display, *terminalDisplay, history, appearance, bounds)) {
 #ifdef _WIN32  // コンソールが無いので(端末の画面にも戻れない)、メッセージボックスで
         fm::showWindowsError("Cannot open the usilic window (no font found in C:/Windows/Fonts, or SDL2.dll/SDL2_ttf.dll "
                              "missing next to usilic.exe).");

@@ -33167,3 +33167,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **原因**: 項目787のactivateThisApplication()(NSRunningApplicationのactivateWithOptions・NSAppのactivateIgnoringOtherApps)は、macOS 14から効かない(前面化は前面のアプリが譲る形になった、ビルドの警告も"will have no effect")。1回目は起動したばかりのアプリとして前に出られるが、GUI→CUIで端末をosascriptで前に出した後の2回目以降は断られる。
    - **直し**: GraphicalDisplay::raise()は、SDL_RaiseWindow()とactivateThisApplication()の後、0.3秒待っても窓に入力のフォーカスが来なければ、System Eventsにこのプロセスを前面にしてもらう(forceActivateThisApplication()、mac_cursor.mm、osascriptの`set frontmost of (first process whose unix id is PID) to true`)。初回はSystem Eventsの操作の許可を聞かれることがある。
    - 確かめたこと: make usilic・make install・make app。実機の^Ogの行き来は未確認。
+1149. **-g・アイコンからの起動でも^OgでCUIへ(2026-10-31)**
+   - **経緯**: 直接のユーザー報告("-g起動では^Ogが利かない。")。
+   - **原因**: (1)Terminal.app・iTerm2からの-gは、端末の色・窓の位置が分かると「始めから終わりまでGUI」の起動(main()のguiOwnsWholeSession)に入っていた。この起動は端末へ戻る作りが無く(setGuiToggleReturnsToTerminal()を立てない)、^Ogは「Already in GUI」。(2)アイコンからの起動(端末無し)は、そもそも戻る端末が無い。
+   - **直し**: (1)端末からの-gはguiOwnsWholeSessionに入らず、^Ogを1回押したのと同じtryEnterGuiPhase()で開く(端末の窓の位置・大きさも渡すので、重ね方は^Ogと同じ)。^Ogで下の端末へ戻れる。(2)戻る端末の無いいちばん上の親の^Og(Command::ToggleGuiMode)は、端末の新しいウィンドウ(openInNewTerminalWindow())で引数無しの`usilic -c`を起動する。新しい方は起動時に~/.usilic/pidのこのプロセスをSIGTERMで終わらせ(終わる時にhistoryへ今の画面を保存する)、それを読んで同じ画面から始める。子(HELP・KEYの窓)は親がいなくなると終わる。引数付きの起動(historyに今の画面を保存しない)では、前回の引数無しの起動の画面になる。
+   - 確かめたこと: make usilic・make install・make app。実機は未確認。

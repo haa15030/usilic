@@ -5744,7 +5744,14 @@ bool Application::handleCommandImpl(Command command) {
       return false;
     case Command::ToggleGuiMode:
       if (display_.isGraphical() && !guiToggleReturnsToTerminal_) {
-        showTransientNotice(activeView(), "Already in GUI");
+        // 2026-10-31、直接のユーザー報告("-g起動では^Ogが利かない"): 戻る端末の無いいちばん上の親(アイコンからの
+        // 起動等)は、端末の新しいウィンドウで引数無しの`usilic -c`を起動する。新しい方は起動時に~/.usilic/pidの
+        // このプロセスをSIGTERMで終わらせ(終わる時にhistoryへ今の画面を保存する)、それを読んで同じ画面から始める。
+        // 子(HELP・KEYの窓)は親がいなくなると終わる(transientParentGone())。
+        if (parentPid_ <= 0 && openInNewTerminalWindow(directoryMode_.currentDirectory(),
+                                                       "unset USILIC USILIC_HANDOFF; usilic -c"))
+          return true;
+        showTransientNotice(activeView(), parentPid_ > 0 ? "Already in GUI" : "Cannot open a terminal window");
         return false;
       }
       // 2026-10-17、直接のユーザー依頼("ssh起動かどうかはわかる？わかるなら-c固定で"): ssh越し(SSH_CONNECTION・
