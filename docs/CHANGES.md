@@ -33258,3 +33258,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告(FreeBSD、項目1168のgit pullの後、"gmake: Nothing to be done for 'usilic'."、"これっておかしくない？")。
    - **原因と変更**: src/cpp/Makefileのbuild/usilic・run_tests・harnessの規則は.cppだけに依存していた(全部を1回のc++で組むので.oの依存が無い)→src/・app/の.hpp・.hもHDRSとして依存に足す。項目1168の「確かめたこと: make usilic」も、実際には作り直されていなかった(この修正の後に作り直して通ることを確かめた)。
    - 確かめたこと: make usilicがapplication.hppの変更で作り直し、通る。
+1170. **HELPの本文から入ったSHELLの戻り値が「/home/usilic/.usilic/HELP.epub」(2026-10-31)**
+   - **経緯**: 直接のユーザー報告(FreeBSD、"SHELLの戻り値が「/home/usilic/.usilic/HELP.epub」なのはNGかなと。HELPはHELP.epubを表示するのではなく(それだと通常ファイルへのアクセスなので^J^Jの対象になってしまう)、その場でHELP.1を.epubにコンバートした画面だったはず。なので戻り値「HELP」でないと")。
+   - **変更**: previousModeName()のFILEで、開いているのがhelpEpubPath()(HELP.1から作ったEPUB)なら「HELP」。項目1166(章の一覧から入った時)と合わせて、HELPのどこから入っても「HELP」。
+   - 確かめたこと: make usilic(作り直されたことも確かめた)。

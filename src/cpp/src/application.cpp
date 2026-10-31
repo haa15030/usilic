@@ -12179,7 +12179,12 @@ std::string Application::previousModeName(ApplicationMode mode) const {
       // 表示経路(SHELL/KEY自身の「戻り値」trailingフィールド)は、
       // 一度も同じ認識を得ておらず、代わりに生の合成されたパスを表示
       // していた。
-      return fileMode_.currentFile() == bannerFilePath() ? "INFO" : fileMode_.currentFile();
+      if (fileMode_.currentFile() == bannerFilePath()) return "INFO";
+      // 2026-10-31、直接のユーザー報告(HELPの本文から入ったSHELLの戻り値が「/home/usilic/.usilic/HELP.epub」):
+      // HELPはHELP.1をその場でEPUBにしたもので(helpEpubPath()、ふつうのファイルとして開いたのではない)、モード名も
+      // 「HELP」。戻り値も「HELP」。
+      if (fileMode_.currentFile() == helpEpubPath()) return "HELP";
+      return fileMode_.currentFile();
     // Man(2026-09-19修正、直接のユーザー報告"^Jmls^M^S→戻り値不良。
     // 正しくは「MAN: ls」"): すぐ下のLocateのケースと全く同じ穴――
     // ここは裸の"ls"を返しており、drawPromptLabel()自身のtrailing
