@@ -39,6 +39,7 @@ Linux(gcc)と macOS(clang、Homebrew は不要)でビルドできます。
 - KEY モードの segv、execvp() に失敗した子の暴走、pipe() の呼び忘れ、fileno(NULL)。
 - macOS で SHELL のキーを押すと全体が固まるのを、エラーで戻るようにした(下記)。
 - usilicrc の FILE 節で gzip 以外のプログラム(bzip2・nkf 等)に通すファイルを開くと segv(`is_child()` が表の終わりの印で配列の外を strcmp() していた)。
+- (ls)・ファイルのカーソルの位置が保存されず、戻ると最上行になる(`load_ll()` が位置の一覧の欄の番号を 4 バイトで割って出していて、64bit では 2 倍にずれていた)。
 
 当てていないもの(クラッシュではないもの): UTF-8 への対応、表示の化け、macOS の tar の `._` ファイルの取り違え、CP/MV/RM のカーソル位置、ファイル名の空白の扱い等。
 

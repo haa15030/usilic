@@ -127,7 +127,8 @@ PP *disp_pp(PP *pp, int f_mark)/*usilic*/
 { /* print line */
   int i, f_pp, f_rc = 0;
   
-  if ((f_pp = (int)pp)) i = 0;
+  if ((f_pp = (pp != NULL))) i = 0; /* usilic.old: was (int)pp, a pointer whose low
+				       32 bits are 0 was taken as NULL on 64-bit */
   else { /* no line */
     vt_move(0, 0);
     vt_eeol();

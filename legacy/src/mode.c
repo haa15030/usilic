@@ -400,7 +400,11 @@ int load_ll(CHILD *chp, ARRAY *ap, u_char prev[], CUT *cutp, HEAP *hp, PN *pnp, 
       break;
     }
   }
-  return (lp) ? (((u_int)lp - (u_int)&hp->ll.a[0]) / sizeof(u_int)) : i;
+  /* usilic.old: was ((u_int)lp - (u_int)&hp->ll.a[0]) / sizeof(u_int): the slots
+     of hp->ll are pointers (8 bytes on 64-bit), so dividing by 4 doubled the
+     index (dir 2 -> 4, file 1 -> 2) and save_ll() threw the cursor position
+     away: (ls) always came back at the top line */
+  return (lp) ? (int)(((char*)lp - (char*)&hp->ll.a[0]) / sizeof(hp->ll.a[0])) : i;
 }
 
 int mode(HEAP *hp, NUM *np, ARRAY *ap, LINE *lp, RV *rvp)/*mode*/
