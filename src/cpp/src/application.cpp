@@ -12495,6 +12495,7 @@ bool Application::shellInsertName() {
                                              : directoryMode_.currentDirectory() + entry->name;
   } else if (currentMode_ == ApplicationMode::File || shellReturnMode_ == ApplicationMode::File) {
     name = fileMode_.currentFile();  // 既にフルパス
+    if (name.empty()) name = fileMode_.pipeSourceFile();  // ^O^Mで開いたもの(FileMode::pipeSourceFile()参照)
   }
   if (name.empty()) return false;
   if (!ensureShellActive()) return false;
@@ -12695,6 +12696,10 @@ bool Application::openExternallyIfApplicable(const std::string &path) {
   if (canOpenVideos() && isVideoFile(path)) return openVideos({path});  // 2026-10-05、openVideos()参照
   // 2026-10-04: -gではJPEG/PNG/GIF/BMPはusilicの画面で表示する(isViewableImageFile()参照)。
   if (display_.isGraphical() && isViewableImageFile(path)) return false;
+  // 2026-10-31、直接のユーザー報告(670MBの.xzの^Mが、legacyは瞬時なのにusilicは数秒かかる): FILTER・ARCHIVEの
+  // 拡張子(.gz・.xz・.tar等)はusilicが展開して見せるので、クイックルックの下調べ(最初の1回のqlmanage -m pluginsが
+  // 数秒かかることがある、quickLookSupportedTypes())をしない。
+  if (configuration_.programForSuffix(path)) return false;
   if (::access("/usr/bin/qlmanage", X_OK) != 0 || !fileMode_.isBinaryFile(path)) return false;
   ChildProcess::Result result = ChildProcess::run({"file", "-b", "--mime-type", path});
   std::string mime = result.ok ? result.output.substr(0, result.output.find('\n')) : "";

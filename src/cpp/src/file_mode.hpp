@@ -227,6 +227,9 @@ class FileMode {
   }
 
   const std::string &currentFile() const;
+  // ^O^M(loadFileAsPipe())で開いたファイル(2026-10-31、直接のユーザー報告"^Jwが利かない"): パイプとして流すので
+  // currentFile()は空になる。^Jw(Application::shellInsertName())は、こちらを使う。他の読み込みでは空。
+  const std::string &pipeSourceFile() const { return pipeSourceFile_; }
 
   // K-27(^Oa、M_ascii、「Switch ascii mode」): 「次の」loadFile()/
   // reflow()呼び出しで使われるエンコーディングを変更する――既に
@@ -705,6 +708,9 @@ class FileMode {
   std::string contentProgramOverride_;  // setContentProgram()参照  // loadTransformedPagerFile()の`label`(モードラインの名前、空ならパス)。loadStream()が消す
   std::string pagerListingDirectory_;     // setPagerListingDirectory()自身の宣言コメント参照
   int streamFd_ = -1;
+  // FILTER(.gz・.xz等)の出力を流している子のpid(loadFileAsPipe()、2026-10-31)。closeStream()で止める。
+  pid_t streamChildPid_ = -1;
+  std::string pipeSourceFile_;  // pipeSourceFile()参照
   bool streamOwnsFd_ = false;
   bool streamAtEof_ = false;
   bool lastLoadAttemptYieldedNothing_ = false;  // lastLoadAttemptYieldedNothing()自身の宣言コメント参照

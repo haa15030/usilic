@@ -983,17 +983,42 @@ bool FileMode::loadFileAsPipe(const std::string &path) {
   probe.close();
 
   rawControlCodesMode_ = false;
+  // 2026-10-31、直接のユーザー報告(670MBの.xzを^O^Mで開くと、legacyは瞬時に冒頭が出るのにusilicは十数秒かかる):
+  // FILTER(.gz・.xz等、loadAndTransformContent()参照)は、子の出力を全部受け取るまで待っていた(展開後は数GB)。
+  // legacyと同じく、子の出力をパイプのまま流し、画面に出る分だけ読む。子は閉じる時に止める(closeStream())。
+  ArchiveKind kind = ArchiveKind::None;
+  auto filter = configuration_.programForSuffix(path, &kind);
+  if (filter && kind == ArchiveKind::None && !filter->argv.empty() && !configuration_.isExec(path) &&
+      !isEpubFile(path)) {
+    std::vector<std::string> argv = filter->argv;
+    argv.push_back(path);
+    ChildProcess::AsyncCapture capture = ChildProcess::startCapturing(argv);
+    if (capture.fd >= 0) {
+      int flags = ::fcntl(capture.fd, F_GETFL);
+      if (flags >= 0) ::fcntl(capture.fd, F_SETFL, flags & ~O_NONBLOCK);  // 最初の画面は子の出力を待って読む
+      loadStream(capture.fd, /*ownsFd=*/true, "", 1, /*noWrap=*/false);
+      streamChildPid_ = capture.pid;
+      contentProgram_ = std::filesystem::path(argv.front()).filename().string();
+      annotations_.pushWithNameOverride(FileAnnotationKind::Search, "", "(stdin)");
+      setPagerReturnsToDirectory(true);
+      pipeSourceFile_ = path;
+      return true;
+    }
+  }
   if (!isHelpMarkupPagerFile(path) && !isMarkdownFile(path) && !looksLikeRoffDocument(head) && !looksBinary(head)) {
     int fd = ::open(path.c_str(), O_RDONLY);
     if (fd >= 0) {
       loadStream(fd, /*ownsFd=*/true, "", 1, /*noWrap=*/false);
       annotations_.pushWithNameOverride(FileAnnotationKind::Search, "", "(stdin)");
       setPagerReturnsToDirectory(true);
+      pipeSourceFile_ = path;
       return true;
     }
   }
   std::string content = loadAndTransformContent(path);
-  return loadContentAsPipe(content);
+  if (!loadContentAsPipe(content)) return false;
+  pipeSourceFile_ = path;
+  return true;
 }
 
 // loadContentAsPipe()自身の宣言コメント(file_mode.hpp)参照――
@@ -1313,6 +1338,8 @@ void FileMode::saveCursorPosition() {
 
 void FileMode::closeStream() {
   if (streamFd_ >= 0 && streamOwnsFd_) ::close(streamFd_);
+  if (streamChildPid_ > 0) ChildProcess::terminate(streamChildPid_);  // 読み終えていないFILTERの子(loadFileAsPipe())
+  streamChildPid_ = -1;
   streamFd_ = -1;
   streamOwnsFd_ = false;
   streamAtEof_ = false;
@@ -1457,6 +1484,7 @@ std::vector<ContentView::Line> FileMode::convertPipeLines() const {
 bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, int initialLineBudget,
                            bool noWrap) {
   closeStream();
+  pipeSourceFile_.clear();  // loadFileAsPipe()は、この後で入れ直す
   restoredPosition_.reset();  // historyの位置で開いたものではない(placeSavedPosition()参照)
   view_.setCursorHighlightEnabled(false);
   noWrapMode_ = noWrap;  // 自身の宣言コメント参照(file_mode.hpp) -- 前回のセッションからの取り残しを防ぐ明示的な上書き
