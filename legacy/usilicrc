@@ -71,6 +71,7 @@ FILE
 	.log	nkf	-e
 	.1	nkf	-e
 	.man	nkf	-e
+	.jp	nkf	-e
 #	.dvi	dvi2tty
 
 EXEC
