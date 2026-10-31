@@ -12267,7 +12267,17 @@ std::string Application::previousModeName(ApplicationMode mode) const {
     // "CUT"が属すべき場所に"usilic v1.5b"を表示していた。
     case ApplicationMode::Cut:
     case ApplicationMode::CutContent:
-      return "PART";
+      // 2026-10-31、直接のユーザー報告(HELPの章の一覧から^[sで入ったSHELLの戻り値が「PART」): 一覧自身のモード名
+      // (cutView_のモードラインと同じ)に。HELP/EPUBの章の一覧はHELP/EPUB、KEY・LOG等はその名前、それ以外はPART。
+      switch (cutOrigin_) {
+        case CutOrigin::Key: return "KEY";
+        case CutOrigin::Log: return "LOG";
+        case CutOrigin::Man: return "MAN";
+        case CutOrigin::Locate: return "LOCATE";
+        case CutOrigin::Du: return "DU";
+        case CutOrigin::Epub: return fileMode_.currentFile() == helpEpubPath() ? "HELP" : "EPUB";
+        default: return "PART";
+      }
     // 2026-09-20追加、Command::StartUnderlineView自身の宣言コメント
     // 参照(`^Ou`)――すぐ上のShell/Cut自身のリテラルな一語のケースと
     // 同じ理屈(UNDER一覧自身の画面には、クエリ/パターンのような
