@@ -33278,3 +33278,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告(FreeBSDの-gのHELPに表紙が無い、"HELP_.txtを更新してないからかなと")。doc/HELP.1は表紙の行(usilic-cover-line)が0行で、make help-man以外で作られていた(10/29のHISTORY.md:53759で伝えた件)。"コミットして"。
    - **変更**: ~/HELP.txt・~/HELP_en.txt(どちらも10/30 10:42、前のdoc/HELP.1と同じ)からmake help-manで作り直した。本文は.THの日付だけが違い、他は表紙の行と、埋め込んだ注釈の元(今のsrc/usilicrc・usilicrc.en・doc/HELP.en.notes)の差。
    - 確かめたこと: 両方に表紙の行が1038行。
+1175. **HELPとdocs/BUILD.mdにFreeBSDのインストールの案内(2026-11-01)**
+   - **経緯**: 直接のユーザー依頼("FreeBSDはサーバー用途以外ではあまり使われていないので、インストールの際の手順も記しておけば試してみたいユーザーには寄与できるかも。かく言う自分もrootのパスワード設定をしなかったりキーボード設定をjp106にしたはずなのにそうなってないとかあるので、インストールの案内もマニュアルに入れてみて")。あわせて、端末に重ねる-gは"Waylandへの移行がLinuxでの流れならFreeBSDでも同じかと思うので重ね合わせはmacOSだけでいい"。
+   - **変更**: src/HELP_.txt・src/HELP_en_.txt(アシスタント用の原稿、追跡対象外)の「必要なソフトウェア」の終わりにFreeBSDの段落(bsdinstallでrootのパスワードとwheel・video、忘れた時のシングルユーザーモード、キーボードはコンソールだけ、pkg bootstrap・pkg install、gmake、PATH、Xfce・NVIDIAドライバ・ja-font-ipa、メニューのアクセサリ、重ねない)、最初の起動の案内のコマンドにFreeBSDのsudo pkg install。docs/BUILD.mdにFreeBSDの節。
+   - 確かめたこと: 日英の行の位置が合う(886行目から)。

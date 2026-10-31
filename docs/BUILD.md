@@ -100,6 +100,29 @@ make usilic
 make test
 ```
 
+## FreeBSD(2026-10-31、16.0-CURRENTで確認)
+
+Makefileは GNU make の書き方なので、FreeBSD標準の`make`ではなく`gmake`を使う。コンパイラ(clang)とncursesはベースシステムにある。
+
+```
+# rootで
+pkg bootstrap
+pkg install git gmake pkgconf sudo sdl2 sdl2_ttf
+
+# ユーザーで
+git clone https://github.com/haa15030/usilic.git
+cd usilic/src/cpp
+gmake usilic
+gmake install          # ~/.local/bin/usilic、~/.local/share/applications/usilic.desktop
+```
+
+- `~/.local/bin`は既定のPATHに無いので、`~/.profile`に`PATH=$HOME/.local/bin:$PATH; export PATH`を足す。
+- `su`はwheelグループのユーザーだけ(`pw groupmod wheel -m ユーザー名`)。sudoは`visudo`で`%wheel`の行を有効にする。
+- GUI(-g、アイコンからの起動)はX11とXfce等が要る。NVIDIAなら`pkg install nvidia-driver nvidia-xconfig xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa`、`sysrc kld_list+=nvidia-modeset dbus_enable=YES lightdm_enable=YES`、`nvidia-xconfig`、再起動(Intel・AMDは`drm-kmod`)。CURRENTでは`kldload nvidia-modeset`が失敗するならportsからビルドする。
+- 最初の起動のインストールの案内は`sudo pkg install -y groff mg texinfo 7-zip w3m`。
+- インストーラで選んだキーボード(jp106等)はコンソールだけ。Xfceでは設定→キーボード→レイアウトで別に選ぶ。
+- 端末に重ねる-gはmacOSだけ(Linux・FreeBSDは重ねない、ユーザー判断2026-10-31)。
+
 ## Windows(WSL2)
 
 2026-10-05追加(`.steering/20261005-windows-wsl2/`)。WSL2の中身は普通のUbuntuなので、上の
