@@ -83,9 +83,9 @@ PROT=	code.P mode.P tc.P usilic.P
 .c.o:
 	\$(CC) -c \$(CFLAGS) \$<
 
-default: usilic
+default: usilic.old
 
-usilic:	\$(PROT) \$(OBJS)
+usilic.old:	\$(PROT) \$(OBJS)
 	\$(CC) \$(LDFLAGS) -o \$@  \$(OBJS) \$(LIBS)
 
 EOF
@@ -122,7 +122,7 @@ debug:
 	ln -sf ../config.h debug
 
 clean:
-	rm -rf usilic \$(OBJS) \$(PROT) *~ debug
+	rm -rf usilic.old \$(OBJS) \$(PROT) *~ debug
 EOF
 
 if [ -f src/Makefile ]; then
@@ -172,8 +172,8 @@ echo 'Installing usilic:'
 mkdir -p \$1$BIN
 mkdir -p \$1$LIB
 mkdir -p \$1$MAN
-echo "install $COPY -m 755 src/usilic \$1$BIN/usilic.old"
-install $COPY -m 755 src/usilic \$1$BIN/usilic.old
+echo "install $COPY -m 755 src/usilic.old \$1$BIN/usilic.old"
+install $COPY -m 755 src/usilic.old \$1$BIN/usilic.old
 echo "install $COPY -m 644 usilicrc \$1$LIB/usilic.oldrc"
 install $COPY -m 644 usilicrc \$1$LIB/usilic.oldrc
 echo "install $COPY -m 644 doc/HELP \$1$LIB"

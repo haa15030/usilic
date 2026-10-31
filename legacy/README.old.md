@@ -11,7 +11,7 @@ C++ 版の usilic(新)と並べて入れられるよう、名前と置き場所�
 
 ```
 cd legacy
-make            # config.sh が src/Makefile・src/config.h を作り、src/usilic をビルド
+make            # config.sh が src/Makefile・src/config.h を作り、src/usilic.old をビルド
 make install    # ~/.local へ入れる
 make clean
 ```

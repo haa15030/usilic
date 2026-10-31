@@ -33201,3 +33201,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **原因**: legacy/src/child.cのis_child()は、FILE節のプログラムの名前を表(groff・tar・lha・unzip・rpm・deb・gzip、終わりの印は-1)と比べる時、終わりの印でも先に`strcmp(*chp->argv, s_S(-1))`をしていた。s_S(-1)はStr.S[]の外(64bitではNULL)なので、表に無い名前(nkf、もともとある.bz2のbzip2も)で落ちていた(lldbのバックトレースで確認、is_child()のchild.c:276のstrcmp)。gzipは表の中で一致するので無事だった。32bitの頃はたまたま有効なポインタだったと思われる。legacyのinit_bin()等はSIGSEGVを受け止めて「(Segmentation fault: …」と表示するだけなので、usilicは終わらない。
    - **直し**: 終わりの印かどうかを先に調べる(順序の入れ替えだけ)。legacy/README.old.mdの「当てた修正」に足した。なお、legacy/のMakefileはconfig.hしか見ていないので、ソースを直した後はlegacy/src/でmakeしないと組み立て直されない。
    - 確かめたこと: 疑似端末で(ls)から^Mで、2000バイトの.txt(nkf)・.bz2(bzip2)・~/HELP.txtと同じ83KBの.txtを開き、どれも落ちずに読めた(モードラインに(nkf)・(bzip2))。
+1157. **legacy: makeで作るバイナリの名前をusilicからusilic.oldに(2026-10-31)**
+   - **依頼**: 直接のユーザー依頼("make で作成されるバイナリ名をusilicではなくusilic.oldにして。")。
+   - **変更**: legacy/config.sh(src/Makefileの目標とclean、install.shの元のファイル)とlegacy/Makefile(default・all・install・clean)。インストール先の~/.local/bin/usilic.oldは前から同じ名前。cleanは古い名前のsrc/usilicも消す。legacy/README.old.mdのビルドの説明も直した。
+   - 確かめたこと: legacy/でmakeして、src/Makefile・install.shが作り直され、src/usilic.oldができる。
