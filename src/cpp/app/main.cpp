@@ -2369,6 +2369,12 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
   // (mg・w3mは無い)。infoはtexinfo、7zはp7zipに入っている。
   const std::vector<std::pair<std::string, std::string>> tools = {
       {"groff", "groff"}, {"info", "texinfo"}, {"7z", "p7zip"}, {"unzip", "unzip"}};
+#elif defined(__FreeBSD__)
+  // FreeBSD(2026-10-31、直接のユーザー報告: FreeBSD 16.0-CURRENTの初回起動で`sudo apt install …`が置かれた):
+  // pkgのパッケージ名。infoはtexinfo、7-Zipは7-zip(コマンド名は7zz、sevenZipCommand()参照)。
+  // unzipはベースシステムに入っている。
+  const std::vector<std::pair<std::string, std::string>> tools = {
+      {"groff", "groff"}, {"mg", "mg"}, {"info", "texinfo"}, {"7zz", "7-zip"}, {"w3m", "w3m"}};
 #else
   const std::vector<std::pair<std::string, std::string>> tools = {
       {"groff", "groff"}, {"mg", "mg"}, {"info", "info"}, {"7z", "p7zip-full"}, {"w3m", "w3m"}, {"unzip", "unzip"}};
@@ -2382,7 +2388,8 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
         found = !findExecutable("7z").empty() || !findExecutable("7zz").empty();
       if (!found) missing.push_back(tool.second);
     }
-#if !defined(__APPLE__) && !defined(__MSYS__) && !defined(__CYGWIN__)
+#if !defined(__APPLE__) && !defined(__MSYS__) && !defined(__CYGWIN__) && !defined(__FreeBSD__)
+    // FreeBSDは除く(fonts-noto-cjkはDebian/Ubuntuのパッケージ名で、フォントの場所も違う。-gは未確認)。
     // 2026-10-05(.steering/20261005-windows-wsl2/): -gの日本語に要るNoto CJKフォント(GraphicalDisplayが
     // 探す場所)がどれも無ければfonts-noto-cjkも。WSL2のUbuntuには最初は入っていない。
     {
@@ -2441,6 +2448,10 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
     // MSYS2の端末ならpacman。Git Bashにはパッケージ管理が無いので案内しない(空を返す)。
     if (findExecutable("pacman").empty()) return "";
     return "pacman -S --needed --noconfirm" + packages;
+#elif defined(__FreeBSD__)
+    // -y: pkgの確認(Proceed with this action? [y/N])を省く。sudoが無ければsu(wheelならrootのパスワード)。
+    if (!findExecutable("sudo").empty()) return "sudo pkg install -y" + packages;
+    return "su -m root -c 'pkg install -y" + packages + "'";
 #else
     return "sudo apt install -y" + packages;  // -y: aptの確認(Y/n)を省く(2026-09-27)
 #endif
