@@ -33254,3 +33254,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー指摘(初回起動の親の右下はusilic-1.5bなのに、SHELLのプロンプトがUSILIC:で紛らわしい)。選択肢を出して、"A''"(プロンプトを普段と同じに)。理由: "HELPがまだ表示されていないがゆえに先入観も無いユーザーの記憶にはusilic-1.5b(SHELLプロンプト)が残る可能性が高い。あとになってページャー起動したとき、機能限定SHELLになったときもusilic-1.5bでないと違和感があるはず"。10/29(項目「初回起動のページャー」)の暫定の「USILIC」は取り消し。
    - **変更**: Application::setFirstStartPager()でShell::setPromptName("USILIC")をやめる。src/HELP_.txt・src/HELP_en_.txtの冒頭の「プロンプトは USILIC」を「画面右下と同じ usilic-1.5b」に。^[lのLOGの区切り("usilic-1.5b:")で初回のSHELLのログも区切られるようになる。
    - 確かめたこと: make usilic。
+1169. **ヘッダ(.hpp)だけが変わってもmake usilicが作り直さない(2026-10-31)**
+   - **経緯**: 直接のユーザー報告(FreeBSD、項目1168のgit pullの後、"gmake: Nothing to be done for 'usilic'."、"これっておかしくない？")。
+   - **原因と変更**: src/cpp/Makefileのbuild/usilic・run_tests・harnessの規則は.cppだけに依存していた(全部を1回のc++で組むので.oの依存が無い)→src/・app/の.hpp・.hもHDRSとして依存に足す。項目1168の「確かめたこと: make usilic」も、実際には作り直されていなかった(この修正の後に作り直して通ることを確かめた)。
+   - 確かめたこと: make usilicがapplication.hppの変更で作り直し、通る。

@@ -83,6 +83,9 @@ BUILD_DIR = build
 # this wildcard -- run_tests already gets its own main() from
 # tests/test_main.cpp (doctest's), and two main()s would conflict.
 SRCS     = $(wildcard $(SRC_DIR)/*.cpp)
+# 2026-10-31、直接のユーザー報告(FreeBSDで、application.hppだけが変わったgit pullの後のgmake usilicが
+# "Nothing to be done"): 下の規則は.cppだけを前提にしていて、ヘッダだけの変更では作り直されなかった。ヘッダも。
+HDRS     = $(wildcard $(SRC_DIR)/*.hpp $(SRC_DIR)/*.h $(APP_DIR)/*.hpp)
 # *_win.cppはWindowsのネイティブ(windows.mk)だけのもの。
 SRCS    := $(filter-out $(SRC_DIR)/%_win.cpp, $(SRCS))
 # mac_cursor.mm/mac_cursor_stub.cpp (2026-08-10, the real NSCursor.openHand
@@ -305,17 +308,17 @@ endif
 	# 上書きしても.appのフォルダ自体の日時は変わらない(Finderはこの日時を出す)ので、作り直したら更新する。
 	touch $(APP_BUNDLE)
 
-$(BUILD_DIR)/run_tests: $(SRCS) $(TESTS) | $(BUILD_DIR)
+$(BUILD_DIR)/run_tests: $(SRCS) $(TESTS) $(HDRS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(TEST_DIR) -I$(SRC_DIR) $(SRCS) $(TESTS) -o $@ $(LDLIBS)
 
-$(BUILD_DIR)/usilic: $(SRCS) $(APP_SRCS) | $(BUILD_DIR)
+$(BUILD_DIR)/usilic: $(SRCS) $(APP_SRCS) $(HDRS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(SRC_DIR) $(SRCS) $(APP_SRCS) -o $@ $(LDLIBS)
 
 # -g(GUI版)を窓を出さずに動かす試験用プログラム(tools/gui_harness.cpp参照、2026-10-27)。usilic本体と同じ
 # ソースから、app/main.cppの代わりにtools/gui_harness.cppを組み込む。
 harness: $(BUILD_DIR)/harness
 
-$(BUILD_DIR)/harness: $(SRCS) $(TOOLS_DIR)/gui_harness.cpp | $(BUILD_DIR)
+$(BUILD_DIR)/harness: $(SRCS) $(TOOLS_DIR)/gui_harness.cpp $(HDRS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(SRC_DIR) $(SRCS) $(TOOLS_DIR)/gui_harness.cpp -o $@ $(LDLIBS)
 
 $(BUILD_DIR):
