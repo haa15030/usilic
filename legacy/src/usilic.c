@@ -133,7 +133,7 @@ static void from_shell(char *name, int pid, int f, char *mess)
       break;
     }
     sprintf(str, "%s.%s", mess, s_S(S_usilic));
-    if (!(fp = fopen(str, "w"))) {
+    if (!(fp = fopen(str, "w"))) { /* usilic.old: fwrite() to a NULL FILE* crashed */
       fprintf(stderr, "%s: %s: %s\n", s_S(S_usilic), str, strerror(errno));
       free_S();
       exit(1);
@@ -163,7 +163,7 @@ static int check_ps(int f_tty, int pid, char **err)
   static char *sp[] = {
     "ps",
     "grep",
-    "usilic.old",
+    "usilic.old", /* usilic.old: was "usilic" */
     n,
   };
   
@@ -224,10 +224,10 @@ static void check_pl(int f_tty, char **err)
 
   if (!f_tty) {
     char *cp = getenv("HOME");
-    s_pid = alloca(strlen(cp) + 32); /* + "/.usilic.old/pid": +10 overflowed once renamed from tcb */
+    s_pid = alloca(strlen(cp) + 32); /* usilic.old: + "/.usilic.old/pid": +10 overflowed once renamed from tcb */
     strcpy(s_pid, cp);
     if (strchr(s_pid, '\0')[-1] != '/') strcat(s_pid, "/");
-    strcat(s_pid, ".usilic.old/pid");
+    strcat(s_pid, ".usilic.old/pid"); /* usilic.old: was .usilic/pid */
     if (!stat(s_pid, &st)) {
       fp = fopen(s_pid, "r");
       fscanf(fp, "%d", &pid);
@@ -235,7 +235,7 @@ static void check_pl(int f_tty, char **err)
       if (pid && !kill(pid, 0)) {
 	struct stat old;
 	stat(s_pid, &old);
-	fprintf(stderr, "usilic.old: Process-ID %d ... ", pid);
+	fprintf(stderr, "usilic.old: Process-ID %d ... ", pid); /* usilic.old: was usilic */
 	fflush(stdout);
 	for (i = 6; i; i--) {
 	  kill(pid, SIGCONT);
@@ -266,7 +266,7 @@ int main(int argc, char *argv[])
     u_int shell	: 1;
     u_int usilic	: 8;
   } f;
-  static char usilic[] = "usilic.old"; /* also names ~/.usilic.old/ and usilic.oldrc */
+  static char usilic[] = "usilic.old"; /* usilic.old: was "usilic"; also names ~/.usilic.old/ and usilic.oldrc */
   static char tmp[N_line];
   static char *err[] = {
     "Invalid option",
@@ -299,7 +299,7 @@ int main(int argc, char *argv[])
     fprintf(stderr, "%s: %s: %s\n", usilic, tmp, strerror(errno));
     exit(1);
   }
-  /* NOT sprintf(tmp, "%s/s.", tmp) -- output and the %s source argument
+  /* usilic.old: NOT sprintf(tmp, "%s/s.", tmp) -- output and the %s source argument
      would be the same buffer, which is undefined behavior. In practice
      this corrupted tmp down to just "/s." (losing the "/tmp/.usilic" prefix),
      so from_shell() later tried to fopen() a path at the filesystem root,
@@ -307,6 +307,7 @@ int main(int argc, char *argv[])
      no such aliasing since its 2nd argument is a literal, not tmp itself. */
   strcat(tmp, "/s.");
   *pathname = '\0';
+  /* usilic.old: USILICVT/USILIC were renamed, they are the new C++ usilic's */
   if (!getenv("USILIC_OLDVT") && tcgetattr(0, &otty) < 0) f.usilic |= 0x20;
   f.shell = getenv("USILIC_OLD") != NULL;
   if (argc == 1) {
@@ -393,7 +394,7 @@ int main(int argc, char *argv[])
   save_signal(f.usilic);
   sprintf(tmp, "%s v%s", usilic, &(strchr(version, ' '))[1]);
   *strchr(tmp, '-') = '\0';
-  setenv("USILIC_OLD", tmp, 1);
+  setenv("USILIC_OLD", tmp, 1); /* usilic.old: was USILIC, now the new C++ usilic's */
   if (access(s_S(S_usilicrc), F_OK) < 0) {
     fprintf(stderr, "%s: %s: %s\n", usilic, s_S(S_usilicrc), strerror(ENOENT));
     free_S();
@@ -420,7 +421,7 @@ void exit_usilic(void)/*usilic*/
       int i;
       char str[256];
       strcpy(str, s_S(S_write));
-      i = ichrstr(str, 0, "w.usilic.old");
+      i = ichrstr(str, 0, "w.usilic.old"); /* usilic.old: was w.usilic */
       strcpy(&str[i-1], "shell");
       rename(s_S(S_log), str);
       strcpy(&str[i-1], "error");

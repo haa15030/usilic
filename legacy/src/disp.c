@@ -161,7 +161,7 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
   static int nlen, f_enter, *lenp;
   static char *copy[3];
 
-  if (!vlen) vlen = strlen(getenv("USILIC_OLD")) + 2;
+  if (!vlen) vlen = strlen(getenv("USILIC_OLD")) + 2; /* usilic.old: was USILIC, now the new C++ usilic's */
   switch(f_M0) {
   case -1:
     return strlen(name);
@@ -313,7 +313,7 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
     vt_move(vt_row(0) - 1, len + 1);
     while ((cp = strchr(prev, '\033')))
       if ((cp2 = strchr(cp, 'm'))) {
-	memmove(cp, &cp2[1], strlen(&cp2[1]) + 1);
+	memmove(cp, &cp2[1], strlen(&cp2[1]) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
       } else break;
     if (argp) {
       for (i = strlen(prev), j = vt_col(0) - (len + i + 1); j > 0; i++, j--)
@@ -338,7 +338,7 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
   } else {
     vt_eeol();
     vt_move(vt_row(0) - 1, vt_col(0) - vlen);
-    vt_printf(" %s%s%s ", vt_geta(A_md), getenv("USILIC_OLD"), vt_geta(A_me));
+    vt_printf(" %s%s%s ", vt_geta(A_md), getenv("USILIC_OLD"), vt_geta(A_me)); /* usilic.old: was USILIC, now the new C++ usilic's */
   }
   vt_endstand();
   if (!f_mark && !f_arc && !f_enter && f_M != T_shell && lenp) *lenp = 0;
@@ -416,7 +416,7 @@ int print_line(void *ps0, PP *pp, int len, u_char *linep)/*usilic*/
   *line = '\0';
   if (!*line && pp != F2) {
     f_code = pp && pp->f.code;
-    if (!pp || (pp && pp->tell == (uintptr_t)F7)) row = n_row = e_row = 0;
+    if (!pp || (pp && pp->tell == (uintptr_t)F7)) row = n_row = e_row = 0; /* usilic.old: was (u_int), truncated pointers on 64-bit */
     else {
       row = pp->f.line;
       while (pp->next) pp = pp->next;

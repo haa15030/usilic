@@ -54,7 +54,8 @@ typedef union {
 static void write_shell(void *p)
 {
   static int row, col, col0, colb, cole, len, f_cr, *pv;
-  static char dir[N_line], version[N_line];
+  static char dir[N_line], version[N_line]; /* usilic.old: version was [80],
+					      overflowed by the version string */
   SHELL *sp;
   u_char *cp, *cp2;
   int f_disp;
@@ -75,7 +76,7 @@ static void write_shell(void *p)
     sp->w.dir = dir;
     sp->w.version = version;
     strcpy(version, vt_geta(A_md));
-    strcat(version, getenv("USILIC_OLD"));
+    strcat(version, getenv("USILIC_OLD")); /* usilic.old: was USILIC, now the new C++ usilic's */
     strcat(version, vt_geta(A_me));
     break;
   case 1:
@@ -92,7 +93,7 @@ static void write_shell(void *p)
 	if ((cp2 = strstr(dir, ":~"))) {
 	  memmove(&dir[strlen(s_S(S_home))], &cp2[3], strlen(&cp2[3]) + 1);
 	  memcpy(dir, s_S(S_home), strlen(s_S(S_home)));
-	} else { /* cp points inside dir[]; &cp[...] and dir overlap when
+	} else { /* usilic.old: cp points inside dir[]; &cp[...] and dir overlap when
 		    cp != dir, so strcpy() here is undefined behavior (and
 		    on macOS, _FORTIFY_SOURCE's __chk_fail_overlap() catches
 		    it and hangs write_shell(), freezing usilic after a CP/MV/RM
@@ -588,7 +589,7 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
 		  p = &cp[1];
 		  strcpy(buff, &cp[1]);
 		  for (cp = buff; *cp == ' ' || *cp == '\t'; cp++) ;
-		  /* NOT strcpy(buff, cp) -- cp already points inside buff
+		  /* usilic.old: NOT strcpy(buff, cp) -- cp already points inside buff
 		     here (see the loop above), so source and destination
 		     overlap. macOS's _FORTIFY_SOURCE detects this and
 		     hangs/aborts inside __chk_fail_overlap() (same class
@@ -862,7 +863,7 @@ static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, P
 	/* '\\' : line continuation ==> alloc.c (2) */
 	if (!fp->bash && cp[-1] == '\r') ff.nl = 1;
 	strcpy(p, p2);
-	memmove(p, &p[vt_col(0) + j], strlen((char*)&p[vt_col(0) + j]) + 1);
+	memmove(p, &p[vt_col(0) + j], strlen((char*)&p[vt_col(0) + j]) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
         if (!*p) break;
 	if (*p == '\r') ff.nl = 1;
 	j = 0;
@@ -1324,12 +1325,15 @@ static int add_line(int row, int c, u_char buff[], char prompt[], RV *rvp, int *
 static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], int pid0, int f_shell)
 {
   static char prompt[N_pipe+1], name[N_line], arg[10], usilic[N_line];
+  /* usilic.old: usilic was [10], overflowed by the version string */
   static PP *p0;
   static FILE *ifp, *ofp, **ifpp, **ofpp;
   static BASE *bp;
   static RV rv;
   static PN pn;
   static int sfd, pid, len, row0, *pv, inter;
+  /* usilic.old: designated initializers; the positional form relied on
+     glibc's __sighandler_t and field order, which macOS doesn't share */
   static struct sigaction alrm = {
     .sa_handler = (void(*)(int))read_shell,
     .sa_flags = SA_RESTART,
@@ -1371,7 +1375,7 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
     }
     Shell.f.init = 0;
     inter = 1; /* ==> (11) */
-    strcpy(usilic, getenv("USILIC_OLD"));
+    strcpy(usilic, getenv("USILIC_OLD")); /* usilic.old: was USILIC, now the new C++ usilic's */
     errp[0] = s_S(S_mark);
     errp[1] = usilic;
     errp[2] = ":";
@@ -1385,7 +1389,7 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
     while (fgetc(ifp) == EOF) ; /* (12) */
     if (!fork()) {
       if (f.bash)
-	/* unset PROMPT_COMMAND: overriding PS1 alone isn't enough to get a
+	/* usilic.old: unset PROMPT_COMMAND: overriding PS1 alone isn't enough to get a
 	   prompt usilic's line-by-line SHELL-mode parser can recognize. Many
 	   desktop terminal emulators (e.g. GNOME Terminal/VTE, via
 	   /etc/profile.d/vte.sh) set PROMPT_COMMAND to inject an OSC
@@ -1733,6 +1737,8 @@ int wait_comm(int pfd, int *posp, int *rowp, int col0p, u_char *buff, u_char pp_
 static int make_shell(FILE **ifpp, FILE **ofpp, int pv[], u_char prev[], int pid, char mess[], int f_comm)
 {
   int i, spid;
+  /* usilic.old: designated initializers; the positional form relied on
+     glibc's __sighandler_t and field order, which macOS doesn't share */
   static struct sigaction alrm = {
     .sa_handler = (void(*)(int))write_shell,
     .sa_flags = SA_RESTART,
@@ -1850,7 +1856,7 @@ int do_shell(u_char prev[], char str[], FILE **pinp, u_char *w, int *ppidp, LIST
 
   if (!Shell.f.alen) {
     Shell.f.alen = strlen(vt_geta(A_md)) + strlen(vt_geta(A_me));
-    Shell.f.blen = strlen(getenv("USILIC_OLD")) + 1; 
+    Shell.f.blen = strlen(getenv("USILIC_OLD")) + 1; /* usilic.old: was USILIC, now the new C++ usilic's */
     Shell.f.clen = Shell.f.alen + Shell.f.blen;
   }
   f_init = !(pid && !kill(pid, 0));

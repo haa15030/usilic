@@ -33205,3 +33205,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **依頼**: 直接のユーザー依頼("make で作成されるバイナリ名をusilicではなくusilic.oldにして。")。
    - **変更**: legacy/config.sh(src/Makefileの目標とclean、install.shの元のファイル)とlegacy/Makefile(default・all・install・clean)。インストール先の~/.local/bin/usilic.oldは前から同じ名前。cleanは古い名前のsrc/usilicも消す。legacy/README.old.mdのビルドの説明も直した。
    - 確かめたこと: legacy/でmakeして、src/Makefile・install.shが作り直され、src/usilic.oldができる。
+1158. **legacy: legacy/のmakeで直した.cを作り直す(.PHONY)、アシスタントが手を入れた所すべてに「usilic.old:」のコメント(2026-10-31)**
+   - **依頼**: 直接のユーザー依頼(.PHONYの説明の後に"それで修正よろしく。言い忘れたけどアシスタントが手を入れたところにはコメントを追記してほしい。抜け落ち検証もよろしく。")。
+   - **.PHONY**: legacy/Makefileのsrc/usilic.oldはsrc/config.hにしか依存していなかったので、src/usilic.oldがconfig.hより新しいとsrc/へ降りず、.cを直しても作り直されなかった。.PHONYにして毎回src/のmakeへ降りる(src/のMakefileが.cと.oの新しさを比べるので、作り直すのは直した分だけ)。child.cをtouchしてlegacy/でmakeすると、child.cだけコンパイルし直して組み直す。
+   - **コメント**: legacy/の取り込み(b813bb4、tcb→usilicの改名だけ)からの差分のすべての変更に、`usilic.old:`で始まるコメントを付けた(英語、ファイルはASCIIのまま)。前から付いていた説明にも印を足した。.c・.hは`/* usilic.old: ... */`、config.sh・Makefile・usilicrcは`# usilic.old: ...`。多くの変更(重なったstrcpy()→memmove()、u_int→uintptr_t、環境変数USILIC→USILIC_OLD、sigactionの初期化、conf_arc()の呼び出しを戻した所等)にはコメントが無かった。legacy/README.old.md(新しく足した説明)は対象外。
+   - **抜け落ちの検証**: `git diff -U0 b813bb4 -- legacy`のハンク(103個)ごとに、追加した行かそのすぐ上(4行以内)に印があるかを調べる台本で、印の無いハンクが0になるまで足した。逆に、印の付いた行がすべて追加した行であること(元のままの行に付いていないこと)も確かめた。legacy/を全部作り直してコンパイルが通る。

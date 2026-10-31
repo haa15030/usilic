@@ -21,6 +21,7 @@ char *s_S(int n_S)/*usilic*/
 }
 
 char **s_P(uintptr_t n_P)/*usilic*/
+/* usilic.old: n_P was u_int, it also carries the ARCHIVE[] pointer (conf()) */
 {
   static char *child[] = { /* built-in program */
     /* file manager */
@@ -267,7 +268,7 @@ static int conf_arc(FILE *fp, char *str, CHILD *chp)
 	if (!(p = strchr(cp, ' '))) p = strchr(cp, '\t');
 	if (!p) p = cp;
 	if ((p = strchr(p, '|')) && strchr(&p[1], '|')) {
-	  memmove(str, cp, strlen(cp) + 1);
+	  memmove(str, cp, strlen(cp) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
 	  save_error("conf_arc(): \042%s\042: %s.\n", str, s_S(S_errm));
 	  save_stderr("conf_arc(): \042%s\042: %s.\n", str, s_S(S_errm));
 	} else save_child(chp, cp, 1, NULL);
@@ -290,7 +291,7 @@ static int conf_bin(FILE *fp, char str[], int f_child, CHILD *chp, char sh[])
       if (!p) p = cp;
       if ((p = strchr(p, '|')))
 	if (strchr(&p[1], '|')) {
-	  memmove(str, cp, strlen(cp) + 1);
+	  memmove(str, cp, strlen(cp) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
 	  return 1;
 	}
       if (f_child < 14) save_child(chp, cp, f_child + 1, NULL);
@@ -331,7 +332,7 @@ static int conf_grep(FILE *fp, char str[], LIST **lgpp, STR **sgpp)
 	while (*cp != '\042' && *cp != '\047') cp++;
       } else while (*cp != ' ' && *cp != '\t') cp++;
       *cp = '\0';
-      memmove(str, p, strlen(p) + 1); /* p may overlap str; strcpy() is UB here and
+      memmove(str, p, strlen(p) + 1); /* usilic.old: p may overlap str; strcpy() is UB here and
 					  aborts under macOS's fortified libc */
       size = strlen(str);
       if ((code = init_code(&size, str, 0)) == C_sjis) toeuc(str);
@@ -482,7 +483,7 @@ static int get_str(FILE *fp, u_char str[])
   if ((cp = strchr(cp, '#'))) *cp = '\0';
   if ((cp = strchr(str, '\n'))) *cp = '\0';
   for (cp = str; *cp && (*cp == ' ' || *cp == '\t'); cp++) ;
-  if (cp > str) memmove(str, cp, strlen((char *)cp) + 1); /* cp points inside str: strcpy() is
+  if (cp > str) memmove(str, cp, strlen((char *)cp) + 1); /* usilic.old: cp points inside str: strcpy() is
     UB on overlapping ranges and was observed to corrupt data here (glibc/aarch64), e.g. dropping
     the '-' out of "K-11" and turning "previous" into "reviouss" -- same bug class as the
     overlapping strcpy() found earlier in write_shell()/input_shell(). */
@@ -623,7 +624,7 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
     "bash",
     "tcsh",
   };
-  static char usilic[] = "usilic.old"; /* also names ~/.usilic.old/ and usilic.oldrc */
+  static char usilic[] = "usilic.old"; /* usilic.old: was "usilic"; also names ~/.usilic.old/ and usilic.oldrc */
   static char jman[] = "man"; 
   static char *groff[] = {
     "groff",
@@ -714,6 +715,7 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
   sprintf(Str.S[S_option+7], "%s%s", s_S(S_usilic), args);
   Str.S[S_nop] = strdup("# \t\n");
   if (!getenv("USILIC_OLDCHARSET")) setenv("USILIC_OLDCHARSET", CHARSET, 1);
+  /* usilic.old: was USILICCHARSET, now the new C++ usilic's */
   if (f_usilic & (0x80|0x40)) {
     if (f_usilic & 0x80) {
       char *p;
@@ -744,7 +746,7 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
     pipe(pv);
     if (!fork()) {
       int pv2[2];
-      pipe(pv2); /* was never called: dup2()/close() below ran on whatever
+      pipe(pv2); /* usilic.old: was never called: dup2()/close() below ran on whatever
 		    garbage happened to be on the stack for pv2[], which could
 		    alias a real, already-open fd and redirect/close it. */
       if (!fork()) {
@@ -813,6 +815,7 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
       return -1;
     }
     strcpy(tmp, getenv("SHELL") ? getenv("SHELL") : "/bin/sh");
+    /* usilic.old: strcpy(tmp, NULL) crashed when SHELL wasn't set */
     for (i = 0, cp = NULL; i < 2; i++) 
       if (strstr(tmp, shell[i])) {
 	cp = shell[i];
@@ -881,7 +884,7 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
   if (erre) save_intr(S_erre);
   print_usilic(mess, f_usilic);
   Str.S[S_USILIC] = strdup(mess);
-  s_P((uintptr_t)ARCHIVE);
+  s_P((uintptr_t)ARCHIVE); /* usilic.old: was (u_int), truncated pointers on 64-bit */
   return 0;
 }
 
@@ -1158,12 +1161,12 @@ static int conf_c(FILE *fp, u_char str[], int i0, int *i_mp, int n_m, int key_m0
 	  while ((p = strstr(comm, "\\c")))
 	    if (p[2] >= 'A' && p[2] <= 'Z') {
 	      *p = p[2] - 'A' + 1;
-	      memmove(&p[1], &p[3], strlen(&p[3]) + 1);
+	      memmove(&p[1], &p[3], strlen(&p[3]) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
 	    }
 	  while ((p = strstr(label[i], "\\c")))
 	    if (p[2] >= 'A' && p[2] <= 'Z') {
 	      sprintf(p, "^%c", p[2]);
-	      memmove(&p[2], &p[3], strlen(&p[3]) + 1);
+	      memmove(&p[2], &p[3], strlen(&p[3]) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
 	    }
 	}
       }
@@ -1260,7 +1263,8 @@ int init_config(CHILD *chp, LIST **lcpp, LIST **lgpp, STR **scpp, STR **sgpp, u_
   memset(p, ' ', n_usilicrc);
   p[n_usilicrc] = '\0';
   fp = fopen(s_S(S_usilicrc), "r");
-  conf_arc(NULL, str, chp);
+  conf_arc(NULL, str, chp); /* usilic.old: was commented out together with the
+			       call below (it crashed: s_P()'s u_int, see s_P()) */
   for (f_shell = f_skip = 0; f_skip >= 0; ) {
     if (!f_skip)
       do {
@@ -1287,6 +1291,7 @@ int init_config(CHILD *chp, LIST **lcpp, LIST **lgpp, STR **scpp, STR **sgpp, u_
     p[f_usilicrc] = f_usilicrc + '0';
     switch(f_usilicrc) {
     case 0:
+      /* usilic.old: was commented out, see conf_arc(NULL, ...) above */
       if ((f_skip = conf_arc(fp, str, chp)) == 1)
 	save_error("%src: %s: %s.\n", s_S(S_usilic), str, s_S(S_errm));
       break;

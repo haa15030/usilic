@@ -422,6 +422,7 @@ void erase_dot(char name[])/*usilic*/
       cp++;
       continue;
     } else if (cp[2]) memmove(cp, &cp[2], strlen(&cp[2]) + 1); /* erase "./" */
+    /* usilic.old: was strcpy() on overlapping ranges (UB) */
     else *cp = '\0';
   if ((cp = strstr(name, "../"))) {
     strcpy(tmp, cp);
@@ -429,13 +430,13 @@ void erase_dot(char name[])/*usilic*/
     while (strlen(tmp) && (cp = strstr(tmp, "../")))
       if (cp == tmp) {
 	get_par(name);
-	memmove(tmp, &cp[3], strlen(&cp[3]) + 1);
+	memmove(tmp, &cp[3], strlen(&cp[3]) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
       } else {
 	i = strlen(name);
 	j = cp - tmp;
 	memcpy(&name[i], tmp, j);
 	name[i + j] = '\0';
-	memmove(tmp, cp, strlen(cp) + 1);
+	memmove(tmp, cp, strlen(cp) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
       }
   } else *tmp = '\0';
   if (strlen(tmp)) strcat(name, tmp);
@@ -557,7 +558,7 @@ void write_list(LL ll, SS ss, LINE *lp, char name[])/*usilic*/
   rename(s_S(S_hist), str); /* backup */
   if (!(fp = fopen(s_S(S_hist), "w"))) return;
   get_time(str);
-  fprintf(fp, "# ~/.usilic.old/history: %s\n", getenv("USILIC_OLD"));
+  fprintf(fp, "# ~/.usilic.old/history: %s\n", getenv("USILIC_OLD")); /* usilic.old: was USILIC, now the new C++ usilic's */
   fprintf(fp, "# E\010EX\010XI\010IT\010T: %s\n", str);
   fprintf(fp, "# Note: The lines begin with the character \014 or \032 mustn't be deleted.\n\n");
   fprintf(fp, "%c Current buffer\n", K_l);
@@ -748,7 +749,7 @@ int ichrstr(char str0[], char c, char *str)/*usilic*/
   char *cp;
 
   if ((str && (cp = strstr(str0, str))) || (!str && (cp = strchr(str0, c))))
-    return (int)(cp - str0) + 1;
+    return (int)(cp - str0) + 1; /* usilic.old: was (int)cp - (int)str0, truncated on 64-bit */
   else return 0;
 }
 
@@ -784,11 +785,11 @@ void print_arg(char arg[], int size, u_char *buff, CHILD *chp, int f_M)/*usilic*
 void dup_error()/*usilic*/
 {
   int fd;
-  FILE *fp;
+  FILE *fp; /* usilic.old: added, see below */
   
   if (!s_S(S_error)) return;
   fp = fopen(s_S(S_error), "a");
-  if (!fp) return; /* fileno(NULL) is UB; fopen() can fail (e.g. ENOENT on the
+  if (!fp) return; /* usilic.old: fileno(NULL) is UB; fopen() can fail (e.g. ENOENT on the
 		       parent dir) and previously wasn't checked here */
   fd = fileno(fp);
   dup2(fd, 2);
@@ -980,17 +981,17 @@ int open_pty(char str[], int f_open)/*usilic*/
   for (cp = "pqrs", np = NULL; *cp; cp++)
     for (np = "0123456789abcdef"; *np; np++) {
       sprintf(str, "/dev/pty%c%c", *cp, *np);
-      /* O_NONBLOCK: on macOS the /dev/ptyXX nodes still exist but are not
+      /* usilic.old: O_NONBLOCK: on macOS the /dev/ptyXX nodes still exist but are not
 	 usable, and a plain open() of them never returns, freezing usilic on
 	 the SHELL key. Probe without blocking (an unusable pair then fails
 	 at once, and SHELL reports it can't start) and switch the master
 	 back to blocking I/O once a usable pair is found. */
       if ((tfd = open(str, O_RDWR | O_NONBLOCK)) >= 0) {
 	str[5] = 't';
-	if ((i = open(str, O_RDWR | O_NONBLOCK)) >= 0) {
+	if ((i = open(str, O_RDWR | O_NONBLOCK)) >= 0) { /* usilic.old: see above */
 	  str[5] = 'p';
 	  close(i);
-	  fcntl(tfd, F_SETFL, fcntl(tfd, F_GETFL) & ~O_NONBLOCK);
+	  fcntl(tfd, F_SETFL, fcntl(tfd, F_GETFL) & ~O_NONBLOCK); /* usilic.old: see above */
 	  if (f_open) return tfd;
 	  else close(tfd);
 	  return 1;

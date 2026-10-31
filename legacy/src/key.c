@@ -61,7 +61,7 @@ static int key_getch(int f_key, u_char cva[])
   return i;
 }
 
-/* key_getch()'s "playback" mode (its else-branch) doesn't touch f_key/cva,
+/* usilic.old: key_getch()'s "playback" mode (its else-branch) doesn't touch f_key/cva,
    so it was called through `getch` -- typedef'd as a 0-argument GETCH --
    relying on whatever garbage was left in the argument registers to not
    coincidentally equal 2 or 3 (key_getch's "setup" mode, which dereferences
@@ -408,7 +408,7 @@ static int input_key(int f_M, u_char mess[], u_char *cs, int col0, char *cname, 
 	    case M_ldir:
 	    case M_lfile2:
 	    case M_ldir2:
-	      if ((cp = strstr(buff, "//"))) memmove(buff, &cp[1], strlen((char*)&cp[1]) + 1);
+	      if ((cp = strstr(buff, "//"))) memmove(buff, &cp[1], strlen((char*)&cp[1]) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
 	      else if (strchr(buff, '\0')[-1] == '~')
 		strcpy(buff, s_S(S_home));
 	      else if ((cp = strstr(buff, "~/"))) {
@@ -550,7 +550,7 @@ int read_m(RV *rvp, int f_M, int klen, u_char *cva, char *cname, LIST **listp, S
   }
   if (cva) {
     key_getch(f_M, cva);
-    getch = key_getch_play;
+    getch = key_getch_play; /* usilic.old: was (GETCH)key_getch, see key_getch_play() */
     return 0;
   }
   if (is_comm(f_M, 1) || f_M == M_exit) f_enter = 2;
@@ -604,7 +604,7 @@ int read_m(RV *rvp, int f_M, int klen, u_char *cva, char *cname, LIST **listp, S
   }
   if (c) {
     int f_stand = 1;
-    u_char *p = (rvp->pp && rvp->pp->tell != (uintptr_t)F7) ? rvp->pp->cs : NULL;
+    u_char *p = (rvp->pp && rvp->pp->tell != (uintptr_t)F7) ? rvp->pp->cs : NULL; /* usilic.old: was (u_int), truncated pointers on 64-bit */
     if (*iname || !p) /* filename with no attribute on the file-list after */
       f_stand = 0;    /* `Enter' (select file) */
     if (f_list && f_stand) stand_str(rvp, f_M);
@@ -1184,7 +1184,7 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	cole -= i;
 	memcpy(yank, buff, i);
 	yank[i] = '\0';
-	memmove(buff, &buff[i], strlen((char*)&buff[i]) + 1);
+	memmove(buff, &buff[i], strlen((char*)&buff[i]) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
 	shift = ((i = cole - col0 - len) > 0) ? i : 0;
 	strcpy(back, &buff[shift]);
 	col = col0;
@@ -1247,6 +1247,7 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	} else {
 	  if (shift) {
 	    if ((i = count_k(buff, col - col0 + shift - 1))) cole--;
+	    /* usilic.old: was strcpy() on overlapping ranges (UB) */
 	    memmove(&buff[col - col0 + shift - 1 - i]
 		   , &buff[col - col0 + shift
 			  + count_k(buff, col - col0 + shift)]
@@ -1264,6 +1265,7 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	      cole -= i;
 	    } else {
 	      if ((i = count_k(buff, col - col0 - 1))) cole--;
+	      /* usilic.old: was strcpy() on overlapping ranges (UB) */
 	      memmove(&buff[col - col0 - 1 - i], &buff[col - col0]
 		     , strlen((char*)&buff[col - col0]) + 1);
 	      if (i) col--;
@@ -1286,6 +1288,7 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	}
 	if (shift) {
 	  if ((i = count_k(buff, col - col0 + shift + 1))) cole--;
+	  /* usilic.old: was strcpy() on overlapping ranges (UB) */
 	  memmove(&buff[col - col0 + shift], &buff[col - col0 + shift + 1 + i]
 		 , strlen((char*)&buff[col - col0 + shift + 1 + i]) + 1);
 	  if (i) {
@@ -1298,10 +1301,12 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	  col++;
 	} else {
 	  i = buff[col - col0] >= 0x80;
+	  /* usilic.old: was strcpy() on overlapping ranges (UB) */
 	  memmove(&buff[col - col0], &buff[col - col0 + 1]
 		 , strlen((char*)&buff[col - col0 + 1]) + 1);
 	  if (i && count_k(buff, col - col0 + 1)) {
 	    cole--;
+	    /* usilic.old: was strcpy() on overlapping ranges (UB) */
 	    memmove(&buff[col - col0], &buff[col - col0 + 1]
 		   , strlen((char*)&buff[col - col0 + 1]) + 1);
 	  }

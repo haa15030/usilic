@@ -72,7 +72,7 @@ int skip_spc(u_char cs[], int f_spc)/*usilic*/
       while (1) {
 	if ((cp = strchr(cs, ' ')) && cp[-1] != '\\') {
 	  if (cp[1]) {
-	    memmove(cs, &cp[1], strlen((char*)&cp[1]) + 1);
+	    memmove(cs, &cp[1], strlen((char*)&cp[1]) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
 	    continue;
 	  } else *cp = '\0';
 	}
@@ -81,7 +81,7 @@ int skip_spc(u_char cs[], int f_spc)/*usilic*/
       break;
     case 2:
       for (cp = &cs[i_dir]; *cp == ' '; cp++) ;
-      memmove(cs, cp, strlen((char*)cp) + 1);
+      memmove(cs, cp, strlen((char*)cp) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
       break;
     }
   }
@@ -93,7 +93,7 @@ int skip_spc(u_char cs[], int f_spc)/*usilic*/
 	*cp++ = j;
 	i--;
       }
-      memmove(cp, &cp[i], strlen((char*)&cp[i]) + 1);
+      memmove(cp, &cp[i], strlen((char*)&cp[i]) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
     } else break;
 #ifdef SKIP_SPC
  debug("1:cs=%s\n",cs);
@@ -137,7 +137,7 @@ static void init_rv(NUM *np, PN *pnp, RV *rvp, HEAP *hp, int etop)
     for (pp = hp->bp->pp; pp && !strstr(pp->cs, "../"); pp = pp->next) ;
   else pp = hp->bp->pp;
   rvp->col = init_col(np->M, pp->cs, hp->bp->size);
-  if (hp->bp->pp->tell != (uintptr_t)F7 /* F7: "No size" etc. */
+  if (hp->bp->pp->tell != (uintptr_t)F7 /* F7: "No size" etc. */ /* usilic.old: was (u_int), truncated pointers on 64-bit */
       && rvp->pp && rvp->col >= 0) { /* reverse attr. */
     strcpy(rvp->str, &rvp->pp->cs[rvp->col]);
   } else strcpy(rvp->str, "");
@@ -817,7 +817,7 @@ void do_prog(char *str, STR **cmdp, STR **histp)/*usilic*/
 #endif
   if (!(pid = fork())) {
     load_signal();
-    unsetenv("USILIC_OLD"); /* enable to launch `usilic' from PROGRAM-mode */
+    unsetenv("USILIC_OLD"); /* enable to launch `usilic' from PROGRAM-mode */ /* usilic.old: was USILIC, now the new C++ usilic's */
     execlp("sh", "sh", "-c", str, NULL);
   }
   fprintf(stdout, "\n%s: %s\n", s_S(S_usilic), str);

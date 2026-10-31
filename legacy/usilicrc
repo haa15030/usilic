@@ -38,7 +38,7 @@ FILE
 	.gz	gzip	-dc
 	.bz2	bzip2	-dc
 	.z	gzip	-dc			
-# 2026-10-31: read UTF-8 texts and sources as EUC-JP through `nkf -e'.
+# usilic.old: 2026-10-31: read UTF-8 texts and sources as EUC-JP through `nkf -e'.
 	.txt	nkf	-e
 	.md	nkf	-e
 	.rst	nkf	-e
