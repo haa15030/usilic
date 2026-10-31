@@ -960,6 +960,14 @@ bool FileMode::loadFileNoWrap(const std::string &path) {
 }
 
 bool FileMode::loadFileRaw(const std::string &path, const std::function<bool()> &shouldAbort) {
+  // 2026-10-31、直接のユーザー報告(670MBの.xzを^[^Mで開くと、legacyは瞬時に"Not enough buffer"なのにusilicは
+  // BUFFER(64MB)まで読んで組むので20秒以上かかる): legacyと同じく、BUFFERを超えるファイルは読まずに知らせる。
+  std::error_code sizeEc;
+  auto size = std::filesystem::file_size(path, sizeEc);
+  if (!sizeEc && static_cast<long long>(size) > configuration_.bufferSizeLimitBytes()) {
+    configuration_.noteBufferLimitHit();
+    return false;
+  }
   noWrapMode_ = false;
   rawControlCodesMode_ = true;
   return loadFileImpl(path, shouldAbort);

@@ -33223,3 +33223,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **原因**: (1)^O^M(FileMode::loadFileAsPipe()、BUFFERを超えた^Mも同じ)は、FILTER(.xzはxz -dc)の子の出力を全部受け取るまで待っていた(loadAndTransformContent()のChildProcess::run()、展開後は数GB)。疑似端末で測って、冒頭が出るまで5.5秒より長く20秒より短い。legacyは子の出力を流して画面に出る分だけ読む。(2)^Mはさらに、読み込みの前のクイックルックの下調べ(openExternallyIfApplicable())で、最初の1回だけqlmanage -m pluginsを待っていた(0.02〜3.5秒、sampleで確認)。(3)^O^Mはパイプとして流すのでFileMode::currentFile()が空になり、^Jw(shellInsertName())は名前が無いとして何もしなかった(.xzに限らず^O^Mで開いたもの全部)。
    - **直し**: (1)loadFileAsPipe()は、FILTERの拡張子(ARCHIVE・EXEC・.epubを除く)なら子をChildProcess::startCapturing()で起こし、その出力をパイプのままloadStream()に渡す(最初の画面は出力を待って読む)。子は閉じる時に止める(closeStream()、streamChildPid_)。(2)FILTER・ARCHIVEの拡張子はusilicが展開して見せるので、クイックルックの下調べをしない。(3)^O^Mで開いた元のファイルをFileMode::pipeSourceFile()に覚え、^Jwはファイルの名前が空ならそれを使う。HELPの原稿(src/HELP_.txt・HELP_en_.txt)の^O^Mの説明に、FILTERの出力も表示分まで読むことを足した。
    - 確かめたこと: 疑似端末で、そのファイルのハードリンクを(ls)から^O^M・^Mで開くと0.5秒以内に冒頭(^Mは「バッファが足りません」)が出る。^Gで閉じるとxzは残らない。^O^Mの後の^Jwで、SHELLのコマンド行に`echo /tmp/claude-501/d/big.img.xz`が入る。make install・make app。
+1162. **^[^M(そのまま読む)は、BUFFERを超えるファイルを読まずにすぐ「Not enough buffer」(2026-10-31)**
+   - **経緯**: 項目1161と同じ報告("^[^Mも試してみるとやはり瞬時でこちらは「Not enough buffer」。^O^Mとは読み込み方が違い、バッファへ入りきらない旨の報告だが瞬時に出るメッセージなので試行はしてない模様"、"usilicでも^O^M、^[^Mが瞬時に出るようにして欲しい")。
+   - **原因**: FileMode::loadFileRaw()はBUFFER(既定64MB)まで読んで、制御コードを見せる形に組んでから"Not enough buffer"を出していた(項目「BUFFER」2026-09-25)。670MBの.xzでは、疑似端末で20秒たっても「FILE 読み込み中...」のまま。legacyはファイルの大きさだけを見て、読まずに知らせる。
+   - **直し**: legacyと同じく、BUFFERを超えるファイルは読まずにConfiguration::noteBufferLimitHit()を立てて戻る((ls)のまま「バッファが足りません」)。usilicrc(src/usilicrc)のBUFFERの説明と、HELPの原稿の^[^Mの説明を合わせた。
+   - 確かめたこと: 疑似端末で、0.5秒以内に(ls)のまま「バッファが足りません」。
