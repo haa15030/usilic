@@ -33274,3 +33274,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告(FreeBSD+Xfce、ja-font-ipaを入れてアイコン起動、"^Hのヘルプでは文字がゴシック体"、~/.usilic/historyを消しても同じ、"^J^FでSANS-SERIFをIPAGothic Regular、SERIFをIPAMincho Regularにしてみたら明朝体になった")。
    - **原因と変更**: graphical_display.cppのloadSerifFont()・loadCjkFallbackFont()の候補は、macOS・Debian系・Windowsの決まった場所だけだった(FreeBSDのフォントは/usr/local/share/fonts/)。どれも無ければ、fontconfigに尋ねる(fc-match 'serif:lang=ja'・'sans-serif:lang=ja'、系統ごとに一度だけ、Windowsのネイティブは除く)。
    - 確かめたこと: Macでmake usilic(Macは決まった場所で見つかるのでfc-matchは呼ばれない)。FreeBSDでの表示はユーザーが実機で。
+1174. **doc/HELP.1・HELP_en.1をmake help-manで作り直し、表紙を埋め込む(2026-10-31)**
+   - **経緯**: 直接のユーザー報告(FreeBSDの-gのHELPに表紙が無い、"HELP_.txtを更新してないからかなと")。doc/HELP.1は表紙の行(usilic-cover-line)が0行で、make help-man以外で作られていた(10/29のHISTORY.md:53759で伝えた件)。"コミットして"。
+   - **変更**: ~/HELP.txt・~/HELP_en.txt(どちらも10/30 10:42、前のdoc/HELP.1と同じ)からmake help-manで作り直した。本文は.THの日付だけが違い、他は表紙の行と、埋め込んだ注釈の元(今のsrc/usilicrc・usilicrc.en・doc/HELP.en.notes)の差。
+   - 確かめたこと: 両方に表紙の行が1038行。
