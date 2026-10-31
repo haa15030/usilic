@@ -240,7 +240,8 @@ install: $(BUILD_DIR)/usilic
 	# src/web/config.phpもここを使う)と、見本の.epub(既にあれば上書きしない)。
 	install -d $(HOME)/.local/usilic-web/texts $(HOME)/.local/usilic-web/books $(HOME)/.local/usilic-web/marks
 	if [ ! -f $(HOME)/.local/usilic-web/texts/sample.epub ]; then install -m 644 ../web/sample/sample.epub $(HOME)/.local/usilic-web/texts/sample.epub; fi
-ifeq ($(shell uname), Linux)
+# 2026-10-31、直接のユーザー依頼(FreeBSD+Xfceでも"最初からアイコン起動"): FreeBSDも同じXDGのランチャー。
+ifneq ($(filter Linux FreeBSD,$(shell uname)),)
 ifneq ($(NO_GUI),1)
 	# 2026-10-16、直接のユーザー依頼(Ubuntu、アイコンからの起動): デスクトップのランチャー(-gで起動。制御端末の無い
 	# 起動はmain()がGUIにする)とアイコン。パスは絶対で書く(デスクトップのセッションのPATHに~/.local/binが無い
