@@ -33232,3 +33232,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **依頼**: 直接のユーザー依頼("Makefileの英文見て思うのはやっぱ日本語で。utf8でいいので.[ch]内の`usilic.old`箇所も日本語への書き換えよろしく。")。
    - **変更**: 項目1158で付けた`usilic.old:`のコメント(.c・.hの86か所、Makefile・config.sh)を日本語にした。印の`usilic.old:`はそのまま。Makefileとconfig.shのcleanのレシピの中にあったコメント(make cleanのたびにシェルへ渡されて表示される)は、目標の行の上へ移した。usilicrcのコメントは、legacyがEUCで表示するのでASCIIのまま。legacy/README.mdの説明も合わせた。
    - 確かめたこと: legacy/を全部作り直してコンパイルが通る。make clean -nが元の3行だけ。印の検証の台本で、印の無いハンクは0(108個)。
+1164. **legacy: usilicrcのKEY節を、C++版と同じ機能はC++版のキーに合わせる(2026-10-31)**
+   - **依頼**: 直接のユーザー依頼("usilic.oldのusilicrc内のKEY設定をusilicのそれで更新して。コメントも含めて。")。書式も番号も違うので、選択肢を出して「書式はlegacyのまま、キーを合わせる」に決まった。
+   - **変更**: legacy/usilicrcのKEY節。legacyは行の順番でK-nの番号が決まる(conf_f()・conf_c())ので、行の並びは当時のままでキーと行末のコメントを書き換えた。F-2(接頭キー)を^X^Kから^J^Oに。K-18 ^J^K→^J^C、K-19 ^O^K→^J^B、K-26 ^Ol→^Oo、K-33/34 ^Jc・^J^C→^Jp・^J^P(C++のPART)、K-41/42 ^Jp・^J^P→^Jt・^J^T(C++のTOOL)、K-51/53/55/57 ^X^Kc等→^Oc・^Om・^Or・^Oa、K-60 ^Xs→^Js、K-66 ^Je→^[e、K-67/68 ^X^Ke・^X^Kl→^J^Oe・^J^Os、K-72/73 ^X^Y・^X^N→^Oy・^On、マクロK-84/85 ,・.→[・]。C++版に無い機能はC++版で空いているキーへ: K-27 ascii ^Oa→^O^A、K-28 漢字コード ^X^Kd→^O^K、K-36 fileのCUTの一覧 ^J^B→^JB。K-0(USILIC)は^[uにすると効かなかった(この行だけESCで始まるキーが効かない)ので^Tのまま。キーの重なりが無いことを台本で確かめた。見出しの説明と行末のコメントは日本語(EUC、legacyがEUCで表示する)。legacy/README.md・インストール済みの~/.local/lib/usilic.old/usilic.oldrcにも。
+   - 失敗と復旧: 1回目の台本がEUCで書けない字(␣)で止まった時、書き込み用に開いた後だったのでlegacy/usilicrcが空になった。未コミットの変更は無かったのでgitのHEADから戻し、変換してから開く順に直した。
+   - 確かめたこと: 疑似端末で、新しい設定を読んで起動し、^Oo(lsの表示形式)・^J^B(親へ)・^T(USILIC)・^J^Oe(ERROR)・^Js(SHELLの再起動、macOSなので擬似端末を開けないと出る)・^Jp(CUTのプロンプト)が利く。^[eは元の^Jeと同じ動き。doc/HELP.jp等の文書は当時のキーのまま。

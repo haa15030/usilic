@@ -221,42 +221,39 @@ RM
 #	rm -vr
 
 KEY
-# Customizing keys described in the KEY mode.
+# キーの割り当て(KEY モードの一覧に出るもの)。
+# 2026-10-31: C++ 版の usilic と同じ機能のキーは、C++ 版のキーに合わせた
+# (行の順番で K-n の番号が決まるので、行の並びは当時のまま)。
 #
-# (1) ... Mode No. used in `mode.h' of source file.
-# (2) ... Any keys except for ESC can be set to `F-?' (from F-0 to F-9) 
-	  up to 2-stroke.
-# (3) ... Though up to 2-stroke, only `F-?' or ESC can be used as the
-#	  first key.  (Since K-54 and K-65 are also the first key,
-#	  set either `F-?' or ESC.)
-# (4) ... The string enclosed in "" will be used in KEY-mode.  The comannd
-          enclosed within parentheses '' in the line of K-43 will be 
-	  executed at SHELL-prompt. 
-# (5) ... Setting of `F-?' isn't one of the following keys can't be 
-#	  executed from the command-line such as the SHELL-prompt.
-#	  (Following keys aren't used for the keys of `Command-line' 
-#	  described in the HELP-mode.)
+# (1) ... ソースの mode.h のモード番号。
+# (2) ... `F-?'(F-0〜F-9)には、ESC 以外のキーを 2 打までで設定できる。
+# (3) ... 2 打までだが、1 打目に使えるのは `F-?' か ESC だけ。
+#	  (K-54・K-65 も 1 打目なので、`F-?' か ESC にすること。)
+# (4) ... "" で囲んだ文字列は KEY モードで使う。K-43 の行の '' で囲んだ
+#	  コマンドは SHELL のプロンプトで実行される。
+# (5) ... 次のキー以外を `F-?' にすると、SHELL のプロンプト等のコマンド行
+#	  からは使えない(次のキーは、HELP モードで説明しているコマンド行の
+#	  キーには使われていない)。
 #
 #         	C-j, C-o, C-t, C-x, C-[
 #
-# (6) ... Built-in macro definition (M-0 ... M-19).  Enclose in "" the 
-#	  string which you want to use in `Command-line'.  The keys of (7) 
-#	  will launch execution of the definition.
-# (7) ... Keys will launch execution of the definition of (6).
-# (8) ... Mark for the content of Setting.
-# (9) ... Setting can be used by `usilic' executed as `pager'.
+# (6) ... 組み込みのマクロの定義(M-0 ... M-19)。コマンド行で使いたい
+#	  文字列は "" で囲む。(7) のキーで定義を実行する。
+# (7) ... (6) の定義を実行するキー。
+# (8) ... 設定の中身の目印。
+# (9) ... ページャーとして実行した usilic でも使える設定。
 #
-# Notations :
+# 書き方:
 #	  C-x ... Ctrl+'x'
 #	  \cX ... Ctrl+'x'
 # 	  ESC ... C-[
 # 	  SPC ... Space
 
-# <-- (2) -->             
+# <-- (2) -->
 F-?	<-- (8)
 	C-x	# ^X							F-0
 	C-j	# ^J							F-1
-	C-x C-k # ^X^K							F-2
+	C-j C-o # ^J^O	(元は ^X^K)					F-2
 	C-o     # ^O							F-3
 		#							F-4
 		#							F-5
@@ -267,100 +264,100 @@ F-?	<-- (8)
 
 #  <-- (3) -->  <-- (4) -->                 		           <-- (1) -->
 K-?	<-- (8)
-	C-t	"USILIC"	# ^T						K-0
-  	F-1 C-h	"HELP"	# ^J^H		<-- (5)				K-1
-	C-g	"Return to previous mode"	# ^G			K-2
-	C-l	"Redisplay current window (clear "Exit" message)" # ^L	K-3
- 	SPC	"Move window one page down"	# Space			K-4
-	b	"Move window one page up"	# b			K-5
- 	C-f	"Move window one page down"	# ^F			K-6
-	C-b	"Move window one page up"	# ^B			K-7
-	j	"Move window one line down"	# j			K-8
-	k	"Move window one line up"	# k			K-9
-	C-n	"Move cursor one line down"	# ^N			K-10
-	C-p	"Move cursor one line up"	# ^P			K-11
-	ESC <	"Go to beginning of buffer"	# ^[<			K-12
-	ESC >	"Go to end of buffer"	# ^[>				K-13
-	ESC	"Go to the N-th line"	# ^[N				K-14
-	C-SPC	"Set mark"	# ^SPC					K-15
-	F-0 F-0	"Get mark"	# ^X^X	 				K-16
-	F-0 C-w	"Save buffer to ~/.usilic/w.usilic"	# ^X^W			K-17
-	F-1 C-k	"Go to file-selector"	# ^J^K				K-18
-	F-3 C-k	"Go to parent directory"	# ^O^K			K-19
-	F-1	"Go to the N-th directory"	# ^JN			K-20
-	F-1 F-1	"Go to previous regular file"	# ^J^J			K-21
-	C-m	"Read content of file to buffer"	# ^M		K-22
-	F-3 C-m	"Read per line"	# ^O^M					K-23
-	ESC C-m	"Read as is"	# ^[^M					K-24
-	F-3 h	"Switch scroll mode"	# ^Oh				K-25
-	F-3 l	"Switch format of `ls' output"	# ^Ol			K-26
-	F-3 a	"Switch ascii mode"	# ^Oa				K-27
-	F-2 d	"Switch kanji code of display"	# ^X^Kd			K-28
-	F-3 C-c	"Copy string"	# ^O^C					K-29
-	F-3 C-y	"Paste string (Command-line)"	# ^O^Y			K-30
-	C-s	"FGREP   : Input string"	# ^S			K-31
-	F-1 C-s	"EGREP   : Select string"	# ^J^S			K-32
-	F-1 c	"CUT     : Input string (buffer)"	# ^Jc 		K-33
-	F-1 C-c	"CUT     : Select string (buffer)"	# ^J^C		K-34
-	F-1 b	"CUT     : Input string (regular file)"	# ^Jb		K-35
-	F-1 C-b	"CUT     : Select string (regular file)"	# ^J^B	K-36
-	F-1 d	"DU      : Execute `du'"	# ^Jd			K-37
-	F-1 C-d	"DU      : Redisplay window"	# ^J^D			K-38
-	F-1 l	"LOCATE  : Execute `locate'"	# ^Jl			K-39
-	F-1 C-l	"LOCATE  : Redisplay window"	# ^J^L			K-40
-	F-1 p	"PROGRAM : Input program name"	# ^Jp			K-41
-	F-1 C-p	"PROGRAM : Select program name"	# ^J^P			K-42
-	F-1 m	"MAN     : Input manual page"	# ^Jm			K-43
-	F-1 C-m	"MAN     : Select manual page"	# ^J^M			K-44
-	F-0 f	"FILE    : Input file name"	# ^Xf			K-45
-	F-0 C-f	"FILE    : Select file name"	# ^X^F			K-46
-	F-0 d	"DIR     : Input directory name"	# ^Xd		K-47
-	F-0 C-d	"DIR     : Select directory name"	# ^X^D		K-48
-	C-r	"HISTORY : History"	# ^R				K-49
-	F-1 C-r	"COMMAND : Select program executed at SHELL"# ^J^R	K-50
-	F-2 c	"CP      : Copy file with SHELL window"	# ^X^Kc		K-51
-	F-0 c	"CP      : Without SHELL window"	# ^Xc		K-52
-	F-2 m	"MV      : Move file with SHELL window"	# ^X^Km		K-53
-	F-0 m	"MV      : Without SHELL window"	# ^Xm		K-54
-	F-2 r	"RM      : Delete file with SHELL window"	# ^X^Kr K-55
-	F-0 r	"RM      : Without SHELL window"	# ^Xr		K-56
-	F-2 a	"ARC     : Expand archive"	# ^X^Ka			K-57
-	F-0 a	"ARC     : Without SHELL window"	# ^Xa		K-58
-	ESC s	"SHELL   : Go to SHELL"	# ^[s				K-59
-	F-0 s	"SHELL   : Restart SHELL"	# ^Xs			K-60
-	F-1 .	"SHELL   : Change current directory"	# ^J.		K-61
-	F-1 ,	"SHELL   : Execute `ls -l \cM'"	# ^J,			K-62
+	C-t	"USILIC"	# ^T     USILIC(C++ 版は ^[u。ここは ESC で始まるキーが効かないので元のまま)	K-0
+	F-1 C-h	"HELP"	# ^J^H   HELP		<-- (5)	K-1
+	C-g	"Return to previous mode"	# ^G     前のモードへ戻る	K-2
+	C-l	"Redisplay current window (clear "Exit" message)"	# ^L     再表示	K-3
+	SPC	"Move window one page down"	# SPC    ページ送り	K-4
+	b	"Move window one page up"	# b      ページ戻し	K-5
+	C-f	"Move window one page down"	# ^F     ページ送り	K-6
+	C-b	"Move window one page up"	# ^B     ページ戻し	K-7
+	j	"Move window one line down"	# j      画面を1行下へ	K-8
+	k	"Move window one line up"	# k      画面を1行上へ	K-9
+	C-n	"Move cursor one line down"	# ^N     カーソルを1行下へ	K-10
+	C-p	"Move cursor one line up"	# ^P     カーソルを1行上へ	K-11
+	ESC <	"Go to beginning of buffer"	# ^[<    先頭へ	K-12
+	ESC >	"Go to end of buffer"	# ^[>    末尾へ	K-13
+	ESC	"Go to the N-th line"	# ^[N    N行目へ	K-14
+	C-SPC	"Set mark"	# ^SPC   印を付ける	K-15
+	F-0 F-0	"Get mark"	# ^X^X   印の行へ	K-16
+	F-0 C-w	"Save buffer to ~/.usilic/w.usilic"	# ^X^W   バッファを作業fileへ保存	K-17
+	F-1 C-c	"Go to file-selector"	# ^J^C   カレントディレクトリへ(元は ^J^K)	K-18
+	F-1 C-b	"Go to parent directory"	# ^J^B   親ディレクトリへ(元は ^O^K)	K-19
+	F-1	"Go to the N-th directory"	# ^JN    N番目のディレクトリへ	K-20
+	F-1 F-1	"Go to previous regular file"	# ^J^J   以前のfileへ	K-21
+	C-m	"Read content of file to buffer"	# ^M     開く/表示	K-22
+	F-3 C-m	"Read per line"	# ^O^M   1行ずつ読む	K-23
+	ESC C-m	"Read as is"	# ^[^M   そのまま読む	K-24
+	F-3 h	"Switch scroll mode"	# ^Oh    スクロールの方法の切り換え	K-25
+	F-3 o	"Switch format of `ls' output"	# ^Oo    ls の表示形式(元は ^Ol)	K-26
+	F-3 C-a	"Switch ascii mode"	# ^O^A   ascii モードの切り換え(元は ^Oa、C++ 版に無い機能)	K-27
+	F-3 C-k	"Switch kanji code of display"	# ^O^K   表示の漢字コードの切り換え(元は ^X^Kd、C++ 版に無い機能)	K-28
+	F-3 C-c	"Copy string"	# ^O^C   COPY	K-29
+	F-3 C-y	"Paste string (Command-line)"	# ^O^Y   ペースト	K-30
+	C-s	"FGREP   : Input string"	# ^S     FGREP	K-31
+	F-1 C-s	"EGREP   : Select string"	# ^J^S   EGREP	K-32
+	F-1 p	"CUT     : Input string (buffer)"	# ^Jp    CUT: バッファ(元は ^Jc、C++ 版の PART)	K-33
+	F-1 C-p	"CUT     : Select string (buffer)"	# ^J^P   CUT: 一覧(元は ^J^C、C++ 版の PART)	K-34
+	F-1 b	"CUT     : Input string (regular file)"	# ^Jb    CUT: file(C++ 版に無いキー)	K-35
+	F-1 B	"CUT     : Select string (regular file)"	# ^JB    CUT: file の一覧(元は ^J^B、C++ 版に無いキー)	K-36
+	F-1 d	"DU      : Execute `du'"	# ^Jd    DU: 集計	K-37
+	F-1 C-d	"DU      : Redisplay window"	# ^J^D   DU: 結果へ戻る	K-38
+	F-1 l	"LOCATE  : Execute `locate'"	# ^Jl    LOCATE: 実行	K-39
+	F-1 C-l	"LOCATE  : Redisplay window"	# ^J^L   LOCATE: 結果へ戻る	K-40
+	F-1 t	"PROGRAM : Input program name"	# ^Jt    PROGRAM: 入力(元は ^Jp、C++ 版の TOOL)	K-41
+	F-1 C-t	"PROGRAM : Select program name"	# ^J^T   PROGRAM: 一覧(元は ^J^P、C++ 版の TOOL)	K-42
+	F-1 m	"MAN     : Input manual page"	# ^Jm    MAN: 入力	K-43
+	F-1 C-m	"MAN     : Select manual page"	# ^J^M   MAN: 一覧	K-44
+	F-0 f	"FILE    : Input file name"	# ^Xf    FILE: 入力	K-45
+	F-0 C-f	"FILE    : Select file name"	# ^X^F   FILE: 一覧	K-46
+	F-0 d	"DIR     : Input directory name"	# ^Xd    DIR: 入力	K-47
+	F-0 C-d	"DIR     : Select directory name"	# ^X^D   DIR: 一覧	K-48
+	C-r	"HISTORY : History"	# ^R     履歴一覧	K-49
+	F-1 C-r	"COMMAND : Select program executed at SHELL"	# ^J^R   SHELL で実行したコマンドの一覧	K-50
+	F-3 c	"CP      : Copy file with SHELL window"	# ^Oc    CP(元は ^X^Kc)	K-51
+	F-0 c	"CP      : Without SHELL window"	# ^Xc    CP: SHELL の画面無し	K-52
+	F-3 m	"MV      : Move file with SHELL window"	# ^Om    MV(元は ^X^Km)	K-53
+	F-0 m	"MV      : Without SHELL window"	# ^Xm    MV: SHELL の画面無し	K-54
+	F-3 r	"RM      : Delete file with SHELL window"	# ^Or    RM(元は ^X^Kr)	K-55
+	F-0 r	"RM      : Without SHELL window"	# ^Xr    RM: SHELL の画面無し	K-56
+	F-3 a	"ARC     : Expand archive"	# ^Oa    ARC: 展開(元は ^X^Ka)	K-57
+	F-0 a	"ARC     : Without SHELL window"	# ^Xa    ARC: SHELL の画面無し	K-58
+	ESC s	"SHELL   : Go to SHELL"	# ^[s    SHELL へ	K-59
+	F-1 s	"SHELL   : Restart SHELL"	# ^Js    SHELL を再起動(元は ^Xs)	K-60
+	F-1 .	"SHELL   : Change current directory"	# ^J.    SHELL: カレントディレクトリへ cd	K-61
+	F-1 ,	"SHELL   : Execute `ls -l \cM'"	# ^J,    SHELL: ls -l	K-62
 #	F-1 ,	"SHELL   : Execute `top \cM'"	# ^J,
-	F-1 w	"SHELL   : Display access-name"	# ^Jw			K-63
-	F-1 C-w	"SHELL   : Display content of buffer"	# ^J^W		K-64
-	C-i	"LIST    : Complete file name"	# ^I			K-65
-	F-1 e	"EDIT    : Edit regular-file"	# ^Je			K-66
-	F-2 e	"ERROR   : Standard error"	# ^X^Ke			K-67
-	F-2 l	"LOG     : SHELL output"	# ^X^Kl			K-68
-	F-0 C-c	"EXIT    : Exit usilic"	# ^X^C				K-69
-	q	"Exit usilic (pager)"	# q				K-70
-	F-0 C-m	"Input destination (CP, MV, RM, ARC)"	# ^X^M		K-71
-	F-0 C-y	"Mark all (CP, MV, RM, ARC)"	# ^X^Y			K-72
-	F-0 C-n	"Clear all (CP, MV, RM, ARC)"	# ^X^N			K-73
-	F-0 (	"Begin macro definition"	# ^X(			K-74
-	F-0 )	"End macro definition"	# ^X)				K-75
-	F-0 e	"Execute macro definition"	# ^Xe			K-76
+	F-1 w	"SHELL   : Display access-name"	# ^Jw    SHELL: アクセス名	K-63
+	F-1 C-w	"SHELL   : Display content of buffer"	# ^J^W   SHELL: バッファの内容	K-64
+	C-i	"LIST    : Complete file name"	# ^I     パスの補完	K-65
+	ESC e	"EDIT    : Edit regular-file"	# ^[e    EDIT(元は ^Je)	K-66
+	F-2 e	"ERROR   : Standard error"	# ^J^Oe  ERROR(元は ^X^Ke)	K-67
+	F-2 s	"LOG     : SHELL output"	# ^J^Os  SHELL のログ(元は ^X^Kl)	K-68
+	F-0 C-c	"EXIT    : Exit usilic"	# ^X^C   EXIT	K-69
+	q	"Exit usilic (pager)"	# q      ページャーの終了	K-70
+	F-0 C-m	"Input destination (CP, MV, RM, ARC)"	# ^X^M   転送先の入力(CP・MV・RM・ARC)	K-71
+	F-3 y	"Mark all (CP, MV, RM, ARC)"	# ^Oy    全選択(元は ^X^Y)	K-72
+	F-3 n	"Clear all (CP, MV, RM, ARC)"	# ^On    全解除(元は ^X^N)	K-73
+	F-0 (	"Begin macro definition"	# ^X(    マクロの記録開始	K-74
+	F-0 )	"End macro definition"	# ^X)    マクロの記録終了	K-75
+	F-0 e	"Execute macro definition"	# ^Xe    マクロの実行	K-76
 
 #	<-- (6) -->
 M-?	<-- (8)
 P-?	<-- (9)
-	K-2 K-11 K-22			# (;) ^G ^P ^M			M-0
+	K-2 K-11 K-22			# (;) ^G ^P ^M	前の項目を開く	M-0
 P-?
-	K-2 K-10 K-22			# (:) ^G ^N ^M			M-1
+	K-2 K-10 K-22			# (:) ^G ^N ^M	次の項目を開く	M-1
 	K-2 K-2 K-11 K-22 K-22		# (+) ^G ^G ^P ^M ^M		M-2
 	K-2 K-2 K-10 K-22 K-22		# (*) ^G ^G ^N ^M ^M		M-3
-	K-22 K-11			# (,) ^M ^P			M-4
-	K-22 K-10			# (.) ^M ^N			M-5
+	K-22 K-11			# ([) ^M ^P(元は ,)		M-4
+	K-22 K-10			# (]) ^M ^N(元は .)		M-5
 	K-22 K-2 K-11 K-22		# (<) ^M ^G ^N ^M		M-6
 	K-22 K-2 K-10 K-22		# (>) ^M ^G ^N ^M		M-7
 	K-45 "~/.usilic/usilicrc\cM" \
 	K-32 "\cU^[A-Z]+\cM"		# (ESC t) ^Xf "..." ^J^S "..."	M-8
-	K-68 K-33 "usilic v1.5b\cM"	# (ESC l) ^X^Kl ^Jc "usilic v..."	M-9
+	K-68 K-33 "usilic v1.5b\cM"	# (ESC l) ^J^Os ^Jp "usilic v..."	M-9
 					# 				M-10
 					# 				M-11
 					# 				M-12
@@ -378,8 +375,8 @@ K-?
 	:	"Go to next line"			# (M-1)		K-81
 	+	"Go to upper specific line"		# (M-2)		K-82
 	*	"Go to lower specific line"		# (M-3)		K-83
-	,	"Mark and move cursor one line up"	# (M-4)		K-84
-	.	"Mark and move cursor one line down"	# (M-5)		K-85
+	[	"Mark and move cursor one line up"	# (M-4) 元は ,	K-84
+	]	"Mark and move cursor one line down"	# (M-5) 元は .	K-85
 	<	"Mark and go to upper specific line"	# (M-6)		K-86
 	>	"Mark and go to lower specific line"	# (M-7)		K-87
 	ESC t	"Search section name in ~/.usilic/usilicrc"	# (M-8)		K-88
