@@ -21,6 +21,7 @@ bool replaceFile(const std::string &from, const std::string &to) {
 
 #ifndef _WIN32  // Windowsはplatform_win.cpp(レジストリ)
 namespace {
+#ifdef __APPLE__  // macOSでしか呼ばない(他ではclangがunused-functionの警告を出す、FreeBSDで発見)
 // macOSの版の名前(メジャー番号→名前)。知らない番号は名前無し。
 std::string macOSReleaseName(const std::string &version) {
   int major = std::atoi(version.c_str());
@@ -39,6 +40,7 @@ std::string macOSReleaseName(const std::string &version) {
     default: return "";
   }
 }
+#endif
 
 #ifndef __APPLE__
 // /etc/os-releaseの「KEY=値」の値(引用符を外す)。
