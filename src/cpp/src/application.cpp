@@ -1551,6 +1551,10 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       if (pagerLaunch_) {
         fields.trailing3.clear();
         fields.rightWatermark = ContentView::programWatermark();
+        // 2026-10-31、直接のユーザー報告(FreeBSDの端末で、初回起動のHELPの^Gの章の一覧が「HELP」「01/42 TOP」
+        // 「111307」だけで、バイト数が戻り値に見える): 戻り値欄が空だとバイト数の欄が右端まで伸ばされ
+        // (fillTrailingToEdge)、透かしの入る余地が無くなって描かれていなかった。伸ばさない。
+        fields.fillTrailingToEdge = false;
       }
       return fields;
     }
