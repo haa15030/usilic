@@ -3306,12 +3306,12 @@ public:
   void setPagerLaunch(bool pager) { pagerLaunch_ = pager; }
   // 2026-10-29、直接のユーザー依頼(.steering/20261029-first-start-pager-help/): 最初の起動(~/.usilic/historyが
   // 無かった、main.cpp)。HELP(EPUB)をページャーとして開き、qで終わる。SHELLは機能限定(limitedShellAllows()):
-  // インストールの間は字・^H・^Mだけ、その後はコマンド行の編集・^G・^Jsだけ。プロンプトの名前は「USILIC」。
+  // インストールの間は字・^H・^Mだけ、その後はコマンド行の編集・^G・^Jsだけ。
   // EPUBの章の一覧の^Gは、シェルが動いていればそのSHELLへ(returnFromCut())。
-  void setFirstStartPager(bool on) {
-    firstStartPager_ = on;
-    if (on) shell_.setPromptName("USILIC");
-  }
+  // 2026-10-31、直接のユーザー判断(10/29の暫定の「USILIC」を取り消し): プロンプトの名前は普段と同じ「usilic-1.5b」。
+  // 最初の起動のユーザーが覚えるのはこのプロンプトなので、後のページャー起動・機能限定SHELLでも同じ名前でないと
+  // 違和感がある。右下の透かし(usilic-1.5b)とも合う。
+  void setFirstStartPager(bool on) { firstStartPager_ = on; }
   // -K(main.cpp、-H・最初の起動のKEYのウィンドウ): KEYを「：」を含む行だけの一覧にする(keyListOnly()参照)。
   void setKeyColonListLaunch(bool on) { keyColonListLaunch_ = on; }
   // ^Od(Command::ToggleWheelDirection)でホイールの向きを逆にしているか(main.cppのscrollByWheel()等が見る)。

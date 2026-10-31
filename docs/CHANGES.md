@@ -33237,3 +33237,20 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: legacy/usilicrcのKEY節。legacyは行の順番でK-nの番号が決まる(conf_f()・conf_c())ので、行の並びは当時のままでキーと行末のコメントを書き換えた。F-2(接頭キー)を^X^Kから^J^Oに。K-18 ^J^K→^J^C、K-19 ^O^K→^J^B、K-26 ^Ol→^Oo、K-33/34 ^Jc・^J^C→^Jp・^J^P(C++のPART)、K-41/42 ^Jp・^J^P→^Jt・^J^T(C++のTOOL)、K-51/53/55/57 ^X^Kc等→^Oc・^Om・^Or・^Oa、K-60 ^Xs→^Js、K-66 ^Je→^[e、K-67/68 ^X^Ke・^X^Kl→^J^Oe・^J^Os、K-72/73 ^X^Y・^X^N→^Oy・^On、マクロK-84/85 ,・.→[・]。C++版に無い機能はC++版で空いているキーへ: K-27 ascii ^Oa→^O^A、K-28 漢字コード ^X^Kd→^O^K、K-36 fileのCUTの一覧 ^J^B→^JB。K-0(USILIC)は^[uにすると効かなかった(この行だけESCで始まるキーが効かない)ので^Tのまま。キーの重なりが無いことを台本で確かめた。見出しの説明と行末のコメントは日本語(EUC、legacyがEUCで表示する)。legacy/README.md・インストール済みの~/.local/lib/usilic.old/usilic.oldrcにも。
    - 失敗と復旧: 1回目の台本がEUCで書けない字(␣)で止まった時、書き込み用に開いた後だったのでlegacy/usilicrcが空になった。未コミットの変更は無かったのでgitのHEADから戻し、変換してから開く順に直した。
    - 確かめたこと: 疑似端末で、新しい設定を読んで起動し、^Oo(lsの表示形式)・^J^B(親へ)・^T(USILIC)・^J^Oe(ERROR)・^Js(SHELLの再起動、macOSなので擬似端末を開けないと出る)・^Jp(CUTのプロンプト)が利く。^[eは元の^Jeと同じ動き。doc/HELP.jp等の文書は当時のキーのまま。
+1165. **FreeBSD 16.0-CURRENTでのビルドと初回起動(2026-10-31)**
+   - **経緯**: ユーザーがFreeBSD 16.0-CURRENTを入れ、ssh(usilic@bsd)からC++版をビルドした。GNU makeの書き方なのでgmake、pkgでgit・gmake・pkgconf・sudo・sdl2・sdl2_ttf。
+   - **変更**: (1)platform.cppのmacOSReleaseName()がmacOS以外で-Wunused-function→#ifdef __APPLE__で囲む(21ed97e)。(2)初回起動のインストールの案内が`sudo apt install -y …`だった→__FreeBSD__ではpkgの名前(info→texinfo、7z→7-zipの7zz、unzipはベースにあるので除く、fonts-noto-cjkも除く)で`sudo pkg install -y …`(sudoが無ければ`su -m root -c`)(52ddb39)。
+   - 確かめたこと: Macでmake usilic(FreeBSDの分岐はユーザーが実機で、`sudo pkg install -y texinfo 7-zip`が通った)。
+   - メモ: legacyのconfig.shのFreeBSDの分岐(doc/patch.bsd)は当時のまま、未確認。
+1166. **HELPの章の一覧から入ったSHELLの戻り値が「PART」(2026-10-31)**
+   - **経緯**: 直接のユーザー報告(FreeBSD、"戻り値がPARTは正しい？")。
+   - **変更**: previousModeName()がCUTの画面を一律にPARTとしていた→cutOrigin_から章の一覧自身のモード名(HELP/EPUB/KEY/LOG/MAN/LOCATE/DU、他はPART)(06258b1)。
+   - 確かめたこと: make usilic。
+1167. **ページャーの本の章の一覧で、端末版の右下の透かしが出ずバイト数が戻り値に見える(2026-10-31)**
+   - **経緯**: 直接のユーザー報告(FreeBSDの端末、初回起動のHELPで^G、"nav.xhtml画面の戻り値が「111307」。これはすでに直してもらったはずだが")。モードラインは「HELP」「01/42 TOP」「111307」だけ。
+   - **原因と変更**: 項目1115で戻り値欄を空にして透かしを出すようにしたが、fillTrailingToEdgeのためバイト数の欄が右端まで伸び、透かしの余地が無かった→ページャーの時は伸ばさない(e5692db)。
+   - 確かめたこと: make usilic(表示は実機で)。
+1168. **初回起動の機能限定SHELLのプロンプトを「USILIC」から普段の「usilic-1.5b」へ(2026-10-31)**
+   - **経緯**: 直接のユーザー指摘(初回起動の親の右下はusilic-1.5bなのに、SHELLのプロンプトがUSILIC:で紛らわしい)。選択肢を出して、"A''"(プロンプトを普段と同じに)。理由: "HELPがまだ表示されていないがゆえに先入観も無いユーザーの記憶にはusilic-1.5b(SHELLプロンプト)が残る可能性が高い。あとになってページャー起動したとき、機能限定SHELLになったときもusilic-1.5bでないと違和感があるはず"。10/29(項目「初回起動のページャー」)の暫定の「USILIC」は取り消し。
+   - **変更**: Application::setFirstStartPager()でShell::setPromptName("USILIC")をやめる。src/HELP_.txt・src/HELP_en_.txtの冒頭の「プロンプトは USILIC」を「画面右下と同じ usilic-1.5b」に。^[lのLOGの区切り("usilic-1.5b:")で初回のSHELLのログも区切られるようになる。
+   - 確かめたこと: make usilic。
