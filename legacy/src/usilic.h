@@ -7,9 +7,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdarg.h>
-#include <stdint.h> /* usilic.old: uintptr_t */
-#include <sys/types.h> /* usilic.old: u_char/u_int/u_long: glibc used to pull them in through
-			     other headers, macOS/clang does not (8f27d7d) */
+#include <stdint.h> /* usilic.old: uintptr_t のため */
+#include <sys/types.h> /* usilic.old: u_char・u_int・u_long のため。glibc では
+			     ほかのヘッダーから入っていたが、macOS(clang)では入らない(8f27d7d) */
 
 #include "mode.h"
 
@@ -109,10 +109,9 @@ typedef struct PP { /* line's pointer */
   struct PP *next;
   u_char *cs;
   ATTR *attr;
-  uintptr_t tell; /* usilic.old: was u_int; also holds a raw u_char* into an archive buffer
-		      (alloc_tar/alloc_lha/alloc_unzip + init_arc etc.);
-		      u_int truncated it on 64-bit, causing ARC mode to
-		      segfault or read garbage */
+  uintptr_t tell; /* usilic.old: 元は u_int。アーカイブのバッファの中を指す
+		      u_char* もそのまま入る(alloc_tar・alloc_lha・alloc_unzip と init_arc 等)。
+		      u_int では 64bit で切り詰められ、ARC モードが落ちるかゴミを読んでいた */
   int split;
   struct {
     u_int nl	: 1;

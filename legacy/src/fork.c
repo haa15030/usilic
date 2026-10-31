@@ -17,7 +17,7 @@ static char *w_arg(char arg[], char argv[])
 }
 
 u_char *read_buff(int *sizep, uintptr_t fd, int f_chkbin)/*usilic*/
-/* usilic.old: fd was u_int, it also carries a FILE* (read_arc()) */
+/* usilic.old: fd は元は u_int。read_arc() からは FILE* も入ってくる */
 {
   int pid = 0;
   u_char *buff;
@@ -75,9 +75,9 @@ u_char *fork_bin(CHILD *chp, int *sizep, int f_M, int f_chkbin)/*usilic*/
     close(pv[1]);
     close(pv[0]);
     execvp(*chp->argv, chp->argv);
-    exit(0); /* usilic.old: was missing: on execvp() failure this child fell through and kept
-		 running as a second, full copy of usilic (same process image, same
-		 open tty fd), racing the real process for every keystroke. */
+    exit(0); /* usilic.old: 抜けていた: execvp() に失敗した子が
+		 終わらずに親の続きを走り、同じ端末を使う2つ目の usilic として
+		 本物とキー入力を奪い合っていた。 */
   } 
   close(pv[1]);
   buff = read_buff(sizep, pv[0], f_chkbin);
@@ -255,10 +255,10 @@ u_char *fork_arc(char name[], int f_M, CHILD *chp0, int *tmp_sizep, int *bp_size
     pipe(pv);
     if (!fork()) {
       load_signal();
-      setenv("LC_ALL", "C", 1); /* usilic.old: archive TOC (tar tvf/unzip -l/lha/rpm -qplv)
-				    is parsed byte-by-byte by alloc_head() as
-				    ASCII; a localized (e.g. Japanese) date breaks
-				    that scan and hangs or segfaults usilic */
+      setenv("LC_ALL", "C", 1); /* usilic.old: アーカイブの一覧(tar tvf・unzip -l・lha・
+				    rpm -qplv)は alloc_head() が ASCII として
+				    1バイトずつ読むので、日本語の日付だと走査が
+				    壊れて止まるか落ちる */
       if (chp2) {
 	pipe(&pv[2]);
 	if (!fork()) {
@@ -770,7 +770,7 @@ char *read_arc(CHILD *arc, char prev[], char name[], int *sizep)/*usilic*/
 {
   CHILD *chp = NULL, *chp2 = NULL;
   int i, pv[6], f_deb, mode, size, length, f_chkbin = 0;
-  uintptr_t fd; /* usilic.old: a file descriptor, or a FILE* when f_chkbin == -1 (read_buff()) */
+  uintptr_t fd; /* usilic.old: ファイル記述子、f_chkbin == -1 の時は FILE*(read_buff()) */
   FILE *fp;
   char *p, head[N_pipe];
   u_char c, *buff;
@@ -933,7 +933,7 @@ char *read_arc(CHILD *arc, char prev[], char name[], int *sizep)/*usilic*/
       return NULL;
     }
     *sizep = size;
-    fd = (uintptr_t)fp; /* usilic.old: u_int truncated the FILE* on 64-bit */
+    fd = (uintptr_t)fp; /* usilic.old: u_int では 64bit で FILE* が切り詰められていた */
     f_chkbin = -1;
   } else {
     *sizep = 0;

@@ -127,8 +127,8 @@ PP *disp_pp(PP *pp, int f_mark)/*usilic*/
 { /* print line */
   int i, f_pp, f_rc = 0;
   
-  if ((f_pp = (pp != NULL))) i = 0; /* usilic.old: was (int)pp, a pointer whose low
-				       32 bits are 0 was taken as NULL on 64-bit */
+  if ((f_pp = (pp != NULL))) i = 0; /* usilic.old: 元は (int)pp。64bit では下位32bitが0の
+				       番地を NULL と取り違えていた */
   else { /* no line */
     vt_move(0, 0);
     vt_eeol();
@@ -162,7 +162,7 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
   static int nlen, f_enter, *lenp;
   static char *copy[3];
 
-  if (!vlen) vlen = strlen(getenv("USILIC_OLD")) + 2; /* usilic.old: was USILIC, now the new C++ usilic's */
+  if (!vlen) vlen = strlen(getenv("USILIC_OLD")) + 2; /* usilic.old: 元は USILIC(今は C++ 版の usilic が使う) */
   switch(f_M0) {
   case -1:
     return strlen(name);
@@ -314,7 +314,7 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
     vt_move(vt_row(0) - 1, len + 1);
     while ((cp = strchr(prev, '\033')))
       if ((cp2 = strchr(cp, 'm'))) {
-	memmove(cp, &cp2[1], strlen(&cp2[1]) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
+	memmove(cp, &cp2[1], strlen(&cp2[1]) + 1); /* usilic.old: 元は重なった範囲への strcpy()(未定義動作) */
       } else break;
     if (argp) {
       for (i = strlen(prev), j = vt_col(0) - (len + i + 1); j > 0; i++, j--)
@@ -339,7 +339,7 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
   } else {
     vt_eeol();
     vt_move(vt_row(0) - 1, vt_col(0) - vlen);
-    vt_printf(" %s%s%s ", vt_geta(A_md), getenv("USILIC_OLD"), vt_geta(A_me)); /* usilic.old: was USILIC, now the new C++ usilic's */
+    vt_printf(" %s%s%s ", vt_geta(A_md), getenv("USILIC_OLD"), vt_geta(A_me)); /* usilic.old: 元は USILIC(今は C++ 版の usilic が使う) */
   }
   vt_endstand();
   if (!f_mark && !f_arc && !f_enter && f_M != T_shell && lenp) *lenp = 0;
@@ -417,7 +417,7 @@ int print_line(void *ps0, PP *pp, int len, u_char *linep)/*usilic*/
   *line = '\0';
   if (!*line && pp != F2) {
     f_code = pp && pp->f.code;
-    if (!pp || (pp && pp->tell == (uintptr_t)F7)) row = n_row = e_row = 0; /* usilic.old: was (u_int), truncated pointers on 64-bit */
+    if (!pp || (pp && pp->tell == (uintptr_t)F7)) row = n_row = e_row = 0; /* usilic.old: 元は (u_int)。64bit ではポインタが切り詰められていた */
     else {
       row = pp->f.line;
       while (pp->next) pp = pp->next;

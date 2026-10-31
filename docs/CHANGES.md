@@ -33228,3 +33228,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **原因**: FileMode::loadFileRaw()はBUFFER(既定64MB)まで読んで、制御コードを見せる形に組んでから"Not enough buffer"を出していた(項目「BUFFER」2026-09-25)。670MBの.xzでは、疑似端末で20秒たっても「FILE 読み込み中...」のまま。legacyはファイルの大きさだけを見て、読まずに知らせる。
    - **直し**: legacyと同じく、BUFFERを超えるファイルは読まずにConfiguration::noteBufferLimitHit()を立てて戻る((ls)のまま「バッファが足りません」)。usilicrc(src/usilicrc)のBUFFERの説明と、HELPの原稿の^[^Mの説明を合わせた。
    - 確かめたこと: 疑似端末で、0.5秒以内に(ls)のまま「バッファが足りません」。
+1163. **legacy: 「usilic.old:」のコメントを日本語(UTF-8)に(2026-10-31)**
+   - **依頼**: 直接のユーザー依頼("Makefileの英文見て思うのはやっぱ日本語で。utf8でいいので.[ch]内の`usilic.old`箇所も日本語への書き換えよろしく。")。
+   - **変更**: 項目1158で付けた`usilic.old:`のコメント(.c・.hの86か所、Makefile・config.sh)を日本語にした。印の`usilic.old:`はそのまま。Makefileとconfig.shのcleanのレシピの中にあったコメント(make cleanのたびにシェルへ渡されて表示される)は、目標の行の上へ移した。usilicrcのコメントは、legacyがEUCで表示するのでASCIIのまま。legacy/README.mdの説明も合わせた。
+   - 確かめたこと: legacy/を全部作り直してコンパイルが通る。make clean -nが元の3行だけ。印の検証の台本で、印の無いハンクは0(108個)。

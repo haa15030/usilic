@@ -822,13 +822,11 @@ PP *alloc_head(u_char buff0[], int f_M0, int size0, int *rowp)/*usilic*/
 	  }
 	  break;
 	} else if (ce == Alloc.line) {
-	  /* usilic.old: Reached the start of the line without ever finding '/': this
-	     isn't GNU tar's "owner/group" format (BSD tar, used by macOS,
-	     has no '/' and prints owner and group as separate fields), so
-	     the backward scan above can never terminate. Without this
-	     fallback it spins forever (100% CPU) and can walk off the
-	     buffer. Recover by locating the size field the BSD way:
-	     mode links owner group SIZE mon day time/year name. */
+	  /* usilic.old: 行頭まで戻っても '/' が無い: GNU tar の「所有者/グループ」の形ではない
+	     (macOS の BSD tar は '/' が無く、所有者とグループを別の欄に出す)ので、
+	     上の逆向きの走査が終わらず、CPU を食い続けてバッファの外まで読んでいた。
+	     BSD の並び(属性 リンク数 所有者 グループ サイズ 月 日 時刻/年 名前)で
+	     サイズの欄を探し直す。 */
 	  for (ce = Alloc.line, k = 0; k < 4; ce++)
 	    if (*ce == ' ') { while (ce[1] == ' ') ce++; k++; }
 	  break;
@@ -963,7 +961,7 @@ void alloc_tar(u_char cp0[], PP pp0[], int size)/*usilic*/
   for (cp = cp0, pp = pp0, end--; ;) {
     if ((cp += 512) > end) /* skip header */
       cp = end;
-    pp->tell = (uintptr_t)cp; /* usilic.old: was (u_int), truncated pointers on 64-bit */
+    pp->tell = (uintptr_t)cp; /* usilic.old: 元は (u_int)。64bit ではポインタが切り詰められていた */
     if (pp->split < 0) pp->split = 0;
     else {
       for (i = pp->split; i && cp < end; i--) cp++;
@@ -998,7 +996,7 @@ void alloc_lha(u_char cp0[], PP pp0[], int size)/*usilic*/
 	  "::::::::"
 	*/
 	while (cp < end && *cp++ != '\n') ;
-    pp->tell = (uintptr_t)cp; /* usilic.old: was (u_int), truncated pointers on 64-bit */
+    pp->tell = (uintptr_t)cp; /* usilic.old: 元は (u_int)。64bit ではポインタが切り詰められていた */
     if (pp->split > 0) {
       for (i = 0; i < pp->split && cp < end; i++) cp++;
       if (cp == end) pp->split = -2;
@@ -1016,7 +1014,7 @@ void alloc_unzip(u_char cp0[], PP pp0[], int size)/*usilic*/
   for (cp = cp0, end = cp + size, pp = pp0; ; ) {
     if (pp->split < 0) pp->split = 0;
     else {
-      pp->tell = (uintptr_t)cp; /* usilic.old: was (u_int), truncated pointers on 64-bit */
+      pp->tell = (uintptr_t)cp; /* usilic.old: 元は (u_int)。64bit ではポインタが切り詰められていた */
       for (i = 0; i < pp->split && cp < end; i++) cp++;
       if (cp == end) pp->split = -2;
     }
@@ -1118,7 +1116,7 @@ u_char *alloc_split(char name[], int tell, int size)/*usilic*/
 }
 
 u_char *alloc_buff(int *sizep, uintptr_t fd, int f_chkbin)/*usilic*/
-/* usilic.old: fd was u_int, it also carries a FILE* (read_arc()) */
+/* usilic.old: fd は元は u_int。read_arc() からは FILE* も入ってくる */
 {
   FILE *fp;
   int size, temp, fsize, code, f_getch = 1;
@@ -1311,7 +1309,7 @@ void make_bp(BASE *bp, char mess[], char *name, char *cp)/*usilic*/
   }
   if ((bp->buff = strdup(toul(Alloc.line, 1)))) {
     if ((bp->pp = set_pp(bp->buff, strlen(bp->buff), &bp->nrow, 0, 0))) {
-      bp->pp->tell = (uintptr_t)F7; /* mark of error */ /* usilic.old: was (u_int), truncated pointers on 64-bit */
+      bp->pp->tell = (uintptr_t)F7; /* mark of error */ /* usilic.old: 元は (u_int)。64bit ではポインタが切り詰められていた */
       bp->size = -1;
     } else {
       free(bp->buff);

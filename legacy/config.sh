@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Working directory.
-TMP=/tmp/.usilic.old	# usilic.old: was /tmp/.usilic
+TMP=/tmp/.usilic.old	# usilic.old: 元は /tmp/.usilic
 
 # Default character set.
 CHARSET="euc"
@@ -35,7 +35,7 @@ else
         make install
         exit 0
     else
-	# usilic.old: macOS (Darwin) wasn't supported (f1ca2a8)
+	# usilic.old: macOS(Darwin)に対応していなかった(f1ca2a8)
 	if [ `uname` = Darwin ]; then	# macOS (f1ca2a8)
 	    USR_DIR=/usr/local
 	    MAN=/usr/local/share/man/man1
@@ -52,17 +52,17 @@ else
             echo 'Not supported yet "'`uname`'".'
             exit 1
 	fi
-	fi	# usilic.old: closes the Darwin branch added above
+	fi	# usilic.old: 上で足した Darwin の分岐を閉じる
     fi
 fi
 
-# usilic.old: The new C++ usilic owns ~/.usilic/ and ~/.local/{bin,lib}/usilic, so this
-# legacy version is installed side by side as usilic.old: ~/.local/bin/usilic.old,
-# ~/.local/lib/usilic.old/ (usilic.oldrc, HELP), its data in ~/.usilic.old/.
+# usilic.old: ~/.usilic/ と ~/.local/{bin,lib}/usilic は C++ 版の usilic が使うので、この旧版は
+# usilic.old として並べて入れる: ~/.local/bin/usilic.old、~/.local/lib/usilic.old/
+# (usilic.oldrc・HELP)、データは ~/.usilic.old/。
 USR_DIR=$HOME/.local
 LIB=$USR_DIR/lib/usilic.old
 BIN=$USR_DIR/bin
-MAN=$USR_DIR/share/man/man1	# usilic.old: was $USR_DIR/man/man1
+MAN=$USR_DIR/share/man/man1	# usilic.old: 元は $USR_DIR/man/man1
 
 cat >> .config <<EOF
 CC=gcc	
@@ -84,7 +84,7 @@ PROT=	code.P mode.P tc.P usilic.P
 .c.o:
 	\$(CC) -c \$(CFLAGS) \$<
 
-# usilic.old: the binary was usilic
+# usilic.old: できるものは元は usilic
 default: usilic.old
 
 usilic.old:	\$(PROT) \$(OBJS)
@@ -123,8 +123,8 @@ debug:
 	/bin/ls Makefile *.[ch]|xargs -t ../perl/debug.pl debug
 	ln -sf ../config.h debug
 
+# usilic.old: 元は usilic を消していた
 clean:
-	# usilic.old: was usilic
 	rm -rf usilic.old \$(OBJS) \$(PROT) *~ debug
 EOF
 
@@ -175,7 +175,7 @@ echo 'Installing usilic:'
 mkdir -p \$1$BIN
 mkdir -p \$1$LIB
 mkdir -p \$1$MAN
-# usilic.old: installed as usilic.old, usilic.oldrc and usilic.old.1.gz (were usilic, usilicrc, usilic.1.gz)
+# usilic.old: usilic.old・usilic.oldrc・usilic.old.1.gz として入れる(元は usilic・usilicrc・usilic.1.gz)
 echo "install $COPY -m 755 src/usilic.old \$1$BIN/usilic.old"
 install $COPY -m 755 src/usilic.old \$1$BIN/usilic.old
 echo "install $COPY -m 644 usilicrc \$1$LIB/usilic.oldrc"
@@ -184,11 +184,11 @@ echo "install $COPY -m 644 doc/HELP \$1$LIB"
 install $COPY -m 644 doc/HELP \$1$LIB
 echo "install $COPY -m 644 doc/HELP.jp \$1$LIB"
 install $COPY -m 644 doc/HELP.jp \$1$LIB
-# usilic.old: was \$1$MAN (installed as usilic.1.gz)
+# usilic.old: 元は \$1$MAN(usilic.1.gz として入っていた)
 echo "install $COPY $PERM doc/usilic.1.gz \$1$MAN/usilic.old.1.gz"
 install $COPY $PERM doc/usilic.1.gz \$1$MAN/usilic.old.1.gz
 EOF
-# usilic.old: was [ -d $JMAN ], true for an empty JMAN on macOS (0b5a0df)
+# usilic.old: 元は [ -d $JMAN ]。macOS では JMAN が空なので真になっていた(0b5a0df)
 if [ -n "$JMAN" ] && [ -d "$JMAN" ]; then
 cat >> install.sh <<EOF
 mkdir -p \$1$JMAN

@@ -54,8 +54,8 @@ typedef union {
 static void write_shell(void *p)
 {
   static int row, col, col0, colb, cole, len, f_cr, *pv;
-  static char dir[N_line], version[N_line]; /* usilic.old: version was [80],
-					      overflowed by the version string */
+  static char dir[N_line], version[N_line]; /* usilic.old: version は元は [80]。
+					      版の表示の文字列で溢れていた */
   SHELL *sp;
   u_char *cp, *cp2;
   int f_disp;
@@ -76,7 +76,7 @@ static void write_shell(void *p)
     sp->w.dir = dir;
     sp->w.version = version;
     strcpy(version, vt_geta(A_md));
-    strcat(version, getenv("USILIC_OLD")); /* usilic.old: was USILIC, now the new C++ usilic's */
+    strcat(version, getenv("USILIC_OLD")); /* usilic.old: 元は USILIC(今は C++ 版の usilic が使う) */
     strcat(version, vt_geta(A_me));
     break;
   case 1:
@@ -93,11 +93,11 @@ static void write_shell(void *p)
 	if ((cp2 = strstr(dir, ":~"))) {
 	  memmove(&dir[strlen(s_S(S_home))], &cp2[3], strlen(&cp2[3]) + 1);
 	  memcpy(dir, s_S(S_home), strlen(s_S(S_home)));
-	} else { /* usilic.old: cp points inside dir[]; &cp[...] and dir overlap when
-		    cp != dir, so strcpy() here is undefined behavior (and
-		    on macOS, _FORTIFY_SOURCE's __chk_fail_overlap() catches
-		    it and hangs write_shell(), freezing usilic after a CP/MV/RM
-		    completes and it tries to redraw the SHELL prompt) */
+	} else { /* usilic.old: cp は dir[] の中を指すので、cp != dir の時は
+		    &cp[...] と dir が重なり、strcpy() は未定義動作になる。macOS では
+		    _FORTIFY_SOURCE の __chk_fail_overlap() がこれを見つけて
+		    write_shell() が止まり、CP/MV/RM の後に SHELL のプロンプトを
+		    描き直す所で usilic が固まっていた */
 	  u_char *sp = &cp[strlen(version) + 1];
 	  memmove(dir, sp, strlen(sp) + 1);
 	}
@@ -589,12 +589,11 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
 		  p = &cp[1];
 		  strcpy(buff, &cp[1]);
 		  for (cp = buff; *cp == ' ' || *cp == '\t'; cp++) ;
-		  /* usilic.old: NOT strcpy(buff, cp) -- cp already points inside buff
-		     here (see the loop above), so source and destination
-		     overlap. macOS's _FORTIFY_SOURCE detects this and
-		     hangs/aborts inside __chk_fail_overlap() (same class
-		     of bug as the write_shell() one fixed earlier).
-		     memmove() has no such restriction. */
+		  /* usilic.old: strcpy(buff, cp) にしない。cp は上の
+		     ループでもう buff の中を指しているので、写し元と写し先が重なる。
+		     macOS の _FORTIFY_SOURCE はこれを見つけて __chk_fail_overlap() の
+		     中で止まる(write_shell() で直したものと同じ種類)。memmove() なら
+		     重なっていてもよい。 */
 		  memmove(buff, cp, strlen((char*)cp) + 1);
 		  if ((cp = strchr(buff, ' '))) *cp = '\0';
 		  if (!strcmp(buff, s_S(S_usilic))) i = -1;
@@ -863,7 +862,7 @@ static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, P
 	/* '\\' : line continuation ==> alloc.c (2) */
 	if (!fp->bash && cp[-1] == '\r') ff.nl = 1;
 	strcpy(p, p2);
-	memmove(p, &p[vt_col(0) + j], strlen((char*)&p[vt_col(0) + j]) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
+	memmove(p, &p[vt_col(0) + j], strlen((char*)&p[vt_col(0) + j]) + 1); /* usilic.old: 元は重なった範囲への strcpy()(未定義動作) */
         if (!*p) break;
 	if (*p == '\r') ff.nl = 1;
 	j = 0;
@@ -1325,15 +1324,15 @@ static int add_line(int row, int c, u_char buff[], char prompt[], RV *rvp, int *
 static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], int pid0, int f_shell)
 {
   static char prompt[N_pipe+1], name[N_line], arg[10], usilic[N_line];
-  /* usilic.old: usilic was [10], overflowed by the version string */
+  /* usilic.old: usilic は元は [10]。版の表示の文字列で溢れていた */
   static PP *p0;
   static FILE *ifp, *ofp, **ifpp, **ofpp;
   static BASE *bp;
   static RV rv;
   static PN pn;
   static int sfd, pid, len, row0, *pv, inter;
-  /* usilic.old: designated initializers; the positional form relied on
-     glibc's __sighandler_t and field order, which macOS doesn't share */
+  /* usilic.old: メンバーの名前で初期化する。元の並びで書く形は
+     glibc の __sighandler_t とメンバーの順序に頼っていて、macOS とは合わない */
   static struct sigaction alrm = {
     .sa_handler = (void(*)(int))read_shell,
     .sa_flags = SA_RESTART,
@@ -1375,7 +1374,7 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
     }
     Shell.f.init = 0;
     inter = 1; /* ==> (11) */
-    strcpy(usilic, getenv("USILIC_OLD")); /* usilic.old: was USILIC, now the new C++ usilic's */
+    strcpy(usilic, getenv("USILIC_OLD")); /* usilic.old: 元は USILIC(今は C++ 版の usilic が使う) */
     errp[0] = s_S(S_mark);
     errp[1] = usilic;
     errp[2] = ":";
@@ -1389,17 +1388,14 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
     while (fgetc(ifp) == EOF) ; /* (12) */
     if (!fork()) {
       if (f.bash)
-	/* usilic.old: unset PROMPT_COMMAND: overriding PS1 alone isn't enough to get a
-	   prompt usilic's line-by-line SHELL-mode parser can recognize. Many
-	   desktop terminal emulators (e.g. GNOME Terminal/VTE, via
-	   /etc/profile.d/vte.sh) set PROMPT_COMMAND to inject an OSC
-	   escape sequence (reporting cwd as a file:// URI, percent-encoded)
-	   before every prompt. usilic's parser doesn't know this escape
-	   sequence and reads it as literal text, desyncing the line buffer
-	   into a repeating garbage loop -- most visible when the cwd has
-	   non-ASCII characters (e.g. a localized "Pictures" folder name),
-	   which makes the injected escape sequence long enough to spill
-	   across what usilic expects to be a single prompt line. */
+	/* usilic.old: unset PROMPT_COMMAND: PS1 を上書きするだけでは、
+	   SHELL モードが1行ずつ読むプロンプトの形にならない。GNOME Terminal(VTE)等の
+	   端末は(/etc/profile.d/vte.sh で)PROMPT_COMMAND に、プロンプトの前に
+	   カレントディレクトリを知らせる制御文字(OSC、file:// の URI)を出させる。
+	   usilic はこれを知らないので文字として読み、行のバッファがずれて同じ
+	   ゴミの行が繰り返される。カレントディレクトリに日本語(「ピクチャ」等)が
+	   あると制御文字が長くなり、1行に収まるはずのプロンプトがはみ出すので
+	   特に起きやすかった。 */
 	fprintf(ofp, "unset PROMPT_COMMAND; export PS1=\047%s%s:\\w\\$ %s\047; set -o ignoreeof; export COLUMNS=%d; unset HISTFILE; export PAGER=\047%s -p %d\047\n#\n"
 		, s_S(S_mark), usilic, s_S(S_mark), vt_col(0), s_S(S_usilic), pid0);
       else
@@ -1737,8 +1733,8 @@ int wait_comm(int pfd, int *posp, int *rowp, int col0p, u_char *buff, u_char pp_
 static int make_shell(FILE **ifpp, FILE **ofpp, int pv[], u_char prev[], int pid, char mess[], int f_comm)
 {
   int i, spid;
-  /* usilic.old: designated initializers; the positional form relied on
-     glibc's __sighandler_t and field order, which macOS doesn't share */
+  /* usilic.old: メンバーの名前で初期化する。元の並びで書く形は
+     glibc の __sighandler_t とメンバーの順序に頼っていて、macOS とは合わない */
   static struct sigaction alrm = {
     .sa_handler = (void(*)(int))write_shell,
     .sa_flags = SA_RESTART,
@@ -1856,7 +1852,7 @@ int do_shell(u_char prev[], char str[], FILE **pinp, u_char *w, int *ppidp, LIST
 
   if (!Shell.f.alen) {
     Shell.f.alen = strlen(vt_geta(A_md)) + strlen(vt_geta(A_me));
-    Shell.f.blen = strlen(getenv("USILIC_OLD")) + 1; /* usilic.old: was USILIC, now the new C++ usilic's */
+    Shell.f.blen = strlen(getenv("USILIC_OLD")) + 1; /* usilic.old: 元は USILIC(今は C++ 版の usilic が使う) */
     Shell.f.clen = Shell.f.alen + Shell.f.blen;
   }
   f_init = !(pid && !kill(pid, 0));

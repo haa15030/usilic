@@ -273,8 +273,9 @@ int is_child(char name[], CHILD *chp)/*usilic*/
   if (chp->f.exec) f_M = T_exec;
   else
     for (i = f_M = 0; !f_M; i++) {
-      /* usilic.old: test the end mark first: s_S(-1) is outside Str.S[] (NULL on 64bit),
-	 so a FILE program other than these (bzip2, nkf, ...) crashed strcmp() */
+      /* usilic.old: 終わりの印を先に調べる。s_S(-1) は Str.S[] の外
+	 (64bit では NULL)なので、表に無い FILE 節のプログラム(bzip2・nkf 等)で
+	 strcmp() が落ちていた */
       if (p[i].S < 0) f_M = p[i].M;
       else if (!strcmp(*chp->argv, s_S(p[i].S))) f_M = p[i].M;
     }

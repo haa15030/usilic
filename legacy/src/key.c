@@ -61,12 +61,11 @@ static int key_getch(int f_key, u_char cva[])
   return i;
 }
 
-/* usilic.old: key_getch()'s "playback" mode (its else-branch) doesn't touch f_key/cva,
-   so it was called through `getch` -- typedef'd as a 0-argument GETCH --
-   relying on whatever garbage was left in the argument registers to not
-   coincidentally equal 2 or 3 (key_getch's "setup" mode, which dereferences
-   cva). That's UB and was observed to crash: this wrapper matches GETCH's
-   real signature and passes a value guaranteed not to be 2 or 3. */
+/* usilic.old: key_getch() の「再生」の使い方(else の側)は
+   f_key・cva を使わないので、引数の無い関数の型 GETCH に無理に変えて getch から
+   呼んでいた。その時の f_key は、引数のレジスタにたまたま残っていた値になり、
+   それが 2 か 3(cva を読む「準備」の使い方)だと落ちる。未定義動作で、実際に
+   落ちていた。GETCH の本当の型に合わせ、2・3 にならない値を渡す包み。 */
 static int key_getch_play(void)
 {
   return key_getch(1, NULL);
@@ -408,7 +407,7 @@ static int input_key(int f_M, u_char mess[], u_char *cs, int col0, char *cname, 
 	    case M_ldir:
 	    case M_lfile2:
 	    case M_ldir2:
-	      if ((cp = strstr(buff, "//"))) memmove(buff, &cp[1], strlen((char*)&cp[1]) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
+	      if ((cp = strstr(buff, "//"))) memmove(buff, &cp[1], strlen((char*)&cp[1]) + 1); /* usilic.old: 元は重なった範囲への strcpy()(未定義動作) */
 	      else if (strchr(buff, '\0')[-1] == '~')
 		strcpy(buff, s_S(S_home));
 	      else if ((cp = strstr(buff, "~/"))) {
@@ -550,7 +549,7 @@ int read_m(RV *rvp, int f_M, int klen, u_char *cva, char *cname, LIST **listp, S
   }
   if (cva) {
     key_getch(f_M, cva);
-    getch = key_getch_play; /* usilic.old: was (GETCH)key_getch, see key_getch_play() */
+    getch = key_getch_play; /* usilic.old: 元は (GETCH)key_getch。key_getch_play() を参照 */
     return 0;
   }
   if (is_comm(f_M, 1) || f_M == M_exit) f_enter = 2;
@@ -604,7 +603,7 @@ int read_m(RV *rvp, int f_M, int klen, u_char *cva, char *cname, LIST **listp, S
   }
   if (c) {
     int f_stand = 1;
-    u_char *p = (rvp->pp && rvp->pp->tell != (uintptr_t)F7) ? rvp->pp->cs : NULL; /* usilic.old: was (u_int), truncated pointers on 64-bit */
+    u_char *p = (rvp->pp && rvp->pp->tell != (uintptr_t)F7) ? rvp->pp->cs : NULL; /* usilic.old: 元は (u_int)。64bit ではポインタが切り詰められていた */
     if (*iname || !p) /* filename with no attribute on the file-list after */
       f_stand = 0;    /* `Enter' (select file) */
     if (f_list && f_stand) stand_str(rvp, f_M);
@@ -1184,7 +1183,7 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	cole -= i;
 	memcpy(yank, buff, i);
 	yank[i] = '\0';
-	memmove(buff, &buff[i], strlen((char*)&buff[i]) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
+	memmove(buff, &buff[i], strlen((char*)&buff[i]) + 1); /* usilic.old: 元は重なった範囲への strcpy()(未定義動作) */
 	shift = ((i = cole - col0 - len) > 0) ? i : 0;
 	strcpy(back, &buff[shift]);
 	col = col0;
@@ -1247,7 +1246,7 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	} else {
 	  if (shift) {
 	    if ((i = count_k(buff, col - col0 + shift - 1))) cole--;
-	    /* usilic.old: was strcpy() on overlapping ranges (UB) */
+	    /* usilic.old: 元は重なった範囲への strcpy()(未定義動作) */
 	    memmove(&buff[col - col0 + shift - 1 - i]
 		   , &buff[col - col0 + shift
 			  + count_k(buff, col - col0 + shift)]
@@ -1265,7 +1264,7 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	      cole -= i;
 	    } else {
 	      if ((i = count_k(buff, col - col0 - 1))) cole--;
-	      /* usilic.old: was strcpy() on overlapping ranges (UB) */
+	      /* usilic.old: 元は重なった範囲への strcpy()(未定義動作) */
 	      memmove(&buff[col - col0 - 1 - i], &buff[col - col0]
 		     , strlen((char*)&buff[col - col0]) + 1);
 	      if (i) col--;
@@ -1288,7 +1287,7 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	}
 	if (shift) {
 	  if ((i = count_k(buff, col - col0 + shift + 1))) cole--;
-	  /* usilic.old: was strcpy() on overlapping ranges (UB) */
+	  /* usilic.old: 元は重なった範囲への strcpy()(未定義動作) */
 	  memmove(&buff[col - col0 + shift], &buff[col - col0 + shift + 1 + i]
 		 , strlen((char*)&buff[col - col0 + shift + 1 + i]) + 1);
 	  if (i) {
@@ -1301,12 +1300,12 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	  col++;
 	} else {
 	  i = buff[col - col0] >= 0x80;
-	  /* usilic.old: was strcpy() on overlapping ranges (UB) */
+	  /* usilic.old: 元は重なった範囲への strcpy()(未定義動作) */
 	  memmove(&buff[col - col0], &buff[col - col0 + 1]
 		 , strlen((char*)&buff[col - col0 + 1]) + 1);
 	  if (i && count_k(buff, col - col0 + 1)) {
 	    cole--;
-	    /* usilic.old: was strcpy() on overlapping ranges (UB) */
+	    /* usilic.old: 元は重なった範囲への strcpy()(未定義動作) */
 	    memmove(&buff[col - col0], &buff[col - col0 + 1]
 		   , strlen((char*)&buff[col - col0 + 1]) + 1);
 	  }

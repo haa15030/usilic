@@ -72,7 +72,7 @@ int skip_spc(u_char cs[], int f_spc)/*usilic*/
       while (1) {
 	if ((cp = strchr(cs, ' ')) && cp[-1] != '\\') {
 	  if (cp[1]) {
-	    memmove(cs, &cp[1], strlen((char*)&cp[1]) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
+	    memmove(cs, &cp[1], strlen((char*)&cp[1]) + 1); /* usilic.old: 元は重なった範囲への strcpy()(未定義動作) */
 	    continue;
 	  } else *cp = '\0';
 	}
@@ -81,7 +81,7 @@ int skip_spc(u_char cs[], int f_spc)/*usilic*/
       break;
     case 2:
       for (cp = &cs[i_dir]; *cp == ' '; cp++) ;
-      memmove(cs, cp, strlen((char*)cp) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
+      memmove(cs, cp, strlen((char*)cp) + 1); /* usilic.old: 元は重なった範囲への strcpy()(未定義動作) */
       break;
     }
   }
@@ -93,7 +93,7 @@ int skip_spc(u_char cs[], int f_spc)/*usilic*/
 	*cp++ = j;
 	i--;
       }
-      memmove(cp, &cp[i], strlen((char*)&cp[i]) + 1); /* usilic.old: was strcpy() on overlapping ranges (UB) */
+      memmove(cp, &cp[i], strlen((char*)&cp[i]) + 1); /* usilic.old: 元は重なった範囲への strcpy()(未定義動作) */
     } else break;
 #ifdef SKIP_SPC
  debug("1:cs=%s\n",cs);
@@ -137,7 +137,7 @@ static void init_rv(NUM *np, PN *pnp, RV *rvp, HEAP *hp, int etop)
     for (pp = hp->bp->pp; pp && !strstr(pp->cs, "../"); pp = pp->next) ;
   else pp = hp->bp->pp;
   rvp->col = init_col(np->M, pp->cs, hp->bp->size);
-  if (hp->bp->pp->tell != (uintptr_t)F7 /* F7: "No size" etc. */ /* usilic.old: was (u_int), truncated pointers on 64-bit */
+  if (hp->bp->pp->tell != (uintptr_t)F7 /* F7: "No size" etc. */ /* usilic.old: 元は (u_int)。64bit ではポインタが切り詰められていた */
       && rvp->pp && rvp->col >= 0) { /* reverse attr. */
     strcpy(rvp->str, &rvp->pp->cs[rvp->col]);
   } else strcpy(rvp->str, "");
@@ -400,10 +400,10 @@ int load_ll(CHILD *chp, ARRAY *ap, u_char prev[], CUT *cutp, HEAP *hp, PN *pnp, 
       break;
     }
   }
-  /* usilic.old: was ((u_int)lp - (u_int)&hp->ll.a[0]) / sizeof(u_int): the slots
-     of hp->ll are pointers (8 bytes on 64-bit), so dividing by 4 doubled the
-     index (dir 2 -> 4, file 1 -> 2) and save_ll() threw the cursor position
-     away: (ls) always came back at the top line */
+  /* usilic.old: 元は ((u_int)lp - (u_int)&hp->ll.a[0]) / sizeof(u_int)。
+     hp->ll の欄はポインタ(64bit では 8 バイト)なので、4 で割ると番号が 2 倍に
+     なり(ディレクトリ 2→4、ファイル 1→2)、save_ll() がカーソルの位置を捨てて
+     いた。(ls) に戻ると、いつも最上行になっていた */
   return (lp) ? (int)(((char*)lp - (char*)&hp->ll.a[0]) / sizeof(hp->ll.a[0])) : i;
 }
 
@@ -821,7 +821,7 @@ void do_prog(char *str, STR **cmdp, STR **histp)/*usilic*/
 #endif
   if (!(pid = fork())) {
     load_signal();
-    unsetenv("USILIC_OLD"); /* enable to launch `usilic' from PROGRAM-mode */ /* usilic.old: was USILIC, now the new C++ usilic's */
+    unsetenv("USILIC_OLD"); /* enable to launch `usilic' from PROGRAM-mode */ /* usilic.old: 元は USILIC(今は C++ 版の usilic が使う) */
     execlp("sh", "sh", "-c", str, NULL);
   }
   fprintf(stdout, "\n%s: %s\n", s_S(S_usilic), str);
