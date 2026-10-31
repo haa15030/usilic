@@ -552,21 +552,47 @@ std::vector<std::string> &userSansSerifCandidates() {
   return candidates;
 }
 
-// `user`(usilicrcの指定)を先に、`builtin`を後に試し、仮名を持つ最初のフォント。
+// 2026-10-31、直接のユーザー報告(FreeBSD+Xfce、ja-font-ipaを入れたが-gのHELPがゴシック体のまま、^J^FでIPAMinchoに
+// すると明朝体): 下の候補はmacOS・Debian系・Windowsの決まった場所だけで、FreeBSD(/usr/local/share/fonts/)等には
+// 無かった。どれも無ければ、fontconfigに日本語の入ったその系統のフォントを尋ねる(fc-match、Windowsのネイティブは除く)。
+std::string fontconfigJapaneseFont(const char *family) {
+#ifdef _WIN32
+  (void)family;
+  return std::string();
+#else
+  std::string command = std::string("fc-match -f '%{file}' '") + family + ":lang=ja' 2>/dev/null";
+  FILE *pipe = ::popen(command.c_str(), "r");
+  if (!pipe) return std::string();
+  std::string path;
+  char buffer[512];
+  while (std::fgets(buffer, sizeof(buffer), pipe)) path += buffer;
+  ::pclose(pipe);
+  return path;
+#endif
+}
+
+// `user`(usilicrcの指定)を先に、`builtin`を後に試し、仮名を持つ最初のフォント。最後にfontconfigの`family`。
 TTF_Font *openFirstJapaneseFont(const std::vector<std::string> &user, const char *const *builtin, std::size_t count,
-                               int pointSize, std::string *openedPath) {
+                               int pointSize, std::string *openedPath, const char *family) {
   std::vector<std::string> paths = user;
   for (std::size_t k = 0; k < count; k++) paths.push_back(builtin[k]);
-  for (const auto &path : paths) {
+  auto tryOpen = [&](const std::string &path) -> TTF_Font * {
     TTF_Font *candidate = TTF_OpenFont(path.c_str(), std::max(pointSize, 1));
-    if (!candidate) continue;
+    if (!candidate) return nullptr;
     if (glyphProvidedByFont(candidate, 0x3042)) {
       if (openedPath) *openedPath = path;  // GraphicalDisplay::currentFontPath()参照
       return candidate;
     }
     TTF_CloseFont(candidate);
-  }
-  return nullptr;
+    return nullptr;
+  };
+  for (const auto &path : paths)
+    if (TTF_Font *font = tryOpen(path)) return font;
+  if (!family) return nullptr;
+  // fc-matchは決まった場所に無い時だけ、大きさを変えるたびに呼ばないよう系統ごとに一度だけ尋ねて覚える。
+  static std::map<std::string, std::string> fontconfigAnswers;
+  if (!fontconfigAnswers.count(family)) fontconfigAnswers[family] = fontconfigJapaneseFont(family);
+  return fontconfigAnswers[family].empty() ? nullptr : tryOpen(fontconfigAnswers[family]);
 }
 
 TTF_Font *loadSerifFont(int pointSize, std::string *openedPath = nullptr) {
@@ -581,7 +607,7 @@ TTF_Font *loadSerifFont(int pointSize, std::string *openedPath = nullptr) {
       "C:/Windows/Fonts/msmincho.ttc",
   };
   return openFirstJapaneseFont(userSerifCandidates(), candidates, sizeof(candidates) / sizeof(candidates[0]),
-                               pointSize, openedPath);
+                               pointSize, openedPath, "serif");
 }
 
 TTF_Font *loadCjkFallbackFont(int pointSize, std::string *openedPath = nullptr) {
@@ -601,7 +627,7 @@ TTF_Font *loadCjkFallbackFont(int pointSize, std::string *openedPath = nullptr) 
       "C:/Windows/Fonts/msgothic.ttc",
   };
   return openFirstJapaneseFont(userSansSerifCandidates(), candidates, sizeof(candidates) / sizeof(candidates[0]),
-                               pointSize, openedPath);
+                               pointSize, openedPath, "sans-serif");
 }
 
 // グリフのテクスチャキャッシュ(2026-08-24、docs/CHANGES.md項目428)

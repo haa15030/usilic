@@ -33270,3 +33270,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼("FreeBSDでもWindowsと同じく最初からアイコン起動できるような環境を整えたい"、実機・NVIDIA RTX3050・Xfce)。
    - **変更**: src/cpp/Makefileのinstallで、~/.local/share/applications/usilic.desktopとアイコンを入れる条件を「Linux」から「LinuxかFreeBSD」に(Xfceも同じXDGの場所を見る)。
    - 確かめたこと: Macでmake -n installに出ないこと(FreeBSDでの動作はユーザーが実機で)。
+1173. **FreeBSD等で-gの明朝体(SERIF)・日本語のゴシック体が見つからない(2026-10-31)**
+   - **経緯**: 直接のユーザー報告(FreeBSD+Xfce、ja-font-ipaを入れてアイコン起動、"^Hのヘルプでは文字がゴシック体"、~/.usilic/historyを消しても同じ、"^J^FでSANS-SERIFをIPAGothic Regular、SERIFをIPAMincho Regularにしてみたら明朝体になった")。
+   - **原因と変更**: graphical_display.cppのloadSerifFont()・loadCjkFallbackFont()の候補は、macOS・Debian系・Windowsの決まった場所だけだった(FreeBSDのフォントは/usr/local/share/fonts/)。どれも無ければ、fontconfigに尋ねる(fc-match 'serif:lang=ja'・'sans-serif:lang=ja'、系統ごとに一度だけ、Windowsのネイティブは除く)。
+   - 確かめたこと: Macでmake usilic(Macは決まった場所で見つかるのでfc-matchは呼ばれない)。FreeBSDでの表示はユーザーが実機で。
