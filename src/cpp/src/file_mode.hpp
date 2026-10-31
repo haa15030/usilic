@@ -562,6 +562,15 @@ class FileMode {
   // クイックルック(Application::openSelectedSegment())が使う。
   EpubMemberReader epubMemberReader(const std::string &epubPath) const;
 
+  // 2026-10-31(.steering/20261031-help-epub-in-memory/、直接のユーザー判断"B"): ディスクに無い、メモリ上だけの
+  // ファイル(HELP.1から作ったHELPのEPUB、Application::helpEpubPath())。pathの名前で、loadFile()・reload()・
+  // epubMemberReader()が中身をディスクの代わりにここから読む(EPUBは無圧縮のzipに限る、readStoredZipMember())。
+  // 作り直しのためのキャッシュなのでconst(mutable)。
+  void setMemoryFile(const std::string &path, std::shared_ptr<const std::string> content) const {
+    memoryFiles_[path] = std::move(content);
+  }
+  bool isMemoryFile(const std::string &path) const { return memoryFiles_.count(path) > 0; }
+
   // 2026-09-28追加、直接のユーザー提案("選択できる章はタグジャンプとしての
   // アンダーラインを付加し returnで当該行へ飛んではどうか"): EPUBの本文で、
   // カーソル行に本の中へのリンク(下線)があれば、リンク先の行へカーソルを
@@ -673,6 +682,7 @@ class FileMode {
   bool rawControlCodesMode_ = false;
   // followEpubLink()用: EPUBの本文のリンクがある行→リンク先の行(どちらも
   // rawLineNumber)。loadAndTransformContent()(const)が変換のたびに作り直す。
+  mutable std::map<std::string, std::shared_ptr<const std::string>> memoryFiles_;  // setMemoryFile()参照
   mutable std::map<int, int> epubLinks_;
   // 表示用に最後に通したプログラム(FILE節のgzip等、roffならgroff)。モードラインの"(groff)"等
   // (loadAndTransformContent()参照、2026-10-08)。

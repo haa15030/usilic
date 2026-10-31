@@ -21,6 +21,7 @@
 #include "child_process.hpp"
 #include "epub_to_help_markup.hpp"
 #include "help_text.hpp"
+#include "help_to_epub.hpp"
 #include "markdown_to_help_markup.hpp"
 #include "pipe_buffer.hpp"
 #include "utf8.hpp"
@@ -470,6 +471,10 @@ std::optional<std::string> FileMode::binaryTypeText(const std::string &path, con
 
 // file_mode.hpp自身の宣言コメント参照。
 EpubMemberReader FileMode::epubMemberReader(const std::string &epubPath) const {
+  if (auto memory = memoryFiles_.find(epubPath); memory != memoryFiles_.end()) {  // setMemoryFile()参照
+    std::shared_ptr<const std::string> zip = memory->second;
+    return [zip](const std::string &member) { return readStoredZipMember(*zip, member); };
+  }
   ProgramCommand unzip = configuration_.commandFor(ConfiguredRole::UnzipExtract);
   return [unzip, epubPath](const std::string &member) -> std::optional<std::string> {
     if (unzip.argv.empty()) return std::nullopt;
@@ -907,7 +912,7 @@ bool FileMode::loadFile(const std::string &path, const std::function<bool()> &sh
   // 全ての入口が対象になる。
   std::error_code sizeEc;
   auto size = std::filesystem::file_size(path, sizeEc);
-  if (!sizeEc && static_cast<long long>(size) > configuration_.bufferSizeLimitBytes()) {
+  if (!isMemoryFile(path) && !sizeEc && static_cast<long long>(size) > configuration_.bufferSizeLimitBytes()) {
     if (!loadFileAsPipe(path)) return false;
     configuration_.noteBufferLimitHit();
     return true;
@@ -918,7 +923,7 @@ bool FileMode::loadFile(const std::string &path, const std::function<bool()> &sh
 bool FileMode::reload() {
   if (currentFile_.empty()) return false;
   std::error_code ec;
-  if (!std::filesystem::is_regular_file(currentFile_, ec)) return false;
+  if (!std::filesystem::is_regular_file(currentFile_, ec) && !isMemoryFile(currentFile_)) return false;
   // 2026-10-19: 引数で開いたページャー(^J^Jで開き直せない)も、同じ開き方で最初から読み直し、カーソルの生の行へ戻す。
   if (pagerMode_ && streamOwnsFd_) {
     std::string path = currentFile_, label = pagerLabel_;
@@ -1121,7 +1126,7 @@ bool FileMode::loadContentAsPipe(const std::string &content) {
 
 bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()> &shouldAbort) {
   std::ifstream probe(path, std::ios::binary);
-  if (!probe) {
+  if (!probe && !isMemoryFile(path)) {  // メモリ上のファイル(setMemoryFile())はディスクに無い
     loadProgressTick_ = nullptr;  // setLoadProgressTick()参照
     return false;
   }

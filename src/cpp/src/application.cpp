@@ -8821,7 +8821,8 @@ bool Application::openEpubImageIn(const std::string &text) {
 bool Application::openEpub(const std::string &path) {
   // 2026-10-05、直接のユーザー報告(WSLのUbuntuで.epubを^Mしたらfile(1)の表示だけ): EPUBの中身は
   // unzipで取り出すので、無ければ"unzip: command not found"と知らせる(最初の起動時の案内にも加えた)。
-  if (!programOnPath("unzip")) {
+  // HELP(helpEpubPath())はメモリ上の無圧縮のzipから読むのでunzipは要らない(2026-10-31)。
+  if (!isGeneratedHelpEpub(path) && !programOnPath("unzip")) {
     showTransientNotice(activeView(), "unzip: command not found");
     return false;
   }
@@ -8842,6 +8843,12 @@ bool Application::openEpub(const std::string &path) {
 }
 
 bool Application::openEpubQuietly(const std::string &path) {
+  // 2026-10-31(.steering/20261031-help-epub-in-memory/): HELPのEPUBはディスクに無く、メモリ上に作る(helpEpubPathFor())。
+  // HELPの子(-H・^T^H、"usilic <そのパス>"で起動される)は、ここで自分でも同じ名前のものを作る。
+  if (isGeneratedHelpEpub(path) && !fileMode_.isMemoryFile(path)) {
+    std::string name = std::filesystem::path(path).stem().string();  // "HELP"・"HELP.en"
+    if (!helpEpubPathFor(name)) return false;
+  }
   // 2026-09-29、直接のユーザー依頼("キー操作での縦横切り替えは廃止。著者は、いずれかを
   // cssファイルに設定してあるはずなのでそれで判断する"): 縦書きかどうかは本が決める
   // (epubIsRightToLeft()、OPFのpage-progression-direction="rtl")。
@@ -20507,7 +20514,11 @@ void Application::reopenHelpInOtherLanguage(const HelpLanguageView &view) {
 // HELP.1と同じ場所のusilicrc・HELP.notesを使う。groffは要らない(HELPのroff版をgroffで組めない時も作れる)。
 // 作ったHELP.epubは履歴に積まない(openEpubQuietly()・runExternalUsilicPager()、isGeneratedHelpEpub())。
 std::string Application::helpRoffSourcePath() const {
-  std::string name = std::filesystem::path(helpPath_).filename().string();
+  return helpRoffSourcePathFor(std::filesystem::path(helpPath_).filename().string());
+}
+
+// nameはHELPの名前(helpPath_のファイル名、"HELP"・英語は"HELP.en")。HELPの子が親と違う言語のHELPを開く時のため。
+std::string Application::helpRoffSourcePathFor(const std::string &name) const {
   std::string roffName = name.size() > 3 && name.compare(name.size() - 3, 3, ".en") == 0
                              ? name.substr(0, name.size() - 3) + "_en.1"
                              : name + ".1";  // reloadHelpText()と同じ
@@ -20520,24 +20531,42 @@ std::string Application::helpRoffSourcePath() const {
 }
 
 std::string Application::generatedHelpEpubPath() const {
-  return std::filesystem::path(usilicrcPath_).parent_path().string() + "/" +
-         std::filesystem::path(helpPath_).filename().string() + ".epub";
+  return generatedHelpEpubPathFor(std::filesystem::path(helpPath_).filename().string());
 }
 
+std::string Application::generatedHelpEpubPathFor(const std::string &name) const {
+  return std::filesystem::path(usilicrcPath_).parent_path().string() + "/" + name + ".epub";
+}
+
+// 2026-10-31(.steering/20261031-help-epub-in-memory/): HELPのEPUBはディスクに無いので(helpEpubPath())、
+// std::filesystem::equivalent()ではなくパスの文字列で比べる。日本語・英語のどちらも。
 bool Application::isGeneratedHelpEpub(const std::string &path) const {
-  std::error_code ec;
-  return !path.empty() && std::filesystem::equivalent(path, generatedHelpEpubPath(), ec);
+  if (path.empty()) return false;
+  std::string normal = std::filesystem::path(path).lexically_normal().string();
+  for (const char *name : {"HELP", "HELP.en"})
+    if (normal == std::filesystem::path(generatedHelpEpubPathFor(name)).lexically_normal().string()) return true;
+  return false;
 }
 
 std::optional<std::string> Application::helpEpubPath() const {
-  std::string source = helpRoffSourcePath();
+  return helpEpubPathFor(std::filesystem::path(helpPath_).filename().string());
+}
+
+// 2026-10-31、直接のユーザー判断(.steering/20261031-help-epub-in-memory/、"B"、10/29の元の依頼は"内部的にHELP.1から
+// HELP.epubを作成して表示する形…forkした子プロセスでusilic -e HELP.1を実行し出力をHELPにするとか"): 以前(項目1121)は
+// 作ったEPUBを~/.usilic/HELP.epubに書き出して開いていたので、(ls)から普通のファイルとして見えていた。今はディスクに
+// 書かず、FileModeのメモリ上のファイル(FileMode::setMemoryFile())として同じパスの名前で置く。HELP.1の時刻を覚えて、
+// 新しくなった時だけ作り直す。以前に書き出したファイルが残っていれば消す。
+std::optional<std::string> Application::helpEpubPathFor(const std::string &name) const {
+  std::string source = helpRoffSourcePathFor(name);
   if (source.empty()) return std::nullopt;
-  std::string out = generatedHelpEpubPath();
+  std::string out = generatedHelpEpubPathFor(name);
   std::error_code ec;
   auto sourceTime = std::filesystem::last_write_time(source, ec);
   if (ec) return std::nullopt;
-  auto outTime = std::filesystem::last_write_time(out, ec);
-  if (!ec && outTime >= sourceTime) return out;
+  if (auto cached = helpEpubSourceTimes_.find(name);
+      cached != helpEpubSourceTimes_.end() && cached->second == sourceTime && fileMode_.isMemoryFile(out))
+    return out;
   auto read = [](const std::string &path) {
     std::ifstream in(path, std::ios::binary);
     std::ostringstream text;
@@ -20547,22 +20576,13 @@ std::optional<std::string> Application::helpEpubPath() const {
   std::string roff = read(source);
   if (roff.empty() || roff[0] != '.') return std::nullopt;
   std::string dir = std::filesystem::path(source).parent_path().string() + "/";
-  bool english = std::filesystem::path(helpPath_).filename().string() != "HELP";
+  bool english = name != "HELP";
   std::string epub = convertMsRoffToHelpEpub(roff, read(dir + (english ? "usilicrc.en" : "usilicrc")),
                                              read(dir + (english ? "HELP.en.notes" : "HELP.notes")));
   if (epub.empty()) return std::nullopt;
-  std::string temp = out + ".tmp" + std::to_string(::getpid());
-  {
-    std::ofstream file(temp, std::ios::binary | std::ios::trunc);
-    if (!file) return std::nullopt;
-    file.write(epub.data(), static_cast<std::streamsize>(epub.size()));
-    if (!file) return std::nullopt;
-  }
-  std::filesystem::rename(temp, out, ec);
-  if (ec) {
-    std::filesystem::remove(temp, ec);
-    return std::nullopt;
-  }
+  fileMode_.setMemoryFile(out, std::make_shared<const std::string>(std::move(epub)));
+  helpEpubSourceTimes_[name] = sourceTime;
+  std::filesystem::remove(out, ec);  // 以前(項目1121)に書き出したもの
   return out;
 }
 

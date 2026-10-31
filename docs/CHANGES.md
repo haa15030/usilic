@@ -33262,3 +33262,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告(FreeBSD、"SHELLの戻り値が「/home/usilic/.usilic/HELP.epub」なのはNGかなと。HELPはHELP.epubを表示するのではなく(それだと通常ファイルへのアクセスなので^J^Jの対象になってしまう)、その場でHELP.1を.epubにコンバートした画面だったはず。なので戻り値「HELP」でないと")。
    - **変更**: previousModeName()のFILEで、開いているのがhelpEpubPath()(HELP.1から作ったEPUB)なら「HELP」。項目1166(章の一覧から入った時)と合わせて、HELPのどこから入っても「HELP」。
    - 確かめたこと: make usilic(作り直されたことも確かめた)。
+1171. **HELPのEPUBを~/.usilic/HELP.epubに書き出さず、メモリ上で開く(2026-10-31)**
+   - **経緯**: 項目1170の説明の中で、項目1121のHELP.epubが実際にはディスクに書き出されていた(ls)から普通のファイルとして開ける)と分かった。10/29の元の依頼(HISTORY.md:53781)は"内部的にHELP.1からHELP.epubを作成して表示する形…(forkした子プロセスでusilic -e HELP.1を実行し出力をHELPにするとか)"。選択肢から"B"(メモリ上で開く)。.steering/20261031-help-epub-in-memory/。
+   - **変更**: help_to_epubにreadStoredZipMember()(無圧縮のzipからメンバーを取り出す)。FileModeに「メモリ上のファイル」(setMemoryFile()・isMemoryFile())を足し、epubMemberReader()(unzip -pの代わり)・loadFile()・loadFileImpl()・reload()がそれを見る。Application::helpEpubPath()はHELP.1から作ったEPUBを同じパスの名前でメモリ上に置き(helpEpubPathFor()、名前"HELP"・"HELP.en"ごと、HELP.1の時刻で作り直す)、以前に書き出したファイルは消す。isGeneratedHelpEpub()はファイルが無いのでパスの文字列で比べる。HELPの子(usilic <パス>)はopenEpubQuietly()で自分でも作る。HELPではunzipが無くてもよい。
+   - 確かめたこと: make usilic・make install。-cで空のHOMEから初回起動し、HELPの章の一覧(HELP 01/42 TOP 111307、右下usilic-1.5b、項目1167も)が開き、~/.usilic/にHELP.epubが無い。HELPの子(-H・^T^H)は未確認。Python版はまだファイルに書き出す。

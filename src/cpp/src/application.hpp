@@ -3296,8 +3296,13 @@ class Application {
   bool openPlainHelp(std::optional<int> rawLine = std::nullopt);
   std::optional<std::string> helpEpubPath() const;  // Command::StartHelp参照(HELP.1から作る、2026-10-29)
   std::string helpRoffSourcePath() const;            // helpEpubPath()の元(HELP.1・HELP_en.1)
-  std::string generatedHelpEpubPath() const;         // helpEpubPath()が作る~/.usilic/HELP.epub
+  std::string generatedHelpEpubPath() const;         // helpEpubPath()が作る~/.usilic/HELP.epub(の名前、ディスクには無い)
   bool isGeneratedHelpEpub(const std::string &path) const;
+  // 名前("HELP"・"HELP.en")ごとの版(2026-10-31、helpEpubPathFor()参照)。
+  std::optional<std::string> helpEpubPathFor(const std::string &name) const;
+  std::string helpRoffSourcePathFor(const std::string &name) const;
+  std::string generatedHelpEpubPathFor(const std::string &name) const;
+  mutable std::map<std::string, std::filesystem::file_time_type> helpEpubSourceTimes_;  // helpEpubPathFor()参照
 public:
   // 実行ファイルの場所から見た<PREFIX>/lib/usilic/(末尾に/、main.cppが設定する)。HELPを~/.local/lib/usilic/・
   // /usr/local/lib/usilic/に無い時に探す(2026-10-05、MSYS2でPREFIXを変えて入れた時のため)。

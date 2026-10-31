@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,10 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
 // 空なら、roffにusilic -nが埋め込んだ表紙(".\" usilic-cover-line …"、base64)を使う(2026-10-29)。
 
 // 表紙の画像をHELP.1に埋め込むためのbase64(2026-10-29)。decodeBase64()は'='・改行等の字を読み飛ばす。
+// 2026-10-31(.steering/20261031-help-epub-in-memory/): 無圧縮のzip(convertMsRoffToHelpEpub()が作るもの)の中から、
+// 名前がちょうどnameのメンバーの中身。無いか、圧縮されたメンバーならnullopt。HELPのEPUBをファイルに書かずに読むため。
+std::optional<std::string> readStoredZipMember(const std::string &zip, const std::string &name);
+
 std::string encodeBase64(const std::string &bytes);
 std::string decodeBase64(const std::string &text);
 

@@ -507,6 +507,28 @@ std::string decodeBase64(const std::string &text) {
   return out;
 }
 
+std::optional<std::string> readStoredZipMember(const std::string &zip, const std::string &name) {
+  auto get16 = [&zip](std::size_t at) {
+    return static_cast<std::uint32_t>(static_cast<unsigned char>(zip[at])) |
+           static_cast<std::uint32_t>(static_cast<unsigned char>(zip[at + 1])) << 8;
+  };
+  auto get32 = [&](std::size_t at) { return get16(at) | get16(at + 2) << 16; };
+  std::size_t at = 0;
+  // ローカルヘッダ(ZipWriter::add()参照)を頭から順にたどる。サイズはヘッダに入っている(データ記述子は使わない)。
+  while (at + 30 <= zip.size() && get32(at) == 0x04034b50) {
+    std::uint32_t method = get16(at + 8);
+    std::uint32_t size = get32(at + 18);
+    std::uint32_t nameLength = get16(at + 26);
+    std::uint32_t extraLength = get16(at + 28);
+    std::size_t data = at + 30 + nameLength + extraLength;
+    if (data + size > zip.size()) return std::nullopt;
+    if (zip.compare(at + 30, nameLength, name) == 0 && nameLength == name.size())
+      return method == 0 ? std::optional<std::string>(zip.substr(data, size)) : std::nullopt;
+    at = data + size;
+  }
+  return std::nullopt;
+}
+
 std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &usilicrcText,
                                     const std::string &notesText, std::string *summary,
                                     std::vector<std::string> *unnoted, const std::string &givenCover) {
