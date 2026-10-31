@@ -38,6 +38,39 @@ FILE
 	.gz	gzip	-dc
 	.bz2	bzip2	-dc
 	.z	gzip	-dc			
+# 2026-10-31: read UTF-8 texts and sources as EUC-JP through `nkf -e'.
+	.txt	nkf	-e
+	.md	nkf	-e
+	.rst	nkf	-e
+	.org	nkf	-e
+	.tex	nkf	-e
+	.notes	nkf	-e
+	.c	nkf	-e
+	.h	nkf	-e
+	.cpp	nkf	-e
+	.hpp	nkf	-e
+	.mm	nkf	-e
+	.py	nkf	-e
+	.php	nkf	-e
+	.js	nkf	-e
+	.ts	nkf	-e
+	.sh	nkf	-e
+	.pl	nkf	-e
+	.json	nkf	-e
+	.yml	nkf	-e
+	.yaml	nkf	-e
+	.toml	nkf	-e
+	.ini	nkf	-e
+	.conf	nkf	-e
+	.csv	nkf	-e
+	.tsv	nkf	-e
+	.xml	nkf	-e
+	.opf	nkf	-e
+	.xhtml	nkf	-e
+	.css	nkf	-e
+	.log	nkf	-e
+	.1	nkf	-e
+	.man	nkf	-e
 #	.dvi	dvi2tty
 
 EXEC

@@ -33192,3 +33192,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **依頼**: 直接のユーザー依頼("^[0だが、うっかりミスもありうるので戻せるようにもしておきたい。^[Oはトグルキーということで（二度目の^[0で元に戻る）。-cでは無効でいい。"、続けて"^[0ね。")。
    - **変更**: 1回目の^[0は、その前の余白(Application::marginsBeforeReset_)と行間・字間(main.cppのspacingBeforeReset)を覚えてから既定へ。2回目はそれへ戻す。間に^[[ / ^[]・^[{ / ^[}・余白のキーで値を変えたら覚えた値は捨て、次の^[0はまた既定へ。takeSpacingResetRequest()は1(既定へ)・-1(戻す)を返す。GraphicalDisplay::resetSpacing()はsetSpacingExtras()(足したドットを置き換える)に。-cでは何もせず「^[0: -g only」。HELPの原稿(src/HELP_.txt・HELP_en_.txt)の^[0の行と説明もトグルに合わせた。
    - 確かめたこと: make usilic・make install・make app。実機は未確認。
+1155. **legacy: usilicrcのFILE節で、UTF-8の文書・ソースをnkf -eに通してEUCで読む(2026-10-31)**
+   - **経緯**: 直接のユーザー依頼("問題なのはHELP.txtを読んでも本体がutf8を理解できないために文字化けする症状なんだけど。(ls)でHELP.txtを選択し、内容をバッファへ読み込む際のルーチンの入力に対してnkfをかませたEUC出力をlegacyが読み込む、みたいな処理のこと。"、続けて"たしかにこれは方針からはずれるのでoldrcへの対処だけでいい。.txt以外には何があるかな？ .mdとか。"、"いずれにも足してみて。")。legacyはEUCを前提にしているので、UTF-8のファイルを開くと化ける。
+   - **変更**: ソースには手を入れず、legacyの設定のFILE節(拡張子ごとに中身を通すプログラム、.gzのgzip -dcと同じ仕組み、拡張子は大文字小文字を区別しない)に、`.txt .md .rst .org .tex .notes .c .h .cpp .hpp .mm .py .php .js .ts .sh .pl .json .yml .yaml .toml .ini .conf .csv .tsv .xml .opf .xhtml .css .log .1 .man`をnkf -eで足した。nkfは入力の文字コードを判別するので、EUCのファイルはそのまま通る。legacy/usilicrc(インストールの元)と~/.local/lib/usilic.old/usilic.oldrc(インストール済み)の両方に。.html・.htmはEXEC節(lynx)なので入れない。拡張子の無いファイル(README・HELP等)は対象にできない。
+   - 確かめたこと: 2つのファイルのFILE節が同じで、どちらもASCIIだけのまま。legacyでの表示は未確認。
