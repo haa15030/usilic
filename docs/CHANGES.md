@@ -33196,3 +33196,8 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼("問題なのはHELP.txtを読んでも本体がutf8を理解できないために文字化けする症状なんだけど。(ls)でHELP.txtを選択し、内容をバッファへ読み込む際のルーチンの入力に対してnkfをかませたEUC出力をlegacyが読み込む、みたいな処理のこと。"、続けて"たしかにこれは方針からはずれるのでoldrcへの対処だけでいい。.txt以外には何があるかな？ .mdとか。"、"いずれにも足してみて。")。legacyはEUCを前提にしているので、UTF-8のファイルを開くと化ける。
    - **変更**: ソースには手を入れず、legacyの設定のFILE節(拡張子ごとに中身を通すプログラム、.gzのgzip -dcと同じ仕組み、拡張子は大文字小文字を区別しない)に、`.txt .md .rst .org .tex .notes .c .h .cpp .hpp .mm .py .php .js .ts .sh .pl .json .yml .yaml .toml .ini .conf .csv .tsv .xml .opf .xhtml .css .log .1 .man`をnkf -eで足した。nkfは入力の文字コードを判別するので、EUCのファイルはそのまま通る。legacy/usilicrc(インストールの元)と~/.local/lib/usilic.old/usilic.oldrc(インストール済み)の両方に。.html・.htmはEXEC節(lynx)なので入れない。拡張子の無いファイル(README・HELP等)は対象にできない。
    - 確かめたこと: 2つのファイルのFILE節が同じで、どちらもASCIIだけのまま。legacyでの表示は未確認。
+1156. **legacy: FILE節でgzip以外のプログラムに通すファイルを開くとsegv(2026-10-31)**
+   - **経緯**: 直接のユーザー報告("legacy/でmake → src/usilicで起動した後、~/HELP.txtにアクセスするとsegvメッセージが出る。")。項目1155で.txtをnkf -eに通すようにした後。
+   - **原因**: legacy/src/child.cのis_child()は、FILE節のプログラムの名前を表(groff・tar・lha・unzip・rpm・deb・gzip、終わりの印は-1)と比べる時、終わりの印でも先に`strcmp(*chp->argv, s_S(-1))`をしていた。s_S(-1)はStr.S[]の外(64bitではNULL)なので、表に無い名前(nkf、もともとある.bz2のbzip2も)で落ちていた(lldbのバックトレースで確認、is_child()のchild.c:276のstrcmp)。gzipは表の中で一致するので無事だった。32bitの頃はたまたま有効なポインタだったと思われる。legacyのinit_bin()等はSIGSEGVを受け止めて「(Segmentation fault: …」と表示するだけなので、usilicは終わらない。
+   - **直し**: 終わりの印かどうかを先に調べる(順序の入れ替えだけ)。legacy/README.old.mdの「当てた修正」に足した。なお、legacy/のMakefileはconfig.hしか見ていないので、ソースを直した後はlegacy/src/でmakeしないと組み立て直されない。
+   - 確かめたこと: 疑似端末で(ls)から^Mで、2000バイトの.txt(nkf)・.bz2(bzip2)・~/HELP.txtと同じ83KBの.txtを開き、どれも落ちずに読めた(モードラインに(nkf)・(bzip2))。

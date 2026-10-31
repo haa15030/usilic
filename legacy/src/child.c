@@ -273,8 +273,10 @@ int is_child(char name[], CHILD *chp)/*usilic*/
   if (chp->f.exec) f_M = T_exec;
   else
     for (i = f_M = 0; !f_M; i++) {
-      if (!strcmp(*chp->argv, s_S(p[i].S))) f_M = p[i].M;
-      else if (p[i].S < 0) f_M = p[i].M;
+      /* test the end mark first: s_S(-1) is outside Str.S[] (NULL on 64bit),
+	 so a FILE program other than these (bzip2, nkf, ...) crashed strcmp() */
+      if (p[i].S < 0) f_M = p[i].M;
+      else if (!strcmp(*chp->argv, s_S(p[i].S))) f_M = p[i].M;
     }
   return f_M;
 }
