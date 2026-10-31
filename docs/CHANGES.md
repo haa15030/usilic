@@ -33210,3 +33210,6 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **.PHONY**: legacy/Makefileのsrc/usilic.oldはsrc/config.hにしか依存していなかったので、src/usilic.oldがconfig.hより新しいとsrc/へ降りず、.cを直しても作り直されなかった。.PHONYにして毎回src/のmakeへ降りる(src/のMakefileが.cと.oの新しさを比べるので、作り直すのは直した分だけ)。child.cをtouchしてlegacy/でmakeすると、child.cだけコンパイルし直して組み直す。
    - **コメント**: legacy/の取り込み(b813bb4、tcb→usilicの改名だけ)からの差分のすべての変更に、`usilic.old:`で始まるコメントを付けた(英語、ファイルはASCIIのまま)。前から付いていた説明にも印を足した。.c・.hは`/* usilic.old: ... */`、config.sh・Makefile・usilicrcは`# usilic.old: ...`。多くの変更(重なったstrcpy()→memmove()、u_int→uintptr_t、環境変数USILIC→USILIC_OLD、sigactionの初期化、conf_arc()の呼び出しを戻した所等)にはコメントが無かった。legacy/README.old.md(新しく足した説明)は対象外。
    - **抜け落ちの検証**: `git diff -U0 b813bb4 -- legacy`のハンク(103個)ごとに、追加した行かそのすぐ上(4行以内)に印があるかを調べる台本で、印の無いハンクが0になるまで足した。逆に、印の付いた行がすべて追加した行であること(元のままの行に付いていないこと)も確かめた。legacy/を全部作り直してコンパイルが通る。
+1159. **legacy/README.md: legacy/で行った作業のまとめ(2026-10-31)**
+   - **依頼**: 直接のユーザー依頼("README.jpと同じディレクトリにREADME.mdでもいいんでlegacy/で行った作業内容をまとめてくれないかな？(UB)の解説等も含めて。")。
+   - **内容**: ソースの中の印(`usilic.old:`)の探し方、言葉の説明(UB・64bitでのポインタの切り詰め・バッファの溢れ)、当てた修正の表、ビルドまわり(macOS・usilic.oldとして並べて入れる・バイナリの名前・.PHONY)、UTF-8のファイルをnkf -eで読む設定、端末をEUCにする方法(Terminal.app・GNOME Terminal・luit)。ビルド・インストール・カーネルの作り方はREADME.old.mdのまま。
