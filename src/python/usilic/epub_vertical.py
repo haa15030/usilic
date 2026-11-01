@@ -205,6 +205,7 @@ class VerticalBook:
 
     def __init__(self, sources, chapter_raws, rows, columns, chapter_breaks, centered=(), horizontal=()):
         self.rows, self.columns = max(1, rows), columns
+        self.body_total = 0  # 横書きの範囲(奥付等)も含めた本全体の元の行の数(position_text())
         self.per_screen = columns_per_screen(columns)
         self.chapter_breaks = chapter_breaks
         self.texts = {s.raw: s.text for s in sources}
@@ -483,6 +484,7 @@ class VerticalBook:
             total = max(total, column.raw)
             if i <= self.cursor:
                 current = max(current, column.raw)
+        total = max(total, self.body_total)  # 総数は本全体(C++のrenderEpubVertical())
         if total <= 0:
             current, total = self.cursor + 1, len(self.cols)
         current = max(current, 1)

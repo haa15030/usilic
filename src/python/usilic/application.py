@@ -30,7 +30,7 @@ from .copy_mode import CopyMode
 from .directory_mode import DirectoryMode
 from .du_mode import DuMode
 from . import epub_vertical as ev
-from .epub_mode import EpubBook, is_epub_file
+from .epub_mode import hide_emphasis_marks, strip_emphasis_marks, EpubBook, is_epub_file
 from .markdown import is_markdown_file, render_markdown, pager_byte_count as markdown_pager_byte_count
 from .file_mode import FileMode
 from .grep_mode import GrepMode, FIXED, REGEX, match_spans
@@ -729,6 +729,7 @@ class Application:
                     if underline and end > start:
                         runs.append((start, end, 'underline'))
                     reverse = underline = False
+                text, runs = hide_emphasis_marks(text, runs)
                 self.display.draw_row_styled(row + margin_top, text, runs, reverse=reverse, underline=underline)
             elif row == offset and not view.lines and (view.empty_placeholder is not None or view.cursor_highlight):
                 # 行が無い時の1行目: 決めた物(「pat: 見つかりません」等)か、カーソルを反転する画面では反転した「--」
@@ -1463,7 +1464,7 @@ class Application:
             return self.epub_lines[start:end]
         self.file_mode.set_rendered(path, lines, os.path.getsize(path), width, renderer=renderer)
         self.file_mode.record_history = name is None and not self.pager_launch
-        self.toc_view.set_lines([Line(title, i + 1) for i, title in enumerate(book.chapter_titles)])
+        self.toc_view.set_lines([Line(strip_emphasis_marks(title), i + 1) for i, title in enumerate(book.chapter_titles)])
         self.toc_view.cursor_index = self.toc_view.top_index = 0
         first_time = self.history is None or self.history.position_for(hist.FILE, path) is None
         self.file_mode.restore_from_history()
@@ -1486,10 +1487,11 @@ class Application:
         空けない。縦書きに組み直す時はepub_logical_lines()がこの空白を取り除く。"""
         left, right = self.epub_margin_left, self.epub_margin_right
         self.epub_margin_columns = 0
+        lead_rows = self.display.rows * 2  # 行の高さが変わっても足りるように(C++のsetEpubHorizontalLeadRows())
         if width - left - right < 20:
-            return book.render(width)
+            return book.render(width, lead_rows)
         self.epub_margin_columns = left
-        lines, toc = book.render(width - left - right)
+        lines, toc = book.render(width - left - right, lead_rows)
         if left > 0:
             for line in lines:
                 if line.text:
@@ -4698,7 +4700,7 @@ class Application:
             if raw in hints.center or raw in hints.indent:
                 pad = len(line.text) - len(line.text.lstrip(' '))
             text = line.text[pad:]
-            runs = [(max(0, a - pad), max(0, b - pad), t) for a, b, t in line.attributes]
+            runs = [(max(0, a - pad), max(0, b - pad), t) for a, b, t in line.attributes if t != 'ruby_text']
             links = [(max(0, a - pad), max(0, b - pad), h) for a, b, h in line.links]
             if head:
                 first, rest = hints.indent.get(raw, (0, 0))
@@ -4730,6 +4732,7 @@ class Application:
                             if 0 <= i < len(self.epub_lines)}
             self.vertical = ev.VerticalBook(sources, chapter_raws, self.epub_vertical_rows(), self.display.columns,
                                             self.epub_chapter_mode, hints.centered, hints.horizontal)
+            self.vertical.body_total = self.epub_lines[-1].raw_line_number or 0 if self.epub_lines else 0
             self.vertical_key, self.vertical_source, self.vertical_synced = key, self.epub_lines, None
         if line != self.vertical_synced:
             self.show_vertical_line(line)
@@ -5040,6 +5043,7 @@ class Application:
             hints = self.epub.hints
             self.vertical = ev.VerticalBook(sources, set(), self.epub_vertical_rows(), self.display.columns,
                                             self.epub_chapter_mode, hints.centered, hints.horizontal)
+            self.vertical.body_total = self.epub_lines[-1].raw_line_number or 0 if self.epub_lines else 0
             self.vertical_synced = self.global_epub_line()
         return True
 

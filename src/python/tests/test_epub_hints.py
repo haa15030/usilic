@@ -83,7 +83,8 @@ class HintsTest(unittest.TestCase):
         self.assertEqual(h.horizontal[-1][0], start)
         self.assertIn(start, h.center)
         centered = next(l for l in self.lines if l.raw_line_number == start)
-        self.assertEqual(centered.text.split('\u2060')[0], ' ' * 18 + '書名')  # 横書きでは中央に((40-4)//2)
+        # 横書きでは中央に。幅には章の印の空白も数える((40-4-4)//2、C++と同じ、Kbt.epubの行で確認)
+        self.assertEqual(centered.text.split('\u2060')[0], ' ' * 16 + '書名')
 
     def test_indent_uses_padding_top_in_vertical_book(self):
         self.assertEqual(self.book.hints.indent[self.raw['字下げ']], (1, 2))

@@ -89,6 +89,38 @@ def _align_center(value):
     return False if any(v in value for v in ('left', 'start', 'right', 'end', 'justify')) else None
 
 
+def _text_emphasis(value):
+    """text-emphasis(-style)の値から傍点の字(C++のparseTextEmphasis())。"none"は空(傍点を打ち消す)。"""
+    v = value.strip()
+    if not v:
+        return None
+    for quote in ('"', "'"):
+        a = v.find(quote)
+        b = v.find(quote, a + 1) if a >= 0 else -1
+        if b > a + 1:
+            return v[a + 1:b]
+    if 'none' in v:
+        return ''
+    opened = 'open' in v
+    if 'double-circle' in v:
+        return '◎' if opened else '◉'
+    if 'circle' in v:
+        return '○' if opened else '●'
+    if 'triangle' in v:
+        return '△' if opened else '▲'
+    if 'dot' in v:
+        return '◦' if opened else '•'
+    return '﹆' if opened else '﹅'  # sesame、"filled"だけの時も
+
+
+EMPHASIS_MARKS = ('﹅', '﹆', '◎', '◉', '○', '●', '△', '▲', '•', '◦')  # C++のisEmphasisMarkReading()
+
+
+class RubyReading(str):
+    """ルビ・傍点の読み「《…》」の字(C++のDisplay::Attribute::RubyText)。行では'ruby_text'の範囲になる: 中央寄せの幅に
+    数えず、傍点は端末に書かない。"""
+
+
 def _font_weight(value):
     v = value.strip()
     if not v:
@@ -139,6 +171,8 @@ def parse_css(css):
                 readers.append(('hidden', lambda v: ('none' in v) if v.strip() else None))
             if 'font-weight' in name:
                 readers.append(('bold', _font_weight))
+            if name.lstrip('-').replace('webkit-', '').replace('epub-', '') in ('text-emphasis', 'text-emphasis-style'):
+                readers.append(('emphasis', _text_emphasis))  # -colorと-positionは読まない
             for key, read in readers:
                 result = read(value)
                 if result is not None:
@@ -188,6 +222,7 @@ class _Style:
     pad_left: float = 0.0
     text_indent: float = 0.0      # 段落の最初の行のずれ(継承)
     bold: bool = False
+    emphasis: str = ''            # 傍点の字(継承、C++のemphasis_)
 
 
 def is_note_type(value):
@@ -330,11 +365,11 @@ class _XhtmlParser(HTMLParser):
         parent = self.style()
         classes = self._classes(attrs)
         st = _Style(parent.vertical, parent.outside or parent.vertical is False, parent.align_end, parent.center,
-                    parent.pad_top, parent.pad_left, parent.text_indent, parent.bold)
+                    parent.pad_top, parent.pad_left, parent.text_indent, parent.bold, parent.emphasis)
 
         def rule(key):
             return rule_for(self.rules, tag, classes, key)
-        for key in ('vertical', 'align_end', 'center', 'text_indent'):
+        for key in ('vertical', 'align_end', 'center', 'text_indent', 'emphasis'):
             value = rule(key)
             if value is not None:
                 setattr(st, key, value)
@@ -440,7 +475,7 @@ class _XhtmlParser(HTMLParser):
         if tag == 'rt':
             self.in_rt = max(0, self.in_rt - 1)
             if self.ruby:
-                self._add('《' + ''.join(self.ruby) + '》')
+                self._add(RubyReading('《' + ''.join(self.ruby) + '》'))
                 self.ruby = []
         if tag == 'a' and self.hrefs:
             self.hrefs.pop()
@@ -485,6 +520,14 @@ class _XhtmlParser(HTMLParser):
             data = re.sub(r'[ \t\r\n]+', ' ', data)
             if self.current is None and not data.strip(' '):  # NBSPだけの段落は空行として残す(str.strip()はNBSPも取る)
                 return
+        emphasis = self.style().emphasis
+        if emphasis and not pre and not any(t == 'ruby' for t, _, _ in self.stack):
+            # 傍点: 字ごとに、傍点を読みにしたルビ(C++のBodyConverter::text())。-gが字の横に描き、-cは書かない
+            for ch in data:
+                self._add(ch)
+                if ch not in ' \t\r\n':
+                    self._add(RubyReading('《' + emphasis + '》'))
+            return
         self._add(data)
 
     def close(self):
@@ -756,7 +799,7 @@ class EpubBook:
                 blocks.append(block)
         return blocks + [Block('p', set())] if blocks else []
 
-    def render(self, width):
+    def render(self, width, lead_rows=0):
         """本全体を画面の行に。(行の並び, 目次の各項目の行の番号)を返す。組版の指定はself.hintsへ。"""
         lines, anchors, number = [], {}, 0
         hints = EpubHints()
@@ -788,6 +831,8 @@ class EpubBook:
                 for piece, attr, link in block.pieces:
                     for name in ((attr,) if isinstance(attr, str) else attr or ()):
                         runs.append((pos, pos + len(piece), name))
+                    if isinstance(piece, RubyReading):
+                        runs.append((pos, pos + len(piece), 'ruby_text'))
                     if link:
                         target = link if re.match(r'[a-z]+:', link) else (
                             self._resolve(base, link) if not link.startswith('#') else href + link)
@@ -832,15 +877,8 @@ class EpubBook:
                         chapters.append((len(lines), hidden_label or text))
                         hidden_label = None
                 first, left = block.indent_columns if text else (0, 0)
-                wrapped = _wrap_with_indent(text, runs, width, first, left, number, line_links, center=block.center)
-                if text and block.chapter and wrapped:
-                    # 章の行の印(C++のepubToHelpMarkup()が行末に付けるタブ)。PipeBufferと同じく、幅0のU+2060と
-                    # 次の8桁目までの空白に広げた形で行に残す(見えないが、大きさ・検索はC++と同じに)
-                    last = wrapped[-1]
-                    column = utf8.text_width(last.text)
-                    spaces = min(8 - column % 8, width - column)
-                    if spaces > 0:
-                        last.text += '\u2060' + ' ' * spaces
+                wrapped = _wrap_with_indent(text, runs, width, first, left, number, line_links, center=block.center,
+                                            chapter_mark=bool(text and block.chapter))
                 lines.extend(wrapped)
             if href is not None:
                 def at(i):
@@ -872,7 +910,22 @@ class EpubBook:
         chapter_raws = {lines[i].raw_line_number for i in toc_lines if 0 <= i < len(lines)}
         self._bidirectional_notes(hints, links, anchor_raws, chapter_raws)
         self.hints = hints
+        self._insert_horizontal_lead(lines, toc_lines, hints, lead_rows)
         return lines, toc_lines
+
+    def _insert_horizontal_lead(self, lines, toc_lines, hints, want):
+        """本の頭に近い横書きの範囲の前に、足りない分の空の行を足す(C++のFileMode::readAndWrap()、項目の2026-10-26:
+        範囲へ入る時に最初の行を画面の一番下に置くため)。直前の行と同じ元の行の番号なので、範囲の外として描かれない。"""
+        if want <= 0:
+            return
+        for first, _ in reversed(hints.horizontal):
+            at = next((i for i, line in enumerate(lines) if (line.raw_line_number or 0) >= first), -1)
+            if at <= 0 or at >= want:
+                continue
+            count = want - at
+            lines[at:at] = [Line('', lines[at - 1].raw_line_number) for _ in range(count)]
+            toc_lines[:] = [i + count if i >= at else i for i in toc_lines]
+            self.anchors = {k: (v + count if v >= at else v) for k, v in getattr(self, 'anchors', {}).items()}
 
     def _layout_ranges(self, hints, kinds, total, header):
         """同じ種類の行が(空行をはさんでも)続く所を1つの範囲に(C++のepubToHelpMarkup()のflush())。横書きの範囲は、
@@ -937,8 +990,11 @@ class EpubBook:
         return anchors.get(href, anchors.get(href.partition('#')[0]))
 
 
-def _wrap_with_indent(text, runs, width, first, left, number, links=(), center=False):
-    """1行目はfirst桁、2行目からはleft桁あけて、幅で折り返す(空の段落は空の行)。centerなら行ごとに中央へ。"""
+def _wrap_with_indent(text, runs, width, first, left, number, links=(), center=False, chapter_mark=False):
+    """1行目はfirst桁、2行目からはleft桁あけて、幅で折り返す(空の段落は空の行)。centerなら行ごとに中央へ。
+    chapter_markなら最後の行に章の行の印(C++のepubToHelpMarkup()が行末に付けるタブ): PipeBufferと同じく、幅0のU+2060と
+    次の8桁目までの空白に広げた形で残す(見えないが、大きさ・検索はC++と同じに)。桁は中央寄せの空白を足す前で数え、
+    中央寄せの幅には印の空白も数える(C++はタブを広げてから中央へ置く)。"""
     from .overstrike import slice_runs
     if not text:
         return [Line('', number)]
@@ -957,16 +1013,56 @@ def _wrap_with_indent(text, runs, width, first, left, number, links=(), center=F
             piece = rest[0]
             queued = []
         pad = indent
-        if center:
-            pad = max(pad, (width - utf8.text_width(' ' * indent + piece)) // 2 + indent)
+        tail = ''
+        if chapter_mark and len(piece) == len(rest):
+            column = utf8.text_width(' ' * indent + piece)
+            spaces = min(8 - column % 8, width - column)
+            if spaces > 0:
+                tail = '\u2060' + ' ' * spaces
+        if center:  # 幅はルビの読みを除いて測る(C++のFileMode::readAndWrap())
+            reading = sum(utf8.text_width(piece[s:e]) for s, e, a in slice_runs(runs, offset, offset + len(piece))
+                          if a == 'ruby_text')
+            pad = max(pad, (width - utf8.text_width(' ' * indent + piece + tail) + reading) // 2 + indent)
         attrs = [(s + pad, e + pad, a) for s, e, a in slice_runs(runs, offset, offset + len(piece))]
         line_links = [(s + pad, e + pad, h) for s, e, h in slice_runs(links, offset, offset + len(piece))]
-        out.append(Line(' ' * pad + piece, number, ends_with_newline=False, attributes=attrs, links=line_links))
+        out.append(Line(' ' * pad + piece + tail, number, ends_with_newline=False, attributes=attrs, links=line_links))
         offset += len(piece)
         rest = rest[len(piece):]
         indent = left
     out[-1].ends_with_newline = True
     return out
+
+
+def hide_emphasis_marks(text, runs):
+    """端末では傍点の「《﹅》」を書かない(C++のContentView::renderLine())。字の位置が詰まるのでrunsも直す。"""
+    readings = [(s, e) for s, e, a in runs if a == 'ruby_text']
+    if not readings:
+        return text, runs
+    drop = []  # 消す字の範囲
+    at = text.find('《')
+    while at >= 0:
+        close = text.find('》', at)
+        if close < 0:
+            break
+        if text[at + 1:close] in EMPHASIS_MARKS and any(s <= at < e for s, e in readings):
+            drop.append((at, close + 1))
+        at = text.find('《', close + 1)
+    if not drop:
+        return text, runs
+
+    def moved(position):
+        return position - sum(min(position, e) - s for s, e in drop if s < position)
+    out, last = [], 0
+    for s, e in drop:
+        out.append(text[last:s])
+        last = e
+    out.append(text[last:])
+    return ''.join(out), [(moved(s), moved(e), a) for s, e, a in runs if moved(e) > moved(s)]
+
+
+def strip_emphasis_marks(text):
+    """章の一覧の名前(属性の無い字)から傍点の「《﹅》」を除く。"""
+    return re.sub('《[' + ''.join(EMPHASIS_MARKS) + ']》', '', text)
 
 
 def is_epub_file(path):

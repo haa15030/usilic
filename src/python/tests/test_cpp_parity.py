@@ -202,19 +202,24 @@ def write_tgz(path):
 
 
 def write_vertical_epub(path):
-    """縦書き(page-progression-direction="rtl")の2章の本。"""
+    """縦書き(page-progression-direction="rtl")の本: 傍点の段落と、中央寄せ・ルビのある横書きの奥付。"""
     item = '<item id="c%d" href="c%d.xhtml" media-type="application/xhtml+xml"/>'
     opf = ('<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="i">'
            '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="i">x</dc:identifier>'
            '<dc:title>t</dc:title><dc:language>ja</dc:language></metadata><manifest>'
-           '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>' +
-           item % (1, 1) + item % (2, 2) +
-           '</manifest><spine page-progression-direction="rtl"><itemref idref="c1"/><itemref idref="c2"/></spine>'
-           '</package>')
+           '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>'
+           '<item id="s" href="s.css" media-type="text/css"/>' +
+           item % (1, 1) + item % (2, 2) + item % (3, 3) +
+           '</manifest><spine page-progression-direction="rtl"><itemref idref="c1"/><itemref idref="c2"/>'
+           '<itemref idref="c3"/></spine></package>')
     nav = ('<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><body>'
            '<nav epub:type="toc"><ol><li><a href="c1.xhtml">第一章</a></li><li><a href="c2.xhtml">第二章</a></li>'
-           '</ol></nav></body></html>')
-    chapter = '<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>%s</h1><p>%s</p></body></html>'
+           '<li><a href="c3.xhtml">奥付</a></li></ol></nav></body></html>')
+    css = ('.em { -webkit-text-emphasis-style: filled sesame; }\n'
+           '.h { writing-mode: horizontal-tb; }\n'
+           '.c { text-align: center; }\n')
+    page = ('<html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" href="s.css"/></head>'
+            '<body%s>%s</body></html>')
     with zipfile.ZipFile(path, 'w') as z:
         z.writestr('mimetype', 'application/epub+zip')
         z.writestr('META-INF/container.xml',
@@ -222,8 +227,11 @@ def write_vertical_epub(path):
                    '<rootfile full-path="o.opf" media-type="application/oebps-package+xml"/></rootfiles></container>')
         z.writestr('o.opf', opf)
         z.writestr('nav.xhtml', nav)
-        z.writestr('c1.xhtml', chapter % ('第一章', '本文です。' * 40))
-        z.writestr('c2.xhtml', chapter % ('第二章', '続きです。' * 40))
+        z.writestr('s.css', css)
+        z.writestr('c1.xhtml', page % ('', '<h1>第一章</h1><p>本文です。<span class="em">傍点の字</span>です。' + '続きです。' * 40 + '</p>'))
+        z.writestr('c2.xhtml', page % ('', '<h1>第二章</h1><p>' + '続きです。' * 40 + '</p>'))
+        z.writestr('c3.xhtml', page % (' class="h"', '<h1>奥付</h1><p class="c"><ruby>燈<rt>ひ</rt></ruby>色の場</p>'
+                                       '<p class="c"><span class="em">傍点</span>の行</p><p>ふつうの行</p>'))
 
 
 @unittest.skipUnless(os.path.exists(CPP), 'C++版が無い(make usilic)')
@@ -274,6 +282,10 @@ class CppParityTest(unittest.TestCase):
 
     def test_pager_vertical_book(self):
         self.compare([self.path('v.epub')], [('^G', G), ('^G', G), ('^K', K), ('^G', G), ('^H', H), ('^G', G), ('^G', G)])
+
+    def test_vertical_book_colophon(self):
+        # 章の一覧の最後(横書きの奥付)へ: 位置の総数・傍点のバイト数・中央寄せの桁
+        self.compare([self.path('v.epub')], [('^G', G), ('^[>', b'\x1b>'), ('^M', b'\r')])
 
     def test_epub_margins(self):
         up, down, left, right = b'\x1b[A', b'\x1b[B', b'\x1b[D', b'\x1b[C'
