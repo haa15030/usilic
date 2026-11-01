@@ -294,7 +294,7 @@ def main():
                 return 'usilic: cannot list ' + (args[0] if args else '.')
             if not ephemeral:  # 足りないプログラムのインストールの案内(実行ループの最初でSHELLへ)
                 from usilic import install_offer
-                offer = install_offer.plan(usilic_dir)
+                offer = install_offer.plan(usilic_dir, first_start)
                 if offer:
                     app.pending_shell_offer = (offer[0], offer[1], 3, offer[2])
             if first_start and help_text.help_roff_path(messages_ja.japanese()):

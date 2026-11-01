@@ -60,15 +60,16 @@ def missing_packages():
     return missing
 
 
-def plan(usilic_dir):
-    """案内するなら(最初のコマンド, 続きのコマンドを返す関数, 案内できた時に印を書く関数)、無ければNone。"""
+def plan(usilic_dir, first_start=False):
+    """案内するなら(最初のコマンド, 続きのコマンドを返す関数, 案内できた時に印を書く関数)、無ければNone。
+    最初の起動(first_start)では、案内済みの印によらず見つからないものを全部(C++の項目1187)。"""
     marker = os.path.join(usilic_dir, 'install-offered')
     try:
         with open(marker, encoding='utf-8') as f:
             offered = [line.strip() for line in f if line.strip()]
     except OSError:
         offered = []
-    to_offer = [p for p in missing_packages() if p not in offered]
+    to_offer = [p for p in missing_packages() if first_start or p not in offered]
     if not to_offer:
         return None
 

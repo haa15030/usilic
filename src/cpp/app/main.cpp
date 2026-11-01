@@ -2337,12 +2337,16 @@ std::string findExecutable(const std::string &name) { return findExecutableIn(na
 // formulaは無い)。macOSはmgを/usr/bin/mgとして標準で持っている。印は
 // ~/.usilic/install-offered(以前のgroff-offeredで既にgroffを提示済みの
 // 環境でも、mg/infoの分は1回出す)。
-void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
+// 2026-11-01、直接のユーザー依頼(FreeBSDでgroffを消して~/.usilic/historyだけ消した初回起動で案内が出ず、
+// "入っていなければ再度案内するように変えて"): 最初の起動(firstStart、~/.usilic/historyが無い)では、案内済みの印に
+// よらず、見つからないものを全部案内する(ふだんの起動では今まで通り、まだ案内していないものだけ)。
+void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, bool firstStart) {
 #ifdef _WIN32
   // 2026-10-20、直接のユーザー報告("Windowsには不要では？"、=kv.png、初回起動でcmdへ`sudo apt install …`が送られて
   // いた): Windowsのネイティブにはaptもgroff等も無く(MANは組んでおいた平文、ManMode::runAndWrap()参照)、案内しない。
   (void)app;
   (void)usilicDir;
+  (void)firstStart;
   return;
 #endif
   // 2026-10-05、直接のユーザー報告(WSLで"w3mが無い。apt installリストに入ってなかった？"): 印のファイルが
@@ -2411,7 +2415,7 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
   // 今回案内するもの: 見つからないもののうち、まだ案内していないもの。
   std::set<std::string> toOffer;
   for (const auto &package : missingPackages())
-    if (!offered.count(package)) toOffer.insert(package);
+    if (firstStart || !offered.count(package)) toOffer.insert(package);
   if (toOffer.empty()) return;
   // toOfferのうち見つからないものだけのインストールコマンド(全部あれば空、followUpでも使う)。
   auto installCommand = [missingPackages, toOffer]() -> std::string {
@@ -6547,7 +6551,7 @@ int main(int argc, char **argv) {
       std::cerr << "usilic: cannot list " << startDirectory << "\n";
       return 1;
     }
-    offerGroffInstallOnce(app, usilicDir);
+    offerGroffInstallOnce(app, usilicDir, firstPagerStart);
     // 2026-10-11、直接のユーザー依頼("一番最初の起動(~/.usilic/historyが空)もしくは-Hの起動オプションで
     // usilicを立ち上げた場合、^Jtusilic ~/.local/lib/usilic/HELP_ja.1^Mを実行した状態で起動"): 親は今まで
     // どおり(ls)か前回の続きから立ち上がり、HELPは子のusilic(外部ページャー、^Jtの"usilic ..."と同じ
