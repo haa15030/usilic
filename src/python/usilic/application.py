@@ -515,6 +515,8 @@ class Application:
             name = 'HELP' if self.epub_name == 'HELP' else 'EPUB'
             if self.vertical_list_active():  # 縦書きの章の一覧: 位置は「選んでいる章/章の数」
                 position = self.notice or '%02d/%02d' % (view.cursor_index + 1, max(1, len(view.lines)))
+                if self.pager_launch and self.pager_help_return is None:  # ^Gの戻り先が無い: 透かし(C++の項目1191)
+                    return F('EPUB', str(self.content_byte_count()), False, PROGRAM_LABEL, '縦書き'), position
                 fields = F('EPUB', str(self.content_byte_count()), True, '', '縦書き')
             elif self.pager_launch and self.pager_help_return is None:
                 # ページャーの本の章の一覧は^Gでどこへも戻らない: 戻り値は無く透かし(C++の項目1115)
@@ -2849,9 +2851,8 @@ class Application:
                 return True
             if self.pager_help_return is not None:
                 return self.return_to_pager_file_from_help()
-            if self.pager_launch:
-                self.current_mode = FILE
-                return True
+            if self.pager_launch:  # ページャーの章の一覧の^Gはどこへも戻らない(C++のreturnFromCut())
+                return False
             return self.go_back()
         if mode == ARCHIVE:
             return self.archive_back()

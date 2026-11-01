@@ -1736,6 +1736,15 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     ContentView::ModeLineFields fields{"EPUB", std::to_string(contentByteCount(fileView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", "縦書き"};
     fields.trailing3 = directoryMode_.currentDirectory();  // 戻り値欄は^Gの戻り先の(ls)(cutView_の同じ欄参照)
+    // 2026-11-02、直接のユーザー報告(`usilic Kbt.epub`の章の一覧の戻り値が「縦書き」): ページャーの章の一覧は
+    // ^Gでどこへも戻らないので(returnFromCut())、横書きの一覧(cutView_)と同じく戻り値は無く透かしを出す。
+    if (pagerLaunch_ && pagerHelpReturn_) {
+      fields.trailing3 = pagerHelpReturn_->path;
+    } else if (pagerLaunch_) {
+      fields.trailing3.clear();
+      fields.rightWatermark = ContentView::programWatermark();
+      fields.fillTrailingToEdge = false;
+    }
     return fields;
   });
 
