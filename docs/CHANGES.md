@@ -33295,3 +33295,6 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 1179. **FreeBSDのpkg installにbashとfirefoxを加える(2026-11-01)**
    - **経緯**: Xfceの地球マーク(ウェブブラウザー)から`https://github.com/settings/keys`を開こうとしたら、ブラウザが1つも入っておらず選択のダイアログが出た。直接のユーザー依頼("pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf firefoxでよろしく")。
    - **変更**: docs/BUILD.mdのFreeBSDの節のpkg install、src/HELP_.txt・HELP_en_.txt(追跡対象外)の同じ行(「ビルドに要るもの等」に)。
+1180. **FreeBSDでbashをログインシェルにする手順、firefoxのpkgのメッセージは対応不要(2026-11-01)**
+   - **経緯**: 直接のユーザー依頼("それも追記で"、chsh -s /usr/local/bin/bashと~/.bash_profileの件)。あわせてfirefoxのpkg installの最後に出る長いメッセージ(boost-libs・gcc14・libjxl・firefoxの未対応機能/カーソル/音声/sftp等)について"必要なのはある？"と聞かれ、どれも対応不要と答えた。
+   - **変更**: docs/BUILD.mdのFreeBSDの節に2項目、src/HELP_.txt・HELP_en_.txt(追跡対象外)に1文ずつ(日英で同じ位置)。

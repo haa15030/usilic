@@ -117,6 +117,8 @@ gmake install          # ~/.local/bin/usilic、~/.local/share/applications/usili
 ```
 
 - `~/.local/bin`は既定のPATHに無いので、`~/.profile`に`PATH=$HOME/.local/bin:$PATH; export PATH`を足す。
+- bashをログインシェルにするなら`chsh -s /usr/local/bin/bash`。bashは`~/.bash_profile`があれば`~/.profile`を読まないので、その時はPATHを`~/.bash_profile`に書く。
+- firefoxのpkg installの最後に長いメッセージ(boost・gcc14・libjxl・firefoxの未対応機能等)が出るが、対応が要るものは無い。
 - `su`はwheelグループのユーザーだけ(`pw groupmod wheel -m ユーザー名`)。sudoは`visudo`で`%wheel`の行を有効にする。
 - GUI(-g、アイコンからの起動)はX11とXfce等が要る。どのGPUでも共通に`pkg install xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa`、`sysrc dbus_enable=YES lightdm_enable=YES`。その上でGPUごとに(2026-11-01、RX580で確認):
 
