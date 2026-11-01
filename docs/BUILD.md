@@ -129,7 +129,8 @@ gmake install          # ~/.local/bin/usilic、~/.local/share/applications/usili
   再起動の前に`kldload amdgpu`(`i915kms`・`nvidia-modeset`)が何も言わずに戻ればカーネルと合っている(AMD・Intelはコンソールの文字が細かくなる)。CURRENTで失敗するならportsからビルドする(インストーラのDistribution Selectで`src`を入れておく)。drm系はユーザーを`video`グループに入れる。
 - インストーラの注意: キーボードの画面は`Japanese 106`をSpaceで選んだ後、**一番上の行**`Continue with jp.kbd keymap`でEnter(2行目のTestは試し打ちだけ)。ベースシステムの入れ方は`Distribution Sets`(従来のtarball、portsとは無関係)で`src`も選ぶ。再インストール後はMac側で`ssh-keygen -R <IP>`(ホスト鍵が変わる)。
 - 最初の起動のインストールの案内は`sudo pkg install -y groff mg texinfo 7-zip w3m`。
-- インストーラで選んだキーボード(jp106等)はコンソールだけ。Xfceでは設定→キーボード→レイアウトで別に選ぶ。
+- インストーラで選んだキーボード(jp106等)はコンソールだけ。Xfceでは設定→キーボード→レイアウトで「システムのデフォルトを使用」を外し、モデルを`Japanese 106-key`、レイアウトの追加で**▶を開かずに親の`Japanese`の行**を選ぶ(▶の下のKana・Macintosh・OADG 109A・Dvorakは標準以外の変種。Kanaを選ぶと`[`が`]`になる等、2026-11-01に実際にはまった)。
+- lightdmのログイン画面までjp106にするには、`/usr/local/etc/X11/xorg.conf.d/keyboard.conf`に`Section "InputClass"`・`Identifier "keyboard"`・`MatchIsKeyboard "on"`・`Option "XkbModel" "jp106"`・`Option "XkbLayout" "jp"`・`EndSection`を書く(Xfce側は「システムのデフォルトを使用」のままでよくなる)。
 - 端末に重ねる-gはmacOSだけ(Linux・FreeBSDは重ねない、ユーザー判断2026-10-31)。
 
 ## Windows(WSL2)
