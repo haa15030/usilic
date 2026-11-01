@@ -3281,7 +3281,7 @@ class Application {
   void reopenHelpInOtherLanguage(const HelpLanguageView &view);
   bool viewedThroughProgram(const std::string &path) const;  // executeEdit()参照
   // 2026-10-11、直接のユーザー依頼: ページャー起動のKEYは、HELP画面用に組んだ本文から行頭がタブの行だけ、-Kの
-  // KEYは「：」を含む行だけを読み込んだ一覧にする(hは無し、-Kでは^Gも無し。キーの発動は2026-10-22からページャー
+  // KEYは「：」を含む行だけを読み込んだ一覧にする(親のいない-Kではhも無し、-Kでは^Gも無し。キーの発動は2026-10-22からページャー
   // 起動でもする、executeSelectedKeyLine()参照)。
   bool keyListOnly() const { return pagerLaunch_ || keyColonListLaunch_; }
   bool keyColonListLaunch_ = false;
@@ -3882,6 +3882,20 @@ private:
   int keyCursorIndex_ = 0;
   // EPUBの本文からKEYを開いた時の、元の章の一覧の^Gの戻り先(startKey()参照)。
   std::optional<ApplicationMode> keyOverEpubReturnMode_;
+  // EPUBの章の一覧からKEYを開いた時の一覧の行と、その一覧のepubTocFromBody_(startKey()参照)。
+  std::optional<int> keyOverEpubTocCursor_;
+  bool keyOverEpubTocFromBody_ = false;
+  bool returnFromKeyToEpubToc();
+  // ページャーのファイルからHELPを開いた時の戻り先(rememberPagerFileForHelp()参照)。bookは`usilic 本.epub`の本。
+  struct PagerHelpReturn {
+    std::string path;
+    bool book;
+    int cursor;
+    int top;
+  };
+  std::optional<PagerHelpReturn> pagerHelpReturn_;
+  void rememberPagerFileForHelp();
+  bool returnToPagerFileFromHelp();
   bool helpJumpHighlight_ = false;
   // 平文のHELPとして最後に開いたファイル(^Hが「平文のHELPを見ている」と判断する、Command::StartHelp参照)。
   std::string plainHelpPath_;

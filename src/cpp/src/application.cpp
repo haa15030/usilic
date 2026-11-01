@@ -1548,7 +1548,10 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       // 2026-10-29、直接のユーザー報告("^Ouで起動した子プロセスのHELP.epubで^Gの時の戻り値が「111057」(子プロセス
       // なので正しくは非ハイライトの「USILIC」)"): ページャーとして開いた本の章の一覧の^Gはどこへも戻らない
       // (returnFromCut())ので、戻り値欄は空にし、本文と同じく右下の透かし(子は「USILIC」)を出す。
-      if (pagerLaunch_) {
+      // 2026-11-02: ページャーのファイルから^Hで開いたHELPなら、^Gの戻り先はそのファイル(pagerHelpReturn_)。
+      if (pagerLaunch_ && pagerHelpReturn_) {
+        fields.trailing3 = std::filesystem::path(pagerHelpReturn_->path).filename().string();
+      } else if (pagerLaunch_) {
         fields.trailing3.clear();
         fields.rightWatermark = ContentView::programWatermark();
         // 2026-10-31、直接のユーザー報告(FreeBSDの端末で、初回起動のHELPの^Gの章の一覧が「HELP」「01/42 TOP」
@@ -1590,8 +1593,16 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     if (cutOrigin_ == CutOrigin::Key && !cutMode_.parentPattern()) {
       // 2026-10-17、直接のユーザー報告("file から ^K したときは戻り値が file でないと"): ^Gの戻り先がファイル閲覧なら、
       // (ls)のディレクトリではなくそのファイル。
+      // 2026-11-02、直接のユーザー報告(HELPから^Kの戻り値が「/Users/.../.usilic/HELP.epub」・章の一覧からは無し):
+      // HELPはファイルとしては見せないので「HELP」。章の一覧から開いたKEYの^Gはその一覧へ(keyOverEpubTocCursor_)。
+      bool overHelp = !fileMode_.currentFile().empty() && (isGeneratedHelpEpub(fileMode_.currentFile()) ||
+                                                           fileMode_.currentFile() == plainHelpPath_);
+      std::string returnLabel = keyOverEpubTocCursor_ ? (overHelp ? "HELP" : "EPUB")
+                                : cutReturnMode_ != ApplicationMode::File ? directoryMode_.currentDirectory()
+                                : overHelp                                ? "HELP"
+                                                                          : fileMode_.currentFile();
       return {name, std::to_string(contentByteCount(cutView_)), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
-              cutReturnMode_ == ApplicationMode::File ? fileMode_.currentFile() : directoryMode_.currentDirectory()};
+              returnLabel};
     }
     // バイト数(2026-08-24修正、実際の報告+参照: "CUT" "01/13 TOP"
     // "435" "/Users/.../CLAUDE.md         "――このプロバイダには以前は
@@ -2600,6 +2611,7 @@ bool Application::navigateToPagerFile(int newIndex) {
   saveFilePosition();
   if (!loadPagerFile(pagerFileList_[newIndex])) return false;
   pagerFileIndex_ = newIndex;
+  pagerHelpReturn_.reset();  // HELPから別のファイルへ移ったら、戻り先はもう無い
   // 2026-08-25のバグ修正: ContentView自身のmove/scrollメソッド
   // (内部で自分自身をredraw()する)とは異なり、FileMode::
   // loadStream()/loadFile()はそうしない――実際のPTYキャプチャにより、
@@ -4111,6 +4123,9 @@ std::optional<bool> Application::gatePagerKey(int byte, std::optional<KeyInput::
   if (pagerKeyBuffer_.empty() &&
       (keyBindingContext() != KeyBindings::Context::All || universalArgPending_ || repeatZPending_ ||
        macroRepeatArmed_))
+    return std::nullopt;
+  // 2026-11-02、直接のユーザー報告(ページャーのKEYの^[<の行は^Mで飛べるのに"hは「使えません」"): KEYのh(HELPの同じ行へ)。
+  if (pagerKeyBuffer_.empty() && byte == 'h' && currentMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Key)
     return std::nullopt;
   const auto &allowed = pagerAllowedKeys();
   if (allowed.empty()) return std::nullopt;
@@ -5993,6 +6008,7 @@ bool Application::handleCommandImpl(Command command) {
           showTransientNotice(activeView(), "Already in HELP");
           return true;
         }
+        rememberPagerFileForHelp();
         return openEpub(*epub);
       }
       // 2026-10-04、直接のユーザー報告("~/.local/lib/usilic/HELPが新しくなったのに^Hでは変更点が更新されない"):
@@ -8984,6 +9000,60 @@ bool Application::returnToEpubToc() {
   return true;
 }
 
+// startKey()参照: 章の一覧から開いたKEYから、その一覧へ戻る(KEYが置き換えたCUTの分割を作り直し、カーソルも元の行へ)。
+bool Application::returnFromKeyToEpubToc() {
+  int cursor = *keyOverEpubTocCursor_;
+  bool fromBody = keyOverEpubTocFromBody_;
+  keyOverEpubTocCursor_.reset();
+  cutOrigin_ = CutOrigin::Epub;
+  cutSyntax_ = GrepSyntax::Fixed;
+  fileReturnMode_ = ApplicationMode::Cut;
+  if (!returnToEpubToc()) return false;
+  epubTocFromBody_ = fromBody;
+  cutView_.setCursorIndex(cursor);
+  if (epubTocVerticalActive()) refreshEpubTocVertical();
+  activeView().redraw();
+  activeView().syncVisibleCursor();
+  return true;
+}
+
+// 2026-11-02、直接のユーザー報告(`usilic BUILD.md`から^H、章の一覧の"^GでBUILD.mdへ戻らない"): ページャーのファイルは
+// HELPを開くと閉じられ、戻る先が無かった。開く前にファイルと位置を覚える。標準入力は読み直せないので覚えない。
+void Application::rememberPagerFileForHelp() {
+  if (!pagerLaunch_ || pagerHelpReturn_) return;
+  const std::string &file = fileMode_.currentFile();
+  if (file.empty() || isGeneratedHelpEpub(file)) return;
+  if (fileMode_.isPagerMode() && pagerFileIndex_ >= 0 && pagerFileIndex_ < static_cast<int>(pagerFileList_.size())) {
+    pagerHelpReturn_ = PagerHelpReturn{pagerFileList_[pagerFileIndex_], false, fileView_.cursorIndex(), fileView_.topIndex()};
+  } else if (!fileMode_.isPagerMode() && isEpubFile(file)) {  // `usilic 本.epub`: 位置はhistoryから(openEpub())
+    saveFilePosition();
+    pagerHelpReturn_ = PagerHelpReturn{file, true, 0, 0};
+  }
+}
+
+// rememberPagerFileForHelp()参照: HELPの章の一覧の^Gで、元のファイルを開き直して元の位置へ。
+bool Application::returnToPagerFileFromHelp() {
+  PagerHelpReturn target = *pagerHelpReturn_;
+  pagerHelpReturn_.reset();
+  saveFilePosition();
+  fileMode_.annotations().clear();  // openEpub()の"EPUB"注釈
+  epubVertical_ = false;
+  if (target.book) return openEpub(target.path);
+  if (!loadPagerFile(target.path)) return false;
+  epubJumpRaw_.reset();
+  epubJumpOrigin_.reset();
+  epubHorizontalSection_.reset();
+  syncEpubHorizontalPresentation();
+  currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Directory;
+  fileMode_.ensureLoadedThrough(target.cursor + display_.rows(), /*bypassPacing=*/true);
+  fileView_.setCursorIndex(target.cursor);
+  fileView_.setTopIndex(target.top);
+  activeView().redraw();
+  activeView().syncVisibleCursor();
+  return true;
+}
+
 // 2026-09-28追加、直接のユーザー依頼("縦書きもよろしく"、"^Jeでファイルを選ぶと
 // EPUBモードへ移行して縦書きになる"、"モード内での縦横切り替えは^Oeで"、同日の
 // "Bibiのように横方向へもスクロールができればいい"→"まずは1列ずつから"): EPUBの
@@ -11409,11 +11479,13 @@ bool Application::returnFromCut() {
   // 2026-10-29: 最初の起動(setFirstStartPager())では、シェルが動いていれば(インストールの後)機能限定SHELLへ
   // (SHELLの^Gでこの章の一覧へ戻る)。
   if (pagerLaunch_ && cutOrigin_ == CutOrigin::Epub && cutReturnMode_ == ApplicationMode::Directory) {
+    if (pagerHelpReturn_) return returnToPagerFileFromHelp();
     if (firstStartPager_ && shellStarted_ && shell_.alive()) return ensureShellActive();
     return false;
   }
   saveKeyCursor();
   saveCutFilePosition();
+  if (cutOrigin_ == CutOrigin::Key && keyOverEpubTocCursor_) return returnFromKeyToEpubToc();
   if (cutOrigin_ == CutOrigin::Key && keyOverEpubReturnMode_ && cutReturnMode_ == ApplicationMode::File) {
     // startKey()参照: EPUBの本文へ戻り、本文の^Gは章の一覧へ(returnToEpubToc()が一覧を作り直す)。
     cutOrigin_ = CutOrigin::Epub;
@@ -20178,10 +20250,22 @@ bool Application::startKey() {
   // 2026-10-12、直接のユーザー報告("^K後は^G連打で無限行き来"): EPUBの本文(^Gで章の一覧へ戻る)からKEYを開くと、
   // CUTの由来と戻り先がKEYのものに置き換わり、本文の^GがKEYへ、KEYの^Gが本文へ、と行き来していた。本文から
   // 開いた時は元の章の一覧の戻り先を控え、KEYの^Gで本文へ戻る時に戻す(returnFromCut())。
-  keyOverEpubReturnMode_.reset();
+  // 2026-11-02、直接のユーザー報告(HELPの章の一覧から^K、"戻り値は「HELP」で^Gでそこへ戻る"、^Mは「--」、^Gは(ls)):
+  // 章の一覧から開いた時はCUTの由来だけがKEYに置き換わり、KEYの^G・^Mが一覧の戻り先へ抜けていた。一覧の行を控えて、
+  // ^G・^Mでは一覧へ戻る(returnFromKeyToEpubToc()、cutReturnMode_は一覧の^Gの戻り先のまま)。KEYの中の^K(^Ojの
+  // 開き直しも)では控えを残す。
+  bool alreadyKey = fromCut && cutOrigin_ == CutOrigin::Key;
+  if (!alreadyKey) {
+    keyOverEpubReturnMode_.reset();
+    keyOverEpubTocCursor_.reset();
+  }
   if (!fromCut && currentMode_ == ApplicationMode::File && fileReturnMode_ == ApplicationMode::Cut &&
       cutOrigin_ == CutOrigin::Epub)
     keyOverEpubReturnMode_ = cutReturnMode_;
+  if (currentMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Epub && !cutMode_.parentPattern()) {
+    keyOverEpubTocCursor_ = cutView_.cursorIndex();
+    keyOverEpubTocFromBody_ = epubTocFromBody_;
+  }
   if (!fromCut) cutReturnMode_ = currentMode_;
   cutOrigin_ = CutOrigin::Key;
   // KEYは反転表示を「：」の手前まで(2026-10-11、-Kから、同日"親の^Kも-Kと同じくキーアサインのみのハイライト
@@ -20342,8 +20426,12 @@ bool Application::executeSelectedKeyLine() {
     showTransientNotice(activeView(), "SHELL/prompt only");
     return false;
   }
-  currentMode_ = cutReturnMode_;
-  activeView().redraw();
+  if (keyOverEpubTocCursor_) {  // startKey()参照: 章の一覧から開いたKEYのキーは、その一覧で実行する
+    if (!returnFromKeyToEpubToc()) return false;
+  } else {
+    currentMode_ = cutReturnMode_;
+    activeView().redraw();
+  }
   bool result = false;
   executingKeyLine_ = true;
   for (int b : bytes) result = feedByte(b, std::nullopt);  // 利用者のキーとして(KEY節の置き換えを通す)
@@ -20383,7 +20471,8 @@ bool Application::isHelpCommandLineKey(int rawLine) const {
 
 bool Application::jumpFromKeyToHelp() {
   if (currentMode_ != ApplicationMode::Cut || cutOrigin_ != CutOrigin::Key) return false;
-  if (keyListOnly() && !(keyColonListLaunch_ && parentPid_ > 0)) return false;  // keyListOnly()参照: hは無し
+  // 親のいない-Kにはhは無い。2026-11-02、直接のユーザー報告("先頭へ飛べるならhも使えるべき"): ページャー起動のKEYでも使う。
+  if (keyColonListLaunch_ && parentPid_ <= 0) return false;
   saveKeyCursor();
   const CutSegment *segment = cutMode_.selectedSegment();
   if (!segment) return false;
@@ -20427,7 +20516,10 @@ bool Application::jumpFromKeyToHelp() {
         showTransientNotice(activeView(), "Parent not reachable");
       return true;
     }
-    if (std::optional<std::string> epub = helpEpubPath(); epub && openEpub(*epub)) return jumpHelpToKeyLine(request);
+    if (std::optional<std::string> epub = helpEpubPath()) {
+      rememberPagerFileForHelp();
+      if (openEpub(*epub)) return jumpHelpToKeyLine(request);
+    }
   }
   return openPlainHelp(content.front().rawLineNumber);
 }

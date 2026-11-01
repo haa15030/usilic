@@ -291,6 +291,12 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
 
     std::error_code ec;
     auto size = std::filesystem::file_size(path, ec);
+    // 2026-11-02、直接のユーザー報告(HELPの本文の戻り値が「/Users/.../.usilic/」、正しくは「EPUB」): メモリ上のファイル
+    // (setMemoryFile()、HELP)はディスクに無いのでサイズが取れず、バイト数の欄にディレクトリを出し、注釈の"EPUB"も消えていた。
+    if (auto memory = memoryFiles_.find(currentFile_); memory != memoryFiles_.end()) {
+      size = memory->second->size();
+      ec.clear();
+    }
     // バイトサイズとディレクトリは、1つの文字列ではなく、2つの
     // 「別々の」ModeLineFields::trailing/trailing2セグメントである
     // ――2026-08-10に追加。この修正の「以前の」バージョンは、実際の

@@ -33327,3 +33327,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: ユーザーの質問("FreeBSDでCaps LockとCtrlを入れ替えるためのX11用の設定ってある？")と、直接のユーザー依頼("それも追記で")。
    - **変更**: docs/BUILD.mdのFreeBSDの節に1項目(keyboard.confのXkbOptions "ctrl:swapcaps"/ctrl:nocaps、setxkbmapで試す・戻す、Xfceの「システムのデフォルトを使用」を外すと上書きされる、コンソールのjp.capsctrl.kbd)。
    - 確かめたこと: ユーザーの実機(16.0-CURRENT)で`ls /usr/share/vt/keymaps | grep jp`が`jp.capsctrl.kbd`・`jp.kbd`。
+1189. **ページャーから^Hで開いたHELPの戻り値と^G、章の一覧からのKEY、ページャーのKEYのh(2026-11-02)**
+   - **経緯**: 直接のユーザー報告(まっさらなBig Surで`usilic ~/git/usilic/docs/BUILD.md`から^H)。(1)HELPの本文の戻り値が「/Users/.../.usilic/」(正しくは「EPUB」)。(2)^Gの章の一覧の戻り値が「usilic-1.5b」、^GでBUILD.mdへ戻らない。(3)章の一覧から^Kの戻り値が「3624」(バイト数が戻り値に見える)、^Mは「--」、^Gはdocs/の(ls)。(4)本文から^Kの戻り値が「/Users/.../.usilic/HELP.epub」(正しくは「HELP」)。(5)ページャーのKEYでhが「ページャーでは使えません」。
+   - **原因**: (1)HELPはメモリ上のファイル(項目1121の後、2026-10-31)でディスクに無いので、FileModeのモードラインのfile_size()が失敗し、バイト数の欄にディレクトリを出して注釈の"EPUB"も消していた(ページャーに限らない)。(2)ページャーのファイルはHELPを開くと閉じられ、戻り先を持っていなかった。(3)startKey()は章の一覧から開いた時にCUTの由来だけをKEYに置き換えるので、KEYの^G・^Mが一覧の戻り先((ls))へ抜けていた(ページャーに限らない)。(5)ページャーのKEYのhは2026-10-11に無しとしていた。
+   - **変更**: file_mode.cppのモードラインでメモリ上のファイルの大きさを使う。application.cppに、rememberPagerFileForHelp()(^H・KEYのhでHELPを開く前に、引数のファイルか`usilic 本.epub`の本と位置を覚える)、returnToPagerFileFromHelp()(章の一覧の^Gで開き直して元の位置へ)、returnFromKeyToEpubToc()(章の一覧から開いたKEYの^G・^Mでその一覧へ、カーソルも元の行)。章の一覧の戻り値はそのファイルの名前、KEYの戻り値はHELPなら「HELP」・本の章の一覧からなら「EPUB」。gatePagerKey()はKEYのhを通し、jumpFromKeyToHelp()は親のいない-Kだけhを断る。KEYの中でもう一度^Kを押しても戻り先を忘れないようにした。
+   - **残したこと**: 標準入力のページャーは読み直せないので^Gで戻らない(戻り値も無し、以前どおり)。アーカイブの引数(`usilic x.tgz`)から^Hした時も戻り先は無いまま。hの通過は既定のキー`h`だけで、usilicrcのKEY節でK-105を変えた場合のキーは通らない。Python版は未対応。
+   - 確かめたこと: make usilic・make install(macOS)。動きはユーザーの実機で確認。
