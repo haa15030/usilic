@@ -33323,3 +33323,6 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 項目1186を確かめるため、FreeBSDでgroffを消して~/.usilic/historyだけを消し`usilic -g`で最初の起動をしたところ、pkg installの案内のSHELLが出ず、KEYも「--」のまま(裏の端末に`env: groff: No such file or directory`)。~/.usilic/install-offeredにgroffが案内済みとして残っていたため(項目のとおり、案内は一度きり)。アシスタントの問い(案内したのに入れなかった・後で消した場合も二度と案内しない仕様を変えるか)に、直接のユーザー判断"入っていなければ再度案内するように変えて"。
    - **変更**: app/main.cppのofferGroffInstallOnce()に引数firstStart(firstPagerStart、~/.usilic/historyが無い)。最初の起動では印によらず、見つからないものを全部案内する。ふだんの起動では今まで通り、まだ案内していないものだけ(毎回出るとうるさいため)。Python版のinstall_offer.plan()も同じく。
    - 確かめたこと: make usilic・make install(macOS)。
+1188. **FreeBSDのX11でCaps LockとCtrlを入れ替える(2026-11-01)**
+   - **経緯**: ユーザーの質問("FreeBSDでCaps LockとCtrlを入れ替えるためのX11用の設定ってある？")と、直接のユーザー依頼("それも追記で")。
+   - **変更**: docs/BUILD.mdのFreeBSDの節に1項目(keyboard.confのXkbOptions "ctrl:swapcaps"/ctrl:nocaps、setxkbmapで試す・戻す、Xfceの「システムのデフォルトを使用」を外すと上書きされる、コンソールのjp.capsctrl.kbdは未確認)。
