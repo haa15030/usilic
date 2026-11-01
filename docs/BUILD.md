@@ -130,6 +130,7 @@ gmake install          # ~/.local/bin/usilic、~/.local/share/applications/usili
 - インストーラの注意: キーボードの画面は`Japanese 106`をSpaceで選んだ後、**一番上の行**`Continue with jp.kbd keymap`でEnter(2行目のTestは試し打ちだけ)。ベースシステムの入れ方は`Distribution Sets`(従来のtarball、portsとは無関係)で`src`も選ぶ。再インストール後はMac側で`ssh-keygen -R <IP>`(ホスト鍵が変わる)。
 - 最初の起動のインストールの案内は`sudo pkg install -y groff mg texinfo 7-zip w3m`。
 - インストーラで選んだキーボード(jp106等)はコンソールだけ。Xfceでは設定→キーボード→レイアウトで「システムのデフォルトを使用」を外し、モデルを`Japanese 106-key`、レイアウトの追加で**▶を開かずに親の`Japanese`の行**を選ぶ(▶の下のKana・Macintosh・OADG 109A・Dvorakは標準以外の変種。Kanaを選ぶと`[`が`]`になる等、2026-11-01に実際にはまった)。
+- Xfceのメニュー等を日本語にするには`echo 'LANG=ja_JP.UTF-8; export LANG' >> ~/.xprofile`してログインし直す(lightdmの`/usr/local/etc/lightdm/Xsession`が`~/.xprofile`を読む、2026-11-01に確認)。`~/.login_conf`やログインクラスで設定するとコンソール(vt)のログインまで日本語になり、vtのフォントに漢字が無いので化ける。
 - lightdmのログイン画面までjp106にするには、`/usr/local/etc/X11/xorg.conf.d/keyboard.conf`に`Section "InputClass"`・`Identifier "keyboard"`・`MatchIsKeyboard "on"`・`Option "XkbModel" "jp106"`・`Option "XkbLayout" "jp"`・`EndSection`を書く(Xfce側は「システムのデフォルトを使用」のままでよくなる)。
 - 端末に重ねる-gはmacOSだけ(Linux・FreeBSDは重ねない、ユーザー判断2026-10-31)。
 
