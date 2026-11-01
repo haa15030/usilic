@@ -2371,14 +2371,14 @@ class Application:
 
     def pager_key_numbers(self):
         """ページャーで使えるK-番号(C++のpagerAllowedKeys()): HELPの行頭がタブの「キー：説明」の行のキー(「（^Xrl も
-        同じ）」のキーも)と、^M・^K・^Og・^Oj・^[[ ^[] ^[{ ^[}・^J^F・^Ot・^T^H・^T^K。最初の起動(first_start_pager)
+        同じ）」のキーも)と、^M・^K・^Og・^Oj・^[[ ^[] ^[{ ^[}・^J^F・^Ot・^T^H・^T^K・^H。最初の起動(first_start_pager)
         では機能限定SHELLへ行く^[s・^Js・^J.・^J,と^I(INFO)も。"""
         key = (japanese(), self.first_start_pager)
         if self.pager_numbers_cache is not None and self.pager_numbers_cache[0] == key:
             return self.pager_numbers_cache[1]
         numbers = set(PAGER_KEYS) | {28, 93, 92, 109, 110, 112, 113, 129, 130}
         numbers |= {n for n, seq in self.bindings.sequences.items()
-                    if seq in ([0x0F, ord('g')], [0x0F, ord('t')], [0x0A, 0x06])}
+                    if seq in ([0x0F, ord('g')], [0x0F, ord('t')], [0x0A, 0x06], [0x08])}  # ^HもC++の項目1185
         found = self.plain_help()
         for raw in (found[3] if found else []):
             if not raw.startswith('\t') or help_text.FULL_COLON not in raw:

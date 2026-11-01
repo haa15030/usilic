@@ -4081,6 +4081,9 @@ const std::vector<std::vector<int>> &Application::pagerAllowedKeys() {
     // 同日、直接のユーザー依頼(HELPを作り直さなくても): HELP/KEYの子(^T^H / ^T^K、launchHelpChild()参照)も。
     pagerAllowedKeys_.push_back({0x14, 0x08});
     pagerAllowedKeys_.push_back({0x14, 0x0b});
+    // 2026-11-01、直接のユーザー報告(FreeBSDのXfceの端末で"usilic ~/.profile"、"^T^Hは開くのに^Hが利かないのは
+    // 不便"): ^H(HELPをその場で開く、^Gで元のファイルへ戻る)も。
+    pagerAllowedKeys_.push_back({0x08});
     // 2026-10-29、直接のユーザー報告(最初の起動で"^[s、^J.、^Js等が皆「ページャーでは使えません」"): 最初の起動
     // (setFirstStartPager())では、機能限定SHELLへ行くキーも。
     // 2026-10-30、直接のユーザー報告(最初の起動で"^Iが「ページャーでは使えません」"、HELPの冒頭は^IのINFOで引数を

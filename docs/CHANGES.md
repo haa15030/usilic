@@ -33311,3 +33311,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 1184. **~/.profileを読み直す度に出る英語の小ネタはfortune(2026-11-01)**
    - **経緯**: PATHを足した`~/.profile`を`. .profile`・`. ~/.profile`で読み直したところ、毎回違うメッセージ(sedの使い方、vidcontrolの使い方)が出た。既定の`~/.profile`の`fortune freebsd-tips`によるもので、どちらも正しく読み込まれていた(アシスタントは最初「`. .profile`はPATHを探して失敗した」と誤って推測した。FreeBSDの/bin/shはカレントディレクトリも探す)。直接のユーザー依頼("fortuneの件も追記で")と質問("日本語では出ない？"、freebsd-tipsは英語だけ)。
    - **変更**: docs/BUILD.mdのFreeBSDの節に1項目。
+1185. **ページャーでも^H(HELP)を使えるように(2026-11-01)**
+   - **経緯**: 直接のユーザー報告(FreeBSDのXfceの端末で`usilic ~/.profile`、"^T^Hは開くのに^Hが利かないのは不便")。ページャーで通すキー(pagerAllowedKeys()、項目952等)に^T^H・^T^Kは入れていたが、^Hは入っていなかった(FreeBSDに限らない)。
+   - **変更**: application.cppのpagerAllowedKeys()に^H(その場でHELPを開き、^Gで元のファイルへ)。Python版のpager_key_numbers()も同じく。
+   - 確かめたこと: make usilic・make install(macOS)。^Hの動きはユーザーの実機で確認。
