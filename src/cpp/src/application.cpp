@@ -1601,6 +1601,10 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
                                 : cutReturnMode_ != ApplicationMode::File ? directoryMode_.currentDirectory()
                                 : overHelp                                ? "HELP"
                                                                           : fileMode_.currentFile();
+      // 引数のアーカイブの一覧はファイルを開いていない(currentFile()が空): 名前の欄に出しているそのアーカイブ。
+      if (const auto *frame = fileMode_.annotations().top();
+          cutReturnMode_ == ApplicationMode::File && returnLabel.empty() && frame && frame->nameOverride)
+        returnLabel = *frame->nameOverride;
       return {name, std::to_string(contentByteCount(cutView_)), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
               returnLabel};
     }
@@ -9021,13 +9025,22 @@ bool Application::returnFromKeyToEpubToc() {
 // HELPを開くと閉じられ、戻る先が無かった。開く前にファイルと位置を覚える。標準入力は読み直せないので覚えない。
 void Application::rememberPagerFileForHelp() {
   if (!pagerLaunch_ || pagerHelpReturn_) return;
+  using Kind = PagerHelpReturn::Kind;
+  // 2026-11-02、直接のユーザー依頼(ARCHIVEのsuffixの引数の選べない一覧、"^H^Gでは一覧へ戻って欲しい"): 一覧は
+  // ファイルではない(currentFile()が空)ので、finishArchiveLoadAsync()の出力から作り直す。
+  if (const auto *frame = fileMode_.annotations().top(); fileMode_.isPagerMode() && !archiveLoadPendingPath_.empty() &&
+                                                          frame && frame->nameOverride == archiveLoadPendingPath_) {
+    pagerHelpReturn_ = PagerHelpReturn{archiveLoadPendingPath_, Kind::ArchiveListing, fileView_.cursorIndex(),
+                                       fileView_.topIndex()};
+    return;
+  }
   const std::string &file = fileMode_.currentFile();
   if (file.empty() || isGeneratedHelpEpub(file)) return;
   if (fileMode_.isPagerMode() && pagerFileIndex_ >= 0 && pagerFileIndex_ < static_cast<int>(pagerFileList_.size())) {
-    pagerHelpReturn_ = PagerHelpReturn{pagerFileList_[pagerFileIndex_], false, fileView_.cursorIndex(), fileView_.topIndex()};
+    pagerHelpReturn_ = PagerHelpReturn{pagerFileList_[pagerFileIndex_], Kind::File, fileView_.cursorIndex(), fileView_.topIndex()};
   } else if (!fileMode_.isPagerMode() && isEpubFile(file)) {  // `usilic 本.epub`: 位置はhistoryから(openEpub())
     saveFilePosition();
-    pagerHelpReturn_ = PagerHelpReturn{file, true, 0, 0};
+    pagerHelpReturn_ = PagerHelpReturn{file, Kind::Book, 0, 0};
   }
 }
 
@@ -9038,8 +9051,9 @@ bool Application::returnToPagerFileFromHelp() {
   saveFilePosition();
   fileMode_.annotations().clear();  // openEpub()の"EPUB"注釈
   epubVertical_ = false;
-  if (target.book) return openEpub(target.path);
-  if (!loadPagerFile(target.path)) return false;
+  if (target.kind == PagerHelpReturn::Kind::Book) return openEpub(target.path);
+  if (target.kind == PagerHelpReturn::Kind::ArchiveListing ? !landArchivePagerListing() : !loadPagerFile(target.path))
+    return false;
   epubJumpRaw_.reset();
   epubJumpOrigin_.reset();
   epubHorizontalSection_.reset();
@@ -13973,17 +13987,25 @@ std::string sortZipListingByName(const std::string &listing) {
   return out;
 }
 
+// 選べない一覧を、読み込み済みの出力から画面に出す(読み終えた時と、HELPの^Gで戻る時、returnToPagerFileFromHelp())。
+bool Application::landArchivePagerListing() {
+  if (!fileMode_.loadContentAsPipe(archiveLoadPendingOutput_)) return false;
+  fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, archiveLoadPendingPath_,
+                                                archiveLoadPendingBadge_);
+  // 2026-11-02(`usilic x.tgz`の一覧の^Gで空の(ls)へ出ていたのを試験で発見): 引数で開いた一覧はページャーなので(ls)へ
+  // 行かない(gatePagerKey()・returnFromCut()と同じ)。戻り値も無く透かし。(ls)の^O^Mの時だけ(ls)へ戻る。
+  if (pagerLaunch_) fileMode_.setPagerReturnsToDirectory(false);
+  else fileMode_.setPagerListingDirectory(truncatedTrailingPath(archiveLoadPendingDirectory_));
+  currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Directory;
+  return true;
+}
+
 void Application::finishArchiveLoadAsync() {
   if (archiveLoadForPager_) {
     archiveLoadForPager_ = false;
     if (isEpubFile(archiveLoadPendingPath_)) archiveLoadPendingOutput_ = sortZipListingByName(archiveLoadPendingOutput_);
-    if (fileMode_.loadContentAsPipe(archiveLoadPendingOutput_)) {
-      fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, archiveLoadPendingPath_,
-                                                    archiveLoadPendingBadge_);
-      fileMode_.setPagerListingDirectory(truncatedTrailingPath(archiveLoadPendingDirectory_));
-      currentMode_ = ApplicationMode::File;
-      fileReturnMode_ = ApplicationMode::Directory;
-    }
+    landArchivePagerListing();
     activeView().redraw();
     return;
   }

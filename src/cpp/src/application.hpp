@@ -3886,15 +3886,17 @@ private:
   std::optional<int> keyOverEpubTocCursor_;
   bool keyOverEpubTocFromBody_ = false;
   bool returnFromKeyToEpubToc();
-  // ページャーのファイルからHELPを開いた時の戻り先(rememberPagerFileForHelp()参照)。bookは`usilic 本.epub`の本。
+  // ページャーのファイルからHELPを開いた時の戻り先(rememberPagerFileForHelp()参照)。Bookは`usilic 本.epub`の本、ArchiveListingは`usilic x.tgz`の一覧。
   struct PagerHelpReturn {
+    enum class Kind { File, Book, ArchiveListing };
     std::string path;
-    bool book;
+    Kind kind;
     int cursor;
     int top;
   };
   std::optional<PagerHelpReturn> pagerHelpReturn_;
   void rememberPagerFileForHelp();
+  bool landArchivePagerListing();  // finishArchiveLoadAsync()参照
   bool returnToPagerFileFromHelp();
   bool helpJumpHighlight_ = false;
   // 平文のHELPとして最後に開いたファイル(^Hが「平文のHELPを見ている」と判断する、Command::StartHelp参照)。

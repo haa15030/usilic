@@ -425,6 +425,10 @@ class Application:
                 fields = F(name, str(fm.byte_count), True, '', 'EPUB', trailing2_kind=mode_line.PATH_MIDDLE)
                 fields.split_layout_when_crowded = True
                 return fields, position
+            if fm.listing_badge and not self.pager_launch:  # (ls)の^O^Mの選べない一覧: 戻り値は(ls)(C++のpagerListingDirectory_)
+                fields = F(fm.current_file, str(fm.byte_count), True, '', fm.listing_badge)
+                fields.trailing3 = mode_line.truncated_trailing_path(os.path.dirname(fm.current_file).rstrip('/') + '/')
+                return fields, self.notice or mode_line.format_fixed_width(*self.position_numbers(view))
             if self.pager_launch:  # ページャー(C++のpagerMode_)。組んだ物(.md)の位置はFILEと同じ形、他は5桁
                 pos = self.notice or (mode_line.format if fm.transformed or fm.whole_loaded
                                       else mode_line.format_fixed_width)(
@@ -1073,9 +1077,36 @@ class Application:
             return True
         if is_markdown_file(path) and self.open_markdown(path, push=False):
             return True
+        if len(self.pager_files) == 1 and self.load_archive_listing(path):  # C++のstartPagerFileList()と同じく引数が1つの時
+            return True
         if not self.file_mode.load_file(path, self.wrap_width(), self.file_view.height):
             return False
         self.file_mode.load_whole_if_small_file(path)
+        return True
+
+    def load_archive_listing(self, path):
+        """ARCHIVEのsuffixのfileの、選べない一覧(tar -tvf等の出力そのまま): 引数で開いた時と(ls)の^O^M(C++の
+        startArchivePagerLoadAsync()・finishArchiveLoadAsync())。"""
+        found = self.configuration.archive_for(path)
+        if not found:
+            return False
+        _, argv, piped, badge = found
+        environment = dict(os.environ, LC_TIME='C', LC_CTYPE='en_US.UTF-8')  # C++のforceUtf8CTypeForListing
+        environment.pop('LC_ALL', None)
+        try:
+            if piped:
+                first = subprocess.Popen(piped + [path], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                output = subprocess.run(argv, stdin=first.stdout, capture_output=True, env=environment).stdout
+                first.stdout.close()
+                first.wait()
+            else:
+                output = subprocess.run(argv + [path], capture_output=True, env=environment).stdout
+        except OSError as error:
+            self.show_transient_notice('Cannot run: ' + str(error.filename))
+            return False
+        self.file_mode.load_bytes(output[:self.configuration.buffer_limit_bytes()], path, self.wrap_width())
+        self.file_mode.listing_badge = self.file_mode.label = badge
+        self.file_mode.record_history = False
         return True
 
     # --- ファイルを開く ---
@@ -2600,6 +2631,9 @@ class Application:
                 entry = self.directory_mode.selected_entry()
                 if entry and not entry.is_directory:
                     path = os.path.join(self.directory_mode.current_directory, entry.name)
+                    if number == 29 and self.load_archive_listing(path):  # ^O^M: アーカイブは選べない一覧(C++と同じ)
+                        self.enter_mode(FILE)
+                        return True
                     return self.open_file(path, streaming=number == 29, raw=True)
             return False
         if number == 31:  # ^J^J

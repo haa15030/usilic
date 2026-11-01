@@ -41,6 +41,7 @@ class FileMode:
         self.whole_loaded = False  # 引数の小さい普通のファイルを全部読んだ(位置はFILEと同じ形、load_whole_if_small_file())
         self.origin = None        # (名前, 印): USILICの一覧から開いた時のモードライン(C++のpushWithNameOverride())
         self.tail = None         # モードラインの最後の欄(Noneなら(ls)のディレクトリ、「ARC: …」等)
+        self.listing_badge = None  # アーカイブの選べない一覧の「(tar)」等(C++のfinishArchiveLoadAsync()の注釈)
         self.renderer = None     # 幅が変わった時に組み直す関数(EPUB・MAN等、widthを受け取り行の並びを返す)
         self.record_history = True  # ^O^M・^[^Mで開いた時は履歴に残さない
 
@@ -76,7 +77,7 @@ class FileMode:
         """組んだ行をそのまま(EPUBの本文・バイナリの表示等)。"""
         self.stream, self.current_file, self.width = None, name, width
         self.raw_texts, self.raw_count, self.byte_count = [], 0, byte_count
-        self.label = self.tail = None
+        self.label = self.tail = self.listing_badge = None
         self.transformed = False
         self.origin = None
         self.renderer = renderer
@@ -84,7 +85,7 @@ class FileMode:
         self.view.set_lines(lines)
 
     def load_stream(self, stream, name, width, initial_lines):
-        self.label = self.tail = self.renderer = None
+        self.label = self.tail = self.renderer = self.listing_badge = None
         self.transformed = False
         self.whole_loaded = False
         self.origin = None
