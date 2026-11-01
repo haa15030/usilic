@@ -33325,4 +33325,5 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - 確かめたこと: make usilic・make install(macOS)。
 1188. **FreeBSDのX11でCaps LockとCtrlを入れ替える(2026-11-01)**
    - **経緯**: ユーザーの質問("FreeBSDでCaps LockとCtrlを入れ替えるためのX11用の設定ってある？")と、直接のユーザー依頼("それも追記で")。
-   - **変更**: docs/BUILD.mdのFreeBSDの節に1項目(keyboard.confのXkbOptions "ctrl:swapcaps"/ctrl:nocaps、setxkbmapで試す・戻す、Xfceの「システムのデフォルトを使用」を外すと上書きされる、コンソールのjp.capsctrl.kbdは未確認)。
+   - **変更**: docs/BUILD.mdのFreeBSDの節に1項目(keyboard.confのXkbOptions "ctrl:swapcaps"/ctrl:nocaps、setxkbmapで試す・戻す、Xfceの「システムのデフォルトを使用」を外すと上書きされる、コンソールのjp.capsctrl.kbd)。
+   - 確かめたこと: ユーザーの実機(16.0-CURRENT)で`ls /usr/share/vt/keymaps | grep jp`が`jp.capsctrl.kbd`・`jp.kbd`。

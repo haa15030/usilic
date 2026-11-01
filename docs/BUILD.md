@@ -136,7 +136,7 @@ gmake install          # ~/.local/bin/usilic、~/.local/share/applications/usili
 - インストーラで選んだキーボード(jp106等)はコンソールだけ。Xfceでは設定→キーボード→レイアウトで「システムのデフォルトを使用」を外し、モデルを`Japanese 106-key`、レイアウトの追加で**▶を開かずに親の`Japanese`の行**を選ぶ(▶の下のKana・Macintosh・OADG 109A・Dvorakは標準以外の変種。Kanaを選ぶと`[`が`]`になる等、2026-11-01に実際にはまった)。
 - Xfceのメニュー等を日本語にするには`echo 'LANG=ja_JP.UTF-8; export LANG' >> ~/.xprofile`してログインし直す(lightdmの`/usr/local/etc/lightdm/Xsession`が`~/.xprofile`を読む、2026-11-01に確認)。`~/.login_conf`やログインクラスで設定するとコンソール(vt)のログインまで日本語になり、vtのフォントに漢字が無いので化ける。
 - lightdmのログイン画面までjp106にするには、`/usr/local/etc/X11/xorg.conf.d/keyboard.conf`に`Section "InputClass"`・`Identifier "keyboard"`・`MatchIsKeyboard "on"`・`Option "XkbModel" "jp106"`・`Option "XkbLayout" "jp"`・`EndSection`を書く(Xfce側は「システムのデフォルトを使用」のままでよくなる)。
-- Caps LockとCtrlを入れ替えるには、同じkeyboard.confに`Option "XkbOptions" "ctrl:swapcaps"`を足す(Caps LockをCtrlにするだけなら`ctrl:nocaps`)。すぐ試すならXfceの端末で`setxkbmap -model jp106 -layout jp -option ctrl:swapcaps`(戻すのは`setxkbmap -option`)。Xfceのレイアウトで「システムのデフォルトを使用」を外していると、ログインの時にXfceが上書きしてXkbOptionsが消えることがあるので、keyboard.confを使うならXfce側はデフォルトのまま。コンソール(vt)はXとは別で、`/usr/share/vt/keymaps/`に`jp.capsctrl.kbd`があれば`sysrc keymap=jp.capsctrl.kbd`(2026-11-01時点で未確認)。
+- Caps LockとCtrlを入れ替えるには、同じkeyboard.confに`Option "XkbOptions" "ctrl:swapcaps"`を足す(Caps LockをCtrlにするだけなら`ctrl:nocaps`)。すぐ試すならXfceの端末で`setxkbmap -model jp106 -layout jp -option ctrl:swapcaps`(戻すのは`setxkbmap -option`)。Xfceのレイアウトで「システムのデフォルトを使用」を外していると、ログインの時にXfceが上書きしてXkbOptionsが消えることがあるので、keyboard.confを使うならXfce側はデフォルトのまま。コンソール(vt)はXとは別で、`sysrc keymap=jp.capsctrl.kbd`して再起動(16.0-CURRENTの`/usr/share/vt/keymaps/`に`jp.kbd`と並んであることを2026-11-01に確認。名前のとおりCaps LockをCtrlにするもので、入れ替えではない)。
 - 端末に重ねる-gはmacOSだけ(Linux・FreeBSDは重ねない、ユーザー判断2026-10-31)。
 
 ## Windows(WSL2)
