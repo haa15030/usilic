@@ -116,7 +116,7 @@ gmake usilic
 gmake install          # ~/.local/bin/usilic、~/.local/share/applications/usilic.desktop
 ```
 
-- 非公開の間は、`git clone`にアクセス権のあるGitHubアカウントの認証(SSHの鍵か`gh auth login`)が要る。鍵の作り方・登録は下の「ソースを手元で変更する」の4。
+- 非公開の間は、`git clone`にアクセス権のあるGitHubアカウントの認証が要る。SSHの鍵なら`git clone git@github.com:haa15030/usilic.git`(`https://`のURLだと鍵は使われず、トークンを聞かれる)。鍵・トークンの作り方は下の「ソースを手元で変更する」の4。
 - `~/.local/bin`は既定のPATHに無いので、`~/.profile`に`PATH=$HOME/.local/bin:$PATH; export PATH`を足す。
 - bashをログインシェルにするなら`chsh -s /usr/local/bin/bash`。bashは`~/.bash_profile`があれば`~/.profile`を読まないので、その時はPATHを`~/.bash_profile`に書く。
 - firefoxのpkg installの最後に長いメッセージ(boost・gcc14・libjxl・firefoxの未対応機能等)が出るが、対応が要るものは無い。
@@ -369,6 +369,19 @@ git stash pop
   そのマシンにまだブラウザが無ければ(FreeBSDを入れた直後等)、sshでつないだ別のマシンの端末でこの1行を
   コピーし、そちらのブラウザ(サインイン済み)で登録してもよい。
 - `gh auth login`(GitHub CLI)なら鍵を作らずに済み、表示されたコードを別のマシンのブラウザで入力しても通る。
+- **鍵とURLの組み合わせに注意**: SSHの鍵が使われるのは`git@github.com:haa15030/usilic.git`の形のURLだけ。
+  `https://github.com/...`で非公開のリポジトリをclone(や自分のforkへpush)すると`Username for 'https://github.com':`
+  と聞かれ、パスワードの欄には**GitHubのパスワードではなくトークン**を入れる(パスワードは受け付けない)。
+  鍵を登録したなら、URLを`git@github.com:`の形にすればトークンは要らない(2026-11-01、FreeBSDで鍵を登録した後に
+  `https://`でcloneしてこれに当たった。既にcloneしたものは`git remote set-url origin git@github.com:…`で切り替えられる)。
+- **トークンの作り方**(`https://`のまま使う場合): GitHubにサインイン→右上のアイコン→Settings→
+  (左の一番下)Developer settings→Personal access tokens→**Fine-grained tokens**→Generate new token。
+  Token name(何でもよい)、Expiration(有効期限)、Repository accessは**Only select repositories**で`usilic`を選び、
+  Permissions→Repository permissionsの**Contents**を`Read-only`(cloneだけ)か`Read and write`(pushもする)に。
+  Generate tokenで表示される`github_pat_…`は**その時しか表示されない**のでコピーしておく。
+  cloneの`Username:`に自分のアカウント名、`Password:`にこのトークンを貼る。
+  毎回聞かれないようにするには`git config --global credential.helper store`(`~/.git-credentials`に平文で保存される。
+  気になるなら`cache`で一定時間だけ覚えさせる)。`gh auth login`を済ませておけば、ghがこの役目も引き受ける。
 - 手順: GitHubで作者のリポジトリをFork → `git remote add mine git@github.com:<自分>/usilic.git` →
   `git push mine my-fix` → GitHubのページからPull Request。
 - 作者以外が1つのリポジトリだけを読む機械用には、リポジトリの所有者が登録するDeploy key(Settings→Deploy keys)

@@ -33305,3 +33305,6 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼("HELPにも方針の1文を入れて")。
    - **変更**: src/HELP_.txt・HELP_en_.txt(追跡対象外)の「ビルドの手順は docs/BUILD.md」の段落の後に2文(narou2epub以外は変更自由、不具合はcloneしたソースをAIに見てもらって直す想定、手引きはdocs/BUILD.mdの「ソースを手元で変更する」)。日英とも920行。
    - **あわせて話したこと(未実施)**: 公開時はdocs/HISTORY.mdを空にして添付する(ユーザー案)。ただしgitの履歴には過去の内容が残るので、履歴ごと公開するなら別途の対処が要る。docs/CHANGES.mdは残す。
+1183. **SSHの鍵はgit@github.com:のURLでだけ使われる、トークンの作り方(2026-11-01)**
+   - **経緯**: FreeBSDでGitHubに鍵を登録した後、`git clone https://github.com/haa15030/usilic`としたら`Username for 'https://github.com':`と聞かれた(https://では鍵は使われず、非公開のリポジトリはトークンが要る)。直接のユーザー依頼("tokenを作る過程も追記しておかなくては")。
+   - **変更**: docs/BUILD.mdの「ソースを手元で変更する」の4に、鍵とURLの組み合わせの注意とFine-grained tokenの作り方(Only select repositories・Contents・一度しか表示されない・credential.helper)。FreeBSDの節の非公開の間の1行もSSHのURLに。
