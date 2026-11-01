@@ -118,7 +118,16 @@ gmake install          # ~/.local/bin/usilic、~/.local/share/applications/usili
 
 - `~/.local/bin`は既定のPATHに無いので、`~/.profile`に`PATH=$HOME/.local/bin:$PATH; export PATH`を足す。
 - `su`はwheelグループのユーザーだけ(`pw groupmod wheel -m ユーザー名`)。sudoは`visudo`で`%wheel`の行を有効にする。
-- GUI(-g、アイコンからの起動)はX11とXfce等が要る。NVIDIAなら`pkg install nvidia-driver nvidia-xconfig xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa`、`sysrc kld_list+=nvidia-modeset dbus_enable=YES lightdm_enable=YES`、`nvidia-xconfig`、再起動(Intel・AMDは`drm-kmod`)。CURRENTでは`kldload nvidia-modeset`が失敗するならportsからビルドする。
+- GUI(-g、アイコンからの起動)はX11とXfce等が要る。どのGPUでも共通に`pkg install xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa`、`sysrc dbus_enable=YES lightdm_enable=YES`。その上でGPUごとに(2026-11-01、RX580で確認):
+
+  | GPU | ドライバ | 起動時に読み込む | ファームウェア | 他に |
+  |---|---|---|---|---|
+  | AMD(Radeon) | `pkg install drm-kmod` | `sysrc kld_list+=amdgpu`(HD 7000番台以前は`radeonkms`) | インストーラが自動で選ぶ(RX580なら`gpu-firmware-amd-kmod-polaris10`)。漏れたら`fwget` | Xorgの設定は不要(modesetting) |
+  | Intel内蔵 | `pkg install drm-kmod` | `sysrc kld_list+=i915kms` | 同上(`gpu-firmware-intel-kmod-*`) | 同上 |
+  | NVIDIA | `pkg install nvidia-driver nvidia-xconfig` | `sysrc kld_list+=nvidia-modeset` | ドライバに同梱(インストーラには出ない) | `nvidia-xconfig`で`/etc/X11/xorg.conf`を作る |
+
+  再起動の前に`kldload amdgpu`(`i915kms`・`nvidia-modeset`)が何も言わずに戻ればカーネルと合っている(AMD・Intelはコンソールの文字が細かくなる)。CURRENTで失敗するならportsからビルドする(インストーラのDistribution Selectで`src`を入れておく)。drm系はユーザーを`video`グループに入れる。
+- インストーラの注意: キーボードの画面は`Japanese 106`をSpaceで選んだ後、**一番上の行**`Continue with jp.kbd keymap`でEnter(2行目のTestは試し打ちだけ)。ベースシステムの入れ方は`Distribution Sets`(従来のtarball、portsとは無関係)で`src`も選ぶ。再インストール後はMac側で`ssh-keygen -R <IP>`(ホスト鍵が変わる)。
 - 最初の起動のインストールの案内は`sudo pkg install -y groff mg texinfo 7-zip w3m`。
 - インストーラで選んだキーボード(jp106等)はコンソールだけ。Xfceでは設定→キーボード→レイアウトで別に選ぶ。
 - 端末に重ねる-gはmacOSだけ(Linux・FreeBSDは重ねない、ユーザー判断2026-10-31)。

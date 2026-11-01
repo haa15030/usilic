@@ -33282,3 +33282,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー依頼("FreeBSDはサーバー用途以外ではあまり使われていないので、インストールの際の手順も記しておけば試してみたいユーザーには寄与できるかも。かく言う自分もrootのパスワード設定をしなかったりキーボード設定をjp106にしたはずなのにそうなってないとかあるので、インストールの案内もマニュアルに入れてみて")。あわせて、端末に重ねる-gは"Waylandへの移行がLinuxでの流れならFreeBSDでも同じかと思うので重ね合わせはmacOSだけでいい"。
    - **変更**: src/HELP_.txt・src/HELP_en_.txt(アシスタント用の原稿、追跡対象外)の「必要なソフトウェア」の終わりにFreeBSDの段落(bsdinstallでrootのパスワードとwheel・video、忘れた時のシングルユーザーモード、キーボードはコンソールだけ、pkg bootstrap・pkg install、gmake、PATH、Xfce・NVIDIAドライバ・ja-font-ipa、メニューのアクセサリ、重ねない)、最初の起動の案内のコマンドにFreeBSDのsudo pkg install。docs/BUILD.mdにFreeBSDの節。
    - 確かめたこと: 日英の行の位置が合う(886行目から)。
+1176. **FreeBSDのGUIの手順をAMD・Intel内蔵・NVIDIAで書き分ける(2026-11-01)**
+   - **経緯**: グラボをRadeon RX580に換装しなおしたマシンへ16.0-CURRENTを入れ直した際、直接のユーザー依頼("NVIDIAの場合は手順が若干違う感じなので併記しておきたいのと、iGPUの時もだいぶ違うのかなと")。RX580ではpkg版のdrm-kmodのまま`kldload amdgpu`が成功した(portsからのビルド不要)。インストーラのキーマップの画面で「Continue with jp.kbd keymap」を入力欄に打ち込んでしまい進めなくなった件(前回jp106にならなかった原因)もあわせて記す。
+   - **変更**: docs/BUILD.mdのFreeBSDの節で、共通のパッケージとGPUごとのドライバ・kld_list・ファームウェアを表にし、インストーラの注意(キーマップの一番上の行、Distribution Setsとsrc、ssh-keygen -R)を追加。src/HELP_.txt・HELP_en_.txt(追跡対象外)の同じ段落も同様に(キーマップの1文、GUIの段落を2文→5文)。
+   - 確かめたこと: 日英の原稿の行数が一致(915行)。
