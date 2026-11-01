@@ -33292,3 +33292,6 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 1178. **FreeBSDのXfceのメニューを日本語にする(~/.xprofileのLANG、2026-11-01)**
    - **経緯**: ユーザーの質問("xfceのメニューって日本語にはならないの？")。ロケールが既定のC.UTF-8だったため。`~/.xprofile`に`LANG=ja_JP.UTF-8`を書いてログインし直し、日本語になったことをユーザーが確認("メニューが日本語になった。追記よろしく")。
    - **変更**: docs/BUILD.mdのFreeBSDの節、src/HELP_.txt・HELP_en_.txt(追跡対象外)に1文ずつ(日英で同じ位置)。`~/.login_conf`だとvtのコンソールまで日本語になり化ける旨も。
+1179. **FreeBSDのpkg installにbashとfirefoxを加える(2026-11-01)**
+   - **経緯**: Xfceの地球マーク(ウェブブラウザー)から`https://github.com/settings/keys`を開こうとしたら、ブラウザが1つも入っておらず選択のダイアログが出た。直接のユーザー依頼("pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf firefoxでよろしく")。
+   - **変更**: docs/BUILD.mdのFreeBSDの節のpkg install、src/HELP_.txt・HELP_en_.txt(追跡対象外)の同じ行(「ビルドに要るもの等」に)。

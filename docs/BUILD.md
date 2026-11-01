@@ -107,7 +107,7 @@ Makefileは GNU make の書き方なので、FreeBSD標準の`make`ではなく`
 ```
 # rootで
 pkg bootstrap
-pkg install git gmake pkgconf sudo sdl2 sdl2_ttf
+pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf firefox
 
 # ユーザーで
 git clone https://github.com/haa15030/usilic.git
