@@ -33315,3 +33315,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **経緯**: 直接のユーザー報告(FreeBSDのXfceの端末で`usilic ~/.profile`、"^T^Hは開くのに^Hが利かないのは不便")。ページャーで通すキー(pagerAllowedKeys()、項目952等)に^T^H・^T^Kは入れていたが、^Hは入っていなかった(FreeBSDに限らない)。
    - **変更**: application.cppのpagerAllowedKeys()に^H(その場でHELPを開き、^Gで元のファイルへ)。Python版のpager_key_numbers()も同じく。
    - 確かめたこと: make usilic・make install(macOS)。^Hの動きはユーザーの実機で確認。
+1186. **最初の起動のページャーで^KのKEYが「--」だけ(groffを入れる前に組めなかったHELPを組み直す)(2026-11-01)**
+   - **経緯**: 直接のユーザー報告(FreeBSD、"初回起動では今度は^Kが利かないというかKEY画面にはなるけど--だけ")。最初の起動の時点ではgroffが無いのでHELP.1を組めず(renderHelpRoff()が失敗、組み済みのHELP.1.txtも入れていない)、平文のHELP(doc/HELP、行頭のタブが無い)で代わりにしていた。ページャーのKEYは行頭がタブの行なので空になる。機能限定SHELLでgroffを入れた後も組み直していなかった。
+   - **変更**: startKey()で、平文で代わりにしている間(helpRoff_が空)は、^Kの度にreloadHelpText()でHELP.1を組み直してみる(groffがまだ無ければ平文のまま)。
+   - 確かめたこと: make usilic・make install(macOS)。groffの無い状態からの動きはユーザーの実機で確認。Python版は未確認。

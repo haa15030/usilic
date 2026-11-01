@@ -20167,6 +20167,11 @@ bool Application::startKey() {
     showTransientNotice(activeView(), "Already in KEY");
     return true;
   }
+  // 2026-11-01、直接のユーザー報告(FreeBSDの最初の起動で"^KがKEY画面にはなるけど--だけ"): 起動した時にgroffが
+  // 無いとHELP.1を組めず、平文のHELP(行頭のタブが無い)で代わりにしていたので、ページャーのKEY(行頭がタブの行)が
+  // 空になった。最初の起動ではSHELLでgroffを入れた後もそのままだったので、平文で代わりにしている間は、^Kの度に
+  // HELP.1を組み直してみる(groffがまだ無ければ平文のまま)。
+  if (helpRoff_.empty()) reloadHelpText();
   if (helpText_.empty()) return showHelpNotFound();
   std::vector<StyledLine> lines = keySourceLines(display_.columns());
   bool fromCut = currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent;
