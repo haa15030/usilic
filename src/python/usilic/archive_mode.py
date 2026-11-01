@@ -121,10 +121,32 @@ def parse_7z_listing(listing):
     return entries
 
 
-def _is_apple_double(name, names):
-    """macOSのtarが足す「._名前」(拡張属性の付録)。bsdtarの`tar tvf`は出さないので一覧から外す。"""
-    head, _, base = name.rpartition('/')
-    return base.startswith('._') and ((head + '/' if head else '') + base[2:]) in names
+def is_paired_apple_double(sidecar, following):
+    """C++のisPairedAppleDouble(): 「._X」で、すぐ後ろが本体のX(ディレクトリならX/)か。本体の無い「._」は隠さない
+    (macOSのtarが「._」だけの書庫の半分を隠していた、C++の2026-10-16の件)。"""
+    head, slash, base = sidecar.rpartition('/')
+    if not base.startswith('._') or len(base) <= 2:
+        return False
+    if len(following) > 1 and following.endswith('/'):
+        following = following[:-1]
+    return head + slash + base[2:] == following
+
+
+def _tar_line_name(line):
+    """`tar tvf`の行の名前: bsdtarは「許可 リンク数 持ち主 グループ 大きさ 日付3つ 名前」、GNUは「許可 持ち主/グループ
+    大きさ 日付 時刻 名前」(C++のparseTarLine())。"""
+    parts = line.split()
+    count = 8 if len(parts) > 8 and parts[1].isdigit() else 5
+    fields = line.split(None, count)
+    return fields[count].split(' -> ')[0] if len(fields) > count else line
+
+
+def remove_paired_apple_double_lines(listing):
+    """C++のremovePairedAppleDoubleLines(): tarの一覧の出力から、本体と組になる「._X」の行を除く(選べない一覧)。"""
+    lines = listing.splitlines()
+    return ''.join(line + '\n' for i, line in enumerate(lines)
+                   if not (i + 1 < len(lines) and is_paired_apple_double(_tar_line_name(line),
+                                                                         _tar_line_name(lines[i + 1]))))
 
 
 def escape_member_pattern(name):
@@ -172,9 +194,9 @@ class ArchiveMode:
             if kind == conf.TAR:
                 with self._tar_open(path) as tar:
                     members = tar.getmembers()
-                    names = set(m.name for m in members)
-                    entries = [ArchiveEntry(m.name + ('/' if m.isdir() else ''), 0 if m.isdir() else m.size,
-                                            m.isdir()) for m in members if not _is_apple_double(m.name, names)]
+                    entries = [ArchiveEntry(m.name + ('/' if m.isdir() else ''), 0 if m.isdir() else m.size, m.isdir())
+                               for i, m in enumerate(members)
+                               if not (i + 1 < len(members) and is_paired_apple_double(m.name, members[i + 1].name))]
             elif kind == conf.ZIP:
                 with zipfile.ZipFile(path) as z:
                     entries = [ArchiveEntry(i.filename, 0 if i.is_dir() else i.file_size, i.is_dir())

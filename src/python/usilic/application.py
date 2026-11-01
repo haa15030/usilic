@@ -23,8 +23,8 @@ from . import bookmarks as bm
 from . import macro as mc
 from . import messages_ja
 from . import prompt as pr
-from .archive_mode import ArchiveMode
-from .configuration import Configuration
+from .archive_mode import ArchiveMode, remove_paired_apple_double_lines
+from .configuration import Configuration, TAR
 from .content_view import ContentView, Line, wrap_text, expand_tabs
 from .copy_mode import CopyMode
 from .directory_mode import DirectoryMode
@@ -122,6 +122,10 @@ class Application:
         self.limited_escapes = 0     # 機能限定SHELLの^[^[^M(すぐ終わる)
         self.pager_numbers_cache = None  # pager_key_numbers()
         self.pager_help_return = None  # ページャーのfileからHELPを開いた時の戻り先(remember_pager_file_for_help())
+        # EPUBの余白(^[+矢印、C++の項目1144・1146): 縦書きは上下の行、横書きは左右の桁。
+        self.epub_margin_top = self.epub_margin_bottom = self.epub_margin_left = self.epub_margin_right = 0
+        self.epub_margin_columns = 0  # 今の本文の行の頭に足した空白(幅が狭ければ0、C++のepubMarginColumns_)
+        self.epub_margin_side = None  # ^[+矢印の後、↑/↓を待っている間の矢印(C++のepubMarginSide_)
         self.pager_files = []       # n/p/x/fで切り替えるfile
         self.pager_index = 0
         self.start_directory = os.getcwd()
@@ -304,6 +308,8 @@ class Application:
         rows, columns = self.display.refresh_size()
         for view in self.views():
             view.set_height(rows - (0 if self.mode_line_hidden else 1))
+        self.vertical_view.set_height(self.epub_vertical_rows())
+        self.vlist_view.set_height(self.epub_vertical_rows())
         self.file_mode.rewrap(self.wrap_width())
         self.directory_mode.columns = columns  # 幅が変わったら名前だけの表示かを決め直す(C++と同じ)
         self.directory_mode.apply_column_auto_display()
@@ -676,10 +682,15 @@ class Application:
         visible = [None] * offset + view.visible_lines()  # SHELLは下に寄せる(上の空きはNone)
         marks = self.marked_rows()
         grep_on = self.grep_active or self.grep_prompt is not None
+        # 縦書きの上下の余白(C++のlayoutViews()・ContentView::setMarginRows())
+        margin_top = self.epub_vertical_margin_top() if view is self.vertical_view or view is self.vlist_view or (
+            self.copy is not None and self.vertical_list_active()) else 0
+        for row in range(margin_top):
+            self.display.draw_row(row, '')
         for row in range(view.height):
             if row < len(visible) and section is not None and \
                     not section[0] <= visible[row].raw_line_number <= section[1]:
-                self.display.draw_row(row, '')  # 横書きの範囲の外の行は空に(C++のsetShownIndexRange())
+                self.display.draw_row(row + margin_top, '')  # 横書きの範囲の外の行は空に(C++のsetShownIndexRange())
             elif row < len(visible) and visible[row] is not None:
                 index = view.top_index + row - offset
                 line = visible[row]
@@ -718,16 +729,19 @@ class Application:
                     if underline and end > start:
                         runs.append((start, end, 'underline'))
                     reverse = underline = False
-                self.display.draw_row_styled(row, text, runs, reverse=reverse, underline=underline)
+                self.display.draw_row_styled(row + margin_top, text, runs, reverse=reverse, underline=underline)
             elif row == offset and not view.lines and (view.empty_placeholder is not None or view.cursor_highlight):
                 # 行が無い時の1行目: 決めた物(「pat: 見つかりません」等)か、カーソルを反転する画面では反転した「--」
                 # (C++のContentViewのemptyPlaceholderLine_の既定)
                 p = view.empty_placeholder
                 if p is None:
-                    self.display.draw_row_styled(row, '--', [], reverse=True)
+                    self.display.draw_row_styled(row + margin_top, '--', [], reverse=True)
                 else:
-                    self.display.draw_row_styled(row, p.text, list(p.attributes))
+                    self.display.draw_row_styled(row + margin_top, p.text, list(p.attributes))
             else:
+                self.display.draw_row(row + margin_top, '')
+        if margin_top or view is self.vertical_view or view is self.vlist_view:
+            for row in range(margin_top + view.height, self.file_view.height):
                 self.display.draw_row(row, '')
         if self.mode_line_hidden and hasattr(self.display, 'draw_scroll_thumb'):
             thumb = scroll_thumb_row_range(view.top_index, view.height, len(view.lines))
@@ -739,10 +753,11 @@ class Application:
                 and self.grep_prompt is None and not self.grep_active):
             self.display.show_cursor_at(*self.shell_cursor_position())
         elif view is self.vertical_view and self.prompt is None and self.grep_prompt is None:
-            self.display.show_cursor_at(*self.vertical.cursor_screen_position())  # 列カーソルの頭(C++の-cと同じ)
+            row, column = self.vertical.cursor_screen_position()  # 列カーソルの頭(C++の-cと同じ)
+            self.display.show_cursor_at(row + margin_top, column)
         elif view is self.vlist_view and self.prompt is None and self.grep_prompt is None:
-            self.display.show_cursor_at(0, max(0, ev.screen_column(self.vlist_cursor_column() - self.vlist.first,
-                                                                   self.display.columns)))
+            self.display.show_cursor_at(margin_top, max(0, ev.screen_column(self.vlist_cursor_column() - self.vlist.first,
+                                                                            self.display.columns)))
         elif self.prompt is not None or self.grep_prompt is not None or self.goto_digits is not None:
             self.display.show_cursor_at(self.display.rows - 1, self.prompt_cursor_column())
         elif self.copy is not None:
@@ -1106,6 +1121,9 @@ class Application:
         except OSError as error:
             self.show_transient_notice('Cannot run: ' + str(error.filename))
             return False
+        if found[0] == TAR:  # 本体と組になる「._」は出さない(ARCと同じ、C++のfinishArchiveLoadAsync())
+            output = remove_paired_apple_double_lines(output.decode('utf-8', 'surrogateescape')).encode(
+                'utf-8', 'surrogateescape')
         self.file_mode.load_bytes(output[:self.configuration.buffer_limit_bytes()], path, self.wrap_width())
         self.file_mode.listing_badge = self.file_mode.label = badge
         self.file_mode.record_history = False
@@ -1433,12 +1451,12 @@ class Application:
             name = 'HELP'
         self.epub_name = name or os.path.basename(path)
         width = self.wrap_width()
-        lines, self.epub_toc_lines = book.render(width)
+        lines, self.epub_toc_lines = self.render_epub_with_margins(book, width)
 
         self.epub_lines, self.epub_link_stack = lines, []
 
         def renderer(w):
-            self.epub_lines, self.epub_toc_lines = book.render(w)
+            self.epub_lines, self.epub_toc_lines = self.render_epub_with_margins(book, w)
             if not self.epub_chapter_mode:
                 return self.epub_lines
             start, end = self.chapter_bounds(self.epub_chapter)
@@ -1461,6 +1479,78 @@ class Application:
         if first_time and len(self.epub_toc_lines) > 1:
             self.go_to_chapter(0)
         self.sync_toc_cursor()
+        return True
+
+    def render_epub_with_margins(self, book, width):
+        """横書きの左右の余白: 幅を狭く組み、行の頭に空白を足す(C++のFileMode::readAndWrap())。幅が20桁未満になるなら
+        空けない。縦書きに組み直す時はepub_logical_lines()がこの空白を取り除く。"""
+        left, right = self.epub_margin_left, self.epub_margin_right
+        self.epub_margin_columns = 0
+        if width - left - right < 20:
+            return book.render(width)
+        self.epub_margin_columns = left
+        lines, toc = book.render(width - left - right)
+        if left > 0:
+            for line in lines:
+                if line.text:
+                    line.text = ' ' * left + line.text
+                    line.attributes = [(a + left, b + left, t) for a, b, t in line.attributes]
+                    line.links = [(a + left, b + left, h) for a, b, h in line.links]
+        return lines, toc
+
+    def set_epub_margins(self, margins):
+        """起動時: 保存した余白[上, 下, 左, 右]。"""
+        self.epub_margin_top, self.epub_margin_bottom, self.epub_margin_left, self.epub_margin_right = margins
+
+    def epub_vertical_margin_top(self):
+        """縦書きの上に空ける行。列に4行残らなければ、下から先に縮める(C++のepubVerticalMarginTop())。"""
+        return max(0, min(self.epub_margin_top, self.file_view.height - 4))
+
+    def epub_vertical_margin_bottom(self):
+        return max(0, min(self.epub_margin_bottom, self.file_view.height - 4 - self.epub_vertical_margin_top()))
+
+    def epub_vertical_rows(self):
+        """縦書きの列の高さ(C++のepubVerticalRows())。"""
+        return max(1, self.file_view.height - self.epub_vertical_margin_top() - self.epub_vertical_margin_bottom())
+
+    def handle_epub_margin_key(self, side, change):
+        """^[+矢印(side)の後の↑(増やす)/↓(減らす)(C++のhandleEpubMarginKey())。横書きのEPUBの画面では←が左・→が右の
+        桁、縦書き(本文と章の一覧)では↑が上・↓が下の行。今の向きでない側は何もしない。"""
+        if change not in ('Up', 'Down'):
+            return False
+        delta = 1 if change == 'Up' else -1
+        vertical = (self.current_mode == FILE and self.vertical_active()) or self.vertical_list_active()
+        horizontal = self.current_mode == FILE and not vertical and self.in_epub_body()
+        if vertical and side in ('Up', 'Down'):
+            top = side == 'Up'
+            shown = self.epub_vertical_margin_top() if top else self.epub_vertical_margin_bottom()
+            current = self.epub_margin_top if top else self.epub_margin_bottom
+            following = max(0, min(current, shown) + delta)
+            if delta > 0 and self.file_view.height - self.epub_vertical_margin_top() - \
+                    self.epub_vertical_margin_bottom() - 1 < 4:
+                return False
+            if following == current:
+                return False
+            if top:
+                self.epub_margin_top = following
+            else:
+                self.epub_margin_bottom = following
+        elif horizontal and side in ('Left', 'Right'):
+            current = self.epub_margin_left if side == 'Left' else self.epub_margin_right
+            if current + delta < 0 or (delta > 0 and self.display.columns - self.epub_margin_left -
+                                       self.epub_margin_right - 1 < 20):
+                return False
+            if side == 'Left':
+                self.epub_margin_left = current + delta
+            else:
+                self.epub_margin_right = current + delta
+            self.file_mode.width = 0  # 幅が同じでも組み直す(C++のepubMarginReflow_)
+        else:
+            return False
+        if self.history is not None:
+            self.history.set_epub_margins([self.epub_margin_top, self.epub_margin_bottom,
+                                           self.epub_margin_left, self.epub_margin_right])
+        self.layout()
         return True
 
     def go_to_chapter(self, index):
@@ -2250,6 +2340,15 @@ class Application:
             return self.handle_mouse(special)
         if isinstance(special, Paste):
             return self.handle_paste(special.text)
+        # ^[や辺の矢印の後の矢印はEPUBの余白: 慣性スクロールに取られない(C++の項目1145)
+        awaiting_margin = self.epub_margin_side is not None or self.pending_keys == [ESC] or \
+            self.translate_pending[0] == [ESC]
+        if special in ('Up', 'Down', 'Left', 'Right') and awaiting_margin:
+            self.coast = self.drag = None
+            flushed, self.translate_pending[0] = self.translate_pending[0], []
+            for b in flushed:
+                self.feed_canonical(b, None)
+            return self.feed_canonical(byte, special)
         if self.coast is not None and special in ('Up', 'Down', 'Left', 'Right'):
             return self.adjust_coast_by_arrow(special)  # 慣性中の矢印: 速さ・向き
         # EPUBの慣性スクロール中の;/:は、章を移ってから同じ段階・向きの慣性を続ける(C++の項目1083)
@@ -2339,7 +2438,16 @@ class Application:
             return True
         if self.first_start_pager and self.current_mode == SHELL and not self.pending_keys:
             return self.limited_shell_key(byte, special)
+        if self.epub_margin_side is not None:  # ^[+矢印の後の↑/↓、他のキーは取り消し(C++のdispatchByte())
+            side, self.epub_margin_side = self.epub_margin_side, None
+            return special is not None and self.handle_epub_margin_key(side, special)
         if special is not None:
+            arrow = str(special).replace('Shift', '')
+            if arrow in ('Up', 'Down', 'Left', 'Right') and (self.pending_keys == [ESC] or
+                                                             (str(special).startswith('Shift') and not self.pending_keys)):
+                self.pending_keys = []
+                self.epub_margin_side = arrow
+                return True
             self.pending_keys = []
             return self.handle_special(special)
         if self.current_mode == SHELL and (self.utf8_pending or byte >= 0x80):
@@ -4585,7 +4693,10 @@ class Application:
         for g, line in enumerate(self.epub_lines):
             raw = line.raw_line_number
             head = not sources or sources[-1].raw != raw
-            pad = len(line.text) - len(line.text.lstrip(' ')) if raw in hints.center or raw in hints.indent else 0
+            margin = self.epub_margin_columns  # 横書きの左の余白(C++のepubLogicalLines())
+            pad = margin if margin > 0 and line.text[:margin] == ' ' * margin else 0
+            if raw in hints.center or raw in hints.indent:
+                pad = len(line.text) - len(line.text.lstrip(' '))
             text = line.text[pad:]
             runs = [(max(0, a - pad), max(0, b - pad), t) for a, b, t in line.attributes]
             links = [(max(0, a - pad), max(0, b - pad), h) for a, b, h in line.links]
@@ -4609,7 +4720,7 @@ class Application:
     def sync_vertical(self):
         """縦書きの列を(本・幅・行数・章ごとが変わっていれば)組み直し、横書きの側(FGREP・目次・リンク等)で
         動いていれば、その行を縦書きの右端に置く。"""
-        key = (self.file_view.height, self.display.columns, self.epub_chapter_mode)
+        key = (self.epub_vertical_rows(), self.display.columns, self.epub_chapter_mode)
         line = self.global_epub_line()
         if self.vertical is None or key != self.vertical_key or self.vertical_source is not self.epub_lines:
             sources, self.vertical_pieces = self.epub_logical_lines()
@@ -4617,7 +4728,7 @@ class Application:
             sources = [x for x in sources if self.epub_horizontal_range(x.raw) is None]  # 横書きの範囲は列にしない
             chapter_raws = {self.epub_lines[i].raw_line_number for i in self.epub_toc_lines
                             if 0 <= i < len(self.epub_lines)}
-            self.vertical = ev.VerticalBook(sources, chapter_raws, self.file_view.height, self.display.columns,
+            self.vertical = ev.VerticalBook(sources, chapter_raws, self.epub_vertical_rows(), self.display.columns,
                                             self.epub_chapter_mode, hints.centered, hints.horizontal)
             self.vertical_key, self.vertical_source, self.vertical_synced = key, self.epub_lines, None
         if line != self.vertical_synced:
@@ -4927,7 +5038,7 @@ class Application:
             sources = [x for x in self.epub_logical_lines()[0]
                        if first <= x.raw <= until and self.epub_horizontal_range(x.raw) is None]
             hints = self.epub.hints
-            self.vertical = ev.VerticalBook(sources, set(), self.file_view.height, self.display.columns,
+            self.vertical = ev.VerticalBook(sources, set(), self.epub_vertical_rows(), self.display.columns,
                                             self.epub_chapter_mode, hints.centered, hints.horizontal)
             self.vertical_synced = self.global_epub_line()
         return True
@@ -5229,6 +5340,7 @@ class Application:
         動かすだけ(C++のclickEpubVertical())。"""
         self.sync_vertical()
         v = self.vertical
+        row -= self.epub_vertical_margin_top()  # 上の余白
         k = ev.column_at(column, self.display.columns)
         c = v.first + k
         if k < 0 or c >= len(v.cols):
@@ -5262,7 +5374,7 @@ class Application:
         if self.vertical_selecting():  # 縦書きのCOPY: 押した所から範囲を始め直す
             v = self.vertical
             v.asking = False
-            v.anchor = v.point = v.cell_at(row, column)
+            v.anchor = v.point = v.cell_at(max(0, row - self.epub_vertical_margin_top()), column)
             return
         view = self.copy.view
         index = view.line_index_at_row(row)
@@ -5275,7 +5387,7 @@ class Application:
         if self.vertical_selecting():
             v = self.vertical
             if v.anchor is not None:
-                v.point = v.cell_at(row, column)
+                v.point = v.cell_at(max(0, row - self.epub_vertical_margin_top()), column)
             return
         view = self.copy.view
         index = view.line_index_at_row(row)
@@ -5416,7 +5528,7 @@ class Application:
         """一覧の1行を1つの論理行として本文と同じ組版で列に並べ、選んでいる行の最初の列を反転表示する。選んでいる
         行が画面の外なら右端の列を動かす(keep_first: 動かさない、ホイール等の1列送り)。"""
         source = self.vlist_source()
-        key = (id(source.lines), len(source.lines), self.file_view.height, self.display.columns)
+        key = (id(source.lines), len(source.lines), self.epub_vertical_rows(), self.display.columns)
         if self.vlist is None or self.vlist_key != key:
             sources = []
             for i, line in enumerate(source.lines):
@@ -5427,7 +5539,7 @@ class Application:
                 pad = len(line.text) - len(line.text.lstrip(' '))
                 sources.append(ev.SourceLine(line.text.strip(' '), i + 1,
                                              [(max(0, a - pad), max(0, b - pad), t) for a, b, t in runs]))
-            self.vlist = ev.VerticalBook(sources, set(), self.file_view.height, self.display.columns, False)
+            self.vlist = ev.VerticalBook(sources, set(), self.epub_vertical_rows(), self.display.columns, False)
             self.vlist_key = key
         v = self.vlist
         cursor = self.vlist_cursor_column()

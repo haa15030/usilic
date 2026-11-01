@@ -62,6 +62,9 @@ struct ArchiveEntry {
 // 表示用文字列を組み立てることも再パースすることも全く不要である
 // (これらのエントリが与えられた上で画面表示用にフォーマットする
 // のはContentViewの仕事)。
+// tarの一覧の出力から、本体と組になる"._X"の行を除く(archive_reader.cpp参照)。
+std::string removePairedAppleDoubleLines(const std::string &listing);
+
 class ArchiveReader {
  public:
   virtual ~ArchiveReader() = default;

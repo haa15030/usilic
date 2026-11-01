@@ -274,6 +274,9 @@ class Configuration:
         argv = [seven_zip_command() if a is None else a for a in argv]
         if sys.platform == 'darwin' and kind in (LHA, RAR, SEVEN_ZIP) and shutil.which(argv[0]) is None:
             kind, argv = TAR, ['tar', '-tvf']  # lha・lsar・7zが無ければmacOSのtar(bsdtar)で(C++のaddBuiltinArchive())
+        elif sys.platform == 'darwin' and kind == TAR and argv[:2] == ['tar', 'tvf']:
+            # macOSのtarは「._」を直後の項目の付加情報として隠す(C++の2026-10-16): 全部を受け取り、こちらで隠す
+            argv = ['tar', '--options', 'tar:!mac-ext', '-tvf'] + argv[2:]
         return kind, argv, piped, '(' + argv[0] + ')'
 
     def filter_for(self, path):

@@ -15,7 +15,7 @@ class ArchiveTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, 'a.tgz')
             with tarfile.open(path, 'w:gz') as tar:
-                for name, data in (('a.txt', b'hello\n'), ('._a.txt', b'mac'), ('n.txt', b'1\n' * 10)):
+                for name, data in (('._a.txt', b'mac'), ('a.txt', b'hello\n'), ('n.txt', b'1\n' * 10)):
                     info = tarfile.TarInfo(name)
                     info.size = len(data)
                     tar.addfile(info, io.BytesIO(data))

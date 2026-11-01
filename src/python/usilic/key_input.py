@@ -14,6 +14,8 @@ UP, DOWN, RIGHT, LEFT, PAGE_UP, PAGE_DOWN = 'Up', 'Down', 'Right', 'Left', 'Page
 _SEQUENCES = {
     b'[A': UP, b'[B': DOWN, b'[C': RIGHT, b'[D': LEFT, b'OA': UP, b'OB': DOWN, b'OC': RIGHT, b'OD': LEFT,
     b'[5~': PAGE_UP, b'[6~': PAGE_DOWN,
+    # ^[+矢印を素早く押した時もShift+矢印として届く端末がある(C++のreadEscapeSequence())
+    b'[1;2A': 'ShiftUp', b'[1;2B': 'ShiftDown', b'[1;2C': 'ShiftRight', b'[1;2D': 'ShiftLeft',
 }
 
 

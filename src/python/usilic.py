@@ -258,6 +258,10 @@ def main():
         configuration.load_default_file()  # ~/.usilic/usilicrc(無ければ~/.local/lib/usilic/usilicrc)
         apply_rc_options(configuration, options['rc'])  # -s・-S等(オプション > usilicrc > 組み込み)
         app = Application(display, KeyInput(0), configuration)
+        # EPUBの余白は前回のまま。historyを読み書きしない起動(ページャー・子)でも使う(書き戻しはしない、C++の項目1146)
+        margin_history = os.path.join(os.path.expanduser('~'), '.usilic')
+        if os.path.exists(os.path.join(margin_history, 'history')):
+            app.set_epub_margins(hist.load_from_disk(margin_history, configuration.retention_count).epub_margins())
         app.layout()
         if stdin_stream is not None and not args:
             app.start_pager([], stdin_stream)

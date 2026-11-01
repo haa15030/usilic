@@ -195,7 +195,7 @@ def run_keys(argv, home, steps):
 
 def write_tgz(path):
     with tarfile.open(path, 'w:gz') as tar:
-        for name in ('a.txt', 'b.txt'):
+        for name in ('._a.txt', 'a.txt', 'b.txt', '._only.txt'):  # 本体と組の「._」は隠し、本体の無い「._」は残す
             info = tarfile.TarInfo(name)
             info.size, info.mtime = 2, 1000000000
             tar.addfile(info, io.BytesIO(b'x\n'))
@@ -274,6 +274,18 @@ class CppParityTest(unittest.TestCase):
 
     def test_pager_vertical_book(self):
         self.compare([self.path('v.epub')], [('^G', G), ('^G', G), ('^K', K), ('^G', G), ('^H', H), ('^G', G), ('^G', G)])
+
+    def test_epub_margins(self):
+        up, down, left, right = b'\x1b[A', b'\x1b[B', b'\x1b[D', b'\x1b[C'
+        steps = []
+        for label, side in (('左', left), ('右', right), ('右', right)):
+            steps += [('^[' + label, b'\x1b'), (label, side), ('↑', up)]
+        self.compare([self.path('a.txt')], [('^H', H)] + steps + [('^G', G), ('^G', G)])
+        vertical = []
+        for label, side in (('上', up), ('下', down)):
+            vertical += [('^[' + label, b'\x1b'), (label, side), ('↑', up)]
+        self.compare([self.path('v.epub')], vertical + [('^G', G)] + vertical[:3] + [('下の↓', b'\x1b'), ('下', down),
+                                                                                    ('↓', down)])
 
     def test_directory_open_archive_listing(self):
         self.compare([self.work], [('^[>', b'\x1b>'), ('^O^M', b'\x0f\r'), ('^G', G)])

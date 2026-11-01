@@ -172,6 +172,17 @@ std::vector<ArchiveEntry> TarReader::parseListing(const std::string &listing) co
   return entries;
 }
 
+// 2026-11-02、直接のユーザー依頼(`._`の仕様(上のisPairedAppleDouble())を選べない一覧にも): tarの一覧の出力から、
+// 本体と組になる"._X"の行を除く(Application::finishArchiveLoadAsync())。本体の無い"._"は残す。
+std::string removePairedAppleDoubleLines(const std::string &listing) {
+  std::vector<std::string> lines = splitLines(listing);
+  std::string out;
+  for (std::size_t i = 0; i < lines.size(); i++)
+    if (!(i + 1 < lines.size() && isPairedAppleDouble(parseTarLine(lines[i]).name, parseTarLine(lines[i + 1]).name)))
+      out += lines[i] + "\n";
+  return out;
+}
+
 // 8進数ASCIIフィールド(tar自身のsize/mode等の数値符号化、最大
 // `len`桁バイト、空白/NULで終端)。
 long parseTarOctalField(const unsigned char *p, int len) {

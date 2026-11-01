@@ -14014,6 +14014,9 @@ void Application::finishArchiveLoadAsync() {
   if (archiveLoadForPager_) {
     archiveLoadForPager_ = false;
     if (isEpubFile(archiveLoadPendingPath_)) archiveLoadPendingOutput_ = sortZipListingByName(archiveLoadPendingOutput_);
+    ArchiveKind listingKind = ArchiveKind::None;
+    if (configuration_.programForSuffix(archiveLoadPendingPath_, &listingKind) && listingKind == ArchiveKind::Tar)
+      archiveLoadPendingOutput_ = removePairedAppleDoubleLines(archiveLoadPendingOutput_);
     landArchivePagerListing();
     activeView().redraw();
     return;

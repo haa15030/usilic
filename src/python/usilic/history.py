@@ -154,6 +154,23 @@ class History:
         if self.on_ring_pushed:
             self.on_ring_pushed(category)
 
+    def epub_margins(self):
+        """EPUBの余白[上, 下, 左, 右](C++のHistory::epubMargins()、 USILICの行の31〜34番目の欄)。無ければ0。"""
+        tokens = self.trailer_tokens
+        if len(tokens) <= 33:
+            return [0, 0, 0, 0]
+        return [max(0, _atoi(tokens[30 + k])) for k in range(4)]
+
+    def set_epub_margins(self, margins):
+        self.journal.append(lambda h: h._set_epub_margins_impl(margins))
+        self._set_epub_margins_impl(margins)
+
+    def _set_epub_margins_impl(self, margins):
+        # 前の欄(C++の-g等の設定)はそのまま残す。無ければ空の欄で埋める(C++は数字なら0、名前なら空と読む)
+        tokens = list(self.trailer_tokens) + [encode_field('')] * (34 - len(self.trailer_tokens))
+        tokens[30:34] = [str(m) for m in margins]
+        self.trailer_tokens = tokens
+
     def set_session_state(self, state):
         self.journal.append(lambda h: h._set_session_state_impl(state))
         self._set_session_state_impl(state)
