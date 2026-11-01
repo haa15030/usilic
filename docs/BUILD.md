@@ -116,6 +116,7 @@ gmake usilic
 gmake install          # ~/.local/bin/usilic、~/.local/share/applications/usilic.desktop
 ```
 
+- 非公開の間は、`git clone`にアクセス権のあるGitHubアカウントの認証(SSHの鍵か`gh auth login`)が要る。鍵の作り方・登録は下の「ソースを手元で変更する」の4。
 - `~/.local/bin`は既定のPATHに無いので、`~/.profile`に`PATH=$HOME/.local/bin:$PATH; export PATH`を足す。
 - bashをログインシェルにするなら`chsh -s /usr/local/bin/bash`。bashは`~/.bash_profile`があれば`~/.profile`を読まないので、その時はPATHを`~/.bash_profile`に書く。
 - firefoxのpkg installの最後に長いメッセージ(boost・gcc14・libjxl・firefoxの未対応機能等)が出るが、対応が要るものは無い。
@@ -316,6 +317,62 @@ ad-hoc署名し直す(`codesign --force --deep -s -`、単体実行
 `.icns`を`src/cpp/packaging/`へ追加し`Info.plist`の
 `CFBundleIconFile`を設定すれば、以後の`make app`で自動的に
 反映される。
+
+## ソースを手元で変更する(公開時の方針、2026-11-01)
+
+**方針**: 公開後は、`src/cpp/tools/narou2epub.py`と`src/cpp/tools/narou2epub-assets/`(「小説家になろう」用の
+スクリプト。NarouToEpub3を改変したもので、元のApache-2.0に従う)以外は、自由に変更してよい。
+作者はあらゆる環境・使い方を十分にテストできていないので、不具合が出たら、cloneした手元のソースを
+AI(Claude Code等)に見てもらって直す、という使い方を想定している。narou2epubを変更する場合は
+Apache-2.0の条件(LICENSEを残す・変更した旨を記す。`narou2epub.py`の冒頭の変更点の一覧に追記する)に従う。
+
+### 1. ソースを取ってくる(アカウント・鍵は不要)
+
+公開リポジトリを読むだけなら、GitHubのアカウントもSSHの鍵も要らない。
+```
+git clone https://github.com/haa15030/usilic.git
+cd usilic
+git switch -c my-fix        # 自分の変更用のブランチ(元のブランチと分けておくと更新を取り込みやすい)
+```
+(冒頭の「ブランチに注意」も参照。)
+
+### 2. AIに見てもらって直す
+
+- cloneしたディレクトリで起動する(Claude Codeなら`claude`)。症状・再現の手順・OS(と`usilic -v`等の版)を伝える。
+- 手がかりになるもの: このファイル(ビルド)、`docs/CHANGES.md`(機能ごと・モードごとの経緯。項目番号で引ける)、
+  `src/HELP_.txt`等のHELPの原稿。
+- **リポジトリ直下の`CLAUDE.md`と`.claude/`は作者の作業用の取り決め**で、Claude Codeが自動で読み込む。特に
+  `.claude/settings.json`のStopフック(`.claude/hooks/history_sync.py`)は、会話を`docs/HISTORY.md`へ
+  追記し続ける。要らなければ`.claude/settings.json`の`"hooks"`を消し、`CLAUDE.md`も自分の環境に合わせて
+  書き換えてよい。
+- 直したら、自分のブランチでビルドし直す(`make usilic`・`make install`。FreeBSDでは`gmake`)。
+
+### 3. 作者側の更新を取り込む
+
+```
+git stash                   # コミットしていない変更があれば退避(コミット済みなら不要)
+git fetch origin
+git rebase origin/<元のブランチ>   # 自分の変更を最新の上に載せ直す。ぶつかったらAIに解消を頼んでもよい
+git stash pop
+```
+
+### 4. 自分の変更をGitHubに置く・作者に送る(ここからアカウントが要る)
+
+| やりたいこと | GitHubのアカウント | 鍵・認証 |
+|---|---|---|
+| 公開リポジトリを`https://`でcloneする・更新を取り込む | 不要 | 不要 |
+| 自分の変更を自分のGitHubに置く(fork→push) | 必要 | SSHの鍵、または`gh auth login` |
+| 作者に変更を送る(Pull Request)・不具合を報告する(Issue) | 必要 | (ブラウザでサインイン) |
+
+- SSHの鍵はアカウントに登録するもので、`https://github.com/settings/keys`はサインインしないと開けない。
+- 鍵は使うマシンで`ssh-keygen -t ed25519`で作り、`~/.ssh/id_ed25519.pub`の1行を上のページのNew SSH keyに貼る。
+  そのマシンにまだブラウザが無ければ(FreeBSDを入れた直後等)、sshでつないだ別のマシンの端末でこの1行を
+  コピーし、そちらのブラウザ(サインイン済み)で登録してもよい。
+- `gh auth login`(GitHub CLI)なら鍵を作らずに済み、表示されたコードを別のマシンのブラウザで入力しても通る。
+- 手順: GitHubで作者のリポジトリをFork → `git remote add mine git@github.com:<自分>/usilic.git` →
+  `git push mine my-fix` → GitHubのページからPull Request。
+- 作者以外が1つのリポジトリだけを読む機械用には、リポジトリの所有者が登録するDeploy key(Settings→Deploy keys)
+  もある(非公開の間に、作者が自分の別マシンへ取ってくる時等)。
 
 ## ビルドターゲット早見表
 

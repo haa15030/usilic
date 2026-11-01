@@ -33298,3 +33298,6 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 1180. **FreeBSDでbashをログインシェルにする手順、firefoxのpkgのメッセージは対応不要(2026-11-01)**
    - **経緯**: 直接のユーザー依頼("それも追記で"、chsh -s /usr/local/bin/bashと~/.bash_profileの件)。あわせてfirefoxのpkg installの最後に出る長いメッセージ(boost-libs・gcc14・libjxl・firefoxの未対応機能/カーソル/音声/sftp等)について"必要なのはある？"と聞かれ、どれも対応不要と答えた。
    - **変更**: docs/BUILD.mdのFreeBSDの節に2項目、src/HELP_.txt・HELP_en_.txt(追跡対象外)に1文ずつ(日英で同じ位置)。
+1181. **docs/BUILD.mdに「ソースを手元で変更する(公開時の方針)」の節(2026-11-01)**
+   - **経緯**: FreeBSDのFirefoxで`https://github.com/settings/keys`を開くとサインインを求められ、"アカウントを登録していないユーザーは公開鍵を登録できない？"との質問(できない、公開リポジトリのcloneには不要)。続いて直接のユーザー依頼: "公開時のポリシーを、`なろう`のスクリプト以外は変更自由な形にしたい。言わばあらゆるケースへの充分なテストなどできていないので不具合が出たらAIに見てもらってね、みたいなスタンス。その際はclone後の公開リポジトリへの変更という形でやってもらうことになるので、そのための手引きを別項目としたうえでそこに追記してほしい"。
+   - **変更**: docs/BUILD.mdに新しい節(方針・narou2epubはApache-2.0に従う、https://でのclone、AIに見てもらう時の手がかりとCLAUDE.md・.claude/のStopフック(docs/HISTORY.mdへの追記)の注意、更新の取り込み、アカウント・鍵の要不要の表、鍵の作り方・別マシンのブラウザでの登録、fork・Pull Request、Deploy key)。FreeBSDの節には非公開の間の認証の1行とそこへの参照。
