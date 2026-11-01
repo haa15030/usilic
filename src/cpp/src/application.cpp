@@ -1550,7 +1550,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       // (returnFromCut())ので、戻り値欄は空にし、本文と同じく右下の透かし(子は「USILIC」)を出す。
       // 2026-11-02: ページャーのファイルから^Hで開いたHELPなら、^Gの戻り先はそのファイル(pagerHelpReturn_)。
       if (pagerLaunch_ && pagerHelpReturn_) {
-        fields.trailing3 = std::filesystem::path(pagerHelpReturn_->path).filename().string();
+        fields.trailing3 = pagerHelpReturn_->path;
       } else if (pagerLaunch_) {
         fields.trailing3.clear();
         fields.rightWatermark = ContentView::programWatermark();

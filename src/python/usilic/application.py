@@ -121,6 +121,7 @@ class Application:
         self.limited_leader_j = False  # 機能限定SHELLの^Jの後
         self.limited_escapes = 0     # 機能限定SHELLの^[^[^M(すぐ終わる)
         self.pager_numbers_cache = None  # pager_key_numbers()
+        self.pager_help_return = None  # ページャーのfileからHELPを開いた時の戻り先(remember_pager_file_for_help())
         self.pager_files = []       # n/p/x/fで切り替えるfile
         self.pager_index = 0
         self.start_directory = os.getcwd()
@@ -500,8 +501,8 @@ class Application:
         if mode == KEY:  # CUTの一覧(cutView_)の欄
             if self.grep_active:
                 position = self.grep.position_text()
-            return F('KEY', str(self.key_byte_count), True, '', 'USILIC' if self.key_colon_list_launch else directory), \
-                position
+            return F('KEY', str(self.key_byte_count), True, '', 'USILIC' if self.key_colon_list_launch
+                     else self.key_return_name(directory)), position
         if mode == HELP:  # 平文のHELP(FILEの欄)
             fields = F('HELP', str(self.help_byte_count), True, '', directory, trailing2_kind=mode_line.PATH)
             fields.split_layout_when_crowded = True
@@ -511,11 +512,12 @@ class Application:
             if self.vertical_list_active():  # 縦書きの章の一覧: 位置は「選んでいる章/章の数」
                 position = self.notice or '%02d/%02d' % (view.cursor_index + 1, max(1, len(view.lines)))
                 fields = F('EPUB', str(self.content_byte_count()), True, '', '縦書き')
-            elif self.pager_launch:  # ページャーの本の章の一覧は^Gでどこへも戻らない: 戻り値は無く透かし(C++の項目1115)
+            elif self.pager_launch and self.pager_help_return is None:
+                # ページャーの本の章の一覧は^Gでどこへも戻らない: 戻り値は無く透かし(C++の項目1115)
                 return F(name, str(self.content_byte_count()), False, PROGRAM_LABEL), position
             else:  # 大きさは本文の行のバイト数(C++のcontentByteCount(fileView_))
                 fields = F(name, str(self.content_byte_count()), True)
-            fields.trailing3 = directory
+            fields.trailing3 = self.pager_help_return['path'] if self.pager_help_return else directory
             return fields, position
         if mode == PART_TOC:
             part = self.part
@@ -548,6 +550,15 @@ class Application:
         if d.sort_label_shown:
             fields.trailing2, fields.trailing2_plain = d.sort_key, True
         return fields, position
+
+    def key_return_name(self, directory):
+        """KEYの戻り値(C++の項目1189): ^Gの戻り先。HELPはファイルとしては見せないので「HELP」、fileならフルパス。"""
+        target = self.return_stack[-1] if self.return_stack else DIRECTORY
+        if target == TOC:
+            return 'HELP' if self.epub_name == 'HELP' else 'EPUB'
+        if target == HELP:
+            return 'HELP'
+        return self.previous_mode_name(FILE) if target == FILE else directory
 
     def prompt_mode_line(self, label, position, message, editor, exit_confirm=False, mode=None):
         """drawPromptLabel()の形のモードライン。右端は戻り先(previousModeName())。"""
@@ -1845,9 +1856,41 @@ class Application:
         if self.in_epub_body() and self.epub is not None and self.epub.path == path:
             self.show_transient_notice('Already in HELP')
             return True
+        if path:
+            self.remember_pager_file_for_help()
         if path and self.open_epub(path, name='HELP'):
             return True
         return self.open_plain_help(None)
+
+    def remember_pager_file_for_help(self):
+        """C++のrememberPagerFileForHelp()(項目1189): ページャーのfile・本からHELPを開く前に、^Gの戻り先と位置を覚える。
+        標準入力は読み直せないので覚えない。"""
+        path = self.file_mode.current_file
+        if not self.pager_launch or self.pager_help_return is not None or not path or \
+                not self.pager_files or self.pager_files[0] == '(stdin)' or help_text.is_generated_help_epub(path):
+            return
+        book = self.epub is not None and path == self.epub.path
+        self.pager_help_return = {'path': path, 'index': self.pager_index, 'book': book,
+                                  'line': self.global_epub_line() if book else 0,
+                                  'cursor': self.file_view.cursor_index, 'top': self.file_view.top_index}
+
+    def return_to_pager_file_from_help(self):
+        """C++のreturnToPagerFileFromHelp(): HELPの章の一覧の^Gで、元のfileを開き直して元の位置へ。"""
+        target, self.pager_help_return = self.pager_help_return, None
+        self.file_mode.save_cursor_position()
+        self.epub = None
+        self.return_stack = []
+        self.current_mode = FILE
+        if not self.open_pager_file(target['index']):
+            return False
+        if target['book']:
+            self.set_epub_cursor(target['line'])
+            return True
+        view = self.file_view
+        self.file_mode.ensure_loaded_through(target['cursor'] + view.height)
+        view.cursor_index, view.top_index = target['cursor'], target['top']
+        view.clamp()
+        return True
 
     def plain_help(self):
         return help_text.plain_help_lines(self.wrap_width(), japanese(), self.configuration)
@@ -1933,6 +1976,8 @@ class Application:
                 self.show_transient_notice('Parent not reachable')
             return True
         path = help_text.help_epub_path(japanese())
+        if request and path:
+            self.remember_pager_file_for_help()
         if request and path and self.open_epub(path, name='HELP'):
             return self.jump_help_to_key_line(*request)
         return self.open_plain_help(line.raw_line_number)
@@ -2364,7 +2409,9 @@ class Application:
             self.count = None
             return False
         digit = keys[-1] if self.bindings.sequence_for(number)[-1] == DIGIT else None
-        if self.pager_launch and number not in self.pager_key_numbers():
+        # KEYのh(K-105、C++の項目1189)はページャーでも使える
+        if self.pager_launch and number not in self.pager_key_numbers() and \
+                not (number == 105 and self.current_mode == KEY):
             self.show_transient_notice('Not available in pager')
             return False
         return self.run_command(number, digit)
@@ -2721,6 +2768,7 @@ class Application:
         last = len(self.pager_files) - 1
         index = {15: min(self.pager_index + 1, last), 16: max(self.pager_index - 1, 0), 17: 0, 18: last}[number]
         if index != self.pager_index and self.pager_files[0] != '(stdin)':
+            self.pager_help_return = None  # HELPから別のfileへ移ったら、戻り先はもう無い
             self.open_pager_file(index)
         return True
 
@@ -2765,6 +2813,8 @@ class Application:
                 self.enter_mode(SHELL)  # 最初の起動: インストールの後は機能限定SHELLへ(C++のreturnFromCut())
                 self.refresh_shell_view()
                 return True
+            if self.pager_help_return is not None:
+                return self.return_to_pager_file_from_help()
             if self.pager_launch:
                 self.current_mode = FILE
                 return True
