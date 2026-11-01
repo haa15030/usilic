@@ -33308,3 +33308,6 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 1183. **SSHの鍵はgit@github.com:のURLでだけ使われる、トークンの作り方(2026-11-01)**
    - **経緯**: FreeBSDでGitHubに鍵を登録した後、`git clone https://github.com/haa15030/usilic`としたら`Username for 'https://github.com':`と聞かれた(https://では鍵は使われず、非公開のリポジトリはトークンが要る)。直接のユーザー依頼("tokenを作る過程も追記しておかなくては")。
    - **変更**: docs/BUILD.mdの「ソースを手元で変更する」の4に、鍵とURLの組み合わせの注意とFine-grained tokenの作り方(Only select repositories・Contents・一度しか表示されない・credential.helper)。FreeBSDの節の非公開の間の1行もSSHのURLに。
+1184. **~/.profileを読み直す度に出る英語の小ネタはfortune(2026-11-01)**
+   - **経緯**: PATHを足した`~/.profile`を`. .profile`・`. ~/.profile`で読み直したところ、毎回違うメッセージ(sedの使い方、vidcontrolの使い方)が出た。既定の`~/.profile`の`fortune freebsd-tips`によるもので、どちらも正しく読み込まれていた(アシスタントは最初「`. .profile`はPATHを探して失敗した」と誤って推測した。FreeBSDの/bin/shはカレントディレクトリも探す)。直接のユーザー依頼("fortuneの件も追記で")と質問("日本語では出ない？"、freebsd-tipsは英語だけ)。
+   - **変更**: docs/BUILD.mdのFreeBSDの節に1項目。
