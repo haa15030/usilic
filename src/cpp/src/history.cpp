@@ -376,12 +376,22 @@ void History::setEpubMargins(const std::array<int, 4> &margins) {
 void History::setEpubMarginsImpl(const std::array<int, 4> &margins) { epubMargins_ = margins; }
 
 void History::setFontFamilyPaths(const std::string &serif, const std::string &sansSerif) {
-  journal_.emplace_back([serif, sansSerif](History &h) { h.setFontFamilyPathsImpl(serif, sansSerif); });
-  setFontFamilyPathsImpl(serif, sansSerif);
+  bool icon = iconLaunch_;
+  journal_.emplace_back([serif, sansSerif, icon](History &h) { h.setFontFamilyPathsImpl(serif, sansSerif, icon); });
+  setFontFamilyPathsImpl(serif, sansSerif, icon);
 }
-void History::setFontFamilyPathsImpl(const std::string &serif, const std::string &sansSerif) {
-  serifFontPath_ = serif;
+void History::setFontFamilyPathsImpl(const std::string &serif, const std::string &sansSerif, bool icon) {
+  (icon ? iconSerifFontPath_ : serifFontPath_) = serif;
+  (icon ? iconSansSerifFontPath_ : sansSerifFontPath_) = sansSerif;
+}
+void History::setFontFamilyPathsFromOlderVersion(const std::string &serif, const std::string &sansSerif) {
+  journal_.emplace_back([serif, sansSerif](History &h) { h.setFontFamilyPathsFromOlderVersionImpl(serif, sansSerif); });
+  setFontFamilyPathsFromOlderVersionImpl(serif, sansSerif);
+}
+void History::setFontFamilyPathsFromOlderVersionImpl(const std::string &serif, const std::string &sansSerif) {
+  serifFontPath_ = iconSerifFontPath_ = serif;
   sansSerifFontPath_ = sansSerif;
+  iconSansSerifFontPath_.clear();
 }
 
 int History::lsMode() const { return lsMode_; }
@@ -692,6 +702,9 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     iconEpubSansSerif_ = toks.size() > 36 && std::atoi(toks[36].c_str()) != 0;
     // ^Ojの言語(2026-11-02、helpLanguage()参照)――同じ理由でさらに末尾に。無ければ未選択。
     helpLanguage_ = toks.size() > 37 ? std::atoi(toks[37].c_str()) : 0;
+    // アイコンからの起動の明朝体・ゴシック体(2026-11-03、serifFontPath()参照)――同じ理由でさらに末尾に。
+    iconSerifFontPath_ = toks.size() > 39 ? decodeField(toks[38]) : serifFontPath_;
+    iconSansSerifFontPath_ = toks.size() > 39 ? decodeField(toks[39]) : std::string();
   }
 
   complete_ = (i < lines.size() && !lines[i].empty() && lines[i][0] == kSubEof);
@@ -786,7 +799,8 @@ std::string History::serialize(const std::string &programName, const std::string
          std::to_string(iconGuiPreferences_.letterSpacingExtraVertical) + " " + std::to_string(epubMargins_[0]) + " " +
          std::to_string(epubMargins_[1]) + " " + std::to_string(epubMargins_[2]) + " " + std::to_string(epubMargins_[3]) +
          " " + encodeField(serifFontPath_) + " " + encodeField(sansSerifFontPath_) + " " +
-         std::to_string(iconEpubSansSerif_ ? 1 : 0) + " " + std::to_string(helpLanguage_) + "\n";
+         std::to_string(iconEpubSansSerif_ ? 1 : 0) + " " + std::to_string(helpLanguage_) + " " +
+         encodeField(iconSerifFontPath_) + " " + encodeField(iconSansSerifFontPath_) + "\n";
   out += std::string(1, kSubEof) + "\n";
   return out;
 }

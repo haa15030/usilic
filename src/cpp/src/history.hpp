@@ -252,10 +252,14 @@ class History {
   // 2026-10-30、直接のユーザー依頼(usilicrcのSERIF・SANS-SERIF・FONT等を削除): ^J^Fで選んだ明朝体・ゴシック体の
   // フォントのファイル(空なら組み込みの候補)。基本の等幅フォントはGuiPreferences::fontPath。同じ永続化の形。
   // fontFamiliesSaved()は、これを書いたhistoryを読んだか(偽なら前のusilicrcの値を一度だけ移す、main.cpp)。
-  const std::string &serifFontPath() const { return serifFontPath_; }
-  const std::string &sansSerifFontPath() const { return sansSerifFontPath_; }
+  // 2026-11-03、直接のユーザー報告("アイコン起動時の同設定はW2のはずなのに-g後はW5になる"): -gとアイコンからの起動で
+  // 別々に覚える(^Ot・FONTと同じ)。前の版のhistoryからは、明朝体は両方へ、ゴシック体は-gへだけ引き継ぐ。
+  const std::string &serifFontPath() const { return iconLaunch_ ? iconSerifFontPath_ : serifFontPath_; }
+  const std::string &sansSerifFontPath() const { return iconLaunch_ ? iconSansSerifFontPath_ : sansSerifFontPath_; }
   bool fontFamiliesSaved() const { return fontFamiliesSaved_; }
   void setFontFamilyPaths(const std::string &serif, const std::string &sansSerif);
+  // 前のusilicrcのSERIF・SANS-SERIFを移す時(main.cpp): 上の「前の版のhistory」と同じ分け方。
+  void setFontFamilyPathsFromOlderVersion(const std::string &serif, const std::string &sansSerif);
   int lsMode() const;
   void setLsMode(int mode);
   // 未設定(新規の履歴)の場合、または読み込み時に環境の文字コードが
@@ -380,6 +384,7 @@ class History {
   int helpLanguage_ = 0;  // helpLanguage()参照
   std::array<int, 4> epubMargins_{};  // epubMargins()参照
   std::string serifFontPath_, sansSerifFontPath_;  // serifFontPath()参照
+  std::string iconSerifFontPath_, iconSansSerifFontPath_;
   bool fontFamiliesSaved_ = false;
   int lsMode_ = 0;
   GuiPreferences guiPreferences_;
@@ -409,7 +414,8 @@ class History {
   void setEpubSansSerifImpl(bool sansSerif, bool icon);
   void setHelpLanguageImpl(int language);
   void setEpubMarginsImpl(const std::array<int, 4> &margins);
-  void setFontFamilyPathsImpl(const std::string &serif, const std::string &sansSerif);
+  void setFontFamilyPathsImpl(const std::string &serif, const std::string &sansSerif, bool icon);
+  void setFontFamilyPathsFromOlderVersionImpl(const std::string &serif, const std::string &sansSerif);
   void setLsModeImpl(int mode);
   void setSavedCharsetImpl(Charset::Encoding encoding);
   void setGuiPreferencesImpl(const GuiPreferences &preferences, bool icon);

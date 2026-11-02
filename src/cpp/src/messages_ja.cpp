@@ -92,9 +92,9 @@ const std::vector<std::pair<std::string, std::string>> &exactMessages() {
 // "{}"を含む型(上から順に試す、より長い・細かい型を先に)。
 const std::vector<std::pair<std::string, std::string>> &patternMessages() {
   static const std::vector<std::pair<std::string, std::string>> kPatterns = {
-      {"LINE-HEIGHT (vertical): {} dots ({})", "LINE-HEIGHT（縦書き）: {} ドット（{}）"},
+      {"LINE-HEIGHT (vertical): {} dots", "LINE-HEIGHT（縦書き）: {} ドット"},
       {"LINE-HEIGHT: {} dots ({})", "LINE-HEIGHT: {} ドット（{}）"},
-      {"LETTER-SPACING (vertical): {} dots ({} dots per column)", "LETTER-SPACING（縦書き）: {} ドット（1 桁 {} ドット）"},
+      {"LETTER-SPACING (vertical): {} dots ({})", "LETTER-SPACING（縦書き）: {} ドット（{}）"},
       {"LETTER-SPACING: {} dots ({} dots per column)", "LETTER-SPACING: {} ドット（1 桁 {} ドット）"},
       {"HELP not found: {} (make install)", "HELP が見つかりません: {}（make install）"},
       {"Cannot write {} to usilicrc", "usilicrc に {} を書き込めません"},

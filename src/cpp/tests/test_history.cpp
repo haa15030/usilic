@@ -225,6 +225,25 @@ TEST_CASE("serialize() then loadHistoryText() keeps the ^Oj language") {
   CHECK(loaded.helpLanguage() == 1);
 }
 
+// 2026-11-03: ^J^Fの明朝体・ゴシック体は-gとアイコンからの起動で別々。パスの空白も壊れない。
+TEST_CASE("font family paths are kept separately for -g and the icon") {
+  History h(10);
+  h.setFontFamilyPaths("/g serif.ttc", "/g sans W5.ttc");
+  History::setIconLaunch(true);
+  CHECK(h.sansSerifFontPath().empty());
+  h.setFontFamilyPaths("/i serif.ttc", "/i sans W3.ttc");
+  History::setIconLaunch(false);
+  History loaded(10);
+  REQUIRE(loaded.loadHistoryText(h.serialize("usilic", "Mon Jan  1 00:00:00 2026"),
+                                 /*environmentCharsetExplicitlySet=*/false));
+  CHECK(loaded.serifFontPath() == "/g serif.ttc");
+  CHECK(loaded.sansSerifFontPath() == "/g sans W5.ttc");
+  History::setIconLaunch(true);
+  CHECK(loaded.serifFontPath() == "/i serif.ttc");
+  CHECK(loaded.sansSerifFontPath() == "/i sans W3.ttc");
+  History::setIconLaunch(false);
+}
+
 // 2026-11-02: ^Otは-gとアイコンからの起動で別々(既定は-gがゴシック体、アイコンが明朝体)。
 TEST_CASE("an icon launch keeps its own EPUB typeface apart from -g") {
   History h(10);

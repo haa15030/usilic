@@ -2838,12 +2838,18 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           app.refreshShellBanner();
       }
     }
-    // ^[] / ^[[(2026-10-17、Application::takeLineHeightAdjustRequest()参照): 今の向きの行の高さをドット単位で。
-    if (int delta = app.takeLineHeightAdjustRequest()) {
-      auto [pixels, ratio] = gui.adjustLineHeight(delta);
+    // ^[] / ^[[(2026-10-17、Application::takeLineHeightAdjustRequest()参照)、^[} / ^[{(2026-10-20、
+    // takeLetterSpacingAdjustRequest()参照): 今の向きの行間・字間をドット単位で。2026-11-03、直接のユーザー報告
+    // ("縦書きでは列間・字間調整のキーアサインが逆"): 行間はいつも^[] / ^[[。縦書きではマスの高さが字の間、マスの幅が
+    // 列の間なので、マスの高さ・幅の増減を横書きと入れ替える(historyの値はマスの高さ・幅のまま)。
+    int lineDelta = app.takeLineHeightAdjustRequest(), letterDelta = app.takeLetterSpacingAdjustRequest();
+    bool verticalShown = app.verticalLayoutShown();
+    int cellHeightDelta = verticalShown ? letterDelta : lineDelta, cellWidthDelta = verticalShown ? lineDelta : letterDelta;
+    if (cellHeightDelta) {
+      auto [pixels, ratio] = gui.adjustLineHeight(cellHeightDelta);
       char ratioText[16];
       std::snprintf(ratioText, sizeof ratioText, "%.2f", ratio);
-      app.showNotice(std::string(app.verticalLayoutShown() ? "LINE-HEIGHT (vertical): " : "LINE-HEIGHT: ") +
+      app.showNotice(std::string(verticalShown ? "LETTER-SPACING (vertical): " : "LINE-HEIGHT: ") +
                      std::to_string(pixels) + " dots (" + ratioText + ")");
     }
     // ^[0(2026-10-31、Application::takeSpacingResetRequest()参照): 行間・字間を既定へ(余白はApplicationが戻した)。
@@ -2860,12 +2866,13 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         app.showNotice("LINE-HEIGHT / LETTER-SPACING / margins: restored");
       }
     }
-    // ^[} / ^[{(2026-10-20、Application::takeLetterSpacingAdjustRequest()参照): 今の向きの字間をドット単位で。
-    if (int delta = app.takeLetterSpacingAdjustRequest()) {
-      auto [width, extra] = gui.adjustLetterSpacing(delta);
-      app.showNotice(std::string(app.verticalLayoutShown() ? "LETTER-SPACING (vertical): " : "LETTER-SPACING: ") +
-                     (extra > 0 ? "+" : "") + std::to_string(extra) + " dots (" + std::to_string(width) +
-                     " dots per column)");
+    if (cellWidthDelta) {
+      auto [width, extra] = gui.adjustLetterSpacing(cellWidthDelta);
+      if (verticalShown)  // 縦書きの1列はマス2つ分
+        app.showNotice("LINE-HEIGHT (vertical): " + std::to_string(width * 2) + " dots");
+      else
+        app.showNotice(std::string("LETTER-SPACING: ") + (extra > 0 ? "+" : "") + std::to_string(extra) + " dots (" +
+                       std::to_string(width) + " dots per column)");
       // 2026-10-30: 2026-10-21からusilicrcのLETTER-SPACINGへも書いていたが、節ごと廃止した。値は終了時に
       // ~/.usilic/historyへ、子のHELP・KEYへはUSILIC_GUI_FRAME(GuiFrame::spacing)で渡る。
     }
@@ -6109,11 +6116,11 @@ int main(int argc, char **argv) {
       history.setEpubMargins(saved.epubMargins());
       history.setEpubSansSerif(saved.epubSansSerif());  // ^Ot(ページャー・子でも同じ字で)
       history.setHelpLanguage(saved.helpLanguage());    // ^Oj
-      if (!saved.fontFamiliesSaved()) history.setFontFamilyPaths(legacySerif, legacySans);
+      if (!saved.fontFamiliesSaved()) history.setFontFamilyPathsFromOlderVersion(legacySerif, legacySans);
     }
   } else if (!history.fontFamiliesSaved()) {
     // 前のusilicrcのSERIF・SANS-SERIF・FONTを一度だけ移す(上のlegacyFont等)。アイコンからの起動の組には移さない。
-    history.setFontFamilyPaths(legacySerif, legacySans);
+    history.setFontFamilyPathsFromOlderVersion(legacySerif, legacySans);
     if (legacyFontSection && !fm::Configuration::iconLaunch()) {
       fm::History::GuiPreferences prefs = history.guiPreferences();
       prefs.fontPath = legacyFont;

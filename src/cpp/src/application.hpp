@@ -2000,7 +2000,8 @@ class Application {
   bool shellBannerShowing() const { return shellBannerActive_; }
   void refreshShellBanner();
   void showNotice(const std::string &text);
-  // ^[[ / ^[](K-109/K-110、2026-10-17): -gの今の向き(横書き・縦書き)の行の高さを1ドットずつ変える要求。
+  // ^[[ / ^[](K-109/K-110、2026-10-17): -gの今の向き(横書き・縦書き)の行間を1ドットずつ変える要求(縦書きはマスの幅、
+  // ^[{ / ^[}はその逆、2026-11-03)。
   // main.cppが受け取ってGraphicalDisplay::adjustLineHeight()へ渡す(返すのは足すドット数の合計、無ければ0)。
   int takeLineHeightAdjustRequest();
   // ^[{ / ^[}(K-112/K-113、2026-10-20): 同じく字間(マスの幅)。GraphicalDisplay::adjustLetterSpacing()へ渡す。
