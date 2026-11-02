@@ -78,6 +78,11 @@ class ArchiveMode {
   bool finishLoadFromOutput(const std::string &path, const std::string &output);
 
   const std::string &currentArchive() const;
+  // archiveを見ている間、モードラインの戻り値欄を親ディレクトリではなくlabelにする(LOCATE・DUから開いた時)。
+  void setReturnLabel(const std::string &archive, const std::string &label) {
+    returnLabelArchive_ = archive;
+    returnLabel_ = label;
+  }
   // currentArchive()の具体的なフォーマット(loadArchive()呼び出し前は
   // None)――K-57/K-58(^X^Ka/^Xa、「ARC: Expand archive」)のために
   // 公開されている。そちらは、正しい抽出コマンドを組み立てるために
@@ -146,6 +151,9 @@ class ArchiveMode {
   const Configuration &configuration_;
 
   std::string currentArchive_;
+  // setReturnLabel()の値: この書庫を見ている間は、戻り値欄を親ディレクトリではなくこのラベルにする。
+  std::string returnLabelArchive_;
+  std::string returnLabel_;
   ArchiveKind archiveKind_ = ArchiveKind::None;
   // archiveKind_に対して実際に設定されているプログラム名(例えば
   // "tar"/"unzip"/"lha"/"rpm")――モードラインプロバイダ自身の

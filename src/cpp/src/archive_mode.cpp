@@ -153,7 +153,7 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
     ContentView::ModeLineFields fields{currentArchive_, std::to_string(view_.totalByteCount()),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/badge};
-    fields.trailing3 = truncatedTrailingPath(parentDirectory);
+    fields.trailing3 = currentArchive_ == returnLabelArchive_ ? returnLabel_ : truncatedTrailingPath(parentDirectory);
     // showEditError_(2026-08-26、reportError()自身のコメント参照):
     // DirectoryMode自身のプロバイダがCP/MV/RMの「Permission denied」/
     // 「Invalid mode」向けに確立した(directory_mode.cpp)、「name

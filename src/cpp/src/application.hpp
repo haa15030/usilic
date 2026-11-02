@@ -2764,6 +2764,8 @@ class Application {
   bool activateSelectedEpubHorizontalLink();
   bool clickEpubHorizontalLink(int index, int column);
   bool openEpubReturningTo(const std::string &path, ApplicationMode returnMode);
+  // LOCATE・DUの^M: 書庫ならARCで開き始める(^Gでその一覧へ戻る)。書庫でなければfalse。
+  bool startArchiveReturningTo(const std::string &path, ApplicationMode returnMode);
   void syncEpubHorizontalPresentation();
   void applyEpubChapterLabels();
   ContentView &grepViewForMode(ApplicationMode mode);
@@ -4577,6 +4579,13 @@ private:
                              // 6=ARC、7=EPUB、8=PART)
   // ^[uのARCから開いたアーカイブ(そこから^Gで、親のディレクトリではなくUSILICの一覧へ戻る。returnFromArchive())。
   std::string archiveReturnsToUnderlineFor_;
+  // LOCATE・DUの^Mで開いた書庫(そこから^Gで、親のディレクトリではなくその一覧へ戻る。returnFromArchive())。
+  std::string archiveReturnsToListFor_;
+  ApplicationMode archiveReturnsToListMode_ = ApplicationMode::Locate;
+  // 読み込み中の書庫の^Gの戻り先(LOCATE・DUから開いた時だけ)。finishArchiveLoadAsync()で受け取る。
+  std::optional<ApplicationMode> archiveLoadReturnMode_;
+  // 書庫として読めなかったものを、LOCATE・DUの^Mの続きで普通のファイルとして開く間だけtrue。
+  bool archiveFallbackToFile_ = false;
   // ^Ou(閲覧)を(ls)以外の一覧(LOCATE/DU/^X^F・^X^D/USILIC)から発動した時の
   // 戻り先(2026-09-27、直接のユーザー依頼"（ls）で可能なファイル操作には
   // 「閲覧」（^Ou）もあるのでよろしく")。^Gで発動元の一覧へ戻す。USILICから

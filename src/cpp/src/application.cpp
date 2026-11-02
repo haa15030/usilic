@@ -6843,6 +6843,7 @@ bool Application::openSelectedDuEntry() {
   }
   if (openExternallyIfApplicable(entry->path)) return true;  // EXEC/画像のクイックルック(2026-09-27)
   if (isEpubFile(entry->path)) return openEpubReturningTo(entry->path, ApplicationMode::Du);
+  if (!archiveFallbackToFile_ && startArchiveReturningTo(entry->path, ApplicationMode::Du)) return true;
   if (!fileMode_.loadFile(entry->path)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Du;
@@ -6949,6 +6950,7 @@ bool Application::openSelectedLocateResult() {
   // 戻るEXECと同様に、LOCATEの結果リストへ変わらず戻る。
   if (openExternallyIfApplicable(*path)) return true;  // EXEC/画像のクイックルック(2026-09-27)
   if (isEpubFile(*path)) return openEpubReturningTo(*path, ApplicationMode::Locate);
+  if (!archiveFallbackToFile_ && startArchiveReturningTo(*path, ApplicationMode::Locate)) return true;
   if (!fileMode_.loadFile(*path)) return false;
   currentMode_ = ApplicationMode::File;
   // 2026-08-14修正(ここでの以前の版に対する2つの直接のユーザーの
@@ -8975,6 +8977,22 @@ bool Application::openEpubQuietly(const std::string &path) {
 // ファイルとしてfileMode_.loadFile()で読むだけで、縦書きの列(rebuildEpubVertical())を組み
 // 直していなかった――前の本の縦書きが残り、名前欄だけが変わっていた。openEpub()で開き、
 // ^Gの戻り先(章の一覧/本文から)を発動元の一覧にする。
+// 2026-11-02、直接のユーザー報告("errorが気になってみてみたら.rarが展開されてない"): LOCATE・DUの^Mは書庫も
+// loadFile()で開いていたので、中身の一覧ではなく"(^@) RAR archive data"の1行になっていた。(ls)の^Mと同じ
+// 非同期の読み込みで開き、読めなければfinishArchiveLoadAsync()が普通のファイルとして開く。
+bool Application::startArchiveReturningTo(const std::string &path, ApplicationMode returnMode) {
+  ArchiveKind archiveKind = ArchiveKind::None;
+  if (!configuration_.programForSuffix(path, &archiveKind) || archiveKind == ArchiveKind::None) return false;
+  drawPromptLabel(PromptKind::ArchiveLoad, /*positionText=*/"", "Loading archive...");
+  display_.flush();
+  if (!startArchiveLoadAsync(path)) {
+    activeView().redraw();
+    return false;
+  }
+  archiveLoadReturnMode_ = returnMode;
+  return true;
+}
+
 bool Application::openEpubReturningTo(const std::string &path, ApplicationMode returnMode) {
   if (!openEpub(path)) return false;
   cutReturnMode_ = returnMode;
@@ -11748,6 +11766,15 @@ bool Application::returnFromArchive() {
   if (archiveParentStack_.empty() && !archiveReturnsToUnderlineFor_.empty() &&
       std::exchange(archiveReturnsToUnderlineFor_, std::string()) == archiveMode_.currentArchive())
     return returnToUnderlineResults();  // ^[uのARCから開いた(archiveReturnsToUnderlineFor_参照)
+  if (archiveParentStack_.empty() && !archiveReturnsToListFor_.empty() &&
+      std::exchange(archiveReturnsToListFor_, std::string()) == archiveMode_.currentArchive()) {
+    archiveMode_.setReturnLabel("", "");
+    if (archiveReturnsToListMode_ == ApplicationMode::Du) return returnToDuResults();
+    currentMode_ = ApplicationMode::Locate;
+    display_.hideVisibleCursor();
+    locateView_.redraw();
+    return true;
+  }
   if (!archiveParentStack_.empty()) {
     std::string parentPath = archiveParentStack_.back();
     archiveParentStack_.pop_back();
@@ -13921,6 +13948,7 @@ void Application::pollDuCompletion() {
 // 設定すれば、fork/exec経由でその子である段1/段2にもそのまま
 // 継承される)。
 bool Application::startArchiveLoadAsync(const std::string &path) {
+  archiveLoadReturnMode_.reset();  // LOCATE・DUから開く時はstartArchiveReturningTo()が後で入れる
   ArchiveKind kind = ArchiveKind::None;
   auto command = configuration_.programForSuffix(path, &kind);
   if (!command || kind == ArchiveKind::None) return false;
@@ -14058,10 +14086,22 @@ void Application::finishArchiveLoadAsync() {
     activeView().redraw();
     return;
   }
+  std::optional<ApplicationMode> returnMode = std::exchange(archiveLoadReturnMode_, std::nullopt);
   if (archiveMode_.finishLoadFromOutput(archiveLoadPendingPath_, archiveLoadPendingOutput_)) {
     archiveParentStack_.clear();  // 全く新しい最上位のアーカイブ――以前のネストした降下の連鎖はもう当てはまらない
     currentMode_ = ApplicationMode::Archive;
     history_.pushRecent(RingCategory::RecentFile, archiveLoadPendingPath_);
+    archiveReturnsToListFor_ = returnMode ? archiveLoadPendingPath_ : std::string();
+    if (returnMode) archiveReturnsToListMode_ = *returnMode;
+    archiveMode_.setReturnLabel(archiveReturnsToListFor_,
+                                returnMode ? (*returnMode == ApplicationMode::Du ? "DU" : "LOCATE") : "");
+    archiveView_.redraw();
+  } else if (!archiveLoadAborted_ && returnMode) {
+    // LOCATE・DUから開いて書庫として読めなかった: その^Mの続き(普通のファイルとして開く)をやり直す。
+    archiveFallbackToFile_ = true;
+    bool opened = *returnMode == ApplicationMode::Du ? openSelectedDuEntry() : openSelectedLocateResult();
+    archiveFallbackToFile_ = false;
+    if (!opened) activeView().redraw();
   } else if (!archiveLoadAborted_ && fileMode_.loadFile(archiveLoadPendingPath_)) {
     // 2026-09-25追加: アーカイブとして読めなかった(一覧が1件も取れない――
     // 中身がその形式でないファイルに別名を付けた等、ArchiveMode::

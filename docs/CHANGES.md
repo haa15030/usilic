@@ -5990,6 +5990,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      マッチの存在を`...`自体のハイライトで示す)として現状維持で
      よいとの回答を得た――変更無し。
 
+1203. **LOCATE・DUの^Mで書庫をARCで開く(2026-11-02)**
+   - 直接のユーザー報告("errorが気になってみてみたら.rarが展開されてない。前はされてたような気がする"、`~/.usilic/error.old`に`file: .../container.rar: (^@) RAR archive data, v4, os: Unix.`等)。
+   - **原因**: LOCATE(`openSelectedLocateResult()`)とDU(`openSelectedDuEntry()`)の^Mに書庫の判定が無く、`.rar`に限らず書庫を`loadFile()`で普通のファイルとして開いていた(バイナリなので"(^@) 種類"の1行になり、errorに残る)。`.epub`だけは項目536で別に扱っていた。(ls)・履歴(^X^F)・起動の引数からはもともとARCで開く。errorの`/usr/local/Homebrew/...`と`/Volumes/ahm/usr/local/Homebrew/...`の2行は、locate.dbで`container.rar`を引いた結果と同じ2件。`git log`では、この2つの経路で書庫を開くコードが入っていた形跡は無い(「前は」は(ls)から開いた時の記憶の可能性、未確定)。
+   - **直し**: `startArchiveReturningTo()`((ls)の^Mと同じ非同期の読み込み、^Gで中断できる)。^Gは親のディレクトリではなく元の一覧へ戻り(`returnFromArchive()`)、戻り値の欄は"LOCATE"・"DU"(`ArchiveMode::setReturnLabel()`)。書庫として読めない`.rar`は、その^Mの続きで普通のファイルとして開く。Python版は`du_or_locate_choose()`が`open_file_entry()`を通るのでもともとARCで開く(コードを読んだだけで、動かしてはいない)。
+   - **確かめたこと(インストール済みのC++版、一時的なHOME、locate.dbは本物のコピー)**: LOCATEで`container.rar`→^M→ARC(戻り値LOCATE)→^Mで中身→^G→^G→LOCATEの一覧→^G→(ls)。DUで同じく開いて^Gで一覧へ、中身が偽物の`fake.rar`は普通のファイルとして開いて^Gで一覧へ。errorは空のまま。
+
 ## 7. MAN
 
 290. **2026-08-13(続き): PROGRAM(K-41/K-42)・MAN(K-43/K-44)を実装、
