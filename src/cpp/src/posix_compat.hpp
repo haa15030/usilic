@@ -54,8 +54,9 @@ inline int mkdir(const char *path, int mode) {
   return _mkdir(path);
 }
 
-// poll: Windowsのネイティブでpollで待つもの(端末の入力・SHELLの擬似端末・FIFO)は全て使わないので、
-// 「何も届いていない」(0)を返すだけ。winsock2.hのpollfd(WSAPoll用)とは別物なので、両方を読む所では使わない。
+// poll: Windowsのネイティブで待てるのはfd 0(キー、KeyInput::open()の後のコンソール、console_win.hpp)だけ。他は
+// 「何も届いていない」(0)を返す(SHELLはShell::outputReady())。コンソールが無ければ待たない(-gのフレームのループ)。
+// winsock2.hのpollfd(WSAPoll用)とは別物なので、両方を読む所では使わない。
 #ifndef POLLIN
 struct pollfd {
   int fd;
@@ -66,12 +67,7 @@ struct pollfd {
 #define POLLOUT 0x0004
 #define POLLERR 0x0008
 #define POLLHUP 0x0010
-inline int poll(struct pollfd *fds, unsigned long count, int timeout) {
-  (void)fds;
-  (void)count;
-  (void)timeout;
-  return 0;
-}
+int poll(struct pollfd *fds, unsigned long count, int timeout);
 #endif
 
 #endif  // _WIN32

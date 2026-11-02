@@ -5,6 +5,26 @@
 #include <cstdlib>
 #include <cstring>
 
+#ifdef _WIN32  // Windowsのネイティブ(.steering/20261102-windows-console-cui/): ncursesの代わりに固定のVTの列
+#include <string>
+
+#include "console_win.hpp"
+
+namespace {
+// tgoto()の代わり: "\x1b[H"(cm)・"\x1b[r"(cs)の終わりの字の前に「行;桁」(tgoto(cap, col, row)と同じ順)。
+const char *tgoto(const char *cap, int col, int row) {
+  static std::string out;
+  std::string text(cap);
+  if (text.empty()) return "";
+  out = text.substr(0, text.size() - 1) + std::to_string(row + 1) + ";" + std::to_string(col + 1) + text.back();
+  return out.c_str();
+}
+int tputs(const char *text, int, int (*put)(int)) {
+  for (; *text; text++) put(static_cast<unsigned char>(*text));
+  return 0;
+}
+}  // namespace
+#else
 #include <curses.h>
 #ifdef __CYGWIN32__
 #include <ncurses/term.h>
@@ -14,6 +34,7 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#endif
 
 // <term.h>は`columns`と`lines`をマクロとして#defineしている
 // (CUR Numbers[0]/[2]、terminfo自身の数値capabilityアクセサ)――
@@ -47,6 +68,7 @@ int outc(int c) {
   return c;
 }
 
+#ifndef _WIN32
 int windowSize(int *rowsp, int *colsp) {
   struct winsize ws;
   ws.ws_row = 0;
@@ -71,6 +93,7 @@ int windowSize(int *rowsp, int *colsp) {
 }
 
 std::string capOrEmpty(char *cap) { return cap ? std::string(cap) : std::string(); }
+#endif  // !_WIN32
 
 }  // namespace
 
@@ -101,6 +124,40 @@ std::unique_ptr<TerminalDisplay> TerminalDisplay::fromEnvironment(bool exitOnFai
   // 生み出した: 全てのlsの行の描画が、権限/所有者/サイズの各列の
   // 直後で切り詰められた。ウィンドウが誤って、24行の縦幅、80桁の
   // 横幅ではなく、24桁「幅」しか無かった(rows=80, columns=24)ため。
+#ifdef _WIN32
+  // コンソールが無い(usilic.exe)か、VTを受け付けない時は、何も描かない控え(常に-g)。
+  (void)exitOnFailure;
+  if (!consoleAvailable() || !consolePrepareOutput()) return std::make_unique<TerminalDisplay>(TerminalCapabilities{}, 24, 80);
+  TerminalCapabilities vt;
+  vt.clearScreen = "\x1b[H\x1b[2J";
+  vt.clearToEndOfLine = "\x1b[K";
+  vt.cursorAddress = "\x1b[H";
+  vt.cursorLeft = "\b";
+  vt.standoutOn = "\x1b[7m";
+  vt.standoutOff = "\x1b[27m";
+  vt.underlineOn = "\x1b[4m";
+  vt.underlineOff = "\x1b[24m";
+  vt.boldOn = "\x1b[1m";
+  vt.boldOff = "\x1b[m";
+  vt.italicOn = "\x1b[3m";
+  vt.italicOff = "\x1b[23m";
+  vt.saveCursor = "\x1b" "7";
+  vt.restoreCursor = "\x1b" "8";
+  vt.changeScrollRegion = "\x1b[r";
+  vt.scrollForward = "\n";
+  vt.scrollReverse = "\x1bM";
+  vt.enterAltScreen = "\x1b[?1049h";
+  vt.exitAltScreen = "\x1b[?1049l";
+  vt.keyUp = "\x1b[A";
+  vt.keyDown = "\x1b[B";
+  vt.keyLeft = "\x1b[D";
+  vt.keyRight = "\x1b[C";
+  vt.keyPageUp = "\x1b[5~";
+  vt.keyPageDown = "\x1b[6~";
+  int consoleRows = 24, consoleColumns = 80;
+  consoleWindowSize(&consoleRows, &consoleColumns);
+  return std::make_unique<TerminalDisplay>(std::move(vt), consoleRows, consoleColumns);
+#else
   auto degraded = [] { return std::make_unique<TerminalDisplay>(TerminalCapabilities{}, 24, 80); };
 
   const char *term = std::getenv("TERM");
@@ -162,6 +219,7 @@ std::unique_ptr<TerminalDisplay> TerminalDisplay::fromEnvironment(bool exitOnFai
   }
 
   return std::make_unique<TerminalDisplay>(std::move(caps), rows, columns);
+#endif  // _WIN32
 }
 
 void TerminalDisplay::write(const std::string &text) {

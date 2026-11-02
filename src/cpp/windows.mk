@@ -1,4 +1,5 @@
-# Windowsのネイティブ(MinGW-w64、互換層無し)の-gだけのusilic.exe(.steering/20261015-windows-native-gui/)。
+# Windowsのネイティブ(MinGW-w64、互換層無し)のusilic.exe(窓、.steering/20261015-windows-native-gui/)と
+# usilic-c.exe(コンソールのCUI、.steering/20261102-windows-console-cui/)。同じオブジェクトをサブシステムだけ変えてリンクする。
 # Macからのクロスビルド: brew install mingw-w64、SDL2・SDL2_ttfのMinGW向けの配布物(SDL2-devel-*-mingw・
 # SDL2_ttf-devel-*-mingw)のx86_64-w64-mingw32のinclude・lib・binをWIN_SDL_DIRへ。Windows上のMSYS2の
 # UCRT64/MINGW64の端末でも、CXX=g++ WINDRES=windresで同じく作れる。
@@ -22,15 +23,19 @@ APP_DIR   = app
 BUILD_DIR = build-win
 OBJ_DIR   = $(BUILD_DIR)/obj
 
-# Windowsでは使わないもの(端末・擬似端末・Macのカーソル・GUI無しのスタブ)は、同じ名前の*_win.cppへ差し替える。
-WIN_REPLACED = terminal_display graphical_display_stub child_process
+# Windowsでは使わないもの(擬似端末・Macのカーソル・GUI無しのスタブ)は、同じ名前の*_win.cppへ差し替える。
+WIN_REPLACED = graphical_display_stub child_process
 SRCS := $(filter-out $(foreach f,$(WIN_REPLACED),$(SRC_DIR)/$(f).cpp), $(wildcard $(SRC_DIR)/*.cpp))
 SRCS := $(filter-out $(SRC_DIR)/%_win.cpp, $(SRCS)) $(wildcard $(SRC_DIR)/*_win.cpp)
 APP_SRCS = $(wildcard $(APP_DIR)/*.cpp)
 OBJS = $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(SRCS) $(APP_SRCS)) $(OBJ_DIR)/usilic_res.o
 
 .PHONY: usilic dist clean
-usilic: $(BUILD_DIR)/usilic.exe
+usilic: $(BUILD_DIR)/usilic.exe $(BUILD_DIR)/usilic-c.exe
+
+# コンソールのサブシステム(libmingw32のmain()がSDL2mainのWinMain()を呼ぶ)。build_stampはusilic.exeのものを使う。
+$(BUILD_DIR)/usilic-c.exe: $(BUILD_DIR)/usilic.exe
+	$(CXX) $(OBJS) $(OBJ_DIR)/build_stamp.o -o $@ $(subst -mwindows,-mconsole,$(LDLIBS))
 
 # 窓のタイトルに出すビルドの日時(2026-10-15、どのusilic.exeを動かしているかを見分けるため、graphical_display.cpp
 # のusilicBuildStamp参照)。リンクのたびに作り直す。
@@ -58,10 +63,11 @@ WIN_HELP_EPUB ?= $(HOME)/.local/lib/usilic/HELP.epub
 WIN_HELP_EN_EPUB ?= $(HOME)/.local/lib/usilic/HELP.en.epub
 
 # 配る形: build-win/usilic/にusilic.exe(strip済み)・SDLのDLL・HELP等、それをbuild-win/usilic-win64.zipに。
-dist: $(BUILD_DIR)/usilic.exe
+dist: $(BUILD_DIR)/usilic.exe $(BUILD_DIR)/usilic-c.exe
 	rm -rf $(BUILD_DIR)/usilic $(BUILD_DIR)/usilic-win64.zip
 	mkdir -p $(BUILD_DIR)/usilic/lib/usilic
 	$(STRIP) -o $(BUILD_DIR)/usilic/usilic.exe $(BUILD_DIR)/usilic.exe
+	$(STRIP) -o $(BUILD_DIR)/usilic/usilic-c.exe $(BUILD_DIR)/usilic-c.exe
 	$(STRIP) -o $(BUILD_DIR)/usilic/SDL2.dll $(WIN_SDL_DIR)/bin/SDL2.dll
 	$(STRIP) -o $(BUILD_DIR)/usilic/SDL2_ttf.dll $(WIN_SDL_DIR)/bin/SDL2_ttf.dll
 	cp ../usilicrc ../usilicrc.en ../../doc/HELP ../../doc/HELP.notes $(BUILD_DIR)/usilic/lib/usilic/

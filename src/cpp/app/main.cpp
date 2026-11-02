@@ -138,6 +138,9 @@
 #include <fstream>
 #include <iostream>
 #include <cmath>
+#ifdef _WIN32
+#include "console_win.hpp"  // .steering/20261102-windows-console-cui/
+#endif
 #ifndef _WIN32  // Windowsのネイティブ(.steering/20261015-windows-native-gui/)に無いもの
 #include <poll.h>
 #endif
@@ -1950,7 +1953,20 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     fds[0].events = POLLIN;
     fds[1].fd = watchShellPty ? app.shell().ptyFd() : -1;  // negative fd: poll() ignores this slot
     fds[1].events = POLLIN;
+#ifdef _WIN32
+    // ConPTYはpoll()で待てない(ptyFd()が-1)ので、短い間隔でShell::outputReady()を見る
+    // (.steering/20261102-windows-console-cui/)。「静かになった」はGUIのループと同じく100ms。
+    static auto lastShellOutput = std::chrono::steady_clock::now();
+    if (watchShellPty && app.shell().outputReady(0)) {
+      lastShellOutput = std::chrono::steady_clock::now();
+      if (!app.shell().onPtyReadable()) app.handleShellChildExited();
+    }
+    int ready = poll(fds, 2, watchShellPty ? 15 : 100);
+    bool shellQuiet = std::chrono::steady_clock::now() - lastShellOutput >= std::chrono::milliseconds(100);
+#else
     int ready = poll(fds, 2, 100);  // 100ms so SIGWINCH/GUI-toggle still get noticed promptly when idle
+    bool shellQuiet = true;
+#endif
 
     if (ready <= 0) {
       if (keyInput.consumeResizeSignal()) app.handleResize();  // updates Display's geometry, then reflows content
@@ -1962,7 +1978,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       // させるべきタイミング――watchShellPtyと同じガード(Shellモード
       // かつ生きていて、かつ他のプロンプトがこの行を専有していない
       // 時だけ)を再利用する。
-      if (watchShellPty) app.shell().flushIdleOutput();
+      if (watchShellPty && shellQuiet) app.shell().flushIdleOutput();
       continue;
     }
     // POLLHUP/POLLERR, not just POLLIN: a real Ubuntu/bash test found
@@ -5533,9 +5549,17 @@ int main(int argc, char **argv) {
   bool isFileLaunch = !filePaths.empty() && filePaths.size() == positionalArgs.size();
 
 #ifdef _WIN32
-  // Windowsのネイティブ(.steering/20261015-windows-native-gui/)は-gだけ(端末の画面を持たない)。
-  forceCui = false;
-  forceGui = true;
+  // Windowsのネイティブ(.steering/20261102-windows-console-cui/): 実行ファイルが2つある。コンソールのある
+  // usilic-c.exeの既定はCUI(-gで窓)。コンソールの無いusilic.exeは今までどおり-gだけで、-cならusilic-c.exeを案内する。
+  if (!fm::consoleAvailable()) {
+    if (forceCui) {
+      fm::showWindowsError("usilic.exe has no console. Use usilic-c.exe for the terminal screen (-c).");
+      return 1;
+    }
+    forceGui = true;
+  } else if (!forceGui) {
+    forceCui = true;
+  }
 #endif
   if (forceCui && forceGui) {
     std::cerr << "usilic: -c and -g are mutually exclusive.\n";

@@ -33378,3 +33378,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: 端末のフォントが分かっている時(gTerminalFontPath)はその切り替えをしない。アイコンからの起動等、端末のフォントが無い時の既定はIPAゴシックのまま(font-ipafontの案内もそのため残す)。端末のフォントを読めない端末(Terminal.app・iTerm2・Ptyxis以外)もフォールバックのまま。保存した^J^Fのフォントが先なので、既にIPAゴシックを選んだ履歴は^J^Fの「端末のフォント」で戻す。
    - HELP: src/HELP_.txt・HELP_en_.txtに1文、必要なソフトウェアの節の「GUI の既定フォント」を直した。
    - 確かめたこと: make usilic・make install(macOS)。-gの窓の動きはユーザーの実機で確認。
+1196. **WindowsのネイティブでCUI起動(usilic-c.exe、保留のConPTYの解消)(2026-11-02)**
+   - **経緯**: 直接のユーザー依頼("保留になっていたConPTYを実装してWindowsでもCUI起動を可能に")。`.steering/20261102-windows-console-cui/`。SHELLのConPTYは2026-10-16に入っていて、足りないのはコンソールの画面とキー入力と起動の分岐だった。
+   - **実行ファイルを2つに**: Windowsはサブシステムが実行ファイルで決まり、GUIのusilic.exeはコンソールにつながらない。コンソールのサブシステムにするとアイコンから窓が出るので、pythonw/pythonと同じく、同じオブジェクトからusilic.exe(窓、今までどおり)とusilic-c.exe(既定はCUI、-gで窓)を作る。usilic.exe -cはusilic-c.exeを案内する。
+   - **変更**: console_win.cpp/hpp(VT出力・VT入力・UTF-8、ReadConsoleInputWからUTF-8のバイト、窓の大きさ)。terminal_display.cppをWindowsでも使う(ncursesの代わりに固定のVTの列と小さなtgoto・tputs、terminal_display_win.cppは廃止)。KeyInputはコンソールから読み、リサイズはWINDOW_BUFFER_SIZE_EVENT。poll()の代わりはfd 0(キー)だけコンソールを待つ。CUIのループのSHELLは15msごとにShell::outputReady()。対話的な子はCUIならそのコンソールで動かす。HELP・KEYの子はusilic.exeの窓で開く。^Zは使えない旨を知らせる。
+   - 2026-10-31のfile_mode.cppのfcntlでWindowsのビルドが壊れていたのも直した。
+   - HELP: src/HELP_.txt・HELP_en_.txtの1文。docs/BUILD.mdのWindowsの節(古くなっていた「SHELLは使えない」も)。
+   - 確かめたこと: make WINDOWS=1 usilicでリンク、objdumpでサブシステム、macOSのmake usilic・make install、test_cpp_parity(7件OK)。**Windows上の動作は未確認**(開発機にWindowsもwineも無い)。

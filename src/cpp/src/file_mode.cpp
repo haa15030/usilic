@@ -1013,8 +1013,10 @@ bool FileMode::loadFileAsPipe(const std::string &path) {
     argv.push_back(path);
     ChildProcess::AsyncCapture capture = ChildProcess::startCapturing(argv);
     if (capture.fd >= 0) {
+#ifndef _WIN32  // Windowsのパイプはブロックのまま
       int flags = ::fcntl(capture.fd, F_GETFL);
       if (flags >= 0) ::fcntl(capture.fd, F_SETFL, flags & ~O_NONBLOCK);  // 最初の画面は子の出力を待って読む
+#endif
       loadStream(capture.fd, /*ownsFd=*/true, "", 1, /*noWrap=*/false);
       streamChildPid_ = capture.pid;
       contentProgram_ = std::filesystem::path(argv.front()).filename().string();

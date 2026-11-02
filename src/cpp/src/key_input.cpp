@@ -9,7 +9,9 @@
 #include <cstring>
 
 #include <unistd.h>
-#ifndef _WIN32  // Windowsのネイティブ(.steering/20261015-windows-native-gui/)は端末を読まない(常に-g)
+#ifdef _WIN32  // Windowsのネイティブ(.steering/20261102-windows-console-cui/)はコンソールのイベントを読む
+#include "console_win.hpp"
+#else
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <termios.h>
@@ -141,6 +143,11 @@ int KeyInput::readByte() {
     macroPos_ = 0;
   }
   if (fd_ < 0) return 0;
+#ifdef _WIN32
+  int consoleByte = consoleReadByte(windowsPolling_ ? 100 : 0);  // termiosのVTIME(100ms)と同じ待ち
+  if (consoleByte < 0) return 0;
+  return consoleByte ? consoleByte : 0x80;
+#endif
   unsigned char c;
   ssize_t n = read(fd_, &c, 1);
   if (n <= 0) return 0;
@@ -153,7 +160,7 @@ int KeyInput::readByte() {
 void KeyInput::open(const std::string &ttyPath) {
 #ifdef _WIN32
   (void)ttyPath;
-  fd_ = -1;
+  fd_ = consoleAvailable() && consoleEnterRawInput() ? 0 : -1;  // fd 0はposix_compat.hppのpoll()がコンソールとして待つ
   return;
 #else
   int fd = ::open(ttyPath.c_str(), O_RDONLY);
@@ -199,14 +206,18 @@ void KeyInput::open(const std::string &ttyPath) {
 }
 
 void KeyInput::leaveRawMode() {
-#ifndef _WIN32
+#ifdef _WIN32
+  if (fd_ >= 0) consoleLeaveRawInput();
+#else
   if (fd_ < 0 || !raw_->haveOriginal) return;
   tcsetattr(fd_, TCSANOW, &raw_->original);
 #endif
 }
 
 void KeyInput::reenterRawMode() {
-#ifndef _WIN32
+#ifdef _WIN32
+  if (fd_ >= 0) consoleEnterRawInput();
+#else
   if (fd_ < 0 || !raw_->haveOriginal) return;
   tcsetattr(fd_, TCSANOW, &raw_->raw);
 #endif
@@ -223,7 +234,7 @@ void KeyInput::close() {
 
 void KeyInput::setPolling(bool polling) {
 #ifdef _WIN32
-  (void)polling;
+  windowsPolling_ = polling;
 #else
   if (fd_ < 0 || !raw_->haveOriginal) return;
   raw_->raw.c_cc[VMIN] = 0;
@@ -322,6 +333,13 @@ void KeyInput::installSignalHandlers() {
 }
 
 bool KeyInput::consumeResizeSignal() {
+#ifdef _WIN32
+  if (fd_ >= 0 && consoleTakeResize()) {
+    int consoleRows, consoleColumns;
+    if (consoleWindowSize(&consoleRows, &consoleColumns)) display_.setSize(consoleRows, consoleColumns);
+    return true;
+  }
+#endif
   if (!g_resizePending) return false;
   g_resizePending = 0;
 #ifndef _WIN32

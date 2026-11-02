@@ -1,6 +1,8 @@
 // posix_compat.hpp(Windowsのネイティブ、.steering/20261015-windows-native-gui/)の実装のうち、windows.hの要るもの。
 #include "posix_compat.hpp"
 
+#include "console_win.hpp"
+
 #include <windows.h>
 
 #include <cerrno>
@@ -44,4 +46,17 @@ void preciseSleepMicroseconds(long microseconds) {
       YieldProcessor();
     }
   }
+}
+
+int poll(struct pollfd *fds, unsigned long count, int timeout) {
+  int ready = 0;
+  for (unsigned long i = 0; i < count; i++) {
+    fds[i].revents = 0;
+    if (fds[i].fd != 0 || !fm::consoleRawInputActive()) continue;
+    if (fm::consoleInputReady(timeout)) {
+      fds[i].revents = POLLIN;
+      ready++;
+    }
+  }
+  return ready;
 }

@@ -4,6 +4,9 @@
 
 #include "epub_vertical.hpp"
 
+#ifdef _WIN32
+#include "console_win.hpp"  // .steering/20261102-windows-console-cui/
+#endif
 #ifndef _WIN32  // Windowsのネイティブ(.steering/20261015-windows-native-gui/)に無いもの
 #include <poll.h>
 #endif
@@ -6534,8 +6537,8 @@ bool Application::keyInterruptRequested() {
   // 見ない(KeyInput::readByte()ではなく端末fdを直接read()する)。
   if (interruptPeeker_ && interruptPeeker_()) return true;
   if (keyInput_.fd() < 0) return false;
-#ifdef _WIN32  // Windowsのネイティブは端末を読まない(fdは常に負、.steering/20261015-windows-native-gui/)
-  return false;
+#ifdef _WIN32  // コンソールが無い時(-g)はfdが負(.steering/20261102-windows-console-cui/)
+  return keyInput_.fd() >= 0 && consoleReadByte(0) >= 0;
 #else
   struct pollfd pfd{keyInput_.fd(), POLLIN, 0};
   if (::poll(&pfd, 1, 0) <= 0 || !(pfd.revents & POLLIN)) return false;
@@ -13087,12 +13090,16 @@ std::string Application::bannerFilePath() const {
 // legacyには存在しなかったGUIモードにも拡張したもの。
 bool Application::handleSuspend() {
   if (display_.isGraphical()) return false;
+#ifdef _WIN32  // ジョブコントロールが無い(.steering/20261102-windows-console-cui/)
+  showTransientNotice(activeView(), "^Z: not available on Windows");
+  return true;
+#endif
   // 2026-09-28修正(Display::leaveForSuspend()自身のコメント参照): 以前は
   // カーソルのあった位置(画面の途中)で改行を出すだけだったため、
   // シェルの「Stopped」やプロンプトが一覧の途中に割り込んでいた。
   display_.leaveForSuspend();
   keyInput_.leaveRawMode();
-#ifndef _WIN32  // Windowsは常に-g(上で戻る)
+#ifndef _WIN32  // 上で戻る
   ::kill(::getpid(), SIGTSTP);
 #endif
   // ここへ戻ってくるのはSIGCONTで再開された後――key_input.cpp自身の
@@ -22147,6 +22154,13 @@ void Application::closeChildChannel() {
 void Application::launchWindowsUsilicChild(const std::vector<std::string> &args) {
   std::string exe = windowsExecutablePath();
   if (exe.empty()) return;
+  // CUI(usilic-c.exe)の親でも、子は窓のusilic.exeで開く(usilic-c.exeだと隠れたコンソールが付いてくる)。
+  {
+    std::filesystem::path path(exe);
+    std::error_code ec;
+    std::filesystem::path windowed = path.parent_path() / "usilic.exe";
+    if (path.filename() == "usilic-c.exe" && std::filesystem::exists(windowed, ec)) exe = windowed.generic_string();
+  }
   std::vector<std::pair<std::string, std::string>> env = {
       {"USILIC_TRANSIENT", std::to_string(parentPid_ > 0 ? parentPid_ : static_cast<long>(::getpid()))},
       {"USILIC_WINDOW_SLOT", std::to_string(externalWindowSlot_)}};

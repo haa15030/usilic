@@ -4,6 +4,7 @@
 // クォートしてUTF-16にする。標準入力への書き込みは別のスレッド(POSIX版の書き込み用の子プロセスと同じく、
 // 大きな入力で満杯の出力パイプとデッドロックしないため)。pid_tはWindowsのプロセスIDで、プロセスの
 // ハンドルは表(g_processes)で持つ。`ls`はPATHにls.exeが無ければnativeLsAlF()で答える。
+#include "console_win.hpp"
 #include "child_process.hpp"
 
 #include <fcntl.h>
@@ -334,12 +335,13 @@ ChildProcess::Result ChildProcess::runPipeline(const std::vector<std::string> &a
   return result;
 }
 
-// 端末を継承する対話的なプログラム(less・vi等)。Windowsのusilicは端末を持たないので、新しいコンソールの窓で
-// 動かして終わるのを待つ。
+// 端末を継承する対話的なプログラム(less・vi等)。-gのusilicは端末を持たないので、新しいコンソールの窓で動かして
+// 終わるのを待つ。CUI(usilic-c.exe)ではそのコンソールで動かす。
 int ChildProcess::runInteractive(const std::vector<std::string> &argv) {
   if (argv.empty()) return -1;
   PROCESS_INFORMATION pi{};
-  if (!launch(argv, nullptr, nullptr, nullptr, CREATE_NEW_CONSOLE, pi, /*useStdHandles=*/false)) return -1;
+  if (!launch(argv, nullptr, nullptr, nullptr, consoleAvailable() ? 0 : CREATE_NEW_CONSOLE, pi, /*useStdHandles=*/false))
+    return -1;
   CloseHandle(pi.hThread);
   int code = waitExitCode(pi.hProcess);
   CloseHandle(pi.hProcess);
@@ -349,7 +351,8 @@ int ChildProcess::runInteractive(const std::vector<std::string> &argv) {
 pid_t ChildProcess::spawnInteractive(const std::vector<std::string> &argv) {
   if (argv.empty()) return -1;
   PROCESS_INFORMATION pi{};
-  if (!launch(argv, nullptr, nullptr, nullptr, CREATE_NEW_CONSOLE, pi, /*useStdHandles=*/false)) return -1;
+  if (!launch(argv, nullptr, nullptr, nullptr, consoleAvailable() ? 0 : CREATE_NEW_CONSOLE, pi, /*useStdHandles=*/false))
+    return -1;
   return remember(pi);
 }
 

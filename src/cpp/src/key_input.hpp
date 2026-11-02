@@ -127,6 +127,7 @@ class KeyInput {
   // Upとして扱われていた。std::optionalは、構造として「一致無し」と
   // 「Upに一致」を別物にする。
   std::optional<SpecialKey> readEscapeSequence();
+  bool windowsPolling_ = true;  // setPolling()のWindowsのネイティブの分(コンソールを待つか)
 
   // 直近のreadEscapeSequence()呼び出しがESCの後に読んだバイト
   // (ESC自体は含まない)、既知のシーケンスに一致したかどうかに
