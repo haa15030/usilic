@@ -306,7 +306,9 @@ class History {
   // 2026-10-22、直接のユーザー依頼("アイコン起動に限ってはフォントサイズ、種類、行間、字間等の情報を-gとは別にして
   // ほしい"): アイコンからの起動(main.cpp)の間、guiPreferences()/setGuiPreferences()は、フォントの大きさ・
   // 窓の行数と桁数・フォント・^[[ / ^[]の行の高さ・^[{ / ^[}の字間を、-gとは別の組(iconGuiPreferences_)で
-  // 読み書きする(色と端末のフォントは共通)。別の組がまだ無ければ(最初のアイコン起動)、-gの値から始める。
+  // 読み書きする(色と端末のフォントは共通)。
+  // 2026-11-02、直接のユーザー報告(最初のアイコン起動の^J^Fが端末のSF Mono、"アイコン起動と-gとでFONTの継承がダブって
+  // ない？もしそうなら別にして"): 別の組がまだ無ければ(最初のアイコン起動)、以前の-gの値ではなく既定の値から始める。
   static void setIconLaunch(bool icon) { iconLaunch_ = icon; }
 
   const SessionState &sessionState() const;
@@ -365,7 +367,9 @@ class History {
   std::size_t limitFor(RingCategory category) const;  // setRetentionCount()参照
   bool smoothScrollEnabled_ = false;
   bool modeLineVisible_ = true;
-  bool epubSansSerif_ = false;  // epubSansSerif()参照
+  // 2026-11-02、直接のユーザー依頼("-gの既定フォントは端末のでいいんだがゴシックを既定に(^Otで切り替わるヤツ)。
+  // 理由は-cがゴシックだから"): 既定はゴシック体(以前は明朝体)。historyに残した選択はそのまま。
+  bool epubSansSerif_ = true;  // epubSansSerif()参照
   std::array<int, 4> epubMargins_{};  // epubMargins()参照
   std::string serifFontPath_, sansSerifFontPath_;  // serifFontPath()参照
   bool fontFamiliesSaved_ = false;

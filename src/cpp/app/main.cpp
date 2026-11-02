@@ -4546,7 +4546,9 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   std::string fontPath = resolveGuiFontPath(appearance, savedGui.fontPath);
   // 2026-10-16(runGuiPhase()の後の、端末に重ねる起動の保存のコメント参照): 重ねる端末が無く、usilicrcのFONTも
   // USILICFONTも無ければ、最後に-gで重ねた端末のフォント。
-  if (!appearance && savedGui.fontPath.empty() && !std::getenv("USILICFONT") && !savedGui.terminalFontPath.empty() &&
+  // 2026-11-02: アイコンからの起動には受け継がない(History::setIconLaunch()のコメント)。
+  if (!appearance && !fm::Configuration::iconLaunch() && savedGui.fontPath.empty() && !std::getenv("USILICFONT") &&
+      !savedGui.terminalFontPath.empty() &&
       std::filesystem::is_regular_file(savedGui.terminalFontPath))
     fontPath = savedGui.terminalFontPath;
   int rows = display.rows(), columns = display.columns();
@@ -6083,6 +6085,7 @@ int main(int argc, char **argv) {
       history.setGuiPreferences(prefs);
       history.setFontFamilyPaths(saved.serifFontPath(), saved.sansSerifFontPath());
       history.setEpubMargins(saved.epubMargins());
+      history.setEpubSansSerif(saved.epubSansSerif());  // ^Ot(ページャー・子でも同じ字で)
       if (!saved.fontFamiliesSaved()) history.setFontFamilyPaths(legacySerif, legacySans);
     }
   } else if (!history.fontFamiliesSaved()) {
@@ -6433,7 +6436,7 @@ int main(int argc, char **argv) {
   // ここで一度適用しておけば両方の起動経路を一箇所でカバーできる。
   display.setModeLineVisible(hasSavedHistory ? history.modeLineVisible() : true);
   // EPUBの明朝体・ゴシック体(^Ot、Command::ToggleEpubTypeface): 前回の終了時の選択(-gへ移った後もDelegatingDisplayが渡す)。
-  display.setSerifSuppressed(hasSavedHistory && history.epubSansSerif());
+  display.setSerifSuppressed(history.epubSansSerif());
   // 2026-09-12追加: fm::Application appのコンストラクタ(このsetModeLineVisible()
   // 呼び出しより前の行で既に構築済み)は自身のlayoutViews()を構築時点の
   // display.modeLineVisible()(まだ既定のtrueのまま)で1回実行してしまって

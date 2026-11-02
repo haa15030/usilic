@@ -408,7 +408,7 @@ void copyIconGuiFields(const History::GuiPreferences &from, History::GuiPreferen
 
 History::GuiPreferences History::guiPreferences() const {
   GuiPreferences prefs = guiPreferences_;
-  if (iconLaunch_ && hasIconGuiPreferences_) copyIconGuiFields(iconGuiPreferences_, prefs);
+  if (iconLaunch_) copyIconGuiFields(iconGuiPreferences_, prefs);
   return prefs;
 }
 void History::setGuiPreferences(const GuiPreferences &preferences) {
@@ -648,8 +648,8 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     modeLineVisible_ = toks.size() > 14 ? std::atoi(toks[14].c_str()) != 0 : true;
     // terminalFontPath(2026-10-16)――同じ理由でさらに末尾に。
     if (toks.size() > 15) guiPreferences_.terminalFontPath = decodeField(toks[15]);
-    // epubSansSerif_(2026-10-17)――同じ理由でさらに末尾に。無ければ明朝体。
-    epubSansSerif_ = toks.size() > 16 && std::atoi(toks[16].c_str()) != 0;
+    // epubSansSerif_(2026-10-17)――同じ理由でさらに末尾に。無ければゴシック体(2026-11-02から既定)。
+    epubSansSerif_ = toks.size() <= 16 || std::atoi(toks[16].c_str()) != 0;
     // ^[[ / ^[]で足した行の高さ(2026-10-18)――同じ理由でさらに末尾に。無ければ0。
     if (toks.size() > 18) {
       guiPreferences_.lineHeightExtraHorizontal = std::atoi(toks[17].c_str());

@@ -206,12 +206,12 @@ TEST_CASE("session state and trailer settings round trip through explicit setter
 // 2026-10-17(^Ot、EPUBの明朝体・ゴシック体、History::epubSansSerif()参照)。
 TEST_CASE("serialize() then loadHistoryText() keeps the EPUB sans-serif choice") {
   History h(10);
-  CHECK_FALSE(h.epubSansSerif());
-  h.setEpubSansSerif(true);
+  CHECK(h.epubSansSerif());  // 既定はゴシック体(2026-11-02)
+  h.setEpubSansSerif(false);
   History loaded(10);
   REQUIRE(loaded.loadHistoryText(h.serialize("usilic", "Mon Jan  1 00:00:00 2026"),
                                  /*environmentCharsetExplicitlySet=*/false));
-  CHECK(loaded.epubSansSerif());
+  CHECK_FALSE(loaded.epubSansSerif());
 }
 
 TEST_CASE("serialize() then loadHistoryText() round-trips every category") {
@@ -437,7 +437,7 @@ TEST_CASE("an icon launch keeps its own font size and letter spacing apart from 
   g.fgR = 200;
   h.setGuiPreferences(g);
   History::setIconLaunch(true);
-  CHECK(h.guiPreferences().fontPointSize == 14);  // 最初のアイコン起動は-gの値から
+  CHECK(h.guiPreferences().fontPointSize == 0);  // 最初のアイコン起動は-gの値を受け継がない(既定の値)
   History::GuiPreferences icon = h.guiPreferences();
   icon.fontPointSize = 20;
   icon.letterSpacingExtraHorizontal = 3;
