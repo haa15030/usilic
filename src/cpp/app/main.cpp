@@ -5559,8 +5559,16 @@ int main(int argc, char **argv) {
       return 1;
     }
     forceGui = true;
-  } else if (!forceGui) {
-    forceCui = true;
+    // 2026-11-02、直接のユーザー判断: usilic.exeはアイコンからの起動の組(フォント・^Ot等、History::setIconLaunch()、-gを
+    // 付けても)、usilic-c.exeの-gは-gの組。usilic-c.exeの子も窓のusilic.exeなので(Application::launchExternalUsilic())、
+    // $USILIC_CONSOLE_PARENTのある時は-gの組。
+    if (!std::getenv("USILIC_CONSOLE_PARENT")) {
+      fm::Configuration::setIconLaunch(true);
+      fm::History::setIconLaunch(true);
+    }
+  } else {
+    ::setenv("USILIC_CONSOLE_PARENT", "1", 1);
+    if (!forceGui) forceCui = true;
   }
 #endif
   if (forceCui && forceGui) {
