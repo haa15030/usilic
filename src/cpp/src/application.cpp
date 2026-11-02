@@ -57,6 +57,10 @@
 namespace fm {
 
 namespace {
+constexpr const char *kReverseSearchFgrepOnly = "^R: only in ^S (FGREP)";  // messages_ja.cpp
+}  // namespace
+
+namespace {
 constexpr int kLeaderJ = 0x0a;         // ^J
 constexpr int kLeaderX = 0x18;         // ^X
 constexpr int kLeaderO = 0x0f;         // ^O
@@ -2965,6 +2969,10 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     return handleCommand(byte == 0x0e ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
   }
   if (fgrepMoveKey(byte, special)) return handleCommand(byte == 0x13 ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
+  if (egrepReverseKey(byte, special)) {
+    showTransientNotice(activeView(), kReverseSearchFgrepOnly);
+    return true;
+  }
   // GrepPattern/CutPattern/ManName自身の「Select ...」リスト
   // (startRegexPromptList()自身のコメント参照): 他の全てのListBrowser
   // の使い方(FILE/DIR/SHELL/PROGRAMのピッカー、全て純粋なナビゲート+
@@ -4150,7 +4158,8 @@ std::optional<bool> Application::gatePagerKey(int byte, std::optional<KeyInput::
   // 2026-11-02、直接のユーザー報告(ページャーのKEYの^[<の行は^Mで飛べるのに"hは「使えません」"): KEYのh(HELPの同じ行へ)。
   if (pagerKeyBuffer_.empty() && byte == 'h' && currentMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Key)
     return std::nullopt;
-  if (pagerKeyBuffer_.empty() && fgrepMoveKey(byte, std::nullopt)) return std::nullopt;  // ページャーのFGREPの^R(前の一致)
+  if (pagerKeyBuffer_.empty() && (fgrepMoveKey(byte, std::nullopt) || egrepReverseKey(byte, std::nullopt)))
+    return std::nullopt;  // ページャーのFGREPの^R(前の一致)、EGREPの^R(その旨を出す)
   const auto &allowed = pagerAllowedKeys();
   if (allowed.empty()) return std::nullopt;
   pagerKeyBuffer_.push_back(byte);
@@ -4605,6 +4614,10 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     return handleCommand(byte == 0x0e ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
   }
   if (fgrepMoveKey(byte, special)) return handleCommand(byte == 0x13 ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
+  if (egrepReverseKey(byte, special)) {
+    showTransientNotice(activeView(), kReverseSearchFgrepOnly);
+    return true;
+  }
   if (grepInPlaceActive_ && byte == kControlG) {
     deactivateGrepInPlace();
     return true;
@@ -5160,6 +5173,13 @@ void Application::clearTransientNotice() {
     if (currentMode_ == ApplicationMode::Directory) directoryView_.redraw();
   }
   externalPagerNoticeShown_ = false;
+  if (promptNoticeShown_) {  // プロンプトの^Rの知らせ(feedPromptByteInner())
+    promptNoticeShown_ = false;
+    if (promptKind_ != PromptKind::None) {
+      drawPromptLabel(promptKind_);
+      promptEditor_.redraw();
+    }
+  }
   if (!transientNoticeView_) return;
   ContentView *view = transientNoticeView_;
   transientNoticeView_ = nullptr;
@@ -15348,6 +15368,11 @@ bool Application::fgrepMoveKey(int byte, std::optional<KeyInput::SpecialKey> spe
          (byte == 0x13 || byte == 0x12);
 }
 
+// ^J^Sの検索を確定した後の^R: 履歴を開かず、^SのFGREPでだけ使える旨を出す(feedPromptByte()の^Rと同じ)。^U^Rは履歴。
+bool Application::egrepReverseKey(int byte, std::optional<KeyInput::SpecialKey> special) const {
+  return grepInPlaceActive_ && !special && grepSyntax_ != GrepSyntax::Fixed && !universalArgPending_ && byte == 0x12;
+}
+
 bool Application::startIncrementalGrepPrompt() {
   if (!isGrepInPlaceEligibleMode(currentMode_)) return false;
   grepSyntax_ = GrepSyntax::Fixed;
@@ -16025,6 +16050,16 @@ bool Application::feedPromptByteInner(int byte) {
   // は表示可能ではなく、legacy自身のm_list()のディスパッチも、^Rが
   // 当てはまらない文脈についてそれをリテラルにタイプすることへは
   // 一度も流れ落ちない。
+  // 2026-11-02、直接のユーザー依頼("EGREPで入力途中の^Rが機能が違う（HISTORYになる）とやはり混乱するので、FGREPでしか
+  // 使えない旨メーセージを出したうえで^U^RのみHISTORYに"、"^O^S/^O^J^Sも同様で"): ^J^S・^O^S・^O^J^Sのプロンプトでも、
+  // 文字がある間の^Rは履歴を開かない(^Sのプロンプトはその前でdispatchByte()が受ける)。
+  // 打った字はそのまま、モード名の隣にその旨を出す(showTransientNotice()はモードラインごと描き直すので、プロンプトが消える)。
+  if (byte == 0x12 && promptKind_ == PromptKind::GrepPattern && !promptEditor_.text().empty()) {
+    drawPromptLabel(promptKind_, localized(kReverseSearchFgrepOnly));
+    promptEditor_.redraw();
+    promptNoticeShown_ = true;
+    return true;
+  }
   if (byte == 0x12) {
     startPromptHistoryRecall();
     return true;
@@ -17692,7 +17727,12 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     display_.setAttribute(Display::Attribute::Standout);
     for (unsigned char c : positionText) display_.putChar(c);
     display_.setAttribute(Display::Attribute::StandoutOff);
-    labelWidth += static_cast<int>(positionText.size());
+    // 表示の桁で数える(2026-11-02、^Rの知らせは日本語、バイト数で数えると打った字が右へずれる)。
+    for (std::size_t i = 0; i < positionText.size();) {
+      int len = std::max(1, Utf8::sequence_length(static_cast<unsigned char>(positionText[i])));
+      labelWidth += Utf8::display_width(reinterpret_cast<const unsigned char *>(positionText.data() + i), len);
+      i += static_cast<std::size_t>(len);
+    }
     display_.putChar(' ');  // 次のフィールドの前の明示的なプレーンな隙間
     labelWidth += 1;
   }

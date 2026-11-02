@@ -398,6 +398,7 @@ class Application:
         if self.prompt is not None:
             p = self.prompt
             position = mode_line.format(view.cursor_index + 1, len(view.lines)) if p.show_position else ''
+            position = self.notice if p.kind in (pr.OCCUR_FIXED, pr.OCCUR_REGEX) and self.notice else position
             listed = p.candidate_list or p.kind in (pr.BOOKMARK_SET, pr.BOOKMARK_JUMP)  # 一覧の下の戻り先
             under = (self.return_stack[-1] if self.return_stack else DIRECTORY) if listed else None
             return self.prompt_mode_line(p.label, position, localized(p.message), p.editor, p.kind == pr.EXIT, under)
@@ -406,12 +407,12 @@ class Application:
             if syntax == FIXED:  # インクリメンタル: 「FGREP 1/11 打った字」(一致が無ければ位置は空、C++と同じ)
                 position = self.grep.position_text() if self.grep.occurrences else ''
                 return self.prompt_mode_line('FGREP', position, '', editor)
-            return self.prompt_mode_line('EGREP', '', '', editor)
+            return self.prompt_mode_line('EGREP', self.notice or '', '', editor)
         if self.grep_active and self.current_mode != KEY:  # KEYは一覧のモードラインのまま、位置を一致の番号に
             name, size = self.mode_line_target()
             fields = mode_line.Fields(self.grep.label(), str(size), True, '', '(' + self.grep.label().lower() + ')')
             fields.trailing3 = name
-            return fields, self.grep.position_text()
+            return fields, self.notice or self.grep.position_text()
         position = self.position_text(view)
         directory = self.directory_mode.current_directory
         mode = self.current_mode
@@ -2433,6 +2434,9 @@ class Application:
                 self.grep.move(1 if byte in (0x0E, 0x13) else -1)
                 self.show_current_match()
                 return True
+            if byte == 0x12:  # ^J^Sの確定の後の^R: 履歴を開かない(^U^Rで履歴、C++のegrepReverseKey())
+                self.show_transient_notice('^R: only in ^S (FGREP)')
+                return True
             if byte == CTRL_G:  # そこに留まる(^Gも今いる一致のまま、C++版と同じ)
                 self.grep_active = False
                 return True
@@ -3106,6 +3110,9 @@ class Application:
                 self.bookmark_place = None
                 self.go_back()
             return True
+        if byte == 0x12 and editor.text and p.kind in (pr.OCCUR_FIXED, pr.OCCUR_REGEX):  # ^Uで消してから(C++のfeedPromptByteInner())
+            self.show_transient_notice('^R: only in ^S (FGREP)')
+            return True
         if byte == 0x12:  # ^R
             return self.start_list_from_prompt()
         if byte == 0x09 and p.kind in TAB_COMPLETION_KINDS:
@@ -3282,6 +3289,9 @@ class Application:
             if self.grep.matches:
                 self.grep.move(1 if byte == 0x13 else -1)
                 self.show_current_match()
+            return True
+        if byte == 0x12 and editor.text:  # 文字がある間は履歴を開かない(^Uで消してから^R、C++のfeedPromptByte())
+            self.show_transient_notice('^R: only in ^S (FGREP)')
             return True
         if byte == 0x12:  # ^R: 入力順の一覧(EGREPはusilicrcのGREPの例を先頭に)
             self.grep_prompt = None

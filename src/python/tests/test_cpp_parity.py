@@ -310,6 +310,12 @@ class CppParityTest(unittest.TestCase):
         self.compare([self.path('a.txt')], typed + [('^U', b'\x15'), ('^R', b'\x12'), ('^G', G), ('^G', G)])
         self.compare([self.path('a.txt')], [('^J^S', b'\x0a\x13'), ('line 2', b'line 2'), ('^M', b'\r'), ('^N', b'\x0e')])
 
+    def test_egrep_reverse_key_needs_empty_prompt(self):
+        # ^J^S・^O^S・^O^J^S: 文字がある間の^Rはその旨を出し、次のキーで消す。確定の後の^Rも同じ
+        for name, keys in (('^J^S', b'\x0a\x13'), ('^O^S', b'\x0f\x13'), ('^O^J^S', b'\x0f\x0a\x13')):
+            self.compare([self.path('a.txt')], [(name, keys), ('line', b'line'), ('^R', b'\x12'), ('l', b'l'), ('^G', G)])
+        self.compare([self.path('a.txt')], [('^J^S', b'\x0a\x13'), ('line 2', b'line 2'), ('^M', b'\r'), ('^R', b'\x12'), ('^N', b'\x0e')])
+
     def test_directory_open_archive_listing(self):
         self.compare([self.work], [('^[>', b'\x1b>'), ('^O^M', b'\x0f\r'), ('^G', G)])
 

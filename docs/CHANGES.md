@@ -33372,6 +33372,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **揃えたPython版の違い**: 確定(^M)で一致の先頭へ戻っていたのを、動いた今の一致のままに。履歴が空でもHISTORYの画面(「No String」、右端に戻り先)を開く。
    - HELP: src/HELP_.txt・HELP_en_.txtのF/EGREPの節に2文。テスト: test_cpp_parityにtest_fgrep_move_keys(テストの端末は読み込みの切れ目で切れたエスケープ列も待つように)。
    - 確かめたこと: make usilic・make install(macOS)、test_fgrep_move_keys。一時的なHOMEで実行。
+1197. **^J^S・^O^S・^O^J^Sの^Rも、文字がある間は履歴を開かずその旨を出す(2026-11-02)**
+   - **経緯**: 直接のユーザー依頼("FGREPの^S/^RはOK。ただEGREPで入力途中の^Rが機能が違う（HISTORYになる）とやはり混乱するので、FGREPでしか使えない旨メーセージを出したうえで^U^RのみHISTORYにしてみて（^O^S/^O^J^Sも同様で...）")。
+   - **変更**: プロンプトに文字がある間の^R(feedPromptByteInner())と、^J^Sの確定の後の^R(egrepReverseKey()、^Uの後は通す)は「^R は ^S の FGREP でだけ使えます」。文字を消した後の^R・^U^Rは今までどおり。プロンプトでは打った字を残すためモード名の隣に出し、次のキーで消す(clearTransientNotice())。^O^Sの一覧の画面の^Rは変えていない。
+   - **直した**: drawPromptLabel()がpositionTextの幅をバイト数で数えていて、日本語だと打った字が右へずれた(今は表示の桁)。Python版も揃えた(_with_truncated_trailing3()は位置の欄をC++と同じバイト数で)。
+   - **残した差**: EGREPの空のプロンプトの^Rは、C++が「EGREP 01/25 TOP」、Python版が「HISTORY 25/25 END」(以前からの差、今回は触れていない)。
+   - HELP: src/HELP_.txt・HELP_en_.txtのF/EGREP節に1文。
+   - 確かめたこと: test_cpp_parityに1件足して8件OK(一時的なHOME)。
 1195. **-gの既定フォントは端末のフォント(最初の起動でIPAゴシックへ替えない)(2026-11-02)**
    - **経緯**: 直接のユーザー依頼("-g起動の既定フォントをIPAゴシックではなく端末のフォントにしてほしい。GUI機能のメインはEPUB閲覧に移っているので、-gは「実はすでにGUI」の名残ということで。^J^Fでの変更は継承される")。
    - **調べ**: resolveGuiFontPath()は以前から、保存した^J^Fのフォント→端末のフォント→IPAゴシックの順。最初の起動でインストールの途中・後にIPAゴシックへ替える処理(runGuiPhase()、項目の2026-10-20)が端末のフォントを上書きしていた。

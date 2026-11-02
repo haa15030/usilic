@@ -3271,6 +3271,8 @@ class Application {
   bool executeEdit();
   bool startKey();  // Command::StartKey参照
   bool fgrepMoveKey(int byte, std::optional<KeyInput::SpecialKey> special) const;
+  bool egrepReverseKey(int byte, std::optional<KeyInput::SpecialKey> special) const;
+  bool promptNoticeShown_ = false;  // プロンプトの^Rの知らせを出している(次のキーで消す、clearTransientNotice())
   // Command::ToggleHelpLanguage参照: ^Ojの前に見ていたHELP・KEYと位置、^Ojの後にそれを切り替えた言語で開き直す。
   struct HelpLanguageView {
     enum Kind { None, Key, EpubToc, EpubBody, Plain } kind = None;

@@ -193,7 +193,7 @@ def _with_truncated_trailing3(f, position, cols):
     """withTruncatedTrailing3()。"""
     if cols <= 0 or not f.trailing3:
         return f
-    base = len(position)
+    base = _bytes(position)  # C++と同じくバイト数(日本語の知らせ)
     for text in (f.name, f.trailing, f.trailing2):
         if text:
             base += _bytes(text) + 1

@@ -63,6 +63,7 @@ _EXACT = {
     'Wheel: reversed': 'ホイール: 逆',
     'Window not reachable': 'ウィンドウに届きません',
     'Serif': '明朝体',
+    '^R: only in ^S (FGREP)': '^R は ^S の FGREP でだけ使えます',
     'Sans-serif': 'ゴシック体',
     'Serif (-g only)': '明朝体（-g だけ）',
     'Sans-serif (-g only)': 'ゴシック体（-g だけ）',
