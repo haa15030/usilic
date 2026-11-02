@@ -5866,13 +5866,23 @@ int main(int argc, char **argv) {
   // killする。pagerモードは従来通り何個でも並行して構わない(この
   // すぐ下のtempRootDirectory自身のコメント参照)。
   if (consultHistoryOnStart) {
-    std::string ownProgramName = std::filesystem::path(argv[0]).filename().string();
     std::string pidPath = usilicDir + "pid";
     long oldPid = 0;
     {
       std::ifstream pidIn(pidPath);
       if (pidIn) pidIn >> oldPid;
     }
+#ifdef _WIN32
+    // 2026-11-02、直接のユーザー依頼("errorのように空になるのは仕様上マズい。Windowsでも1つだけにして"): Windowsには
+    // psもSIGTERMも無いので、この排他が効かず同時に動いていた。名前付きイベントで頼む(posix_compat.hpp参照、
+    // 古い方はSIGTERMの時と同じ道筋で、historyを保存して終わる)。古い方が終わってから下のerrorを空にする。
+    if (oldPid > 0 && static_cast<pid_t>(oldPid) != ::getpid() && requestProcessQuit(oldPid)) {
+      for (int waited = 0; waited < 80 && ::kill(static_cast<pid_t>(oldPid), 0) == 0; waited++) ::usleep(50000);
+      if (::kill(static_cast<pid_t>(oldPid), 0) == 0) ::kill(static_cast<pid_t>(oldPid), SIGKILL);  // 4秒待っても応答無し
+    }
+    listenForQuitRequest(&gTerminationSignalReceived);
+#else
+    std::string ownProgramName = std::filesystem::path(argv[0]).filename().string();
     if (oldPid > 0 && static_cast<pid_t>(oldPid) != ::getpid() && ::kill(static_cast<pid_t>(oldPid), 0) == 0) {
       std::string comm = fm::ChildProcess::run({"ps", "-p", std::to_string(oldPid), "-o", "comm="}).output;
       while (!comm.empty() && (comm.back() == '\n' || comm.back() == '\r' || comm.back() == ' ')) comm.pop_back();
@@ -5883,6 +5893,7 @@ int main(int argc, char **argv) {
         if (::kill(static_cast<pid_t>(oldPid), 0) == 0) ::kill(static_cast<pid_t>(oldPid), SIGKILL);  // 4秒待っても応答無し -- 強制終了
       }
     }
+#endif
     std::ofstream pidOut(pidPath, std::ios::trunc);
     if (pidOut) pidOut << ::getpid() << "\n";
   }

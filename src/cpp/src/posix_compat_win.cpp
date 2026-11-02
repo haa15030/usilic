@@ -6,6 +6,8 @@
 #include <windows.h>
 
 #include <cerrno>
+#include <csignal>
+#include <string>
 
 int kill(long long pid, int sig) {
   HANDLE h = OpenProcess(sig == 0 ? PROCESS_QUERY_LIMITED_INFORMATION : PROCESS_TERMINATE |
@@ -28,6 +30,34 @@ int kill(long long pid, int sig) {
   }
   CloseHandle(h);
   return result;
+}
+
+static std::string quitEventName(long long pid) { return "Local\\usilic-quit-" + std::to_string(pid); }
+
+static DWORD WINAPI waitForQuitRequest(LPVOID parameter) {
+  HANDLE *handles = static_cast<HANDLE *>(parameter);
+  WaitForSingleObject(handles[0], INFINITE);
+  *reinterpret_cast<volatile std::sig_atomic_t *>(handles[1]) = 1;
+  return 0;
+}
+
+void listenForQuitRequest(volatile std::sig_atomic_t *flag) {
+  HANDLE event = CreateEventA(nullptr, TRUE, FALSE, quitEventName(GetCurrentProcessId()).c_str());
+  if (!event) return;
+  // スレッドもイベントもプロセスの終わりまで使う(閉じない)
+  static HANDLE handles[2];
+  handles[0] = event;
+  handles[1] = reinterpret_cast<HANDLE>(const_cast<std::sig_atomic_t *>(flag));
+  HANDLE thread = CreateThread(nullptr, 0, waitForQuitRequest, handles, 0, nullptr);
+  if (thread) CloseHandle(thread);
+}
+
+bool requestProcessQuit(long long pid) {
+  HANDLE event = OpenEventA(EVENT_MODIFY_STATE, FALSE, quitEventName(pid).c_str());
+  if (!event) return false;
+  bool sent = SetEvent(event) != 0;
+  CloseHandle(event);
+  return sent;
 }
 
 void preciseSleepMicroseconds(long microseconds) {

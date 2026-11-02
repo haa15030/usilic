@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include <csignal>
 #include <cstdlib>
 #include <string>
 
@@ -30,6 +31,12 @@ inline int lstat(const char *path, struct stat *st) { return stat(path, st); }
 // kill: sigが0ならそのプロセスが生きているか(0)、それ以外なら終わらせる(TerminateProcess)。
 // 実装はposix_compat_win.cpp(windows.hをこのヘッダへ持ち込まないため)。
 int kill(long long pid, int sig);
+// Windowsにはプロセスへ送れるSIGTERMが無いので、「終わってほしい」は名前付きイベントで伝える(2026-11-02)。
+// listenForQuitRequest(): 自分のPIDのイベントを作り、合図が来たら*flagを1にする(SIGTERMのハンドラと同じ役目)。
+// requestProcessQuit(): pidのイベントへ合図する。イベントはusilicだけが作り、プロセスと一緒に消えるので、
+// falseならpidは動いているusilicではない(PIDが別のプロセスに使い回されていても誤って止めない)。
+void listenForQuitRequest(volatile std::sig_atomic_t *flag);
+bool requestProcessQuit(long long pid);
 #ifndef SIGKILL
 #define SIGKILL 9
 #endif

@@ -33406,8 +33406,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 1201. **Windows: usilic.exeはアイコンからの起動の組、usilic-c.exeの-gは-gの組(2026-11-02)**
    - **経緯**: 直接のユーザー判断("フォントの設定はそれでいいと思う")。Windowsにはアイコンからの起動の判定が無く、項目1198・1200の分離が効かなかった。
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
-   - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。
+   - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1204. **Windowsでも、ファイルマネージャーのusilicは1つだけ(2026-11-02)**
+   - 直接のユーザー依頼("複数起動していても実害は無いんだけど、shellのように追記ならまだしもerrorのように空になるのは仕様上マズいなと。Windowsでも1つだけにして。")。項目1201の「今のまま」の判断を撤回。
+   - **原因**: Windowsにはプロセスへ送れるSIGTERMが無く(`kill()`は常に`TerminateProcess`)、本人確認の`ps`も無いので、排他が何もしていなかった。
+   - **直し**: 名前付きイベント`Local\usilic-quit-<PID>`(`posix_compat_win.cpp`の`listenForQuitRequest()`・`requestProcessQuit()`)。ファイルマネージャーとして起動すると自分のPIDのイベントを作り、合図を待つスレッドが`gTerminationSignalReceived`を立てる(以後はSIGTERMと同じ道筋で、CUI・GUIのループが終了処理をする)。新しい方は`~/.usilic/pid`のPIDのイベントへ合図し、最大4秒待って、まだ動いていれば`TerminateProcess`。その後で`error`を空にする。イベントはusilicだけが作りプロセスと一緒に消えるので、PIDの使い回しで別のプロセスを止めることはない。`usilic.exe`と`usilic-c.exe`は互いに対象(名前を見ない)。ページャーと子(`consultHistoryOnStart`がfalse)は従来どおり対象外。Mac・Linuxの動作は変えていない。
+   - **確かめたこと**: Mac・Windows向けのコンパイルとzip作成まで。Windowsでの動作は実機を持たないので未確認。古い版(イベントを作らない)が動いている時は止められない。
+   - HELP原稿(src/HELP_.txt・HELP_en_.txt)から、項目1201の後で足した「ただし Windows では…」「その場合は ~/.usilic/ の…」の2文を除いた。
+
 1202. **^Ojの言語をhistoryに残す、Windowsは表示言語が日本語なら日本語で始める(2026-11-02)**
    - **経緯**: 直接のユーザー報告(Windowsのzipで"どれも^Ojが保存されない。日本語で終えても次回起動後は^Hが英語になる")。
    - **原因**: 言語はhistoryに無く、起動のたびにLANGで決めていた(2026-10-11)。WindowsはふつうLANGが無いので、いつも英語で始まっていた。
