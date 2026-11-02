@@ -353,12 +353,13 @@ void History::setModeLineVisible(bool visible) {
 }
 void History::setModeLineVisibleImpl(bool visible) { modeLineVisible_ = visible; }
 
-bool History::epubSansSerif() const { return epubSansSerif_; }
+bool History::epubSansSerif() const { return iconLaunch_ ? iconEpubSansSerif_ : epubSansSerif_; }
 void History::setEpubSansSerif(bool sansSerif) {
-  journal_.emplace_back([sansSerif](History &h) { h.setEpubSansSerifImpl(sansSerif); });
-  setEpubSansSerifImpl(sansSerif);
+  bool icon = iconLaunch_;
+  journal_.emplace_back([sansSerif, icon](History &h) { h.setEpubSansSerifImpl(sansSerif, icon); });
+  setEpubSansSerifImpl(sansSerif, icon);
 }
-void History::setEpubSansSerifImpl(bool sansSerif) { epubSansSerif_ = sansSerif; }
+void History::setEpubSansSerifImpl(bool sansSerif, bool icon) { (icon ? iconEpubSansSerif_ : epubSansSerif_) = sansSerif; }
 
 std::array<int, 4> History::epubMargins() const { return epubMargins_; }
 void History::setEpubMargins(const std::array<int, 4> &margins) {
@@ -680,6 +681,8 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     fontFamiliesSaved_ = toks.size() > 35;
     serifFontPath_ = fontFamiliesSaved_ ? decodeField(toks[34]) : std::string();
     sansSerifFontPath_ = fontFamiliesSaved_ ? decodeField(toks[35]) : std::string();
+    // アイコンからの起動の^Ot(2026-11-02、iconEpubSansSerif_参照)――同じ理由でさらに末尾に。無ければ明朝体。
+    iconEpubSansSerif_ = toks.size() > 36 && std::atoi(toks[36].c_str()) != 0;
   }
 
   complete_ = (i < lines.size() && !lines[i].empty() && lines[i][0] == kSubEof);
@@ -773,7 +776,8 @@ std::string History::serialize(const std::string &programName, const std::string
          std::to_string(iconGuiPreferences_.letterSpacingExtraHorizontal) + " " +
          std::to_string(iconGuiPreferences_.letterSpacingExtraVertical) + " " + std::to_string(epubMargins_[0]) + " " +
          std::to_string(epubMargins_[1]) + " " + std::to_string(epubMargins_[2]) + " " + std::to_string(epubMargins_[3]) +
-         " " + encodeField(serifFontPath_) + " " + encodeField(sansSerifFontPath_) + "\n";
+         " " + encodeField(serifFontPath_) + " " + encodeField(sansSerifFontPath_) + " " +
+         std::to_string(iconEpubSansSerif_ ? 1 : 0) + "\n";
   out += std::string(1, kSubEof) + "\n";
   return out;
 }

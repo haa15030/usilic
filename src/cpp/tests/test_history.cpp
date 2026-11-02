@@ -214,6 +214,24 @@ TEST_CASE("serialize() then loadHistoryText() keeps the EPUB sans-serif choice")
   CHECK_FALSE(loaded.epubSansSerif());
 }
 
+// 2026-11-02: ^Otは-gとアイコンからの起動で別々(既定は-gがゴシック体、アイコンが明朝体)。
+TEST_CASE("an icon launch keeps its own EPUB typeface apart from -g") {
+  History h(10);
+  History::setIconLaunch(true);
+  CHECK_FALSE(h.epubSansSerif());
+  h.setEpubSansSerif(true);
+  History::setIconLaunch(false);
+  CHECK(h.epubSansSerif());
+  h.setEpubSansSerif(false);
+  History loaded(10);
+  REQUIRE(loaded.loadHistoryText(h.serialize("usilic", "Mon Jan  1 00:00:00 2026"),
+                                 /*environmentCharsetExplicitlySet=*/false));
+  CHECK_FALSE(loaded.epubSansSerif());
+  History::setIconLaunch(true);
+  CHECK(loaded.epubSansSerif());
+  History::setIconLaunch(false);
+}
+
 TEST_CASE("serialize() then loadHistoryText() round-trips every category") {
   History h(50);
   h.setPosition(PositionCategory::File, "/a/b.txt", {3, 10, 0, 7});

@@ -238,7 +238,7 @@ class History {
   bool modeLineVisible() const;
   void setModeLineVisible(bool visible);
   // 2026-10-17: EPUBをゴシック体で読むか(^Ot、Command::ToggleEpubTypeface)。modeLineVisible()と同じ永続化の形
-  // (USILICのトレーラーの末尾)。既定は明朝体(本の指定どおり)。
+  // (USILICのトレーラーの末尾)。2026-11-02: -gとアイコンからの起動で別々に覚える(epubSansSerif_の宣言コメント)。
   bool epubSansSerif() const;
   void setEpubSansSerif(bool sansSerif);
   // 2026-10-30: EPUBの余白(^[+矢印、Application::handleEpubMarginKey())。{縦書きの上, 下, 横書きの左, 右}。
@@ -368,8 +368,11 @@ class History {
   bool smoothScrollEnabled_ = false;
   bool modeLineVisible_ = true;
   // 2026-11-02、直接のユーザー依頼("-gの既定フォントは端末のでいいんだがゴシックを既定に(^Otで切り替わるヤツ)。
-  // 理由は-cがゴシックだから"): 既定はゴシック体(以前は明朝体)。historyに残した選択はそのまま。
+  // 理由は-cがゴシックだから"、"GUIのメインは今はEPUB閲覧なので...名残としての-gは置いておきたい...-gで起動後、明朝体で
+  // 立ち上がるよりもゴシック体(CUIがそうだから)のほうがそれらしくみえる...EPUB閲覧がメインのアイコン起動の方は明朝体で
+  // ないと困る"): -gの既定はゴシック体、アイコンからの起動の既定は明朝体で、選択も別々に覚える。
   bool epubSansSerif_ = true;  // epubSansSerif()参照
+  bool iconEpubSansSerif_ = false;
   std::array<int, 4> epubMargins_{};  // epubMargins()参照
   std::string serifFontPath_, sansSerifFontPath_;  // serifFontPath()参照
   bool fontFamiliesSaved_ = false;
@@ -398,7 +401,7 @@ class History {
   void mirrorToUsilicImpl(RingCategory source, const std::string &name);
   void setSmoothScrollEnabledImpl(bool enabled);
   void setModeLineVisibleImpl(bool visible);
-  void setEpubSansSerifImpl(bool sansSerif);
+  void setEpubSansSerifImpl(bool sansSerif, bool icon);
   void setEpubMarginsImpl(const std::array<int, 4> &margins);
   void setFontFamilyPathsImpl(const std::string &serif, const std::string &sansSerif);
   void setLsModeImpl(int mode);
