@@ -2838,7 +2838,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           app.refreshShellBanner();
       }
     }
-    // ^[[ / ^[](2026-10-17、Application::takeLineHeightAdjustRequest()参照): 今の向きの行の高さをドット単位で。
+    // ^[] / ^[[(2026-10-17、Application::takeLineHeightAdjustRequest()参照): 今の向きの行の高さをドット単位で。
     if (int delta = app.takeLineHeightAdjustRequest()) {
       auto [pixels, ratio] = gui.adjustLineHeight(delta);
       char ratioText[16];
@@ -2852,14 +2852,15 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       static std::pair<std::pair<int, int>, std::pair<int, int>> spacingBeforeReset;
       if (request > 0) {
         spacingBeforeReset = {fm::GraphicalDisplay::lineHeightExtras(), fm::GraphicalDisplay::letterSpacingExtras()};
-        gui.setSpacingExtras({0, 0}, {0, 0});
+        auto defaults = gui.defaultSpacingExtras();
+        gui.setSpacingExtras(defaults.first, defaults.second);
         app.showNotice("LINE-HEIGHT / LETTER-SPACING / margins: default (^[0 again to undo)");
       } else {
         gui.setSpacingExtras(spacingBeforeReset.first, spacingBeforeReset.second);
         app.showNotice("LINE-HEIGHT / LETTER-SPACING / margins: restored");
       }
     }
-    // ^[{ / ^[}(2026-10-20、Application::takeLetterSpacingAdjustRequest()参照): 今の向きの字間をドット単位で。
+    // ^[} / ^[{(2026-10-20、Application::takeLetterSpacingAdjustRequest()参照): 今の向きの字間をドット単位で。
     if (int delta = app.takeLetterSpacingAdjustRequest()) {
       auto [width, extra] = gui.adjustLetterSpacing(delta);
       app.showNotice(std::string(app.verticalLayoutShown() ? "LETTER-SPACING (vertical): " : "LETTER-SPACING: ") +

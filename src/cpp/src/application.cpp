@@ -3536,23 +3536,24 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       case 'u':
         return handleCommand(Command::StartUsilicToc);
       // 2026-10-17、直接のユーザー依頼("^[[/^[]をドット単位の行間変更キーに設定"): -gの今の向きの行の高さを
-      // 1ドット広げる(^[[)・狭める(^[])。HELPの「^[[ / ^[] … 行間の増減」の順。画面はmain.cppが変える。
+      // 1ドット広げる(^[])・狭める(^[[)。画面はmain.cppが変える。2026-11-02、直接のユーザー依頼("機能が逆なので
+      // 入れ替えて。つまり広がる方が`]`/`}`")。K-109が^[[・K-110が^[]のままなので、K-109が狭める方になった。
       case '[':
-        lineHeightAdjustRequest_++;
+        lineHeightAdjustRequest_--;
         marginsBeforeReset_.reset();  // ^[0で戻す値は捨てる(resetSpacingAndMargins()参照)
         return true;
       case ']':
-        lineHeightAdjustRequest_--;
+        lineHeightAdjustRequest_++;
         marginsBeforeReset_.reset();
         return true;
-      // 2026-10-20、直接のユーザー依頼("字間の調整はできる？ ^[{/^[}とか"): 同じく字間を1ドット広げる(^[{)・
-      // 狭める(^[})。
+      // 2026-10-20、直接のユーザー依頼("字間の調整はできる？ ^[{/^[}とか"): 同じく字間を1ドット広げる(^[})・
+      // 狭める(^[{)。
       case '{':
-        letterSpacingAdjustRequest_++;
+        letterSpacingAdjustRequest_--;
         marginsBeforeReset_.reset();
         return true;
       case '}':
-        letterSpacingAdjustRequest_--;
+        letterSpacingAdjustRequest_++;
         marginsBeforeReset_.reset();
         return true;
       // (ESC i: 2026-09-10追加、2026-09-19削除) ESC iは

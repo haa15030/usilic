@@ -450,10 +450,10 @@ KEY
     K-101 F-2 s   # ^Os   EPUB: chapter breaks / continuous scroll
     K-102 F-2 w   # ^Ow   EPUB: cycle the web link action (URL)
     K-108 F-2 C-e # ^O^E  EPUB: list of records (made by vertical COPY)
-    K-109 ESC [   # ^[[   -g: line height 1 dot taller
-    K-110 ESC ]   # ^[]   -g: line height 1 dot shorter
-    K-112 ESC {   # ^[{   -g: letter spacing 1 dot wider
-    K-113 ESC }   # ^[}   -g: letter spacing 1 dot narrower
+    K-109 ESC [   # ^[[   -g: line height 1 dot shorter
+    K-110 ESC ]   # ^[]   -g: line height 1 dot taller
+    K-112 ESC {   # ^[{   -g: letter spacing 1 dot narrower
+    K-113 ESC }   # ^[}   -g: letter spacing 1 dot wider
     K-111 F-2 t   # ^Ot   serif/sans-serif switch (-g, Japanese text outside EPUB)
     K-103 F-1 C-a # ^J^A  ARC: list (archives in the FILE history)
     K-104 F-1 C-f # ^J^F  -g: font list

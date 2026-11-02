@@ -847,6 +847,14 @@ struct GraphicalDisplay::Impl {
   // フォントから求めた(^[{ / ^[}で足す前の)マスの幅(cellWidthFor()参照)。cellWidthがこれより狭ければ、
   // 字を縮めずにマスからはみ出させて描く(narrowedCells())。
   int naturalCellWidth = 0;
+  // 2026-11-02、直接のユーザー報告(-cから^Og、横書きは行も字も同じなのに"縦書きだと字の大きさが一回り小さくなって右端行は
+  // 同じだが左端が変わってくる。そのままHELPへ行くと間延びした字間になる。^Og^Ogで直る"): matchWindowSize()でマスを端末に
+  // 合わせても、向きが変わると字の大きさの倍率とcreate()の時のフォントの寸法でマスを求め直していた。端末に合わせた
+  // 窓では、縦横どちらもこのマスを基準にし、合わせた後で^[[等で足した分だけを加える。0なら合わせていない。
+  int matchedCellHeight = 0;
+  int matchedCellWidth = 0;
+  int matchedLineExtra[2] = {0, 0};
+  int matchedLetterExtra[2] = {0, 0};
   bool narrowedCells() const { return naturalCellWidth > 0 && cellWidth < naturalCellWidth; }
   // 2026-10-20、直接のユーザー依頼("モードラインだけはバグモードでよろしく"、=kt.png・=ku.png): モードラインの行は
   // 狭めたマスでも字をマスの幅に縮める(はみ出させると「16%」の「%」が数字に被る)。
@@ -2620,6 +2628,19 @@ void GraphicalDisplay::setLineHeightRatios(double horizontal, double vertical) {
 // 変わる(窓の端をドラッグした時と同じくhandleWindowResized()、メインのループはconsumeSizeChanged()で
 // Application::handleResize()を呼ぶ)。字の面の切り出し(cachedGlyphTexture())がマスの高さによるので、字の
 // キャッシュも捨てる。
+int GraphicalDisplay::cellHeightFor(bool vertical) const {
+  if (impl_->matchedCellHeight > 0)
+    return std::max(1, impl_->matchedCellHeight + lineHeightExtraPixels(vertical) - impl_->matchedLineExtra[vertical ? 1 : 0]);
+  int natural = impl_->naturalCellHeight > 0 ? impl_->naturalCellHeight : impl_->cellHeight;
+  return lineHeightFor(impl_->currentFontPointSize, natural, vertical);
+}
+
+int GraphicalDisplay::cellWidthForOrientation(bool vertical) const {
+  if (impl_->matchedCellWidth > 0)
+    return std::max(1, impl_->matchedCellWidth + letterSpacingExtraPixels(vertical) - impl_->matchedLetterExtra[vertical ? 1 : 0]);
+  return cellWidthFor(impl_->naturalCellWidth > 0 ? impl_->naturalCellWidth : impl_->cellWidth, vertical);
+}
+
 void GraphicalDisplay::setVerticalLineSpacing(bool vertical) {
   if (!impl_->window || vertical == impl_->verticalSpacing) return;
   impl_->verticalSpacing = vertical;
@@ -2629,7 +2650,8 @@ void GraphicalDisplay::setVerticalLineSpacing(bool vertical) {
 std::pair<int, double> GraphicalDisplay::adjustLineHeight(int deltaPixels) {
   bool vertical = impl_->verticalSpacing;
   int natural = impl_->naturalCellHeight > 0 ? impl_->naturalCellHeight : impl_->cellHeight;
-  int base = lineHeightForBase(impl_->currentFontPointSize, natural, vertical);
+  int base = impl_->matchedCellHeight > 0 ? impl_->matchedCellHeight - impl_->matchedLineExtra[vertical ? 1 : 0]
+                                          : lineHeightForBase(impl_->currentFontPointSize, natural, vertical);
   // 1ドットより低くはしない。上は字の大きさの4倍まで。
   int limit = std::max(base + 1, impl_->currentFontPointSize * 4);
   int extra = std::clamp(lineHeightExtraPixels(vertical) + deltaPixels, 1 - base, limit - base);
@@ -2650,16 +2672,15 @@ std::pair<int, int> GraphicalDisplay::lineHeightExtras() {
 void GraphicalDisplay::reapplyLineHeight() {
   lineHeightExtraPixels(false) = 0;
   lineHeightExtraPixels(true) = 0;
+  impl_->matchedLineExtra[0] = impl_->matchedLineExtra[1] = 0;
   reapplyLineHeightKeepingExtra();
 }
 
 // 今の向きの行の高さとマスの幅(字間、2026-10-20)を求め直し、変わっていれば字のキャッシュを捨てて組み直す。
 void GraphicalDisplay::reapplyLineHeightKeepingExtra() {
   if (!impl_->window) return;
-  int natural = impl_->naturalCellHeight > 0 ? impl_->naturalCellHeight : impl_->cellHeight;
-  int height = lineHeightFor(impl_->currentFontPointSize, natural, impl_->verticalSpacing);
-  int naturalWidth = impl_->naturalCellWidth > 0 ? impl_->naturalCellWidth : impl_->cellWidth;
-  int width = cellWidthFor(naturalWidth, impl_->verticalSpacing);
+  int height = cellHeightFor(impl_->verticalSpacing);
+  int width = cellWidthForOrientation(impl_->verticalSpacing);
   if ((height == impl_->cellHeight && width == impl_->cellWidth) || height <= 0 || width <= 0) return;
   impl_->cellHeight = height;
   impl_->cellWidth = width;
@@ -2675,7 +2696,8 @@ void GraphicalDisplay::reapplyLineHeightKeepingExtra() {
 // ^[{ / ^[}(2026-10-20): 今の向きのマスの幅を`deltaPixels`ドット変える。半角の字の幅の半分より狭くはしない。
 std::pair<int, int> GraphicalDisplay::adjustLetterSpacing(int deltaPixels) {
   bool vertical = impl_->verticalSpacing;
-  int natural = impl_->naturalCellWidth > 0 ? impl_->naturalCellWidth : impl_->cellWidth;
+  int natural = impl_->matchedCellWidth > 0 ? impl_->matchedCellWidth - impl_->matchedLetterExtra[vertical ? 1 : 0]
+                : impl_->naturalCellWidth > 0 ? impl_->naturalCellWidth : impl_->cellWidth;
   int lower = (natural + 1) / 2, upper = natural + std::max(1, impl_->currentFontPointSize);
   int extra = std::clamp(letterSpacingExtraPixels(vertical) + deltaPixels, lower - natural, upper - natural);
   letterSpacingExtraPixels(vertical) = extra;
@@ -2692,6 +2714,10 @@ std::pair<int, int> GraphicalDisplay::letterSpacingExtras() {
   return {fm::letterSpacingExtraPixels(false), fm::letterSpacingExtraPixels(true)};
 }
 
+std::pair<std::pair<int, int>, std::pair<int, int>> GraphicalDisplay::defaultSpacingExtras() const {
+  return {{impl_->matchedLineExtra[0], impl_->matchedLineExtra[1]}, {impl_->matchedLetterExtra[0], impl_->matchedLetterExtra[1]}};
+}
+
 void GraphicalDisplay::setSpacingExtras(std::pair<int, int> lineHeight, std::pair<int, int> letterSpacing) {
   setLineHeightExtras(lineHeight.first, lineHeight.second);
   setLetterSpacingExtras(letterSpacing.first, letterSpacing.second);
@@ -2700,8 +2726,7 @@ void GraphicalDisplay::setSpacingExtras(std::pair<int, int> lineHeight, std::pai
 
 int GraphicalDisplay::horizontalColumns() const {
   if (!impl_->verticalSpacing || !impl_->window) return impl_->columns;
-  int natural = impl_->naturalCellWidth > 0 ? impl_->naturalCellWidth : impl_->cellWidth;
-  int width = cellWidthFor(natural, false);
+  int width = cellWidthForOrientation(false);
   int w = 0, h = 0;
   SDL_GetWindowSize(impl_->window, &w, &h);
   return std::max(1, (w - Impl::kMarginX * 2 - impl_->scrollbarWidth) / width);
@@ -2709,8 +2734,7 @@ int GraphicalDisplay::horizontalColumns() const {
 
 int GraphicalDisplay::horizontalRows() const {
   if (!impl_->verticalSpacing || !impl_->window) return impl_->rows;
-  int natural = impl_->naturalCellHeight > 0 ? impl_->naturalCellHeight : impl_->cellHeight;
-  int height = lineHeightFor(impl_->currentFontPointSize, natural, false);
+  int height = cellHeightFor(false);
   int w = 0, h = 0;
   SDL_GetWindowSize(impl_->window, &w, &h);
   return height > 0 ? std::max(1, (h - Impl::kMarginY * 2) / height) : impl_->rows;
@@ -2761,6 +2785,7 @@ void GraphicalDisplay::adjustFontSize(int deltaPoints) {
       cellHeight = std::max(cellHeight, cjkHeight);
     }
   }
+  impl_->matchedCellHeight = impl_->matchedCellWidth = 0;  // 字の大きさを変えたら端末のマスではなくなる
   impl_->naturalCellHeight = cellHeight;
   cellHeight = lineHeightFor(newPointSize, cellHeight, impl_->verticalSpacing);
   impl_->naturalCellWidth = cellWidth;
@@ -2866,6 +2891,7 @@ bool GraphicalDisplay::setFont(FontKind kind, const std::string &path) {
   if (resized) setSizeAll(impl_->currentFontPointSize);
   int cellWidth = 0, cellHeight = 0;
   measure(cellWidth, cellHeight);
+  impl_->matchedCellHeight = impl_->matchedCellWidth = 0;  // フォントを替えたら端末のマスではなくなる
   if (cellHeight > 0) impl_->naturalCellHeight = cellHeight;
   cellHeight = lineHeightFor(impl_->currentFontPointSize, cellHeight, impl_->verticalSpacing);
   if (cellWidth > 0) impl_->naturalCellWidth = cellWidth;
@@ -4149,6 +4175,12 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   }
   impl_->cellWidth = cellWidth;
   impl_->cellHeight = cellHeight;
+  impl_->matchedCellHeight = cellHeight;
+  impl_->matchedCellWidth = cellWidth;
+  for (int v = 0; v < 2; v++) {
+    impl_->matchedLineExtra[v] = lineHeightExtraPixels(v == 1);
+    impl_->matchedLetterExtra[v] = letterSpacingExtraPixels(v == 1);
+  }
   impl_->scrollbarWidth = cellHeight;  // Impl::scrollbarWidth自身のコメント参照
   int width = contentWidth;
   int height = contentHeight;

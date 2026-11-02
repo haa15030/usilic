@@ -362,6 +362,8 @@ class GraphicalDisplay : public Display {
   // ^[0(2026-10-31、Application::takeSpacingResetRequest()参照): ^[[ / ^[]・^[{ / ^[}で足した分(横書き・縦書き)を
   // 置き換え、今の向きの行の高さとマスの幅を当て直す。既定へは{0, 0}・{0, 0}。
   void setSpacingExtras(std::pair<int, int> lineHeight, std::pair<int, int> letterSpacing);
+  // ^[0の既定の値(ふつうは0、端末に合わせた窓では合わせた時の値)。{行の高さ, 字間}、それぞれ{横書き, 縦書き}。
+  std::pair<std::pair<int, int>, std::pair<int, int>> defaultSpacingExtras() const;
   // 横書きのマスの幅での桁数(horizontalRows()と同じく、窓の大きさを保存する時用)。
   int horizontalColumns() const;
 
@@ -606,6 +608,9 @@ class GraphicalDisplay : public Display {
   // 引き起こしたもの)は何もしない。
   void handleWindowResized(int newPixelWidth, int newPixelHeight);
   void reapplyLineHeightKeepingExtra();  // adjustLineHeight()・reapplyLineHeight()参照
+  // 向きごとのマスの高さと幅(端末に合わせた窓ではそのマスが基準、Impl::matchedCellHeight)。
+  int cellHeightFor(bool vertical) const;
+  int cellWidthForOrientation(bool vertical) const;
 
   // pumpEvents()自身の、Cmd+=/Cmd+-/Cmd+0のためのSDL_KEYDOWN
   // ハンドラ(2026-08-24、docs/CHANGES.md項目426、項目425への

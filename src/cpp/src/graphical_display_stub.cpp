@@ -55,6 +55,7 @@ std::pair<int, int> GraphicalDisplay::adjustLetterSpacing(int deltaPixels) { ret
 void GraphicalDisplay::setLetterSpacingExtras(int horizontal, int vertical) {}
 std::pair<int, int> GraphicalDisplay::letterSpacingExtras() { return {}; }
 void GraphicalDisplay::setSpacingExtras(std::pair<int, int> lineHeight, std::pair<int, int> letterSpacing) {}
+std::pair<std::pair<int, int>, std::pair<int, int>> GraphicalDisplay::defaultSpacingExtras() const { return {}; }
 int GraphicalDisplay::horizontalColumns() const { return {}; }
 int GraphicalDisplay::horizontalRows() const { return {}; }
 bool GraphicalDisplay::consumeSizeChanged() { return {}; }
