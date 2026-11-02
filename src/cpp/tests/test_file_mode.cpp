@@ -159,6 +159,33 @@ TEST_CASE_FIXTURE(Fixture, "saveCursorPosition before any loadFile is a safe no-
   CHECK(history.positionFor(PositionCategory::File, "").has_value() == false);
 }
 
+TEST_CASE_FIXTURE(Fixture, "reflow: stays on the same text inside a wrapped line, at the same screen row") {
+  std::string body;
+  for (int i = 0; i < 30; i++) body += "short line\n";
+  std::string paragraph;
+  for (char c = 'a'; c <= 'z'; c++) paragraph += std::string(10, c);  // 260 columns
+  body += paragraph + "\n";
+  for (int i = 0; i < 30; i++) body += "short line\n";
+  std::string path = writeFile("para.txt", body);
+  view.setViewport(0, 20);
+  REQUIRE(mode.loadFile(path));
+  // 31st raw line, wrapped at 80: the 'q' run (index 16, byte 160) is on its third row
+  int firstRow = 30;
+  REQUIRE(view.lines()[firstRow].text.substr(0, 1) == "a");
+  view.setCursorIndex(firstRow + 2);
+  view.setTopIndex(firstRow - 3);
+  REQUIRE(view.lines()[view.cursorIndex()].text.find('q') != std::string::npos);
+  int screenRow = view.cursorIndex() - view.topIndex();
+
+  REQUIRE(mode.reflow(40));
+  CHECK(view.lines()[view.cursorIndex()].text.find('q') != std::string::npos);
+  CHECK(view.cursorIndex() - view.topIndex() == screenRow);
+
+  REQUIRE(mode.reflow(80));
+  CHECK(view.cursorIndex() == firstRow + 2);
+  CHECK(view.topIndex() == firstRow - 3);
+}
+
 TEST_CASE_FIXTURE(Fixture, "reflow: re-wraps the current file at the new width") {
   std::string path = writeFile("long.txt", "abcdefghijklmno\n");
   REQUIRE(mode.loadFile(path));

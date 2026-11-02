@@ -2845,6 +2845,7 @@ class Application {
   int fileRawLineAtCursor() const;
   void rebuildEpubVertical(int rawLine);
   void showEpubVerticalRaw(int rawLine);
+  void restoreEpubVerticalPlaceInLine(int cellsBefore, int screenColumn);
   void setEpubVerticalFirst(int first);
   // 画像のページ(pageStartから1画面分の列)の、画像の外の左右の余白の列の数(Display::contentImageWidthFraction())。
   int epubImagePageMarginColumns(int pageStart);
@@ -3894,16 +3895,17 @@ private:
   bool returnFromKeyToEpubToc();
   // ページャーのファイルからHELPを開いた時の戻り先(rememberPagerFileForHelp()参照)。Bookは`usilic 本.epub`の本、ArchiveListingは`usilic x.tgz`の一覧。
   struct PagerHelpReturn {
-    enum class Kind { File, Book, ArchiveListing, Usilicrc };
+    enum class Kind { File, Book, ArchiveListing, ModeFile };
     std::string path;
     Kind kind;
     int cursor;
     int top;
-    ApplicationMode fileReturn = ApplicationMode::Directory;  // Usilicrc: 戻った後の^Gの戻り先
+    ApplicationMode fileReturn = ApplicationMode::Directory;  // ModeFile: 戻った後の^Gの戻り先
+    AnnotationStack<FileMode::FileAnnotationKind> annotations{};  // ModeFile: 名前欄・戻り値欄の注釈(DU・LOCATE等から開いた時)
   };
   std::optional<PagerHelpReturn> pagerHelpReturn_;
-  // ~/.usilic/usilicrcから^Hで開いたHELPを見ている(^Gの戻り先はそのファイル、rememberPagerFileForHelp())。
-  bool helpReturnsToUsilicrc() const;
+  // 通常のファイルから^Hで開いたHELPを見ている(^Gの戻り先はそのファイル、rememberPagerFileForHelp())。
+  bool helpReturnsToFile() const;
   void rememberPagerFileForHelp();
   bool landArchivePagerListing();  // finishArchiveLoadAsync()参照
   bool returnToPagerFileFromHelp();

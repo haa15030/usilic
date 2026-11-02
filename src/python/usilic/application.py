@@ -536,7 +536,7 @@ class Application:
                 return F(name, str(self.content_byte_count()), False, PROGRAM_LABEL), position
             else:  # 大きさは本文の行のバイト数(C++のcontentByteCount(fileView_))
                 fields = F(name, str(self.content_byte_count()), True)
-            help_return = self.pager_help_return and (self.pager_launch or self.help_returns_to_usilicrc())
+            help_return = self.pager_help_return and (self.pager_launch or self.help_returns_to_file())
             fields.trailing3 = self.pager_help_return['path'] if help_return else directory
             return fields, position
         if mode == PART_TOC:
@@ -2002,12 +2002,12 @@ class Application:
         """C++のrememberPagerFileForHelp()(項目1189): ページャーのfile・本からHELPを開く前に、^Gの戻り先と位置を覚える。
         標準入力は読み直せないので覚えない。"""
         path = self.file_mode.current_file
-        if not self.pager_launch:  # ~/.usilic/usilicrcの^H^Gはそのファイルへ(C++の項目1205)。^Hする度に決め直す
+        if not self.pager_launch:  # 通常のファイルの^H^Gはそのファイルへ(C++の項目1206)。^Hする度に決め直す
             self.pager_help_return = None
-            rc = os.path.expanduser('~/.usilic/usilicrc')
-            if self.current_mode == FILE and path and os.path.exists(path) and os.path.exists(rc) and \
-                    os.path.samefile(path, rc):
-                self.pager_help_return = {'path': rc, 'usilicrc': True, 'stack': list(self.return_stack),
+            if self.current_mode == FILE and path and os.path.isfile(path) and not is_epub_file(path) and \
+                    self.file_mode.record_history and not self.file_mode.has_active_stream():
+                self.pager_help_return = {'path': path, 'normal_file': True, 'stack': list(self.return_stack),
+                                          'tail': self.file_mode.tail,
                                           'cursor': self.file_view.cursor_index, 'top': self.file_view.top_index}
             return
         if self.pager_help_return is not None or not path or \
@@ -2018,18 +2018,18 @@ class Application:
                                   'line': self.global_epub_line() if book else 0,
                                   'cursor': self.file_view.cursor_index, 'top': self.file_view.top_index}
 
-    def help_returns_to_usilicrc(self):
+    def help_returns_to_file(self):
         target = self.pager_help_return
-        return not self.pager_launch and target is not None and target.get('usilicrc') and \
+        return not self.pager_launch and target is not None and target.get('normal_file') and \
             self.epub is not None and help_text.is_generated_help_epub(self.epub.path)
 
-    def return_to_usilicrc_from_help(self):
+    def return_to_file_from_help(self):
         target, self.pager_help_return = self.pager_help_return, None
         self.file_mode.save_cursor_position()
         self.epub = None
         self.return_stack = target['stack']
         self.current_mode = FILE
-        if not self.open_file(target['path']):
+        if not self.open_file(target['path'], target['tail']):
             return False
         view = self.file_view
         view.cursor_index, view.top_index = target['cursor'], target['top']
@@ -3000,8 +3000,8 @@ class Application:
                 self.enter_mode(SHELL)  # 最初の起動: インストールの後は機能限定SHELLへ(C++のreturnFromCut())
                 self.refresh_shell_view()
                 return True
-            if self.help_returns_to_usilicrc():
-                return self.return_to_usilicrc_from_help()
+            if self.help_returns_to_file():
+                return self.return_to_file_from_help()
             if self.pager_launch and self.pager_help_return is not None:
                 return self.return_to_pager_file_from_help()
             if self.pager_launch:  # ページャーの章の一覧の^Gはどこへも戻らない(C++のreturnFromCut())

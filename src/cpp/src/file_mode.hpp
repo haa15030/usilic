@@ -469,6 +469,7 @@ class FileMode {
   // リセットされず、「次の」loadFile()/loadStream()呼び出しでのみ
   // リセットされる。
   bool isPagerMode() const { return pagerMode_; }
+  bool isNoWrapMode() const { return noWrapMode_; }  // ^O^M(loadFileNoWrap())等で開いたか
   bool isRawControlCodesMode() const { return rawControlCodesMode_; }  // ^[M(loadFileRaw())で開いたか
 
   // 2026-08-25(ユーザーからの直接の依頼、実際のlegacyバイナリへの
@@ -657,12 +658,17 @@ class FileMode {
   // reflow()自身の2026-09-08追加コメント参照――再折り返しの前後で
   // カーソルが指す「生の」行番号を保つための一対のヘルパー。
   std::optional<int> rawLineNumberAt(int index) const;
-  int translateCursorAfterReflow(int beforeCursor, std::optional<int> beforeRawLine) const;
+  // charsBefore: 元の行の中でカーソルの行より前にある字の数(空白を除くバイト数、charsBeforeCursor())。
+  int translateCursorAfterReflow(int beforeCursor, std::optional<int> beforeRawLine, int charsBefore = 0) const;
+  int charsBeforeCursor() const;
+  int rowWithinRawLine(int firstRow, int charsBefore) const;
+  // カーソルを画面の上からscreenRow行目に(画面に収まらなければ一番下の行に)。
+  void keepCursorScreenRow(int screenRow);
   // 2026-10-31、直接のユーザー報告("アイコン起動では今の表示画面が継承されない場合がある"): historyの位置
   // (カーソルの行と、画面の上から何行目か)を今の行と画面の高さで置く(loadFileImpl())。アイコンからの起動は
   // 端末の大きさで開いてからGUIの大きさへ組み直すので、開いた後にカーソルも画面も動いていなければ、
   // reflow()で同じ位置を新しい大きさで置き直す(restoredPosition_・restoredPlacement_)。
-  void placeSavedPosition(const History::CursorPosition &pos);
+  void placeSavedPosition(const History::CursorPosition &pos, int charsBefore = 0);
   std::optional<History::CursorPosition> restoredPosition_;
   std::pair<int, int> restoredPlacement_{-1, -1};  // 置いた直後の(カーソル, 一番上の行)
 

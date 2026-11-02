@@ -1556,7 +1556,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       // なので正しくは非ハイライトの「USILIC」)"): ページャーとして開いた本の章の一覧の^Gはどこへも戻らない
       // (returnFromCut())ので、戻り値欄は空にし、本文と同じく右下の透かし(子は「USILIC」)を出す。
       // 2026-11-02: ページャーのファイルから^Hで開いたHELPなら、^Gの戻り先はそのファイル(pagerHelpReturn_)。
-      if ((pagerLaunch_ && pagerHelpReturn_) || helpReturnsToUsilicrc()) {
+      if ((pagerLaunch_ && pagerHelpReturn_) || helpReturnsToFile()) {
         fields.trailing3 = pagerHelpReturn_->path;
       } else if (pagerLaunch_) {
         fields.trailing3.clear();
@@ -1745,7 +1745,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     fields.trailing3 = directoryMode_.currentDirectory();  // 戻り値欄は^Gの戻り先の(ls)(cutView_の同じ欄参照)
     // 2026-11-02、直接のユーザー報告(`usilic Kbt.epub`の章の一覧の戻り値が「縦書き」): ページャーの章の一覧は
     // ^Gでどこへも戻らないので(returnFromCut())、横書きの一覧(cutView_)と同じく戻り値は無く透かしを出す。
-    if ((pagerLaunch_ && pagerHelpReturn_) || helpReturnsToUsilicrc()) {
+    if ((pagerLaunch_ && pagerHelpReturn_) || helpReturnsToFile()) {
       fields.trailing3 = pagerHelpReturn_->path;
     } else if (pagerLaunch_) {
       fields.trailing3.clear();
@@ -9092,14 +9092,19 @@ bool Application::returnFromKeyToEpubToc() {
 // HELPを開くと閉じられ、戻る先が無かった。開く前にファイルと位置を覚える。標準入力は読み直せないので覚えない。
 void Application::rememberPagerFileForHelp() {
   // 2026-11-02、直接のユーザー依頼("~/.usilic/usilicrc画面での^H^Gは戻り値を「/Users/haa15030/.usilic/usilicrc」にして
-  // (現状は(ls))"): HELPの外から^Hする度に決め直す(前のHELPの戻り先を残さない)。
+  // (現状は(ls))"、同日"usilicrcは通常ファイル。よって全ての通常ファイルが対象でよろしく"): HELPの外から^Hする度に
+  // 決め直す(前のHELPの戻り先を残さない)。読み直せないもの(標準入力等の流れ・^[M・^O^Mで開いたもの・生成した平文の
+  // HELP)と本(モードはEPUB)は今までどおり(ls)へ。戻った後の^Gは元の戻り先(CUTはHELPの章の一覧で上書きされるので(ls))。
   if (!pagerLaunch_) {
     pagerHelpReturn_.reset();
     if (currentMode_ != ApplicationMode::File) return;
+    const std::string &path = fileMode_.currentFile();
     std::error_code ec;
-    if (fileMode_.currentFile().empty() || !std::filesystem::equivalent(fileMode_.currentFile(), usilicrcPath_, ec) || ec)
+    if (path.empty() || !std::filesystem::is_regular_file(path, ec) || ec || isEpubFile(path) || path == plainHelpPath_ ||
+        fileMode_.hasActiveStream() || fileMode_.isRawControlCodesMode() || fileMode_.isNoWrapMode())
       return;
-    pagerHelpReturn_ = PagerHelpReturn{usilicrcPath_, PagerHelpReturn::Kind::Usilicrc, 0, 0, fileReturnMode_};
+    ApplicationMode back = fileReturnMode_ == ApplicationMode::Cut ? ApplicationMode::Directory : fileReturnMode_;
+    pagerHelpReturn_ = PagerHelpReturn{path, PagerHelpReturn::Kind::ModeFile, 0, 0, back, fileMode_.annotations()};
     return;
   }
   if (pagerHelpReturn_) return;
@@ -9123,8 +9128,8 @@ void Application::rememberPagerFileForHelp() {
 }
 
 // rememberPagerFileForHelp()参照: HELPの章の一覧の^Gで、元のファイルを開き直して元の位置へ。
-bool Application::helpReturnsToUsilicrc() const {
-  return !pagerLaunch_ && pagerHelpReturn_ && pagerHelpReturn_->kind == PagerHelpReturn::Kind::Usilicrc &&
+bool Application::helpReturnsToFile() const {
+  return !pagerLaunch_ && pagerHelpReturn_ && pagerHelpReturn_->kind == PagerHelpReturn::Kind::ModeFile &&
          isGeneratedHelpEpub(fileMode_.currentFile());
 }
 
@@ -9135,12 +9140,13 @@ bool Application::returnToPagerFileFromHelp() {
   fileMode_.annotations().clear();  // openEpub()の"EPUB"注釈
   epubVertical_ = false;
   if (target.kind == PagerHelpReturn::Kind::Book) return openEpub(target.path);
-  if (target.kind == PagerHelpReturn::Kind::Usilicrc) {
+  if (target.kind == PagerHelpReturn::Kind::ModeFile) {
     epubJumpRaw_.reset();
     epubJumpOrigin_.reset();
     epubHorizontalSection_.reset();
     syncEpubHorizontalPresentation();
     if (!fileMode_.loadFile(target.path)) return false;  // 位置はhistoryから
+    fileMode_.annotations() = target.annotations;
     currentMode_ = ApplicationMode::File;
     fileReturnMode_ = target.fileReturn;
     activeView().redraw();
@@ -9771,6 +9777,24 @@ void Application::showEpubVerticalRaw(int rawLine) {
   while (cursor + 1 < static_cast<int>(epubVerticalCols_.size()) && epubVerticalCols_[cursor].titlePage &&
          epubVerticalCols_[cursor].padding)
     cursor++;
+  setEpubVerticalView(first, cursor);
+}
+
+// handleResize()参照: showEpubVerticalRaw()が段落の頭の列を右端に置いた後で、段落の中の同じ字の列へ、画面の同じ
+// 桁へ置き直す。画像のページ・扉はページの頭から見せるものなので、画面にかかる時は置き直さない。
+void Application::restoreEpubVerticalPlaceInLine(int cellsBefore, int screenColumn) {
+  if (epubHorizontalSection_ || epubVerticalCols_.empty()) return;
+  int total = static_cast<int>(epubVerticalCols_.size());
+  int cursor = std::clamp(epubVerticalCursor_, 0, total - 1);
+  int raw = epubVerticalCols_[cursor].rawLineNumber;
+  for (int used = 0; cursor + 1 < total && epubVerticalCols_[cursor + 1].rawLineNumber == raw; cursor++) {
+    used += static_cast<int>(epubVerticalCols_[cursor].cells.size());
+    if (used > cellsBefore) break;
+  }
+  int perScreen = epubVerticalColumnsPerScreen(display_.columns());
+  int first = std::max(0, cursor - std::clamp(screenColumn, 0, std::max(0, perScreen - 1)));
+  for (int c = first; c < std::min(total, first + perScreen); c++)
+    if (!epubVerticalCols_[c].image.empty() || epubVerticalCols_[c].titlePage) return;
   setEpubVerticalView(first, cursor);
 }
 
@@ -11583,7 +11607,7 @@ bool Application::returnFromCutContent() {
 // returnFromGrep()が防がなければならなかったような古い注釈の危険は
 // 無い。
 bool Application::returnFromCut() {
-  if (helpReturnsToUsilicrc() && cutOrigin_ == CutOrigin::Epub) return returnToPagerFileFromHelp();
+  if (helpReturnsToFile() && cutOrigin_ == CutOrigin::Epub) return returnToPagerFileFromHelp();
   // 2026-10-12: ページャーとして起動した時(pagerLaunch_)は(ls)を読み込んでいないので、EPUBの章の一覧の^Gで
   // 空の(ls)へ出ていた。ページャーではディレクトリへ行かない(gatePagerKey()と同じ依頼)ので、その場に留まる。
   // 2026-10-29: 最初の起動(setFirstStartPager())では、シェルが動いていれば(インストールの後)機能限定SHELLへ
@@ -21532,6 +21556,14 @@ void Application::handleResize() {
   manMode_.setWidth(display_.columns());
   std::optional<int> epubRaw;  // 縦書きは、今のページの最初の行を保って組み直す
   if (currentMode_ == ApplicationMode::File && epubVerticalActive()) epubRaw = epubVerticalCurrentRaw();
+  // 2026-11-02、直接のユーザー報告("^Ogの行き来でカーソル位置が保存されない"): 組み直すと段落の頭の列へ戻っていた。
+  // 段落の中で何字目の列か(列の高さが変わっても同じ字の所へ)と、画面の右から何本目かを覚えておく。
+  int epubCellsBefore = 0, epubScreenColumn = 0;
+  if (epubRaw) {
+    for (int c = epubVerticalCursor_ - 1; c >= 0 && epubVerticalCols_[c].rawLineNumber == *epubRaw; c--)
+      epubCellsBefore += static_cast<int>(epubVerticalCols_[c].cells.size());
+    epubScreenColumn = epubVerticalCursor_ - epubVerticalFirst_;
+  }
   // 縦書きの画面を見せている間は、裏の横書きの画面を組み直しても描かない(2026-10-26、直接のユーザー報告"一瞬だけ
   // =ml.pngが表示される"、横書きとしか分からないほど一瞬、USILICGUIDEBUGのログで確認)。
   // 2026-10-26、直接のユーザー報告("「付録」から「まえがき」へ進む際、一瞬動きが停止するのはなぜ？"): -gで縦書きの本の
@@ -21606,6 +21638,7 @@ void Application::handleResize() {
   if (epubRaw && epubBuiltSize_ != std::make_tuple(epubVerticalRows(), display_.columns(), display_.isGraphical())) {
     int moved = leave ? epubVerticalFirst_ - leave->first : 0;
     rebuildEpubVertical(*epubRaw);
+    if (!leave) restoreEpubVerticalPlaceInLine(epubCellsBefore, epubScreenColumn);
     // 横書きの範囲から戻った直後(epubLeavePlacement_参照): 戻った時の置き方をやり直し、その後に動いた分だけ送る
     if (leave && std::abs(moved) <= 2) {
       placeEpubVerticalAfterLeaving(leave->raw, leave->before, leave->after, leave->sectionEnd);

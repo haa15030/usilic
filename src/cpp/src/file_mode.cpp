@@ -1194,7 +1194,7 @@ bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()>
 }
 
 // restoredPosition_の宣言のコメント参照。
-void FileMode::placeSavedPosition(const History::CursorPosition &pos) {
+void FileMode::placeSavedPosition(const History::CursorPosition &pos, int charsBefore) {
   int idx = pos.row;
   int last = static_cast<int>(view_.lines().size()) - 1;
   // 2026-10-07、直接のユーザー報告("34x55でインデント修正中、HELP.txtを`平文`と`「：」でCUT`の間で^J^J
@@ -1205,7 +1205,7 @@ void FileMode::placeSavedPosition(const History::CursorPosition &pos) {
     const auto &lines = view_.lines();
     for (int i = 0; i <= last; i++)
       if (lines[i].rawLineNumber && *lines[i].rawLineNumber >= pos.lineNumber) {
-        idx = i;
+        idx = rowWithinRawLine(i, charsBefore);  // 開いたまま組み直す時(reflow())は、段落の中の同じ字の行へ
         break;
       }
   }
@@ -1260,9 +1260,11 @@ bool FileMode::reflow(int newWidth, bool draw) {
     // リトライは不要な単純な線形探索で足りる)。
     int oldCursor = view_.cursorIndex();
     std::optional<int> oldRawLine = rawLineNumberAt(oldCursor);
+    int oldChars = charsBeforeCursor(), oldScreenRow = oldCursor - view_.topIndex();
     if (streamFd_ >= 0) readMoreIntoPipe(std::max(oldLineCount, 1));
     view_.setLines(convertPipeLines());
-    view_.setCursorIndex(translateCursorAfterReflow(oldCursor, oldRawLine));
+    view_.setCursorIndex(translateCursorAfterReflow(oldCursor, oldRawLine, oldChars));
+    keepCursorScreenRow(oldScreenRow);
     if (draw) {
       view_.redraw();
       view_.syncVisibleCursor();
@@ -1289,13 +1291,19 @@ bool FileMode::reflow(int newWidth, bool draw) {
   int oldCursor = view_.cursorIndex();
   std::optional<int> oldRawLine = rawLineNumberAt(oldCursor);
   bool unmoved = restoredPosition_ && restoredPlacement_ == std::make_pair(oldCursor, view_.topIndex());
+  // 2026-11-02、直接のユーザー報告("^Ogの行き来でカーソル位置が保存されないのはなぜかと思っていたら表紙のあるなし?"):
+  // そのとおりで、-gだけ表紙の画像が行の帯になるので、前後の行の番号が帯の分だけずれる。カーソルは元の行で探し直して
+  // いたが、(1)一番上の行は古い番号のままで画面の中の位置が変わり、(2)折り返した段落の途中でも段落の頭へ戻っていた。
+  // 段落の中で何字目かと、画面の上から何行目かも保つ。
+  int oldChars = charsBeforeCursor(), oldScreenRow = oldCursor - view_.topIndex();
 
   view_.setLines(readAndWrap(currentFile_));
   if (unmoved) {
-    placeSavedPosition(*restoredPosition_);  // restoredPosition_の宣言のコメント参照
+    placeSavedPosition(*restoredPosition_, oldChars);  // restoredPosition_の宣言のコメント参照
   } else {
     restoredPosition_.reset();
-    view_.setCursorIndex(translateCursorAfterReflow(oldCursor, oldRawLine));
+    view_.setCursorIndex(translateCursorAfterReflow(oldCursor, oldRawLine, oldChars));
+    keepCursorScreenRow(oldScreenRow);
   }
   if (draw) {
     view_.redraw();
@@ -1323,16 +1331,46 @@ std::optional<int> FileMode::rawLineNumberAt(int index) const {
   return lines[index].rawLineNumber;
 }
 
-int FileMode::translateCursorAfterReflow(int beforeCursor, std::optional<int> beforeRawLine) const {
+int FileMode::translateCursorAfterReflow(int beforeCursor, std::optional<int> beforeRawLine, int charsBefore) const {
   const auto &lines = view_.lines();
   int last = static_cast<int>(lines.size()) - 1;
   if (last < 0) return 0;
   if (beforeRawLine) {
     for (int i = 0; i <= last; i++) {
-      if (lines[i].rawLineNumber && *lines[i].rawLineNumber >= *beforeRawLine) return i;
+      if (lines[i].rawLineNumber && *lines[i].rawLineNumber >= *beforeRawLine) return rowWithinRawLine(i, charsBefore);
     }
   }
   return std::clamp(beforeCursor, 0, last);
+}
+
+static int nonSpaceBytes(const std::string &text) {
+  return static_cast<int>(std::count_if(text.begin(), text.end(), [](char c) { return c != ' '; }));
+}
+
+int FileMode::charsBeforeCursor() const {
+  const auto &lines = view_.lines();
+  int cursor = view_.cursorIndex();
+  if (cursor < 0 || cursor >= static_cast<int>(lines.size()) || !lines[cursor].imageKey.empty()) return 0;
+  std::optional<int> raw = lines[cursor].rawLineNumber;
+  int chars = 0;
+  for (int i = cursor - 1; raw && i >= 0 && lines[i].rawLineNumber == raw; i--) chars += nonSpaceBytes(lines[i].text);
+  return chars;
+}
+
+// firstRow(元の行の最初の画面の行)から数えて、charsBefore字目の字のある画面の行。画像の帯は字が無いのでその手前まで。
+int FileMode::rowWithinRawLine(int firstRow, int charsBefore) const {
+  const auto &lines = view_.lines();
+  int row = firstRow, used = 0;
+  for (; charsBefore > 0 && row + 1 < static_cast<int>(lines.size()) && lines[row + 1].rawLineNumber == lines[row].rawLineNumber; row++) {
+    if (!lines[row + 1].imageKey.empty()) break;
+    used += nonSpaceBytes(lines[row].text);
+    if (used > charsBefore) break;
+  }
+  return row;
+}
+
+void FileMode::keepCursorScreenRow(int screenRow) {
+  view_.setTopIndex(view_.cursorIndex() - std::clamp(screenRow, 0, std::max(0, view_.height() - 1)));
 }
 
 const std::string &FileMode::currentFile() const { return currentFile_; }
