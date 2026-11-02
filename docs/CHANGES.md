@@ -33366,3 +33366,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **結果**: Kbt.epubの本文の全465行が、C++版と字まで一致(幅100、バイト数27095)。
    - **残した違い**: CSSの`html { writing-mode: vertical-rl; }`がある本: C++版は横書きの本文だけ(章の一覧も無し)、Python版はOPFのrtlどおり縦書きになる。テストの本を作っていて発見。どちらが正しいかは未判断(Kbt.epubはこの形ではない)。
    - 確かめたこと: make usilic・make install(macOS)、test_cpp_parity(6件OK)、test_epub・test_epub_hints・test_epub_vertical・test_archive・test_history。一時的なHOMEで実行。全部のユニットテストは実行していない。
+1194. **FGREP(^S)の移動に^S/^R、何か入っているプロンプトの^Rは履歴を開かない(2026-11-02)**
+   - **経緯**: 直接のユーザー依頼("FGREPなんだが、検索結果一覧の移動キーを^N/^Pに加え、emacs同様^S/^Rを有効にしてほしい。^Rは本来HISTORYだが、真っ新プロンプトの時だけ有効でいい"、"それでも履歴を見たいなら^U^Rの時だけでもいい"、"^O^Sでは現状のままでいい")。
+   - **変更(C++版・Python版)**: ^Sのプロンプトを打っている間と確定の後、^Sで次、^Rで前の一致へ。プロンプトに字があれば^Rは履歴を開かず(一致が無ければ何もしない)、^Uで消した真っ新なプロンプトの^Rが履歴。確定の後の^U^Rも履歴。^J^S(EGREP)と^O^S / ^O^J^Sはそのまま。ページャーでも確定の後の^Rを通す。
+   - **揃えたPython版の違い**: 確定(^M)で一致の先頭へ戻っていたのを、動いた今の一致のままに。履歴が空でもHISTORYの画面(「No String」、右端に戻り先)を開く。
+   - HELP: src/HELP_.txt・HELP_en_.txtのF/EGREPの節に2文。テスト: test_cpp_parityにtest_fgrep_move_keys(テストの端末は読み込みの切れ目で切れたエスケープ列も待つように)。
+   - 確かめたこと: make usilic・make install(macOS)、test_fgrep_move_keys。一時的なHOMEで実行。

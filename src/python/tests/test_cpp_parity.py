@@ -60,6 +60,9 @@ class Screen:
                     i = match.end()
                     continue
                 following = text[i + 1:i + 2]
+                if not following or (following == '[' and SEQUENCE.fullmatch(text[i:] + 'm')):
+                    self.pending = text[i:].encode('utf-8') + self.pending  # 読み込みの切れ目で切れた列
+                    return
                 if following in ('(', ')', '#'):  # 文字集合の指定等(3バイト)
                     i += 3
                     continue
@@ -298,6 +301,14 @@ class CppParityTest(unittest.TestCase):
             vertical += [('^[' + label, b'\x1b'), (label, side), ('↑', up)]
         self.compare([self.path('v.epub')], vertical + [('^G', G)] + vertical[:3] + [('下の↓', b'\x1b'), ('下', down),
                                                                                     ('↓', down)])
+
+    def test_fgrep_move_keys(self):
+        typed = [('^S', b'\x13'), ('line 1', b'line 1')]
+        moves = [('^S次', b'\x13'), ('^S次', b'\x13'), ('^R前', b'\x12')]
+        # 打っている間、確定の後、^Uで消した真っ新なプロンプトの^R(履歴)、^J^Sの確定の後の^N
+        self.compare([self.path('a.txt')], typed + moves + [('^M', b'\r')] + moves + [('^G', G)])
+        self.compare([self.path('a.txt')], typed + [('^U', b'\x15'), ('^R', b'\x12'), ('^G', G), ('^G', G)])
+        self.compare([self.path('a.txt')], [('^J^S', b'\x0a\x13'), ('line 2', b'line 2'), ('^M', b'\r'), ('^N', b'\x0e')])
 
     def test_directory_open_archive_listing(self):
         self.compare([self.work], [('^[>', b'\x1b>'), ('^O^M', b'\x0f\r'), ('^G', G)])

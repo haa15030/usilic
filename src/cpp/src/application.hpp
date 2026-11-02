@@ -3270,6 +3270,7 @@ class Application {
   bool executePathInput(const std::string &path);
   bool executeEdit();
   bool startKey();  // Command::StartKey参照
+  bool fgrepMoveKey(int byte, std::optional<KeyInput::SpecialKey> special) const;
   // Command::ToggleHelpLanguage参照: ^Ojの前に見ていたHELP・KEYと位置、^Ojの後にそれを切り替えた言語で開き直す。
   struct HelpLanguageView {
     enum Kind { None, Key, EpubToc, EpubBody, Plain } kind = None;

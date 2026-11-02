@@ -470,6 +470,12 @@ class Application:
             back = self.return_stack[-1] if self.return_stack else DIRECTORY
             if self.tab_completion is not None:  # ^I^Iの候補の一覧: 語の前の部分に続けて、右端に戻り先
                 return self.prompt_line_with_text(lm.label, position, self.tab_completion[2] + item, back)
+            if self.list_prompt is not None and self.list_prompt.kind in (pr.FGREP, pr.EGREP) and not lm.items:
+                # 空のHISTORY(C++のlistBrowserView_の欄): 右端に戻り先
+                destination = mode_line.truncated_trailing_path(self.previous_mode_name(back))
+                fields = F('HISTORY', '', True, '', destination)
+                fields.trailing_plain = fields.trailing2_right_justified = True
+                return fields, position
             if not lm.sorted and (lm.prompt_kind is not None or self.list_prompt is not None):
                 # 入力順(listBrowserChronological_): 名前はHISTORY、右端にプロンプトの名前
                 label = self.list_prompt.label if self.list_prompt is not None else lm.label
@@ -1705,7 +1711,7 @@ class Application:
         items = list(self.ring(p.history_category))
         if p.kind in (pr.EGREP, pr.PART, pr.OCCUR_REGEX, pr.MARK_REGEX):
             items = list(self.configuration.grep_examples) + items
-        if not items:
+        if not items and p.kind not in (pr.FGREP, pr.EGREP):
             self.show_transient_notice('No string')
             return True
         self.prompt = None
@@ -1718,7 +1724,10 @@ class Application:
             back.editor.set_text(self.strip_tags(item))
             self.restore_prompt(back)
             return True
-        return self.show_list(items, p.label, choose, False, prompt_kind=p.kind)
+        result = self.show_list(items, p.label, choose, False, prompt_kind=p.kind,
+                                allow_empty=p.kind in (pr.FGREP, pr.EGREP))  # 空でもHISTORYの画面(C++と同じ)
+        self.list_view.empty_placeholder = Line('No String') if not items else None
+        return result
 
     def restore_prompt(self, p):
         if p.kind in (pr.FGREP, pr.EGREP):
@@ -2419,8 +2428,9 @@ class Application:
         if self.grep_prompt is not None:
             return self.feed_grep_prompt_byte(byte)
         if self.grep_active and special is None:
-            if byte in (0x0E, 0x10):  # ^N/^P: 次/前の一致
-                self.grep.move(1 if byte == 0x0E else -1)
+            # ^N/^P: 次/前の一致。^Sの検索はEmacsと同じく^S/^Rも(C++の項目1194)
+            if byte in (0x0E, 0x10) or (byte in (0x13, 0x12) and self.grep.syntax == FIXED):
+                self.grep.move(1 if byte in (0x0E, 0x13) else -1)
                 self.show_current_match()
                 return True
             if byte == CTRL_G:  # そこに留まる(^Gも今いる一致のまま、C++版と同じ)
@@ -3260,10 +3270,18 @@ class Application:
             if self.history is not None:
                 self.history.push_recent(hist.RECENT_FGREP_PATTERN if syntax == FIXED else hist.RECENT_EGREP_PATTERN,
                                          pattern)
-            if not self.run_grep(syntax, pattern) or not self.grep.matches:
+            # ^Sは打っている間に探し終えていて、^N・^S等で動いた今の一致のまま確定する(C++と同じ)
+            already = syntax == FIXED and self.grep.pattern == pattern and self.grep.matches
+            if not already and (not self.run_grep(syntax, pattern) or not self.grep.matches):
                 self.show_transient_notice('No string')
                 return True
             self.grep_active = True
+            return True
+        if byte in (0x13, 0x12) and syntax == FIXED and (byte == 0x13 or editor.text):
+            # 打っている間の^S: 次の一致、^R: 前(何か入っていれば履歴を開かない、^Uで消してから^Rで履歴、C++の項目1194)
+            if self.grep.matches:
+                self.grep.move(1 if byte == 0x13 else -1)
+                self.show_current_match()
             return True
         if byte == 0x12:  # ^R: 入力順の一覧(EGREPはusilicrcのGREPの例を先頭に)
             self.grep_prompt = None
@@ -3274,7 +3292,7 @@ class Application:
                 self.prompt = None
                 self.grep_prompt = (syntax, editor)
             return result
-        if byte == 0x13:  # 打っている間の^Sは何もしない(C++と同じ、次の一致へは^N)
+        if byte == 0x13:  # ^J^Sの打っている間の^Sは何もしない
             return True
         if byte in (0x0E, 0x10) and syntax == FIXED:  # 打っている間の^N: 次の一致へ、^P: 前へ(巡回)
             self.grep.move(-1 if byte == 0x10 else 1)

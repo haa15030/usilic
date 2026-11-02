@@ -2836,9 +2836,15 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // プレビューしたい)なので、このチェックをプロンプト経路より前へ
   // 出す――他の全てのバイトは引き続き通常通りfeedPromptByte()へ渡る
   // (ここで横取りするのは0x0e/0x10の2バイトだけ)。
+  // 2026-11-02、直接のユーザー依頼("FGREP...移動キーを^N/^Pに加え、emacs同様^S/^Rを有効に。^Rは本来HISTORYだが、
+  // 真っ新プロンプトの時だけ有効でいい"): 打っている間は^Sが次、^Rが前。何か入っていれば^Rは履歴を開かない
+  // (履歴を見たければ^Uで消してから^R)。一致が無い間の^S/^Rは何もしない。^J^S・^O^Sのプロンプトはそのまま。
+  if (incrementalGrepActive_ && promptKind_ == PromptKind::GrepPattern && !special && !grepInPlaceActive_ &&
+      (byte == 0x13 || (byte == 0x12 && !promptEditor_.text().empty())))
+    return true;
   if (grepInPlaceActive_ && incrementalGrepActive_ && promptKind_ == PromptKind::GrepPattern && !special &&
-      (byte == 0x0e || byte == 0x10)) {
-    bool result = handleCommand(byte == 0x0e ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
+      (byte == 0x0e || byte == 0x10 || byte == 0x13 || byte == 0x12)) {
+    bool result = handleCommand(byte == 0x0e || byte == 0x13 ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
     // jumpToGrepInPlaceMatch()自身のredraw()が、liveIncrementalGrepSearch()
     // 自身のコメント通り画面最終行(生きたプロンプトの行)を通常の
     // モードラインで上書きしてしまう――そちらと同じ組で描き直す。
@@ -2955,6 +2961,7 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   if (grepInPlaceActive_ && !special && (byte == 0x0e || byte == 0x10)) {
     return handleCommand(byte == 0x0e ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
   }
+  if (fgrepMoveKey(byte, special)) return handleCommand(byte == 0x13 ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
   // GrepPattern/CutPattern/ManName自身の「Select ...」リスト
   // (startRegexPromptList()自身のコメント参照): 他の全てのListBrowser
   // の使い方(FILE/DIR/SHELL/PROGRAMのピッカー、全て純粋なナビゲート+
@@ -4140,6 +4147,7 @@ std::optional<bool> Application::gatePagerKey(int byte, std::optional<KeyInput::
   // 2026-11-02、直接のユーザー報告(ページャーのKEYの^[<の行は^Mで飛べるのに"hは「使えません」"): KEYのh(HELPの同じ行へ)。
   if (pagerKeyBuffer_.empty() && byte == 'h' && currentMode_ == ApplicationMode::Cut && cutOrigin_ == CutOrigin::Key)
     return std::nullopt;
+  if (pagerKeyBuffer_.empty() && fgrepMoveKey(byte, std::nullopt)) return std::nullopt;  // ページャーのFGREPの^R(前の一致)
   const auto &allowed = pagerAllowedKeys();
   if (allowed.empty()) return std::nullopt;
   pagerKeyBuffer_.push_back(byte);
@@ -4593,6 +4601,7 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   if (grepInPlaceActive_ && !special && (byte == 0x0e || byte == 0x10)) {
     return handleCommand(byte == 0x0e ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
   }
+  if (fgrepMoveKey(byte, special)) return handleCommand(byte == 0x13 ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
   if (grepInPlaceActive_ && byte == kControlG) {
     deactivateGrepInPlace();
     return true;
@@ -15326,6 +15335,12 @@ bool Application::startGrepPrompt(GrepSyntax syntax) {
 // 揃えて表示と挙動を一致させる(モードラインのラベルが今も"FGREP"で
 // あるのはこのため――^Sの検索が「リテラル」であることを、^J^Sの
 // "EGREP"と対にして示し続ける)。
+// ^Sの検索を確定した後の^S(次)/^R(前)。^J^Sの結果はそのまま(^N/^Pだけ)。^U^Rは履歴(ふつうの^Rへ流れる)。
+bool Application::fgrepMoveKey(int byte, std::optional<KeyInput::SpecialKey> special) const {
+  return grepInPlaceActive_ && !special && grepSyntax_ == GrepSyntax::Fixed && !universalArgPending_ &&
+         (byte == 0x13 || byte == 0x12);
+}
+
 bool Application::startIncrementalGrepPrompt() {
   if (!isGrepInPlaceEligibleMode(currentMode_)) return false;
   grepSyntax_ = GrepSyntax::Fixed;
