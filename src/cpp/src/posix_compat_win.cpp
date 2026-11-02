@@ -60,6 +60,39 @@ bool requestProcessQuit(long long pid) {
   return sent;
 }
 
+static std::string channelSlotPath(const std::string &name) { return "\\\\.\\mailslot\\" + name; }
+
+void *openChannelSlot(const std::string &name) {
+  HANDLE slot = CreateMailslotA(channelSlotPath(name).c_str(), 0, 0, nullptr);  // タイムアウト0: 待たない
+  return slot == INVALID_HANDLE_VALUE ? nullptr : slot;
+}
+
+bool writeChannelSlot(const std::string &name, const std::string &message) {
+  HANDLE slot = CreateFileA(channelSlotPath(name).c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                            FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (slot == INVALID_HANDLE_VALUE) return false;
+  DWORD written = 0;
+  bool ok = WriteFile(slot, message.data(), static_cast<DWORD>(message.size()), &written, nullptr) &&
+            written == message.size();
+  CloseHandle(slot);
+  return ok;
+}
+
+std::string readChannelSlot(void *slot) {
+  std::string out;
+  for (;;) {
+    DWORD next = 0, count = 0;
+    if (!GetMailslotInfo(static_cast<HANDLE>(slot), nullptr, &next, &count, nullptr) || next == MAILSLOT_NO_MESSAGE) break;
+    std::string message(next, '\0');
+    DWORD got = 0;
+    if (!ReadFile(static_cast<HANDLE>(slot), message.data(), next, &got, nullptr)) break;
+    out.append(message, 0, got);
+  }
+  return out;
+}
+
+void closeChannelSlot(void *slot) { CloseHandle(static_cast<HANDLE>(slot)); }
+
 void preciseSleepMicroseconds(long microseconds) {
   if (microseconds <= 0) return;
   LARGE_INTEGER frequency, start, now;

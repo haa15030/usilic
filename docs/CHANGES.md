@@ -33408,6 +33408,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1205. **Windowsの親子のつながり(^T^H・KEYの子の^M・usilic-c.exeの子)、usilicrcの^H^G(2026-11-02)**
+   - 直接のユーザー報告・依頼("^T^Hが開かない。^T^Kは開くけれども「^[<:先頭へ」は「親に届きません」これは諦めか。"、"usilic-c.exeで起動したときの^T^Kもusilic-c.exeで開いてほしい"、"~/.usilic/usilicrc画面での^H^Gは戻り値を「/Users/haa15030/.usilic/usilicrc」にして(現状は(ls))")。
+   - **^T^H**: 子の引数の`~/.usilic/HELP.epub`はmain.cppの`lexically_normal()`でWindowsでは"\"区切りになり、"/"で置いたメモリ上のHELP(`helpEpubPathFor()`)と文字列が一致せず、開けずに子が終わっていたと読んだ(コードからの判断、実機は未確認)。`openEpubQuietly()`は`helpEpubPathFor()`の返す名前で開く。
+   - **親に届きません**: `sendToChannel()`がWindowsでは常に失敗していた(FIFOが無い)。メールスロット`\\.\mailslot\usilic-ch-<親のPID>-<名前>`で同じ受け渡しにした(posix_compat_win.cpp、`openChildChannel()`・`pollChildChannel()`)。子の登録("pid.<PID>"のファイル)はそのまま。これでKEYの子の^M・h、^Tn/^Tpの巡回も親へ届く。`terminateChildren()`は`ps`の代わりに項目1204の合図で子を終わらせ、子も合図を待つ(main.cpp)。`forwardHelpRequest()`のHELPの子の開き直しもWindowsの起動に。親子での^Og("G")は、子の開き直しがsh・端末に頼るのでWindowsでは送らない。
+   - **usilic-c.exeの子**: CUIの親の子は、新しいコンソールのusilic-c.exe -c(`ChildProcess::runInNewConsole()`、標準入出力は渡さない。NULを渡すとパイプからの起動になる)。usilic-c.exe -gの親の子は従来どおり窓のusilic.exe。
+   - **usilicrcの^H^G**: `rememberPagerFileForHelp()`の`Kind::Usilicrc`。章の一覧の戻り値はそのパス、^Gでusilicrcの元の位置へ、その後の^Gは元の戻り先。HELPの外から^Hする度に決め直すので、次に(ls)から^Hした時は(ls)へ戻る。他のファイルの^H^Gは今までどおり(ls)。Python版も同じ(`help_returns_to_usilicrc()`)。
+   - **確かめたこと**: usilicrcの^H^GはMacのC++版・Python版を一時的なHOMEで。`usilic -c ~/.usilic/HELP.epub`がMacで開くこと。Windows向けはコンパイルとzip作成まで、Windowsの動作は未確認。
+
 1204. **Windowsでも、ファイルマネージャーのusilicは1つだけ(2026-11-02)**
    - 直接のユーザー依頼("複数起動していても実害は無いんだけど、shellのように追記ならまだしもerrorのように空になるのは仕様上マズいなと。Windowsでも1つだけにして。")。項目1201の「今のまま」の判断を撤回。
    - **原因**: Windowsにはプロセスへ送れるSIGTERMが無く(`kill()`は常に`TerminateProcess`)、本人確認の`ps`も無いので、排他が何もしていなかった。

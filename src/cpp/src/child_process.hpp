@@ -168,6 +168,10 @@ class ChildProcess {
   // 返す。起動できなかった場合は-1。完了したら回収するために
   // hasExited()と組み合わせて使う。
   static pid_t runDetached(const std::vector<std::string> &argv);
+#ifdef _WIN32
+  // 新しいコンソールのウィンドウで起動する(CUIのusilic-c.exeの子、Application::launchWindowsUsilicChild())。
+  static pid_t runInNewConsole(const std::vector<std::string> &argv);
+#endif
 
   // runDetached()の子プロセスが既に終了しているかどうかの
   // ノンブロッキングチェック(waitpid(pid, ..., WNOHANG))――終了して

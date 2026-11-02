@@ -367,6 +367,14 @@ pid_t ChildProcess::runDetached(const std::vector<std::string> &argv) {
   return ok ? remember(pi) : -1;
 }
 
+pid_t ChildProcess::runInNewConsole(const std::vector<std::string> &argv) {
+  if (argv.empty()) return -1;
+  PROCESS_INFORMATION pi{};
+  // 標準入出力は渡さない(新しいコンソールのものになる。NULを渡すと子はパイプからの起動だと思う)。
+  bool ok = launch(argv, nullptr, nullptr, nullptr, CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP, pi, /*useStdHandles=*/false);
+  return ok ? remember(pi) : -1;
+}
+
 bool ChildProcess::hasExited(pid_t pid) {
   if (pid <= 0) return true;
   HANDLE h;

@@ -5880,7 +5880,6 @@ int main(int argc, char **argv) {
       for (int waited = 0; waited < 80 && ::kill(static_cast<pid_t>(oldPid), 0) == 0; waited++) ::usleep(50000);
       if (::kill(static_cast<pid_t>(oldPid), 0) == 0) ::kill(static_cast<pid_t>(oldPid), SIGKILL);  // 4秒待っても応答無し
     }
-    listenForQuitRequest(&gTerminationSignalReceived);
 #else
     std::string ownProgramName = std::filesystem::path(argv[0]).filename().string();
     if (oldPid > 0 && static_cast<pid_t>(oldPid) != ::getpid() && ::kill(static_cast<pid_t>(oldPid), 0) == 0) {
@@ -5897,6 +5896,9 @@ int main(int argc, char **argv) {
     std::ofstream pidOut(pidPath, std::ios::trunc);
     if (pidOut) pidOut << ::getpid() << "\n";
   }
+#ifdef _WIN32
+  listenForQuitRequest(&gTerminationSignalReceived);  // 子も(親のApplication::terminateChildren()が頼む)
+#endif
 
   // tempRootDirectory: 2026-09-15修正(⑤、上のkill機構自身のコメント
   // 参照)――ファイルマネージャーとして起動する側(引数無し/ディレクト

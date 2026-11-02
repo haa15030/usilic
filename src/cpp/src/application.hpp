@@ -1833,6 +1833,7 @@ class Application {
   bool endsWithParentOnly_ = false;
   void setEndsWithParentOnly(bool value) { endsWithParentOnly_ = value; }
   int channelFd_ = -1;          // openChildChannel()のFIFO(読み)
+  void *channelSlot_ = nullptr;  // Windowsでは、FIFOの代わりのメールスロット(posix_compat.hpp)
   int channelKeepFd_ = -1;      // 同じFIFOの書き側(読み側がEOFにならないよう開いたままにする)
   std::string channelPath_;     // 同FIFOのパス
   std::string channelBuffer_;   // 読んだが改行までまだ届いていない分
@@ -3893,13 +3894,16 @@ private:
   bool returnFromKeyToEpubToc();
   // ページャーのファイルからHELPを開いた時の戻り先(rememberPagerFileForHelp()参照)。Bookは`usilic 本.epub`の本、ArchiveListingは`usilic x.tgz`の一覧。
   struct PagerHelpReturn {
-    enum class Kind { File, Book, ArchiveListing };
+    enum class Kind { File, Book, ArchiveListing, Usilicrc };
     std::string path;
     Kind kind;
     int cursor;
     int top;
+    ApplicationMode fileReturn = ApplicationMode::Directory;  // Usilicrc: 戻った後の^Gの戻り先
   };
   std::optional<PagerHelpReturn> pagerHelpReturn_;
+  // ~/.usilic/usilicrcから^Hで開いたHELPを見ている(^Gの戻り先はそのファイル、rememberPagerFileForHelp())。
+  bool helpReturnsToUsilicrc() const;
   void rememberPagerFileForHelp();
   bool landArchivePagerListing();  // finishArchiveLoadAsync()参照
   bool returnToPagerFileFromHelp();

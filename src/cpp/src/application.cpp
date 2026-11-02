@@ -1556,7 +1556,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       // なので正しくは非ハイライトの「USILIC」)"): ページャーとして開いた本の章の一覧の^Gはどこへも戻らない
       // (returnFromCut())ので、戻り値欄は空にし、本文と同じく右下の透かし(子は「USILIC」)を出す。
       // 2026-11-02: ページャーのファイルから^Hで開いたHELPなら、^Gの戻り先はそのファイル(pagerHelpReturn_)。
-      if (pagerLaunch_ && pagerHelpReturn_) {
+      if ((pagerLaunch_ && pagerHelpReturn_) || helpReturnsToUsilicrc()) {
         fields.trailing3 = pagerHelpReturn_->path;
       } else if (pagerLaunch_) {
         fields.trailing3.clear();
@@ -1745,7 +1745,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     fields.trailing3 = directoryMode_.currentDirectory();  // 戻り値欄は^Gの戻り先の(ls)(cutView_の同じ欄参照)
     // 2026-11-02、直接のユーザー報告(`usilic Kbt.epub`の章の一覧の戻り値が「縦書き」): ページャーの章の一覧は
     // ^Gでどこへも戻らないので(returnFromCut())、横書きの一覧(cutView_)と同じく戻り値は無く透かしを出す。
-    if (pagerLaunch_ && pagerHelpReturn_) {
+    if ((pagerLaunch_ && pagerHelpReturn_) || helpReturnsToUsilicrc()) {
       fields.trailing3 = pagerHelpReturn_->path;
     } else if (pagerLaunch_) {
       fields.trailing3.clear();
@@ -7405,6 +7405,9 @@ std::vector<std::pair<long, std::string>> Application::registeredChildren() cons
 // 2026-10-13、直接のユーザー依頼("^OgをCUI・GUI切り換えトグルとしたい...^Ogの際、開いていた子プロセスはすべて
 // 切り換えで"): いちばん上の親の^Ogで、子にも"G"を送って同じように切り替えさせる(pollChildChannel()の"G")。
 void Application::toggleChildrenGuiMode() {
+#ifdef _WIN32
+  return;  // Windowsの^Ogは親子で切り替えない(受け渡しはあるが、子の開き直しがsh・端末のウィンドウに頼る)
+#endif
   if (parentPid_ > 0) return;
   for (const auto &child : registeredChildren()) sendToChannel(static_cast<long>(::getpid()), child.second, "G\n");
 }
@@ -8909,12 +8912,16 @@ bool Application::openEpub(const std::string &path) {
   return opened;
 }
 
-bool Application::openEpubQuietly(const std::string &path) {
+bool Application::openEpubQuietly(const std::string &requestedPath) {
   // 2026-10-31(.steering/20261031-help-epub-in-memory/): HELPのEPUBはディスクに無く、メモリ上に作る(helpEpubPathFor())。
   // HELPの子(-H・^T^H、"usilic <そのパス>"で起動される)は、ここで自分でも同じ名前のものを作る。
-  if (isGeneratedHelpEpub(path) && !fileMode_.isMemoryFile(path)) {
-    std::string name = std::filesystem::path(path).stem().string();  // "HELP"・"HELP.en"
-    if (!helpEpubPathFor(name)) return false;
+  // 2026-11-02、直接のユーザー報告(Windows、"^T^Hが開かない"): 子の引数はmain.cppのlexically_normal()で"\"区切りに
+  // なり、"/"で置いたメモリ上のファイルと文字列が一致しなかった。helpEpubPathFor()の返す名前で開く。
+  std::string path = requestedPath;
+  if (isGeneratedHelpEpub(path)) {
+    std::optional<std::string> memoryPath = helpEpubPathFor(std::filesystem::path(path).stem().string());  // "HELP"・"HELP.en"
+    if (!memoryPath) return false;
+    path = *memoryPath;
   }
   // 2026-09-29、直接のユーザー依頼("キー操作での縦横切り替えは廃止。著者は、いずれかを
   // cssファイルに設定してあるはずなのでそれで判断する"): 縦書きかどうかは本が決める
@@ -9084,7 +9091,18 @@ bool Application::returnFromKeyToEpubToc() {
 // 2026-11-02、直接のユーザー報告(`usilic BUILD.md`から^H、章の一覧の"^GでBUILD.mdへ戻らない"): ページャーのファイルは
 // HELPを開くと閉じられ、戻る先が無かった。開く前にファイルと位置を覚える。標準入力は読み直せないので覚えない。
 void Application::rememberPagerFileForHelp() {
-  if (!pagerLaunch_ || pagerHelpReturn_) return;
+  // 2026-11-02、直接のユーザー依頼("~/.usilic/usilicrc画面での^H^Gは戻り値を「/Users/haa15030/.usilic/usilicrc」にして
+  // (現状は(ls))"): HELPの外から^Hする度に決め直す(前のHELPの戻り先を残さない)。
+  if (!pagerLaunch_) {
+    pagerHelpReturn_.reset();
+    if (currentMode_ != ApplicationMode::File) return;
+    std::error_code ec;
+    if (fileMode_.currentFile().empty() || !std::filesystem::equivalent(fileMode_.currentFile(), usilicrcPath_, ec) || ec)
+      return;
+    pagerHelpReturn_ = PagerHelpReturn{usilicrcPath_, PagerHelpReturn::Kind::Usilicrc, 0, 0, fileReturnMode_};
+    return;
+  }
+  if (pagerHelpReturn_) return;
   using Kind = PagerHelpReturn::Kind;
   // 2026-11-02、直接のユーザー依頼(ARCHIVEのsuffixの引数の選べない一覧、"^H^Gでは一覧へ戻って欲しい"): 一覧は
   // ファイルではない(currentFile()が空)ので、finishArchiveLoadAsync()の出力から作り直す。
@@ -9105,6 +9123,11 @@ void Application::rememberPagerFileForHelp() {
 }
 
 // rememberPagerFileForHelp()参照: HELPの章の一覧の^Gで、元のファイルを開き直して元の位置へ。
+bool Application::helpReturnsToUsilicrc() const {
+  return !pagerLaunch_ && pagerHelpReturn_ && pagerHelpReturn_->kind == PagerHelpReturn::Kind::Usilicrc &&
+         isGeneratedHelpEpub(fileMode_.currentFile());
+}
+
 bool Application::returnToPagerFileFromHelp() {
   PagerHelpReturn target = *pagerHelpReturn_;
   pagerHelpReturn_.reset();
@@ -9112,6 +9135,18 @@ bool Application::returnToPagerFileFromHelp() {
   fileMode_.annotations().clear();  // openEpub()の"EPUB"注釈
   epubVertical_ = false;
   if (target.kind == PagerHelpReturn::Kind::Book) return openEpub(target.path);
+  if (target.kind == PagerHelpReturn::Kind::Usilicrc) {
+    epubJumpRaw_.reset();
+    epubJumpOrigin_.reset();
+    epubHorizontalSection_.reset();
+    syncEpubHorizontalPresentation();
+    if (!fileMode_.loadFile(target.path)) return false;  // 位置はhistoryから
+    currentMode_ = ApplicationMode::File;
+    fileReturnMode_ = target.fileReturn;
+    activeView().redraw();
+    activeView().syncVisibleCursor();
+    return true;
+  }
   if (target.kind == PagerHelpReturn::Kind::ArchiveListing ? !landArchivePagerListing() : !loadPagerFile(target.path))
     return false;
   epubJumpRaw_.reset();
@@ -11548,6 +11583,7 @@ bool Application::returnFromCutContent() {
 // returnFromGrep()が防がなければならなかったような古い注釈の危険は
 // 無い。
 bool Application::returnFromCut() {
+  if (helpReturnsToUsilicrc() && cutOrigin_ == CutOrigin::Epub) return returnToPagerFileFromHelp();
   // 2026-10-12: ページャーとして起動した時(pagerLaunch_)は(ls)を読み込んでいないので、EPUBの章の一覧の^Gで
   // 空の(ls)へ出ていた。ページャーではディレクトリへ行かない(gatePagerKey()と同じ依頼)ので、その場に留まる。
   // 2026-10-29: 最初の起動(setFirstStartPager())では、シェルが動いていれば(インストールの後)機能限定SHELLへ
@@ -20458,14 +20494,19 @@ std::string channelDirectory(long ownerPid) {
   return (std::filesystem::temp_directory_path(ec) / ("usilic-ch-" + std::to_string(ownerPid))).string();
 }
 
+#ifdef _WIN32
+// 2026-11-02、直接のユーザー依頼(-KのKEYの^Mが"親に届きません"): Windowsの受け渡しはメールスロット。ディレクトリは
+// 子の登録("pid.<PID>"、registerAsChild())にそのまま使う。
+std::string channelSlotName(long ownerPid, const std::string &name) {
+  return "usilic-ch-" + std::to_string(ownerPid) + "-" + name;
+}
+#endif
+
 // `ownerPid`の受け渡しのFIFO `name`へ`message`(1行、PIPE_BUF以下なら一度に書かれる)を書く。読む側が
 // いなければ(FIFOが無い・開いているプロセスが無い)false。
 bool sendToChannel(long ownerPid, const std::string &name, const std::string &message) {
-#ifdef _WIN32  // .steering/20261015-windows-native-gui/
-  (void)ownerPid;
-  (void)name;
-  (void)message;
-  return false;  // 親子のusilic(FIFO)はWindowsでは未対応
+#ifdef _WIN32
+  return writeChannelSlot(channelSlotName(ownerPid, name), message);
 #else
   std::string path = channelDirectory(ownerPid) + "/" + name;
   int fd = ::open(path.c_str(), O_WRONLY | O_NONBLOCK);
@@ -22148,9 +22189,12 @@ void Application::pollShellOfferFollowUp() {
 // 1行で書く。親はキーを今の画面で実行し(executeRemoteKeys())、HELPの行はHELPの子の"help"へ回す(いなければ
 // HELPの子を開き直して、起動時にその行へ飛ばす、forwardHelpRequest())。
 void Application::openChildChannel(long ownerPid, const std::string &name) {
-#ifdef _WIN32  // .steering/20261015-windows-native-gui/
-  (void)ownerPid;
-  (void)name;  // 親子のusilic(FIFO)はWindowsでは未対応
+#ifdef _WIN32
+  closeChildChannel();
+  std::string dir = channelDirectory(ownerPid);
+  ::mkdir(dir.c_str(), 0700);
+  channelSlot_ = openChannelSlot(channelSlotName(ownerPid, name));
+  if (channelSlot_) channelPath_ = dir + "/" + name;
 #else
   closeChildChannel();
   std::string dir = channelDirectory(ownerPid);
@@ -22195,9 +22239,13 @@ void Application::terminateChildren() {
       std::filesystem::remove(entry.path(), ec);  // 強制終了等で残ったもの
       continue;
     }
+#ifdef _WIN32
+    if (!requestProcessQuit(pid)) continue;  // usilicでなければ合図のイベントが無い(posix_compat.hpp)
+#else
     std::string comm = ChildProcess::run({"ps", "-p", std::to_string(pid), "-o", "comm="}).output;
     if (comm.find("usilic") == std::string::npos) continue;
     ::kill(pid, SIGTERM);
+#endif
     pids.push_back(pid);
   }
   for (int waited = 0; waited < 30; waited++) {
@@ -22218,6 +22266,10 @@ void Application::closeChildChannel() {
   if (channelFd_ >= 0) ::close(channelFd_);
   if (channelKeepFd_ >= 0) ::close(channelKeepFd_);
   channelFd_ = channelKeepFd_ = -1;
+#ifdef _WIN32
+  if (channelSlot_) closeChannelSlot(channelSlot_);
+  channelSlot_ = nullptr;
+#endif
   if (!channelPath_.empty()) {
     ::unlink(channelPath_.c_str());
     ::rmdir(std::filesystem::path(channelPath_).parent_path().string().c_str());  // 空なら(他方のFIFOが残っていれば残る)
@@ -22229,33 +22281,36 @@ void Application::closeChildChannel() {
 #ifdef _WIN32
 // 2026-10-20、直接のユーザー報告("Windowsでは利かない？"、=kx.png): Windowsのネイティブ(.steering/
 // 20261015-windows-native-gui/)には親子のusilicのつながり(FIFO)が無いので、HELP・KEYの子は、このusilic.exeを
-// USILIC_TRANSIENT(このusilicのPID)付きで直接起動するだけ(sh・runExternalUsilicPager()を通さない)。子は親が
-// いなくなれば終わる(main.cppのtransientParentGone()、kill()はposix_compat_win.cpp)。KEYの子の^M(親でキーを
-// 実行)・HELPの子への行の受け渡しは、FIFOが要るので使えない。
+// USILIC_TRANSIENT(このusilicのPID)付きで直接起動する(sh・runExternalUsilicPager()を通さない)。親子の受け渡しは
+// メールスロット(openChildChannel())。
 void Application::launchWindowsUsilicChild(const std::vector<std::string> &args) {
   std::string exe = windowsExecutablePath();
   if (exe.empty()) return;
-  // CUI(usilic-c.exe)の親でも、子は窓のusilic.exeで開く(usilic-c.exeだと隠れたコンソールが付いてくる)。
-  {
-    std::filesystem::path path(exe);
+  // 2026-11-02、直接のユーザー依頼("usilic-c.exeで起動したときの^T^Kもusilic-c.exeで開いてほしい"): CUIの親の子は、
+  // 新しいコンソールのusilic-c.exe。usilic-c.exeの-gの親の子は窓のusilic.exe(usilic-c.exeだと隠れたコンソールが付く)。
+  std::filesystem::path selfPath(exe);
+  bool consoleChild = selfPath.filename() == "usilic-c.exe" && !display_.isGraphical();
+  if (selfPath.filename() == "usilic-c.exe" && !consoleChild) {
     std::error_code ec;
-    std::filesystem::path windowed = path.parent_path() / "usilic.exe";
-    if (path.filename() == "usilic-c.exe" && std::filesystem::exists(windowed, ec)) exe = windowed.generic_string();
+    std::filesystem::path windowed = selfPath.parent_path() / "usilic.exe";
+    if (std::filesystem::exists(windowed, ec)) exe = windowed.generic_string();
   }
   std::vector<std::pair<std::string, std::string>> env = {
       {"USILIC_TRANSIENT", std::to_string(parentPid_ > 0 ? parentPid_ : static_cast<long>(::getpid()))},
       {"USILIC_WINDOW_SLOT", std::to_string(externalWindowSlot_)}};
-  if (guiFrameProvider_) env.push_back({"USILIC_GUI_FRAME", guiFrameProvider_()});
-  if (guiFontProvider_) env.push_back({"USILICFONT", guiFontProvider_()});
+  if (!consoleChild && guiFrameProvider_) env.push_back({"USILIC_GUI_FRAME", guiFrameProvider_()});
+  if (!consoleChild && guiFontProvider_) env.push_back({"USILICFONT", guiFontProvider_()});
   std::vector<std::pair<std::string, std::optional<std::string>>> saved;
   for (const auto &[name, value] : env) {
     const char *old = std::getenv(name.c_str());
     saved.push_back({name, old ? std::optional<std::string>(old) : std::nullopt});
     if (!value.empty()) ::setenv(name.c_str(), value.c_str(), 1);
   }
-  std::vector<std::string> argv = {exe, "-g"};
+  std::vector<std::string> argv = {exe, consoleChild ? "-c" : "-g"};
   argv.insert(argv.end(), args.begin(), args.end());
-  ChildProcess::runDetached(argv);  // 子は起動時の環境を受け継ぐので、起動したら戻す
+  // 子は起動時の環境を受け継ぐので、起動したら戻す
+  if (consoleChild) ChildProcess::runInNewConsole(argv);
+  else ChildProcess::runDetached(argv);
   for (const auto &[name, value] : saved) {
     if (value) ::setenv(name.c_str(), value->c_str(), 1);
     else ::unsetenv(name.c_str());
@@ -22324,6 +22379,10 @@ void Application::pollChildChannel() {
     if (std::exchange(keyChildPending_, false)) launchKeyChild();
     display_.flush();
   }
+#ifdef _WIN32
+  if (!channelSlot_) return;
+  channelBuffer_ += readChannelSlot(channelSlot_);
+#else
   if (channelFd_ < 0) return;
   char buf[4096];
   for (;;) {
@@ -22331,6 +22390,7 @@ void Application::pollChildChannel() {
     if (n <= 0) break;
     channelBuffer_.append(buf, static_cast<std::size_t>(n));
   }
+#endif
   bool handled = false;
   for (std::size_t nl; (nl = channelBuffer_.find('\n')) != std::string::npos;) {
     std::string line = channelBuffer_.substr(0, nl);
@@ -22437,6 +22497,12 @@ void Application::forwardHelpRequest(const std::string &request) {
   if (sendToChannel(::getpid(), "help", "H " + request + "\n")) return;
   // HELPの子がいない(閉じられた): -H・最初の起動と同じHELPの子を開き直し、起動したらその行へ飛ばす。
   if (helpLoadedPath_.empty()) return;
+#ifdef _WIN32
+  ::setenv("USILIC_HELP_JUMP", request.c_str(), 1);  // launchWindowsUsilicChild()の子が受け継ぐ
+  launchHelpChild();
+  ::unsetenv("USILIC_HELP_JUMP");
+  return;
+#endif
   // 2026-10-18、直接のユーザー報告("^Hとやっても~/.local/lib/usilic/HELP.epubを読まない"): HELP.epubがあれば、
   // 子の窓でも^Hと同じくそちらを開く(Command::StartHelp参照)。
   std::string helpFile = helpEpubPath().value_or(helpLoadedPath_);

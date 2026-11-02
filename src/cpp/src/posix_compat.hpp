@@ -37,6 +37,12 @@ int kill(long long pid, int sig);
 // falseならpidは動いているusilicではない(PIDが別のプロセスに使い回されていても誤って止めない)。
 void listenForQuitRequest(volatile std::sig_atomic_t *flag);
 bool requestProcessQuit(long long pid);
+// 親子の受け渡し(Application::openChildChannel())のFIFOの代わりのメールスロット(2026-11-02)。FIFOと同じく、読む側が
+// いなければ書けず(false)、読む側は待たずに読む(来ていなければ空)。
+void *openChannelSlot(const std::string &name);
+bool writeChannelSlot(const std::string &name, const std::string &message);
+std::string readChannelSlot(void *slot);
+void closeChannelSlot(void *slot);
 #ifndef SIGKILL
 #define SIGKILL 9
 #endif
