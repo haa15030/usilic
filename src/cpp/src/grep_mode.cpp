@@ -120,6 +120,8 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
   // 試す。
   ChildProcess::Options options;
   options.input = &inputText;
+  // 2026-11-02(LANG=ja_JP.eucJPのTerminal.appでHELPの章の一覧が作れなかった): 渡す字はいつもUTF-8なので、ロケールに関わらず。
+  options.forceUtf8CTypeForListing = true;
   ChildProcess::Result result;
   bool ranAtLeastOnce = false;
   // 2026-09-10追加: 実際に一致した候補(NFC/NFDのどちらでヒットしたか、

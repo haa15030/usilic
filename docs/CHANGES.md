@@ -33378,6 +33378,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: 端末のフォントが分かっている時(gTerminalFontPath)はその切り替えをしない。アイコンからの起動等、端末のフォントが無い時の既定はIPAゴシックのまま(font-ipafontの案内もそのため残す)。端末のフォントを読めない端末(Terminal.app・iTerm2・Ptyxis以外)もフォールバックのまま。保存した^J^Fのフォントが先なので、既にIPAゴシックを選んだ履歴は^J^Fの「端末のフォント」で戻す。
    - HELP: src/HELP_.txt・HELP_en_.txtに1文、必要なソフトウェアの節の「GUI の既定フォント」を直した。
    - 確かめたこと: make usilic・make install(macOS)。-gの窓の動きはユーザーの実機で確認。
+1199. **LANGがUTF-8でなくてもHELPの章分け・検索が動くように(2026-11-02)**
+   - **経緯**: 直接のユーザー報告(~/.usilic/historyを無くして-cで起動すると和文が「〓」等に化け、^Ojの英語でも一部化ける。日本語に戻して再起動しても英語のまま)。「一時的なHOMEではなく~/からの-c起動での動作チェックと~/.usilic/historyの調査」の依頼で本物のHOMEで調べた(historyは退避して戻した)。
+   - **調べ**: historyは壊れていない(文字コードの欄は310=UTF-8、言語の欄はそもそも無い)。本物のHOME・historyなしでもLANG=ja_JP.UTF-8なら化けない。「〓」はusilicのソースに無い。Terminal.appのBasicプロファイルがCharacterEncoding=3(日本語EUC)で、usilicのUTF-8を端末がEUCとして描いていた(LANGはプロファイルに合わせてja_JP.eucJPになる想定、rcファイルに設定は無い)。起動時の言語はLANGで決めるので(2026-10-11の仕様)、ja_JPのUTF-8以外はいつも英語で始まる。
+   - **usilicの不具合**: LANG=ja_JP.eucJPだとCutMode::split()のgrepがUTF-8の本文を読めず、章の一覧が作れないので、モードラインが「HELP.epub ... /Users/.../.usilic/」になった(=ng.pngと同じ)。CutMode・GrepModeのgrepはforceUtf8CTypeForListingで動かす。LANG=C・en_US.UTF-8では再現しない。
+   - **対処しない所**: usilicの出力はUTF-8だけなので、端末がEUCのままなら字は化ける。端末の設定はユーザーが直す。
+   - 確かめたこと: 本物のHOMEでLANG=ja_JP.UTF-8・eucJPとも「HELP ... EPUB」。
 1196. **WindowsのネイティブでCUI起動(usilic-c.exe、保留のConPTYの解消)(2026-11-02)**
    - **経緯**: 直接のユーザー依頼("保留になっていたConPTYを実装してWindowsでもCUI起動を可能に")。`.steering/20261102-windows-console-cui/`。SHELLのConPTYは2026-10-16に入っていて、足りないのはコンソールの画面とキー入力と起動の分岐だった。
    - **実行ファイルを2つに**: Windowsはサブシステムが実行ファイルで決まり、GUIのusilic.exeはコンソールにつながらない。コンソールのサブシステムにするとアイコンから窓が出るので、pythonw/pythonと同じく、同じオブジェクトからusilic.exe(窓、今までどおり)とusilic-c.exe(既定はCUI、-gで窓)を作る。usilic.exe -cはusilic-c.exeを案内する。

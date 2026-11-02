@@ -121,6 +121,8 @@ bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::strin
   // 抱えている。
   ChildProcess::Options options;
   options.input = &inputText;
+  // 2026-11-02(LANG=ja_JP.eucJPのTerminal.appでHELPの章の一覧が作れなかった): 渡す字はいつもUTF-8なので、ロケールに関わらず。
+  options.forceUtf8CTypeForListing = true;
   ChildProcess::Result result;
   bool ranAtLeastOnce = false;
   for (const auto &candidate : unicodeNormalizationCandidates(searchPattern)) {
