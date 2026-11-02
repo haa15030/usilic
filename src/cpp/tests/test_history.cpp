@@ -214,6 +214,17 @@ TEST_CASE("serialize() then loadHistoryText() keeps the EPUB sans-serif choice")
   CHECK_FALSE(loaded.epubSansSerif());
 }
 
+// 2026-11-02: ^Ojの言語(History::helpLanguage())。
+TEST_CASE("serialize() then loadHistoryText() keeps the ^Oj language") {
+  History h(10);
+  CHECK(h.helpLanguage() == 0);
+  h.setHelpLanguage(1);
+  History loaded(10);
+  REQUIRE(loaded.loadHistoryText(h.serialize("usilic", "Mon Jan  1 00:00:00 2026"),
+                                 /*environmentCharsetExplicitlySet=*/false));
+  CHECK(loaded.helpLanguage() == 1);
+}
+
 // 2026-11-02: ^Otは-gとアイコンからの起動で別々(既定は-gがゴシック体、アイコンが明朝体)。
 TEST_CASE("an icon launch keeps its own EPUB typeface apart from -g") {
   History h(10);

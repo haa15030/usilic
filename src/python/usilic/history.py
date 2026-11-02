@@ -171,6 +171,19 @@ class History:
         tokens[30:34] = [str(m) for m in margins]
         self.trailer_tokens = tokens
 
+    def help_language(self):
+        """^Ojで選んだ言語(C++のHistory::helpLanguage()、USILICの行の38番目の欄)。0は未選択、1は日本語、2は英語。"""
+        return _atoi(self.trailer_tokens[37]) if len(self.trailer_tokens) > 37 else 0
+
+    def set_help_language(self, language):
+        self.journal.append(lambda h: h._set_help_language_impl(language))
+        self._set_help_language_impl(language)
+
+    def _set_help_language_impl(self, language):
+        tokens = list(self.trailer_tokens) + [encode_field('')] * (38 - len(self.trailer_tokens))
+        tokens[37] = str(language)
+        self.trailer_tokens = tokens
+
     def set_session_state(self, state):
         self.journal.append(lambda h: h._set_session_state_impl(state))
         self._set_session_state_impl(state)

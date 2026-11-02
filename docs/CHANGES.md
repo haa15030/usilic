@@ -33402,6 +33402,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **未解決(ユーザーの判断待ち)**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1202. **^Ojの言語をhistoryに残す、Windowsは表示言語が日本語なら日本語で始める(2026-11-02)**
+   - **経緯**: 直接のユーザー報告(Windowsのzipで"どれも^Ojが保存されない。日本語で終えても次回起動後は^Hが英語になる")。
+   - **原因**: 言語はhistoryに無く、起動のたびにLANGで決めていた(2026-10-11)。WindowsはふつうLANGが無いので、いつも英語で始まっていた。
+   - **変更**: History::helpLanguage()(0は未選択、1は日本語、2は英語、USILICの行の38番目)を足し、^Ojで記録して起動時はLANGより先に見る。ページャー・子は読むだけで書き戻さない(ページャーの^Ojは次の起動に残らない)。Windowsは、LANGが無く表示言語(GetUserDefaultUILanguage)が日本語ならLANG=ja_JP.UTF-8に(macOSのAppleLanguagesと同じ)。Python版も揃えた。
+   - HELP: キーの一覧の^Ojに「次回の起動にも引き継ぐ」。
+   - 確かめたこと: 一時的なHOMEのPTYで、LANG=ja_JP.UTF-8・en_US.UTF-8それぞれ^Ojの後の再起動で^Hの言語が残ること。test_cpp_parityに1件足した。Windows向けのビルドは通るが、Windows上の動きはユーザーの実機で確認。
 1199. **LANGがUTF-8でなくてもHELPの章分け・検索が動くように(2026-11-02)**
    - **経緯**: 直接のユーザー報告(~/.usilic/historyを無くして-cで起動すると和文が「〓」等に化け、^Ojの英語でも一部化ける。日本語に戻して再起動しても英語のまま)。「一時的なHOMEではなく~/からの-c起動での動作チェックと~/.usilic/historyの調査」の依頼で本物のHOMEで調べた(historyは退避して戻した)。
    - **調べ**: historyは壊れていない(文字コードの欄は310=UTF-8、言語の欄はそもそも無い)。本物のHOME・historyなしでもLANG=ja_JP.UTF-8なら化けない。「〓」はusilicのソースに無い。Terminal.appのBasicプロファイルがCharacterEncoding=3(日本語EUC)で、usilicのUTF-8を端末がEUCとして描いていた(LANGはプロファイルに合わせてja_JP.eucJPになる想定、rcファイルに設定は無い)。起動時の言語はLANGで決めるので(2026-10-11の仕様)、ja_JPのUTF-8以外はいつも英語で始まる。

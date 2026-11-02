@@ -241,6 +241,10 @@ class History {
   // (USILICのトレーラーの末尾)。2026-11-02: -gとアイコンからの起動で別々に覚える(epubSansSerif_の宣言コメント)。
   bool epubSansSerif() const;
   void setEpubSansSerif(bool sansSerif);
+  // 2026-11-02、直接のユーザー報告(Windows、"どれも^Ojが保存されない。日本語で終えても次回起動後は^Hが英語になる"):
+  // ^Ojで選んだ言語(0は未選択でLANGに従う、1は日本語、2は英語)。USILICのトレーラーの末尾。
+  int helpLanguage() const;
+  void setHelpLanguage(int language);
   // 2026-10-30: EPUBの余白(^[+矢印、Application::handleEpubMarginKey())。{縦書きの上, 下, 横書きの左, 右}。
   // epubSansSerif()と同じ永続化の形。既定は無し(全部0)。
   std::array<int, 4> epubMargins() const;
@@ -373,6 +377,7 @@ class History {
   // ないと困る"): -gの既定はゴシック体、アイコンからの起動の既定は明朝体で、選択も別々に覚える。
   bool epubSansSerif_ = true;  // epubSansSerif()参照
   bool iconEpubSansSerif_ = false;
+  int helpLanguage_ = 0;  // helpLanguage()参照
   std::array<int, 4> epubMargins_{};  // epubMargins()参照
   std::string serifFontPath_, sansSerifFontPath_;  // serifFontPath()参照
   bool fontFamiliesSaved_ = false;
@@ -402,6 +407,7 @@ class History {
   void setSmoothScrollEnabledImpl(bool enabled);
   void setModeLineVisibleImpl(bool visible);
   void setEpubSansSerifImpl(bool sansSerif, bool icon);
+  void setHelpLanguageImpl(int language);
   void setEpubMarginsImpl(const std::array<int, 4> &margins);
   void setFontFamilyPathsImpl(const std::string &serif, const std::string &sansSerif);
   void setLsModeImpl(int mode);

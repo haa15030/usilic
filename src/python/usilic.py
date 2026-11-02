@@ -261,7 +261,10 @@ def main():
         # EPUBの余白は前回のまま。historyを読み書きしない起動(ページャー・子)でも使う(書き戻しはしない、C++の項目1146)
         margin_history = os.path.join(os.path.expanduser('~'), '.usilic')
         if os.path.exists(os.path.join(margin_history, 'history')):
-            app.set_epub_margins(hist.load_from_disk(margin_history, configuration.retention_count).epub_margins())
+            saved = hist.load_from_disk(margin_history, configuration.retention_count)
+            app.set_epub_margins(saved.epub_margins())
+            if saved.help_language():  # ^Ojで選んだ言語(C++のHistory::helpLanguage())
+                messages_ja.set_japanese(saved.help_language() == 1)
         app.layout()
         if stdin_stream is not None and not args:
             app.start_pager([], stdin_stream)

@@ -87,6 +87,10 @@ void prepareWindowsEnvironment() {
   if (!_wgetenv(L"USER")) {
     if (const wchar_t *user = _wgetenv(L"USERNAME")) _wputenv_s(L"USER", user);
   }
+  // 2026-11-02(上のmacOSのAppleLanguagesと同じ、main.cpp): LANGが無ければ、Windowsの表示言語が日本語の時にja_JP.UTF-8に。
+  // 以前は日本語のWindowsでも英語で始まっていた(Windowsは普通LANGを持たない)。
+  if (!_wgetenv(L"LANG") && PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_JAPANESE)
+    _wputenv_s(L"LANG", L"ja_JP.UTF-8");
 }
 
 bool replaceFile(const std::string &from, const std::string &to) {

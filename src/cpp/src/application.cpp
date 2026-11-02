@@ -5799,6 +5799,7 @@ bool Application::handleCommandImpl(Command command) {
         setMessagesJapanese(helpPath_ == helpBasePath_);
         return false;
       }
+      history_.setHelpLanguage(helpPath_ == helpBasePath_ ? 1 : 2);  // 次の起動も(History::helpLanguage())
       reopenHelpInOtherLanguage(view);
       // MANのusilicのページ(Windowsは組んでおいた平文、他はHELP.ja.1/HELP.1、ManMode::runAndWrap()参照)も、その場で
       // 切り替えた言語に(2026-10-20、Windows以外も)。

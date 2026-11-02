@@ -353,6 +353,13 @@ void History::setModeLineVisible(bool visible) {
 }
 void History::setModeLineVisibleImpl(bool visible) { modeLineVisible_ = visible; }
 
+int History::helpLanguage() const { return helpLanguage_; }
+void History::setHelpLanguage(int language) {
+  journal_.emplace_back([language](History &h) { h.setHelpLanguageImpl(language); });
+  setHelpLanguageImpl(language);
+}
+void History::setHelpLanguageImpl(int language) { helpLanguage_ = language; }
+
 bool History::epubSansSerif() const { return iconLaunch_ ? iconEpubSansSerif_ : epubSansSerif_; }
 void History::setEpubSansSerif(bool sansSerif) {
   bool icon = iconLaunch_;
@@ -683,6 +690,8 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     sansSerifFontPath_ = fontFamiliesSaved_ ? decodeField(toks[35]) : std::string();
     // アイコンからの起動の^Ot(2026-11-02、iconEpubSansSerif_参照)――同じ理由でさらに末尾に。無ければ明朝体。
     iconEpubSansSerif_ = toks.size() > 36 && std::atoi(toks[36].c_str()) != 0;
+    // ^Ojの言語(2026-11-02、helpLanguage()参照)――同じ理由でさらに末尾に。無ければ未選択。
+    helpLanguage_ = toks.size() > 37 ? std::atoi(toks[37].c_str()) : 0;
   }
 
   complete_ = (i < lines.size() && !lines[i].empty() && lines[i][0] == kSubEof);
@@ -777,7 +786,7 @@ std::string History::serialize(const std::string &programName, const std::string
          std::to_string(iconGuiPreferences_.letterSpacingExtraVertical) + " " + std::to_string(epubMargins_[0]) + " " +
          std::to_string(epubMargins_[1]) + " " + std::to_string(epubMargins_[2]) + " " + std::to_string(epubMargins_[3]) +
          " " + encodeField(serifFontPath_) + " " + encodeField(sansSerifFontPath_) + " " +
-         std::to_string(iconEpubSansSerif_ ? 1 : 0) + "\n";
+         std::to_string(iconEpubSansSerif_ ? 1 : 0) + " " + std::to_string(helpLanguage_) + "\n";
   out += std::string(1, kSubEof) + "\n";
   return out;
 }

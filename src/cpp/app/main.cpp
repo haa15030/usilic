@@ -6094,6 +6094,7 @@ int main(int argc, char **argv) {
       history.setFontFamilyPaths(saved.serifFontPath(), saved.sansSerifFontPath());
       history.setEpubMargins(saved.epubMargins());
       history.setEpubSansSerif(saved.epubSansSerif());  // ^Ot(ページャー・子でも同じ字で)
+      history.setHelpLanguage(saved.helpLanguage());    // ^Oj
       if (!saved.fontFamiliesSaved()) history.setFontFamilyPaths(legacySerif, legacySans);
     }
   } else if (!history.fontFamiliesSaved()) {
@@ -6235,6 +6236,7 @@ int main(int argc, char **argv) {
     for (char c : lang) langLower += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     bool japanese = langLower.rfind("ja_jp.", 0) == 0 &&
                     (langLower.find(".utf-8") != std::string::npos || langLower.find(".utf8") != std::string::npos);
+    if (history.helpLanguage() != 0) japanese = history.helpLanguage() == 1;  // ^Ojで選んだ言語が先(History::helpLanguage())
     app.setHelpEnglish(!japanese);
     if (!app.reloadHelpText() && !japanese) {
       app.setHelpEnglish(false);

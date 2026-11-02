@@ -4306,6 +4306,8 @@ class Application:
     def toggle_language(self):
         """^Oj: 日本語/英語(HELPを見ていればその言語のHELPへ)。"""
         messages_ja.set_japanese(not japanese())
+        if self.history is not None:  # 次の起動も(C++のHistory::helpLanguage()、ページャーは書き戻さない)
+            self.history.set_help_language(1 if japanese() else 2)
         if self.current_mode == KEY:  # KEYはその場で切り換えた言語の一覧に(C++のreopenHelpInOtherLanguage())
             cursor = self.key_view.cursor_index
             self.current_mode = self.return_stack.pop() if self.return_stack else DIRECTORY
