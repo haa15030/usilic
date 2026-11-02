@@ -33372,3 +33372,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **揃えたPython版の違い**: 確定(^M)で一致の先頭へ戻っていたのを、動いた今の一致のままに。履歴が空でもHISTORYの画面(「No String」、右端に戻り先)を開く。
    - HELP: src/HELP_.txt・HELP_en_.txtのF/EGREPの節に2文。テスト: test_cpp_parityにtest_fgrep_move_keys(テストの端末は読み込みの切れ目で切れたエスケープ列も待つように)。
    - 確かめたこと: make usilic・make install(macOS)、test_fgrep_move_keys。一時的なHOMEで実行。
+1195. **-gの既定フォントは端末のフォント(最初の起動でIPAゴシックへ替えない)(2026-11-02)**
+   - **経緯**: 直接のユーザー依頼("-g起動の既定フォントをIPAゴシックではなく端末のフォントにしてほしい。GUI機能のメインはEPUB閲覧に移っているので、-gは「実はすでにGUI」の名残ということで。^J^Fでの変更は継承される")。
+   - **調べ**: resolveGuiFontPath()は以前から、保存した^J^Fのフォント→端末のフォント→IPAゴシックの順。最初の起動でインストールの途中・後にIPAゴシックへ替える処理(runGuiPhase()、項目の2026-10-20)が端末のフォントを上書きしていた。
+   - **変更**: 端末のフォントが分かっている時(gTerminalFontPath)はその切り替えをしない。アイコンからの起動等、端末のフォントが無い時の既定はIPAゴシックのまま(font-ipafontの案内もそのため残す)。端末のフォントを読めない端末(Terminal.app・iTerm2・Ptyxis以外)もフォールバックのまま。保存した^J^Fのフォントが先なので、既にIPAゴシックを選んだ履歴は^J^Fの「端末のフォント」で戻す。
+   - HELP: src/HELP_.txt・HELP_en_.txtに1文、必要なソフトウェアの節の「GUI の既定フォント」を直した。
+   - 確かめたこと: make usilic・make install(macOS)。-gの窓の動きはユーザーの実機で確認。

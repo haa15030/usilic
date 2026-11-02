@@ -2800,16 +2800,18 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     if (auto choice = app.takeFontChoice()) applyFontChoice(app, gui, choice->first, choice->second);
     // 最初の起動のインストールを入れ終えた(Application::takeFirstStartInstallDone()): 入ったIPAゴシックへ替えてから
     // HELPへ戻る(usilicrcのFONTには書かない。次からはresolveGuiFontPath()がipagを選ぶ)。
+    // 2026-11-02、直接のユーザー依頼("-g起動の既定フォントをIPAゴシックではなく端末のフォントに...-gは「実はすでにGUI」
+    // の名残"): 端末のフォントで開いた-gでは替えない(IPAゴシックはアイコンからの起動等、端末のフォントが無い時の既定)。
     if (app.takeFirstStartInstallDone()) {
       if (std::string ipag = ipaGothicFontPath();
-          !ipag.empty() && gui.currentFontPath(fm::GraphicalDisplay::FontKind::Base) != ipag)
+          gTerminalFontPath.empty() && !ipag.empty() && gui.currentFontPath(fm::GraphicalDisplay::FontKind::Base) != ipag)
         gui.setFont(fm::GraphicalDisplay::FontKind::Base, ipag);
       app.finishFirstStartInstall();
     }
     // 2026-10-20、直接のユーザー依頼("リストの真っ先にipafontを持ってきてインストールが済みしだいその場でフォント
     // 変更後、他のインストールを継続"): 表紙を出している間(最初の起動のインストール)は1秒ごとにIPAゴシックを探し、
     // 入ったらその場でフォントを替えて表紙を描き直す(残りのbrew installはそのまま続く)。
-    if (app.shellBannerShowing()) {
+    if (app.shellBannerShowing() && gTerminalFontPath.empty()) {
       static auto lastProbe = std::chrono::steady_clock::time_point{};
       auto now = std::chrono::steady_clock::now();
       if (now - lastProbe >= std::chrono::seconds(1)) {
