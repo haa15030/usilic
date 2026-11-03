@@ -104,42 +104,65 @@ make test
 
 Makefileは GNU make の書き方なので、FreeBSD標準の`make`ではなく`gmake`を使う。コンパイラ(clang)とncursesはベースシステムにある。
 
+順番は、パッケージ→GUI(X11・Xfce)→公開鍵の登録(非公開の間だけ)→ビルド。GUIを先にするのは、公開鍵の登録にFreeBSD上のfirefoxを使えるようにするため。
+
+### 1. パッケージ
+
 ```
 # rootで
 pkg bootstrap
 pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf firefox
+```
 
+### 2. GUI(X11・Xfce)
+
+-g・アイコンからの起動に要る。どのGPUでも共通に、rootで
+```
+pkg install xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa
+sysrc dbus_enable=YES lightdm_enable=YES
+```
+その上でGPUごとに(2026-11-01、RX580で確認):
+
+| GPU | ドライバ | 起動時に読み込む | ファームウェア | 他に |
+|---|---|---|---|---|
+| AMD(Radeon) | `pkg install drm-kmod` | `sysrc kld_list+=amdgpu`(HD 7000番台以前は`radeonkms`) | インストーラが自動で選ぶ(RX580なら`gpu-firmware-amd-kmod-polaris10`)。漏れたら`fwget` | Xorgの設定は不要(modesetting) |
+| Intel内蔵 | `pkg install drm-kmod` | `sysrc kld_list+=i915kms` | 同上(`gpu-firmware-intel-kmod-*`) | 同上 |
+| NVIDIA | `pkg install nvidia-driver nvidia-xconfig` | `sysrc kld_list+=nvidia-modeset` | ドライバに同梱(インストーラには出ない) | `nvidia-xconfig`で`/etc/X11/xorg.conf`を作る |
+
+再起動の前に`kldload amdgpu`(`i915kms`・`nvidia-modeset`)が何も言わずに戻ればカーネルと合っている(AMD・Intelはコンソールの文字が細かくなる)。CURRENTで失敗するならportsからビルドする(インストーラのDistribution Selectで`src`を入れておく)。drm系はユーザーを`video`グループに入れる。
+
+### 3. 公開鍵の登録(リポジトリが非公開の間だけ)
+
+公開後は要らないので、4へ進む。非公開の間は、`git clone`にアクセス権のあるGitHubアカウントの認証が要る。
+
+Xfceにログインし、端末で鍵を作って公開鍵の1行を表示する:
+```
+ssh-keygen -t ed25519
+cat ~/.ssh/id_ed25519.pub
+```
+firefoxで`https://github.com/settings/keys`を開き(サインインが要る)、New SSH keyにその1行を貼る。端末で`ssh -T git@github.com`で確かめる(初回はyes。`Hi ...!`と出れば登録できている)。
+
+GUIを入れない時は、別のマシンのブラウザで登録する。Macなら`ssh ユーザー名@<IP> cat .ssh/id_ed25519.pub | pbcopy`で1行がクリップボードに入る(FreeBSDのsshdが動いていなければ、rootで`sysrc sshd_enable=YES; service sshd start`)。トークンの作り方は下の「ソースを手元で変更する」の4。
+
+### 4. ビルド
+
+```
 # ユーザーで
-git clone https://github.com/haa15030/usilic.git
+git clone https://github.com/haa15030/usilic.git     # 非公開の間は git@github.com:haa15030/usilic.git
 cd usilic/src/cpp
 gmake usilic
 gmake install          # ~/.local/bin/usilic、~/.local/share/applications/usilic.desktop
 ```
 
-- 非公開の間は、`git clone`にアクセス権のあるGitHubアカウントの認証が要る。SSHの鍵なら`git clone git@github.com:haa15030/usilic.git`(`https://`のURLだと鍵は使われず、トークンを聞かれる)。トークンの作り方は下の「ソースを手元で変更する」の4。
-- **公開鍵の登録はcloneの前に、ブラウザのある別のマシンから**(Xorgを入れる前はfirefoxが使えない)。FreeBSD側で鍵を作り、Mac等からsshでその1行を取ってきて、そちらのブラウザで登録する:
-  ```
-  # FreeBSDで(sshdが動いていなければ、rootで sysrc sshd_enable=YES; service sshd start)
-  ssh-keygen -t ed25519
+`https://`のURLだと鍵は使われず、非公開の間はトークンを聞かれる。
 
-  # Macで(1行がクリップボードに入る)
-  ssh ユーザー名@<IP> cat .ssh/id_ed25519.pub | pbcopy
-  ```
-  Macのブラウザで`https://github.com/settings/keys`→New SSH keyに貼る。FreeBSDに戻って`ssh -T git@github.com`で確かめる(初回はyes。`Hi ...!`と出れば登録できている)。
+### 注意点
+
 - `~/.local/bin`は既定のPATHに無いので、`~/.profile`に`PATH=$HOME/.local/bin:$PATH; export PATH`を足す。
 - 書き換えた`~/.profile`をその場で読み直すなら`. ~/.profile`(sshでつなぎ直しても読まれる)。その時やログインの度に英語の小ネタが毎回違う内容で出るのは、既定の`~/.profile`の最後の`fortune freebsd-tips`(FreeBSDの使い方のヒントをランダムに1つ表示する)。エラーではない。要らなければその行の先頭に`#`。freebsd-tipsは英語だけで、日本語版は無い。
 - bashをログインシェルにするなら`chsh -s /usr/local/bin/bash`。bashは`~/.bash_profile`があれば`~/.profile`を読まないので、その時はPATHを`~/.bash_profile`に書く。
 - firefoxのpkg installの最後に長いメッセージ(boost・gcc14・libjxl・firefoxの未対応機能等)が出るが、対応が要るものは無い。
 - `su`はwheelグループのユーザーだけ(`pw groupmod wheel -m ユーザー名`)。sudoは`visudo`で`%wheel`の行を有効にする。
-- GUI(-g、アイコンからの起動)はX11とXfce等が要る。どのGPUでも共通に`pkg install xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa`、`sysrc dbus_enable=YES lightdm_enable=YES`。その上でGPUごとに(2026-11-01、RX580で確認):
-
-  | GPU | ドライバ | 起動時に読み込む | ファームウェア | 他に |
-  |---|---|---|---|---|
-  | AMD(Radeon) | `pkg install drm-kmod` | `sysrc kld_list+=amdgpu`(HD 7000番台以前は`radeonkms`) | インストーラが自動で選ぶ(RX580なら`gpu-firmware-amd-kmod-polaris10`)。漏れたら`fwget` | Xorgの設定は不要(modesetting) |
-  | Intel内蔵 | `pkg install drm-kmod` | `sysrc kld_list+=i915kms` | 同上(`gpu-firmware-intel-kmod-*`) | 同上 |
-  | NVIDIA | `pkg install nvidia-driver nvidia-xconfig` | `sysrc kld_list+=nvidia-modeset` | ドライバに同梱(インストーラには出ない) | `nvidia-xconfig`で`/etc/X11/xorg.conf`を作る |
-
-  再起動の前に`kldload amdgpu`(`i915kms`・`nvidia-modeset`)が何も言わずに戻ればカーネルと合っている(AMD・Intelはコンソールの文字が細かくなる)。CURRENTで失敗するならportsからビルドする(インストーラのDistribution Selectで`src`を入れておく)。drm系はユーザーを`video`グループに入れる。
 - インストーラの注意: キーボードの画面は`Japanese 106`をSpaceで選んだ後、**一番上の行**`Continue with jp.kbd keymap`でEnter(2行目のTestは試し打ちだけ)。ベースシステムの入れ方は`Distribution Sets`(従来のtarball、portsとは無関係)で`src`も選ぶ。再インストール後はMac側で`ssh-keygen -R <IP>`(ホスト鍵が変わる)。
 - 最初の起動のインストールの案内は`sudo pkg install -y groff mg texinfo 7-zip w3m`。
 - インストーラで選んだキーボード(jp106等)はコンソールだけ。Xfceでは設定→キーボード→レイアウトで「システムのデフォルトを使用」を外し、モデルを`Japanese 106-key`、レイアウトの追加で**▶を開かずに親の`Japanese`の行**を選ぶ(▶の下のKana・Macintosh・OADG 109A・Dvorakは標準以外の変種。Kanaを選ぶと`[`が`]`になる等、2026-11-01に実際にはまった)。
