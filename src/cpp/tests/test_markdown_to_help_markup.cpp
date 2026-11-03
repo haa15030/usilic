@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "doctest.h"
 #include "help_text.hpp"
 #include "markdown_to_help_markup.hpp"
@@ -43,7 +44,17 @@ TEST_CASE("markdownToHelpMarkup: inline code is not interpreted as markdown insi
 
 TEST_CASE("markdownToHelpMarkup: fenced code blocks are indented and NOT inline-parsed") {
   std::string in = "```cpp\nint *p = a_b__c;\n```";
-  CHECK(markdownToHelpMarkup(in) == "<indent04>int *p = a_b__c;</indent>");
+  // フェンスの行は見せず、行番号がずれないよう空行になる
+  CHECK(markdownToHelpMarkup(in) == "\n<indent04>int *p = a_b__c;</indent>\n");
+}
+
+TEST_CASE("markdownToHelpMarkup: every source line becomes exactly one output line, so the pager's "
+          "line numbers equal the file's") {
+  std::string in =
+      "# Title\n\npara line 1\npara line 2\n\n```\ncode\n```\n\n- item\n  continued\n\n"
+      "| a | b |\n|---|---|\n| 1 | 2 |\n\n> quote\n---\nlast\n";
+  auto count = [](const std::string &s) { return std::count(s.begin(), s.end(), '\n'); };
+  CHECK(count(markdownToHelpMarkup(in)) == count(in));
 }
 
 TEST_CASE("markdownToHelpMarkup: unordered and ordered list items keep their marker and are "
@@ -81,13 +92,14 @@ TEST_CASE("markdownToHelpMarkup: an unterminated emphasis marker is passed throu
 }
 
 TEST_CASE("markdownToHelpMarkup: emphasis spanning a soft-wrapped paragraph line is still "
-          "recognized (lines are joined with a space)") {
-  CHECK(markdownToHelpMarkup("this is **bold\ntext** across lines") == "this is <b>bold text</b> across lines");
+          "recognized (the line break stays)") {
+  CHECK(markdownToHelpMarkup("this is **bold\ntext** across lines") == "this is <b>bold\ntext</b> across lines");
 }
 
-TEST_CASE("markdownToHelpMarkup: a trailing double-space at end of line is a hard break, kept "
-          "as a real newline inside the joined paragraph") {
+TEST_CASE("markdownToHelpMarkup: paragraph lines stay separate lines, with or without a trailing "
+          "double-space") {
   CHECK(markdownToHelpMarkup("line one  \nline two") == "line one\nline two");
+  CHECK(markdownToHelpMarkup("line one\nline two") == "line one\nline two");
 }
 
 TEST_CASE("markdownToHelpMarkup: blank lines separate paragraphs and are preserved") {

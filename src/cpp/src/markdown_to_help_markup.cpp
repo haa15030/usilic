@@ -151,7 +151,7 @@ FlankInfo computeFlanking(const std::string &text, std::size_t start, std::size_
   auto classify = [&](long pos) -> int {  // 0=空白相当、1=句読点、2=文字
     if (pos < 0 || pos >= static_cast<long>(text.size())) return 0;
     unsigned char c = static_cast<unsigned char>(text[pos]);
-    if (c == ' ' || c == '\t') return 0;
+    if (c == ' ' || c == '\t' || c == '\n') return 0;  // '\n'は段落の中の行の境目(flushParagraphのコメント参照)
     if (c < 0x80 && isAsciiPunct(c)) return 1;
     return 2;
   };
@@ -410,17 +410,18 @@ std::string markdownToHelpMarkup(const std::string &source) {
   char fenceMarker = '`';
   // 段落(空行・ブロック要素で区切られた、連続する平文の行)を1つにまとめてから
   // インライン変換する――**太字**等が、ソース上の(ソフトラップされた)行の
-  // 境界をまたいでいても正しく認識されるようにするため(段落内はMarkdownの
-  // 慣習どおり、行末2スペースの場合だけ改行を保ち、それ以外は空白1つで
-  // つなぐ)。
+  // 境界をまたいでいても正しく認識されるようにするため。
+  // 2026-11-04、直接のユーザー依頼(^Lの行番号とファイルの行番号が違うと"今のようなケースで齟齬がおきるので一致で"):
+  // ページャーの行番号がファイルの行番号と一致するよう、ソースの1行を必ず出力の1行にする。以前は段落の行を
+  // 空白1つでつないで1行にし、フェンスの行を捨てていたので、docs/BUILD.mdの154行目が104行目に見えていた。
+  // 段落の行は改行のままつなぐ(Markdownの再流し込みはしない。長い行はページャーが折り返す)。
   std::vector<std::string> paragraph;
   auto flushParagraph = [&]() {
     if (paragraph.empty()) return;
     std::string joined;
     for (std::size_t k = 0; k < paragraph.size(); k++) {
-      bool hardBreak = paragraph[k].size() >= 2 && paragraph[k].substr(paragraph[k].size() - 2) == "  ";
       joined += trimRight(paragraph[k]);
-      if (k + 1 < paragraph.size()) joined += hardBreak ? "\n" : " ";
+      if (k + 1 < paragraph.size()) joined += '\n';
     }
     out += renderInline(joined);
     out += '\n';
@@ -440,7 +441,8 @@ std::string markdownToHelpMarkup(const std::string &source) {
       } else if (marker == fenceMarker) {
         inFence = false;
       }
-      continue;  // フェンス行自体(```や言語名)は出力しない
+      out += '\n';  // フェンス行自体(```や言語名)は見せず、行番号がずれないよう空行にする
+      continue;
     }
     if (inFence) {
       // コードブロックの中身はインライン記法を解釈せず、字下げだけ与える。
