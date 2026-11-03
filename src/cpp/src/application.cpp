@@ -4117,6 +4117,8 @@ const std::vector<std::vector<int>> &Application::pagerAllowedKeys() {
     // 2026-10-20、直接のユーザー依頼("-gで起動したPagerではフォント表示幅関連のキーアサインが無効なので使えるように
     // して"): 行間(^[[ / ^[])・字間(^[{ / ^[})・フォントの一覧(^J^F)・明朝体/ゴシック体(^Ot)も。
     for (int c : {'[', ']', '{', '}'}) pagerAllowedKeys_.push_back({kEscape, c});
+    // 2026-11-04、直接のユーザー報告("`^[gg`が「ページャーでは使えません」"): ^[Nと同じ指定行へ(usilicrcのK-114)。
+    pagerAllowedKeys_.push_back({kEscape, 'g', 'g'});
     pagerAllowedKeys_.push_back({kLeaderJ, 0x06});
     pagerAllowedKeys_.push_back({kLeaderO, 't'});
     // 2026-10-30、直接のユーザー報告("usilic.appで起動後のHELPでは^Ojで英語表示にならない。KEYではなった"): HELPの子・
@@ -22468,7 +22470,20 @@ void Application::pollChildChannel() {
 }
 
 std::string Application::pendingPrefixLabel() const {
-  if (copyEscapePending_ || escPending_) return "ESC-";
+  // 2026-11-04、直接のユーザー依頼("`^[`のときも`C-[`が出て欲しい"): ESCも他と同じ書き方に。ページャーではキーを
+  // gatePagerKey()が溜めていて下の各フラグが立たないので、溜めているキーから作る。
+  if (!pagerKeyBuffer_.empty()) {
+    std::string label;
+    for (int b : pagerKeyBuffer_) {
+      if (!label.empty()) label += ' ';
+      if (b >= 1 && b <= 26) label += "C-" + std::string(1, static_cast<char>(b + 0x60));
+      else if (b >= 0 && b < 0x20) label += "C-" + std::string(1, static_cast<char>(b + 0x40));
+      else label += static_cast<char>(b);
+    }
+    return label + "-";
+  }
+  if (copyEscapePending_ || escPending_) return "C-[-";
+  if (gotoLineGPending_) return "C-[ g-";
   if (copyLeaderXPending_) return "C-x-";
   if (copyLeaderJPending_) return "C-j-";
   if (registerPending_ == RegisterAction::Set) return "C-x r SPC-";
