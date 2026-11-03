@@ -116,7 +116,16 @@ gmake usilic
 gmake install          # ~/.local/bin/usilic、~/.local/share/applications/usilic.desktop
 ```
 
-- 非公開の間は、`git clone`にアクセス権のあるGitHubアカウントの認証が要る。SSHの鍵なら`git clone git@github.com:haa15030/usilic.git`(`https://`のURLだと鍵は使われず、トークンを聞かれる)。鍵・トークンの作り方は下の「ソースを手元で変更する」の4。
+- 非公開の間は、`git clone`にアクセス権のあるGitHubアカウントの認証が要る。SSHの鍵なら`git clone git@github.com:haa15030/usilic.git`(`https://`のURLだと鍵は使われず、トークンを聞かれる)。トークンの作り方は下の「ソースを手元で変更する」の4。
+- **公開鍵の登録はcloneの前に、ブラウザのある別のマシンから**(Xorgを入れる前はfirefoxが使えない)。FreeBSD側で鍵を作り、Mac等からsshでその1行を取ってきて、そちらのブラウザで登録する:
+  ```
+  # FreeBSDで(sshdが動いていなければ、rootで sysrc sshd_enable=YES; service sshd start)
+  ssh-keygen -t ed25519
+
+  # Macで(1行がクリップボードに入る)
+  ssh ユーザー名@<IP> cat .ssh/id_ed25519.pub | pbcopy
+  ```
+  Macのブラウザで`https://github.com/settings/keys`→New SSH keyに貼る。FreeBSDに戻って`ssh -T git@github.com`で確かめる(初回はyes。`Hi ...!`と出れば登録できている)。
 - `~/.local/bin`は既定のPATHに無いので、`~/.profile`に`PATH=$HOME/.local/bin:$PATH; export PATH`を足す。
 - 書き換えた`~/.profile`をその場で読み直すなら`. ~/.profile`(sshでつなぎ直しても読まれる)。その時やログインの度に英語の小ネタが毎回違う内容で出るのは、既定の`~/.profile`の最後の`fortune freebsd-tips`(FreeBSDの使い方のヒントをランダムに1つ表示する)。エラーではない。要らなければその行の先頭に`#`。freebsd-tipsは英語だけで、日本語版は無い。
 - bashをログインシェルにするなら`chsh -s /usr/local/bin/bash`。bashは`~/.bash_profile`があれば`~/.profile`を読まないので、その時はPATHを`~/.bash_profile`に書く。
