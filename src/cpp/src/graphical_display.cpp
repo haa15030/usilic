@@ -1202,6 +1202,38 @@ TTF_Font *verticalFormFontFor(ImplT &impl, TTF_Font *chosen, unsigned int codepo
   return glyphProvidedByFont(impl.verticalFormsFont, codepoint) ? impl.verticalFormsFont : chosen;
 }
 
+// 2026-11-05、直接のユーザー報告(FreeBSD、=nl.png、縦書きの句読点・括弧が豆腐): IPAフォントは縦書き用の字(U+FE11等)を
+// 持たず、FreeBSDには他に持つフォントも無い。どのフォントにも無い時に、代わりに描く横書きの字(renderCell()が、句読点は
+// 右上へずらし、他は90度回す)。縦書き用の字でなければnullptr。
+const char *horizontalGlyphForVerticalForm(unsigned int codepoint) {
+  switch (codepoint) {
+    case 0xFE10: return "\xEF\xBC\x8C";  // ，
+    case 0xFE11: return "\xE3\x80\x81";  // 、
+    case 0xFE12: return "\xE3\x80\x82";  // 。
+    case 0xFE19: return "\xE2\x80\xA6";  // …
+    case 0xFE30: return "\xE2\x80\xA5";  // ‥
+    case 0xFE35: return "\xEF\xBC\x88";  // （
+    case 0xFE36: return "\xEF\xBC\x89";  // ）
+    case 0xFE37: return "\xEF\xBD\x9B";  // ｛
+    case 0xFE38: return "\xEF\xBD\x9D";  // ｝
+    case 0xFE39: return "\xE3\x80\x94";  // 〔
+    case 0xFE3A: return "\xE3\x80\x95";  // 〕
+    case 0xFE3B: return "\xE3\x80\x90";  // 【
+    case 0xFE3C: return "\xE3\x80\x91";  // 】
+    case 0xFE3D: return "\xE3\x80\x8A";  // 《
+    case 0xFE3E: return "\xE3\x80\x8B";  // 》
+    case 0xFE3F: return "\xE3\x80\x88";  // 〈
+    case 0xFE40: return "\xE3\x80\x89";  // 〉
+    case 0xFE41: return "\xE3\x80\x8C";  // 「
+    case 0xFE42: return "\xE3\x80\x8D";  // 」
+    case 0xFE43: return "\xE3\x80\x8E";  // 『
+    case 0xFE44: return "\xE3\x80\x8F";  // 』
+    case 0xFE47: return "\xEF\xBC\xBB";  // ［
+    case 0xFE48: return "\xEF\xBC\xBD";  // ］
+    default: return nullptr;
+  }
+}
+
 // 2026-10-20、直接のユーザー報告("-gでは注釈からの戻り矢印(「usilicrc の KEY」の左側)が豆腐になる"): HELP.epubの注釈の
 // 戻りの「↩」(U+21A9)はIPAゴシック・ヒラギノ等に無い。選んだフォント(chosen)にも開いている他のフォントにも無い字は、
 // 記号を多く持つフォント(Menlo・Apple Symbols・DejaVu Sans・Segoe UI Symbol等)をその字だけに使う。どれにも無ければchosen。
@@ -2042,6 +2074,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
   std::string substituteGlyph;
   double rotation = 0.0;
   unsigned int cornerMark = 0;
+  bool shiftToUpperRight = false;  // 縦書き用の字が無い句読点(horizontalGlyphForVerticalForm()参照)
   if (verticalText) {
     if (codepoint == 0x301D || codepoint == 0x301F) cornerMark = codepoint;
     if (codepoint == 0xFF5C) {
@@ -2056,6 +2089,13 @@ void GraphicalDisplay::renderCell(int row, int col) {
       // Noto Sans CJKの「〞」は横に寝た2本線で、ヒラギノの縦寄りの2本線と字形が違う。二重
       // プライム「″」(U+2033)はNoto・ヒラギノ角ゴ/明朝・MSゴシックのどれでも縦寄りの2本線。
       substituteGlyph = "\xE2\x80\xB3";
+    } else if (const char *horizontal = horizontalGlyphForVerticalForm(codepoint)) {
+      TTF_Font *serif = cell.serif || impl_->serifEverywhere ? serifFontFor(*impl_, codepoint) : nullptr;
+      if (!glyphProvidedByFont(verticalFormFontFor(*impl_, serif ? serif : impl_->font, codepoint), codepoint)) {
+        substituteGlyph = horizontal;
+        if (codepoint <= 0xFE12) shiftToUpperRight = true;
+        else rotation = 90.0;
+      }
     }
     if (!substituteGlyph.empty()) codepoint = decodeUtf8Codepoint(substituteGlyph);
   }
@@ -2248,6 +2288,11 @@ void GraphicalDisplay::renderCell(int row, int col) {
         return;
       }
       if (kRotated.count(codepoint)) rotation = 90.0;
+      if (shiftToUpperRight) {  // 左下にある点を、マスの右上へ
+        int shift = static_cast<int>(dst.w * 0.55);
+        dst.x += shift;
+        dst.y -= shift;
+      }
       // 縦書きの「ー」「―」はフォント自身の縦書き用の字形(cachedVerticalGlyphTexture()参照)。墨の範囲を、横書きの
       // 字と同じ縮尺でマスの中央に置く。「―」は2026-10-06、直接のユーザー依頼("「―」も縦書き用の字形にして")。
       if (rotation != 0.0 && (renderGlyph == "\xE3\x83\xBC" || renderGlyph == "\xE2\x80\x95")) {
