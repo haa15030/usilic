@@ -591,6 +591,16 @@ std::string fontconfigFontWithChar(const char *hex) {
 #endif
 }
 
+// 2026-11-04、直接のユーザー依頼(FreeBSD、=ni.png、日本語の下線が字の間で切れる。"文字の幅で長さも決まるの？"→
+// "その形で入れてみて"): TTF_STYLE_UNDERLINEの線は描いた字の幅しかなく、高さもフォントごとに違う。マスの幅いっぱいに
+// 同じ高さで引く。大きさを変えた字(Cell::size)はマス目から外して置くので、今までどおりフォントの下線。
+void fillCellUnderline(SDL_Renderer *renderer, int x, int y, int width, int cellHeight, SDL_Color color) {
+  int thickness = std::max(1, cellHeight / 20);
+  SDL_Rect line{x, y + cellHeight - std::max(1, cellHeight / 10) - thickness, width, thickness};
+  SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, 255);
+  SDL_RenderFillRect(renderer, &line);
+}
+
 // `user`(usilicrcの指定)を先に、`builtin`を後に試し、仮名を持つ最初のフォント。最後にfontconfigの`family`。
 TTF_Font *openFirstJapaneseFont(const std::vector<std::string> &user, const char *const *builtin, std::size_t count,
                                int pointSize, std::string *openedPath, const char *family) {
@@ -1960,7 +1970,8 @@ void GraphicalDisplay::renderCell(int row, int col) {
 
   int style = TTF_STYLE_NORMAL;
   if (cell.bold) style |= TTF_STYLE_BOLD;
-  if (underline) style |= TTF_STYLE_UNDERLINE;
+  bool cellUnderline = underline && cell.size == 0;  // fillCellUnderline()参照
+  if (underline && !cellUnderline) style |= TTF_STYLE_UNDERLINE;
   if (cell.italic) style |= TTF_STYLE_ITALIC;
 
   // メインフォントに欠けているグリフについては、CJK対応フォント
@@ -2123,6 +2134,10 @@ void GraphicalDisplay::renderCell(int row, int col) {
         return;
       }
     }
+  }
+  if (cellUnderline) {
+    fillCellUnderline(impl_->renderer, box.x, box.y, impl_->cellWidth * (isWide ? 2 : 1), impl_->cellHeight, fg);
+    if (blank) return;
   }
   const std::string &renderGlyph =
       !substituteGlyph.empty() ? substituteGlyph : cell.glyph.empty() ? std::string(" ") : cell.glyph;
@@ -2307,7 +2322,9 @@ void GraphicalDisplay::renderCursor() {
 
   int style = TTF_STYLE_NORMAL;
   if (cell.bold) style |= TTF_STYLE_BOLD;
-  if (cell.underline) style |= TTF_STYLE_UNDERLINE;
+  if (cell.underline && cell.size != 0) style |= TTF_STYLE_UNDERLINE;
+  if (cell.underline && cell.size == 0)
+    fillCellUnderline(impl_->renderer, box.x, box.y, box.w, impl_->cellHeight, impl_->bg);
   if (cell.italic) style |= TTF_STYLE_ITALIC;
 
   // renderCell()と同じメイン/フォールバックフォントのグリフ有無の
@@ -4525,6 +4542,10 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       SDL_SetRenderDrawColor(impl_->renderer, hlBg.r, hlBg.g, hlBg.b, 255);
       SDL_RenderFillRect(impl_->renderer, &cellRect);
     }
+    bool cellUnderline = wantUnderline && wantSize == 0;  // fillCellUnderline()参照(空白のマスにも引く)
+    if (cellUnderline)
+      fillCellUnderline(impl_->renderer, Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y, width * impl_->cellWidth,
+                        impl_->cellHeight, wantHighlightCurrent ? kHighlightCurrentFgColor : runFg);
     if (glyph != " " && lead >= 0x20) {
       SDL_Color cellFg = runFg;
       // renderCell()自身のkHighlightCurrentFgColorコメント参照――
@@ -4567,7 +4588,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       // 計算されるまさにその箇所参照)。
       int style = TTF_STYLE_NORMAL;
       if (wantBold) style |= TTF_STYLE_BOLD;
-      if (wantUnderline) style |= TTF_STYLE_UNDERLINE;
+      if (wantUnderline && !cellUnderline) style |= TTF_STYLE_UNDERLINE;
       if (wantItalic) style |= TTF_STYLE_ITALIC;
       // renderCell()と同じ半角用ヒンティングの調整――それ自身のコメント
       // 参照(項目264、項目263のTTF_HINTING_LIGHTを置き換えたもの)。
