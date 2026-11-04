@@ -578,13 +578,15 @@ std::string fontconfigFontWithChar(const char *hex) {
   (void)hex;
   return std::string();
 #else
-  std::string command = std::string("fc-match -f '%{file}' ':charset=") + hex + "' 2>/dev/null";
+  // fc-matchは持たないフォントも返すので、持つものだけを並べるfc-listの最初の1つ。
+  std::string command = std::string("fc-list -f '%{file}\\n' ':charset=") + hex + "' 2>/dev/null";
   FILE *pipe = ::popen(command.c_str(), "r");
   if (!pipe) return std::string();
   std::string path;
   char buffer[512];
-  while (std::fgets(buffer, sizeof(buffer), pipe)) path += buffer;
+  if (std::fgets(buffer, sizeof(buffer), pipe)) path = buffer;
   ::pclose(pipe);
+  if (!path.empty() && path.back() == '\n') path.pop_back();
   return path;
 #endif
 }
