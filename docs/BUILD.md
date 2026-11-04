@@ -111,7 +111,7 @@ Makefileは GNU make の書き方なので、FreeBSD標準の`make`ではなく`
 ```
 # rootで
 pkg bootstrap
-pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf firefox xdg-utils
+pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf firefox xdg-utils python3
 ```
 
 ### 2. GUI(X11・Xfce)
@@ -161,10 +161,11 @@ gmake install          # ~/.local/bin/usilic、~/.local/share/applications/usili
 - `~/.local/bin`は既定のPATHに無いので、`~/.profile`に`PATH=$HOME/.local/bin:$PATH; export PATH`を足す。
 - 書き換えた`~/.profile`をその場で読み直すなら`. ~/.profile`(sshでつなぎ直しても読まれる)。その時やログインの度に英語の小ネタが毎回違う内容で出るのは、既定の`~/.profile`の最後の`fortune freebsd-tips`(FreeBSDの使い方のヒントをランダムに1つ表示する)。エラーではない。要らなければその行の先頭に`#`。freebsd-tipsは英語だけで、日本語版は無い。
 - bashをログインシェルにするなら`chsh -s /usr/local/bin/bash`。bashは`~/.bash_profile`があれば`~/.profile`を読まないので、その時はPATHを`~/.bash_profile`に書く。
+- `python3`はEPUBのリンクのEpub(narou2epub)・Pdf(url2pdf)に要る。そのほかの準備はHELPのnarou2epub・url2pdfの所。
 - firefoxのpkg installの最後に長いメッセージ(boost・gcc14・libjxl・firefoxの未対応機能等)が出るが、対応が要るものは無い。
 - `su`はwheelグループのユーザーだけ(`pw groupmod wheel -m ユーザー名`)。sudoは`visudo`で`%wheel`の行を有効にする。
 - インストーラの注意: キーボードの画面は`Japanese 106`をSpaceで選んだ後、**一番上の行**`Continue with jp.kbd keymap`でEnter(2行目のTestは試し打ちだけ)。ベースシステムの入れ方は`Distribution Sets`(従来のtarball、portsとは無関係)で`src`も選ぶ。再インストール後はMac側で`ssh-keygen -R <IP>`(ホスト鍵が変わる)。
-- 最初の起動のインストールの案内は`sudo pkg install -y groff mg texinfo 7-zip w3m`。入らなかったものは次の起動でもう一度だけ実行し、その後はモードラインに「見つかりません」と出すだけなので、手で入れる。
+- 最初の起動のインストールの案内は`sudo pkg install -y groff mg texinfo 7-zip w3m python3`。入らなかったものは次の起動でもう一度だけ実行し、その後はモードラインに「見つかりません」と出すだけなので、手で入れる。
 - インストーラで選んだキーボード(jp106等)はコンソールだけ。Xfceでは設定→キーボード→レイアウトで「システムのデフォルトを使用」を外し、モデルを`Japanese 106-key`、レイアウトの追加で**▶を開かずに親の`Japanese`の行**を選ぶ(▶の下のKana・Macintosh・OADG 109A・Dvorakは標準以外の変種。Kanaを選ぶと`[`が`]`になる等、2026-11-01に実際にはまった)。
 - Xfceのメニュー等を日本語にするには`echo 'LANG=ja_JP.UTF-8; export LANG' >> ~/.xprofile`してログインし直す(lightdmの`/usr/local/etc/lightdm/Xsession`が`~/.xprofile`を読む、2026-11-01に確認)。`~/.login_conf`やログインクラスで設定するとコンソール(vt)のログインまで日本語になり、vtのフォントに漢字が無いので化ける。
 - lightdmのログイン画面までjp106にするには、`/usr/local/etc/X11/xorg.conf.d/keyboard.conf`に`Section "InputClass"`・`Identifier "keyboard"`・`MatchIsKeyboard "on"`・`Option "XkbModel" "jp106"`・`Option "XkbLayout" "jp"`・`EndSection`を書く(Xfce側は「システムのデフォルトを使用」のままでよくなる)。

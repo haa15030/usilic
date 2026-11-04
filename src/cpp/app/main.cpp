@@ -2399,8 +2399,9 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
   // FreeBSD(2026-10-31、直接のユーザー報告: FreeBSD 16.0-CURRENTの初回起動で`sudo apt install …`が置かれた):
   // pkgのパッケージ名。infoはtexinfo、7-Zipは7-zip(コマンド名は7zz、sevenZipCommand()参照)。
   // unzipはベースシステムに入っている。
+  // python3(2026-11-04、直接のユーザー報告"FreeBSDではpython3が無いエラー"): narou2epub・url2pdf。FreeBSDには最初から無い。
   const std::vector<std::pair<std::string, std::string>> tools = {
-      {"groff", "groff"}, {"mg", "mg"}, {"info", "texinfo"}, {"7zz", "7-zip"}, {"w3m", "w3m"}};
+      {"groff", "groff"}, {"mg", "mg"}, {"info", "texinfo"}, {"7zz", "7-zip"}, {"w3m", "w3m"}, {"python3", "python3"}};
 #else
   const std::vector<std::pair<std::string, std::string>> tools = {
       {"groff", "groff"}, {"mg", "mg"}, {"info", "info"}, {"7z", "p7zip-full"}, {"w3m", "w3m"}, {"unzip", "unzip"}};
