@@ -557,11 +557,19 @@ std::vector<std::string> &userSansSerifCandidates() {
 // 2026-10-31、直接のユーザー報告(FreeBSD+Xfce、ja-font-ipaを入れたが-gのHELPがゴシック体のまま、^J^FでIPAMinchoに
 // すると明朝体): 下の候補はmacOS・Debian系・Windowsの決まった場所だけで、FreeBSD(/usr/local/share/fonts/)等には
 // 無かった。どれも無ければ、fontconfigに日本語の入ったその系統のフォントを尋ねる(fc-match、Windowsのネイティブは除く)。
+std::string fontconfigFirstListed(const std::string &pattern);
+
 std::string fontconfigJapaneseFont(const char *family) {
 #ifdef _WIN32
   (void)family;
   return std::string();
 #else
+  // 2026-11-05、直接のユーザー報告(FreeBSD、=nr.png、表紙の見出しの「う」だけズレる): fc-matchはIPA P明朝のような
+  // 字ごとに幅の違うフォントも返す。字の面はマスの中央に置くので、幅が違うと丸めで字ごとに1ドット程度ずれる。
+  // 入っていれば全角の幅が揃ったIPAフォントを先に使う(fc-listは入っているものしか返さない)。
+  std::string fixedWidth = fontconfigFirstListed(std::string(":family=") +
+                                                 (std::string(family) == "serif" ? "IPAMincho" : "IPAGothic"));
+  if (!fixedWidth.empty()) return fixedWidth;
   std::string command = std::string("fc-match -f '%{file}' '") + family + ":lang=ja' 2>/dev/null";
   FILE *pipe = ::popen(command.c_str(), "r");
   if (!pipe) return std::string();
@@ -574,13 +582,16 @@ std::string fontconfigJapaneseFont(const char *family) {
 }
 
 // 16進のコードポイント(`hex`)の字を持つフォントのファイルをfontconfigに尋ねる(symbolFontFor()参照)。
-std::string fontconfigFontWithChar(const char *hex) {
+// fc-matchは持たないフォントも返すので、持つものだけを並べるfc-listの最初の1つ。
+std::string fontconfigFontWithChar(const char *hex) { return fontconfigFirstListed(std::string(":charset=") + hex); }
+
+// `pattern`に合うフォントのファイルのうち、fc-listの最初の1つ。無ければ空。
+std::string fontconfigFirstListed(const std::string &pattern) {
 #ifdef _WIN32
-  (void)hex;
+  (void)pattern;
   return std::string();
 #else
-  // fc-matchは持たないフォントも返すので、持つものだけを並べるfc-listの最初の1つ。
-  std::string command = std::string("fc-list -f '%{file}\\n' ':charset=") + hex + "' 2>/dev/null";
+  std::string command = "fc-list -f '%{file}\\n' '" + pattern + "' 2>/dev/null";
   FILE *pipe = ::popen(command.c_str(), "r");
   if (!pipe) return std::string();
   std::string path;
