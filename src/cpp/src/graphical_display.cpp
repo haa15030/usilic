@@ -3220,6 +3220,22 @@ void GraphicalDisplay::drawRubyText(int x, int y, const std::string &ruby, int s
       double scale = std::min(static_cast<double>(size) / w, static_cast<double>(size) / h);
       int dw = static_cast<int>(w * scale), dh = static_cast<int>(h * scale);
       SDL_Rect dst{x + 2 * cw + (cw - dw) / 2, top + static_cast<int>(k) * size + (size - dh) / 2, dw, dh};
+      // 2026-11-05、直接のユーザー報告(FreeBSD、=nu.png、=nv.pngと比べて傍点が薄い): IPAフォントの「﹅」の墨の幅は全角の
+      // 0.28倍で、ヒラギノ明朝(0.57倍)の半分しかない。小さい傍点は、墨をヒラギノと同じ幅にしてマスの中央に置く。
+      unsigned int codepoint = decodeUtf8Codepoint(glyph);
+      if (codepoint == 0xFE45 || codepoint == 0xFE46) {
+        TTF_Font *font = fontFor(codepoint);
+        int inkLeft = 0, inkRight = 0, inkBottom = 0, inkTop = 0;
+        double em = std::max(impl_->currentFontPointSize, 1);
+        if (TTF_GlyphMetrics32(font, codepoint, &inkLeft, &inkRight, &inkBottom, &inkTop, nullptr) == 0 &&
+            inkRight > inkLeft && inkRight - inkLeft < 0.4 * em) {
+          scale *= (codepoint == 0xFE45 ? 0.57 : 0.64) * em / (inkRight - inkLeft);
+          dst.w = static_cast<int>(w * scale);
+          dst.h = static_cast<int>(h * scale);
+          dst.x = static_cast<int>(x + 2 * cw + cw / 2.0 - scale * (inkLeft + inkRight) / 2.0);
+          dst.y = static_cast<int>(top + (k + 0.5) * size - scale * (TTF_FontAscent(font) - (inkBottom + inkTop) / 2.0));
+        }
+      }
       SDL_RenderCopyEx(impl_->renderer, texture, nullptr, &dst, rotation, nullptr, SDL_FLIP_NONE);
     }
     return;
