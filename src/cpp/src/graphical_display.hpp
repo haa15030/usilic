@@ -424,6 +424,11 @@ class GraphicalDisplay : public Display {
   // する。揃っていなければ空。
   std::vector<std::string> consumeDroppedFiles();
 
+  // 2026-11-04、直接のユーザー依頼(-gのプロンプトへ外からコピーした文字列を貼り付ける): 貼り付けのキー(⌘V、macOS以外は
+  // Ctrl+Shift+Vも)が押されていれば、OSのクリップボードの文字列(fm::oneLinePastedText()で1行にしたもの)を返す。
+  // キーが押されていない・クリップボードが空なら空。
+  std::string consumePastedText();
+
   // -- ドラッグスクロールのプロトタイプサポート(2026-07-30、
   // 実現可能性サンプル) --
   // GUIモードの残りの部分へさらに踏み込む前に、「ドット単位の

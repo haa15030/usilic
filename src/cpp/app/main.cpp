@@ -2955,6 +2955,16 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         anyEventThisFrame = true;
       }
     }
+    // GraphicalDisplay::consumePastedText()参照。CUIの端末からの貼り付け(peekBracketedPaste())と同じく、1字ずつキーとして
+    // 渡す(^J^Eの一覧の絞り込み等も、打った時と同じに動く)。プロンプトの外では何もしない。
+    {
+      std::string pasted = gui.consumePastedText();
+      if (!pasted.empty() && app.promptActive()) {
+        app.noteUserActivity();
+        for (unsigned char c : pasted) app.feedByte(c, std::nullopt);
+        anyEventThisFrame = true;
+      }
+    }
     // 2026-08-24 fix (docs/CHANGES.md item 422, see GraphicalDisplay::
     // consumeNeedsRedraw()'s own declaration comment for the full
     // story): a real user report against `make app`'s new .app bundle

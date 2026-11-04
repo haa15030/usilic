@@ -193,6 +193,21 @@ std::string utf8ToUtf16LeWithBom(const std::string &utf8) {
   return out;
 }
 
+std::string oneLinePastedText(const std::string &text) {
+  std::string out;
+  bool pendingSpace = false;
+  for (unsigned char c : text) {
+    if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+      pendingSpace = true;
+    } else if (c >= 0x20 && c != 0x7F) {
+      if (pendingSpace && !out.empty()) out += ' ';
+      pendingSpace = false;
+      out += static_cast<char>(c);
+    }
+  }
+  return out;
+}
+
 bool copyToWindowsClipboard(const std::string &utf8) {
   if (isMsys()) {
     std::ofstream out("/dev/clipboard", std::ios::binary);

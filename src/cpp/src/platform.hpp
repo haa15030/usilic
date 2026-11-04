@@ -38,6 +38,10 @@ std::string windowsPathFor(const std::string &path);
 // WSL・MSYSともexplorer.exe(成功しても終了コード1を返すことがあるので、起動できたかだけを見る)。
 // `cmd.exe /c start`はURLの&等をcmdが解釈してしまうので使わない。
 bool openOnWindowsHost(const std::string &target);
+// 2026-11-04、直接のユーザー依頼(-gのプロンプトへブラウザからコピーした作品のID等を貼り付ける): 外のクリップボードの
+// 文字列を、プロンプトへ1行で入れる形に。前後の空白・改行を除き、途中の改行・タブは空白1つ、他の制御文字は捨てる
+// (改行をそのまま渡すと[Enter]になって確定してしまう)。
+std::string oneLinePastedText(const std::string &text);
 // UTF-8をUTF-16LE(BOM付き)へ。clip.exeはUTF-8をそのまま渡すと日本語が化けるため。
 std::string utf8ToUtf16LeWithBom(const std::string &utf8);
 // Windowsのクリップボードへ(WSLはclip.exe、MSYSは/dev/clipboardへUTF-8のまま書く)。

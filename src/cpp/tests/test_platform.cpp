@@ -17,3 +17,11 @@ TEST_CASE("utf8ToUtf16LeWithBom: BOM, Japanese, CRLF, and a surrogate pair") {
   CHECK(utf8ToUtf16LeWithBom("\n") == std::string("\xFF\xFE" "\r\0\n\0", 6));
   CHECK(utf8ToUtf16LeWithBom("\xF0\x9F\x98\x80") == std::string("\xFF\xFE" "\x3D\xD8\x00\xDE", 6));  // U+1F600
 }
+
+TEST_CASE("oneLinePastedText: プロンプトへ1行で入れる形にする") {
+  CHECK(fm::oneLinePastedText("n1234ab\n") == "n1234ab");
+  CHECK(fm::oneLinePastedText("  https://example.com/\r\n") == "https://example.com/");
+  CHECK(fm::oneLinePastedText("a\nb\t\tc  d") == "a b c d");
+  CHECK(fm::oneLinePastedText("小説\x1b[0m") == "小説[0m");
+  CHECK(fm::oneLinePastedText(" \n ") == "");
+}

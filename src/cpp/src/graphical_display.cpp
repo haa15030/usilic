@@ -987,6 +987,7 @@ struct GraphicalDisplay::Impl {
   // consumeDroppedFiles()自身の宣言コメント参照。
   std::vector<std::string> pendingDrop;       // 受け渡しの途中
   std::vector<std::string> completedDrop;     // 揃った一式(consumeDroppedFiles()が返す)
+  bool pasteRequested = false;                // consumePastedText()
   bool dropInProgress = false;                // SDL_DROPBEGIN〜SDL_DROPCOMPLETEの間
   std::deque<DragEvent> dragQueue;
   std::deque<HoverEvent> hoverQueue;
@@ -3699,6 +3700,7 @@ bool GraphicalDisplay::pumpEvents() {
           else if (sym == SDLK_MINUS || sym == SDLK_KP_MINUS) adjustFontSize(-1);
           else if (sym == SDLK_0 || sym == SDLK_KP_0) adjustFontSize(0);
           else if (sym == SDLK_k) cycleColorPreset();
+          else if (sym == SDLK_v) impl_->pasteRequested = true;  // consumePastedText()
           break;
         }
         // コントロールキーの組み合わせ(Ctrl+A..Ctrl+_)は、SDL_TEXTINPUT
@@ -3727,6 +3729,13 @@ bool GraphicalDisplay::pumpEvents() {
             adjustFontSize(0);
             break;
           }
+#ifndef __APPLE__
+          // 貼り付け(consumePastedText())。上のKMOD_GUI(Windows・Superキー)の組み合わせはOS側が先に取るので、端末と同じキー。
+          if (sym == SDLK_v && shift) {
+            impl_->pasteRequested = true;
+            break;
+          }
+#endif
           if (sym >= SDLK_a && sym <= SDLK_z) {
             impl_->keyQueue.push_back(KeyEvent{(sym - SDLK_a) + 1, std::nullopt});
           } else if (sym == SDLK_LEFTBRACKET) {
@@ -3833,6 +3842,16 @@ std::optional<GraphicalDisplay::HoverEvent> GraphicalDisplay::consumeHoverEvent(
   HoverEvent hover = impl_->hoverQueue.front();
   impl_->hoverQueue.pop_front();
   return hover;
+}
+
+std::string GraphicalDisplay::consumePastedText() {
+  if (!impl_->pasteRequested) return std::string();
+  impl_->pasteRequested = false;
+  char *clipboard = SDL_GetClipboardText();
+  if (!clipboard) return std::string();
+  std::string text = oneLinePastedText(clipboard);
+  SDL_free(clipboard);
+  return text;
 }
 
 std::vector<std::string> GraphicalDisplay::consumeDroppedFiles() {
