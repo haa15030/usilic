@@ -22410,6 +22410,11 @@ void Application::pollChildChannel() {
     activeView().redraw();
     display_.flush();
   }
+  if (!pendingMissingNotice_.empty()) {  // scheduleStartNotice()参照
+    showTransientNotice(activeView(), localized("Not found: ") + pendingMissingNotice_);
+    pendingMissingNotice_.clear();
+    display_.flush();
+  }
   if (helpChildrenPending_ || keyChildPending_) {
     if (std::exchange(helpChildrenPending_, false)) launchHelpChild();
     if (std::exchange(keyChildPending_, false)) launchKeyChild();

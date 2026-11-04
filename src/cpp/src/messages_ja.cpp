@@ -45,6 +45,7 @@ const std::vector<std::pair<std::string, std::string>> &exactMessages() {
       {"No Open in URL (usilicrc)", "usilicrc の URL に Open がありません"},
       {"No other windows", "ほかのウィンドウがありません"},
       {"No string", "見つかりません"},
+      {"Not found: ", "見つかりません: "},
       {"Not available in pager", "ページャーでは使えません"},
       {"Not defining kbd macro", "キーボードマクロを記録していません"},
       {"Not enough buffer", "バッファが足りません"},

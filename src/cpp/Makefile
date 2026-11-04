@@ -248,7 +248,9 @@ ifneq ($(NO_GUI),1)
 	# ことがある)。端末から-g・^Ogで使った時の色・フォント・大きさ(~/.usilic/history)で開く。
 	install -m 644 packaging/usilic_icon_1024.png $(LIB_DIR)/usilic.png
 	install -d $(PREFIX)/share/applications
-	printf '[Desktop Entry]\nType=Application\nName=usilic\nComment=Text-based file manager\nExec=%s -g\nIcon=%s\nTerminal=false\nCategories=Utility;FileManager;\n' \
+	# 2026-11-04、直接のユーザー依頼(FreeBSD、"最初のアイコン起動は明朝に"): -gを付けるとmain()のアイコンからの起動の判定
+	# (制御端末が無い)を通らず、-gの組(ゴシック体の既定等)になっていた。$$USILIC_ICON_LAUNCHで明示する。
+	printf '[Desktop Entry]\nType=Application\nName=usilic\nComment=Text-based file manager\nExec=env USILIC_ICON_LAUNCH=1 %s -g\nIcon=%s\nTerminal=false\nCategories=Utility;FileManager;\n' \
 	  "$(INSTALL_DIR)/$(INSTALL_NAME)" "$(LIB_DIR)/usilic.png" > $(PREFIX)/share/applications/usilic.desktop
 	chmod 644 $(PREFIX)/share/applications/usilic.desktop
 	-command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database $(PREFIX)/share/applications

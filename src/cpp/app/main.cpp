@@ -2369,12 +2369,18 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
   // あるだけで二度と案内しなかったので、後から対象に足したもの(w3m・unzip・fonts-noto-cjk)が、既に案内
   // 済みの環境では一度も案内されなかった。印のファイルには案内したパッケージ名を1行ずつ書き、まだ案内して
   // いないもので見つからないものがあれば、それだけをもう一度案内する(以前の空の印は「何も案内していない」)。
+  // 2026-11-04、直接のユーザー依頼(FreeBSDで、sudoが無く最初の起動のインストールに失敗し、sudoを入れた後の起動では
+  // 案内が出なかった。"足りないツールがあれば...案内にしたら起こりうる不都合"を検討した上で): 案内はインストールを
+  // 確認なしで実行するので、起動のたびには実行しない。実行するのは最初の起動と、その次の起動で1回だけ(最初の起動で
+  // 入らなかったもの)。ほかの起動では、見つからないものを実行せずに知らせるだけ。印のファイルは、次の起動でもう一度
+  // 実行するパッケージを"retry:名前"で持つ(以前の、名前だけの行は見ない)。
   std::string marker = usilicDir + "install-offered";
-  std::set<std::string> offered;
+  const std::string retryPrefix = "retry:";
+  std::set<std::string> retry;
   {
     std::ifstream in(marker);
     for (std::string line; std::getline(in, line);)
-      if (!line.empty()) offered.insert(line);
+      if (line.rfind(retryPrefix, 0) == 0) retry.insert(line.substr(retryPrefix.size()));
   }
   // {コマンド名, パッケージ名}
 #ifdef __APPLE__
@@ -2428,11 +2434,25 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
 #endif
     return missing;
   };
-  // 今回案内するもの: 見つからないもののうち、まだ案内していないもの。
+  // 今回実行するもの: 最初の起動は見つからないもの全部、ふだんの起動は前回の印の分だけ。
   std::set<std::string> toOffer;
-  for (const auto &package : missingPackages())
-    if (firstStart || !offered.count(package)) toOffer.insert(package);
-  if (toOffer.empty()) return;
+  const std::vector<std::string> missingNow = missingPackages();
+  for (const auto &package : missingNow)
+    if (firstStart || retry.count(package)) toOffer.insert(package);
+  if (toOffer.empty()) {
+    // 印は実行の前にしか役に立たないので消す(入った後で消したものが、後の起動で黙って実行されないように)。
+    std::error_code removeError;
+    std::filesystem::remove(marker, removeError);
+#if defined(__MSYS__) || defined(__CYGWIN__)
+    if (findExecutable("pacman").empty()) return;  // Git Bashにはパッケージ管理が無いので案内しない(下と同じ)
+#endif
+    if (!missingNow.empty()) {
+      std::string names;
+      for (const auto &package : missingNow) names += (names.empty() ? "" : ", ") + package;
+      app.scheduleStartNotice(names);
+    }
+    return;
+  }
   // toOfferのうち見つからないものだけのインストールコマンド(全部あれば空、followUpでも使う)。
   auto installCommand = [missingPackages, toOffer]() -> std::string {
     std::string packages;
@@ -2484,11 +2504,12 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
   // あれば、その分だけのコマンドを再び入力欄に置く(最大2回。実行はやはり
   // ユーザーのreturnで)。
   // brewから入れる場合は、Homebrew自体のインストールの後にbrew installが続くので1回多く。
-  // 案内済みの印は、実際に入力欄に置けた時に書く(Application::scheduleShellOffer()参照、2026-10-20)。
-  app.scheduleShellOffer(command, installCommand, /*retries=*/3, [marker, offered, toOffer] {
+  // 印は、実際に入力欄に置けた時に書く(Application::scheduleShellOffer()参照、2026-10-20)。最初の起動で実行した分は
+  // 次の起動にもう一度の印を付ける(入れば次の起動の見つからないものに出ないので実行されない)。もう一度の分は消す。
+  app.scheduleShellOffer(command, installCommand, /*retries=*/firstStart ? 3 : 1, [marker, retryPrefix, toOffer, firstStart] {
     std::ofstream out(marker);
-    for (const auto &package : offered) out << package << "\n";
-    for (const auto &package : toOffer) out << package << "\n";
+    if (firstStart)
+      for (const auto &package : toOffer) out << retryPrefix << package << "\n";
   });
 }
 

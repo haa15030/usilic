@@ -2195,6 +2195,9 @@ class Application {
                           std::function<void()> onOffered) {
     pendingShellOffer_ = PendingShellOffer{commandLine, std::move(followUp), retries, std::move(onOffered)};
   }
+  // 2026-11-04: 実行ループに入ってから(pollChildChannel())「見つかりません: <names>」をモードラインに出す。
+  void scheduleStartNotice(const std::string &names) { pendingMissingNotice_ = names; }
+  std::string pendingMissingNotice_;
   struct PendingShellOffer {
     std::string commandLine;
     std::function<std::string()> followUp;
