@@ -3010,6 +3010,9 @@ class Application {
   std::string listBrowserCategoryLabel() const;           // startEpubList()参照
   bool epubPathPending_ = false;  // ^Jeのパス入力中(PathInputの投入をopenEpub()へ回す)
   bool epubListPending_ = false;  // ^J^E: 次のstartPromptHistoryRecall()をEPUBだけにする
+  // ^J^Eの一覧を最後に離れた時の行の文字列(2026-11-05、直接のユーザー報告"^J^Eがカーソル位置を保存しない")。一覧は並べ
+  // 直されるので行番号でなく文字列で覚える。起動し直すと空で、その時は履歴でいちばん新しいEPUBの行へ置く。
+  std::string epubListLastItem_;
   // ^J^Eの一覧で^Mした文字列・一覧から打ち始めたプロンプトの文字列か(executePromptSubmission()のRecentFile、
   // activatePrompt()で消す)。
   bool epubListSubmitting_ = false;

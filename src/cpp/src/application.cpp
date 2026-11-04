@@ -7521,6 +7521,7 @@ bool Application::openSelectedListEntry() { return openSelectedListEntryImpl(); 
 bool Application::openSelectedListEntryImpl() {
   const std::string *item = listBrowserMode_.selectedItem();
   if (!item) return false;
+  if (promptHistoryContext_ && promptHistoryContext_->epubOnly) epubListLastItem_ = *item;  // epubListLastItem_参照
   if (fontListShowing()) {  // ^J^F(takeFontListRequest()参照)
     int idx = listBrowserView_.cursorIndex();
     if (idx >= 0 && idx < static_cast<int>(fontListEntries_.size()))
@@ -12075,6 +12076,8 @@ bool Application::returnFromListBrowser() {
   }
   if (tabCompletionContext_) return returnFromTabCompletionList(/*selected=*/false);
   if (promptHistoryContext_) {
+    if (promptHistoryContext_->epubOnly)  // epubListLastItem_参照
+      if (const std::string *item = listBrowserMode_.selectedItem()) epubListLastItem_ = *item;
     PromptKind kind = promptHistoryContext_->kind;
     // EGREP自身の候補リスト(2026-08-12修正、直接のユーザーの指示)。
     // ここでの^Gは空の編集可能なプロンプトを再度開いては「ならない」。
@@ -17170,6 +17173,16 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
       // 参照。実際の報告により、これが最初のシードパターンではなく
       // 「最後の」(11個中11番目の)ものに着地することが判明した。
       listBrowserView_.setCursorIndex(0);
+      if (promptHistoryContext_ && promptHistoryContext_->epubOnly) {  // ^J^E(epubListLastItem_参照)
+        auto found = std::find(items.begin(), items.end(), epubListLastItem_);
+        const std::deque<std::string> &recent = history_.recentEntries(RingCategory::RecentFile);
+        for (auto entry = recent.rbegin(); found == items.end() && entry != recent.rend(); ++entry)
+          found = std::find(items.begin(), items.end(), *entry);
+        if (found != items.end()) {
+          listBrowserView_.setCursorIndex(static_cast<int>(found - items.begin()));
+          listBrowserView_.centerOnCursor();
+        }
+      }
     } else {
       // 最新(最も最近積まれたエントリ、末尾にある)が、実際に最初に
       // 見える/選択されるものである――ToggleHistoryView自身の時系列
