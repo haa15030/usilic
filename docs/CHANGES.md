@@ -33424,6 +33424,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: xdg-openが無ければ、$BROWSER、exo-open、gio open、firefox、chromium、chrome、google-chromeの順に、PATHにあるものを開けるまで試す(`openWithoutXdgOpen()`)。何も無ければ今までどおり「xdg-open: command not found」。URLの節に書いたxdg-open・PdfのPDFを開く時も同じ。
    - **待たない**: `ChildProcess::run()`は子の終了を待つので、ブラウザがその場で動く場合はブラウザを閉じるまでusilicが止まる。`open`(macOS)以外は裏で起動し、1秒以内に失敗で終わった時だけ失敗とする(`runOpenerInBackground()`)。そのためOpenは1回につき最大1秒待つ。
    - docs/BUILD.mdのFreeBSDのpkg installに`xdg-utils`を追加(実機では未確認)。src/usilicrcのコメントにも記載。
+   - FreeBSDでビルドエラー(`waitpid`が宣言されていない): macOSでは他のヘッダ経由で`<sys/wait.h>`が入っていただけだったので、`application.cpp`で明示的にincludeした。
    - 確かめたこと: Macで一時的なHOMEのPTY、偽のコマンドで、xdg-openがあればそれ、無ければ失敗するものを飛ばしてfirefox、どれも開けなければ「実行できません」、起動中もキーが効くこと。**FreeBSDの実機は未確認。**
    - 試験の失敗: 最初の起動の案内を止めずに試し、本物の`brew install font-ipafont`がまた走った(強制終了、Caskroomに変更なし、Homebrew自身の更新の確認はFETCH_HEADが更新された)。またURLを本物の`open`・`gio open`へ渡した回があった。
 1213. **足りないツールの案内の見直し、Linux・FreeBSDのアイコンからの起動を-gの組にしない(2026-11-04)**

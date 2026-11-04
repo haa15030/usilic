@@ -30,6 +30,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #ifndef _WIN32
+#include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <termios.h>
