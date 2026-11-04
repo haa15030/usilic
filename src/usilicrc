@@ -289,7 +289,8 @@ URL
 # この節が無ければ下の内容(Linux は Open が xdg-open、Copy が
 # xclip -selection clipboard、Look は無し。Windows は Open が explorer.exe、
 # Copy が clip.exe、Look は無し。Pdf は url2pdf、Epub は narou2epub がある時
-# だけ)を使います。
+# だけ)を使います。xdg-open が無ければ、$BROWSER、exo-open、gio open、firefox、
+# chromium、chrome、google-chrome の順に、開けるまで試します。
 
 #	Open	open
 #	Pdf	~/.local/lib/usilic/url2pdf

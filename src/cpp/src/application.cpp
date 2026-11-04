@@ -8374,6 +8374,47 @@ bool Application::openEpubLineImage(const ContentView &view) {
 // ほしい"): URLをWebの場所のファイル(.webloc)にしてクイックルック(runQuickLook())に渡す。
 // 2026-10-04、直接のユーザー依頼("usilicrcで選べるようにして、既定はA(既定のブラウザ)。^Owでモードを
 // 巡回"): Configuration::urlHandlers()の今の対処(urlHandlerIndex_)で開く。以前のクイックルックはLook。
+// 2026-11-04、直接のユーザー報告("「小説家になろう」を^Mすると「xdg-open: コマンドが見つかりません」"、"デフォルトブラウザ
+// があるときは新たに起動してほしい"): ChildProcess::run()は子の終了と標準出力の閉じるのを待つので、ブラウザが動いて
+// いない時にxdg-open等がブラウザをそのまま動かすと、ブラウザを閉じるまでusilicが止まる。裏で起動し、1秒以内に失敗で
+// 終わった時だけ失敗とする。
+static bool runOpenerInBackground(const std::vector<std::string> &argv) {
+#ifdef _WIN32
+  return ChildProcess::run(argv).ok;
+#else
+  // 1秒を過ぎて動き続けたものは閉じた後にゾンビで残るので、次に開く時に回収する。
+  static std::vector<pid_t> running;
+  running.erase(std::remove_if(running.begin(), running.end(), [](pid_t pid) { return ChildProcess::hasExited(pid); }),
+                running.end());
+  pid_t pid = ChildProcess::runDetached(argv);
+  if (pid <= 0) return false;
+  for (int i = 0; i < 20; i++) {
+    int status = 0;
+    if (::waitpid(pid, &status, WNOHANG) == pid) return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    ::usleep(50 * 1000);
+  }
+  running.push_back(pid);
+  return true;
+#endif
+}
+
+// 同じ報告: xdg-open(xdg-utils)が無い環境では、デスクトップの既定のブラウザを開くコマンド、入っているブラウザの順に、
+// PATHにあるものを開けるまで試す(gioは既定のアプリが無ければ失敗するが、その先のfirefoxは開ける)。
+// *found: 試すものが1つでもあったか。
+static bool openWithoutXdgOpen(const std::string &target, bool *found = nullptr) {
+  std::vector<std::vector<std::string>> candidates;
+  if (const char *browser = std::getenv("BROWSER"); browser && *browser) candidates.push_back({browser});
+  candidates.insert(candidates.end(), {{"exo-open"}, {"gio", "open"}, {"firefox"}, {"chromium"}, {"chrome"}, {"google-chrome"}});
+  if (found) *found = false;
+  for (auto &candidate : candidates) {
+    if (!programOnPath(candidate[0])) continue;
+    if (found) *found = true;
+    candidate.push_back(target);
+    if (runOpenerInBackground(candidate)) return true;
+  }
+  return false;
+}
+
 // ^J^Eのなろう・カクヨム等のサイトの入口(kEpubListSiteUrls参照)。2026-10-17から、^Owの対処によらずOpen
 // (openEpubWebLink()のisEpubNovelSiteUrl()参照)。
 bool Application::openEpubListSiteUrl(const std::string &url) { return openEpubWebLink(url); }
@@ -8407,6 +8448,14 @@ bool Application::openEpubWebLinkWithCurrentHandler(const std::string &url) {
   if (handler.name == "Look") return openWebLinkInQuickLook(url);
   if (handler.argv.empty()) return false;
   std::vector<std::string> argv = handler.argv;
+  if (handler.name == "Open" && argv[0] == "xdg-open" && !programOnPath(argv[0])) {
+    bool found = false;
+    if (openWithoutXdgOpen(url, &found)) return true;
+    if (found) {
+      showTransientNotice(activeView(), "Cannot run: " + url);
+      return false;
+    }
+  }
   // 2026-10-04、直接のユーザー報告("Dump、Termとも動作しないのはw3mが存在しないからだが-gでは何が起きたか
   // わからない"): programが無ければシェルと同じ"…: command not found"を一時表示する。
   if (!programOnPath(argv[0])) {
@@ -8439,7 +8488,8 @@ bool Application::openEpubWebLinkWithCurrentHandler(const std::string &url) {
     }
     if (::access("/usr/bin/qlmanage", X_OK) == 0) runQuickLook({pdf});
     else if (hasWindowsHost()) openOnWindowsHost(pdf);  // 2026-10-05、platform.hpp参照
-    else ChildProcess::run({"xdg-open", pdf});
+    else if (programOnPath("xdg-open")) runOpenerInBackground({"xdg-open", pdf});
+    else openWithoutXdgOpen(pdf);
     showTransientNotice(activeView(), "Saved: " + pdf);
     return true;
   }
@@ -8495,9 +8545,14 @@ bool Application::openEpubWebLinkWithCurrentHandler(const std::string &url) {
     if (!ok) showTransientNotice(activeView(), "Cannot run: " + argv[0]);
     return ok;
   }
-  ChildProcess::Result result = ChildProcess::run(argv);
-  if (!result.ok) showTransientNotice(activeView(), "Cannot run: " + argv[0]);
-  return result.ok;
+#ifdef _WIN32
+  bool ok = ChildProcess::run(argv).ok;
+#else
+  // macOSのopenはブラウザを起動してすぐ戻るので、今までどおり待つ(1秒待たせない)。
+  bool ok = argv[0] == "open" ? ChildProcess::run(argv).ok : runOpenerInBackground(argv);
+#endif
+  if (!ok) showTransientNotice(activeView(), "Cannot run: " + argv[0]);
+  return ok;
 }
 
 // ^Ow(K-102): 次の対処へ。名前(4文字)を位置の欄に出す(どのキーでも消える、^O^Eと同じ)。

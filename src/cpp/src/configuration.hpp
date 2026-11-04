@@ -363,7 +363,7 @@ class Configuration {
   const std::vector<MacroEntry> &macros() const { return macros_; }
   // URL(2026-10-04新設、直接のユーザー依頼"usilicrcで選べるようにして、既定はA。^Owでモードを巡回"):
   // EPUBの本文のWebのリンクを踏んだ時の対処、「名前 program (option)」の行を書いた順に。名前は
-  //   Open  programにURLを渡して起動(既定のブラウザ等、macOSはopen、Linuxはxdg-open)
+  //   Open  programにURLを渡して起動(既定のブラウザ等、macOSはopen、Linuxはxdg-open。無ければopenWithoutXdgOpen())
   //   Pdf   programにURLを渡し、標準出力に書かれたPDFのパスをクイックルック(Linuxはxdg-open)で開く
   //         (2026-10-04、src/cpp/tools/url2pdf、ページ全体を縦長の1ページのPDFにする)
   //   Dump  programにURLを渡した出力(w3m -dump等)をusilicの画面で読む(^Gで本へ戻る)

@@ -33408,6 +33408,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1214. **xdg-openが無くても既定のブラウザ等で開く、ブラウザの起動を待たない(2026-11-04)**
+   - 直接のユーザー報告・依頼(FreeBSD、"firefoxが起動していないときに「小説家になろう」を^Mすると「xdg-open: コマンドが見つかりません」となる。デフォルトブラウザがあるときは新たに起動してほしい。")。
+   - **原因**: 既定のOpenはxdg-openだけで、xdg-utilsが無いとfirefoxの動作の有無によらず開けない(usilicはブラウザが動いているかを見ていない)。
+   - **変更**: xdg-openが無ければ、$BROWSER、exo-open、gio open、firefox、chromium、chrome、google-chromeの順に、PATHにあるものを開けるまで試す(`openWithoutXdgOpen()`)。何も無ければ今までどおり「xdg-open: command not found」。URLの節に書いたxdg-open・PdfのPDFを開く時も同じ。
+   - **待たない**: `ChildProcess::run()`は子の終了を待つので、ブラウザがその場で動く場合はブラウザを閉じるまでusilicが止まる。`open`(macOS)以外は裏で起動し、1秒以内に失敗で終わった時だけ失敗とする(`runOpenerInBackground()`)。そのためOpenは1回につき最大1秒待つ。
+   - docs/BUILD.mdのFreeBSDのpkg installに`xdg-utils`を追加(実機では未確認)。src/usilicrcのコメントにも記載。
+   - 確かめたこと: Macで一時的なHOMEのPTY、偽のコマンドで、xdg-openがあればそれ、無ければ失敗するものを飛ばしてfirefox、どれも開けなければ「実行できません」、起動中もキーが効くこと。**FreeBSDの実機は未確認。**
+   - 試験の失敗: 最初の起動の案内を止めずに試し、本物の`brew install font-ipafont`がまた走った(強制終了、Caskroomに変更なし、Homebrew自身の更新の確認はFETCH_HEADが更新された)。またURLを本物の`open`・`gio open`へ渡した回があった。
 1213. **足りないツールの案内の見直し、Linux・FreeBSDのアイコンからの起動を-gの組にしない(2026-11-04)**
    - 直接のユーザー報告・依頼(FreeBSD、sudoが無い状態の最初のアイコン起動の後、sudoを入れても"案内が出なかった"。"足りないツールがあれば...案内にしたら起こりうる不都合ある？"→おすすめの形で"実装よろしく"。"HELPの日本語フォントがゴシックなので最初のアイコン起動は明朝にしてほしい。")。
    - **案内**: 案内は確認なしでインストールを実行するので(2026-10-20)、起動のたびには実行しない。最初の起動で実行し、入らなかった分を`~/.usilic/install-offered`に`retry:名前`で残して、次の起動でもう一度だけ実行する。それ以外の起動は、見つからないものをモードラインに「見つかりません: w3m, ...」と出すだけ(`Application::scheduleStartNotice()`)。以前の形式の印(名前だけの行)は見ない。後からリストに足したものも自動では実行されず、知らせるだけになる。

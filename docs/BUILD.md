@@ -111,7 +111,7 @@ Makefileは GNU make の書き方なので、FreeBSD標準の`make`ではなく`
 ```
 # rootで
 pkg bootstrap
-pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf firefox
+pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf firefox xdg-utils
 ```
 
 ### 2. GUI(X11・Xfce)
