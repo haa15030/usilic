@@ -596,7 +596,7 @@ std::string fontconfigFontWithChar(const char *hex) {
 // 同じ高さで引く。大きさを変えた字(Cell::size)はマス目から外して置くので、今までどおりフォントの下線。
 void fillCellUnderline(SDL_Renderer *renderer, int x, int y, int width, int cellHeight, SDL_Color color) {
   int thickness = std::max(1, cellHeight / 20);
-  SDL_Rect line{x, y + cellHeight - std::max(1, cellHeight / 10) - thickness, width, thickness};
+  SDL_Rect line{x, y + cellHeight - std::max(1, cellHeight / 20) - thickness, width, thickness};
   SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, 255);
   SDL_RenderFillRect(renderer, &line);
 }
@@ -1073,6 +1073,7 @@ struct GraphicalDisplay::Impl {
   // 構造体のすぐ下)参照――全てのエントリが常に「現在の」フォント/
   // サイズ/色に正確に一致するよう、キー付け/クリアされている。
   std::map<GlyphCacheKey, CachedGlyph> glyphCache;
+  std::map<std::pair<TTF_Font *, int>, int> baselineShiftCache;  // wideGlyphBaselineShift()
 
   Cell &cellAt(int row, int col) { return grid[row * columns + col]; }
   const Cell &cellAt(int row, int col) const { return grid[row * columns + col]; }
@@ -1244,6 +1245,43 @@ TTF_Font *symbolFontFor(ImplT &impl, TTF_Font *chosen, unsigned int codepoint) {
   return glyphProvidedByFont(impl.symbolFont, codepoint) ? impl.symbolFont : chosen;
 }
 
+// 2026-11-04、直接のユーザー報告(macOS、18pt、=nj.png、"日本語混じりの英文で日本語箇所が1ドット分上がって凸凹になる"):
+// 字の面はマスの上下中央に置くが、面の高さとベースラインの位置の丸め方はフォントごとに違う(SF MonoとIPAゴシックの18ptは、
+// 「H」の下端がそれぞれマスの17行目と16行目)。全角の字を描くフォントの「H」の下端を、基本のフォントの「H」の下端に揃える
+// 下へのずれ(画素)を返す。測れない時・大きくずれる時(変わった作りのフォント)は0。
+template <typename ImplT>
+int wideGlyphBaselineShift(ImplT &impl, TTF_Font *font) {
+  if (!font || !impl.font || font == impl.font) return 0;
+  std::pair<TTF_Font *, int> key{font, impl.cellHeight};
+  auto found = impl.baselineShiftCache.find(key);
+  if (found != impl.baselineShiftCache.end()) return found->second;
+  auto bottomRow = [&](TTF_Font *f) {
+    TTF_SetFontStyle(f, TTF_STYLE_NORMAL);
+    TTF_SetFontHinting(f, TTF_HINTING_NONE);
+    SDL_Color white{255, 255, 255, 255};
+    SDL_Surface *rendered = glyphProvidedByFont(f, 'H') ? TTF_RenderUTF8_Blended(f, "H", white) : nullptr;
+    SDL_Surface *surface = rendered ? SDL_ConvertSurfaceFormat(rendered, SDL_PIXELFORMAT_ARGB8888, 0) : nullptr;
+    if (rendered) SDL_FreeSurface(rendered);
+    if (!surface) return -1;
+    int bottom = -1;
+    SDL_LockSurface(surface);
+    for (int y = 0; y < surface->h; y++) {
+      const Uint32 *row = reinterpret_cast<const Uint32 *>(static_cast<const Uint8 *>(surface->pixels) + y * surface->pitch);
+      for (int x = 0; x < surface->w; x++)
+        if ((row[x] >> 24) > 100) bottom = y;
+    }
+    SDL_UnlockSurface(surface);
+    int result = bottom < 0 ? -1 : (impl.cellHeight - surface->h) / 2 + bottom;
+    SDL_FreeSurface(surface);
+    return result;
+  };
+  int mainRow = bottomRow(impl.font), otherRow = bottomRow(font);
+  int shift = mainRow >= 0 && otherRow >= 0 ? mainRow - otherRow : 0;
+  if (std::abs(shift) > impl.cellHeight / 8) shift = 0;
+  impl.baselineShiftCache[key] = shift;
+  return shift;
+}
+
 template <typename ImplT>
 SDL_Texture *cachedGlyphTexture(ImplT &impl, TTF_Font *font, const std::string &glyph, int style, int hinting,
                                  SDL_Color color, bool narrow, int &outW, int &outH, bool rotate90 = false) {
@@ -1388,6 +1426,7 @@ void clearGlyphCache(ImplT &impl) {
     if (cached.texture) SDL_DestroyTexture(cached.texture);
   }
   impl.glyphCache.clear();
+  impl.baselineShiftCache.clear();
 }
 
 // Impl::sizeOverlayUntil参照。usilic自身が窓の大きさを変える時はこれを通す(その後のリサイズで大きさを出さない)。
@@ -2161,6 +2200,8 @@ void GraphicalDisplay::renderCell(int row, int col) {
         dst.x += static_cast<int>((place.start - col + (place.pitch - 1) * (isWide ? 2 : 1) / 2.0) * impl_->cellWidth);
     } else {
       dst = scaleGlyphRect(dst, cell.size, box.x, box.y, maxW, impl_->cellHeight);
+      if (!verticalText && isWide && cell.size == 0 && h <= impl_->cellHeight)
+        dst.y += wideGlyphBaselineShift(*impl_, renderFont);
     }
     if (verticalText) {
       // Display::setVerticalTextHint()参照。
@@ -2355,6 +2396,7 @@ void GraphicalDisplay::renderCursor() {
     SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h,
                                 cell.italic || cell.bold || impl_->overflowNarrowedCells(row));
     dst = scaleGlyphRect(dst, cell.size, box.x, box.y, maxW, impl_->cellHeight);
+    if (isWide && cell.size == 0 && h <= impl_->cellHeight) dst.y += wideGlyphBaselineShift(*impl_, renderFont);
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
   }
 }
@@ -4625,6 +4667,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
         } else {
           dst = scaleGlyphRect(dst, wantSize, Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y,
                                width * impl_->cellWidth, impl_->cellHeight);
+          if (isWide && wantSize == 0 && h <= impl_->cellHeight) dst.y += wideGlyphBaselineShift(*impl_, renderFont);
         }
         SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
       }
