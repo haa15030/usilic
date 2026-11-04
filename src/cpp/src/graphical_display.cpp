@@ -1,4 +1,5 @@
 #include "graphical_display.hpp"
+#include "platform.hpp"
 
 #include "configuration.hpp"
 #include "epub_vertical.hpp"

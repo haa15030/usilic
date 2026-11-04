@@ -33413,6 +33413,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **以前**: CUIは端末の貼り付け(peekBracketedPaste())で入るが、-gはコピーをOSへ渡すだけで受け取りが無かった。^O^Yはusilicの中でコピーしたものだけ。
    - **変更**: プロンプトの中で⌘V(macOS以外はCtrl+Shift+V)。`GraphicalDisplay::consumePastedText()`がSDL_GetClipboardText()で読み、`oneLinePastedText()`で1行にして(改行で確定しないよう、前後の空白は除き、途中の改行・タブは空白に、他の制御文字は捨てる)、CUIと同じく1字ずつキーとして渡す。プロンプトの外とSHELLの中では何もしない。^O^Yは変えていない。HELP原稿(src/HELP_.txt・HELP_en_.txt)。
    - 確かめたこと: `oneLinePastedText()`のテスト(test_platform)。**-gの窓はここでは開けず、キーからの動きは未確認。**
+   - 作業の失敗: `#include "platform.hpp"`が抜けてビルドが失敗したのに、同じコマンドの続きでd8d5d8f(ビルドできない)をpushした。次のコミットで直した。
 1218. **FreeBSDの案内・手順にpython3を追加(2026-11-04)**
    - 直接のユーザー報告("FreeBSDではpython3が無いエラー")。narou2epub・url2pdfが使うpython3がFreeBSDには最初から無い。
    - **変更**: FreeBSDの案内のリスト(`offerGroffInstallOnce()`)とdocs/BUILD.mdのpkg installに`python3`を追加。既に最初の起動を済ませた環境では自動で入らず、モードラインに「見つかりません: python3」と出る(項目1213)。
