@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1215. **-gの注釈の戻りマーク「↩」が、FreeBSD等で豆腐になる(2026-11-04)**
+   - 直接のユーザー報告(FreeBSD、=ni.png、"URLの注釈で[3]以外の戻りマークが豆腐になってる")。2つ目以降の戻りのリンクは`↩2`等で、「↩」(U+21A9)はIPAフォントに無い。
+   - **原因**: 記号のフォント(`symbolFontFor()`)の候補がmacOS・Debian系・Windowsの決まった場所だけで、FreeBSDのDejaVu(/usr/local/share/fonts/dejavu/)を見ていなかった。
+   - **変更**: FreeBSDの場所を候補に足し、どれも無ければ「↩」を持つフォントをfontconfigに尋ねる(`fontconfigFontWithChar()`)。docs/BUILD.mdのpkg installに`dejavu`を追加(「↩」を持つフォントが何も入っていなければ豆腐のまま)。
+   - 確かめたこと: Macでビルドと`fc-match`の問い合わせの形だけ。**FreeBSDの実機は未確認。**
 1214. **xdg-openが無くても既定のブラウザ等で開く、ブラウザの起動を待たない(2026-11-04)**
    - 直接のユーザー報告・依頼(FreeBSD、"firefoxが起動していないときに「小説家になろう」を^Mすると「xdg-open: コマンドが見つかりません」となる。デフォルトブラウザがあるときは新たに起動してほしい。")。
    - **原因**: 既定のOpenはxdg-openだけで、xdg-utilsが無いとfirefoxの動作の有無によらず開けない(usilicはブラウザが動いているかを見ていない)。

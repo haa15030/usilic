@@ -118,7 +118,7 @@ pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf firefox xdg-utils
 
 -g・アイコンからの起動に要る。どのGPUでも共通に、rootで
 ```
-pkg install xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa
+pkg install xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa dejavu
 sysrc dbus_enable=YES lightdm_enable=YES
 ```
 その上でGPUごとに(2026-11-01、RX580で確認):

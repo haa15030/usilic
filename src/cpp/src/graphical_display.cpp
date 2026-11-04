@@ -572,6 +572,23 @@ std::string fontconfigJapaneseFont(const char *family) {
 #endif
 }
 
+// 16進のコードポイント(`hex`)の字を持つフォントのファイルをfontconfigに尋ねる(symbolFontFor()参照)。
+std::string fontconfigFontWithChar(const char *hex) {
+#ifdef _WIN32
+  (void)hex;
+  return std::string();
+#else
+  std::string command = std::string("fc-match -f '%{file}' ':charset=") + hex + "' 2>/dev/null";
+  FILE *pipe = ::popen(command.c_str(), "r");
+  if (!pipe) return std::string();
+  std::string path;
+  char buffer[512];
+  while (std::fgets(buffer, sizeof(buffer), pipe)) path += buffer;
+  ::pclose(pipe);
+  return path;
+#endif
+}
+
 // `user`(usilicrcの指定)を先に、`builtin`を後に試し、仮名を持つ最初のフォント。最後にfontconfigの`family`。
 TTF_Font *openFirstJapaneseFont(const std::vector<std::string> &user, const char *const *builtin, std::size_t count,
                                int pointSize, std::string *openedPath, const char *family) {
@@ -1187,17 +1204,29 @@ TTF_Font *symbolFontFor(ImplT &impl, TTF_Font *chosen, unsigned int codepoint) {
         "/System/Library/Fonts/Apple Symbols.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        "/usr/local/share/fonts/dejavu/DejaVuSans.ttf",  // FreeBSD
+        "/usr/local/share/fonts/dejavu/DejaVuSansMono.ttf",
         "C:/Windows/Fonts/seguisym.ttf",
         "/mnt/c/Windows/Fonts/seguisym.ttf",
     };
-    for (const char *path : candidates) {
+    auto tryOpen = [&](const char *path) {
       TTF_Font *opened = TTF_OpenFont(path, std::max(impl.currentFontPointSize, 1));
-      if (!opened) continue;
+      if (!opened) return false;
       if (glyphProvidedByFont(opened, 0x21A9)) {
         impl.symbolFont = opened;
-        break;
+        return true;
       }
       TTF_CloseFont(opened);
+      return false;
+    };
+    bool opened = false;
+    for (const char *path : candidates)
+      if ((opened = tryOpen(path))) break;
+    // 2026-11-04、直接のユーザー報告(FreeBSD、"URLの注釈で[3]以外の戻りマークが豆腐"): 上の決まった場所に無ければ、
+    // 「↩」を持つフォントをfontconfigに尋ねる(大きさを変えるたびに呼ばないよう一度だけ、fontconfigJapaneseFont()と同じ)。
+    if (!opened) {
+      static const std::string fontconfigPath = fontconfigFontWithChar("21a9");
+      if (!fontconfigPath.empty()) tryOpen(fontconfigPath.c_str());
     }
   }
   return glyphProvidedByFont(impl.symbolFont, codepoint) ? impl.symbolFont : chosen;
