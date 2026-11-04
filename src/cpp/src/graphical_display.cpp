@@ -2075,6 +2075,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
   double rotation = 0.0;
   unsigned int cornerMark = 0;
   bool shiftToUpperRight = false;  // 縦書き用の字が無い句読点(horizontalGlyphForVerticalForm()参照)
+  int bracketSide = 0;  // 縦書き用の字が無い括弧。1は開き(続く字の側へ)、-1は閉じ(前の字の側へ)
   if (verticalText) {
     if (codepoint == 0x301D || codepoint == 0x301F) cornerMark = codepoint;
     if (codepoint == 0xFF5C) {
@@ -2095,6 +2096,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
         substituteGlyph = horizontal;
         if (codepoint <= 0xFE12) shiftToUpperRight = true;
         else rotation = 90.0;
+        if (codepoint >= 0xFE35) bracketSide = (codepoint & 1) ? 1 : -1;  // U+FE35〜は奇数が開き
       }
     }
     if (!substituteGlyph.empty()) codepoint = decodeUtf8Codepoint(substituteGlyph);
@@ -2288,10 +2290,27 @@ void GraphicalDisplay::renderCell(int row, int col) {
         return;
       }
       if (kRotated.count(codepoint)) rotation = 90.0;
-      if (shiftToUpperRight) {  // 左下にある点を、マスの右上へ
-        int shift = static_cast<int>(dst.w * 0.55);
-        dst.x += shift;
-        dst.y -= shift;
+      // 2026-11-05、直接のユーザー報告(=nn.png、=no.pngと比べて句読点と「」の位置が違う): 字の面の幅はフォントで違う
+      // (IPA P明朝の「、」は全角の半分)ので、面ではなく墨の範囲を、ヒラギノ明朝の縦書き用の字と同じ余白に置く
+      // (全角の枠に対して、句読点は右0.03・上0.06、開きは下0.06、閉じは上0.07)。
+      int bracketShiftY = 0;
+      int inkLeft = 0, inkRight = 0, inkBottom = 0, inkTop = 0;
+      if ((shiftToUpperRight || bracketSide != 0) &&
+          TTF_GlyphMetrics32(renderFont, codepoint, &inkLeft, &inkRight, &inkBottom, &inkTop, nullptr) == 0) {
+        double scale = static_cast<double>(dst.w) / std::max(w, 1);
+        double em = scale * std::max(impl_->currentFontPointSize, 1);
+        double centerX = dst.x + dst.w / 2.0, centerY = dst.y + dst.h / 2.0;
+        if (shiftToUpperRight) {
+          double currentTop = centerY + scale * (TTF_FontAscent(renderFont) - inkTop - TTF_FontHeight(renderFont) / 2.0);
+          dst.x += static_cast<int>(std::lround(centerX + em * (0.5 - 0.03) - (dst.x + scale * inkRight)));
+          dst.y += static_cast<int>(std::lround(centerY - em * (0.5 - 0.06) - currentTop));
+        } else {
+          // 回した面では、元の横の位置が上からの位置になる(下のrotated)。
+          double rotatedTop = centerY - dst.w / 2.0;
+          bracketShiftY = static_cast<int>(std::lround(
+              bracketSide > 0 ? centerY + em * (0.5 - 0.06) - (rotatedTop + scale * inkRight)
+                              : centerY - em * (0.5 - 0.07) - (rotatedTop + scale * inkLeft)));
+        }
       }
       // 縦書きの「ー」「―」はフォント自身の縦書き用の字形(cachedVerticalGlyphTexture()参照)。墨の範囲を、横書きの
       // 字と同じ縮尺でマスの中央に置く。「―」は2026-10-06、直接のユーザー依頼("「―」も縦書き用の字形にして")。
@@ -2318,7 +2337,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
         SDL_Texture *turned =
             cachedGlyphTexture(*impl_, renderFont, renderGlyph, style, hinting, fg, !isWide, rw, rh, /*rotate90=*/true);
         if (!turned) return;
-        SDL_Rect rotated{dst.x + (dst.w - dst.h) / 2, dst.y + (dst.h - dst.w) / 2, dst.h, dst.w};
+        SDL_Rect rotated{dst.x + (dst.w - dst.h) / 2, dst.y + (dst.h - dst.w) / 2 + bracketShiftY, dst.h, dst.w};
         SDL_RenderCopy(impl_->renderer, turned, nullptr, &rotated);
         return;
       }
