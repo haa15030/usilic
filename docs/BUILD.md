@@ -61,23 +61,27 @@ git pull
    sudo port selfupdate
    sudo port install pkgconfig libsdl2 libsdl2_ttf
    ```
-4. 公開鍵の登録(リポジトリが非公開の間だけ必要):
+4. 公開鍵の登録(リポジトリが非公開の間だけ必要)。鍵を作り(プロンプトに戻るまではEnterのみ)、
+   公開鍵の1行をクリップボードへ入れる:
    ```
-   ssh-keygen -t ed25519           # プロンプトに戻るまではEnterのみ
-   pbcopy < ~/.ssh/id_ed25519.pub  # 公開鍵の1行をクリップボードへ
+   ssh-keygen -t ed25519
+   pbcopy < ~/.ssh/id_ed25519.pub
    ```
    ブラウザで`https://github.com/settings/keys`を開いてGitHubにサインインし、
    New SSH keyのKeyに貼って登録する(Titleは任意、Key typeはそのまま)。
+   登録できたか確かめる(初回は`yes`、Hi ...! と出ればよい):
    ```
-   ssh -T git@github.com           # 初回はyes(Hi ...! と出ればよい)
+   ssh -T git@github.com
    ```
-5. クローンしてビルド:
+5. クローンしてビルド(`make usilic`で`build/usilic`ができ、`make test`で単体テスト一式(doctest)を実行する):
    ```
    git clone -b mpi-gui-fix git@github.com:haa15030/usilic.git
    cd usilic/src/cpp
-   make usilic     # build/usilic ができる
-   make test       # 単体テスト一式(doctest)を実行
+   make usilic
+   make test
    ```
+   ※macOSのzshは、打ち込んだ行の`#`を注釈として扱わない(`interactivecomments`が既定で無効)。
+   注釈付きの行を貼ると`zsh: no matches found`等になるので、このファイルの枠には注釈を書かない。
 6. (任意)`/usr/local/bin/U`としてインストール(`INSTALL_NAME`が
    `usilic`ではなく`U`なのは、`src/install.sh`が入れる旧C版
    `/usr/local/bin/usilic`と衝突しないよう、日常的に試すための

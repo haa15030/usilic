@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1231. **docs/BUILD.md: macOSの節のコードの枠から`#`の注釈を出す(2026-11-06)**
+   - 直接のユーザー報告(mpr): 5.の枠をそのまま貼ったら`zsh: no matches found: 単体テスト一式(doctest)を実行`。macOSのzshは打ち込んだ行の`#`を注釈として扱わず(`interactivecomments`が既定で無効)、`(...)`がファイル名のパターンになった。
+   - **変更**: 4.・5.の枠の注釈を本文へ移し、枠に注釈を書かない旨を書き添えた。BUILD.htmlを作り直した。
+   - 同時に出た`make usilic`のエラー(`NSBundle.h`の`NS_FORMAT_ARGUMENT`、MacOSX12.1.sdk)は、Command Line Toolsのclangと SDKの版の不一致とみて調査中。
 1230. **docs/BUILD.md: Intel MacはMacPortsで、macOSにも公開鍵の登録の手順(2026-11-06)**
    - 直接のユーザー報告(mpr、Intel Mac): BUILD.htmlのmacOSの2.のHomebrewのインストーラが"Homebrew on macOS is only supported on Apple Silicon processors!"で止まった。MacPortsを入れた後は`port: command not found`(開いたままのターミナルにPATHが反映されていない)。"BUILD.htmlのmacOSの4.のまえにも公開鍵の登録は必要だな。"
    - **変更**: macOSの2.・3.にIntel MacではMacPorts(`pkgconfig libsdl2 libsdl2_ttf`)を使うこと、入れた後はターミナルを開き直すことを足した。公開鍵の登録を新しい4.にし(`pbcopy`でクリップボードへ、`ssh -T git@github.com`)、クローンは`-b mpi-gui-fix`のSSHのURLに。以降を1つずつ繰り下げた。BUILD.htmlはdocs/md2html.pyで作り直した。

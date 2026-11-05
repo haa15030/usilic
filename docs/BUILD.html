@@ -73,15 +73,16 @@ git pull</code></pre>
 <pre><code>brew install pkgconf sdl2 sdl2_ttf</code></pre>
 <p>MacPortsの場合:</p>
 <pre><code>sudo port selfupdate
-sudo port install pkgconfig libsdl2 libsdl2_ttf</code></pre></li><li>公開鍵の登録(リポジトリが非公開の間だけ必要):
-<pre><code>ssh-keygen -t ed25519           # プロンプトに戻るまではEnterのみ
-pbcopy &lt; ~/.ssh/id_ed25519.pub  # 公開鍵の1行をクリップボードへ</code></pre>
-<p>ブラウザで<code>https://github.com/settings/keys</code>を開いてGitHubにサインインし、New SSH keyのKeyに貼って登録する(Titleは任意、Key typeはそのまま)。</p>
-<pre><code>ssh -T git@github.com           # 初回はyes(Hi ...! と出ればよい)</code></pre></li><li>クローンしてビルド:
+sudo port install pkgconfig libsdl2 libsdl2_ttf</code></pre></li><li>公開鍵の登録(リポジトリが非公開の間だけ必要)。鍵を作り(プロンプトに戻るまではEnterのみ)、公開鍵の1行をクリップボードへ入れる:
+<pre><code>ssh-keygen -t ed25519
+pbcopy &lt; ~/.ssh/id_ed25519.pub</code></pre>
+<p>ブラウザで<code>https://github.com/settings/keys</code>を開いてGitHubにサインインし、New SSH keyのKeyに貼って登録する(Titleは任意、Key typeはそのまま)。登録できたか確かめる(初回は<code>yes</code>、Hi ...! と出ればよい):</p>
+<pre><code>ssh -T git@github.com</code></pre></li><li>クローンしてビルド(<code>make usilic</code>で<code>build/usilic</code>ができ、<code>make test</code>で単体テスト一式(doctest)を実行する):
 <pre><code>git clone -b mpi-gui-fix git@github.com:haa15030/usilic.git
 cd usilic/src/cpp
-make usilic     # build/usilic ができる
-make test       # 単体テスト一式(doctest)を実行</code></pre></li><li>(任意)<code>/usr/local/bin/U</code>としてインストール(<code>INSTALL_NAME</code>が<code>usilic</code>ではなく<code>U</code>なのは、<code>src/install.sh</code>が入れる旧C版<code>/usr/local/bin/usilic</code>と衝突しないよう、日常的に試すための短い専用名としてユーザー自身が選んだもの):
+make usilic
+make test</code></pre>
+<p class="note">※macOSのzshは、打ち込んだ行の<code>#</code>を注釈として扱わない(<code>interactivecomments</code>が既定で無効)。注釈付きの行を貼ると<code>zsh: no matches found</code>等になるので、このファイルの枠には注釈を書かない。</p></li><li>(任意)<code>/usr/local/bin/U</code>としてインストール(<code>INSTALL_NAME</code>が<code>usilic</code>ではなく<code>U</code>なのは、<code>src/install.sh</code>が入れる旧C版<code>/usr/local/bin/usilic</code>と衝突しないよう、日常的に試すための短い専用名としてユーザー自身が選んだもの):
 <pre><code>sudo make install</code></pre></li></ol>
 <h3>Intel Mac(Sequoia)固有の注意点</h3>
 <p>Xcode 15以降のデフォルトリンカ(通称ld-prime)が、Homebrew製の一部dylib構成(<code>sdl2_ttf</code>が<code>sdl2</code>ではなく<code>sdl2-compat</code>を参照する構成など)で「ライブラリもリンクコマンドも正しいのにシンボルが見つからない」という既知の非互換を起こすことがある(docs/CHANGES.md項目419で実際に発生・特定)。対策として<code>Makefile</code>のDarwin向け<code>LDLIBS</code>に<code>-Wl,-ld_classic</code>(旧リンカの強制指定)を組み込み済みなので、<strong>上記の手順通りに<code>make</code>すれば追加の対応は不要</strong>。万一同種のリンクエラーが再発した場合は、<code>pkg-config --cflags --libs sdl2 SDL2_ttf</code>の出力・<code>file</code>/ <code>lipo -info</code>でのアーキテクチャ・<code>nm -gU</code>でのシンボルの実エクスポート状況、の3点を順に確認するとよい(docs/CHANGES.md項目419の調査ログに実例あり)。</p>
