@@ -100,77 +100,376 @@ make usilic
 make test
 ```
 
-## FreeBSD(2026-10-31、16.0-CURRENTで確認)
+## FreeBSD(2026-11-05、16.0-CURRENT・RTX 3050でインストールから通しで確認)
 
 Makefileは GNU make の書き方なので、FreeBSD標準の`make`ではなく`gmake`を使う。コンパイラ(clang)とncursesはベースシステムにある。
 
-順番は、パッケージ→GUI(X11・Xfce)→公開鍵の登録(非公開の間だけ)→ビルド。GUIを先にするのは、公開鍵の登録にFreeBSD上のfirefoxを使えるようにするため。
+順番は、インストーラ→パッケージ→GUI(X11・Xfce)→日本語入力→公開鍵の登録(非公開の間だけ)→ビルド。GUIを先にするのは、公開鍵の登録にFreeBSD上のfirefoxを使えるようにするため。
 
-### 1. パッケージ
+手順(1〜10)の表記の区別:
 
+- <span style="color:#0097a7">設定項目名</span>
+- **選択対象のハイライト表示**
+- `自分で決めてよい値`
+- *キー入力*
+- [Enterで選択]
+- 「表示文字列」
+
+NVIDIAのGPUを使う例で書いている。AMD・Intelは「3. GPUのドライバ」の表を参照。
+
+### 1. インストーラー
+
+<span style="color:#0097a7">Welcome</span> -> [Install]
+
+<span style="color:#0097a7">Keymap Selection</span> -> 「Japanese 106」を *Space* で選ぶ ->  
+一番上の行 **>>> Continue with jp.kbd keymap** で [Select]  
+(2行目の「->- Test default keymap」 は試し打ちだけ)
+
+<span style="color:#0097a7">Set Hostname</span> -> `HOST` [OK]
+
+<span style="color:#0097a7">Select Installation type</span> -> [Distribution Sets] (従来のtarball、portsとは無関係)
+
+<span style="color:#0097a7">Distribution Select</span> -> 「src」を選ぶ -> [OK]
+
+<span style="color:#0097a7">Network Installation</span> -> [OK]
+
+<span style="color:#0097a7">Network Configuration</span> -> **rge0 RTL8125** (環境による) -> [Auto]
+
+<span style="color:#0097a7">Partitioning</span> -> **Auto (ZFS) Guided Root-on-ZFS** -> [OK]
+
+<span style="color:#0097a7">ZFS Configuration</span> -> 「zroot」 -> [OK] ->  
+**>>> Install Proceed with Installation** [Select] ->  
+**stripe Stripe - No Redundancy** [OK] ->  
+**nda0 Patriot M.2 P300 128GB**（環境による）を選ぶ [OK] -> [YES]
+
+<span style="color:#0097a7">Mirror Selection</span> -> **http://download.freebsd.org Main Site** -> [OK]
+
+<span style="color:#0097a7">Fetching Distribution</span> ...
+
+<span style="color:#0097a7">Archive Extraction</span> ...
+
+<span style="color:#0097a7">Boot Configuration</span> -> [Yes]
+
+<span style="color:#0097a7">Set root password</span> -> Password -> Repeat password -> [OK]
+
+<span style="color:#0097a7">Time Zone Selector</span> -> **5  Asia** -> **20 Japan** -> [OK] ->  
+<span style="color:#0097a7">Confirmation</span> -> [Yes]
+
+<span style="color:#0097a7">Time & Date</span> -> [Set Date] (合ってれば [Skip]) ->  
+[Set Time] (合ってれば [Skip])
+
+<span style="color:#0097a7">System Configuration</span> -> [OK]
+
+<span style="color:#0097a7">System Hardening</span> -> [OK]
+
+<span style="color:#0097a7">FreeBSD firmware installation</span> ...
+
+<span style="color:#0097a7">Add User Accounts</span> -> [Yes]
+
+```screen
+「FreeBSD Installer
+========================
+Add Users」
 ```
-# rootで
-pkg bootstrap
-pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf firefox xdg-utils python3
+
+Username: `ABC` ->  
+Full name: `DEF` ->  
+Uid: (Leave empty for default): ->  
+Login group [ABC]: ->  
+Login group is ABC Invite ABC into other groups? [] : *wheel video operator*  
+Login class [default]: ->  
+Shell (sh csh tcsh nologin) [sh]: ->  
+Home directory [/home/ABC] ->  
+Home directory permissions (Leave empty for default): ->  
+Enable ZFS encryption? (yes/no) [no] ->  
+Use password-based authentication? [yes]: ->  
+Use an empty password? (yes/no) [no]: ->  
+Use a random password? (yes/no) [no]: ->  
+Enter password: `GHI`  
+Enter password again: `GHI`  
+Lock out the account after creation? [no]: ->
+
+```screen
+「Username    : ABC
+  Password    : *****
+  Full Name   : DEF
+  Uid         : 1001
+  ZFS dataset : zroot/home/ABC
+  Class       :
+  Groups      : ABC wheel video operator
+  Home        : /home/ABC
+  Home Mode   :
+  Shell       : /bin/sh
+  Locked      : no」
 ```
 
-### 2. GUI(X11・Xfce)
+OK? (yes/no) [yes]: ->  
+adduser: INFO: Successfully added (ABC) to the user database.  
+Add another user? (yes/no) [no]:
 
--g・アイコンからの起動に要る。どのGPUでも共通に、rootで
+<span style="color:#0097a7">Final Configuration</span> ->  
+**Finish Apply configuration and exit installer** -> [Select]
+
+<span style="color:#0097a7">Manual Configuration</span> -> [No]
+
+<span style="color:#0097a7">Complete</span> -> [Reboot]
+
+※sshでログイン中にシステムを入れ直した場合は、ログインする側のマシンで *ssh-keygen -R \<IP\>* を実行する(ホスト鍵が変わるため)。
+
+### 2. パッケージ
+
+```screen
+「FreeBSD/amd64 (HOST) (ttyv0)
+ login: 」
 ```
-pkg install xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa dejavu
+
+```key
+su -
+```
+
+*pkg bootstrap* -> *y*
+
+```key
+pkg update
+```
+
+*pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf xfce4-screenshooter-plugin firefox xdg-utils python3* -> *y*
+
+※firefoxの最後に長いメッセージ(boost・gcc14・libjxl・firefoxの未対応機能等)が出るが、対応が要るものは無い。
+
+*pkg install xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa dejavu noto-jp fcitx5 fcitx5-configtool fcitx5-gtk3 fcitx5-qt6 ja-fcitx5-mozc3* -> *y*
+
+```key
 sysrc dbus_enable=YES lightdm_enable=YES
 ```
-その上でGPUごとに(2026-11-01、RX580で確認):
+
+### 3. GPUのドライバ
 
 | GPU | ドライバ | 起動時に読み込む | ファームウェア | 他に |
 |---|---|---|---|---|
-| AMD(Radeon) | `pkg install drm-kmod` | `sysrc kld_list+=amdgpu`(HD 7000番台以前は`radeonkms`) | インストーラが自動で選ぶ(RX580なら`gpu-firmware-amd-kmod-polaris10`)。漏れたら`fwget` | Xorgの設定は不要(modesetting) |
-| Intel内蔵 | `pkg install drm-kmod` | `sysrc kld_list+=i915kms` | 同上(`gpu-firmware-intel-kmod-*`) | 同上 |
-| NVIDIA | `pkg install nvidia-driver nvidia-xconfig` | `sysrc kld_list+=nvidia-modeset` | ドライバに同梱(インストーラには出ない) | `nvidia-xconfig`で`/etc/X11/xorg.conf`を作る |
+| NVIDIA | *pkg install nvidia-driver nvidia-xconfig* | *sysrc kld_list+=nvidia-modeset* | ドライバに同梱(インストーラには出ない) | *nvidia-xconfig* で`/etc/X11/xorg.conf`を作る |
+| AMD(Radeon) | *pkg install drm-kmod* | *sysrc kld_list+=amdgpu*(HD 7000番台以前はradeonkms) | インストーラが自動で選ぶ(RX580ならgpu-firmware-amd-kmod-polaris10)。漏れたら *fwget* | Xorgの設定は不要(modesetting)。RX580で確認(2026-11-01) |
+| Intel内蔵 | *pkg install drm-kmod* | *sysrc kld_list+=i915kms* | 同上(`gpu-firmware-intel-kmod-*`) | 同上 |
 
-再起動の前に`kldload amdgpu`(`i915kms`・`nvidia-modeset`)が何も言わずに戻ればカーネルと合っている(AMD・Intelはコンソールの文字が細かくなる)。CURRENTで失敗するならportsからビルドする(インストーラのDistribution Selectで`src`を入れておく)。drm系はユーザーを`video`グループに入れる。
+表の「ドライバ」と「起動時に読み込む」のコマンドを実行する(*sysrc* を忘れると再起動の後で画面が出ない)。
 
-### 3. 公開鍵の登録(リポジトリが非公開の間だけ)
+*kldload nvidia-modeset*(AMDはamdgpu、Intelはi915kms)を実行し、メッセージが何も出ないことを確かめる。
 
-公開後は要らないので、4へ進む。非公開の間は、`git clone`にアクセス権のあるGitHubアカウントの認証が要る。
+NVIDIAの場合は、続けて *nvidia-xconfig* を実行する。
 
-Xfceにログインし、端末で鍵を作って公開鍵の1行を表示する:
+### 4. sudoとキーボード
+
+```key
+echo '%wheel ALL=(ALL:ALL) ALL' > /usr/local/etc/sudoers.d/wheel
 ```
-ssh-keygen -t ed25519
-cat ~/.ssh/id_ed25519.pub
+
+```key
+chmod 440 /usr/local/etc/sudoers.d/wheel
 ```
-firefoxで`https://github.com/settings/keys`を開き(サインインが要る)、New SSH keyにその1行を貼る。端末で`ssh -T git@github.com`で確かめる(初回はyes。`Hi ...!`と出れば登録できている)。
 
-GUIを入れない時は、別のマシンのブラウザで登録する。Macなら`ssh ユーザー名@<IP> cat .ssh/id_ed25519.pub | pbcopy`で1行がクリップボードに入る(FreeBSDのsshdが動いていなければ、rootで`sysrc sshd_enable=YES; service sshd start`)。トークンの作り方は下の「ソースを手元で変更する」の4。
-
-### 4. ビルド
-
+```key
+mkdir -p /usr/local/etc/X11/xorg.conf.d
 ```
-# ユーザーで
-git clone https://github.com/haa15030/usilic.git     # 非公開の間は git@github.com:haa15030/usilic.git
+
+```key
+cat > /usr/local/etc/X11/xorg.conf.d/keyboard.conf <<'EOF'
+Section "InputClass"
+Identifier "keyboard"
+MatchIsKeyboard "on"
+Option "XkbModel" "jp106"
+Option "XkbLayout" "jp"
+Option "XkbOptions" "ctrl:swapcaps"
+EndSection
+EOF
+```
+
+※XkbOptionsの行はCaps LockとCtrlを入れ替える設定。要らなければ省く。
+
+### 5. 日本語入力に対応したSDL2
+
+パッケージのSDL2はfcitxに対応していないので、-gで日本語を入力できるようportsからビルドする。時間と数GBの空きが要る。
+
+```key
+git clone --depth 1 https://git.FreeBSD.org/ports.git /usr/ports
+```
+
+```key
+echo 'devel_sdl20_SET+=DBUS FCITX' >> /etc/make.conf
+```
+
+```key
+cd /usr/ports/devel/sdl20
+```
+
+```key
+make install-missing-packages
+```
+
+```key
+make BATCH=yes reinstall clean
+```
+
+*pkg query '%Ok=%Ov' sdl2 | grep -E 'DBUS|FCITX'*(DBUS=on、FCITX=on と出ることを確かめる)
+
+```key
+pkg lock -y sdl2
+```
+
+※ロックすると *pkg upgrade* でパッケージ版に戻らない。sdl2を更新する時は *pkg unlock -y sdl2* で解除し、この節の *cd* 以降をやり直す。
+
+### 6. 日本語の環境を設定して再起動
+
+rootからユーザーへ戻る。
+
+```key
+exit
+```
+
+```key
+cat > ~/.xprofile <<'EOF'
+export LANG=ja_JP.UTF-8
+export GTK_IM_MODULE=fcitx
+export QT_IM_MODULE=fcitx
+export XMODIFIERS=@im=fcitx
+export SDL_IM_MODULE=fcitx
+EOF
+```
+
+```key
+sudo reboot
+```
+
+### 7. Xfceの最初の設定と公開鍵の登録
+
+xfceにログインし、画面最下行左から2番目の「\$\_」アイコン(Terminal)をクリックする。
+
+NVIDIAの場合は、ウィンドウの合成表示を切る(有効のままだと画面が固まることがある)。
+
+```key
+xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false
+```
+
+鍵を作って、公開鍵を表示する。
+
+*ssh-keygen -t ed25519* -> shプロンプトに戻るまでは *Enter* のみ
+
+*cat ~/.ssh/id_ed25519.pub*(折り返し無しでコピーする)
+
+firefoxで *https://github.com/settings/keys* へアクセスし、GitHubのアカウントでログインする。アカウントが無ければ作成する。
+
+New SSH key をクリック
+
+Title -> `任意`
+
+Key type -> そのまま
+
+Key -> 先ほどコピーした公開鍵をペースト
+
+Authentication keys の欄に、Titleの公開鍵が登録されていることを確かめる。
+
+※リポジトリが非公開の間だけ必要な手順。
+
+### 8. usilicのビルド
+
+Terminalで実行する。
+
+*ssh -T git\@github.com* -> 初回は *yes*(Hi ...! と出ればよい)
+
+```key
+mkdir git
+```
+
+```key
+cd git
+```
+
+```key
+git clone -b mpi-gui-fix git@github.com:haa15030/usilic.git
+```
+
+```key
 cd usilic/src/cpp
-gmake usilic
-gmake install          # ~/.local/bin/usilic、~/.local/share/applications/usilic.desktop
 ```
 
-`https://`のURLだと鍵は使われず、非公開の間はトークンを聞かれる。
+```key
+gmake usilic && gmake install
+```
+
+```key
+echo 'PATH=$HOME/.local/bin:$PATH; export PATH' >> ~/.profile
+```
+
+```key
+. ~/.profile
+```
+
+※~/.local/binは既定のPATHに無いので追加する(sshでつなぎ直しても読まれる)。
+
+※この時やログインの度に英語の小ネタが毎回違う内容で出るのは、既定の~/.profileの最後の fortune freebsd-tips(FreeBSDの使い方のヒントをランダムに1つ表示する)。エラーではない。要らなければその行の先頭に#。freebsd-tipsは英語だけで、日本語版は無い。
+
+※bashをログインシェルにするなら *chsh -s /usr/local/bin/bash*。bashは~/.bash_profileがあれば~/.profileを読まないので、その時だけ次も実行する。
+
+```key
+echo 'PATH=$HOME/.local/bin:$PATH; export PATH' >> ~/.bash_profile
+```
+
+### 9. 日本語入力の設定
+
+アプリケーション -> 設定 -> Fcitx5 設定
+
+「入力メソッド」に Mozc があることを確かめる。無ければ追加する。一覧に出なければ「現在の言語のみ表示」のチェックを外す。
+
+「グローバルオプション」タブの「入力メソッドの切り替え:」から「Control+スペース」の「-」をクリック(usilicの選択/非選択のキーと被るため)。切り替えは 半角／全角 のキーで行う -> 「適用」 -> 「閉じる」
+
+### 10. usilicの起動
+
+XfceのTerminalで、パネルを再起動する(ログインした後で *gmake install* したusilicをメニューに出すため)。
+
+```key
+xfce4-panel -r
+```
+
+アプリケーション -> アクセサリー -> usilic をクリックする。
+
+「usilic-1.5b:~\$ sudo pkg install -y groff mg texinfo 7-zip w3m」で *Enter*
+
+パスワードを入力する。
 
 ### 注意点
 
-- `~/.local/bin`は既定のPATHに無いので、`~/.profile`に`PATH=$HOME/.local/bin:$PATH; export PATH`を足す。
-- 書き換えた`~/.profile`をその場で読み直すなら`. ~/.profile`(sshでつなぎ直しても読まれる)。その時やログインの度に英語の小ネタが毎回違う内容で出るのは、既定の`~/.profile`の最後の`fortune freebsd-tips`(FreeBSDの使い方のヒントをランダムに1つ表示する)。エラーではない。要らなければその行の先頭に`#`。freebsd-tipsは英語だけで、日本語版は無い。
-- bashをログインシェルにするなら`chsh -s /usr/local/bin/bash`。bashは`~/.bash_profile`があれば`~/.profile`を読まないので、その時はPATHを`~/.bash_profile`に書く。
+以下は上の表記の区別とは別で、`` ` `` はコマンドやファイル名を表す。
+
+**インストールとパッケージ**
+
+- `pkg install`の`firefox`の最後に長いメッセージ(boost・gcc14・libjxl・firefoxの未対応機能等)が出るが、対応が要るものは無い。
 - `python3`はEPUBのリンクのEpub(narou2epub)・Pdf(url2pdf)に要る。そのほかの準備はHELPのnarou2epub・url2pdfの所。
-- firefoxのpkg installの最後に長いメッセージ(boost・gcc14・libjxl・firefoxの未対応機能等)が出るが、対応が要るものは無い。
-- `su`はwheelグループのユーザーだけ(`pw groupmod wheel -m ユーザー名`)。sudoは`visudo`で`%wheel`の行を有効にする。
-- インストーラの注意: キーボードの画面は`Japanese 106`をSpaceで選んだ後、**一番上の行**`Continue with jp.kbd keymap`でEnter(2行目のTestは試し打ちだけ)。ベースシステムの入れ方は`Distribution Sets`(従来のtarball、portsとは無関係)で`src`も選ぶ。再インストール後はMac側で`ssh-keygen -R <IP>`(ホスト鍵が変わる)。
-- 最初の起動のインストールの案内は`sudo pkg install -y groff mg texinfo 7-zip w3m python3`。入らなかったものは次の起動でもう一度だけ実行し、その後はモードラインに「見つかりません」と出すだけなので、手で入れる。
-- インストーラで選んだキーボード(jp106等)はコンソールだけ。Xfceでは設定→キーボード→レイアウトで「システムのデフォルトを使用」を外し、モデルを`Japanese 106-key`、レイアウトの追加で**▶を開かずに親の`Japanese`の行**を選ぶ(▶の下のKana・Macintosh・OADG 109A・Dvorakは標準以外の変種。Kanaを選ぶと`[`が`]`になる等、2026-11-01に実際にはまった)。
-- Xfceのメニュー等を日本語にするには`echo 'LANG=ja_JP.UTF-8; export LANG' >> ~/.xprofile`してログインし直す(lightdmの`/usr/local/etc/lightdm/Xsession`が`~/.xprofile`を読む、2026-11-01に確認)。`~/.login_conf`やログインクラスで設定するとコンソール(vt)のログインまで日本語になり、vtのフォントに漢字が無いので化ける。
-- lightdmのログイン画面までjp106にするには、`/usr/local/etc/X11/xorg.conf.d/keyboard.conf`に`Section "InputClass"`・`Identifier "keyboard"`・`MatchIsKeyboard "on"`・`Option "XkbModel" "jp106"`・`Option "XkbLayout" "jp"`・`EndSection`を書く(Xfce側は「システムのデフォルトを使用」のままでよくなる)。
-- Caps LockとCtrlを入れ替えるには、同じkeyboard.confに`Option "XkbOptions" "ctrl:swapcaps"`を足す(Caps LockをCtrlにするだけなら`ctrl:nocaps`)。すぐ試すならXfceの端末で`setxkbmap -model jp106 -layout jp -option ctrl:swapcaps`(戻すのは`setxkbmap -option`)。Xfceのレイアウトで「システムのデフォルトを使用」を外していると、ログインの時にXfceが上書きしてXkbOptionsが消えることがあるので、keyboard.confを使うならXfce側はデフォルトのまま。コンソール(vt)はXとは別で、`sysrc keymap=jp.capsctrl.kbd`して再起動(16.0-CURRENTの`/usr/share/vt/keymaps/`に`jp.kbd`と並んであることを2026-11-01に確認。名前のとおりCaps LockをCtrlにするもので、入れ替えではない)。
+- 最初の起動のインストールの案内で入らなかったものは、次の起動でもう一度だけ実行し、その後はモードラインに「見つかりません」と出すだけなので、手で入れる。
+- `su`はwheelグループのユーザーだけ。インストーラで入れなかったユーザーは`pw groupmod wheel -m ユーザー名`。
+- `noto-jp`は-cの表示に要る(無いと端末で豆腐になる字がある)。入れた後はログインし直す。
+
+**GPUと画面**
+
+- 再起動の前に`kldload`が何も言わずに戻ればカーネルと合っている(AMD・Intelはコンソールの文字が細かくなる)。CURRENTで失敗するならportsからビルドする(インストーラのDistribution Selectで`src`を入れておく)。drm系はユーザーを`video`グループに入れる。
+- ログインできず`login:`のままなら、`/var/log/lightdm/x-0.log`と`/var/log/Xorg.0.log`を見る。`keyboard.conf`の書き間違いや、`kld_list`の設定漏れでXが起動しない(2026-11-05に実際に両方)。
+- NVIDIAでウィンドウの合成表示が有効だと、xfwm4が`glXBindTexImageEXT`で止まり、画面が固まることがある(RTX 3050・ドライバ595.112.07、2026-11-05。引き金は未特定)。マウスカーソルだけ動く状態になったら、sshから`pkill -9 xfwm4`で戻る。合成表示を切る`xfconf-query`はsshからでは届かないので、XfceのTerminalで実行する。
 - 端末に重ねる-gはmacOSだけ(Linux・FreeBSDは重ねない、ユーザー判断2026-10-31)。
+
+**日本語入力とSDL2**
+
+- パッケージのSDL2は`DBUS`・`FCITX`が`off`で、-gでは窓は開いても日本語が入らない(`pkg query '%Ok=%Ov' sdl2`で分かる)。ビルドしても`off`のままなら、古い設定が残っているので`make rmconfig`と`make clean`をしてからやり直す。
+- ビルドの前に`pkg lock`していると`make reinstall`が止まる。`pkg unlock -y sdl2`で解除する。
+
+**日本語とキーボード**
+
+- Xfceのメニュー等を日本語にする`LANG`は`~/.xprofile`に書く(lightdmの`/usr/local/etc/lightdm/Xsession`が読む、2026-11-01に確認)。`~/.login_conf`やログインクラスで設定するとコンソール(vt)のログインまで日本語になり、vtのフォントに漢字が無いので化ける。
+- `keyboard.conf`を使わずXfceだけで設定するなら、設定→キーボード→レイアウトで「システムのデフォルトを使用」を外し、モデルを`Japanese 106-key`、レイアウトの追加で**▶を開かずに親の`Japanese`の行**を選ぶ(▶の下のKana・Macintosh・OADG 109A・Dvorakは標準以外の変種。Kanaを選ぶと`[`が`]`になる等、2026-11-01に実際にはまった)。ただし、これだとログイン画面はjp106にならない。
+- Caps LockをCtrlにするだけなら`XkbOptions`を`ctrl:nocaps`にする。すぐ試すならXfceの端末で`setxkbmap -model jp106 -layout jp -option ctrl:swapcaps`(戻すのは`setxkbmap -option`)。Xfceのレイアウトで「システムのデフォルトを使用」を外していると、ログインの時にXfceが上書きして`XkbOptions`が消えることがあるので、`keyboard.conf`を使うならXfce側はデフォルトのまま。
+- コンソール(vt)はXとは別で、`sysrc keymap=jp.capsctrl.kbd`して再起動(16.0-CURRENTの`/usr/share/vt/keymaps/`に`jp.kbd`と並んであることを2026-11-01に確認。名前のとおりCaps LockをCtrlにするもので、入れ替えではない)。
+
+**公開鍵とPATH**
+
+- `https://`のURLでcloneすると鍵は使われず、非公開の間はトークンを聞かれる(公開後は`https://github.com/haa15030/usilic.git`でよく、7の鍵の登録も要らない)。トークンの作り方は下の「ソースを手元で変更する」の4。
+- GUIを入れない時は、別のマシンのブラウザで鍵を登録する。Macなら`ssh ユーザー名@<IP> cat .ssh/id_ed25519.pub | pbcopy`で1行がクリップボードに入る(FreeBSDのsshdが動いていなければ、rootで`sysrc sshd_enable=YES; service sshd start`)。GUIがあってもsshで作業中なら、鍵の作成・表示はsshで済み、登録もMacのブラウザでできる。
 
 ## Windows(WSL2)
 

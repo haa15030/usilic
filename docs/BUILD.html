@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>usilic (C++版) ビルド手順</title>
+<style>
+:root {
+  --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --line: #d0d7de; --box: #f6f8fa;
+  --item: #0097a7; --value: #b35900; --link: #0969da;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16191d; --fg: #e6e8eb; --muted: #9aa4ae; --line: #3a4048; --box: #22262b;
+    --item: #26c6da; --value: #f0a35e; --link: #58a6ff;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16191d; --fg: #e6e8eb; --muted: #9aa4ae; --line: #3a4048; --box: #22262b;
+  --item: #26c6da; --value: #f0a35e; --link: #58a6ff;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0 auto; max-width: 56rem; padding: 1.5rem 16px 4rem;
+  background: var(--bg); color: var(--fg);
+  font-family: -apple-system, "Hiragino Sans", "Noto Sans CJK JP", "IPAGothic", sans-serif;
+  line-height: 1.7; overflow-wrap: anywhere;
+}
+a { color: var(--link); }
+h1 { font-size: 1.6rem; line-height: 1.3; }
+h2 { font-size: 1.3rem; margin-top: 3rem; padding-bottom: .25rem; border-bottom: 1px solid var(--line); }
+h3 { font-size: 1.05rem; margin-top: 2rem; }
+p { margin: .7rem 0; }
+ul, ol { padding-left: 1.5rem; }
+li { margin: .3rem 0; }
+nav { padding: .5rem 1rem; background: var(--box); border: 1px solid var(--line); border-radius: 6px; }
+nav ul { margin: .2rem 0; list-style: none; padding: 0; }
+.item { color: var(--item); }
+strong { white-space: pre-wrap; }
+code, em, pre { font-family: ui-monospace, Menlo, Consolas, "DejaVu Sans Mono", "IPAGothic", monospace; }
+code { color: var(--value); font-size: .92em; }
+em { font-size: .95em; }
+pre {
+  margin: .7rem 0; padding: .55rem .8rem; overflow-x: auto; overflow-wrap: normal;
+  background: var(--box); border: 1px solid var(--line); border-radius: 6px; line-height: 1.5;
+}
+pre code { color: inherit; font-size: inherit; }
+pre.key { font-style: italic; }
+p.note { color: var(--muted); font-size: .92em; }
+.table { overflow-x: auto; }
+table { border-collapse: collapse; overflow-wrap: normal; }
+th, td { padding: .4rem .7rem; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { background: var(--box); }
+</style>
+</head>
+<body>
+<h1>usilic (C++版) ビルド手順</h1>
+<nav><ul><li><a href="#s1">必要なもの(共通)</a></li><li><a href="#s2">macOS</a></li><li><a href="#s3">Linux (Ubuntu/Debian系)</a></li><li><a href="#s4">FreeBSD(2026-11-05、16.0-CURRENT・RTX 3050でインストールから通しで確認)</a></li><li><a href="#s5">Windows(WSL2)</a></li><li><a href="#s6">Windows(Git Bash / MSYS2)</a></li><li><a href="#s7">Windows(ネイティブ、MinGW-w64)</a></li><li><a href="#s8">Docker(<code>.devcontainer/</code>)</a></li><li><a href="#s9">macOS: Finderからアイコンクリックで起動する(<code>.app</code>バンドル)</a></li><li><a href="#s10">ソースを手元で変更する(公開時の方針、2026-11-01)</a></li><li><a href="#s11">ビルドターゲット早見表</a></li></ul></nav>
+<p><code>src/cpp/</code>以下のC++移植版usilicを、何も入っていないまっさらなmacOS/Linuxマシンから実際にビルドできるようになるまでの手順。</p>
+<p>「なぜこれが要るのか」を各所に書いてあるのは、パッケージの過不足で無反応/謎のリンクエラーになったときに原因を追いやすくするため(2026-08-24、Intel Mac実機での<code>SDL2_ttf</code>リンクエラー[docs/CHANGES.md項目419]の調査を機に整備)。</p>
+<p><strong>ブランチに注意(2026-10-05追記)</strong>: <code>git clone</code>で取り出されるのは既定のブランチ<code>master</code> (2026-08-29の版)で、それ以後の作業は<code>mpi-gui-fix</code>ブランチにある(まだ<code>master</code>へマージしていない)。cloneした後、ビルドの前に必ず</p>
+<pre><code>git checkout mpi-gui-fix
+git pull</code></pre>
+<p>とする(<code>git branch</code>で今のブランチを確かめられる)。2026-10-05、WSL2で<code>master</code>のままビルドしたため古い版(^Hが効かず^TがTUTORIAL)を試していた、という実例があった。</p>
+<h2 id="s1">必要なもの(共通)</h2>
+<ul><li>C++17対応コンパイラ(<code>clang++</code>または<code>g++</code>)と<code>make</code></li><li><code>git</code></li><li><code>ncurses</code>のヘッダ/ライブラリ(<code>terminal_display.cpp</code>が<code>setupterm</code>/<code>tputs</code>/<code>tgoto</code>等のterminfo APIを使用)</li><li><code>pkg-config</code></li><li><code>SDL2</code>と<code>SDL2_ttf</code>のヘッダ/ライブラリ</li></ul>
+<p><code>SDL2</code>/<code>SDL2_ttf</code>は本来GUIモード(<code>-g</code>、<code>GraphicalDisplay</code>)専用のはずだが、<code>src/cpp/Makefile</code>は<code>src/</code>以下の<code>.cpp</code>を<code>make usilic</code>/ <code>make test</code>どちらでも無条件に全部ビルドする作りで、<code>graphical_display.cpp</code>自身も<code>&lt;SDL2/SDL.h&gt;</code>/<code>&lt;SDL2/SDL_ttf.h&gt;</code>を<code>#ifdef</code>無しで無条件includeしている。<strong>つまりCUIしか使わない場合でも、コンパイルを通すためだけにSDL2/SDL2_ttfのヘッダ/ライブラリが必須になる</strong>(GUIウィンドウを一度も開かない場合でも)。</p>
+<h2 id="s2">macOS</h2>
+<ol><li>Xcode Command Line Tools(<code>clang++</code>/<code>make</code>/<code>git</code>、および<code>ncurses</code>のヘッダ/ライブラリもSDKに同梱):
+<pre><code>xcode-select --install</code></pre></li><li><a href="https://brew.sh">Homebrew</a>(未導入の場合):
+<pre><code>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</code></pre></li><li><code>pkg-config</code>(<code>pkgconf</code>パッケージが提供)、<code>SDL2</code>、<code>SDL2_ttf</code>:
+<pre><code>brew install pkgconf sdl2 sdl2_ttf</code></pre></li><li>クローンしてビルド:
+<pre><code>git clone https://github.com/haa15030/usilic.git
+cd usilic/src/cpp
+make usilic     # build/usilic ができる
+make test       # 単体テスト一式(doctest)を実行</code></pre></li><li>(任意)<code>/usr/local/bin/U</code>としてインストール(<code>INSTALL_NAME</code>が<code>usilic</code>ではなく<code>U</code>なのは、<code>src/install.sh</code>が入れる旧C版<code>/usr/local/bin/usilic</code>と衝突しないよう、日常的に試すための短い専用名としてユーザー自身が選んだもの):
+<pre><code>sudo make install</code></pre></li></ol>
+<h3>Intel Mac(Sequoia)固有の注意点</h3>
+<p>Xcode 15以降のデフォルトリンカ(通称ld-prime)が、Homebrew製の一部dylib構成(<code>sdl2_ttf</code>が<code>sdl2</code>ではなく<code>sdl2-compat</code>を参照する構成など)で「ライブラリもリンクコマンドも正しいのにシンボルが見つからない」という既知の非互換を起こすことがある(docs/CHANGES.md項目419で実際に発生・特定)。対策として<code>Makefile</code>のDarwin向け<code>LDLIBS</code>に<code>-Wl,-ld_classic</code>(旧リンカの強制指定)を組み込み済みなので、<strong>上記の手順通りに<code>make</code>すれば追加の対応は不要</strong>。万一同種のリンクエラーが再発した場合は、<code>pkg-config --cflags --libs sdl2 SDL2_ttf</code>の出力・<code>file</code>/ <code>lipo -info</code>でのアーキテクチャ・<code>nm -gU</code>でのシンボルの実エクスポート状況、の3点を順に確認するとよい(docs/CHANGES.md項目419の調査ログに実例あり)。</p>
+<h3>Apple Silicon + Homebrewが<code>/opt/homebrew</code>の場合</h3>
+<p><code>/opt/homebrew/lib</code>はデフォルトのリンカ検索パスに含まれないが、<code>pkg-config</code>経由でSDL2/SDL2_ttfの<code>-I</code>/<code>-L</code>は自動的に解決されるため、追加の<code>CFLAGS</code>/<code>LDFLAGS</code>指定は不要(2026-07-16に検証済み、CLAUDE.mdの経緯記録も参照)。</p>
+<h2 id="s3">Linux (Ubuntu/Debian系)</h2>
+<pre><code>sudo apt-get update
+sudo apt-get install -y build-essential libncurses-dev pkg-config \
+    libsdl2-dev libsdl2-ttf-dev git
+
+git clone https://github.com/haa15030/usilic.git
+cd usilic/src/cpp
+make usilic
+make test</code></pre>
+<h2 id="s4">FreeBSD(2026-11-05、16.0-CURRENT・RTX 3050でインストールから通しで確認)</h2>
+<p>Makefileは GNU make の書き方なので、FreeBSD標準の<code>make</code>ではなく<code>gmake</code>を使う。コンパイラ(clang)とncursesはベースシステムにある。</p>
+<p>順番は、インストーラ→パッケージ→GUI(X11・Xfce)→日本語入力→公開鍵の登録(非公開の間だけ)→ビルド。GUIを先にするのは、公開鍵の登録にFreeBSD上のfirefoxを使えるようにするため。</p>
+<p>手順(1〜10)の表記の区別:</p>
+<ul><li><span class="item">設定項目名</span></li><li><strong>選択対象のハイライト表示</strong></li><li><code>自分で決めてよい値</code></li><li><em>キー入力</em></li><li>[Enterで選択]</li><li>「表示文字列」</li></ul>
+<p>NVIDIAのGPUを使う例で書いている。AMD・Intelは「3. GPUのドライバ」の表を参照。</p>
+<h3>1. インストーラー</h3>
+<p><span class="item">Welcome</span> -&gt; [Install]</p>
+<p><span class="item">Keymap Selection</span> -&gt; 「Japanese 106」を <em>Space</em> で選ぶ -&gt;<br>
+一番上の行 <strong>&gt;&gt;&gt; Continue with jp.kbd keymap</strong> で [Select]<br>
+(2行目の「-&gt;- Test default keymap」 は試し打ちだけ)</p>
+<p><span class="item">Set Hostname</span> -&gt; <code>HOST</code> [OK]</p>
+<p><span class="item">Select Installation type</span> -&gt; [Distribution Sets] (従来のtarball、portsとは無関係)</p>
+<p><span class="item">Distribution Select</span> -&gt; 「src」を選ぶ -&gt; [OK]</p>
+<p><span class="item">Network Installation</span> -&gt; [OK]</p>
+<p><span class="item">Network Configuration</span> -&gt; <strong>rge0 RTL8125</strong> (環境による) -&gt; [Auto]</p>
+<p><span class="item">Partitioning</span> -&gt; <strong>Auto (ZFS) Guided Root-on-ZFS</strong> -&gt; [OK]</p>
+<p><span class="item">ZFS Configuration</span> -&gt; 「zroot」 -&gt; [OK] -&gt;<br>
+<strong>&gt;&gt;&gt; Install Proceed with Installation</strong> [Select] -&gt;<br>
+<strong>stripe Stripe - No Redundancy</strong> [OK] -&gt;<br>
+<strong>nda0 Patriot M.2 P300 128GB</strong>（環境による）を選ぶ [OK] -&gt; [YES]</p>
+<p><span class="item">Mirror Selection</span> -&gt; <strong><a href="http://download.freebsd.org">http://download.freebsd.org</a> Main Site</strong> -&gt; [OK]</p>
+<p><span class="item">Fetching Distribution</span> ...</p>
+<p><span class="item">Archive Extraction</span> ...</p>
+<p><span class="item">Boot Configuration</span> -&gt; [Yes]</p>
+<p><span class="item">Set root password</span> -&gt; Password -&gt; Repeat password -&gt; [OK]</p>
+<p><span class="item">Time Zone Selector</span> -&gt; <strong>5  Asia</strong> -&gt; <strong>20 Japan</strong> -&gt; [OK] -&gt;<br>
+<span class="item">Confirmation</span> -&gt; [Yes]</p>
+<p><span class="item">Time &amp; Date</span> -&gt; [Set Date] (合ってれば [Skip]) -&gt;<br>
+[Set Time] (合ってれば [Skip])</p>
+<p><span class="item">System Configuration</span> -&gt; [OK]</p>
+<p><span class="item">System Hardening</span> -&gt; [OK]</p>
+<p><span class="item">FreeBSD firmware installation</span> ...</p>
+<p><span class="item">Add User Accounts</span> -&gt; [Yes]</p>
+<pre class="screen"><code>「FreeBSD Installer
+========================
+Add Users」</code></pre>
+<p>Username: <code>ABC</code> -&gt;<br>
+Full name: <code>DEF</code> -&gt;<br>
+Uid: (Leave empty for default): -&gt;<br>
+Login group [ABC]: -&gt;<br>
+Login group is ABC Invite ABC into other groups? [] : <em>wheel video operator</em><br>
+Login class [default]: -&gt;<br>
+Shell (sh csh tcsh nologin) [sh]: -&gt;<br>
+Home directory [/home/ABC] -&gt;<br>
+Home directory permissions (Leave empty for default): -&gt;<br>
+Enable ZFS encryption? (yes/no) [no] -&gt;<br>
+Use password-based authentication? [yes]: -&gt;<br>
+Use an empty password? (yes/no) [no]: -&gt;<br>
+Use a random password? (yes/no) [no]: -&gt;<br>
+Enter password: <code>GHI</code><br>
+Enter password again: <code>GHI</code><br>
+Lock out the account after creation? [no]: -&gt;</p>
+<pre class="screen"><code>「Username    : ABC
+  Password    : *****
+  Full Name   : DEF
+  Uid         : 1001
+  ZFS dataset : zroot/home/ABC
+  Class       :
+  Groups      : ABC wheel video operator
+  Home        : /home/ABC
+  Home Mode   :
+  Shell       : /bin/sh
+  Locked      : no」</code></pre>
+<p>OK? (yes/no) [yes]: -&gt;<br>
+adduser: INFO: Successfully added (ABC) to the user database.<br>
+Add another user? (yes/no) [no]:</p>
+<p><span class="item">Final Configuration</span> -&gt;<br>
+<strong>Finish Apply configuration and exit installer</strong> -&gt; [Select]</p>
+<p><span class="item">Manual Configuration</span> -&gt; [No]</p>
+<p><span class="item">Complete</span> -&gt; [Reboot]</p>
+<p class="note">※sshでログイン中にシステムを入れ直した場合は、ログインする側のマシンで <em>ssh-keygen -R &lt;IP&gt;</em> を実行する(ホスト鍵が変わるため)。</p>
+<h3>2. パッケージ</h3>
+<pre class="screen"><code>「FreeBSD/amd64 (HOST) (ttyv0)
+ login: 」</code></pre>
+<pre class="key"><code>su -</code></pre>
+<p><em>pkg bootstrap</em> -&gt; <em>y</em></p>
+<pre class="key"><code>pkg update</code></pre>
+<p><em>pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf xfce4-screenshooter-plugin firefox xdg-utils python3</em> -&gt; <em>y</em></p>
+<p class="note">※firefoxの最後に長いメッセージ(boost・gcc14・libjxl・firefoxの未対応機能等)が出るが、対応が要るものは無い。</p>
+<p><em>pkg install xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa dejavu noto-jp fcitx5 fcitx5-configtool fcitx5-gtk3 fcitx5-qt6 ja-fcitx5-mozc3</em> -&gt; <em>y</em></p>
+<pre class="key"><code>sysrc dbus_enable=YES lightdm_enable=YES</code></pre>
+<h3>3. GPUのドライバ</h3>
+<div class="table"><table><thead><tr><th>GPU</th><th>ドライバ</th><th>起動時に読み込む</th><th>ファームウェア</th><th>他に</th></tr></thead><tbody><tr><td>NVIDIA</td><td><em>pkg install nvidia-driver nvidia-xconfig</em></td><td><em>sysrc kld_list+=nvidia-modeset</em></td><td>ドライバに同梱(インストーラには出ない)</td><td><em>nvidia-xconfig</em> で<code>/etc/X11/xorg.conf</code>を作る</td></tr><tr><td>AMD(Radeon)</td><td><em>pkg install drm-kmod</em></td><td><em>sysrc kld_list+=amdgpu</em>(HD 7000番台以前はradeonkms)</td><td>インストーラが自動で選ぶ(RX580ならgpu-firmware-amd-kmod-polaris10)。漏れたら <em>fwget</em></td><td>Xorgの設定は不要(modesetting)。RX580で確認(2026-11-01)</td></tr><tr><td>Intel内蔵</td><td><em>pkg install drm-kmod</em></td><td><em>sysrc kld_list+=i915kms</em></td><td>同上(<code>gpu-firmware-intel-kmod-*</code>)</td><td>同上</td></tr></tbody></table></div>
+<p>表の「ドライバ」と「起動時に読み込む」のコマンドを実行する(<em>sysrc</em> を忘れると再起動の後で画面が出ない)。</p>
+<p><em>kldload nvidia-modeset</em>(AMDはamdgpu、Intelはi915kms)を実行し、メッセージが何も出ないことを確かめる。</p>
+<p>NVIDIAの場合は、続けて <em>nvidia-xconfig</em> を実行する。</p>
+<h3>4. sudoとキーボード</h3>
+<pre class="key"><code>echo '%wheel ALL=(ALL:ALL) ALL' &gt; /usr/local/etc/sudoers.d/wheel</code></pre>
+<pre class="key"><code>chmod 440 /usr/local/etc/sudoers.d/wheel</code></pre>
+<pre class="key"><code>mkdir -p /usr/local/etc/X11/xorg.conf.d</code></pre>
+<pre class="key"><code>cat &gt; /usr/local/etc/X11/xorg.conf.d/keyboard.conf &lt;&lt;'EOF'
+Section "InputClass"
+Identifier "keyboard"
+MatchIsKeyboard "on"
+Option "XkbModel" "jp106"
+Option "XkbLayout" "jp"
+Option "XkbOptions" "ctrl:swapcaps"
+EndSection
+EOF</code></pre>
+<p class="note">※XkbOptionsの行はCaps LockとCtrlを入れ替える設定。要らなければ省く。</p>
+<h3>5. 日本語入力に対応したSDL2</h3>
+<p>パッケージのSDL2はfcitxに対応していないので、-gで日本語を入力できるようportsからビルドする。時間と数GBの空きが要る。</p>
+<pre class="key"><code>git clone --depth 1 https://git.FreeBSD.org/ports.git /usr/ports</code></pre>
+<pre class="key"><code>echo 'devel_sdl20_SET+=DBUS FCITX' &gt;&gt; /etc/make.conf</code></pre>
+<pre class="key"><code>cd /usr/ports/devel/sdl20</code></pre>
+<pre class="key"><code>make install-missing-packages</code></pre>
+<pre class="key"><code>make BATCH=yes reinstall clean</code></pre>
+<p><em>pkg query '%Ok=%Ov' sdl2 | grep -E 'DBUS|FCITX'</em>(DBUS=on、FCITX=on と出ることを確かめる)</p>
+<pre class="key"><code>pkg lock -y sdl2</code></pre>
+<p class="note">※ロックすると <em>pkg upgrade</em> でパッケージ版に戻らない。sdl2を更新する時は <em>pkg unlock -y sdl2</em> で解除し、この節の <em>cd</em> 以降をやり直す。</p>
+<h3>6. 日本語の環境を設定して再起動</h3>
+<p>rootからユーザーへ戻る。</p>
+<pre class="key"><code>exit</code></pre>
+<pre class="key"><code>cat &gt; ~/.xprofile &lt;&lt;'EOF'
+export LANG=ja_JP.UTF-8
+export GTK_IM_MODULE=fcitx
+export QT_IM_MODULE=fcitx
+export XMODIFIERS=@im=fcitx
+export SDL_IM_MODULE=fcitx
+EOF</code></pre>
+<pre class="key"><code>sudo reboot</code></pre>
+<h3>7. Xfceの最初の設定と公開鍵の登録</h3>
+<p>xfceにログインし、画面最下行左から2番目の「$_」アイコン(Terminal)をクリックする。</p>
+<p>NVIDIAの場合は、ウィンドウの合成表示を切る(有効のままだと画面が固まることがある)。</p>
+<pre class="key"><code>xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false</code></pre>
+<p>鍵を作って、公開鍵を表示する。</p>
+<p><em>ssh-keygen -t ed25519</em> -&gt; shプロンプトに戻るまでは <em>Enter</em> のみ</p>
+<p><em>cat ~/.ssh/id_ed25519.pub</em>(折り返し無しでコピーする)</p>
+<p>firefoxで <em><a href="https://github.com/settings/keys">https://github.com/settings/keys</a></em> へアクセスし、GitHubのアカウントでログインする。アカウントが無ければ作成する。</p>
+<p>New SSH key をクリック</p>
+<p>Title -&gt; <code>任意</code></p>
+<p>Key type -&gt; そのまま</p>
+<p>Key -&gt; 先ほどコピーした公開鍵をペースト</p>
+<p>Authentication keys の欄に、Titleの公開鍵が登録されていることを確かめる。</p>
+<p class="note">※リポジトリが非公開の間だけ必要な手順。</p>
+<h3>8. usilicのビルド</h3>
+<p>Terminalで実行する。</p>
+<p><em>ssh -T git@github.com</em> -&gt; 初回は <em>yes</em>(Hi ...! と出ればよい)</p>
+<pre class="key"><code>mkdir git</code></pre>
+<pre class="key"><code>cd git</code></pre>
+<pre class="key"><code>git clone -b mpi-gui-fix git@github.com:haa15030/usilic.git</code></pre>
+<pre class="key"><code>cd usilic/src/cpp</code></pre>
+<pre class="key"><code>gmake usilic &amp;&amp; gmake install</code></pre>
+<pre class="key"><code>echo 'PATH=$HOME/.local/bin:$PATH; export PATH' &gt;&gt; ~/.profile</code></pre>
+<pre class="key"><code>. ~/.profile</code></pre>
+<p class="note">※~/.local/binは既定のPATHに無いので追加する(sshでつなぎ直しても読まれる)。</p>
+<p class="note">※この時やログインの度に英語の小ネタが毎回違う内容で出るのは、既定の~/.profileの最後の fortune freebsd-tips(FreeBSDの使い方のヒントをランダムに1つ表示する)。エラーではない。要らなければその行の先頭に#。freebsd-tipsは英語だけで、日本語版は無い。</p>
+<p class="note">※bashをログインシェルにするなら <em>chsh -s /usr/local/bin/bash</em>。bashは~/.bash_profileがあれば~/.profileを読まないので、その時だけ次も実行する。</p>
+<pre class="key"><code>echo 'PATH=$HOME/.local/bin:$PATH; export PATH' &gt;&gt; ~/.bash_profile</code></pre>
+<h3>9. 日本語入力の設定</h3>
+<p>アプリケーション -&gt; 設定 -&gt; Fcitx5 設定</p>
+<p>「入力メソッド」に Mozc があることを確かめる。無ければ追加する。一覧に出なければ「現在の言語のみ表示」のチェックを外す。</p>
+<p>「グローバルオプション」タブの「入力メソッドの切り替え:」から「Control+スペース」の「-」をクリック(usilicの選択/非選択のキーと被るため)。切り替えは 半角／全角 のキーで行う -&gt; 「適用」 -&gt; 「閉じる」</p>
+<h3>10. usilicの起動</h3>
+<p>XfceのTerminalで、パネルを再起動する(ログインした後で <em>gmake install</em> したusilicをメニューに出すため)。</p>
+<pre class="key"><code>xfce4-panel -r</code></pre>
+<p>アプリケーション -&gt; アクセサリー -&gt; usilic をクリックする。</p>
+<p>「usilic-1.5b:~$ sudo pkg install -y groff mg texinfo 7-zip w3m」で <em>Enter</em></p>
+<p>パスワードを入力する。</p>
+<h3>注意点</h3>
+<p>以下は上の表記の区別とは別で、<code>`</code> はコマンドやファイル名を表す。</p>
+<p><strong>インストールとパッケージ</strong></p>
+<ul><li><code>pkg install</code>の<code>firefox</code>の最後に長いメッセージ(boost・gcc14・libjxl・firefoxの未対応機能等)が出るが、対応が要るものは無い。</li><li><code>python3</code>はEPUBのリンクのEpub(narou2epub)・Pdf(url2pdf)に要る。そのほかの準備はHELPのnarou2epub・url2pdfの所。</li><li>最初の起動のインストールの案内で入らなかったものは、次の起動でもう一度だけ実行し、その後はモードラインに「見つかりません」と出すだけなので、手で入れる。</li><li><code>su</code>はwheelグループのユーザーだけ。インストーラで入れなかったユーザーは<code>pw groupmod wheel -m ユーザー名</code>。</li><li><code>noto-jp</code>は-cの表示に要る(無いと端末で豆腐になる字がある)。入れた後はログインし直す。</li></ul>
+<p><strong>GPUと画面</strong></p>
+<ul><li>再起動の前に<code>kldload</code>が何も言わずに戻ればカーネルと合っている(AMD・Intelはコンソールの文字が細かくなる)。CURRENTで失敗するならportsからビルドする(インストーラのDistribution Selectで<code>src</code>を入れておく)。drm系はユーザーを<code>video</code>グループに入れる。</li><li>ログインできず<code>login:</code>のままなら、<code>/var/log/lightdm/x-0.log</code>と<code>/var/log/Xorg.0.log</code>を見る。<code>keyboard.conf</code>の書き間違いや、<code>kld_list</code>の設定漏れでXが起動しない(2026-11-05に実際に両方)。</li><li>NVIDIAでウィンドウの合成表示が有効だと、xfwm4が<code>glXBindTexImageEXT</code>で止まり、画面が固まることがある(RTX 3050・ドライバ595.112.07、2026-11-05。引き金は未特定)。マウスカーソルだけ動く状態になったら、sshから<code>pkill -9 xfwm4</code>で戻る。合成表示を切る<code>xfconf-query</code>はsshからでは届かないので、XfceのTerminalで実行する。</li><li>端末に重ねる-gはmacOSだけ(Linux・FreeBSDは重ねない、ユーザー判断2026-10-31)。</li></ul>
+<p><strong>日本語入力とSDL2</strong></p>
+<ul><li>パッケージのSDL2は<code>DBUS</code>・<code>FCITX</code>が<code>off</code>で、-gでは窓は開いても日本語が入らない(<code>pkg query '%Ok=%Ov' sdl2</code>で分かる)。ビルドしても<code>off</code>のままなら、古い設定が残っているので<code>make rmconfig</code>と<code>make clean</code>をしてからやり直す。</li><li>ビルドの前に<code>pkg lock</code>していると<code>make reinstall</code>が止まる。<code>pkg unlock -y sdl2</code>で解除する。</li></ul>
+<p><strong>日本語とキーボード</strong></p>
+<ul><li>Xfceのメニュー等を日本語にする<code>LANG</code>は<code>~/.xprofile</code>に書く(lightdmの<code>/usr/local/etc/lightdm/Xsession</code>が読む、2026-11-01に確認)。<code>~/.login_conf</code>やログインクラスで設定するとコンソール(vt)のログインまで日本語になり、vtのフォントに漢字が無いので化ける。</li><li><code>keyboard.conf</code>を使わずXfceだけで設定するなら、設定→キーボード→レイアウトで「システムのデフォルトを使用」を外し、モデルを<code>Japanese 106-key</code>、レイアウトの追加で<strong>▶を開かずに親の<code>Japanese</code>の行</strong>を選ぶ(▶の下のKana・Macintosh・OADG 109A・Dvorakは標準以外の変種。Kanaを選ぶと<code>[</code>が<code>]</code>になる等、2026-11-01に実際にはまった)。ただし、これだとログイン画面はjp106にならない。</li><li>Caps LockをCtrlにするだけなら<code>XkbOptions</code>を<code>ctrl:nocaps</code>にする。すぐ試すならXfceの端末で<code>setxkbmap -model jp106 -layout jp -option ctrl:swapcaps</code>(戻すのは<code>setxkbmap -option</code>)。Xfceのレイアウトで「システムのデフォルトを使用」を外していると、ログインの時にXfceが上書きして<code>XkbOptions</code>が消えることがあるので、<code>keyboard.conf</code>を使うならXfce側はデフォルトのまま。</li><li>コンソール(vt)はXとは別で、<code>sysrc keymap=jp.capsctrl.kbd</code>して再起動(16.0-CURRENTの<code>/usr/share/vt/keymaps/</code>に<code>jp.kbd</code>と並んであることを2026-11-01に確認。名前のとおりCaps LockをCtrlにするもので、入れ替えではない)。</li></ul>
+<p><strong>公開鍵とPATH</strong></p>
+<ul><li><code>https://</code>のURLでcloneすると鍵は使われず、非公開の間はトークンを聞かれる(公開後は<code>https://github.com/haa15030/usilic.git</code>でよく、7の鍵の登録も要らない)。トークンの作り方は下の「ソースを手元で変更する」の4。</li><li>GUIを入れない時は、別のマシンのブラウザで鍵を登録する。Macなら<code>ssh ユーザー名@&lt;IP&gt; cat .ssh/id_ed25519.pub | pbcopy</code>で1行がクリップボードに入る(FreeBSDのsshdが動いていなければ、rootで<code>sysrc sshd_enable=YES; service sshd start</code>)。GUIがあってもsshで作業中なら、鍵の作成・表示はsshで済み、登録もMacのブラウザでできる。</li></ul>
+<h2 id="s5">Windows(WSL2)</h2>
+<p>2026-10-05追加(<code>.steering/20261005-windows-wsl2/</code>)。WSL2の中身は普通のUbuntuなので、上のLinuxの手順でビルドする。違いは、外で開く・クリップボードがWindows側につながること。</p>
+<ol><li><strong>WSL2を入れる</strong>(初回のみ): 管理者のPowerShellで<code>wsl --install</code>(既定でUbuntuが入る)→再起動→スタートメニューの「Ubuntu」を開いてユーザー名・パスワードを決める。Windows Terminalから「Ubuntu」のタブで使うのがお勧め。</li><li><strong>パッケージ</strong>(Ubuntuの中で):
+<pre><code>sudo apt-get update
+sudo apt-get install -y build-essential libncurses-dev pkg-config \
+    libsdl2-dev libsdl2-ttf-dev git fonts-noto-cjk unzip</code></pre>
+<p><code>fonts-noto-cjk</code>は<code>-g</code>の日本語の表示用、<code>unzip</code>はEPUBと.zip(ARC)用(WSLのUbuntuには最初は入っていない。どちらも無ければ最初の起動時の案内にも出る)。<code>-g</code>の和文のゴシック体は、Windows側のメイリオ(<code>/mnt/c/Windows/Fonts/meiryo.ttc</code>)があればそれを使う(無ければNoto Sans CJK)。^Ofのフォント一覧にも<code>/mnt/c/Windows/Fonts</code>のフォントが出る。</p></li><li><strong>ビルドとインストール</strong>: リポジトリは非公開なので、<code>gh auth login</code>(GitHub CLI、<code>sudo apt-get install gh</code>)かSSHの鍵を用意してから<code>git clone</code>し、
+<pre><code>cd usilic
+git checkout mpi-gui-fix   # 冒頭の「ブランチに注意」参照
+cd src/cpp
+make usilic
+make install          # ~/.local/bin/usilic、~/.local/lib/usilic/</code></pre>
+<p><code>~/.local/bin</code>がPATHに無ければ<code>~/.profile</code>に<code>export PATH="$HOME/.local/bin:$PATH"</code>を足す。リポジトリはWSLの中(<code>~/</code>の下)に置く。<code>/mnt/c/...</code>(Windows側のドライブ)の下はファイルの読み書きが遅く、パーミッションも正しく扱えない。</p></li><li><strong>-g(GUI)</strong>: WSLg(Windows 11、またはWindows 10の新しい版のWSL)があれば<code>usilic -g</code>でWindowsのデスクトップにウィンドウが出る(X/Waylandの設定は要らない)。</li><li><strong>Windows側とのつながり</strong>(usilicがWSLの中かを実行時に判定する、<code>src/cpp/src/platform.hpp</code>):
+<ul><li>動画・url2pdfで作ったPDF・EPUBのWebのリンク(Open)は、<code>explorer.exe</code>でWindowsの既定のアプリ(ブラウザ・動画プレーヤー等)で開く。WSLの中のファイルは<code>wslpath -w</code>で<code>\\wsl.localhost\Ubuntu\...</code>の形にして渡す。</li><li>COPY(<code>^[w</code>/<code>^[p</code>)とEPUBのWebのリンクのCopyは、<code>clip.exe</code>でWindowsのクリップボードへ入る(日本語はUTF-16に変換して渡す)。</li><li>Windows側のファイルは<code>/mnt/c/Users/&lt;名前&gt;/...</code>で見える。</li></ul></li></ol>
+<h2 id="s6">Windows(Git Bash / MSYS2)</h2>
+<p>2026-10-05追加(<code>.steering/20261005-windows-gitbash/</code>)。Git Bashの土台はMSYS2(Cygwin系)の実行環境なので、MSYS2でビルドしたusilic.exeがGit Bashでも動く見込み。Git for Windowsにはコンパイラが無いので、ビルドはMSYS2で行う。<strong>-g(GUI)は使えない</strong>(MSYS2のMSYS環境にSDL2が無いため。SDL2が見つからないとMakefileが自動で<code>NO_GUI=1</code>になり、<code>src/graphical_display_stub.cpp</code>でビルドする)。LOCATEも使えない(locate/updatedbが無い)。</p>
+<ol><li><strong>MSYS2を入れる</strong>: <a href="https://www.msys2.org/">https://www.msys2.org/</a> のインストーラで<code>C:\msys64</code>へ。スタートメニューの<strong>「MSYS2 MSYS」</strong>の端末を開く(「MINGW64」「UCRT64」ではない。それらはWindowsネイティブのexeを作る環境で、usilicが使うforkや擬似端末が無い)。</li><li><strong>パッケージ</strong>(MSYS2 MSYSの端末で):
+<pre><code>pacman -Syu                     # 初回は端末を閉じて開き直し、もう一度
+pacman -S --needed gcc make ncurses-devel pkgconf git unzip</code></pre></li><li><strong>ビルド</strong>:
+<pre><code>git clone ...(WSL2の節と同じく、非公開なので認証を用意する)
+cd usilic
+git checkout mpi-gui-fix   # 冒頭の「ブランチに注意」参照
+cd src/cpp
+make usilic                     # build/usilic.exe</code></pre></li><li><strong>MSYS2の端末で使う</strong>: <code>make install</code>(<code>~/.local/bin/usilic</code>、MSYS2のホームは<code>C:\msys64\home\&lt;名前&gt;</code>)。<code>~/.bashrc</code>に<code>export PATH="$HOME/.local/bin:$PATH"</code>。</li><li><strong>Git Bashで使う</strong>: Git Bashのホームは<code>C:\Users\&lt;名前&gt;</code>(MSYS2からは<code>/c/Users/&lt;名前&gt;</code>)なので、
+<pre><code>make install PREFIX=/c/Users/&lt;名前&gt;/.local</code></pre>
+<p>で入れ、Git Bashの<code>~/.bashrc</code>に<code>export PATH="$HOME/.local/bin:$PATH"</code>。libstdc++/libgccは静的にリンクしてある。それ以外に足りないDLLがあれば、MSYS2の端末で<code>ldd build/usilic.exe</code>を見て、<code>/usr/bin/msys-*.dll</code>のうちGit Bashの<code>/usr/bin</code>に無いもの(例えば<code>msys-ncursesw6.dll</code>)を<code>/c/Users/&lt;名前&gt;/.local/bin/</code>へコピーする。<code>msys-2.0.dll</code>はGit Bashのものを使う(コピーしない)。版の違いで動かなければ、4.のMSYS2の端末で使う。</p></li><li><strong>Windows側とのつながり</strong>(<code>src/cpp/src/platform.hpp</code>のisMsys()): 動画・url2pdfのPDF・EPUBのWebのリンク(Open)は<code>explorer.exe</code>でWindowsの既定のアプリで開き(パスは<code>cygpath -w</code>)、COPYとEPUBのリンクのCopyは<code>/dev/clipboard</code>でWindowsのクリップボードへ入る。</li><li><strong>最初の起動時の案内</strong>: MSYS2の端末(<code>pacman</code>がある)では、groff・texinfo・p7zipのうち無いものを<code>pacman -S --needed</code>で入れるコマンドを置く。Git Bashでは案内しない。</li><li><strong>文字の大きさ</strong>: Git BashもMSYS2の端末もmintty。usilic側ではなく端末で変える。その場では<code>Ctrl</code>+<code>+</code>/<code>-</code>(<code>Ctrl</code>+ホイール、<code>Ctrl</code>+<code>0</code>で戻す。閉じると元に戻る)。ずっと変えるには、ウィンドウを右クリック→Options→Text→Fontで選んでSave (<code>~/.minttyrc</code>に<code>FontHeight=14</code>のように入る)。Git Bash(<code>C:\Users\&lt;名前&gt;</code>)とMSYS2(<code>C:\msys64\home\&lt;名前&gt;</code>)はホームが別なので、それぞれで設定する。</li></ol>
+<h2 id="s7">Windows(ネイティブ、MinGW-w64)</h2>
+<p>2026-10-15追加(<code>.steering/20261015-windows-native-gui/</code>)。POSIXの互換層(MSYS2の<code>msys-2.0.dll</code>)を使わない、Windowsのふつうの実行ファイルで、2つある(2026-11-02、<code>.steering/20261102-windows-console-cui/</code>)。<code>usilic.exe</code>はSDLの窓(-g、アイコンから起動してもコンソールの窓が出ない)、<code>usilic-c.exe</code>はコマンドプロンプト・PowerShell・Windows Terminalの中のCUI(-gで窓も開ける)。CUIは<strong>Windows 10 1809以降</strong>(VT処理)、SHELLはConPTY。親子のusilicの受け渡し(KEYの子から親のキー実行等)は使えない。(ls)の一覧はWindowsに<code>ls</code>が無いので、usilicの中で<code>ls -alF</code>と同じ形の行を作る(<code>src/cpp/src/native_ls.cpp</code>)。外部コマンドは<code>CreateProcessW</code>で起動する(<code>src/cpp/src/child_process_win.cpp</code>)。ファイル名はマニフェストの<code>activeCodePage</code>でUTF-8にしているので、<strong>Windows 10 1903以降</strong>が要る。</p>
+<h3>Macからクロスビルドする</h3>
+<ol><li><strong>ツール</strong>: <code>brew install mingw-w64</code>。</li><li><strong>SDL2・SDL2_ttf</strong>: GitHubのlibsdl-orgのリリースから<code>SDL2-devel-&lt;版&gt;-mingw.tar.gz</code>・<code>SDL2_ttf-devel-&lt;版&gt;-mingw.tar.gz</code>を落とし、中の<code>x86_64-w64-mingw32/</code>の<code>include</code>・<code>lib</code>・<code>bin</code>を<code>~/.local/mingw/</code>へコピーする(別の場所なら<code>make</code>に<code>WIN_SDL_DIR=...</code>)。</li><li><strong>ビルド</strong>:
+<pre><code>cd src/cpp
+make WINDOWS=1 -j8 usilic     # build-win/usilic.exe・usilic-c.exe(設定はwindows.mk)
+make WINDOWS=1 dist           # build-win/usilic/ と build-win/usilic-win64.zip</code></pre>
+<p><code>dist</code>は、strip済みの<code>usilic.exe</code>・<code>usilic-c.exe</code>・<code>SDL2.dll</code>・<code>SDL2_ttf.dll</code>と、<code>lib/usilic/</code>(usilicrc・HELP・HELP.notes、<code>~/.local/lib/usilic/HELP.epub</code>があればそれも)をまとめる。</p></li></ol>
+<h3>Windowsで使う</h3>
+<ol><li><code>usilic-win64.zip</code>を好きな所(例えば<code>C:\Users\&lt;名前&gt;\usilic\</code>)に展開する。</li><li><code>usilic.exe</code>をダブルクリックするか、コマンドプロンプトから<code>usilic.exe [ディレクトリ|ファイル]</code>。引数が無ければカレントディレクトリ(ダブルクリックならexeの場所)の(ls)。端末の中で使うなら<code>usilic-c.exe</code> (<code>usilic.exe -c</code>はそれを案内して終わる)。^Zのサスペンド、CUIの^J^F等の-g専用の機能は使えない。</li><li>設定・履歴は<code>%USERPROFILE%\.usilic\</code>(HOMEが無ければUSERPROFILEを使う)、HELP・既定のusilicrcはexeの隣の<code>lib\usilic\</code>。フォントは<code>C:\Windows\Fonts</code>のMSゴシック(無ければConsolas)、和文のゴシック体はメイリオ、明朝体は游明朝。</li><li>窓が出ない時はメッセージボックスで理由を出す(フォントが無い等)。<code>SDL2.dll</code>が無いとWindows自身が起動前に知らせる。</li></ol>
+<h3>Windows上でビルドする</h3>
+<p>MSYS2の<strong>UCRT64</strong>の端末で<code>pacman -S --needed mingw-w64-ucrt-x86_64-gcc make zip</code>、SDL2・SDL2_ttfは上と同じ配布物を<code>WIN_SDL_DIR</code>に置き、<code>make WINDOWS=1 CXX=g++ WINDRES=windres STRIP=strip usilic</code>。</p>
+<h2 id="s8">Docker(<code>.devcontainer/</code>)</h2>
+<p>このリポジトリの<code>.devcontainer/Dockerfile</code>(Ubuntu 26.04ベース)には上記Linux手順のパッケージが最初から含まれている(2026-08-24、<code>libsdl2-dev</code>/<code>libsdl2-ttf-dev</code>/<code>pkg-config</code>を追加[docs/CHANGES.md項目420] -- それ以前はSDL2関連が抜けており、<code>make usilic</code>がヘッダ不足でコンパイルすら通らない状態だった)。実際に<code>docker build</code>したイメージへ、ホストのbind mountを経由せずリポジトリを<code>git clone</code>し直した上で<code>make usilic</code>/<code>make test</code>が成功することを検証済み。</p>
+<p><strong>注意(重要)</strong>: ホストのMac上のリポジトリをこのDockerコンテナへbind mountして使う場合、コンテナ内で<code>make</code>/<code>make clean</code>を実行すると、共有された<code>build/</code>ディレクトリにLinux版バイナリが書き込まれ、Mac側の<code>build/usilic</code>(Mach-O)を壊す(あるいは<code>rm -rf build</code>でMac側ごと削除する)。コンテナ内でのビルド確認はリポジトリをコンテナ内の別パス(例: <code>/tmp/usilic</code>)へコピーまたは<code>git clone</code>し直した上で行うこと。Mac側で確認済みのバイナリをそのまま使い続けたい場合は、コンテナ内で<code>make</code>系コマンドを一切実行しないこと。</p>
+<h2 id="s9">macOS: Finderからアイコンクリックで起動する(<code>.app</code>バンドル)</h2>
+<pre><code>cd usilic/src/cpp
+make app        # build/usilic.app ができる
+open build/usilic.app   # 動作確認(実際にウィンドウが開く)</code></pre>
+<p><code>usilic</code>は引数無し起動だとmacOSでは元々GUIモード(SDL2の独立ウィンドウ、ターミナル不要)がデフォルトになる設計になっているため、<code>make usilic</code>が作る<code>build/usilic</code>をそのまま<code>.app</code>バンドルへ包むだけで、Finderからのダブルクリック起動に対応できる(2026-08-24、docs/CHANGES.md項目421)。GUI側の追加実装は不要だった。</p>
+<p><code>build/usilic.app</code>をFinderで<code>/Applications</code>や<code>Dock</code>へドラッグすれば、以後は通常のアプリと同じ感覚でアイコンクリック起動できる。ターミナルからの<code>U</code>起動(<code>-c</code>でCUIも選択可)は影響を受けない。</p>
+<p><strong>署名について</strong>: <code>make app</code>は末尾で<code>.app</code>バンドル全体をad-hoc署名し直す(<code>codesign --force --deep -s -</code>、単体実行ファイル用の署名をバンドル構造にそのまま流用すると<code>spctl -a</code>がrejectedになるため必須)。有償のDeveloper ID証明書による署名・公証(notarization)は行っていないため、他のMacへコピーした場合や<code>com.apple.quarantine</code>属性が付いた場合は、初回起動時にGatekeeperの確認(右クリック→「開く」)が必要になることがある。ローカルでビルドしたものをそのまま使う分にはこの確認は出ない(quarantine属性が付かないため)。</p>
+<p>アイコンは未設定(Finderの汎用実行ファイルアイコンのまま)。<code>.icns</code>を<code>src/cpp/packaging/</code>へ追加し<code>Info.plist</code>の<code>CFBundleIconFile</code>を設定すれば、以後の<code>make app</code>で自動的に反映される。</p>
+<h2 id="s10">ソースを手元で変更する(公開時の方針、2026-11-01)</h2>
+<p><strong>方針</strong>: 公開後は、<code>src/cpp/tools/narou2epub.py</code>と<code>src/cpp/tools/narou2epub-assets/</code>(「小説家になろう」用のスクリプト。NarouToEpub3を改変したもので、元のApache-2.0に従う)以外は、自由に変更してよい。作者はあらゆる環境・使い方を十分にテストできていないので、不具合が出たら、cloneした手元のソースをAI(Claude Code等)に見てもらって直す、という使い方を想定している。narou2epubを変更する場合はApache-2.0の条件(LICENSEを残す・変更した旨を記す。<code>narou2epub.py</code>の冒頭の変更点の一覧に追記する)に従う。</p>
+<h3>1. ソースを取ってくる(アカウント・鍵は不要)</h3>
+<p>公開リポジトリを読むだけなら、GitHubのアカウントもSSHの鍵も要らない。</p>
+<pre><code>git clone https://github.com/haa15030/usilic.git
+cd usilic
+git switch -c my-fix        # 自分の変更用のブランチ(元のブランチと分けておくと更新を取り込みやすい)</code></pre>
+<p>(冒頭の「ブランチに注意」も参照。)</p>
+<h3>2. AIに見てもらって直す</h3>
+<ul><li>cloneしたディレクトリで起動する(Claude Codeなら<code>claude</code>)。症状・再現の手順・OS(と<code>usilic -v</code>等の版)を伝える。</li><li>手がかりになるもの: このファイル(ビルド)、<code>docs/CHANGES.md</code>(機能ごと・モードごとの経緯。項目番号で引ける)、<code>src/HELP_.txt</code>等のHELPの原稿。</li><li><strong>リポジトリ直下の<code>CLAUDE.md</code>と<code>.claude/</code>は作者の作業用の取り決め</strong>で、Claude Codeが自動で読み込む。特に<code>.claude/settings.json</code>のStopフック(<code>.claude/hooks/history_sync.py</code>)は、会話を<code>docs/HISTORY.md</code>へ追記し続ける。要らなければ<code>.claude/settings.json</code>の<code>"hooks"</code>を消し、<code>CLAUDE.md</code>も自分の環境に合わせて書き換えてよい。</li><li>直したら、自分のブランチでビルドし直す(<code>make usilic</code>・<code>make install</code>。FreeBSDでは<code>gmake</code>)。</li></ul>
+<h3>3. 作者側の更新を取り込む</h3>
+<pre><code>git stash                   # コミットしていない変更があれば退避(コミット済みなら不要)
+git fetch origin
+git rebase origin/&lt;元のブランチ&gt;   # 自分の変更を最新の上に載せ直す。ぶつかったらAIに解消を頼んでもよい
+git stash pop</code></pre>
+<h3>4. 自分の変更をGitHubに置く・作者に送る(ここからアカウントが要る)</h3>
+<div class="table"><table><thead><tr><th>やりたいこと</th><th>GitHubのアカウント</th><th>鍵・認証</th></tr></thead><tbody><tr><td>公開リポジトリを<code>https://</code>でcloneする・更新を取り込む</td><td>不要</td><td>不要</td></tr><tr><td>自分の変更を自分のGitHubに置く(fork→push)</td><td>必要</td><td>SSHの鍵、または<code>gh auth login</code></td></tr><tr><td>作者に変更を送る(Pull Request)・不具合を報告する(Issue)</td><td>必要</td><td>(ブラウザでサインイン)</td></tr></tbody></table></div>
+<ul><li>SSHの鍵はアカウントに登録するもので、<code>https://github.com/settings/keys</code>はサインインしないと開けない。</li><li>鍵は使うマシンで<code>ssh-keygen -t ed25519</code>で作り、<code>~/.ssh/id_ed25519.pub</code>の1行を上のページのNew SSH keyに貼る。そのマシンにまだブラウザが無ければ(FreeBSDを入れた直後等)、sshでつないだ別のマシンの端末でこの1行をコピーし、そちらのブラウザ(サインイン済み)で登録してもよい。</li><li><code>gh auth login</code>(GitHub CLI)なら鍵を作らずに済み、表示されたコードを別のマシンのブラウザで入力しても通る。</li><li><strong>鍵とURLの組み合わせに注意</strong>: SSHの鍵が使われるのは<code>git@github.com:haa15030/usilic.git</code>の形のURLだけ。<code>https://github.com/...</code>で非公開のリポジトリをclone(や自分のforkへpush)すると<code>Username for 'https://github.com':</code>と聞かれ、パスワードの欄には<strong>GitHubのパスワードではなくトークン</strong>を入れる(パスワードは受け付けない)。鍵を登録したなら、URLを<code>git@github.com:</code>の形にすればトークンは要らない(2026-11-01、FreeBSDで鍵を登録した後に<code>https://</code>でcloneしてこれに当たった。既にcloneしたものは<code>git remote set-url origin git@github.com:…</code>で切り替えられる)。</li><li><strong>トークンの作り方</strong>(<code>https://</code>のまま使う場合): GitHubにサインイン→右上のアイコン→Settings→ (左の一番下)Developer settings→Personal access tokens→<strong>Fine-grained tokens</strong>→Generate new token。Token name(何でもよい)、Expiration(有効期限)、Repository accessは<strong>Only select repositories</strong>で<code>usilic</code>を選び、Permissions→Repository permissionsの<strong>Contents</strong>を<code>Read-only</code>(cloneだけ)か<code>Read and write</code>(pushもする)に。Generate tokenで表示される<code>github_pat_…</code>は<strong>その時しか表示されない</strong>のでコピーしておく。cloneの<code>Username:</code>に自分のアカウント名、<code>Password:</code>にこのトークンを貼る。毎回聞かれないようにするには<code>git config --global credential.helper store</code>(<code>~/.git-credentials</code>に平文で保存される。気になるなら<code>cache</code>で一定時間だけ覚えさせる)。<code>gh auth login</code>を済ませておけば、ghがこの役目も引き受ける。</li><li>手順: GitHubで作者のリポジトリをFork → <code>git remote add mine git@github.com:&lt;自分&gt;/usilic.git</code> → <code>git push mine my-fix</code> → GitHubのページからPull Request。</li><li>作者以外が1つのリポジトリだけを読む機械用には、リポジトリの所有者が登録するDeploy key(Settings→Deploy keys)もある(非公開の間に、作者が自分の別マシンへ取ってくる時等)。</li></ul>
+<h2 id="s11">ビルドターゲット早見表</h2>
+<div class="table"><table><thead><tr><th>コマンド</th><th>内容</th></tr></thead><tbody><tr><td><code>make usilic</code></td><td><code>build/usilic</code>(実行可能バイナリ)を生成</td></tr><tr><td><code>make app</code></td><td><code>build/usilic.app</code>(Finderから起動できる<code>.app</code>バンドル、macOS用)を生成</td></tr><tr><td><code>make test</code></td><td><code>build/run_tests</code>を生成し、そのまま実行(doctest)</td></tr><tr><td><code>make clean</code></td><td><code>build/</code>を削除</td></tr><tr><td><code>make WINDOWS=1 usilic</code></td><td><code>build-win/usilic.exe</code>(Windowsのネイティブ、-gだけ。MinGW-w64、windows.mk)</td></tr><tr><td><code>make WINDOWS=1 dist</code></td><td><code>build-win/usilic-win64.zip</code>(exe・SDLのDLL・HELP等)</td></tr><tr><td><code>sudo make install</code></td><td><code>build/usilic</code>を<code>/usr/local/bin/U</code>へインストール</td></tr></tbody></table></div>
+<p><code>make</code>(ターゲット省略)は<code>Makefile</code>内で最初に書かれている<code>test</code>が実行される(<code>usilic</code>ではない)ので注意。</p>
+</body>
+</html>
