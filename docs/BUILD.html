@@ -68,9 +68,17 @@ git pull</code></pre>
 <h2 id="s2">macOS</h2>
 <ol><li>Xcode Command Line Tools(<code>clang++</code>/<code>make</code>/<code>git</code>、および<code>ncurses</code>のヘッダ/ライブラリもSDKに同梱):
 <pre><code>xcode-select --install</code></pre></li><li><a href="https://brew.sh">Homebrew</a>(未導入の場合):
-<pre><code>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</code></pre></li><li><code>pkg-config</code>(<code>pkgconf</code>パッケージが提供)、<code>SDL2</code>、<code>SDL2_ttf</code>:
-<pre><code>brew install pkgconf sdl2 sdl2_ttf</code></pre></li><li>クローンしてビルド:
-<pre><code>git clone https://github.com/haa15030/usilic.git
+<pre><code>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</code></pre>
+<p><strong>Intel Macでは、Homebrewは新しく入れられない</strong>(2026-11-06、インストーラが<code>Homebrew on macOS is only supported on Apple Silicon processors!</code>で止まる)。前から入っているHomebrewは今も使える。入っていなければ、代わりに<a href="https://www.macports.org/install.php">MacPorts</a>を使う。そのMacのmacOSの版に合う<code>.pkg</code>を入れたら、<strong>ターミナルを開き直す</strong>(<code>/opt/local/bin</code>をPATHに足す<code>~/.zprofile</code>は、開いたままのウィンドウには反映されない)。</p></li><li><code>pkg-config</code>(<code>pkgconf</code>パッケージが提供)、<code>SDL2</code>、<code>SDL2_ttf</code>:
+<pre><code>brew install pkgconf sdl2 sdl2_ttf</code></pre>
+<p>MacPortsの場合:</p>
+<pre><code>sudo port selfupdate
+sudo port install pkgconfig libsdl2 libsdl2_ttf</code></pre></li><li>公開鍵の登録(リポジトリが非公開の間だけ必要):
+<pre><code>ssh-keygen -t ed25519           # プロンプトに戻るまではEnterのみ
+pbcopy &lt; ~/.ssh/id_ed25519.pub  # 公開鍵の1行をクリップボードへ</code></pre>
+<p>ブラウザで<code>https://github.com/settings/keys</code>を開いてGitHubにサインインし、New SSH keyのKeyに貼って登録する(Titleは任意、Key typeはそのまま)。</p>
+<pre><code>ssh -T git@github.com           # 初回はyes(Hi ...! と出ればよい)</code></pre></li><li>クローンしてビルド:
+<pre><code>git clone -b mpi-gui-fix git@github.com:haa15030/usilic.git
 cd usilic/src/cpp
 make usilic     # build/usilic ができる
 make test       # 単体テスト一式(doctest)を実行</code></pre></li><li>(任意)<code>/usr/local/bin/U</code>としてインストール(<code>INSTALL_NAME</code>が<code>usilic</code>ではなく<code>U</code>なのは、<code>src/install.sh</code>が入れる旧C版<code>/usr/local/bin/usilic</code>と衝突しないよう、日常的に試すための短い専用名としてユーザー自身が選んだもの):

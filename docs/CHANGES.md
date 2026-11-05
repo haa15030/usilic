@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1230. **docs/BUILD.md: Intel MacはMacPortsで、macOSにも公開鍵の登録の手順(2026-11-06)**
+   - 直接のユーザー報告(mpr、Intel Mac): BUILD.htmlのmacOSの2.のHomebrewのインストーラが"Homebrew on macOS is only supported on Apple Silicon processors!"で止まった。MacPortsを入れた後は`port: command not found`(開いたままのターミナルにPATHが反映されていない)。"BUILD.htmlのmacOSの4.のまえにも公開鍵の登録は必要だな。"
+   - **変更**: macOSの2.・3.にIntel MacではMacPorts(`pkgconfig libsdl2 libsdl2_ttf`)を使うこと、入れた後はターミナルを開き直すことを足した。公開鍵の登録を新しい4.にし(`pbcopy`でクリップボードへ、`ssh -T git@github.com`)、クローンは`-b mpi-gui-fix`のSSHのURLに。以降を1つずつ繰り下げた。BUILD.htmlはdocs/md2html.pyで作り直した。
+   - 確かめたこと: mpiではHomebrew 7.0.12(Intel)は前から入っていて動いている。MacPortsでのビルドはmprで確認中。
 1229. **FreeBSDの手順をdocs/BUILD.mdへマージし、docs/BUILD.htmlを作成(2026-11-05)**
    - 直接のユーザー依頼("BUILD.mdへマージしたのち、BUILD.htmlも作成してみて。BigSurはこれからだが暫定で。")。インストールから最後まで、ユーザーの実機で通した手順(RTX 3050、原稿はsrc/bsd_build.md)。
    - **変更**: BUILD.mdのFreeBSDの節を、手順1〜10と注意点に置き換えた。以前の注意点(ファームウェア・Xfceのキーボード・vtのキーマップ等)は残し、今回分かったこと(xfwm4が固まった時の戻し方、ポートのオプションがoffのままの時等)を足した。sudoは`visudo`の案内から`sudoers.d`へ。docs/bsd_build.mdは統合したので削除。

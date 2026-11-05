@@ -46,18 +46,39 @@ git pull
    ```
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
    ```
+   **Intel Macでは、Homebrewは新しく入れられない**(2026-11-06、インストーラが
+   `Homebrew on macOS is only supported on Apple Silicon processors!`で止まる)。
+   前から入っているHomebrewは今も使える。入っていなければ、代わりに
+   [MacPorts](https://www.macports.org/install.php)を使う。そのMacのmacOSの版に合う
+   `.pkg`を入れたら、**ターミナルを開き直す**(`/opt/local/bin`をPATHに足す
+   `~/.zprofile`は、開いたままのウィンドウには反映されない)。
 3. `pkg-config`(`pkgconf`パッケージが提供)、`SDL2`、`SDL2_ttf`:
    ```
    brew install pkgconf sdl2 sdl2_ttf
    ```
-4. クローンしてビルド:
+   MacPortsの場合:
    ```
-   git clone https://github.com/haa15030/usilic.git
+   sudo port selfupdate
+   sudo port install pkgconfig libsdl2 libsdl2_ttf
+   ```
+4. 公開鍵の登録(リポジトリが非公開の間だけ必要):
+   ```
+   ssh-keygen -t ed25519           # プロンプトに戻るまではEnterのみ
+   pbcopy < ~/.ssh/id_ed25519.pub  # 公開鍵の1行をクリップボードへ
+   ```
+   ブラウザで`https://github.com/settings/keys`を開いてGitHubにサインインし、
+   New SSH keyのKeyに貼って登録する(Titleは任意、Key typeはそのまま)。
+   ```
+   ssh -T git@github.com           # 初回はyes(Hi ...! と出ればよい)
+   ```
+5. クローンしてビルド:
+   ```
+   git clone -b mpi-gui-fix git@github.com:haa15030/usilic.git
    cd usilic/src/cpp
    make usilic     # build/usilic ができる
    make test       # 単体テスト一式(doctest)を実行
    ```
-5. (任意)`/usr/local/bin/U`としてインストール(`INSTALL_NAME`が
+6. (任意)`/usr/local/bin/U`としてインストール(`INSTALL_NAME`が
    `usilic`ではなく`U`なのは、`src/install.sh`が入れる旧C版
    `/usr/local/bin/usilic`と衝突しないよう、日常的に試すための
    短い専用名としてユーザー自身が選んだもの):
