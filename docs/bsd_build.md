@@ -230,6 +230,10 @@ Terminalで実行する。
 
 ## 10. usilicの起動
 
+XfceのTerminalで、パネルを再起動する(ログインした後で *gmake install* したusilicをメニューに出すため)。
+
+*xfce4-panel -r*
+
 アプリケーション -> アクセサリー -> usilic をクリックする。
 
 「usilic-1.5b:~\$ sudo pkg install -y groff mg texinfo 7-zip w3m」で *Enter*

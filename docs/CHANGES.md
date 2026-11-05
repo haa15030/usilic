@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1228. **docs/bsd_build.md: アクセサリーにusilicが出るようにパネルを再起動(2026-11-05)**
+   - 直接のユーザー報告("10.でアクセサリーにusilicがいない。gmake installは済んでいて~/.local/bin/にもちゃんとある。")。
+   - **変更**: 10節の最初に`xfce4-panel -r`を追加した。ユーザーの実機で、実行後にメニューに出たことを確認("今度は出た")。ドラフトにあったログアウトを清書で外したことで表に出た。
+   - **原因(未確認)**: ログインの時に`~/.local/share/applications`がまだ無く、後から作られたことをメニューが検知できないためと思われる。
 1227. **docs/bsd_build.mdの手順の誤りでXが起動しなかった(2026-11-05)**
    - 直接のユーザー報告("ttyv0へのlogin: で止まってる")。ログは`Parse error on line 6 of section InputClass ... "color:" is not a valid keyword`。
    - **原因1**: 任意の値の色付け(`<span style="color:...">`)を`keyboard.conf`のコマンドの中にも付けたので、コピーしたタグが設定ファイルに入った。コマンドの中の色付けをやめた。
