@@ -102,6 +102,8 @@ Complete -> Reboot
 | AMD(Radeon) | *pkg install drm-kmod* | *sysrc kld_list+=amdgpu*(HD 7000番台以前はradeonkms) | |
 | Intel内蔵 | *pkg install drm-kmod* | *sysrc kld_list+=i915kms* | |
 
+表の「ドライバ」と「起動時に読み込む」のコマンドを実行する(*sysrc* を忘れると再起動の後で画面が出ない)。
+
 *kldload nvidia-modeset*(AMDはamdgpu、Intelはi915kms)を実行し、メッセージが何も出ないことを確かめる。
 
 NVIDIAの場合は、続けて *nvidia-xconfig* を実行する。
@@ -120,7 +122,7 @@ NVIDIAの場合は、続けて *nvidia-xconfig* を実行する。
 *MatchIsKeyboard "on"*  
 *Option "XkbModel" "jp106"*  
 *Option "XkbLayout" "jp"*  
-*Option "XkbOptions" "<span style="color:#c0392b">ctrl:swapcaps</span>"*  
+*Option "XkbOptions" "ctrl:swapcaps"*  
 *EndSection*  
 *EOF*
 
