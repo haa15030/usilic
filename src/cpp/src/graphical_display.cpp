@@ -2243,7 +2243,10 @@ void GraphicalDisplay::renderCell(int row, int col) {
     // 引き伸ばすのではなく、縮小して中央寄せするのかについてはそれ
     // 自身のコメント参照。
     int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
-    SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h,
+    // 2026-11-05、直接のユーザー報告("縦書きの^[{/^[}では、字の大きさが変わってしまう"): 縦書きの字間はマスの高さなので、
+    // 字の面より低くすると字ごと縮んでいた。縦書きは高さでは縮めず、マスの中央に置いて上下へはみ出させる(字が重なる)。
+    int fitHeight = verticalText ? std::max(impl_->cellHeight, h) : impl_->cellHeight;
+    SDL_Rect dst = fitGlyphRect(box.x, box.y + (impl_->cellHeight - fitHeight) / 2, maxW, fitHeight, w, h,
                                 cell.italic || cell.bold || impl_->overflowNarrowedCells(row));
     if (cell.size > 0) {
       // 大きい字はマス目から外す(placeLargeGlyph())
