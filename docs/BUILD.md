@@ -42,6 +42,15 @@ git pull
    ```
    xcode-select --install
    ```
+   入っている場合も、更新があれば入れる(`Label:`の後の名前を`-i`に渡す。下は2026-11-06のBig Surの例):
+   ```
+   softwareupdate --list
+   ```
+   ```
+   sudo softwareupdate -i "Command Line Tools for Xcode-13.2"
+   ```
+   古いまま使うと、コンパイラ(clang)より新しいSDKが既定になっていることがあり、
+   `make usilic`が`mac_cursor.mm`の中で止まる(下の「Command Line ToolsのclangとSDKの版の不一致」)。
 2. [Homebrew](https://brew.sh)(未導入の場合):
    ```
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -89,6 +98,20 @@ git pull
    ```
    sudo make install
    ```
+
+### Command Line ToolsのclangとSDKの版の不一致
+
+Big Sur(mpr、2026-11-06)で、`make usilic`が次のエラーで止まった:
+```
+NSBundle.h:91:143: error: function does not return NSString
+```
+clangは12.0.5(Xcode 12.5の世代、合うSDKは11.3)なのに、既定のSDK(`xcrun --show-sdk-path`)は
+`MacOSX12.1.sdk`だった。古いclangが12.1のSDKの`NS_FORMAT_ARGUMENT`を読めない。usilicのソースの問題ではない。
+上の手順1.でCommand Line Toolsを更新すれば版が揃う。更新できない時は、
+`ls /Library/Developer/CommandLineTools/SDKs/`でclangに合う版のSDKを探して指定する:
+```
+SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX11.3.sdk make usilic
+```
 
 ### Intel Mac(Sequoia)固有の注意点
 

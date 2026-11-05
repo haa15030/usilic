@@ -67,7 +67,11 @@ git pull</code></pre>
 <p><code>SDL2</code>/<code>SDL2_ttf</code>は本来GUIモード(<code>-g</code>、<code>GraphicalDisplay</code>)専用のはずだが、<code>src/cpp/Makefile</code>は<code>src/</code>以下の<code>.cpp</code>を<code>make usilic</code>/ <code>make test</code>どちらでも無条件に全部ビルドする作りで、<code>graphical_display.cpp</code>自身も<code>&lt;SDL2/SDL.h&gt;</code>/<code>&lt;SDL2/SDL_ttf.h&gt;</code>を<code>#ifdef</code>無しで無条件includeしている。<strong>つまりCUIしか使わない場合でも、コンパイルを通すためだけにSDL2/SDL2_ttfのヘッダ/ライブラリが必須になる</strong>(GUIウィンドウを一度も開かない場合でも)。</p>
 <h2 id="s2">macOS</h2>
 <ol><li>Xcode Command Line Tools(<code>clang++</code>/<code>make</code>/<code>git</code>、および<code>ncurses</code>のヘッダ/ライブラリもSDKに同梱):
-<pre><code>xcode-select --install</code></pre></li><li><a href="https://brew.sh">Homebrew</a>(未導入の場合):
+<pre><code>xcode-select --install</code></pre>
+<p>入っている場合も、更新があれば入れる(<code>Label:</code>の後の名前を<code>-i</code>に渡す。下は2026-11-06のBig Surの例):</p>
+<pre><code>softwareupdate --list</code></pre>
+<pre><code>sudo softwareupdate -i "Command Line Tools for Xcode-13.2"</code></pre>
+<p>古いまま使うと、コンパイラ(clang)より新しいSDKが既定になっていることがあり、<code>make usilic</code>が<code>mac_cursor.mm</code>の中で止まる(下の「Command Line ToolsのclangとSDKの版の不一致」)。</p></li><li><a href="https://brew.sh">Homebrew</a>(未導入の場合):
 <pre><code>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</code></pre>
 <p><strong>Intel Macでは、Homebrewは新しく入れられない</strong>(2026-11-06、インストーラが<code>Homebrew on macOS is only supported on Apple Silicon processors!</code>で止まる)。前から入っているHomebrewは今も使える。入っていなければ、代わりに<a href="https://www.macports.org/install.php">MacPorts</a>を使う。そのMacのmacOSの版に合う<code>.pkg</code>を入れたら、<strong>ターミナルを開き直す</strong>(<code>/opt/local/bin</code>をPATHに足す<code>~/.zprofile</code>は、開いたままのウィンドウには反映されない)。</p></li><li><code>pkg-config</code>(<code>pkgconf</code>パッケージが提供)、<code>SDL2</code>、<code>SDL2_ttf</code>:
 <pre><code>brew install pkgconf sdl2 sdl2_ttf</code></pre>
@@ -84,6 +88,11 @@ make usilic
 make test</code></pre>
 <p class="note">※macOSのzshは、打ち込んだ行の<code>#</code>を注釈として扱わない(<code>interactivecomments</code>が既定で無効)。注釈付きの行を貼ると<code>zsh: no matches found</code>等になるので、このファイルの枠には注釈を書かない。</p></li><li>(任意)<code>/usr/local/bin/U</code>としてインストール(<code>INSTALL_NAME</code>が<code>usilic</code>ではなく<code>U</code>なのは、<code>src/install.sh</code>が入れる旧C版<code>/usr/local/bin/usilic</code>と衝突しないよう、日常的に試すための短い専用名としてユーザー自身が選んだもの):
 <pre><code>sudo make install</code></pre></li></ol>
+<h3>Command Line ToolsのclangとSDKの版の不一致</h3>
+<p>Big Sur(mpr、2026-11-06)で、<code>make usilic</code>が次のエラーで止まった:</p>
+<pre><code>NSBundle.h:91:143: error: function does not return NSString</code></pre>
+<p>clangは12.0.5(Xcode 12.5の世代、合うSDKは11.3)なのに、既定のSDK(<code>xcrun --show-sdk-path</code>)は<code>MacOSX12.1.sdk</code>だった。古いclangが12.1のSDKの<code>NS_FORMAT_ARGUMENT</code>を読めない。usilicのソースの問題ではない。上の手順1.でCommand Line Toolsを更新すれば版が揃う。更新できない時は、<code>ls /Library/Developer/CommandLineTools/SDKs/</code>でclangに合う版のSDKを探して指定する:</p>
+<pre><code>SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX11.3.sdk make usilic</code></pre>
 <h3>Intel Mac(Sequoia)固有の注意点</h3>
 <p>Xcode 15以降のデフォルトリンカ(通称ld-prime)が、Homebrew製の一部dylib構成(<code>sdl2_ttf</code>が<code>sdl2</code>ではなく<code>sdl2-compat</code>を参照する構成など)で「ライブラリもリンクコマンドも正しいのにシンボルが見つからない」という既知の非互換を起こすことがある(docs/CHANGES.md項目419で実際に発生・特定)。対策として<code>Makefile</code>のDarwin向け<code>LDLIBS</code>に<code>-Wl,-ld_classic</code>(旧リンカの強制指定)を組み込み済みなので、<strong>上記の手順通りに<code>make</code>すれば追加の対応は不要</strong>。万一同種のリンクエラーが再発した場合は、<code>pkg-config --cflags --libs sdl2 SDL2_ttf</code>の出力・<code>file</code>/ <code>lipo -info</code>でのアーキテクチャ・<code>nm -gU</code>でのシンボルの実エクスポート状況、の3点を順に確認するとよい(docs/CHANGES.md項目419の調査ログに実例あり)。</p>
 <h3>Apple Silicon + Homebrewが<code>/opt/homebrew</code>の場合</h3>

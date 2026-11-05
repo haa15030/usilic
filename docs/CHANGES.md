@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1232. **docs/BUILD.md: macOSの手順1.でCommand Line Toolsを更新、clangとSDKの版の不一致の注意点(2026-11-06)**
+   - 直接のユーザー報告(mpr、Big Sur): `make usilic`が`NSBundle.h:91:143: error: function does not return NSString`(`NS_FORMAT_ARGUMENT`)で止まった。clangは12.0.5(Xcode 12.5の世代)、SDKは11.3・12.1等が並び、既定は12.1だった。`SDKROOT=.../MacOSX11.3.sdk make usilic`で通った。"エラーと対処は記述したけど最初から回避できるならそちらの方がいいかなと。" `softwareupdate --list`にCommand Line Tools for Xcode-13.2があった。
+   - **変更**: 手順1.に`softwareupdate --list`・`-i`で更新する手順を足し、エラーの原因と`SDKROOT`での回避を注意点の節にした。BUILD.htmlを作り直した。
+   - 確かめたこと: SDKROOTでのビルドはmprで確認済み。13.2に更新した後、SDKROOT無しで通るかはmprで確認中。
 1231. **docs/BUILD.md: macOSの節のコードの枠から`#`の注釈を出す(2026-11-06)**
    - 直接のユーザー報告(mpr): 5.の枠をそのまま貼ったら`zsh: no matches found: 単体テスト一式(doctest)を実行`。macOSのzshは打ち込んだ行の`#`を注釈として扱わず(`interactivecomments`が既定で無効)、`(...)`がファイル名のパターンになった。
    - **変更**: 4.・5.の枠の注釈を本文へ移し、枠に注釈を書かない旨を書き添えた。BUILD.htmlを作り直した。
