@@ -37,7 +37,7 @@ CXXFLAGS ?= -std=c++17 $(OPTFLAGS) -Wall -Wextra -Wno-missing-field-initializers
 # added unconditionally.
 LDLIBS   ?= -lncurses $(SDL_LIBS)
 ifeq ($(shell uname), Darwin)
-LDLIBS += -framework CoreText -framework CoreFoundation -framework Cocoa
+LDLIBS += -framework CoreText -framework CoreFoundation -framework Cocoa -framework Carbon
 # 2026-08-24 fix (docs/CHANGES.md item 419): a real user report on an
 # Intel Mac (Sequoia, fresh `brew install sdl2 sdl2_ttf`) -- `ld`
 # reported every `TTF_*` symbol from SDL2_ttf as "not found for

@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#import <Carbon/Carbon.h>  // KBGetLayoutType()・LMGetKbdType()(macKeyboardIsJis())
 #include <unistd.h>
 
 #include "mac_cursor.hpp"
@@ -64,6 +65,8 @@ CursorImage extractOpenHandCursorImage() {
 }
 
 void systemBeep() { NSBeep(); }
+
+bool macKeyboardIsJis() { return KBGetLayoutType(LMGetKbdType()) == kKeyboardJIS; }
 
 void activateThisApplication() {
   [[NSRunningApplication currentApplication] activateWithOptions:NSApplicationActivateIgnoringOtherApps];

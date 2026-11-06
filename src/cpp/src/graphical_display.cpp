@@ -3806,6 +3806,24 @@ bool GraphicalDisplay::pumpEvents() {
         // いるのに合わせている。
         if (event.key.keysym.mod & KMOD_CTRL) {
           SDL_Keycode sym = event.key.keysym.sym;
+#ifdef __APPLE__
+          // 2026-11-06(macKeyboardIsJis()参照): JISキーボードの記号キーは、SDLの報告するsymではなく位置から。
+          // @はUSの[の位置、[は]の位置、]は\の位置、^は=の位置、¥・_はJIS専用のキー。
+          if (macKeyboardIsJis()) {
+            SDL_Scancode code = event.key.keysym.scancode;
+            int jisByte = code == SDL_SCANCODE_LEFTBRACKET     ? 0x80   // ^@
+                          : code == SDL_SCANCODE_RIGHTBRACKET  ? 0x1b   // ^[
+                          : (code == SDL_SCANCODE_BACKSLASH || code == SDL_SCANCODE_NONUSHASH) ? 0x1d  // ^]
+                          : code == SDL_SCANCODE_EQUALS        ? 0x1e   // ^^
+                          : code == SDL_SCANCODE_INTERNATIONAL3 ? 0x1c  // ^\(¥)
+                          : code == SDL_SCANCODE_INTERNATIONAL1 ? 0x1f  // ^_
+                                                               : -1;
+            if (jisByte >= 0) {
+              impl_->keyQueue.push_back(KeyEvent{jisByte, std::nullopt});
+              break;
+            }
+          }
+#endif
           // 2026-10-06追加、直接のユーザー質問("WSLのGUI、文字拡大・縮小キーは？"): Windows/
           // Linuxでは上のKMOD_GUI(Windowsキー)の組み合わせはOS側が先に取る(Win+'+'は拡大鏡)
           // ので、Ctrl+'+'/'-'/'0'でも同じ拡大・縮小・元に戻すをする(ブラウザの慣習)。
@@ -3845,7 +3863,7 @@ bool GraphicalDisplay::pumpEvents() {
                        : sym == SDLK_AT         ? 0x80
                                                 : 0x1f;
             impl_->keyQueue.push_back(KeyEvent{byte, std::nullopt});
-          } else if (sym == SDLK_2 && shift) {
+          } else if (sym == SDLK_2 && shift && !macKeyboardIsJis()) {  // JISのShift+2は"
             // 2026-11-06(^␣の表記を^@に、key_bindings.cppのlabel()参照): USキーボードの^@はCtrl+Shift+2(SDLの
             // symは2のまま)。端末(xterm等)と同じく^@(0x80)にする。JISキーボードは@のキー(上のSDLK_AT)。
             impl_->keyQueue.push_back(KeyEvent{0x80, std::nullopt});

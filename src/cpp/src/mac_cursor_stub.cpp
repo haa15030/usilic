@@ -17,4 +17,6 @@ void activateThisApplication() {}
 
 void forceActivateThisApplication() {}
 
+bool macKeyboardIsJis() { return false; }
+
 }  // namespace fm
