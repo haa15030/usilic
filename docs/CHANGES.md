@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1237. **SHELL: 改行で終わらない問い合わせへの答えを、その行より上に書き足さない。BUILD.mdのmacOSは~/gitの下へクローン(2026-11-06)**
+   - 直接のユーザー指摘: "`=oa.pngのjjjj`はそれが原因じゃ無い点。さっきもそう。打つときはsudoのプロンプト位置なのに、Enter後にああなる。なにかのヒントになる？" 項目1236で「Password:の前に打った字」としたのは誤り。改行で終わらない行(`pendingLine_`)は入力欄の左に仮のプロンプトとして出し(`flushIdleOutput()`)、スクロールバックにはプログラムの改行で初めて入るのに、`submitLine()`が答えを先に書き足していたので、答えがその行より上に出ていた。エコーのある問い合わせ(`Continue? [Y/n]: y`)でも、`y`の次に`Continue? [Y/n]: y`と出たはず。
+   - **変更**: 動いているプログラムが改行で終わらない行で入力を待っている時も、`freezePromptLine()`・`pendingEchoFilter_`を飛ばす(エコーがあれば端末のエコーで1行になる)。
+   - 直接のユーザー依頼("git/を作ってなかった。以後は~/git/usilicでよろしく"): BUILD.mdのmacOSの手順5.に`mkdir -p ~/git`・`cd ~/git`を足し、BUILD.htmlを作り直した。
+   - 確かめたこと: mpiで`make usilic`が通ること。動作はユーザーの実機で確認待ち。
 1236. **SHELL: sudoのパスワード等、エコーを切っている間は打った字を表示しない(2026-11-06)**
    - 直接のユーザー報告(mpr、=ob.png・=oc.png): 最初の起動のSHELLで`Password:jjjj`とパスワードが見え、送った後も`jjjj`の行が残った。"直して。" SHELLで動いているコマンドへの入力は、usilic自身の入力欄(LineEditor)で組み立てて^Mでptyへ送るため、sudoがエコーを切っても字が見えていた(最初の起動に限らない)。
    - **変更**: `Shell::inputEchoOff()`(フォアグラウンドのジョブがあり、ptyのtermiosのECHOが切れている)の間、`LineEditor::setConcealed()`で入力欄に字を描かず、`submitLine()`はその行をスクロールバックに残さない(`freezePromptLine()`・`pendingEchoFilter_`を飛ばす)。判定は`feedShellByte()`でキーごとに。Windowsのネイティブは対象外(常にfalse)。

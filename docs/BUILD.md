@@ -84,6 +84,8 @@ git pull
    ```
 5. クローンしてビルド(`make usilic`で`build/usilic`ができ、`make test`で単体テスト一式(doctest)を実行する):
    ```
+   mkdir -p ~/git
+   cd ~/git
    git clone -b mpi-gui-fix git@github.com:haa15030/usilic.git
    cd usilic/src/cpp
    make usilic

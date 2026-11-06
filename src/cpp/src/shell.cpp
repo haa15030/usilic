@@ -1770,7 +1770,11 @@ void Shell::submitLine() {
   // には当てはまらない。
   bool wasAlreadyBusy = busy();
   // パスワード等(inputEchoOff()参照): 打った行をスクロールバックに残さない(2026-11-06、=oc.pngで"jjjj"が残った)。
-  bool concealed = wasAlreadyBusy && inputEchoOff();
+  // 2026-11-06、直接のユーザー指摘("Enter後にああなる。なにかのヒントになる？"): 動いているプログラムが改行で
+  // 終わらない行("Password:"、"Continue? [Y/n]: "等、pendingLine_)で入力を待っている時も残さない。その行は
+  // プログラムの改行で初めてスクロールバックに入るので、ここで書き足すと答えがその行より上に出ていた
+  // (=oa.pngの"jjjj"の次に"Password:")。エコーがあれば、端末のエコーで"Continue? [Y/n]: y"の1行になる。
+  bool concealed = wasAlreadyBusy && (inputEchoOff() || !stripSgr(pendingLine_).empty());
 
   if (!trimmed.empty()) {
     if (!concealed) freezePromptLine(trimmed, /*includePrompt=*/!wasAlreadyBusy);

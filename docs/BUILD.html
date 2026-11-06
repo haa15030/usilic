@@ -82,7 +82,9 @@ sudo port install pkgconfig libsdl2 libsdl2_ttf</code></pre></li><li>公開鍵�
 pbcopy &lt; ~/.ssh/id_ed25519.pub</code></pre>
 <p>ブラウザで<code>https://github.com/settings/keys</code>を開いてGitHubにサインインし、New SSH keyのKeyに貼って登録する(Titleは任意、Key typeはそのまま)。登録できたか確かめる(初回は<code>yes</code>、Hi ...! と出ればよい):</p>
 <pre><code>ssh -T git@github.com</code></pre></li><li>クローンしてビルド(<code>make usilic</code>で<code>build/usilic</code>ができ、<code>make test</code>で単体テスト一式(doctest)を実行する):
-<pre><code>git clone -b mpi-gui-fix git@github.com:haa15030/usilic.git
+<pre><code>mkdir -p ~/git
+cd ~/git
+git clone -b mpi-gui-fix git@github.com:haa15030/usilic.git
 cd usilic/src/cpp
 make usilic
 make test</code></pre>
