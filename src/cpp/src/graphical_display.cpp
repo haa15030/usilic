@@ -3086,7 +3086,6 @@ bool GraphicalDisplay::setFont(FontKind kind, const std::string &path) {
 }
 
 // 明朝体はふだん最初に明朝の字を描く時に読み込む(serifFontFor())ので、まだなら読み込んでから答える。
-#ifdef _WIN32
 std::vector<GraphicalDisplay::ScannedFontFace> GraphicalDisplay::scanFontFiles(
     const std::vector<std::string> &directories) {
   std::vector<ScannedFontFace> faces;
@@ -3122,7 +3121,6 @@ std::vector<GraphicalDisplay::ScannedFontFace> GraphicalDisplay::scanFontFiles(
   if (!initialized) TTF_Quit();
   return faces;
 }
-#endif
 
 std::string GraphicalDisplay::currentFontPath(FontKind kind) const {
   switch (kind) {

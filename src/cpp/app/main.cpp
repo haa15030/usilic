@@ -2642,6 +2642,28 @@ std::vector<fm::FontListEntry> buildFontList(const fm::GraphicalDisplay &gui) {
     std::sort(mono.begin(), mono.end(), byName);
     std::sort(japanese.begin(), japanese.end(), byName);
   }
+#else
+  // 2026-11-06、直接のユーザー報告(mpr、MacPortsのSDL2、"^J^Fが「フォントがみつかりません（fc-list）」"): fc-list
+  // (fontconfig)はHomebrewのSDL2では一緒に入るが、MacPortsでは入らない。fc-listで何も取れなければ、Windowsと同じく
+  // フォントのフォルダを調べる(サブフォルダは見ない)。
+  if (mono.empty() && japanese.empty()) {
+    const char *home = std::getenv("HOME");
+    std::string h = home ? home : "";
+#ifdef __APPLE__
+    std::vector<std::string> directories = {"/System/Library/Fonts", "/System/Library/Fonts/Supplemental",
+                                            "/Library/Fonts", h + "/Library/Fonts"};
+#else
+    std::vector<std::string> directories = {"/usr/share/fonts", "/usr/local/share/fonts", h + "/.fonts",
+                                            h + "/.local/share/fonts"};
+#endif
+    for (const auto &face : fm::GraphicalDisplay::scanFontFiles(directories)) {
+      if (face.monospace) mono.push_back({face.path, face.name});
+      if (face.japanese) japanese.push_back({face.path, face.name});
+    }
+    auto byName = [](const Face &a, const Face &b) { return a.name < b.name; };
+    std::sort(mono.begin(), mono.end(), byName);
+    std::sort(japanese.begin(), japanese.end(), byName);
+  }
 #endif
   if (mono.empty() && japanese.empty()) return {};
   for (const auto &face : japanese) (looksSerif(face.name) ? serif : sans).push_back(face);
