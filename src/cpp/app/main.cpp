@@ -2492,18 +2492,17 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
     // Intel Macでbrewもportも無い: Homebrewのインストーラは止まるだけなので、MacPortsのページを開く
     // (macOSの版に合う.pkgを選んで入れる。入れた後の起動で、もう一度の印の分をport installで入れる)。
     if (useMacPorts && findExecutable("port").empty())
-      return "open https://www.macports.org/install.php"
-             "  # Intel MacにはHomebrewを新しく入れられないので、MacPortsを入れる。次の起動で sudo port -N install" +
-             packages;
+      return "open https://www.macports.org/install.php";
     // -N: 依存するportの"Continue? [Y/n]"を省く(2026-11-06、直接のユーザー報告(mpr、=oa.png)、そこで止まった)。
     // 2>&1 | cat(2026-11-06、直接のユーザー報告(mpr、=oc.png、"1分18秒後にHELPが表示されただけ")): 端末へ出すと
     // portは進み具合の行を上書きして消し、SHELLでは26行のうち3行のほか空になった。端末でなくすと普通の行で出る
     // (sudoのパスワードは/dev/ttyから読むので入力できる)。
     if (useMacPorts) return "sudo port -N install" + packages + " 2>&1 | cat";
+    // 2026-11-06、直接のユーザー報告(mpr、=oe.png): 以前は後ろに"  # Homebrew未インストール(…)"の注釈を付けていたが、
+    // zshは打ち込んだ行の#を注釈として扱わず(interactivecommentsが既定で無効)、"zsh: no matches found"で
+    // インストーラが一度も実行されていなかった。案内のコマンドには注釈を付けない。
     if (brew.empty())
-      return "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-             "  # Homebrew未インストール(Xcode Command Line Toolsも必要なら入る)。終わると次は brew install" +
-             packages;
+      return "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"";
     // 2026-10-20、直接のユーザー依頼("リストの真っ先にipafontを持ってきて"): font-ipafontは先に別のbrew installで
     // (入りしだい-gのフォントをIPAゴシックに替える、runGuiPhase())。;でつなぎ、失敗しても残りは続ける。
     std::string program =
