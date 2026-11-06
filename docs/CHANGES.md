@@ -33408,6 +33408,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1252. **in-placeの検索中の[Enter]・クリックは、今の一致の所のリンクへ(2026-11-07)**
+   - 直接のユーザー依頼("検索モードではマッチした文字列へのハイライト表示箇所でおこなった操作をその場で反映して欲しい。たとえばHELP画面で^SURL^M後、URL[3]の位置で^M（または左クリック）で注釈へ飛ぶ。モードスタックは検索モードを立ち上げた箇所までクリアでいい")。
+   - **原因**: 検索中の[Enter]は検索を終えてから本文の[Enter]になるが、横書きのEPUB(HELP)の[Enter]が飛ぶのは「選んでいるリンク」(カーソルの行の最初のリンク)で、一致の位置とは関係が無かった。クリックは検索を終えないまま飛んでいた。
+   - **変更**: `selectEpubHorizontalLinkAtGrepMatch()`で、[Enter]の前に今の一致(HighlightCurrent)に重なるリンク、無ければ同じ行で一致の後の最初のリンクを選ぶ。`clickEpubHorizontalLink()`は検索を終えてから飛ぶ。どちらも検索は終わるので、注釈の^Gは本文へ戻る(検索へは戻らない)。縦書き・(ls)等は変えていない。
+   - 確かめたこと: `make usilic`・`make install`が通ること。**実機の動きは未確認。**
+1251. **^J^Eからnarou2epubを動かしたSHELLの^Gは^J^Eのプロンプトへ、作品IDの打ち間違いはブラウザで開かずに知らせる(2026-11-07)**
+   - 直接のユーザー報告・依頼: "^J^EからSHELLへ移った後、^Gで同じ画面に戻らない（^X^Fへは戻る）"、"^J^EでURLのあとのID入力をミスタイプすると...ブラウザ画面になるのでその場合はモードラインに同じ意味のメッセージを出力して上記^Gと同じにしてほしい（^J^Eプロンプトへ戻る）"。
+   - **原因**: ^J^Eの一覧で打ち始めると、プロンプトの間は戻り先のモードへ切り替わっている(一覧ではなくなる)ので、SHELLの戻り先は^J^Eを押した画面になっていた。作品の形(n1234ab等)に合わないURLは^Owの今の対処(Open)でブラウザに渡っていた。
+   - **変更**: ^J^Eの一覧から投入した文字列を覚え(`epubListRetryText_`)、それでnarou2epubを動かしたSHELLの^Gは、^J^Eの一覧を開き直してその文字列を打ちかけたプロンプトにする(`reopenEpubListPrompt()`)。EPUBを受け取った時(`pollShellHandoff()`)・別の経路でSHELLへ入った時は忘れる。小説サイトの入口の直後に、作品の形に合わない数字入りの名前を1つ足したURL(例: https://noc.syosetu.com/n735my)は、ブラウザで開かずに同じプロンプトへ戻し、モード名の隣に「作品がありません: URL」(No such work)。^Jeでは知らせるだけ。数字の無い名前(ランキング等)・2段以上のURLは今までどおり。
+   - 確かめたこと: `make usilic`・`make install`が通ること。**実機の動きは未確認。**
 1250. **narou2epub: venvやライブラリが無ければ、初めての1回だけ作って入れる(2026-11-07)**
    - 直接のユーザー報告("^J^E -> https://noc.syousetu.com/n7354my -> No module named 'requests'。これはminiでgit pullした版でも発生")。
    - **原因**: `~/.local/lib/usilic/venv`を作って`pip install lxml ebooklib requests Pillow`する手順は、tools/narou2epubのコメントとHELPにしか無く、`make install`も最初の起動のインストールも行わない。venvが無いとpython3のままで動き、requestsが無かった。

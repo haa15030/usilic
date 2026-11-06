@@ -116,6 +116,7 @@ const std::vector<std::pair<std::string, std::string>> &patternMessages() {
       {"Copied: {}", "コピーしました: {}"},
       {"No books: {}", "本がありません: {}"},
       {"No such EPUB: {}", "EPUB がありません: {}"},
+      {"No such work: {}", "作品がありません: {}"},
       {"No such file or directory: {}", "ファイルまたはディレクトリがありません: {}"},
       {"Not a book: {}", "本ではありません: {}"},
       {"Not a Narou work: {}", "なろうの作品ではありません: {}"},

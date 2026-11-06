@@ -5341,6 +5341,11 @@ bool Application::handleCommandImpl(Command command) {
   // 「元のモードから抜ける」が1回の^Gで同時に起きてしまい、
   // ユーザーが期待する「まずハイライトだけが消える」動作にならない。
   bool wasGrepInPlaceActive = grepInPlaceActive_;
+  // 2026-11-07、直接のユーザー依頼("検索モードではマッチした文字列へのハイライト表示箇所でおこなった操作をその場で
+  // 反映して欲しい。たとえばHELP画面で^SURL^M後、URL[3]の位置で^M...で注釈へ飛ぶ。モードスタックは検索モードを
+  // 立ち上げた箇所までクリアでいい"): 横書きのEPUB(HELP)の本文では、[Enter]はカーソルの行の最初のリンクではなく、
+  // 今の一致(HighlightCurrent)に重なるリンク(無ければ同じ行で一致の後の最初のリンク)へ飛ぶ。検索は下で終える。
+  if (grepInPlaceActive_ && command == Command::Enter) selectEpubHorizontalLinkAtGrepMatch();
   if (grepInPlaceActive_ && !isGrepInPlaceSafeCommand(command)) {
     deactivateGrepInPlace();
   }
@@ -8825,6 +8830,7 @@ bool Application::runNarouToEpub(const Configuration::UrlHandler &handler, const
     activeView().redraw();
     return false;
   }
+  shellEpubListRetryText_ = epubListRetryText_;  // ^J^Eから: SHELLの^Gでその^J^Eのプロンプトへ(epubListRetryText_参照)
   std::vector<std::string> argv = handler.argv;
   argv.push_back(url);
   std::string command = shell_.usesCmdSyntax() ? cmdQuoteArgv(argv) : shellQuoteArgv(argv);
@@ -8899,6 +8905,20 @@ bool Application::openEpubPromptSpecial(const std::string &text) {
     std::string url = text;
     url.erase(0, url.find_first_not_of(" \t"));
     url.erase(url.find_last_not_of(" \t") + 1);
+    // 2026-11-07、直接のユーザー依頼("^J^EでURLのあとのID入力をミスタイプすると...ブラウザ画面になるのでその場合は
+    // モードラインに同じ意味のメッセージを出力して...^J^Eプロンプトへ戻る"): 小説サイトの入口の直後に、作品の形に
+    // 合わない数字入りの名前を1つ足したもの(例: https://noc.syosetu.com/n735my)は、ブラウザで開かずに知らせる。
+    // 数字の無い名前(ランキング等)・2段以上のURLは今までどおり^Owの今の対処で開く。
+    static const std::regex kSiteWithBadId(
+        R"(^https?://([a-z0-9]+\.syosetu\.com|kakuyomu\.jp|www\.aozora\.gr\.jp|(www\.)?archiveofourown\.org)/)"
+        R"(([a-z]*[0-9][a-z0-9]*)/?$)",
+        std::regex::icase);
+    if (std::regex_match(url, kSiteWithBadId)) {
+      if (epubListRetryText_) return reopenEpubListPrompt(*epubListRetryText_, "No such work: " + url);
+      activeView().redraw();
+      showTransientNotice(activeView(), "No such work: " + url);
+      return true;
+    }
     if (isUsilicWebUrl(url)) history_.pushRecent(RingCategory::RecentFile, url);  // ^J^Eの一覧へ(isUsilicWebUrl()参照)
     activeView().redraw();
     openEpubWebLink(url);
@@ -10947,6 +10967,25 @@ bool Application::activateSelectedEpubHorizontalLink() {
   return activateEpubHorizontalLink(link);
 }
 
+// in-placeの検索の今の一致に重なるリンク(無ければ同じ行で一致の後の最初のリンク)を、横書きの選んでいるリンクにする
+// (handleCommand()のCommand::Enter、2026-11-07)。
+void Application::selectEpubHorizontalLinkAtGrepMatch() {
+  if (!grepInPlaceActive_ || grepInPlaceOriginMode_ != ApplicationMode::File || !epubHorizontalLinksActive()) return;
+  if (grepInPlaceIndex_ < 0 || grepInPlaceIndex_ >= static_cast<int>(grepInPlaceOccurrences_.size())) return;
+  const GrepOccurrence &occurrence = grepInPlaceOccurrences_[grepInPlaceIndex_];
+  if (occurrence.sourceLineIndex != fileView_.cursorIndex()) return;
+  std::optional<EpubHorizontalLink> after;
+  for (const auto &link : epubHorizontalVisibleLinks()) {
+    if (link.index != occurrence.sourceLineIndex) continue;
+    if (link.start < occurrence.span.second && link.end > occurrence.span.first) {
+      epubHorizontalLink_ = link;
+      return;
+    }
+    if (!after && link.start >= occurrence.span.second) after = link;
+  }
+  if (after) epubHorizontalLink_ = after;
+}
+
 // 行indexの画面の桁columnが下線の字なら、そのリンクを選んで飛ぶ(-gのクリック)。
 bool Application::clickEpubHorizontalLink(int index, int column) {
   if (!epubHorizontalLinksActive()) return false;
@@ -10965,6 +11004,8 @@ bool Application::clickEpubHorizontalLink(int index, int column) {
   if (byte < 0) return false;
   for (const auto &link : epubHorizontalVisibleLinks())
     if (link.index == index && byte >= link.start && byte < link.end) {
+      // in-placeの検索中のクリック(2026-11-07、handleCommand()のCommand::Enterと同じ依頼): 検索を終えてから飛ぶ。
+      if (grepInPlaceActive_) deactivateGrepInPlace();
       epubHorizontalLink_ = link;
       return activateEpubHorizontalLink(link);
     }
@@ -11062,6 +11103,25 @@ bool Application::startEpubList() {
   bool ok = startRegexPromptList(PromptKind::RecentFile);
   epubListPending_ = false;
   return ok;
+}
+
+// ^J^Eの一覧を開き直し、`text`を打ちかけた編集のプロンプトにする(一覧から打ち始めた時、feedRegexListByte()と同じ形)。
+// `notice`があればモード名の隣に出す(次のキーで消える、promptNoticeShown_)。epubListRetryText_参照。
+bool Application::reopenEpubListPrompt(const std::string &text, const std::string &notice) {
+  if (!startEpubList()) return false;
+  if (!promptHistoryContext_ || !promptHistoryContext_->epubOnly) return true;
+  std::string positionText;
+  int candidateCount = static_cast<int>(listBrowserMode_.items().size());
+  if (candidateCount > 0) positionText = ModeLine::format(listBrowserView_.cursorIndex() + 1, candidateCount);
+  if (!notice.empty()) positionText = localized(notice);
+  ApplicationMode returnMode = promptHistoryContext_->returnMode;
+  if (returnMode != ApplicationMode::Shell) currentMode_ = returnMode;
+  listBrowserView_.redraw();
+  activatePrompt(PromptKind::RecentFile, text, positionText);
+  epubListSubmitting_ = true;
+  promptHistoryContext_ = std::nullopt;
+  if (!notice.empty()) promptNoticeShown_ = true;
+  return true;
 }
 
 // K-103(^J^A、2026-10-05、直接のユーザー依頼"^J^Aでアーカイブファイル一覧(^J^Eみたいなやつ)"):
@@ -12032,6 +12092,12 @@ bool Application::returnToDuResults() {
 
 bool Application::returnFromShell() {
   currentMode_ = shellReturnMode_;
+  if (shellEpubListRetryText_) {  // ^J^Eからnarou2epubを動かしたSHELL(epubListRetryText_参照)
+    std::string text = *shellEpubListRetryText_;
+    shellEpubListRetryText_.reset();
+    display_.hideVisibleCursor();
+    return reopenEpubListPrompt(text, "");
+  }
   // ^J^Wが押された「同じ」ListBrowser候補リストへ戻る時、一時停止
   // されていたpromptHistoryContext_セッション(それ自身の宣言コメント
   // 参照)を復元する――正確に一度だけ消費される。
@@ -12308,6 +12374,7 @@ bool Application::returnPagerToShell() {
 
 bool Application::ensureShellActive() {
   if (currentMode_ == ApplicationMode::Shell) return true;
+  shellEpubListRetryText_.reset();  // 新しくSHELLへ入る(runNarouToEpub()はこの後で立て直す)
   // 2026-08-26修正(実際の、注意深く再現された報告): (Command::Back
   // 自身の専用の^G/'q'のページャ復帰処理とは対照的に)^[s/^J^W等の
   // 「この」汎用の経路経由でShellに到達する時、現在SHELLの引き渡し
@@ -16773,7 +16840,10 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
       // 作品でないURLは^Owの今の対処で開き、EpubならNot a Narou work)、それ以外で開けなければその旨を出す。
       if (epubListSubmitting_) {
         epubListSubmitting_ = false;
-        if (openEpubPromptSpecial(text)) return true;
+        epubListRetryText_ = text;  // epubListRetryText_参照
+        bool special = openEpubPromptSpecial(text);
+        epubListRetryText_.reset();
+        if (special) return true;
         ResolvedPath resolved = pathResolver_.resolve(text, directoryMode_.currentDirectory());
         if (!resolved.exists) {
           activeView().redraw();
@@ -19420,6 +19490,7 @@ bool Application::pollShellHandoff() {
   std::string path = "/tmp/.usilic-shell/s." + std::to_string(::getuid()) + "." + std::to_string(shell_.childPid());
   struct stat st;
   if (::stat(path.c_str(), &st) != 0) return false;
+  shellEpubListRetryText_.reset();  // narou2epubがEPUBを渡した(以後のSHELLの^Gはふだんどおり)
 
   if (S_ISSOCK(st.st_mode)) {
     // パイプされたstdin(SHELLプロンプトでタイプされた

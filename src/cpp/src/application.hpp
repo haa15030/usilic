@@ -2771,6 +2771,7 @@ class Application {
   bool epubHorizontalLinksActive() const;
   bool activateEpubHorizontalLink(const EpubHorizontalLink &link);
   bool activateSelectedEpubHorizontalLink();
+  void selectEpubHorizontalLinkAtGrepMatch();
   bool clickEpubHorizontalLink(int index, int column);
   bool openEpubReturningTo(const std::string &path, ApplicationMode returnMode);
   // LOCATE・DUの^M: 書庫ならARCで開き始める(^Gでその一覧へ戻る)。書庫でなければfalse。
@@ -3006,6 +3007,7 @@ class Application {
   std::optional<std::string> selectedEpubWebUrl();                // cycleUrlHandler()参照
   bool runNarouToEpub(const Configuration::UrlHandler &handler, const std::string &url);                                 // K-98(^Je)
   bool startEpubList();                                   // K-99(^J^E)
+  bool reopenEpubListPrompt(const std::string &text, const std::string &notice);  // epubListRetryText_参照
   bool startArchiveList();                                // K-103(^J^A)
   std::string installLibDirectory_;
   bool showHelpNotFound();  // Command::StartHelp参照
@@ -3020,6 +3022,12 @@ class Application {
   // ^J^Eの一覧で^Mした文字列・一覧から打ち始めたプロンプトの文字列か(executePromptSubmission()のRecentFile、
   // activatePrompt()で消す)。
   bool epubListSubmitting_ = false;
+  // 2026-11-07、直接のユーザー報告・依頼(^J^EからSHELLへ移った後、^Gで^J^Eへ戻らない。作品IDを打ち間違えたら
+  // ブラウザではなくモードラインに出して^J^Eのプロンプトへ): epubListRetryText_は^J^Eの一覧から投入した文字列
+  // (openEpubPromptSpecial()を呼ぶ間だけ)、shellEpubListRetryText_はそれでnarou2epubを動かしたSHELLから^Gで
+  // その文字列の^J^Eのプロンプトへ戻る(reopenEpubListPrompt())。別の経路でSHELLへ入った時・EPUBを受け取った時に消す。
+  std::optional<std::string> epubListRetryText_;
+  std::optional<std::string> shellEpubListRetryText_;
   // ^Ofのフォント一覧(takeFontListRequest()参照)。fontListShowing()は、一覧が今のListBrowserの
   // 中身である間だけ真(別の一覧へ移った後にフラグが残っても、その一覧のEnterを横取りしない)。
   bool fontListRequested_ = false;
