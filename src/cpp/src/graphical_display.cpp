@@ -3047,7 +3047,12 @@ bool GraphicalDisplay::setFont(FontKind kind, const std::string &path) {
       impl_->serifFont = opened;
       impl_->serifFontMissing = false;
       impl_->serifFontPath = path;
-      break;
+      // 2026-11-07、直接のユーザー報告(macOS、=oj.png・=ok.png、"最初から明朝を設定してしまうと重ならない"): 明朝体は
+      // マスの寸法(下のmeasure()は基本のフォントとゴシック体だけ)に関わらないのに、下で端末に合わせたマス
+      // (matchedCellHeight)を捨てて測り直し、窓の大きさを変えていた。明朝体は差し替えて描き直すだけ。
+      clearGlyphCache(*impl_);
+      impl_->needsRedraw = true;
+      return true;
   }
   auto measure = [&](int &cellWidth, int &cellHeight) {
     if (TTF_SizeUTF8(impl_->font, "M", &cellWidth, &cellHeight) != 0) return;
