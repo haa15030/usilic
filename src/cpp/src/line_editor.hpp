@@ -140,6 +140,11 @@ class LineEditor {
   // 再描画する。何か編集した後、または強制的に再描画したい場合
   // (例えば外部から画面がクリアされた後)に呼ぶ。
   void redraw();
+  // 2026-11-06、直接のユーザー報告(mpr、=ob.png、最初の起動のSHELLで"Password:jjjj"): trueの間、redraw()は字を
+  // 描かない(打った字は持ったまま、カーソルは欄の先頭)。SHELLで動いているコマンドが端末のエコーを切っている間
+  // (sudoのパスワード等、Shell::inputEchoOff())に使う。
+  void setConcealed(bool on) { concealed_ = on; }
+  bool concealed() const { return concealed_; }
 
  private:
   // legacyのCにおけるN_line(1024)だった。2026-09-27、64KBへ拡大――直接の
@@ -167,6 +172,7 @@ class LineEditor {
   Charset::Encoding encoding_;
 
   std::string buffer_;
+  bool concealed_ = false;  // setConcealed()参照
   int cursorPos_ = 0;   // buffer_へのバイトオフセット
   int shift_ = 0;       // 表示されている最も左のバイトのオフセット
 

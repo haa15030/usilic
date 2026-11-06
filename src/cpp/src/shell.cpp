@@ -1769,9 +1769,11 @@ void Shell::submitLine() {
   // 起動する」時にだけ意味を持つ処理であり、単なるstdinへのデータ行
   // には当てはまらない。
   bool wasAlreadyBusy = busy();
+  // パスワード等(inputEchoOff()参照): 打った行をスクロールバックに残さない(2026-11-06、=oc.pngで"jjjj"が残った)。
+  bool concealed = wasAlreadyBusy && inputEchoOff();
 
   if (!trimmed.empty()) {
-    freezePromptLine(trimmed, /*includePrompt=*/!wasAlreadyBusy);
+    if (!concealed) freezePromptLine(trimmed, /*includePrompt=*/!wasAlreadyBusy);
 
     bool handled = false;
     if (!wasAlreadyBusy) {
@@ -1789,7 +1791,7 @@ void Shell::submitLine() {
       handled = programLauncher_ && !programToken.empty() && programLauncher_(programToken, trimmed);
     }
     if (!handled) {
-      pendingEchoFilter_ = trimmed;  // 自身のコメント参照――flushNewScrollbackLines()によって消費される
+      if (!concealed) pendingEchoFilter_ = trimmed;  // 自身のコメント参照――flushNewScrollbackLines()によって消費される
       // 2026-09-28修正、直接のユーザー報告("sudo apt install...でパスワード
       // (スペース1文字)待ちになるものの入力してもはねられる"): 既に動いて
       // いるプログラムへの入力(パスワード等)は、先頭の空白も含めて打った
@@ -2011,6 +2013,15 @@ bool Shell::foregroundJobRunning() const {
 #endif
 }
 bool Shell::busy() const { return busy_ || foregroundJobRunning(); }
+bool Shell::inputEchoOff() const {
+#ifdef _WIN32
+  return false;
+#else
+  if (!foregroundJobRunning()) return false;
+  struct termios t {};
+  return ::tcgetattr(masterFd_, &t) == 0 && !(t.c_lflag & ECHO);
+#endif
+}
 
 void Shell::onResize(int rows, int columns, bool redraw) {
   viewportRows_ = rows;

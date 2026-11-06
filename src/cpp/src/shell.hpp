@@ -394,6 +394,9 @@ class Shell {
   // いる最中だと分かる――子プロセス側との一切の通信無しに判定できる。
   bool foregroundJobRunning() const;
   bool busy() const;
+  // 2026-11-06: フォアグラウンドで動いているコマンドが端末のエコーを切っているか(sudoのパスワード入力等)。
+  // 打った字を入力欄に描かず、送った行をスクロールバックにも残さない(LineEditor::setConcealed()、submitLine())。
+  bool inputEchoOff() const;
 
   // -- リサイズ --
   // 新しい端末サイズをpty(TIOCSWINSZ)と、所有するContentViewの

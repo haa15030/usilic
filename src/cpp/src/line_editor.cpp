@@ -195,6 +195,11 @@ void LineEditor::redraw() {
   display_.moveCursor(row_, col0_);
   display_.write(std::string(width_, ' '));
   display_.moveCursor(row_, col0_);
+  if (concealed_) {  // setConcealed()参照
+    display_.setVisibleCursor(row_, col0_);
+    display_.flush();
+    return;
+  }
   renderVisible(visible, shift_);
 
   // moveCursor()ではなくsetVisibleCursor(): これこそが意味のある

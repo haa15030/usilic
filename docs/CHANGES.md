@@ -33408,10 +33408,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1236. **SHELL: sudoのパスワード等、エコーを切っている間は打った字を表示しない(2026-11-06)**
+   - 直接のユーザー報告(mpr、=ob.png・=oc.png): 最初の起動のSHELLで`Password:jjjj`とパスワードが見え、送った後も`jjjj`の行が残った。"直して。" SHELLで動いているコマンドへの入力は、usilic自身の入力欄(LineEditor)で組み立てて^Mでptyへ送るため、sudoがエコーを切っても字が見えていた(最初の起動に限らない)。
+   - **変更**: `Shell::inputEchoOff()`(フォアグラウンドのジョブがあり、ptyのtermiosのECHOが切れている)の間、`LineEditor::setConcealed()`で入力欄に字を描かず、`submitLine()`はその行をスクロールバックに残さない(`freezePromptLine()`・`pendingEchoFilter_`を飛ばす)。判定は`feedShellByte()`でキーごとに。Windowsのネイティブは対象外(常にfalse)。
+   - 確かめたこと: mpiで`make usilic`が通ること。動作はユーザーの実機で確認待ち。
 1235. **最初の起動のport installの出力を`2>&1 | cat`で(2026-11-06)**
    - 直接のユーザー報告(mpr、=ob.png・=oc.png): "動画を撮ってコマ送りしてみても一切何も表示されなかった。1分18秒後にHELPが表示されただけ。" =oc.pngのモードラインは00026/00026なのに、見えるのは最初の3行だけで残りは空。端末へ出すとportは進み具合の行を上書きして消すため、とみた。
    - **変更**: `sudo port -N install ... 2>&1 | cat`(端末でなければ普通の行で出る。sudoのパスワードは/dev/ttyから読む)。
-   - 同じ画像で、最初の起動のSHELLがsudoのパスワード(jjjj)をそのまま表示していると分かった。未対処(ユーザーに確認中)。
+   - 同じ画像で、最初の起動のSHELLがsudoのパスワード(jjjj)をそのまま表示していると分かった(項目1236で対処)。
    - 確かめたこと: mpiで`make usilic`が通ること。mprの実機で確認待ち。
 1234. **MacPortsは`port -N install`、最初の起動の機能限定SHELLで^O^C・^Iを使えるように(2026-11-06)**
    - 直接のユーザー報告(mpr、=oa.png): 項目1233の`sudo port install 7zip w3m`が依存するportの`Continue? [Y/n]:`で止まった。"インストール過程が一瞬表示されて消えるのを繰り返して最後には何も無い画面になった"(こちらは原因未確認)。

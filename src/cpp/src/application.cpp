@@ -4415,6 +4415,9 @@ bool Application::limitedShellAllows(int byte, std::optional<KeyInput::SpecialKe
 
 bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> special) {
   if (firstStartPager_ && !limitedShellAllows(byte, special)) return true;
+  // 2026-11-06、直接のユーザー報告(mpr、=ob.png、最初の起動のsudo port installで"Password:jjjj"と見えた)・依頼("直して"):
+  // 動いているコマンドが端末のエコーを切っている間は、打った字を入力欄に描かない(Shell::inputEchoOff())。
+  shell_.commandLine().setConcealed(shell_.inputEchoOff());
   // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装、Shell::tabArmed_
   // 自身の宣言コメント参照(legacyの`f_list`フラグと同じ役割): TAB
   // 以外の任意のバイトを処理する「前」に、必ずここでリセットする
