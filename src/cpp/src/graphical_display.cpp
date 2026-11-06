@@ -3846,6 +3846,10 @@ bool GraphicalDisplay::pumpEvents() {
                        : sym == SDLK_AT         ? 0x80
                                                 : 0x1f;
             impl_->keyQueue.push_back(KeyEvent{byte, std::nullopt});
+          } else if (sym == SDLK_2 && shift) {
+            // 2026-11-06(^␣の表記を^@に、key_bindings.cppのlabel()参照): USキーボードの^@はCtrl+Shift+2(SDLの
+            // symは2のまま)。端末(xterm等)と同じく^@(0x80)にする。JISキーボードは@のキー(上のSDLK_AT)。
+            impl_->keyQueue.push_back(KeyEvent{0x80, std::nullopt});
           } else if (sym == SDLK_SPACE) {
             // 2026-09-07追加、直接のユーザー報告(⑨のGUI限定「COPY
             // モードで^@によるハイライトが一切出ない」を切り分けた

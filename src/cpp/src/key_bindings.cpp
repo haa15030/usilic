@@ -66,7 +66,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {33, "F-2 l"},     // ^Ol   ls のソートキー巡回(2026-10-05、^O^Lと交換)
       {34, "F-2 C-l"},   // ^O^L  再表示(SHELL内から)/ls のソート順を逆順に
       {35, "."},         // .     選択/非選択
-      {36, "C-SPC"},     // ^SPC  選択/非選択
+      {36, "C-@"},       // ^@  選択/非選択(2026-11-06、以前はC-SPC、label()参照)
       {37, "F-2 y"},     // ^Oy   全選択
       {38, "F-2 n"},     // ^On   全解除
       // (39: ^[P 一時的な選択対象の貼り付け、2026-10-05廃止。番号は詰めない)
@@ -152,7 +152,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {118, "F-0 r b"},      // ^Xrb  ブックマークへ飛ぶ
       {119, "F-0 r l"},      // ^Xrl  ブックマークの一覧
       {120, "F-0 r SPC"},    // ^Xr␣  今の場所をレジスタへ
-      {121, "F-0 r C-SPC"},  // ^Xr^␣ 今の場所をレジスタへ(^Xr␣と同じ)
+      {121, "F-0 r C-@"},  // ^Xr^@ 今の場所をレジスタへ(^Xr␣と同じ)
       {122, "F-0 r j"},      // ^Xrj  レジスタの場所へ飛ぶ
       {123, "F-2 C-s"},      // ^O^S  一致した行の一覧(FGREP)
       {124, "F-2 F-1 C-s"},  // ^O^J^S 一致した行の一覧(EGREP)
@@ -267,7 +267,10 @@ std::string KeyBindings::label(const Sequence &seq) {
   std::string out;
   for (int b : seq) {
     if (b == kDigit) out += "N";
-    else if (b == 0x80 || b == 0) out += "^\xE2\x90\xA3";  // ^␣(Ctrl-Space)
+    // 2026-11-06、直接のユーザー依頼(mpr、"BigSurでは`ことえり`なんだが`^Space`はATOK同様切り換えキー"、
+    // "`^Space`を`^@`に置き換えては"): Ctrl+SpaceはmacOSの入力ソースの切り替えに取られるので、表記は^@
+    // (同じ0x80。端末はどちらもNULを送り、EmacsでもC-@はC-SPCと同じset-mark)。
+    else if (b == 0x80 || b == 0) out += "^@";
     else if (b == ' ') out += "\xE2\x90\xA3";              // ␣
     else if (b == 0x1b) out += "^[";
     else if (b < 0x20) out += std::string("^") + static_cast<char>(b + '@');

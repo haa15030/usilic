@@ -1637,6 +1637,11 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       std::string path = (cutOrigin_ == CutOrigin::File && cutReturnMode_ != ApplicationMode::Directory)
                              ? fileMode_.currentFile()
                              : directoryMode_.currentDirectory();
+      // 2026-11-06、直接のユーザー報告(mpr、=oi.png、HELPの^Sの戻り値が"/Users/.../.usilic/HELP.epub"、"「HELP」で"):
+      // HELPはファイルとしては見せない(^Kの戻り値と同じ)。
+      if (cutOrigin_ == CutOrigin::File && cutReturnMode_ != ApplicationMode::Directory &&
+          (isGeneratedHelpEpub(path) || path == plainHelpPath_))
+        path = "HELP";
       std::size_t bytes = contentByteCount(cutOrigin_ == CutOrigin::File ? fileView_ : directoryView_);
       // 2026-09-27追加、直接のユーザー依頼("CUTのモードライン、検索結果一覧の
       // 画面では(EGREP)があるほうがいい"): in-place GREPと同じ並び(バッジ、
@@ -15378,6 +15383,17 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
   }
   switch (byte) {
     case kControlG:
+      // 2026-11-06、直接のユーザー依頼(mpr、"COPYでの^G(orマウスの右クリック)では^[wを実行したのち離脱"、"そうして"):
+      // 範囲を指定していれば(マーク中)、^[wと同じく確定してクリップボードへ入れてから抜ける。範囲が空なら
+      // (confirmMark()が上書きしない)前のクリップボードの中身は入れ直さない。右クリックもここ(main.cppが^Gを送る)。
+      if (copyMode_.markActive()) {
+        std::string before = copyMode_.clipboardText();
+        copyMode_.confirmMark();
+        if (copyMode_.clipboardText() != before) {
+          promptEditor_.setKillBuffer(copyMode_.clipboardText());
+          copyTextToSystemClipboard(copyMode_.clipboardText());
+        }
+      }
       return returnFromCopy();
     case 0x10:  // ^P
       copyMode_.moveUp();
