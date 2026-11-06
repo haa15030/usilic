@@ -3824,13 +3824,12 @@ bool GraphicalDisplay::pumpEvents() {
             adjustFontSize(0);
             break;
           }
-#ifndef __APPLE__
           // 貼り付け(consumePastedText())。上のKMOD_GUI(Windows・Superキー)の組み合わせはOS側が先に取るので、端末と同じキー。
+          // 2026-11-06、直接のユーザー質問("Ctrl+Shift+vはmacOSでは無理？"): macOSでも(⌘vと同じ)。
           if (sym == SDLK_v && shift) {
             impl_->pasteRequested = true;
             break;
           }
-#endif
           if (sym >= SDLK_a && sym <= SDLK_z) {
             impl_->keyQueue.push_back(KeyEvent{(sym - SDLK_a) + 1, std::nullopt});
           } else if (sym == SDLK_LEFTBRACKET) {

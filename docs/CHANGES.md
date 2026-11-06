@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1240. **SHELLで^O^Y・⌘v・Ctrl+Shift+vの貼り付け(2026-11-06)**
+   - 直接のユーザー依頼(mpr): "SHELLで^O^Y、⌘vが利くようにして。Ctrl+Shift+vはmaOSでは無理？" SHELLの^O^Yは(ls)へ抜けてから`Command::PasteClipboard`(プロンプトの中だけ)になって何もせず、-gの⌘vはプロンプトの中でしか渡していなかった。Ctrl+Shift+vはmacOSだけ除いていた(⌘vがあるため)。
+   - **変更**: `Application::pasteIntoShell()`でSHELLのコマンド行のカーソル位置へ入れる(実行はしない。改行は空白に、末尾の改行は除く)。ふつうのSHELL・最初の起動の機能限定SHELLの^O^Y(COPYで取ったもの)、-gの⌘v・Ctrl+Shift+v(OSのクリップボード、macOSでもCtrl+Shift+vを有効に)。
+   - 同じ報告の、mprだけで^[が(ls)になる・^@で範囲指定が始まらない件は、JISキーボードのキーをSDLがUS配列の位置で読んでいる(Ctrl+[が^]、Ctrl+@が^[)とみて、ユーザーに確認中。
+   - 確かめたこと: mpiで`make usilic`が通ること。
 1239. **^␣の表記を^@に、COPYの^G・右クリックは範囲を確定してから抜ける、HELPの^Sの戻り値は「HELP」(2026-11-06)**
    - 直接のユーザー報告・依頼(mpr、Big Sur): "BigSurでは`ことえり`なんだが`^Space`はATOK同様切り換えキーになっている…ここはusilicの方で変えた方がいいと思う。現状`=oi.png`の`^Space`を`^@`に置き換えてはどうかなと。emacsのキーアサインと違う以外の問題が起きないか調べて見て。"
    - **調べたこと**: ^@と^␣は元から同じキー(0x80)。端末はどちらもNULを送り(KeyInputが0x80に)、-gもCtrl+@(SDLK_AT)・Ctrl+Spaceとも0x80。EmacsでもC-@はC-SPCと同じset-mark-commandなので、Emacsとも違わない。usilicrcのKEYは`C-SPC`・`C-@`どちらでも読める(以前の設定もそのまま)。HELPの行の^Mで飛ぶ(KEYのh)ラベルの読み取りも^@を0x80にしている。ただし-gでUSキーボードの^@(Ctrl+Shift+2)はSDLのsymが2のままで捨てていた。

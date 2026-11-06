@@ -4385,6 +4385,7 @@ bool Application::limitedShellAllows(int byte, std::optional<KeyInput::SpecialKe
   // "^O^Cと^Iも足してみて"): ^O^C(COPY)は、インストールの間も(エラーを写せるよう)。
   if (std::exchange(limitedShellLeaderO_, false)) {
     if (byte == 0x03) handleCommand(Command::EnterCopyMode);
+    else if (byte == 0x19) pasteIntoShell(copyMode_.clipboardText());  // ^O^Y(2026-11-06、pasteIntoShell()参照)
     else refuse();
     return false;
   }
@@ -4416,6 +4417,18 @@ bool Application::limitedShellAllows(int byte, std::optional<KeyInput::SpecialKe
     default:
       return refuse();  // ^[・^X・^R・^T・^Q等のusilicのキー
   }
+}
+
+bool Application::pasteIntoShell(const std::string &text) {
+  if (currentMode_ != ApplicationMode::Shell) return false;
+  std::string line = text;
+  while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.pop_back();
+  for (char &c : line)
+    if (c == '\n' || c == '\r') c = ' ';
+  if (line.empty()) return true;
+  shell_.commandLine().paste(line);
+  shell_.commandLine().redraw();
+  return true;
 }
 
 bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> special) {
@@ -4580,6 +4593,11 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     // 2026-10-22(HELPのキーの検証で、SHELLの^O^F・^O^B・^O^Lが(ls)へ抜けてそちらをページ送り等していた): SHELLの
     // 中から使うための^O^F・^O^B・^O^L・^O/(dispatchLeaderByte()の^Oの節)も、SHELLのまま実行する。
     bool isShellSafeLeaderO = leaderOPending_ && (byte == 0x06 || byte == 0x02 || byte == 0x0c || byte == '/');
+    // 2026-11-06(pasteIntoShell()参照): ^O^YはSHELLのコマンド行へ貼る(以前は(ls)へ抜けて何もしなかった)。
+    if (leaderOPending_ && byte == 0x19) {
+      leaderOPending_ = false;
+      return pasteIntoShell(copyMode_.clipboardText());
+    }
     // 2026-10-24、直接のユーザー依頼("SHELL画面のままEXITって出せない？"): 終了の確認(^[^[・^X^C)もSHELLのまま。
     // 以前は他の命令と同じく戻り先((ls)等)へ切り換えてから出していた(旧も同じ)。
     bool isShellSafeExit = (escPending_ && byte == kEscape) || (leaderXPending_ && byte == 0x03);

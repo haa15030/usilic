@@ -2994,6 +2994,9 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         app.noteUserActivity();
         for (unsigned char c : pasted) app.feedByte(c, std::nullopt);
         anyEventThisFrame = true;
+      } else if (!pasted.empty() && app.pasteIntoShell(pasted)) {  // SHELLのコマンド行(2026-11-06、⌘v)
+        app.noteUserActivity();
+        anyEventThisFrame = true;
       }
     }
     // 2026-08-24 fix (docs/CHANGES.md item 422, see GraphicalDisplay::

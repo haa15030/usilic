@@ -1683,6 +1683,9 @@ class Application {
   bool limitedShellLeaderO_ = false;  // 機能限定SHELLで^Oを押した(次が^Cなら^O^C、COPY)
 
   bool promptActive() const;
+  // 2026-11-06、直接のユーザー依頼(mpr、"SHELLで^O^Y、⌘vが利くようにして"): SHELLのコマンド行のカーソル位置へ
+  // `text`を入れる(実行はしない、改行は空白に、末尾の改行は除く)。SHELLでなければfalse(main.cppの⌘v・^O^Y)。
+  bool pasteIntoShell(const std::string &text);
   // 自身の定義コメント(application.cpp)参照: promptActive()に
   // 加えて、RecentFile/RecentDirectoryの直接エントリ呼び出し状態
   // ――ホバー/たまたまの再描画を抑制する呼び出し元向けであり、
