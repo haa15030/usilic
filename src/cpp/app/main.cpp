@@ -2496,7 +2496,10 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
              "  # Intel MacにはHomebrewを新しく入れられないので、MacPortsを入れる。次の起動で sudo port -N install" +
              packages;
     // -N: 依存するportの"Continue? [Y/n]"を省く(2026-11-06、直接のユーザー報告(mpr、=oa.png)、そこで止まった)。
-    if (useMacPorts) return "sudo port -N install" + packages;
+    // 2>&1 | cat(2026-11-06、直接のユーザー報告(mpr、=oc.png、"1分18秒後にHELPが表示されただけ")): 端末へ出すと
+    // portは進み具合の行を上書きして消し、SHELLでは26行のうち3行のほか空になった。端末でなくすと普通の行で出る
+    // (sudoのパスワードは/dev/ttyから読むので入力できる)。
+    if (useMacPorts) return "sudo port -N install" + packages + " 2>&1 | cat";
     if (brew.empty())
       return "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
              "  # Homebrew未インストール(Xcode Command Line Toolsも必要なら入る)。終わると次は brew install" +
