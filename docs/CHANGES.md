@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1250. **narou2epub: venvやライブラリが無ければ、初めての1回だけ作って入れる(2026-11-07)**
+   - 直接のユーザー報告("^J^E -> https://noc.syousetu.com/n7354my -> No module named 'requests'。これはminiでgit pullした版でも発生")。
+   - **原因**: `~/.local/lib/usilic/venv`を作って`pip install lxml ebooklib requests Pillow`する手順は、tools/narou2epubのコメントとHELPにしか無く、`make install`も最初の起動のインストールも行わない。venvが無いとpython3のままで動き、requestsが無かった。
+   - **変更**: tools/narou2epubで、選んだpythonが`requests, lxml, ebooklib, PIL`を読み込めなければ、venv(`$USILIC_VENV`、無ければ`~/.local/lib/usilic/venv`)を作り(既にあれば作らない)、4つを`pip install`してからそのpythonで動かす。経過は標準エラー(標準出力はEPUBのパスだけ)。HELP原稿(src/HELP_.txt・HELP_en_.txt)に「済んでいなければ初めて使う時に自動で」を足した。url2pdf(playwright)は変えていない。
+   - 確かめたこと: `sh -n`と、この環境のvenvで読み込みの確かめが通ること。**venvの無い環境で入る所は未確認。**
 1249. **-gの^J^Fで、SERIFの今のフォントに下線が無い(2026-11-07)**
    - 直接のユーザー報告("-gで起動するとSERIFにアンダーラインが無い。`ヒラギノ明朝 ProN W3` 等を選んでも次回起動時は元に戻る（アンダーラインも消失）"、"最初の明朝は何になってるの？")。
    - **原因**: 重ね合わせ(端末に重ねる-g)ではなかった。明朝体のフォントは最初に明朝の字を描く時に読み込むが、ゴシック体の間(^Ot、2026-11-02から既定)は`serifFontFor()`が読み込まずに返るので、`currentFontPath(Serif)`が空だった。一覧の下線が無く、選んだフォントもその起動の中だけ下線が出た(historyへは保存されていて、次の起動でも候補の先頭として使われる)。

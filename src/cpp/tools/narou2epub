@@ -12,6 +12,20 @@ python=python3
 for candidate in "$USILIC_VENV/bin/python" "$here/venv/bin/python" "$HOME/.local/lib/usilic/venv/bin/python"; do
   if [ -x "$candidate" ]; then python=$candidate; break; fi
 done
+# 2026-11-07、直接のユーザー報告(^J^Eで"No module named 'requests'"、git pullしたminiでも): venvを作る手順は
+# 上の「準備」のコメントにしか無く、venvが無い(またはライブラリの足りない)環境ではpython3のままで失敗していた。
+# 足りなければ、初めての1回だけvenvを作って入れる(経過は標準エラー。標準出力はEPUBのパスだけ)。
+if [ "$1" != "-h" ] && [ "$1" != "--help" ] &&
+   ! "$python" -c 'import requests, lxml, ebooklib, PIL' 2>/dev/null; then
+  venv=${USILIC_VENV:-$HOME/.local/lib/usilic/venv}
+  echo "narou2epub: $venv へ lxml ebooklib requests Pillow を入れます(初めての1回だけ)" >&2
+  if [ ! -x "$venv/bin/python" ]; then
+    command -v python3 >/dev/null 2>&1 || { echo "narou2epub: python3 が見つかりません" >&2; exit 1; }
+    python3 -m venv "$venv" >&2 || exit $?
+  fi
+  "$venv/bin/python" -m pip install lxml ebooklib requests Pillow >&2 || exit $?
+  python=$venv/bin/python
+fi
 case "$1" in -*) ;; *) set -- -n "$@" ;; esac
 # usilicのSHELL(USILICが立っている、^Jtで打った時も)の中なら、作り終えたら最後のEPUBを`usilic`で親のusilicへ
 # 渡して開く(2026-10-11)。途中の経過は標準エラーなのでそのままSHELLに見える。
