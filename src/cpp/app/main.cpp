@@ -2391,7 +2391,7 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
   // 2026-11-06、直接のユーザー報告(mpr、Intel MacのBig Sur): Homebrewのインストーラが"Homebrew on macOS is only
   // supported on Apple Silicon processors!"で止まり、Intel Macには新しく入れられなくなった。brewが無くMacPortsの
   // portがあれば`sudo port install`で入れる。portの名前は7-Zipが7zip(コマンド名は7zz)、ほかはHomebrewと同じ
-  // (mprの`port info --name`で確認)。IPAフォントのportは無い(`port search ipa`)ので、portの時は案内しない。
+  // (mprの`port info --name`で確認)。IPAフォントのportは無い(`port search ipa`)ので、配布元のzipから(installCommand())。
   // Intel Macでbrewもportも無い時もportの名前で(MacPortsのページを開き、入れた後の起動でもう一度の印の名前のまま入れる)。
 #if defined(__x86_64__)
   const bool useMacPorts = findExecutable("brew").empty();
@@ -2448,7 +2448,7 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
 #ifdef __APPLE__
     // 2026-10-20、直接のユーザー依頼: -gの既定のフォントのIPAゴシック(ipaGothicFontPath())も。font-ipafontはcaskだが、
     // 同じ名前のformulaが無いので、brew installにformulaと並べて書ける。
-    if (!useMacPorts && ipaGothicFontPath().empty()) missing.push_back("font-ipafont");
+    if (ipaGothicFontPath().empty()) missing.push_back("font-ipafont");  // MacPortsでは配布元から(installCommand())
 #endif
     return missing;
   };
@@ -2500,7 +2500,22 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
     // 2>&1 | cat(2026-11-06、直接のユーザー報告(mpr、=oc.png、"1分18秒後にHELPが表示されただけ")): 端末へ出すと
     // portは進み具合の行を上書きして消し、SHELLでは26行のうち3行のほか空になった。端末でなくすと普通の行で出る
     // (sudoのパスワードは/dev/ttyから読むので入力できる)。
-    if (useMacPorts) return "sudo port -N install" + packages + " 2>&1 | cat";
+    // 2026-11-06、直接のユーザー依頼(mpr、"あとはIPAだけだね"→配布元のzipを入れる手順→"足しといて"): MacPortsには
+    // IPAフォントのportが無いので、IPAの配布元のzipを~/Library/Fontsへ(ipag.ttf等、ユーザーごとのフォント、sudo不要)。
+    // Homebrewのfont-ipafontと同じく先に(入りしだい-gのフォントをIPAゴシックに替える、runGuiPhase())、;でつなぐ。
+    if (useMacPorts) {
+      std::string command;
+      const std::string font = " font-ipafont";
+      if (std::size_t at = packages.find(font); at != std::string::npos) {
+        packages.erase(at, font.size());
+        command = "curl -fL -o /tmp/IPAfont00303.zip https://moji.or.jp/wp-content/ipafont/IPAfont/IPAfont00303.zip"
+                  " && unzip -o -q /tmp/IPAfont00303.zip -d /tmp && mkdir -p ~/Library/Fonts"
+                  " && cp /tmp/IPAfont00303/*.ttf ~/Library/Fonts/";
+      }
+      if (!packages.empty())
+        command += (command.empty() ? "" : "; ") + std::string("sudo port -N install") + packages + " 2>&1 | cat";
+      return command;
+    }
     // 2026-11-06、直接のユーザー報告(mpr、=oe.png): 以前は後ろに"  # Homebrew未インストール(…)"の注釈を付けていたが、
     // zshは打ち込んだ行の#を注釈として扱わず(interactivecommentsが既定で無効)、"zsh: no matches found"で
     // インストーラが一度も実行されていなかった。案内のコマンドには注釈を付けない。

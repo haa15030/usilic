@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1247. **最初の起動のインストール: MacPortsの時はIPAフォントを配布元のzipから~/Library/Fontsへ(2026-11-06)**
+   - 直接のユーザー報告・依頼(mpr): fontconfigが入り^J^FのFONTは`SF NS Mono Light`、"あとはIPAだけだね。"→配布元のzipを入れる手順を示した後"足しといて。"
+   - **変更**: MacPortsの時もIPAゴシック(`ipaGothicFontPath()`)を調べ、無ければ`curl -fL -o /tmp/IPAfont00303.zip https://moji.or.jp/wp-content/ipafont/IPAfont/IPAfont00303.zip && unzip -o -q … -d /tmp && mkdir -p ~/Library/Fonts && cp /tmp/IPAfont00303/*.ttf ~/Library/Fonts/`を、Homebrewのfont-ipafontと同じく先に(`;`でport installへつなぐ)。sudo不要。HELP(src/HELP_.txt・HELP_en_.txtの「必要なソフトウェア」)も合わせた。
+   - 確かめたこと: 同じcurl・unzip・cpを作業用のフォルダで実行し、ipag.ttf・ipagp.ttf・ipam.ttf・ipamp.ttfが出ること。mpiで`make usilic`が通ること。
 1246. **最初の起動のインストール: MacPortsの時はfc-list(fontconfig)も調べる(2026-11-06)**
    - 直接のユーザー質問・依頼: "必要なアプリの有無はwhichで調べているわけではない？"(findExecutable()でPATHとHomebrew・MacPortsの場所を見ている、ただしfc-listは対象外だった)→"足しといて。"
    - **変更**: `offerGroffInstallOnce()`で、MacPortsの時だけ`fc-list`→`fontconfig`を調べる対象に足した(HomebrewのSDL2なら一緒に入る)。項目1245のフォルダを調べる仕組みは予備として残す。
