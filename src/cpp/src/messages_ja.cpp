@@ -50,6 +50,7 @@ const std::vector<std::pair<std::string, std::string>> &exactMessages() {
       {"Not defining kbd macro", "キーボードマクロを記録していません"},
       {"Not enough buffer", "バッファが足りません"},
       {"Not found in HELP", "HELP に見つかりません"},
+      {"KEY needs groff 1.20 or later", "KEY には groff 1.20 以降が必要です"},
       {"Open only", "Open だけです"},
       {"Opened in a new window", "新しいウィンドウで開きました"},
       {"Parent not reachable", "親に届きません"},

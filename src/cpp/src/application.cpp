@@ -20595,6 +20595,7 @@ bool Application::startKey() {
   // Pagerでは「行頭^I」、FileManagerでは「：」で検索後の文字列でKEYを構成"): ページャーとして起動した時は、
   // 行頭がタブの行で切る(HELPの原稿にはまだ行頭のタブが無いので、今は一覧が空になる)。
   bool pagerKeys = pagerLaunch_;
+  bool noPagerKeys = pagerKeys && lines.empty();  // 下の知らせ参照(splitの前に)
   cutSyntax_ = pagerKeys ? GrepSyntax::Basic : GrepSyntax::Fixed;
   if (!cutMode_.split(lines, pagerKeys ? "^\t" : "\xEF\xBC\x9A", cutSyntax_)) return false;
   cutMode_.dropLeadingFiller();
@@ -20605,6 +20606,10 @@ bool Application::startKey() {
   }
   currentMode_ = ApplicationMode::Cut;
   activeView().redraw();
+  // 2026-11-06、直接のユーザー報告(mpr、Big Sur付属のgroff 1.19.2でHELPの^Kが"--")・指摘("それだとページャー限定が
+  // できないのでは？"、「：」の行で代わりにする案はやめた): ページャーのKEYは、groffで組んだHELP(行頭がタブの行)が
+  // 要る。平文のHELPで代わりにしていて空になった時は、その旨を知らせる(main.cppは1.20より古いgroffを無いと数える)。
+  if (noPagerKeys) showTransientNotice(activeView(), "KEY needs groff 1.20 or later");
   return true;
 }
 

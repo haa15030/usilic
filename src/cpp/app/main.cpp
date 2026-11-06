@@ -2419,15 +2419,27 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
   const std::vector<std::pair<std::string, std::string>> tools = {
       {"groff", "groff"}, {"mg", "mg"}, {"info", "info"}, {"7z", "p7zip-full"}, {"w3m", "w3m"}, {"unzip", "unzip"}};
 #endif
+  // 2026-11-06、直接のユーザー報告(mpr、Big Sur付属のgroff 1.19.2でHELPの^Kが"--"): groffの-Kutf8(preconv)は1.20から。
+  // それより古いgroffはHELP.1を組めない(平文のHELPになりKEYが空)ので、無いのと同じに数える。
+  auto groffUsable = []() {
+    std::string groff = findExecutable("groff");
+    if (groff.empty()) return false;
+    fm::ChildProcess::Result result = fm::ChildProcess::run({groff, "--version"});
+    std::size_t at = result.ok ? result.output.find("version ") : std::string::npos;
+    if (at == std::string::npos) return true;  // 版が読めなければ、使えるものとみなす(今まで通り)
+    int major = 0, minor = 0;
+    if (std::sscanf(result.output.c_str() + at + 8, "%d.%d", &major, &minor) != 2) return true;
+    return major > 1 || (major == 1 && minor >= 20);
+  };
   // 見つからないパッケージ(全部あれば空)。
 #ifdef __APPLE__
-  auto missingPackages = [tools, useMacPorts]() {
+  auto missingPackages = [tools, useMacPorts, groffUsable]() {
 #else
-  auto missingPackages = [tools]() {
+  auto missingPackages = [tools, groffUsable]() {
 #endif
     std::vector<std::string> missing;
     for (const auto &tool : tools) {
-      bool found = !findExecutable(tool.first).empty();
+      bool found = tool.first == "groff" ? groffUsable() : !findExecutable(tool.first).empty();
       if (tool.first == "7zz" || tool.first == "7z")
         found = !findExecutable("7z").empty() || !findExecutable("7zz").empty();
       if (!found) missing.push_back(tool.second);
@@ -5395,8 +5407,13 @@ int main(int argc, char **argv) {
   {
     std::string path = std::getenv("PATH") ? std::getenv("PATH") : "/usr/bin:/bin:/usr/sbin:/sbin";
     // 2026-11-06: MacPortsの/opt/local/binも(Intel MacではHomebrewが新しく入れられない、offerGroffInstallOnce()参照)。
-    for (const char *dir : {"/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"})
-      if ((":" + path + ":").find(std::string(":") + dir + ":") == std::string::npos) path += std::string(":") + dir;
+    // 2026-11-06、直接のユーザー報告(mpr、Big Sur、HELPで^Kが"--"): 後ろに足していたので、Finderからの起動では
+    // /usr/binのBig Sur付属の古いgroff(1.19.2、-Kutf8が無い)が先に見つかっていた。ターミナル(Homebrewのshellenv・
+    // MacPortsの~/.zprofile)と同じく前に足す。
+    std::string front;
+    for (const char *dir : {"/opt/homebrew/bin", "/opt/local/bin", "/usr/local/bin"})
+      if ((":" + path + ":").find(std::string(":") + dir + ":") == std::string::npos) front += std::string(dir) + ":";
+    path = front + path;
     ::setenv("PATH", path.c_str(), 1);
   }
   // 2026-10-20、直接のユーザー報告(.usilicを消して.appから起動すると"英語モードで始まる"): FinderからはLANGも無く、

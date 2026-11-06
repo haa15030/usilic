@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1248. **Big Sur付属の古いgroff(1.19.2)を無いと数える、FinderからのPATHはパッケージの場所を前に、ページャーのKEYが空なら知らせる(2026-11-06)**
+   - 直接のユーザー報告(mpr、Big Sur): "直後のHELP画面で^Kしたら`--`になった"、`groff --version`は1.19.2。HELP・KEYはHELP.1を`groff -Kutf8`で組むが、`-K`(preconv)はgroff 1.20から。組めずに平文のHELPで代わりにし、ページャーのKEY(行頭がタブの行)が空になった(項目の2026-11-01、FreeBSDでgroffが無かった時と同じ)。
+   - **変更**: `offerGroffInstallOnce()`で、groffの`--version`が1.20より古ければ無いと数える(最初の起動で新しいgroffを入れる、ふだんの起動では「見つかりません: groff」)。macOSのFinderからの起動で足すHomebrew・MacPortsの場所を、後ろではなく前に(ターミナルのshellenv・~/.zprofileと同じ、後ろだと/usr/binの古いgroffが先に見つかる)。
+   - ユーザーの質問("平文のHELPには'：'は無いの？")→ある。「：」の行で代わりにする案は、ユーザーの指摘("それだとページャー限定ができないのでは？")でやめ、ページャーのKEYが空の時に「KEY には groff 1.20 以降が必要です」と知らせる。
+   - 確かめたこと: mpiで`make usilic`が通ること。mprの実機で確認待ち(すぐ直すには`sudo port install groff`)。
 1247. **最初の起動のインストール: MacPortsの時はIPAフォントを配布元のzipから~/Library/Fontsへ(2026-11-06)**
    - 直接のユーザー報告・依頼(mpr): fontconfigが入り^J^FのFONTは`SF NS Mono Light`、"あとはIPAだけだね。"→配布元のzipを入れる手順を示した後"足しといて。"
    - **変更**: MacPortsの時もIPAゴシック(`ipaGothicFontPath()`)を調べ、無ければ`curl -fL -o /tmp/IPAfont00303.zip https://moji.or.jp/wp-content/ipafont/IPAfont/IPAfont00303.zip && unzip -o -q … -d /tmp && mkdir -p ~/Library/Fonts && cp /tmp/IPAfont00303/*.ttf ~/Library/Fonts/`を、Homebrewのfont-ipafontと同じく先に(`;`でport installへつなぐ)。sudo不要。HELP(src/HELP_.txt・HELP_en_.txtの「必要なソフトウェア」)も合わせた。
