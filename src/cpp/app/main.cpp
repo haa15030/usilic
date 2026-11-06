@@ -2493,9 +2493,10 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
     // (macOSの版に合う.pkgを選んで入れる。入れた後の起動で、もう一度の印の分をport installで入れる)。
     if (useMacPorts && findExecutable("port").empty())
       return "open https://www.macports.org/install.php"
-             "  # Intel MacにはHomebrewを新しく入れられないので、MacPortsを入れる。次の起動で sudo port install" +
+             "  # Intel MacにはHomebrewを新しく入れられないので、MacPortsを入れる。次の起動で sudo port -N install" +
              packages;
-    if (useMacPorts) return "sudo port install" + packages;
+    // -N: 依存するportの"Continue? [Y/n]"を省く(2026-11-06、直接のユーザー報告(mpr、=oa.png)、そこで止まった)。
+    if (useMacPorts) return "sudo port -N install" + packages;
     if (brew.empty())
       return "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
              "  # Homebrew未インストール(Xcode Command Line Toolsも必要なら入る)。終わると次は brew install" +

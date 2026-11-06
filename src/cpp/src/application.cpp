@@ -4376,6 +4376,17 @@ bool Application::limitedShellAllows(int byte, std::optional<KeyInput::SpecialKe
   if (special) return refuse();  // 矢印等
   bool installing = shellOffer_.has_value();  // インストールの案内(pollShellOfferFollowUp())が続いている間
   bool printable = byte >= 0x20;  // DEL(0x7f)・UTF-8の字も
+  // 2026-11-06、直接のユーザー依頼(mpr、"SHELLのメッセージをコピペしようと^O^Cしたら「ページャーでは使えません」"、
+  // "^O^Cと^Iも足してみて"): ^O^C(COPY)は、インストールの間も(エラーを写せるよう)。
+  if (std::exchange(limitedShellLeaderO_, false)) {
+    if (byte == 0x03) handleCommand(Command::EnterCopyMode);
+    else refuse();
+    return false;
+  }
+  if (byte == 0x0f) {
+    limitedShellLeaderO_ = true;
+    return false;
+  }
   if (installing) {
     limitedShellLeaderJ_ = false;
     return printable || byte == 0x08 || byte == kCarriageReturn || refuse();
@@ -4395,9 +4406,10 @@ bool Application::limitedShellAllows(int byte, std::optional<KeyInput::SpecialKe
   switch (byte) {  // コマンド行の編集・^C(割り込み)・^D・^G(EPUBへ戻る)・^P/^N(出力をたどる)・^M
     case 0x01: case 0x02: case 0x03: case 0x04: case 0x05: case 0x06: case kControlG: case 0x08: case 0x0b:
     case kCarriageReturn: case 0x0e: case 0x10: case 0x15: case kControlW: case 0x19: case kControlUnderscore:
+    case 0x09:  // ^I(補完、2026-11-06、上の^O^Cと同じユーザー依頼。(ls)へは行けないので補完は害が無い)
       return true;
     default:
-      return refuse();  // ^[・^X・^O・^R・^T・^I・^Q等のusilicのキー
+      return refuse();  // ^[・^X・^R・^T・^Q等のusilicのキー
   }
 }
 

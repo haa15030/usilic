@@ -1680,6 +1680,7 @@ class Application {
   bool limitedShellAllows(int byte, std::optional<KeyInput::SpecialKey> special);  // setFirstStartPager()参照
   bool firstStartPager_ = false;
   bool limitedShellLeaderJ_ = false;  // 機能限定SHELLで^Jを押した(次がsなら^Js)
+  bool limitedShellLeaderO_ = false;  // 機能限定SHELLで^Oを押した(次が^Cなら^O^C、COPY)
 
   bool promptActive() const;
   // 自身の定義コメント(application.cpp)参照: promptActive()に
