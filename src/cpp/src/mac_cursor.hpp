@@ -70,6 +70,10 @@ void activateThisApplication();
 // (osascript、終わるまで待つ)。
 void forceActivateThisApplication();
 
+// 前面のアプリがこのプロセスか(NSWorkspaceのfrontmostApplication、2026-11-07)。GraphicalDisplay::raise()が
+// forceActivateThisApplication()を呼ぶかの判定に使う。macOS以外(mac_cursor_stub.cpp)はtrue。
+bool thisApplicationIsFrontmost();
+
 // 2026-11-06、直接のユーザー報告(mpr、Big Sur・MacPortsのSDL2、JISキーボード): -gでCtrl+[が^](→(ls))、Ctrl+@が^[
 // になった(ターミナルのviでは正しい)。SDL2がJISの記号キーをUS配列の位置の字(@の位置の"["等)として報告していた。
 // 接続しているキーボードがJISか(KBGetLayoutType())。GraphicalDisplayは、JISならCtrlと組み合わせた記号キーを

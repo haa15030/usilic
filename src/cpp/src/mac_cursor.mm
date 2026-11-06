@@ -73,6 +73,11 @@ void activateThisApplication() {
   [NSApp activateIgnoringOtherApps:YES];
 }
 
+bool thisApplicationIsFrontmost() {
+  NSRunningApplication *front = [[NSWorkspace sharedWorkspace] frontmostApplication];
+  return front && front.processIdentifier == getpid();
+}
+
 void forceActivateThisApplication() {
   NSString *script = [NSString
       stringWithFormat:@"tell application \"System Events\" to set frontmost of (first process whose unix id is %d) to true",

@@ -4476,9 +4476,12 @@ void GraphicalDisplay::raise() {
 #ifdef __APPLE__
   // 2026-10-31(forceActivateThisApplication()参照): 少し待っても(0.3秒)入力のフォーカスが来なければ、System Events
   // に前面にしてもらう。
+  // 2026-11-07、直接のユーザー報告("^Og連打でCUIが上に来るバグが再発してる"): 以前は窓の入力のフォーカス
+  // (SDL_WINDOW_INPUT_FOCUS)で見ていたが、macOS 14からはアプリが前面でなくても、その窓がアプリの中のキーの窓に
+  // なるだけで立つことがあり、端末が前のまま前面化を飛ばしていた。前面のアプリがこのプロセスかで見る。
   for (int waited = 0; waited < 30; waited++) {
     SDL_PumpEvents();
-    if (SDL_GetWindowFlags(impl_->window) & SDL_WINDOW_INPUT_FOCUS) return;
+    if (thisApplicationIsFrontmost() && (SDL_GetWindowFlags(impl_->window) & SDL_WINDOW_INPUT_FOCUS)) return;
     SDL_Delay(10);
   }
   forceActivateThisApplication();

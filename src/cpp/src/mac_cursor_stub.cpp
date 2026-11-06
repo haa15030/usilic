@@ -17,6 +17,8 @@ void activateThisApplication() {}
 
 void forceActivateThisApplication() {}
 
+bool thisApplicationIsFrontmost() { return true; }
+
 bool macKeyboardIsJis() { return false; }
 
 }  // namespace fm
