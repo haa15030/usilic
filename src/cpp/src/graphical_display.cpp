@@ -1165,12 +1165,16 @@ namespace {
 // 持たなければnullptr(ふだんのフォントで描く)。Implを要するのでcachedGlyphTexture()と
 // 同じくテンプレートにしてある。
 template <typename ImplT>
-TTF_Font *serifFontFor(ImplT &impl, unsigned int codepoint) {
-  if (impl.serifSuppressed) return nullptr;  // GraphicalDisplay::setSerifSuppressed()参照(ゴシック体で描く)
+void ensureSerifFontLoaded(ImplT &impl) {
   if (!impl.serifFont && !impl.serifFontMissing) {
     impl.serifFont = loadSerifFont(impl.currentFontPointSize, &impl.serifFontPath);
     impl.serifFontMissing = impl.serifFont == nullptr;
   }
+}
+template <typename ImplT>
+TTF_Font *serifFontFor(ImplT &impl, unsigned int codepoint) {
+  if (impl.serifSuppressed) return nullptr;  // GraphicalDisplay::setSerifSuppressed()参照(ゴシック体で描く)
+  ensureSerifFontLoaded(impl);
   if (!impl.serifFont || !glyphProvidedByFont(impl.serifFont, codepoint)) return nullptr;
   return impl.serifFont;
 }
@@ -3129,7 +3133,10 @@ std::string GraphicalDisplay::currentFontPath(FontKind kind) const {
     case FontKind::SansSerif:
       return impl_->fallbackFontPath;
     case FontKind::Serif:
-      serifFontFor(*impl_, 0x3042);
+      // 2026-11-07、直接のユーザー報告("-gで起動するとSERIFにアンダーラインが無い"): serifFontFor()はゴシック体の
+      // 間(^Ot、2026-11-02から既定)は読み込まずに返るので、^J^Fの一覧の下線・子へ渡すフォントが空だった。
+      // ゴシック体の間でも読み込んでから答える。
+      ensureSerifFontLoaded(*impl_);
       return impl_->serifFontPath;
   }
   return {};

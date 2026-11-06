@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1249. **-gの^J^Fで、SERIFの今のフォントに下線が無い(2026-11-07)**
+   - 直接のユーザー報告("-gで起動するとSERIFにアンダーラインが無い。`ヒラギノ明朝 ProN W3` 等を選んでも次回起動時は元に戻る（アンダーラインも消失）"、"最初の明朝は何になってるの？")。
+   - **原因**: 重ね合わせ(端末に重ねる-g)ではなかった。明朝体のフォントは最初に明朝の字を描く時に読み込むが、ゴシック体の間(^Ot、2026-11-02から既定)は`serifFontFor()`が読み込まずに返るので、`currentFontPath(Serif)`が空だった。一覧の下線が無く、選んだフォントもその起動の中だけ下線が出た(historyへは保存されていて、次の起動でも候補の先頭として使われる)。
+   - **変更**: `currentFontPath(Serif)`は、ゴシック体の間でも明朝体のフォントを読み込んでから答える(`ensureSerifFontLoaded()`)。-gの子へ渡すフォント(GuiFrame::fonts)も同じく空でなくなる。
+   - 最初の明朝体(何も選んでいない時): macOSは`/System/Library/Fonts/ヒラギノ明朝 ProN.ttc`(ヒラギノ明朝 ProN W3)、Debian系はNoto Serif CJK・IPAex明朝等、どれも無ければfontconfig(IPA明朝を先に)。
+   - 確かめたこと: `make usilic`・`make install`が通ること。**-gの窓はここでは開けず、一覧は未確認。**
 1248. **Big Sur付属の古いgroff(1.19.2)を無いと数える、FinderからのPATHはパッケージの場所を前に、ページャーのKEYが空なら知らせる(2026-11-06)**
    - 直接のユーザー報告(mpr、Big Sur): "直後のHELP画面で^Kしたら`--`になった"、`groff --version`は1.19.2。HELP・KEYはHELP.1を`groff -Kutf8`で組むが、`-K`(preconv)はgroff 1.20から。組めずに平文のHELPで代わりにし、ページャーのKEY(行頭がタブの行)が空になった(項目の2026-11-01、FreeBSDでgroffが無かった時と同じ)。
    - **変更**: `offerGroffInstallOnce()`で、groffの`--version`が1.20より古ければ無いと数える(最初の起動で新しいgroffを入れる、ふだんの起動では「見つかりません: groff」)。macOSのFinderからの起動で足すHomebrew・MacPortsの場所を、後ろではなく前に(ターミナルのshellenv・~/.zprofileと同じ、後ろだと/usr/binの古いgroffが先に見つかる)。
