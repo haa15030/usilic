@@ -2398,8 +2398,11 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
 #else
   const bool useMacPorts = findExecutable("brew").empty() && !findExecutable("port").empty();
 #endif
-  const std::vector<std::pair<std::string, std::string>> tools = {
+  std::vector<std::pair<std::string, std::string>> tools = {
       {"groff", "groff"}, {"mg", "mg"}, {"info", "texinfo"}, {"7zz", useMacPorts ? "7zip" : "sevenzip"}, {"w3m", "w3m"}};
+  // 2026-11-06、直接のユーザー依頼(mprで^J^Fが「フォントが見つかりません(fc-list)」、"足しといて"): fc-list(^J^Fの一覧・
+  // IPAゴシックを探す)はHomebrewのSDL2なら一緒に入るが、MacPortsでは入らないので、MacPortsの時だけ調べる。
+  if (useMacPorts) tools.push_back({"fc-list", "fontconfig"});
 #elif defined(__MSYS__) || defined(__CYGWIN__)
   // MSYS2(2026-10-05、.steering/20261005-windows-gitbash/): MSYS2のmsysのリポジトリにあるものだけ
   // (mg・w3mは無い)。infoはtexinfo、7zはp7zipに入っている。

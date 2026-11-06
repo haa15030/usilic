@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1246. **最初の起動のインストール: MacPortsの時はfc-list(fontconfig)も調べる(2026-11-06)**
+   - 直接のユーザー質問・依頼: "必要なアプリの有無はwhichで調べているわけではない？"(findExecutable()でPATHとHomebrew・MacPortsの場所を見ている、ただしfc-listは対象外だった)→"足しといて。"
+   - **変更**: `offerGroffInstallOnce()`で、MacPortsの時だけ`fc-list`→`fontconfig`を調べる対象に足した(HomebrewのSDL2なら一緒に入る)。項目1245のフォルダを調べる仕組みは予備として残す。
+   - ユーザーの質問("FreeBSDではusilic自身がフォルダを調べるの？"): FreeBSDはX・Xfceの依存でfontconfigが入るのでfc-listで、予備はfc-listから何も取れない時だけ(サブフォルダを見ないので、FreeBSDの/usr/local/share/fonts/*/ではほぼ見つからない)、と説明。
+   - 確かめたこと: mpiで`make usilic`が通ること。
 1245. **^J^F: fc-listが無ければフォントのフォルダを調べる(2026-11-06)**
    - 直接のユーザー報告(mpr、MacPortsのSDL2): "^J^Fが「フォントがみつかりません（fc-list）」。IPAが無いから？" IPAではなく、fc-list(fontconfig)が無いため(HomebrewのSDL2では一緒に入るが、MacPortsのlibsdl2・libsdl2_ttfでは入らない)。すぐ直すには`sudo port install fontconfig`。
    - **変更**: `buildFontList()`で、fc-listから何も取れなければ、Windowsのネイティブと同じ`GraphicalDisplay::scanFontFiles()`(SDL_ttfで0番目の書体を開き、等幅か・「あ」があるかを調べる)でフォントのフォルダを調べる(macOSは/System/Library/Fonts・その下のSupplemental・/Library/Fonts・~/Library/Fonts、ほかは/usr/share/fonts等、サブフォルダは見ない)。scanFontFiles()をWindows限定から外した。名前が「.」で始まる隠しのフォント(SF Mono等)は出ない。
