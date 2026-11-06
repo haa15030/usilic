@@ -5329,6 +5329,11 @@ void applyRcOptions(fm::Configuration &configuration, const std::vector<RcOption
         section = "LINE";
         saved.push_back(option.values.front());
         break;
+      case 'a':  // 2026-11-06(Configuration::overrideLocateNetwork()参照): 値は取らない
+        configuration.overrideLocateNetwork(true);
+        section = "LOCATE";
+        saved.push_back("on");
+        break;
       default:
         continue;
     }
@@ -5440,7 +5445,8 @@ int main(int argc, char **argv) {
                    "  -w wait       macro WAIT (x 10 msec)\n"
                    "  -b MB         BUFFER size (1-100)\n"
                    "  -l lines      history LINE count\n"
-                   "  -S -D -F -W -B -L   same as lowercase, and also write it to ~/.usilic/usilicrc\n"
+                   "  -a            LOCATE: ^Jl also scans network volumes\n"
+                   "  -S -D -F -W -B -L -A   same as lowercase, and also write it to ~/.usilic/usilicrc\n"
                    "  -e HELP.1     write HELP.1 as an EPUB to stdout and exit\n";
       return 0;
     } else if (std::strlen(argv[i]) == 2 && std::strchr("sSdD", argv[i][1]) && argv[i][0] == '-') {
@@ -5471,6 +5477,9 @@ int main(int argc, char **argv) {
         return 1;
       }
       rcOptions.push_back(RcOption{letter, {argv[++i]}});
+    } else if (std::strcmp(argv[i], "-a") == 0 || std::strcmp(argv[i], "-A") == 0) {
+      // 2026-11-06、直接のユーザー依頼(LOCATE節、Configuration::overrideLocateNetwork()参照): 値は取らない。
+      rcOptions.push_back(RcOption{argv[i][1], {}});
     } else if (std::strcmp(argv[i], "-m") == 0) {
       // 2026-09-20追加、直接のユーザー依頼("usilicに裏オプションを
       // 作ってほしい。具体的には、`usilic -m src/QUICK.txt` >

@@ -186,6 +186,16 @@ WAIT
 
 	1
 
+LOCATE
+# 書式: on|off
+#
+# ^Jl(LOCATE: データベース作成)で、ホームと外付けのボリューム(macOS は /Volumes、
+# FreeBSD は /media・/mnt)に加えて、ネットワークのボリューム(smbfs 等)も調べるか。
+# 調べるとデータベースの作成に時間がかかり、相手が切れていると止まることがあります。
+# usilic -a で試し、usilic -A でここへ書き込めます。
+
+	off
+
 CP
 # 書式: cp  (option)
 #

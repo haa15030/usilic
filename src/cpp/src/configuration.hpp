@@ -260,6 +260,10 @@ class Configuration {
   // ついては列挙型自身のコメント参照(ユーザーからの直接の判断:
   // 「macOS限定項目は、すでにGUIもあるので同様でいい」)。
   void setUserLocateDatabasePath(const std::string &path);
+  // 2026-11-06、直接のユーザー依頼(usilicrcのLOCATE節、usilic -a/-A): ^Jlでホーム用のデータベースを作る時、
+  // ネットワークのボリューム(smbfs等)も調べるか。既定はoff。
+  void overrideLocateNetwork(bool on);
+  bool locateNetwork() const { return locateNetwork_; }
 
   // -- 役割ベースの組み込みコマンド(ls/du/cp/mv/rm/groff/man/... ) --
   // usilicrcディレクティブで上書きできるのはCp/Mv/Rmだけ(CP/MV/RM
@@ -430,6 +434,9 @@ class Configuration {
   int bufferSizeLimitBytes_ = 64 * 1024 * 1024;
   mutable bool bufferLimitHit_ = false;  // noteBufferLimitHit()参照
   int historyRetentionCount_ = 0;  // 0は無制限(History自身のコンストラクタのコメント参照)
+  bool locateNetwork_ = false;  // overrideLocateNetwork()参照
+  std::string userLocateDatabasePath_;  // setUserLocateDatabasePath()の値(LOCATE節・-aで作り直す)
+  void rebuildUserLocateCommands();
   int waitIntervalMicros_ = 10000;  // conf_wait()の静的k_wait初期化値は100000(1秒)。2026-10-18、直接のユーザー依頼で既定を1(10 msec)に
   int columnThreshold_ = 8;  // columnThreshold()自身のコメント参照
   std::vector<long> speedValues_;  // SPEED

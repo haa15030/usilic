@@ -33408,10 +33408,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1243. **LOCATE: ネットワークのボリュームを調べるかをusilicrcのLOCATE節・-a/-Aで、FreeBSDもmacOSと同じ仕組みに(2026-11-06)**
+   - 直接のユーザー依頼: "smbfsを外すかどうかはまだ答えてなかったよ。それって起動オプションでは設定できない？"→WAIT等と同じ形(usilicrcの節、小文字で試し大文字で書き込む)の案に"それでいい。FreeBSDのLOCATEも同じでよろしく。"
+   - **変更**: usilicrcに`LOCATE`節(`on|off`、既定off、キーワードの31番)。`usilic -a`でその回だけon、`-A`でusilicrcへ`on`を書く(値は取らない)。usilicrcを新しい版で置き換える時も引き継ぐ節に足した。`Configuration::rebuildUserLocateCommands()`がホーム用のデータベースの作り方を組み立てる(LOCATE節・-aで作り直す)。
+   - FreeBSD: macOSと同じホーム用のデータベース(`find -s` | `/usr/libexec/locate.mklocatedb`)を使い、^Jl(UpdateDb)も`/usr/libexec/locate.updatedb`に(以前はLinuxの`updatedb`)。外付けは/media・/mnt、ネットワークはsmbfs・nfs(fusefsはexFATのUSB等にも使うので外さない)、並びが崩れうるので`-presort`を付けない。
+   - HELP(src/HELP_.txt・HELP_en_.txtの起動オプション)・`-h`にも`-a`/`-A`。
+   - 確かめたこと: mpiで`make usilic`が通り、`-h`に出ること。FreeBSDはビルドも未確認。
 1242. **LOCATE(macOS): ^Jlで作るホーム用のデータベースに/Volumesも(2026-11-06)**
    - 直接のユーザー依頼: "LOCATEで気になるのはVolumes/を探してくれない点。これって直せる？" システムのデータベース(週1回rootが作る)は起動ディスクだけ、usilicの`~/.usilic/locate.db`は`$HOME`だけだった。
    - **変更**(`Configuration::setUserLocateDatabasePath()`): `find -s "$HOME" /Volumes`に。ネットワークのボリューム(smbfs・afpfs・nfs・webdav)・Time Machine(Backups.backupdb)・.Spotlight-V100・.fseventsd・.Trashes・.DocumentRevisions-V100は`-prune`で除く。macOSのfindの`-fstype local`はmpiでローカルのapfsまで外したので、名前で指定した。起動ディスクの/Volumes/Macintosh HDは/へのリンクでfindはたどらない。
-   - ユーザーの質問("ネットワークのボリュームはそもそも辿れない？"): たどれるが、遅い・切れると止まる・中身が古くなるので外した、と説明。入れるかは確認中。
+   - ユーザーの質問("ネットワークのボリュームはそもそも辿れない？"): たどれるが、遅い・切れると止まる・中身が古くなるので外した、と説明。入れるかは項目1243で設定に。
    - 確かめたこと: mpiで、同じfindの式が/Volumes/haa15030(smbfs)だけを外し、/Volumes/TESTの中身をlocate.mklocatedb経由で引けること。`make usilic`が通ること。
 1241. **-g(macOS): JISキーボードのCtrl+記号キーを位置から決める(2026-11-06)**
    - 直接のユーザー報告(mpr、Big Sur・ことえり・JISキーボード、MacPortsのSDL2): "(ls)以外の画面（HELPも該当）で^[すると(ls)になる"、"^@でハイライト表示が始まらない"、"いずれもmini、mpiでは起きない"。Escキーは正常、テキストエディットの字は刻印どおり、ターミナルのviでは^[も正常。"^[は^]として認識してそうだね。"

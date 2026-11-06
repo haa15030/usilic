@@ -152,7 +152,7 @@ std::string updateUserIfOlder(const std::string &home) {
   // (Windowsではzipを展開し直すたび)で起動すると消えていた。^J^FのFONT・SANS-SERIF・SERIFは2026-10-30に
   // ~/.usilic/historyへ移した(前の値はmain.cppが置き換える前に一度だけ移す)。
   std::string userText = readFile(user), installedText = readFile(*installed), merged = installedText;
-  for (const char *section : {"SPEED", "DRAG", "WAIT", "BUFFER", "LINE"}) {
+  for (const char *section : {"SPEED", "DRAG", "WAIT", "BUFFER", "LINE", "LOCATE"}) {
     auto mine = sectionValues(userText, section);
     if (mine && *mine != sectionValues(installedText, section).value_or(std::vector<std::string>{}))
       merged = replaceSection(merged, section, *mine, installedText);

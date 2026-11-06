@@ -77,6 +77,8 @@ const std::vector<std::string> &directiveKeywords() {
       "LETTER-SPACING",
       // 2026-10-22追加(アイコンからの起動だけのFONT・LINE-HEIGHT・LETTER-SPACING)、2026-10-30廃止。
       "ICON-FONT", "ICON-LINE-HEIGHT", "ICON-LETTER-SPACING",
+      // 2026-11-06追加(overrideLocateNetwork()参照)。
+      "LOCATE",
   };
   return kKeywords;
 }
@@ -353,7 +355,7 @@ Configuration::Configuration() {
   // として実行すると、依然としておそらく権限エラーで失敗する。ただ
   // それは「command not found」ではなく、正しいバイナリからの本物の
   // エラーというだけである。
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__FreeBSD__)  // FreeBSDも(2026-11-06、updatedbはLinuxのコマンド)
   roleCommands_[ConfiguredRole::UpdateDb] = {{"/usr/libexec/locate.updatedb"}, std::nullopt};
 #else
   roleCommands_[ConfiguredRole::UpdateDb] = {{"updatedb"}, std::nullopt};
@@ -666,6 +668,10 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         if (auto v = nextDigitToken(lines, i)) historyRetentionCount_ = std::atoi(v->c_str());
         break;
       }
+      case 31: {  // LOCATE(overrideLocateNetwork()参照): on/off
+        if (auto v = nextDataLine(lines, i)) overrideLocateNetwork(v->rfind("on", 0) == 0);
+        break;
+      }
       case 10: {  // WAIT
         if (auto v = nextDigitToken(lines, i)) waitIntervalMicros_ = std::atoi(v->c_str()) * 10000;
         break;
@@ -962,7 +968,21 @@ std::vector<std::string> Configuration::shellArgv(const std::string &envShell) c
 }
 
 void Configuration::setUserLocateDatabasePath(const std::string &path) {
-#ifdef __APPLE__
+  userLocateDatabasePath_ = path;
+  rebuildUserLocateCommands();
+}
+
+void Configuration::overrideLocateNetwork(bool on) {
+  locateNetwork_ = on;
+  rebuildUserLocateCommands();
+}
+
+void Configuration::rebuildUserLocateCommands() {
+#if defined(__APPLE__) || defined(__FreeBSD__)
+  // 2026-11-06、直接のユーザー依頼("FreeBSDのLOCATEも同じでよろしく"): FreeBSDにもBSDの/usr/libexec/locate.mklocatedb・
+  // find -sがあるので、macOSと同じホーム用のデータベースを使う。
+  const std::string &path = userLocateDatabasePath_;
+  if (path.empty()) return;
   roleCommands_[ConfiguredRole::LocateUserDb] = {{"locate", "-d", path}, std::nullopt};
   // /usr/libexec/locate.updatedb自身の実際のパイプライン
   // (`find -s $SEARCHPATHS ... -or -print | $mklocatedb -presort >
@@ -986,16 +1006,29 @@ void Configuration::setUserLocateDatabasePath(const std::string &path) {
   // 遅く、切れていると止まる。macOSのfindの`-fstype local`はローカルのapfsまで外したので名前で)・Time Machine
   // (Backups.backupdb、丸ごと重複)・各ボリュームの管理用のフォルダは除く。起動ディスクの/Volumes/Macintosh HDは
   // /へのリンクで、findはたどらない。"/Users/…"は"/Volumes/…"より前なので、-presortの並びも保たれる。
-  std::string tmpPath = path + ".tmp";
-  std::string script = "find -s \"$HOME\" /Volumes \\( -fstype smbfs -o -fstype afpfs -o -fstype nfs -o -fstype webdav "
-                       "-o -name Backups.backupdb -o -name .Spotlight-V100 "
-                       "-o -name .fseventsd -o -name .Trashes -o -name .DocumentRevisions-V100 \\) -prune -o -print "
-                       "2>/dev/null | /usr/libexec/locate.mklocatedb -presort > " +
-                        shellQuoteSinglePath(tmpPath) + " && mv -f " + shellQuoteSinglePath(tmpPath) + " " +
-                        shellQuoteSinglePath(path) + " && chmod 600 " + shellQuoteSinglePath(path);
-  roleCommands_[ConfiguredRole::LocateUserDbBuild] = {{"sh", "-c", script}, std::nullopt};
+  // 2026-11-06、直接のユーザー依頼("LOCATEで気になるのはVolumes/を探してくれない点。これって直せる？"): 外付けの
+  // ボリューム(macOSは/Volumes、FreeBSDは/media・/mnt)も(システムのデータベースは起動ディスクだけ)。ネットワークの
+  // ボリューム(遅く、切れていると止まる)はLOCATE節がonの時だけ。macOSのfindの`-fstype local`はmpiでローカルのapfsまで
+  // 外したので、ファイルシステムを名前で。FreeBSDのfusefsはexFATのUSB等にも使うので外さない。Time Machine
+  // (Backups.backupdb、丸ごと重複)・各ボリュームの管理用のフォルダは除く。macOSの/Volumes/Macintosh HDは/への
+  // リンクで、findはたどらない。macOSの"/Users/…"は"/Volumes/…"より前なので-presortの並びも保たれる(FreeBSDは
+  // 並びが崩れうるので-presortを付けず、mklocatedbに並べさせる)。
+#ifdef __APPLE__
+  const std::string roots = "\"$HOME\" /Volumes";
+  const std::string network = "-fstype smbfs -o -fstype afpfs -o -fstype nfs -o -fstype webdav -o ";
+  const std::string presort = " -presort";
 #else
-  (void)path;  // enum自身のコメント参照――Linux専用ビルドは両方のroleを未設定のままにする
+  const std::string roots = "\"$HOME\" /media /mnt";
+  const std::string network = "-fstype smbfs -o -fstype nfs -o ";
+  const std::string presort;
+#endif
+  std::string tmpPath = path + ".tmp";
+  std::string script = "find -s " + roots + " \\( " + (locateNetwork_ ? std::string() : network) +
+                       "-name Backups.backupdb -o -name .Spotlight-V100 -o -name .fseventsd -o -name .Trashes "
+                       "-o -name .DocumentRevisions-V100 \\) -prune -o -print 2>/dev/null | /usr/libexec/locate.mklocatedb" +
+                       presort + " > " + shellQuoteSinglePath(tmpPath) + " && mv -f " + shellQuoteSinglePath(tmpPath) +
+                       " " + shellQuoteSinglePath(path) + " && chmod 600 " + shellQuoteSinglePath(path);
+  roleCommands_[ConfiguredRole::LocateUserDbBuild] = {{"sh", "-c", script}, std::nullopt};
 #endif
 }
 
