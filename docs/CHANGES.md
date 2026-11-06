@@ -33408,6 +33408,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1244. **docs/BUILD.md: Intel MacのHomebrewは2027年9月以降動かなくなる予定(2026-11-06)**
+   - 直接のユーザー依頼("brewのIntel版ダウンロードのリンクは無い？"→"調べてみて。"→"書き足して。")。調べた結果(brew.sh・docs.brew.sh/Installation・docs.brew.sh/Support-Tiers・Homebrew/installのinstall.sh): install.shはarm64以外で無条件に中止(回避の変数・オプションは無い)、`.pkg`もApple Silicon専用。Homebrew 7.0(2026-09-13)でIntel MacはTier 3、2027年9月以降はIntel MacではHomebrew自体を動かなくする予定。brew doctorはIntel MacにMacPortsを勧める。
+   - **変更**: BUILD.mdのmacOSの手順2.の、Intel Macの注意に書き足した。BUILD.htmlを作り直した。
 1243. **LOCATE: ネットワークのボリュームを調べるかをusilicrcのLOCATE節・-a/-Aで、FreeBSDもmacOSと同じ仕組みに(2026-11-06)**
    - 直接のユーザー依頼: "smbfsを外すかどうかはまだ答えてなかったよ。それって起動オプションでは設定できない？"→WAIT等と同じ形(usilicrcの節、小文字で試し大文字で書き込む)の案に"それでいい。FreeBSDのLOCATEも同じでよろしく。"
    - **変更**: usilicrcに`LOCATE`節(`on|off`、既定off、キーワードの31番)。`usilic -a`でその回だけon、`-A`でusilicrcへ`on`を書く(値は取らない)。usilicrcを新しい版で置き換える時も引き継ぐ節に足した。`Configuration::rebuildUserLocateCommands()`がホーム用のデータベースの作り方を組み立てる(LOCATE節・-aで作り直す)。

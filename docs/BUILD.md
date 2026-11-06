@@ -57,7 +57,10 @@ git pull
    ```
    **Intel Macでは、Homebrewは新しく入れられない**(2026-11-06、インストーラが
    `Homebrew on macOS is only supported on Apple Silicon processors!`で止まる)。
-   前から入っているHomebrewは今も使える。入っていなければ、代わりに
+   前から入っているHomebrewは今も使えるが、Homebrew 7.0(2026-09)からIntel Macは最低の扱い(Tier 3、
+   出来合いのパッケージはほとんど作られずソースからのビルドになりがち)で、2027年9月以降はIntel Macでは
+   Homebrew自体が動かなくなる予定(https://docs.brew.sh/Support-Tiers)。`.pkg`のインストーラもApple Silicon専用で、
+   Intel Macに新しく入れる公式の方法は無い。入っていなければ(いずれは入っていても)、代わりに
    [MacPorts](https://www.macports.org/install.php)を使う。そのMacのmacOSの版に合う
    `.pkg`を入れたら、**ターミナルを開き直す**(`/opt/local/bin`をPATHに足す
    `~/.zprofile`は、開いたままのウィンドウには反映されない)。
