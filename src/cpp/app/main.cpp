@@ -2388,8 +2388,18 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
   // 7-Zip(ARCの.7z)も。Homebrewのformula名はsevenzip(コマンド名は7zz、
   // `7zz`というformulaは無い)。fm::sevenZipCommand()が7zの代わりに7zzを使う。
   // 2026-10-05: w3m(EPUBのWebのリンクのDump/Term、項目623)も。
+  // 2026-11-06、直接のユーザー報告(mpr、Intel MacのBig Sur): Homebrewのインストーラが"Homebrew on macOS is only
+  // supported on Apple Silicon processors!"で止まり、Intel Macには新しく入れられなくなった。brewが無くMacPortsの
+  // portがあれば`sudo port install`で入れる。portの名前は7-Zipが7zip(コマンド名は7zz)、ほかはHomebrewと同じ
+  // (mprの`port info --name`で確認)。IPAフォントのportは無い(`port search ipa`)ので、portの時は案内しない。
+  // Intel Macでbrewもportも無い時もportの名前で(MacPortsのページを開き、入れた後の起動でもう一度の印の名前のまま入れる)。
+#if defined(__x86_64__)
+  const bool useMacPorts = findExecutable("brew").empty();
+#else
+  const bool useMacPorts = findExecutable("brew").empty() && !findExecutable("port").empty();
+#endif
   const std::vector<std::pair<std::string, std::string>> tools = {
-      {"groff", "groff"}, {"mg", "mg"}, {"info", "texinfo"}, {"7zz", "sevenzip"}, {"w3m", "w3m"}};
+      {"groff", "groff"}, {"mg", "mg"}, {"info", "texinfo"}, {"7zz", useMacPorts ? "7zip" : "sevenzip"}, {"w3m", "w3m"}};
 #elif defined(__MSYS__) || defined(__CYGWIN__)
   // MSYS2(2026-10-05、.steering/20261005-windows-gitbash/): MSYS2のmsysのリポジトリにあるものだけ
   // (mg・w3mは無い)。infoはtexinfo、7zはp7zipに入っている。
@@ -2407,7 +2417,11 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
       {"groff", "groff"}, {"mg", "mg"}, {"info", "info"}, {"7z", "p7zip-full"}, {"w3m", "w3m"}, {"unzip", "unzip"}};
 #endif
   // 見つからないパッケージ(全部あれば空)。
+#ifdef __APPLE__
+  auto missingPackages = [tools, useMacPorts]() {
+#else
   auto missingPackages = [tools]() {
+#endif
     std::vector<std::string> missing;
     for (const auto &tool : tools) {
       bool found = !findExecutable(tool.first).empty();
@@ -2431,7 +2445,7 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
 #ifdef __APPLE__
     // 2026-10-20、直接のユーザー依頼: -gの既定のフォントのIPAゴシック(ipaGothicFontPath())も。font-ipafontはcaskだが、
     // 同じ名前のformulaが無いので、brew installにformulaと並べて書ける。
-    if (ipaGothicFontPath().empty()) missing.push_back("font-ipafont");
+    if (!useMacPorts && ipaGothicFontPath().empty()) missing.push_back("font-ipafont");
 #endif
     return missing;
   };
@@ -2455,7 +2469,11 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
     return;
   }
   // toOfferのうち見つからないものだけのインストールコマンド(全部あれば空、followUpでも使う)。
+#ifdef __APPLE__
+  auto installCommand = [missingPackages, toOffer, useMacPorts]() -> std::string {
+#else
   auto installCommand = [missingPackages, toOffer]() -> std::string {
+#endif
     std::string packages;
     for (const auto &package : missingPackages())
       if (toOffer.count(package)) packages += " " + package;
@@ -2471,6 +2489,13 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
     // インストーラーはNONINTERACTIVE=1で「Press RETURN」の確認を省く(sudoのパスワードは聞かれる)。brew installは
     // HOMEBREW_NO_ASK=1で"Do you want to proceed with the installation? [y/n]"を省く(-yを知らない古いbrewでも、
     // 環境変数なら無視されるだけ)。
+    // Intel Macでbrewもportも無い: Homebrewのインストーラは止まるだけなので、MacPortsのページを開く
+    // (macOSの版に合う.pkgを選んで入れる。入れた後の起動で、もう一度の印の分をport installで入れる)。
+    if (useMacPorts && findExecutable("port").empty())
+      return "open https://www.macports.org/install.php"
+             "  # Intel MacにはHomebrewを新しく入れられないので、MacPortsを入れる。次の起動で sudo port install" +
+             packages;
+    if (useMacPorts) return "sudo port install" + packages;
     if (brew.empty())
       return "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
              "  # Homebrew未インストール(Xcode Command Line Toolsも必要なら入る)。終わると次は brew install" +
@@ -2507,7 +2532,10 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
   // brewから入れる場合は、Homebrew自体のインストールの後にbrew installが続くので1回多く。
   // 印は、実際に入力欄に置けた時に書く(Application::scheduleShellOffer()参照、2026-10-20)。最初の起動で実行した分は
   // 次の起動にもう一度の印を付ける(入れば次の起動の見つからないものに出ないので実行されない)。もう一度の分は消す。
-  app.scheduleShellOffer(command, installCommand, /*retries=*/firstStart ? 3 : 1, [marker, retryPrefix, toOffer, firstStart] {
+  // MacPortsのページを開いた時は、プロンプトが戻るたびに開き直さない(.pkgのインストールはSHELLの外で行う)。
+  std::function<std::string()> followUp = installCommand;
+  if (command.rfind("open https://www.macports.org/", 0) == 0) followUp = nullptr;
+  app.scheduleShellOffer(command, followUp, /*retries=*/firstStart ? 3 : 1, [marker, retryPrefix, toOffer, firstStart] {
     std::ofstream out(marker);
     if (firstStart)
       for (const auto &package : toOffer) out << retryPrefix << package << "\n";
@@ -5315,7 +5343,8 @@ int main(int argc, char **argv) {
   // 無ければHomebrewの既定の場所を後ろに足す(子のシェル・コマンドにも受け継がれる)。
   {
     std::string path = std::getenv("PATH") ? std::getenv("PATH") : "/usr/bin:/bin:/usr/sbin:/sbin";
-    for (const char *dir : {"/opt/homebrew/bin", "/usr/local/bin"})
+    // 2026-11-06: MacPortsの/opt/local/binも(Intel MacではHomebrewが新しく入れられない、offerGroffInstallOnce()参照)。
+    for (const char *dir : {"/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"})
       if ((":" + path + ":").find(std::string(":") + dir + ":") == std::string::npos) path += std::string(":") + dir;
     ::setenv("PATH", path.c_str(), 1);
   }

@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1233. **最初の起動のツールのインストール: Intel MacでbrewがなければMacPortsで(2026-11-06)**
+   - 直接のユーザー質問(mpr、Intel MacのBig Sur)"Homebrewが使えないとなると必要なツールはどうなるの？"、"名前が確認できたら直して。" brewが無いと最初の起動でHomebrewのインストーラを置くが、Intel Macでは"Homebrew on macOS is only supported on Apple Silicon processors!"で止まり、groff等が入らないままになる。
+   - **変更**(`app/main.cpp`の`offerGroffInstallOnce()`): brewが無くportがあれば`sudo port install`。portの名前は7-Zipが`7zip`、ほかは同じ(mprの`port info --name groff mg texinfo 7zip p7zip w3m`で確認)。IPAフォントのportは無い(`port search ipa`)ので、portの時は案内しない。Intel Macでbrewもportも無ければ、Homebrewのインストーラの代わりに`open https://www.macports.org/install.php`を置き(プロンプトが戻っても開き直さない)、次の起動でもう一度の印の分を`port install`で入れる(印の名前がずれないよう、この時もportの名前で)。Finderからの起動のPATHと`sevenZipCommand()`の探す場所に`/opt/local/bin`を足した。
+   - HELP: src/HELP_.txt・HELP_en_.txtの「必要なソフトウェア」に1行ずつ足した(doc/HELPへの反映はユーザー)。
+   - 確かめたこと: mpi(Homebrewあり)で`make usilic`が通ること。portでの案内はmprの実機で確認待ち。
 1232. **docs/BUILD.md: macOSの手順1.でCommand Line Toolsを更新、clangとSDKの版の不一致の注意点(2026-11-06)**
    - 直接のユーザー報告(mpr、Big Sur): `make usilic`が`NSBundle.h:91:143: error: function does not return NSString`(`NS_FORMAT_ARGUMENT`)で止まった。clangは12.0.5(Xcode 12.5の世代)、SDKは11.3・12.1等が並び、既定は12.1だった。`SDKROOT=.../MacOSX11.3.sdk make usilic`で通った。"エラーと対処は記述したけど最初から回避できるならそちらの方がいいかなと。" `softwareupdate --list`にCommand Line Tools for Xcode-13.2があった。
    - **変更**: 手順1.に`softwareupdate --list`・`-i`で更新する手順を足し、エラーの原因と`SDKROOT`での回避を注意点の節にした。BUILD.htmlを作り直した。
