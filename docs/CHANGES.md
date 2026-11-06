@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1242. **LOCATE(macOS): ^Jlで作るホーム用のデータベースに/Volumesも(2026-11-06)**
+   - 直接のユーザー依頼: "LOCATEで気になるのはVolumes/を探してくれない点。これって直せる？" システムのデータベース(週1回rootが作る)は起動ディスクだけ、usilicの`~/.usilic/locate.db`は`$HOME`だけだった。
+   - **変更**(`Configuration::setUserLocateDatabasePath()`): `find -s "$HOME" /Volumes`に。ネットワークのボリューム(smbfs・afpfs・nfs・webdav)・Time Machine(Backups.backupdb)・.Spotlight-V100・.fseventsd・.Trashes・.DocumentRevisions-V100は`-prune`で除く。macOSのfindの`-fstype local`はmpiでローカルのapfsまで外したので、名前で指定した。起動ディスクの/Volumes/Macintosh HDは/へのリンクでfindはたどらない。
+   - ユーザーの質問("ネットワークのボリュームはそもそも辿れない？"): たどれるが、遅い・切れると止まる・中身が古くなるので外した、と説明。入れるかは確認中。
+   - 確かめたこと: mpiで、同じfindの式が/Volumes/haa15030(smbfs)だけを外し、/Volumes/TESTの中身をlocate.mklocatedb経由で引けること。`make usilic`が通ること。
 1241. **-g(macOS): JISキーボードのCtrl+記号キーを位置から決める(2026-11-06)**
    - 直接のユーザー報告(mpr、Big Sur・ことえり・JISキーボード、MacPortsのSDL2): "(ls)以外の画面（HELPも該当）で^[すると(ls)になる"、"^@でハイライト表示が始まらない"、"いずれもmini、mpiでは起きない"。Escキーは正常、テキストエディットの字は刻印どおり、ターミナルのviでは^[も正常。"^[は^]として認識してそうだね。"
    - **原因(推定)**: SDL2がJISの記号キーをUS配列の位置の字として報告していた(JISの`[`はUSの`]`の位置→^]で(ls)へ、`@`はUSの`[`の位置→^[)。mpi・miniはHomebrewのsdl2-compat(SDL3)で、正しい字が届いていた。

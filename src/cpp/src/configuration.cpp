@@ -981,8 +981,16 @@ void Configuration::setUserLocateDatabasePath(const std::string &path) {
   // usilicDirのmkdir(2)コメント参照)なので、このファイルはディレク
   // トリのものを継承するのではなく、それ自身の明示的な制限を必要
   // とする。
+  // 2026-11-06、直接のユーザー依頼("LOCATEで気になるのはVolumes/を探してくれない点。これって直せる？"): /Volumesの
+  // 外付けのボリュームも(システムのデータベースは起動ディスクだけ)。ネットワークのボリューム(smbfs・afpfs・nfs・webdav、
+  // 遅く、切れていると止まる。macOSのfindの`-fstype local`はローカルのapfsまで外したので名前で)・Time Machine
+  // (Backups.backupdb、丸ごと重複)・各ボリュームの管理用のフォルダは除く。起動ディスクの/Volumes/Macintosh HDは
+  // /へのリンクで、findはたどらない。"/Users/…"は"/Volumes/…"より前なので、-presortの並びも保たれる。
   std::string tmpPath = path + ".tmp";
-  std::string script = "find -s \"$HOME\" -print 2>/dev/null | /usr/libexec/locate.mklocatedb -presort > " +
+  std::string script = "find -s \"$HOME\" /Volumes \\( -fstype smbfs -o -fstype afpfs -o -fstype nfs -o -fstype webdav "
+                       "-o -name Backups.backupdb -o -name .Spotlight-V100 "
+                       "-o -name .fseventsd -o -name .Trashes -o -name .DocumentRevisions-V100 \\) -prune -o -print "
+                       "2>/dev/null | /usr/libexec/locate.mklocatedb -presort > " +
                         shellQuoteSinglePath(tmpPath) + " && mv -f " + shellQuoteSinglePath(tmpPath) + " " +
                         shellQuoteSinglePath(path) + " && chmod 600 " + shellQuoteSinglePath(path);
   roleCommands_[ConfiguredRole::LocateUserDbBuild] = {{"sh", "-c", script}, std::nullopt};
