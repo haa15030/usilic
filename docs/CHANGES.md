@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1266. **macOSはMacPortsに一本化(最初の起動のインストール・ビルドの手順)(2026-11-07)**
+   - 直接のユーザー判断("macOSの新旧およびCPU種別によって使えたり使えなかったりするよりは（一年後にはIntel用Homebrewも使えないとなればなおさら）MacPortsに一本化しておいた方がいいと思う。手順は長くなっても見てるだけで終わるしsudoの手間くらいは大目にみてくれるのではないかと。")。発端はPHP2Shellの更新にbrewを使う是非のユーザーの問い("phpの更新にbrewを使うのはマズくない？　macOS新旧問わず、いっそ全てをbrew無しにしたらどうなる？")で、brew無しの代わりを表にして、MacPortsへの一本化・今のまま・OSで分けるの3案を示した。
+   - **以前**: Homebrew(brew)があればbrew install、無ければHomebrew自体のインストーラ。Intel Macでbrewが無ければMacPorts(項目1233〜1247)。
+   - **変更**: `offerGroffInstallOnce()`は、どのMacも`sudo port -N install groff mg texinfo 7zip w3m fontconfig`(IPAフォントは配布元のzipから~/Library/Fonts)、portが無ければMacPortsのページを開く。Homebrewの経路(brew install・Homebrew自体のインストーラ)は外した。Homebrewで既に入っているものは今までどおり見つかるので入れ直さない。実行ファイルを探す場所・Finderからの起動で足すPATHは、/opt/local/binを/opt/homebrew/binより先にした。HELP原稿(src/HELP_.txt・HELP_en_.txtの「必要なソフトウェア」)・README.mdの表・docs/BUILD.mdのmacOSの節(手順2.をMacPortsに、手順3.をport install、「Apple Silicon + Homebrew」の節を削除、Macからのクロスビルドのmingw-w64もport)を合わせた。docs/BUILD.htmlを作り直した。
+   - 確かめたこと: `make usilic`・`make install`・`make app`が通ること。**MacPortsだけのApple SiliconのMacでのビルド・最初の起動のインストールは未確認**(Intel MacのBig Sur(mpr)では項目1233〜1247で確認済み)。Macからのmingw-w64のクロスビルドもMacPortsでは未確認。
 1265. **usilic-web: 本の中のスクリプトを止める(CSP)、登録・記録は自分のページからだけ受け付ける(CSRF)(2026-11-07)**
    - 直接のユーザー質問("usilic-webのPHPは騒ぎになったセキュリティも問題無し？")→src/web/のPHPを読んで、PHP本体の件(2026年10月のPHP2Shell、修正版は8.5.12・8.4.27・8.3.36・8.2.35。mpiは8.5.11でPHPの更新が要る)と、コードの気になる点2つを答え、"直しといて。"
    - **気になった点**: (1)章は同じサイトのiframe(file.php)で見せるので、EPUBの中のスクリプトがusilic-webの登録・記録をこのサイトとして操作できた(AO3等から落としたEPUBは中身を作っていない)。(2)ブラウザはBasic認証のパスワードを自動で付けるので、ログイン中に開いた別のサイトのページからupload.php・marks.phpへ送らせることができた。

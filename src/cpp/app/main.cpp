@@ -2324,6 +2324,7 @@ std::string findExecutableIn(const std::string &name, bool includeHomebrewDefaul
       if (!dir.empty()) dirs.push_back(dir);
   }
   if (includeHomebrewDefaults) {
+    dirs.push_back("/opt/local/bin");  // MacPorts(2026-11-07、offerGroffInstallOnce()のuseMacPorts参照)
     dirs.push_back("/opt/homebrew/bin");
     dirs.push_back("/usr/local/bin");
   }
@@ -2393,11 +2394,10 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
   // portがあれば`sudo port install`で入れる。portの名前は7-Zipが7zip(コマンド名は7zz)、ほかはHomebrewと同じ
   // (mprの`port info --name`で確認)。IPAフォントのportは無い(`port search ipa`)ので、配布元のzipから(installCommand())。
   // Intel Macでbrewもportも無い時もportの名前で(MacPortsのページを開き、入れた後の起動でもう一度の印の名前のまま入れる)。
-#if defined(__x86_64__)
-  const bool useMacPorts = findExecutable("brew").empty();
-#else
-  const bool useMacPorts = findExecutable("brew").empty() && !findExecutable("port").empty();
-#endif
+  // 2026-11-07、直接のユーザー判断("macOSの新旧およびCPU種別によって使えたり使えなかったりするよりは（一年後には
+  // Intel用Homebrewも使えないとなればなおさら）MacPortsに一本化"): Homebrewの有無によらず、どのMacもMacPortsで入れる
+  // (MacPortsが無ければそのページを開く)。Homebrewで既に入っているものは見つかるので、入れ直さない。
+  const bool useMacPorts = true;
   std::vector<std::pair<std::string, std::string>> tools = {
       {"groff", "groff"}, {"mg", "mg"}, {"info", "texinfo"}, {"7zz", useMacPorts ? "7zip" : "sevenzip"}, {"w3m", "w3m"}};
   // 2026-11-06、直接のユーザー依頼(mprで^J^Fが「フォントが見つかりません(fc-list)」、"足しといて"): fc-list(^J^Fの一覧・
@@ -2432,11 +2432,7 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
     return major > 1 || (major == 1 && minor >= 20);
   };
   // 見つからないパッケージ(全部あれば空)。
-#ifdef __APPLE__
-  auto missingPackages = [tools, useMacPorts, groffUsable]() {
-#else
   auto missingPackages = [tools, groffUsable]() {
-#endif
     std::vector<std::string> missing;
     for (const auto &tool : tools) {
       bool found = tool.first == "groff" ? groffUsable() : !findExecutable(tool.first).empty();
@@ -2484,65 +2480,34 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
     return;
   }
   // toOfferのうち見つからないものだけのインストールコマンド(全部あれば空、followUpでも使う)。
-#ifdef __APPLE__
-  auto installCommand = [missingPackages, toOffer, useMacPorts]() -> std::string {
-#else
   auto installCommand = [missingPackages, toOffer]() -> std::string {
-#endif
     std::string packages;
     for (const auto &package : missingPackages())
       if (toOffer.count(package)) packages += " " + package;
     if (packages.empty()) return "";
 #ifdef __APPLE__
-    std::string brew = findExecutable("brew");
-    // brewがPATH上に無い(Finderからの起動でHomebrewの既定の場所だけで
-    // 見つかった)場合は、SHELLでもそのまま実行できるようフルパスで書く。
-    // 2026-10-05、直接のユーザー依頼("brewが無い場合の案内も入れて欲しい。Xcodeも必要"): brewが
-    // 無ければ、Homebrew公式のインストールコマンド(https://brew.sh、足りなければXcodeのCommand Line
-    // Toolsも入れる)を置く。終わってプロンプトが戻れば、下のfollowUpで今度はbrew installを置く。
-    // 2026-10-20、直接のユーザー依頼("あとは自動で入るほうがいい"、案内は^Mを待たずに実行する): Homebrewの
-    // インストーラーはNONINTERACTIVE=1で「Press RETURN」の確認を省く(sudoのパスワードは聞かれる)。brew installは
-    // HOMEBREW_NO_ASK=1で"Do you want to proceed with the installation? [y/n]"を省く(-yを知らない古いbrewでも、
-    // 環境変数なら無視されるだけ)。
-    // Intel Macでbrewもportも無い: Homebrewのインストーラは止まるだけなので、MacPortsのページを開く
-    // (macOSの版に合う.pkgを選んで入れる。入れた後の起動で、もう一度の印の分をport installで入れる)。
-    if (useMacPorts && findExecutable("port").empty())
-      return "open https://www.macports.org/install.php";
+    // 2026-11-07(useMacPorts参照): どのMacもMacPortsで入れる。以前のHomebrewの経路(brew install・Homebrew自体の
+    // インストーラ、2026-10-05〜10-20)は外した。MacPortsが無ければ、そのページを開く(macOSの版に合う.pkgを選んで
+    // 入れる。入れた後の起動で、もう一度の印の分をport installで入れる)。
+    if (findExecutable("port").empty()) return "open https://www.macports.org/install.php";
     // -N: 依存するportの"Continue? [Y/n]"を省く(2026-11-06、直接のユーザー報告(mpr、=oa.png)、そこで止まった)。
     // 2>&1 | cat(2026-11-06、直接のユーザー報告(mpr、=oc.png、"1分18秒後にHELPが表示されただけ")): 端末へ出すと
     // portは進み具合の行を上書きして消し、SHELLでは26行のうち3行のほか空になった。端末でなくすと普通の行で出る
     // (sudoのパスワードは/dev/ttyから読むので入力できる)。
     // 2026-11-06、直接のユーザー依頼(mpr、"あとはIPAだけだね"→配布元のzipを入れる手順→"足しといて"): MacPortsには
     // IPAフォントのportが無いので、IPAの配布元のzipを~/Library/Fontsへ(ipag.ttf等、ユーザーごとのフォント、sudo不要)。
-    // Homebrewのfont-ipafontと同じく先に(入りしだい-gのフォントをIPAゴシックに替える、runGuiPhase())、;でつなぐ。
-    if (useMacPorts) {
-      std::string command;
-      const std::string font = " font-ipafont";
-      if (std::size_t at = packages.find(font); at != std::string::npos) {
-        packages.erase(at, font.size());
-        command = "curl -fL -o /tmp/IPAfont00303.zip https://moji.or.jp/wp-content/ipafont/IPAfont/IPAfont00303.zip"
-                  " && unzip -o -q /tmp/IPAfont00303.zip -d /tmp && mkdir -p ~/Library/Fonts"
-                  " && cp /tmp/IPAfont00303/*.ttf ~/Library/Fonts/";
-      }
-      if (!packages.empty())
-        command += (command.empty() ? "" : "; ") + std::string("sudo port -N install") + packages + " 2>&1 | cat";
-      return command;
-    }
-    // 2026-11-06、直接のユーザー報告(mpr、=oe.png): 以前は後ろに"  # Homebrew未インストール(…)"の注釈を付けていたが、
-    // zshは打ち込んだ行の#を注釈として扱わず(interactivecommentsが既定で無効)、"zsh: no matches found"で
-    // インストーラが一度も実行されていなかった。案内のコマンドには注釈を付けない。
-    if (brew.empty())
-      return "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"";
-    // 2026-10-20、直接のユーザー依頼("リストの真っ先にipafontを持ってきて"): font-ipafontは先に別のbrew installで
-    // (入りしだい-gのフォントをIPAゴシックに替える、runGuiPhase())。;でつなぎ、失敗しても残りは続ける。
-    std::string program =
-        "HOMEBREW_NO_ASK=1 " + (brew == findExecutableOnPathOnly("brew") ? std::string("brew") : brew);
+    // 先に入れ(入りしだい-gのフォントをIPAゴシックに替える、runGuiPhase())、;でつなぐ。
+    std::string command;
     const std::string font = " font-ipafont";
-    if (std::size_t at = packages.find(font); at != std::string::npos && packages != font) {
+    if (std::size_t at = packages.find(font); at != std::string::npos) {
       packages.erase(at, font.size());
-      return program + " install" + font + "; " + program + " install" + packages;
+      command = "curl -fL -o /tmp/IPAfont00303.zip https://moji.or.jp/wp-content/ipafont/IPAfont/IPAfont00303.zip"
+                " && unzip -o -q /tmp/IPAfont00303.zip -d /tmp && mkdir -p ~/Library/Fonts"
+                " && cp /tmp/IPAfont00303/*.ttf ~/Library/Fonts/";
     }
-    return program + " install" + packages;
+    if (!packages.empty())
+      command += (command.empty() ? "" : "; ") + std::string("sudo port -N install") + packages + " 2>&1 | cat";
+    return command;
 #elif defined(__MSYS__) || defined(__CYGWIN__)
     // MSYS2の端末ならpacman。Git Bashにはパッケージ管理が無いので案内しない(空を返す)。
     if (findExecutable("pacman").empty()) return "";
@@ -5411,7 +5376,8 @@ int main(int argc, char **argv) {
     // /usr/binのBig Sur付属の古いgroff(1.19.2、-Kutf8が無い)が先に見つかっていた。ターミナル(Homebrewのshellenv・
     // MacPortsの~/.zprofile)と同じく前に足す。
     std::string front;
-    for (const char *dir : {"/opt/homebrew/bin", "/opt/local/bin", "/usr/local/bin"})
+    // 2026-11-07(offerGroffInstallOnce()のuseMacPorts参照): MacPortsへ一本化したので/opt/local/binを先に。
+    for (const char *dir : {"/opt/local/bin", "/opt/homebrew/bin", "/usr/local/bin"})
       if ((":" + path + ":").find(std::string(":") + dir + ":") == std::string::npos) front += std::string(dir) + ":";
     path = front + path;
     ::setenv("PATH", path.c_str(), 1);

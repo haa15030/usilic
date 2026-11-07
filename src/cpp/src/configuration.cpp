@@ -25,9 +25,9 @@ static bool commandOnPath(const std::string &name) {
       start = colon + 1;
     }
   }
+  dirs.push_back("/opt/local/bin");  // MacPorts(2026-11-06、2026-11-07から先に。main.cppのofferGroffInstallOnce()参照)
   dirs.push_back("/opt/homebrew/bin");
   dirs.push_back("/usr/local/bin");
-  dirs.push_back("/opt/local/bin");  // MacPorts(2026-11-06、main.cppのofferGroffInstallOnce()参照)
   for (const auto &dir : dirs)
     if (::access((dir + "/" + name).c_str(), X_OK) == 0) return true;
   return false;

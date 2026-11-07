@@ -51,28 +51,21 @@ git pull
    ```
    古いまま使うと、コンパイラ(clang)より新しいSDKが既定になっていることがあり、
    `make usilic`が`mac_cursor.mm`の中で止まる(下の「Command Line ToolsのclangとSDKの版の不一致」)。
-2. [Homebrew](https://brew.sh)(未導入の場合):
-   ```
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-   ```
-   **Intel Macでは、Homebrewは新しく入れられない**(2026-11-06、インストーラが
-   `Homebrew on macOS is only supported on Apple Silicon processors!`で止まる)。
-   前から入っているHomebrewは今も使えるが、Homebrew 7.0(2026-09)からIntel Macは最低の扱い(Tier 3、
-   出来合いのパッケージはほとんど作られずソースからのビルドになりがち)で、2027年9月以降はIntel Macでは
-   Homebrew自体が動かなくなる予定(https://docs.brew.sh/Support-Tiers)。`.pkg`のインストーラもApple Silicon専用で、
-   Intel Macに新しく入れる公式の方法は無い。入っていなければ(いずれは入っていても)、代わりに
-   [MacPorts](https://www.macports.org/install.php)を使う。そのMacのmacOSの版に合う
-   `.pkg`を入れたら、**ターミナルを開き直す**(`/opt/local/bin`をPATHに足す
-   `~/.zprofile`は、開いたままのウィンドウには反映されない)。
-3. `pkg-config`(`pkgconf`パッケージが提供)、`SDL2`、`SDL2_ttf`:
-   ```
-   brew install pkgconf sdl2 sdl2_ttf
-   ```
-   MacPortsの場合:
+2. [MacPorts](https://www.macports.org/install.php)(未導入の場合): そのMacのmacOSの版に合う`.pkg`を入れたら、
+   **ターミナルを開き直す**(`/opt/local/bin`をPATHに足す`~/.zprofile`は、開いたままのウィンドウには反映されない)。
+   2026-11-07から、macOSの版やCPU(Intel・Apple Silicon)によらずMacPortsに一本化した(ユーザー判断)。
+   Homebrewは古いmacOS(Big Sur等)に対応しておらず、Intel Macには新しく入れられず(2026-11-06、インストーラが
+   `Homebrew on macOS is only supported on Apple Silicon processors!`で止まる)、2027年9月以降はIntel Macでは
+   Homebrew自体が動かなくなる予定(https://docs.brew.sh/Support-Tiers)。使えたり使えなかったりするより、
+   どのMacでも同じ手順にする。最初の起動のインストール(groff等)もMacPortsで行う。
+3. `pkg-config`、`SDL2`、`SDL2_ttf`:
    ```
    sudo port selfupdate
+   ```
+   ```
    sudo port install pkgconfig libsdl2 libsdl2_ttf
    ```
+   既にHomebrewで`pkgconf sdl2 sdl2_ttf`を入れてあるMacは、そのままでもビルドできる(`pkg-config`が見つけた方を使う)。
 4. 公開鍵の登録(リポジトリが非公開の間だけ必要)。鍵を作り(プロンプトに戻るまではEnterのみ)、
    公開鍵の1行をクリップボードへ入れる:
    ```
@@ -120,6 +113,7 @@ SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX11.3.sdk make usilic
 
 ### Intel Mac(Sequoia)固有の注意点
 
+(Homebrewで入れたSDL2を使っていた頃の記録。MacPortsのSDL2でも`-ld_classic`はそのまま付く。)
 Xcode 15以降のデフォルトリンカ(通称ld-prime)が、Homebrew製の
 一部dylib構成(`sdl2_ttf`が`sdl2`ではなく`sdl2-compat`を参照する
 構成など)で「ライブラリもリンクコマンドも正しいのにシンボルが
@@ -132,13 +126,6 @@ Xcode 15以降のデフォルトリンカ(通称ld-prime)が、Homebrew製の
 `lipo -info`でのアーキテクチャ・`nm -gU`でのシンボルの実
 エクスポート状況、の3点を順に確認するとよい(docs/CHANGES.md
 項目419の調査ログに実例あり)。
-
-### Apple Silicon + Homebrewが`/opt/homebrew`の場合
-
-`/opt/homebrew/lib`はデフォルトのリンカ検索パスに含まれないが、
-`pkg-config`経由でSDL2/SDL2_ttfの`-I`/`-L`は自動的に解決される
-ため、追加の`CFLAGS`/`LDFLAGS`指定は不要(2026-07-16に検証済み、
-CLAUDE.mdの経緯記録も参照)。
 
 ## Linux (Ubuntu/Debian系)
 
@@ -648,7 +635,7 @@ PowerShell・Windows Terminalの中のCUI(-gで窓も開ける)。CUIは**Window
 
 ### Macからクロスビルドする
 
-1. **ツール**: `brew install mingw-w64`。
+1. **ツール**: `sudo port install mingw-w64`(2026-11-07にMacPortsへ一本化。以前は`brew install mingw-w64`で作っていて、MacPortsでのクロスビルドは未確認)。
 2. **SDL2・SDL2_ttf**: GitHubのlibsdl-orgのリリースから`SDL2-devel-<版>-mingw.tar.gz`・
    `SDL2_ttf-devel-<版>-mingw.tar.gz`を落とし、中の`x86_64-w64-mingw32/`の`include`・`lib`・`bin`を
    `~/.local/mingw/`へコピーする(別の場所なら`make`に`WIN_SDL_DIR=...`)。
