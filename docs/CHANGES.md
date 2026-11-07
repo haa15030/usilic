@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1258. **FreeBSDでビルドできない(shellQuoteSinglePath()がmacOSだけ)(2026-11-07)**
+   - 直接のユーザー報告(FreeBSD 16.0-CURRENT・i5-7500、手順8.のビルド、om.png): `src/configuration.cpp:1029:42: error: use of undeclared identifier 'shellQuoteSinglePath'`が4つ。
+   - **原因**: 項目1243でLOCATEのホーム用のデータベースのコマンドを作る所(`rebuildUserLocateCommands()`)をFreeBSDにも広げたが、そこで使う`shellQuoteSinglePath()`の定義は`#ifdef __APPLE__`のままだった。macOSではビルドできるので気づかなかった。
+   - **変更**: `shellQuoteSinglePath()`の条件を使う側と同じ`#if defined(__APPLE__) || defined(__FreeBSD__)`にした。項目1243の他の`__FreeBSD__`の所と、main.cppの`__FreeBSD__`の所(最初の起動のインストール)は、macOSだけの関数を使っていないことを目で確かめた。
+   - 確かめたこと: macOSで`make usilic`が通ること。macOSのヘッダーで`__FreeBSD__`を立てて構文だけ確かめる方法は、libc++のヘッダーが通らず使えなかった。**FreeBSDでのビルドは未確認。**
 1257. **docs/BUILD.md(FreeBSD): sshでつなぐためのIPアドレスの調べ方、Intel内蔵GPUでdrm-kmodがカーネルと合わない時のビルド(2026-11-07)**
    - 直接のユーザー報告(FreeBSD 16.0-CURRENT・i5-7500の内蔵GPUで、手順6.の再起動の後"xfceが出ない止まってる")。sshから読み取るだけのコマンドの結果で、`KLD i915kms.ko: depends on kernel - not available or version mismatch`。pkgの`drm-612-kmod-6.12.110.1600030_3`はカーネル(`kern.osreldate`が`1600029`、`main-n290352-61c70dc16a79`)より新しい版向けで、i915kmsが読み込まれず、Xが`/dev/dri/card0`を開けずに`Cannot run in framebuffer mode`で終わり、lightdmも止まっていた。`/usr/src`は`1600029`で、`/usr/ports/graphics/drm-612-kmod`を`make BATCH=yes reinstall clean`して`kldload i915kms`が通り、`card0`ができ、再起動でXfceに入れた(文字は細かくならなかった)。
    - 直接のユーザー依頼("2.パッケージ以降は、ssh経由でログインできる環境があるならタイプミス回避の意味でもブラウザからのコピペ進行の方が望ましいのでIPアドレスを調べる方法も記載した方がいいと思う。`ifconfig rge0|grep broadcast|awk '{print $2}'`とか。もっと簡単なのあればそれでよろしく。")。

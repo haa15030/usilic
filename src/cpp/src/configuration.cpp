@@ -252,7 +252,9 @@ std::optional<SuffixLine> parseSuffixLine(const std::string &trimmedLine, std::v
   return result;
 }
 
-#ifdef __APPLE__
+// 2026-11-07、直接のユーザー報告(FreeBSDのビルドで"use of undeclared identifier 'shellQuoteSinglePath'"): 項目1243で
+// 使う側をFreeBSDにも広げたのに、ここは__APPLE__だけのままだった。
+#if defined(__APPLE__) || defined(__FreeBSD__)
 // setUserLocateDatabasePath()自身の`path`(絶対ファイルシステムパス、
 // 攻撃者が制御できるものではないが、それでも防御的にシングルクオート
 // される――さもないとその中の迷った`'`は、それが埋め込まれる
