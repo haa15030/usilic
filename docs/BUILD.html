@@ -261,7 +261,8 @@ EOF</code></pre>
 <pre class="key"><code>gmake usilic &amp;&amp; gmake install</code></pre>
 <pre class="key"><code>echo 'PATH=$HOME/.local/bin:$PATH; export PATH' &gt;&gt; ~/.profile</code></pre>
 <pre class="key"><code>. ~/.profile</code></pre>
-<p class="note">※~/.local/binは既定のPATHに無いので追加する(sshでつなぎ直しても読まれる)。</p>
+<pre class="key"><code>echo 'PATH=$HOME/.local/bin:$PATH; export PATH' &gt;&gt; ~/.bashrc</code></pre>
+<p class="note">※~/.local/binは既定のPATHに無いので追加する。~/.profileはsshでつないだ時(ログインシェル)に読まれる。usilicのSHELL(機能限定SHELLも)はbashをログインシェルとしてではなく起動するので、~/.bashrcだけを読む(~/.bashrcに無いと、SHELLで<code>usilic .</code>等が見つからない。2026-11-07)。</p>
 <p class="note">※この時やログインの度に英語の小ネタが毎回違う内容で出るのは、既定の~/.profileの最後の fortune freebsd-tips(FreeBSDの使い方のヒントをランダムに1つ表示する)。エラーではない。要らなければその行の先頭に#。freebsd-tipsは英語だけで、日本語版は無い。</p>
 <p class="note">※bashをログインシェルにするなら <em>chsh -s /usr/local/bin/bash</em>。bashは~/.bash_profileがあれば~/.profileを読まないので、その時だけ次も実行する。</p>
 <pre class="key"><code>echo 'PATH=$HOME/.local/bin:$PATH; export PATH' &gt;&gt; ~/.bash_profile</code></pre>

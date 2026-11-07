@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1264. **docs/BUILD.md(FreeBSD): ~/.bashrcにもPATHを(usilicのSHELLで`usilic`が見つからない)(2026-11-07)**
+   - 直接のユーザー報告・提案("機能制限SHELLで`usilic .^M`とやってもPATHが通ってない。.bash_profileだと.profileが読まれないので.bashrcにPATH設定では？")。
+   - **原因**: usilicのSHELLは、環境変数SHELLのbash等(sh等なら`bash`、`Configuration::shellArgv()`)をログインシェルとしてではなく起動するので、bashは~/.bashrcだけを読む。手順8.は~/.profile(と~/.bash_profile)にしか書いていなかった。Xfceのメニューからの起動も~/.profileを通らない。
+   - **変更**: 手順8.に`echo 'PATH=$HOME/.local/bin:$PATH; export PATH' >> ~/.bashrc`を足し、~/.profileはsshでつないだ時、~/.bashrcはusilicのSHELLが読むことを注記した。docs/BUILD.htmlを作り直した。
 1263. **機能限定SHELLの`usilic …`は、親で開かず子のusilicで開く(2026-11-07)**
    - 直接のユーザー報告("FreeBSDに限らず機能制限SHELLで`usilic .^M`とやると親のままカレントディレクトリ(ls)になる。子プロセスによる(ls)、が反映されてない")。
    - **原因**: SHELLで打った`usilic パス`は、子が親へパスを渡し(`pollShellHandoff()`)、親がそのディレクトリ・ファイルを自分で開く。ページャーとして起動した親(最初の起動のHELP等、`pagerLaunch_`)は、ふだんディレクトリへ行かない(`gatePagerKey()`)のに、ここだけは(ls)になっていた。

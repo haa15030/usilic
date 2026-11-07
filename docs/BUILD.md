@@ -478,7 +478,11 @@ echo 'PATH=$HOME/.local/bin:$PATH; export PATH' >> ~/.profile
 . ~/.profile
 ```
 
-※~/.local/binは既定のPATHに無いので追加する(sshでつなぎ直しても読まれる)。
+```key
+echo 'PATH=$HOME/.local/bin:$PATH; export PATH' >> ~/.bashrc
+```
+
+※~/.local/binは既定のPATHに無いので追加する。~/.profileはsshでつないだ時(ログインシェル)に読まれる。usilicのSHELL(機能限定SHELLも)はbashをログインシェルとしてではなく起動するので、~/.bashrcだけを読む(~/.bashrcに無いと、SHELLで`usilic .`等が見つからない。2026-11-07)。
 
 ※この時やログインの度に英語の小ネタが毎回違う内容で出るのは、既定の~/.profileの最後の fortune freebsd-tips(FreeBSDの使い方のヒントをランダムに1つ表示する)。エラーではない。要らなければその行の先頭に#。freebsd-tipsは英語だけで、日本語版は無い。
 
