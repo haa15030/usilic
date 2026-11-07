@@ -63,8 +63,17 @@ export ASSUME_ALWAYS_YES=yes  # pkgの確認を省く(make install-missing-packa
 
 # ---------------------------------------------------------------- 1. パッケージ
 say "1. パッケージ"
+# 入っていないものだけを入れる(入っているものも渡すと、後の段でpkg lockしたsdl2やドライバ・ファームウェアを
+# 入れ直そうとして「is locked and may not be modified」で止まる。2026-11-07、再実行で実際に)。
+pkg_install() {
+  missing=""
+  for p in "$@"; do
+    pkg info -e "$p" || missing="$missing $p"
+  done
+  [ -z "$missing" ] || pkg install -y $missing
+}
 pkg update -q
-pkg install -y git gmake pkgconf sudo bash sdl2 sdl2_ttf xfce4-screenshooter-plugin firefox xdg-utils python3 \
+pkg_install git gmake pkgconf sudo bash sdl2 sdl2_ttf xfce4-screenshooter-plugin firefox xdg-utils python3 \
   xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa dejavu noto-jp \
   fcitx5 fcitx5-configtool fcitx5-gtk3 fcitx5-qt6 ja-fcitx5-mozc3 \
   groff mg texinfo 7-zip w3m || die "pkg install に失敗しました"
@@ -126,9 +135,9 @@ ensure_ports() {
 
 if [ -n "$module" ]; then
   if [ "$gpu" = nvidia ]; then
-    pkg install -y nvidia-driver nvidia-xconfig || die "nvidia-driver を入れられません"
+    pkg_install nvidia-driver nvidia-xconfig || die "nvidia-driver を入れられません"
   else
-    pkg install -y drm-kmod || die "drm-kmod を入れられません"
+    pkg_install drm-kmod || die "drm-kmod を入れられません"
   fi
   sysrc -n kld_list 2>/dev/null | tr ' ' '\n' | grep -qx "$module" || sysrc kld_list+="$module"
   if ! kldstat -n "$module" >/dev/null 2>&1; then
