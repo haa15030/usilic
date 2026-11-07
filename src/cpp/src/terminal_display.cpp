@@ -371,6 +371,57 @@ void TerminalDisplay::setAttribute(Attribute attr) {
   std::fflush(stdout);
 }
 
+// Display::setColor()自身のコメント参照(2026-09-26追加)。基本16色
+// (0〜15)は30〜37/90〜97(背景は40〜47/100〜107)で送る――38;5;nでも
+// 同じ色番号を指せるが、古い端末との互換性と、`git log`等自身が
+// 送るのと同じ形に揃えるため。
+namespace {
+// 端末が24ビット色を名乗っているか(COLORTERMがtruecolor・24bit。iTerm2・GNOME Terminal・WezTerm等は付け、
+// macOS 15までのTerminal.appは付けない)。
+bool terminalSupportsTrueColor() {
+  static const bool supported = [] {
+    const char *colorterm = std::getenv("COLORTERM");
+    if (!colorterm) return false;
+    std::string value = colorterm;
+    return value == "truecolor" || value == "24bit";
+  }();
+  return supported;
+}
+
+// xtermの256色のうち、(r,g,b)にいちばん近い色の番号(6×6×6の色の立方体16〜231と灰色232〜255から)。
+int nearestXterm256(int r, int g, int b) {
+  static const int kLevels[6] = {0, 95, 135, 175, 215, 255};
+  auto nearestLevel = [](int v) {
+    int best = 0;
+    for (int i = 1; i < 6; i++)
+      if (std::abs(kLevels[i] - v) < std::abs(kLevels[best] - v)) best = i;
+    return best;
+  };
+  int ri = nearestLevel(r), gi = nearestLevel(g), bi = nearestLevel(b);
+  auto distance = [&](int cr, int cg, int cb) { return (cr - r) * (cr - r) + (cg - g) * (cg - g) + (cb - b) * (cb - b); };
+  int cube = 16 + 36 * ri + 6 * gi + bi;
+  int cubeDistance = distance(kLevels[ri], kLevels[gi], kLevels[bi]);
+  int grayIndex = std::clamp(((r + g + b) / 3 - 8 + 5) / 10, 0, 23);
+  int gray = 8 + 10 * grayIndex;
+  return distance(gray, gray, gray) < cubeDistance ? 232 + grayIndex : cube;
+}
+
+std::string colorParams(int color, bool background) {
+  if (color == Display::kDefaultColor) return background ? "49" : "39";
+  if (color & Display::kTrueColorFlag) {
+    int rgb = color & 0xFFFFFF;
+    int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+    if (!terminalSupportsTrueColor())  // attributeEscape()のHighlightの2026-11-07のコメント参照
+      return std::string(background ? "48" : "38") + ";5;" + std::to_string(nearestXterm256(r, g, b));
+    return std::string(background ? "48" : "38") + ";2;" + std::to_string(r) + ";" + std::to_string(g) + ";" +
+           std::to_string(b);
+  }
+  if (color < 8) return std::to_string((background ? 40 : 30) + color);
+  if (color < 16) return std::to_string((background ? 100 : 90) + color - 8);
+  return std::string(background ? "48" : "38") + ";5;" + std::to_string(color);
+}
+}  // namespace
+
 std::string TerminalDisplay::attributeEscape(Attribute attr) const {
   switch (attr) {
     case Attribute::Underline:
@@ -435,10 +486,16 @@ std::string TerminalDisplay::attributeEscape(Attribute attr) const {
     // 合わせ、以前は全マッチに一律適用していたこの値(旧Highlight)を
     // HighlightCurrent(現在位置の出現だけ)へ移し、Highlight自体は
     // 本来のlazy-highlight相当(他の全マッチ、背景のみ)へ格下げした。
+    //
+    // 2026-11-07、直接のユーザー報告("usilic -c のHELPでは検索結果のハイライトがマッチ行以降、次のマッチ位置まで
+    // 薄色に変わる"): 24ビット色(38;2;r;g;b)を解さない端末(macOS 15までのTerminal.app等)は、"2"を薄色(SGR 2)と
+    // 読み、HighlightOffの39;49では戻らないので、次の全リセットまで薄色が続いていた。24ビット色を名乗らない端末
+    // (terminalSupportsTrueColor())では、同じ色に近い256色(38;5;n)で送る(colorParams()も同じ)。
     case Attribute::Highlight:
-      return "\x1b[48;2;175;238;238m";
+      return "\x1b[" + colorParams(Display::kTrueColorFlag | 0xAFEEEE, true) + "m";
     case Attribute::HighlightCurrent:
-      return "\x1b[38;2;176;226;255;48;2;205;0;205m";
+      return "\x1b[" + colorParams(Display::kTrueColorFlag | 0xB0E2FF, false) + ";" +
+             colorParams(Display::kTrueColorFlag | 0xCD00CD, true) + "m";
     case Attribute::HighlightOff:
       return "\x1b[39;49m";
     case Attribute::Color:
@@ -447,23 +504,6 @@ std::string TerminalDisplay::attributeEscape(Attribute attr) const {
   return "";
 }
 
-// Display::setColor()自身のコメント参照(2026-09-26追加)。基本16色
-// (0〜15)は30〜37/90〜97(背景は40〜47/100〜107)で送る――38;5;nでも
-// 同じ色番号を指せるが、古い端末との互換性と、`git log`等自身が
-// 送るのと同じ形に揃えるため。
-namespace {
-std::string colorParams(int color, bool background) {
-  if (color == Display::kDefaultColor) return background ? "49" : "39";
-  if (color & Display::kTrueColorFlag) {
-    int rgb = color & 0xFFFFFF;
-    return std::string(background ? "48" : "38") + ";2;" + std::to_string((rgb >> 16) & 0xFF) + ";" +
-           std::to_string((rgb >> 8) & 0xFF) + ";" + std::to_string(rgb & 0xFF);
-  }
-  if (color < 8) return std::to_string((background ? 40 : 30) + color);
-  if (color < 16) return std::to_string((background ? 100 : 90) + color - 8);
-  return std::string(background ? "48" : "38") + ";5;" + std::to_string(color);
-}
-}  // namespace
 
 // BoldOff/HighlightOffで端末側の色がリセットされた後、setColor()で
 // 要求済みの色を送り直す。Highlight中はそちらの色を優先する。
