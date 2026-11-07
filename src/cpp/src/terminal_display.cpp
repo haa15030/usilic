@@ -366,7 +366,10 @@ void TerminalDisplay::setAttribute(Attribute attr) {
   }
   // 2026-09-26追加: HighlightOff自身の"\x1b[39;49m"は色を既定へ戻して
   // しまうので、ANSIの色(setColor())が有効ならそれを送り直す。
-  if (attr == Attribute::HighlightOff) emitColor();
+  if (attr == Attribute::HighlightOff) {
+    if (boldOn_) tputs(attributeEscape(Attribute::Bold).c_str(), 1, outc);  // 22で解けた太字(attributeEscape()参照)
+    emitColor();
+  }
 
   std::fflush(stdout);
 }
@@ -497,7 +500,9 @@ std::string TerminalDisplay::attributeEscape(Attribute attr) const {
       return "\x1b[" + colorParams(Display::kTrueColorFlag | 0xB0E2FF, false) + ";" +
              colorParams(Display::kTrueColorFlag | 0xCD00CD, true) + "m";
     case Attribute::HighlightOff:
-      return "\x1b[39;49m";
+      // 2026-11-07(上のHighlightの同日のコメント参照): 色の指定を読み違えて薄色(SGR 2)になる端末でも戻るよう、
+      // 文字の濃さ(22)も戻す。22は太字も解くので、setAttribute()で太字を送り直す。
+      return "\x1b[22;39;49m";
     case Attribute::Color:
       return "";
   }
