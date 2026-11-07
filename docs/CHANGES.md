@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1269. **tools/setup-freebsd.sh: 開始・終了の時刻とかかった時間を出す(2026-11-07)**
+   - ユーザーの報告("無事終わった。")と問い("所要時間を計ってなかったんだが、終了時間はsrc/cpp/build/usilic？　開始時間は何を見ればいい？")。i5-7500のFreeBSDで、一時的に公開にしたリポジトリから`git clone https://github.com/haa15030/usilic`して、項目1268のスクリプトが最後まで通った。
+   - 今回の分は、記録ファイル/var/log/usilic-setup.logの作られた時刻(開始)と最後に書かれた時刻(終了)で分かる(`stat -f '開始 %SB%n終了 %Sm' /var/log/usilic-setup.log`)。
+   - **変更**: 次からは、画面と記録の最初に「開始: 日時」、最後に「終了: 日時(かかった時間 h時間mm分ss秒)」を出す。途中で止まった時も出す。確かめたのは`sh -n`のみ。
 1268. **FreeBSDのセットアップのスクリプト(tools/setup-freebsd.sh)(2026-11-07)**
    - 直接のユーザー提案("ヒアドキュメント等は特にコピペで助かるんだが、ユーザーとrootとで実行する手順をまとめたシェルスクリプトを作るのはどう？　一発実行で終わり。")→スクリプトにできる所・できない所と使い方の形を示し、"やってみて。"
    - **作ったもの**: `tools/setup-freebsd.sh ユーザー名 [--gpu=nvidia|amd|radeon|intel|none] [--swapcaps]`。rootで実行し、docs/BUILD.mdのFreeBSDの2.〜8.を一度に行う: (1)パッケージ(手順2.の全部と、最初の起動で入れるgroff・mg・texinfo・7-zip・w3m)、(2)GPU(`pciconf -l`のvendorでNVIDIA>AMD>Intelの順に見分け、ドライバを入れてkld_listに足し、`kldload`を試す。dmesgに「version mismatch」が出たら、/usr/srcの版がカーネルと同じか確かめ、`pkg info -d drm-kmod`のポート(drm-612-kmod等)をportsからビルドしてpkg lock(項目1257の手順)。NVIDIAはnvidia-xconfig、それ以外は/dev/dri/card0を確かめる)、(3)dbus・lightdm、sudoers.dのwheel、ユーザーをwheel・video・operatorへ、コンソールのキーマップがjpならXのキーボードをjp106に(`--swapcaps`でctrl:swapcaps)、(4)SDL2をDBUS・FCITX付きでportsからビルドしてpkg lock、(5)`su - ユーザー`で~/.profile・~/.bashrc(・~/.bash_profile)のPATH、~/.xprofile、`gmake usilic`・`gmake install`。NVIDIAはXfceの設定ファイル(xfwm4.xml)で合成表示を切っておく。どの段も済んでいれば飛ばすので、止まったらもう一度実行すれば続きから。出力は/var/log/usilic-setup.logにも。

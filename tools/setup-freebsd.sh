@@ -25,9 +25,14 @@ set -u
 LOG=/var/log/usilic-setup.log
 if [ -z "${USILIC_SETUP_LOGGED:-}" ]; then
   status_file=$(mktemp -t usilic-setup)
+  started=$(date +%s)
+  echo "開始: $(date '+%Y-%m-%d %H:%M:%S')" | tee -a "$LOG"
   { USILIC_SETUP_LOGGED=1 sh "$0" "$@"; echo $? > "$status_file"; } 2>&1 | tee -a "$LOG"
   status=$(cat "$status_file")
   rm -f "$status_file"
+  elapsed=$(( $(date +%s) - started ))
+  printf '終了: %s(かかった時間 %d時間%02d分%02d秒)\n' "$(date '+%Y-%m-%d %H:%M:%S')" \
+    $((elapsed / 3600)) $((elapsed % 3600 / 60)) $((elapsed % 60)) | tee -a "$LOG"
   exit "${status:-1}"
 fi
 
