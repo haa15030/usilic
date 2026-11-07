@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1260. **docs/BUILD.md(FreeBSD): NVIDIAのドライバのpkg lock(2026-11-07)**
+   - 直接のユーザー質問("NVIDIA ドライバはlockできないの？")→できると答え、書き足す提案に"書き足して。"
+   - **変更**: 注意点の項目1259の行に、`pkg lock -y nvidia-driver`と、カーネルのモジュールが別のパッケージ(`nvidia-kmod`等、`pkg info -d nvidia-driver`で分かる)なら一緒にロックすること(ドライバ本体とモジュールの版が違うと動かない)を足した。docs/BUILD.htmlを作り直した。
+   - 確かめたこと: 今のportsでモジュールが別のパッケージかは未確認(RTX 3050の実機で`pkg info -d nvidia-driver`を見れば分かる)。
 1259. **docs/BUILD.md(FreeBSD): カーネルとドライバの版のずれはAMDでも、pkg upgradeの後でも起きる(2026-11-07)**
    - 直接のユーザー質問("RX580でもドライバとカーネルの齟齬って起きうる？")→起きうると答え、注意点に1行足す提案に"ぜひ足しておいて"。
    - **変更**: 注意点の「GPUと画面」に、ずれはGPUの種類によらない(amdgpu・i915kmsは同じdrm-kmod、ファームウェア・nvidia-driverもカーネルのモジュール)こと、別の日のスナップショットで入れ直した時と`pkg upgrade`の後の再起動で起きうること、`pkg lock -y drm-612-kmod`で`pkg upgrade`でのずれは避けられることを足した。docs/BUILD.htmlを作り直した。

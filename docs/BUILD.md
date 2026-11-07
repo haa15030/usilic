@@ -525,7 +525,7 @@ xfce4-panel -r
 **GPUと画面**
 
 - 再起動の前に`kldload`が何も言わずに戻ればカーネルと合っている(AMDはコンソールの文字が細かくなる。Intelはi5-7500では変わらなかった)。CURRENTで失敗するならportsからビルドする(3.の※、インストーラのDistribution Selectで`src`を入れておく)。2026-11-07、i5-7500ではpkgの`drm-612-kmod`が`1600030`向け、カーネルが`1600029`で読み込めず、Xが`/dev/dri/card0`を開けずに`Cannot run in framebuffer mode`で止まり、`login:`のままだった。
-- このカーネルとドライバの版のずれは、GPUの種類によらない(AMDのamdgpuもIntelのi915kmsも同じ`drm-kmod`のパッケージで、ファームウェアの`gpu-firmware-*-kmod`、NVIDIAの`nvidia-driver`もカーネルのモジュール)。インストールした日のスナップショットとpkgの組み合わせで決まるので、RX580で一度動いても、別の日のスナップショットで入れ直した時や、カーネルはそのままで`pkg upgrade`した後の再起動で起きうる。3.の※のビルドの後で`pkg lock`しておけば、`pkg upgrade`でのずれは避けられる(ビルドしていなくても、動いているうちに`pkg lock -y drm-612-kmod`しておいてよい)。drm系はユーザーを`video`グループに入れる。
+- このカーネルとドライバの版のずれは、GPUの種類によらない(AMDのamdgpuもIntelのi915kmsも同じ`drm-kmod`のパッケージで、ファームウェアの`gpu-firmware-*-kmod`、NVIDIAの`nvidia-driver`もカーネルのモジュール)。インストールした日のスナップショットとpkgの組み合わせで決まるので、RX580で一度動いても、別の日のスナップショットで入れ直した時や、カーネルはそのままで`pkg upgrade`した後の再起動で起きうる。3.の※のビルドの後で`pkg lock`しておけば、`pkg upgrade`でのずれは避けられる(ビルドしていなくても、動いているうちに`pkg lock -y drm-612-kmod`しておいてよい)。NVIDIAは`pkg lock -y nvidia-driver`。カーネルのモジュールが別のパッケージ(`nvidia-kmod`等、`pkg info -d nvidia-driver`で分かる)なら一緒にロックする(ドライバ本体とモジュールの版が違うと動かないので、片方だけにしない)。drm系はユーザーを`video`グループに入れる。
 - ログインできず`login:`のままなら、`/var/log/lightdm/x-0.log`と`/var/log/Xorg.0.log`を見る。`keyboard.conf`の書き間違いや、`kld_list`の設定漏れでXが起動しない(2026-11-05に実際に両方)。
 - NVIDIAでウィンドウの合成表示が有効だと、xfwm4が`glXBindTexImageEXT`で止まり、画面が固まることがある(RTX 3050・ドライバ595.112.07、2026-11-05。引き金は未特定)。マウスカーソルだけ動く状態になったら、sshから`pkill -9 xfwm4`で戻る。合成表示を切る`xfconf-query`はsshからでは届かないので、XfceのTerminalで実行する。
 - 端末に重ねる-gはmacOSだけ(Linux・FreeBSDは重ねない、ユーザー判断2026-10-31)。
