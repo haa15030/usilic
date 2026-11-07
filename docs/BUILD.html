@@ -183,6 +183,7 @@ Add another user? (yes/no) [no]:</p>
 <h3>2. パッケージ</h3>
 <pre class="screen"><code>「FreeBSD/amd64 (HOST) (ttyv0)
  login: 」</code></pre>
+<p class="note">※ここから先は、別のマシン(Mac等)からsshでつなぐと、この手順書のコマンドをブラウザからコピー&amp;ペーストでき、打ち間違いを避けられる。作ったユーザーでログインして <em>ifconfig | grep broadcast</em> を実行し、「inet」の次の値(例: <code>192.168.1.23</code>)がこのマシンのIPアドレス。別のマシンの端末で <em>ssh <code>ABC</code>@&lt;IP&gt;</em> とつなぎ、以降はそこで続ける(sshdはインストーラのSystem Configurationで既定で有効。無効なら、このマシンのrootで <em>sysrc sshd_enable=YES; service sshd start</em>)。</p>
 <pre class="key"><code>su -</code></pre>
 <p><em>pkg bootstrap</em> -&gt; <em>y</em></p>
 <pre class="key"><code>pkg update</code></pre>
@@ -191,9 +192,15 @@ Add another user? (yes/no) [no]:</p>
 <p><em>pkg install xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa dejavu noto-jp fcitx5 fcitx5-configtool fcitx5-gtk3 fcitx5-qt6 ja-fcitx5-mozc3</em> -&gt; <em>y</em></p>
 <pre class="key"><code>sysrc dbus_enable=YES lightdm_enable=YES</code></pre>
 <h3>3. GPUのドライバ</h3>
-<div class="table"><table><thead><tr><th>GPU</th><th>ドライバ</th><th>起動時に読み込む</th><th>ファームウェア</th><th>他に</th></tr></thead><tbody><tr><td>NVIDIA</td><td><em>pkg install nvidia-driver nvidia-xconfig</em></td><td><em>sysrc kld_list+=nvidia-modeset</em></td><td>ドライバに同梱(インストーラには出ない)</td><td><em>nvidia-xconfig</em> で<code>/etc/X11/xorg.conf</code>を作る</td></tr><tr><td>AMD(Radeon)</td><td><em>pkg install drm-kmod</em></td><td><em>sysrc kld_list+=amdgpu</em>(HD 7000番台以前はradeonkms)</td><td>インストーラが自動で選ぶ(RX580ならgpu-firmware-amd-kmod-polaris10)。漏れたら <em>fwget</em></td><td>Xorgの設定は不要(modesetting)。RX580で確認(2026-11-01)</td></tr><tr><td>Intel内蔵</td><td><em>pkg install drm-kmod</em></td><td><em>sysrc kld_list+=i915kms</em></td><td>同上(<code>gpu-firmware-intel-kmod-*</code>)</td><td>同上</td></tr></tbody></table></div>
+<div class="table"><table><thead><tr><th>GPU</th><th>ドライバ</th><th>起動時に読み込む</th><th>ファームウェア</th><th>他に</th></tr></thead><tbody><tr><td>NVIDIA</td><td><em>pkg install nvidia-driver nvidia-xconfig</em></td><td><em>sysrc kld_list+=nvidia-modeset</em></td><td>ドライバに同梱(インストーラには出ない)</td><td><em>nvidia-xconfig</em> で<code>/etc/X11/xorg.conf</code>を作る</td></tr><tr><td>AMD(Radeon)</td><td><em>pkg install drm-kmod</em></td><td><em>sysrc kld_list+=amdgpu</em>(HD 7000番台以前はradeonkms)</td><td>インストーラが自動で選ぶ(RX580ならgpu-firmware-amd-kmod-polaris10)。漏れたら <em>fwget</em></td><td>Xorgの設定は不要(modesetting)。RX580で確認(2026-11-01)</td></tr><tr><td>Intel内蔵</td><td><em>pkg install drm-kmod</em></td><td><em>sysrc kld_list+=i915kms</em></td><td>同上(<code>gpu-firmware-intel-kmod-*</code>)</td><td>同上。i5-7500(Kaby Lake)で確認(2026-11-07、下の※のビルドが要った)</td></tr></tbody></table></div>
 <p>表の「ドライバ」と「起動時に読み込む」のコマンドを実行する(<em>sysrc</em> を忘れると再起動の後で画面が出ない)。</p>
 <p><em>kldload nvidia-modeset</em>(AMDはamdgpu、Intelはi915kms)を実行し、メッセージが何も出ないことを確かめる。</p>
+<p class="note">※AMD・Intelで <em>kldload</em> が失敗し、<em>dmesg | tail</em> に「depends on kernel - not available or version mismatch」と出たら、pkgのドライバが今のカーネルより新しいCURRENT向けにビルドされている(<em>sysctl -n kern.osreldate</em> がカーネル、<em>pkg info -d drm-kmod</em> の<code>drm-612-kmod-…1600030</code>等の末尾がドライバの版)。/usr/srcの版(<em>grep '^#define __FreeBSD_version' /usr/src/sys/sys/param.h</em>)がカーネルと同じなら、5.の <em>git clone</em> でportsを取ってから、<em>pkg info -d drm-kmod</em> に出たポートをビルドし直す(i5-7500では文字は細かくならなかったが、<em>ls /dev/dri</em> に<code>card0</code>があればよい)。</p>
+<pre class="key"><code>cd /usr/ports/graphics/drm-612-kmod</code></pre>
+<pre class="key"><code>make install-missing-packages</code></pre>
+<pre class="key"><code>make BATCH=yes reinstall clean</code></pre>
+<pre class="key"><code>pkg lock -y drm-612-kmod</code></pre>
+<p class="note">※ロックすると <em>pkg upgrade</em> でpkg版に戻らない。カーネルを更新した時は <em>pkg unlock -y drm-612-kmod</em> で解除し、ビルドし直す。</p>
 <p>NVIDIAの場合は、続けて <em>nvidia-xconfig</em> を実行する。</p>
 <h3>4. sudoとキーボード</h3>
 <pre class="key"><code>echo '%wheel ALL=(ALL:ALL) ALL' &gt; /usr/local/etc/sudoers.d/wheel</code></pre>
@@ -273,7 +280,7 @@ EOF</code></pre>
 <p><strong>インストールとパッケージ</strong></p>
 <ul><li><code>pkg install</code>の<code>firefox</code>の最後に長いメッセージ(boost・gcc14・libjxl・firefoxの未対応機能等)が出るが、対応が要るものは無い。</li><li><code>python3</code>はEPUBのリンクのEpub(narou2epub)・Pdf(url2pdf)に要る。そのほかの準備はHELPのnarou2epub・url2pdfの所。</li><li>最初の起動のインストールの案内で入らなかったものは、次の起動でもう一度だけ実行し、その後はモードラインに「見つかりません」と出すだけなので、手で入れる。</li><li><code>su</code>はwheelグループのユーザーだけ。インストーラで入れなかったユーザーは<code>pw groupmod wheel -m ユーザー名</code>。</li><li><code>noto-jp</code>は-cの表示に要る(無いと端末で豆腐になる字がある)。入れた後はログインし直す。</li></ul>
 <p><strong>GPUと画面</strong></p>
-<ul><li>再起動の前に<code>kldload</code>が何も言わずに戻ればカーネルと合っている(AMD・Intelはコンソールの文字が細かくなる)。CURRENTで失敗するならportsからビルドする(インストーラのDistribution Selectで<code>src</code>を入れておく)。drm系はユーザーを<code>video</code>グループに入れる。</li><li>ログインできず<code>login:</code>のままなら、<code>/var/log/lightdm/x-0.log</code>と<code>/var/log/Xorg.0.log</code>を見る。<code>keyboard.conf</code>の書き間違いや、<code>kld_list</code>の設定漏れでXが起動しない(2026-11-05に実際に両方)。</li><li>NVIDIAでウィンドウの合成表示が有効だと、xfwm4が<code>glXBindTexImageEXT</code>で止まり、画面が固まることがある(RTX 3050・ドライバ595.112.07、2026-11-05。引き金は未特定)。マウスカーソルだけ動く状態になったら、sshから<code>pkill -9 xfwm4</code>で戻る。合成表示を切る<code>xfconf-query</code>はsshからでは届かないので、XfceのTerminalで実行する。</li><li>端末に重ねる-gはmacOSだけ(Linux・FreeBSDは重ねない、ユーザー判断2026-10-31)。</li></ul>
+<ul><li>再起動の前に<code>kldload</code>が何も言わずに戻ればカーネルと合っている(AMDはコンソールの文字が細かくなる。Intelはi5-7500では変わらなかった)。CURRENTで失敗するならportsからビルドする(3.の※、インストーラのDistribution Selectで<code>src</code>を入れておく)。2026-11-07、i5-7500ではpkgの<code>drm-612-kmod</code>が<code>1600030</code>向け、カーネルが<code>1600029</code>で読み込めず、Xが<code>/dev/dri/card0</code>を開けずに<code>Cannot run in framebuffer mode</code>で止まり、<code>login:</code>のままだった。drm系はユーザーを<code>video</code>グループに入れる。</li><li>ログインできず<code>login:</code>のままなら、<code>/var/log/lightdm/x-0.log</code>と<code>/var/log/Xorg.0.log</code>を見る。<code>keyboard.conf</code>の書き間違いや、<code>kld_list</code>の設定漏れでXが起動しない(2026-11-05に実際に両方)。</li><li>NVIDIAでウィンドウの合成表示が有効だと、xfwm4が<code>glXBindTexImageEXT</code>で止まり、画面が固まることがある(RTX 3050・ドライバ595.112.07、2026-11-05。引き金は未特定)。マウスカーソルだけ動く状態になったら、sshから<code>pkill -9 xfwm4</code>で戻る。合成表示を切る<code>xfconf-query</code>はsshからでは届かないので、XfceのTerminalで実行する。</li><li>端末に重ねる-gはmacOSだけ(Linux・FreeBSDは重ねない、ユーザー判断2026-10-31)。</li></ul>
 <p><strong>日本語入力とSDL2</strong></p>
 <ul><li>パッケージのSDL2は<code>DBUS</code>・<code>FCITX</code>が<code>off</code>で、-gでは窓は開いても日本語が入らない(<code>pkg query '%Ok=%Ov' sdl2</code>で分かる)。ビルドしても<code>off</code>のままなら、古い設定が残っているので<code>make rmconfig</code>と<code>make clean</code>をしてからやり直す。</li><li>ビルドの前に<code>pkg lock</code>していると<code>make reinstall</code>が止まる。<code>pkg unlock -y sdl2</code>で解除する。</li></ul>
 <p><strong>日本語とキーボード</strong></p>

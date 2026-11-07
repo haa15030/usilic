@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1257. **docs/BUILD.md(FreeBSD): sshでつなぐためのIPアドレスの調べ方、Intel内蔵GPUでdrm-kmodがカーネルと合わない時のビルド(2026-11-07)**
+   - 直接のユーザー報告(FreeBSD 16.0-CURRENT・i5-7500の内蔵GPUで、手順6.の再起動の後"xfceが出ない止まってる")。sshから読み取るだけのコマンドの結果で、`KLD i915kms.ko: depends on kernel - not available or version mismatch`。pkgの`drm-612-kmod-6.12.110.1600030_3`はカーネル(`kern.osreldate`が`1600029`、`main-n290352-61c70dc16a79`)より新しい版向けで、i915kmsが読み込まれず、Xが`/dev/dri/card0`を開けずに`Cannot run in framebuffer mode`で終わり、lightdmも止まっていた。`/usr/src`は`1600029`で、`/usr/ports/graphics/drm-612-kmod`を`make BATCH=yes reinstall clean`して`kldload i915kms`が通り、`card0`ができ、再起動でXfceに入れた(文字は細かくならなかった)。
+   - 直接のユーザー依頼("2.パッケージ以降は、ssh経由でログインできる環境があるならタイプミス回避の意味でもブラウザからのコピペ進行の方が望ましいのでIPアドレスを調べる方法も記載した方がいいと思う。`ifconfig rge0|grep broadcast|awk '{print $2}'`とか。もっと簡単なのあればそれでよろしく。")。
+   - **変更**: 2.の最初に、sshでつないで続ける案内と`ifconfig | grep broadcast`(インターフェースの名前を知らなくてよい、「inet」の次がIPアドレス)を足した。3.に、`kldload`が版の不一致で失敗した時の確かめ方と、portsから`drm-612-kmod`をビルドしてロックする手順を足し、表のIntel内蔵にi5-7500での確認を書いた。注意点の`kldload`の項も合わせた。docs/BUILD.htmlを`md2html.py`で作り直した。
+   - 確かめたこと: BUILD.htmlの該当の所がタグの残り無く変換されていること。ファームウェア(`gpu-firmware-intel-kmod-kabylake`、pkg版は1600030向け)が読み込めているかは未確認。
 1256. **-cの検索のハイライトの解除で文字の濃さも戻す(2026-11-07)**
    - 直接のユーザー報告(項目1255の後、"直ってない。そういやBigSur...のchrome版Claudeでは``がオレンジ色じゃなくて薄字になるけど、HELPでも`port`を検索するとこんな感じ。=ol.png")。=ol.pngでは一致に背景色が付かず、一致から後が薄色。
    - 調べたこと: 項目1255の版(~/.local/bin/usilic)を80×57・COLORTERM無し・TERM_PROGRAM=Apple_TerminalのPTYで動かし、^Sport^Mの出力が`\x1b[48;5;159m`等の256色で、24ビット色を含まないことを確かめた。256色ならTerminal.appでも背景色が付くはずなので、=ol.pngは24ビット色で送る前の版(またはそれを動かしている別のMac)の画面の可能性が高い。どのMacのどの版かはユーザーに確認中。

@@ -276,6 +276,8 @@ Add another user? (yes/no) [no]:
  login: 」
 ```
 
+※ここから先は、別のマシン(Mac等)からsshでつなぐと、この手順書のコマンドをブラウザからコピー&ペーストでき、打ち間違いを避けられる。作ったユーザーでログインして *ifconfig | grep broadcast* を実行し、「inet」の次の値(例: `192.168.1.23`)がこのマシンのIPアドレス。別のマシンの端末で *ssh `ABC`@\<IP\>* とつなぎ、以降はそこで続ける(sshdはインストーラのSystem Configurationで既定で有効。無効なら、このマシンのrootで *sysrc sshd_enable=YES; service sshd start*)。
+
 ```key
 su -
 ```
@@ -302,11 +304,31 @@ sysrc dbus_enable=YES lightdm_enable=YES
 |---|---|---|---|---|
 | NVIDIA | *pkg install nvidia-driver nvidia-xconfig* | *sysrc kld_list+=nvidia-modeset* | ドライバに同梱(インストーラには出ない) | *nvidia-xconfig* で`/etc/X11/xorg.conf`を作る |
 | AMD(Radeon) | *pkg install drm-kmod* | *sysrc kld_list+=amdgpu*(HD 7000番台以前はradeonkms) | インストーラが自動で選ぶ(RX580ならgpu-firmware-amd-kmod-polaris10)。漏れたら *fwget* | Xorgの設定は不要(modesetting)。RX580で確認(2026-11-01) |
-| Intel内蔵 | *pkg install drm-kmod* | *sysrc kld_list+=i915kms* | 同上(`gpu-firmware-intel-kmod-*`) | 同上 |
+| Intel内蔵 | *pkg install drm-kmod* | *sysrc kld_list+=i915kms* | 同上(`gpu-firmware-intel-kmod-*`) | 同上。i5-7500(Kaby Lake)で確認(2026-11-07、下の※のビルドが要った) |
 
 表の「ドライバ」と「起動時に読み込む」のコマンドを実行する(*sysrc* を忘れると再起動の後で画面が出ない)。
 
 *kldload nvidia-modeset*(AMDはamdgpu、Intelはi915kms)を実行し、メッセージが何も出ないことを確かめる。
+
+※AMD・Intelで *kldload* が失敗し、*dmesg | tail* に「depends on kernel - not available or version mismatch」と出たら、pkgのドライバが今のカーネルより新しいCURRENT向けにビルドされている(*sysctl -n kern.osreldate* がカーネル、*pkg info -d drm-kmod* の`drm-612-kmod-…1600030`等の末尾がドライバの版)。/usr/srcの版(*grep '^#define __FreeBSD_version' /usr/src/sys/sys/param.h*)がカーネルと同じなら、5.の *git clone* でportsを取ってから、*pkg info -d drm-kmod* に出たポートをビルドし直す(i5-7500では文字は細かくならなかったが、*ls /dev/dri* に`card0`があればよい)。
+
+```key
+cd /usr/ports/graphics/drm-612-kmod
+```
+
+```key
+make install-missing-packages
+```
+
+```key
+make BATCH=yes reinstall clean
+```
+
+```key
+pkg lock -y drm-612-kmod
+```
+
+※ロックすると *pkg upgrade* でpkg版に戻らない。カーネルを更新した時は *pkg unlock -y drm-612-kmod* で解除し、ビルドし直す。
 
 NVIDIAの場合は、続けて *nvidia-xconfig* を実行する。
 
@@ -502,7 +524,7 @@ xfce4-panel -r
 
 **GPUと画面**
 
-- 再起動の前に`kldload`が何も言わずに戻ればカーネルと合っている(AMD・Intelはコンソールの文字が細かくなる)。CURRENTで失敗するならportsからビルドする(インストーラのDistribution Selectで`src`を入れておく)。drm系はユーザーを`video`グループに入れる。
+- 再起動の前に`kldload`が何も言わずに戻ればカーネルと合っている(AMDはコンソールの文字が細かくなる。Intelはi5-7500では変わらなかった)。CURRENTで失敗するならportsからビルドする(3.の※、インストーラのDistribution Selectで`src`を入れておく)。2026-11-07、i5-7500ではpkgの`drm-612-kmod`が`1600030`向け、カーネルが`1600029`で読み込めず、Xが`/dev/dri/card0`を開けずに`Cannot run in framebuffer mode`で止まり、`login:`のままだった。drm系はユーザーを`video`グループに入れる。
 - ログインできず`login:`のままなら、`/var/log/lightdm/x-0.log`と`/var/log/Xorg.0.log`を見る。`keyboard.conf`の書き間違いや、`kld_list`の設定漏れでXが起動しない(2026-11-05に実際に両方)。
 - NVIDIAでウィンドウの合成表示が有効だと、xfwm4が`glXBindTexImageEXT`で止まり、画面が固まることがある(RTX 3050・ドライバ595.112.07、2026-11-05。引き金は未特定)。マウスカーソルだけ動く状態になったら、sshから`pkill -9 xfwm4`で戻る。合成表示を切る`xfconf-query`はsshからでは届かないので、XfceのTerminalで実行する。
 - 端末に重ねる-gはmacOSだけ(Linux・FreeBSDは重ねない、ユーザー判断2026-10-31)。
