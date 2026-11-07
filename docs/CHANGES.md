@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1268. **FreeBSDのセットアップのスクリプト(tools/setup-freebsd.sh)(2026-11-07)**
+   - 直接のユーザー提案("ヒアドキュメント等は特にコピペで助かるんだが、ユーザーとrootとで実行する手順をまとめたシェルスクリプトを作るのはどう？　一発実行で終わり。")→スクリプトにできる所・できない所と使い方の形を示し、"やってみて。"
+   - **作ったもの**: `tools/setup-freebsd.sh ユーザー名 [--gpu=nvidia|amd|radeon|intel|none] [--swapcaps]`。rootで実行し、docs/BUILD.mdのFreeBSDの2.〜8.を一度に行う: (1)パッケージ(手順2.の全部と、最初の起動で入れるgroff・mg・texinfo・7-zip・w3m)、(2)GPU(`pciconf -l`のvendorでNVIDIA>AMD>Intelの順に見分け、ドライバを入れてkld_listに足し、`kldload`を試す。dmesgに「version mismatch」が出たら、/usr/srcの版がカーネルと同じか確かめ、`pkg info -d drm-kmod`のポート(drm-612-kmod等)をportsからビルドしてpkg lock(項目1257の手順)。NVIDIAはnvidia-xconfig、それ以外は/dev/dri/card0を確かめる)、(3)dbus・lightdm、sudoers.dのwheel、ユーザーをwheel・video・operatorへ、コンソールのキーマップがjpならXのキーボードをjp106に(`--swapcaps`でctrl:swapcaps)、(4)SDL2をDBUS・FCITX付きでportsからビルドしてpkg lock、(5)`su - ユーザー`で~/.profile・~/.bashrc(・~/.bash_profile)のPATH、~/.xprofile、`gmake usilic`・`gmake install`。NVIDIAはXfceの設定ファイル(xfwm4.xml)で合成表示を切っておく。どの段も済んでいれば飛ばすので、止まったらもう一度実行すれば続きから。出力は/var/log/usilic-setup.logにも。
+   - docs/BUILD.md: FreeBSDの2.の前に「2.〜8.をスクリプトで進める」の節(最初に打つ3行、オプション、非公開の間の鍵)を足し、手で進める手順はそのまま残した。docs/BUILD.htmlを作り直した。
+   - 確かめたこと: `sh -n`のみ。**FreeBSDの実機では未実行**(ユーザーがi5-7500のマシンを入れ直して試す)。fcitx5-qt6は手順2.どおり入れている。ファームウェア(gpu-firmware-*-kmod)の版のずれと、NVIDIAのドライバの版のずれは扱っていない(止まって知らせるだけ)。
 1267. **usilic-web: 既定の本棚(BUILD.html・HELP.epub・蜘蛛の糸.epub)、macOSの設置をMacPortsで、セキュリティの説明(2026-11-07)**
    - 直接のユーザー提案("ブラウザによるBUILD.html参照については、usilic-webをあらかじめ入れてもらうことにして、既定としてのBUILD.html、HELP.epub、日英縦横混在サンプル.epub（Kbt->sample）、青空文庫サンプル.epubをtexts/に入れたヤツを配布ってのはどうかな？　`http://localhost/usilic-web/`の本棚から選んだ`BUILD.html`を参照。")、青空文庫のサンプルは"`蜘蛛の糸`でいい"。日英縦横混在のサンプルは原稿の追記を待つ(ユーザー判断"あとでいい")。
    - **困る点**: 手順書を読むのはusilicをビルドする前で、`make install`が作る原稿置き場(~/.local/usilic-web/texts)がまだ無い。

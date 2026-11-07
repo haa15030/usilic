@@ -256,6 +256,32 @@ Add another user? (yes/no) [no]:
 
 ※sshでログイン中にシステムを入れ直した場合は、ログインする側のマシンで *ssh-keygen -R \<IP\>* を実行する(ホスト鍵が変わるため)。
 
+### 2.〜8.をスクリプトで進める(2026-11-07)
+
+2.〜8.(9.の日本語入力の設定とusilicの起動の前まで)は、`tools/setup-freebsd.sh`で一度に実行できる。インストーラが終わって再起動し、rootでログインした所(sshでつないでもよい)で:
+
+```key
+pkg bootstrap -y && pkg install -y git
+```
+
+```key
+su `ABC` -c 'git clone https://github.com/haa15030/usilic.git ~/git/usilic'
+```
+
+```key
+sh ~`ABC`/git/usilic/tools/setup-freebsd.sh `ABC`
+```
+
+※`ABC`はインストーラで作ったユーザー名。GPUは`pciconf -l`で見分ける(NVIDIA・AMD・Intel)。違う時やAMDのHD 7000番台以前は、最後に`--gpu=nvidia`・`--gpu=amd`・`--gpu=radeon`・`--gpu=intel`を足す。コンソールのキーマップがjpならXのキーボードもjp106にし、`--swapcaps`を足すとCaps LockとCtrlを入れ替える。
+
+※`kldload`がカーネルとの版のずれで失敗したら(下の注意点)、/usr/srcに合わせてportsからドライバをビルドし、`pkg lock`する。SDL2のportsからのビルドもあるので、時間がかかる。途中で止まったら、同じコマンドをもう一度実行すれば、済んだ所を飛ばして続きから進む。記録は`/var/log/usilic-setup.log`。
+
+※最初の起動で入れるgroff・mg・texinfo・7-zip・w3mも、ここで入れる。
+
+※終わったら *reboot* し、9.・10.へ進む。リポジトリが非公開の間は、*git clone* にGitHubへの鍵の登録が要る(Xfceがまだ無いので、注意点の「GUIを入れない時」と同じく、ユーザーで鍵を作って別のマシンのブラウザで登録し、`git@github.com:haa15030/usilic.git`から *git clone* する)。
+
+以下は、スクリプトを使わずに手で進める場合の手順。
+
 ### 2. パッケージ
 
 ```screen
