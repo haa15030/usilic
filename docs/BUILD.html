@@ -178,8 +178,8 @@ Add another user? (yes/no) [no]:</p>
 <h3>2.〜8.をスクリプトで進める(2026-11-07)</h3>
 <p>2.〜8.(9.の日本語入力の設定とusilicの起動の前まで)は、<code>tools/setup-freebsd.sh</code>で一度に実行できる。インストーラが終わって再起動し、rootでログインした所(sshでつないでもよい)で:</p>
 <pre class="key"><code>pkg bootstrap -y &amp;&amp; pkg install -y git</code></pre>
-<pre class="key"><code>su `ABC` -c 'git clone https://github.com/haa15030/usilic.git ~/git/usilic'</code></pre>
-<pre class="key"><code>sh ~`ABC`/git/usilic/tools/setup-freebsd.sh `ABC`</code></pre>
+<pre class="key"><code>su ABC -c 'git clone https://github.com/haa15030/usilic.git ~/git/usilic'</code></pre>
+<pre class="key"><code>sh ~ABC/git/usilic/tools/setup-freebsd.sh ABC</code></pre>
 <p class="note">※<code>ABC</code>はインストーラで作ったユーザー名。GPUは<code>pciconf -l</code>で見分ける(NVIDIA・AMD・Intel)。違う時やAMDのHD 7000番台以前は、最後に<code>--gpu=nvidia</code>・<code>--gpu=amd</code>・<code>--gpu=radeon</code>・<code>--gpu=intel</code>を足す。コンソールのキーマップがjpならXのキーボードもjp106にし、<code>--swapcaps</code>を足すとCaps LockとCtrlを入れ替える。</p>
 <p class="note">※<code>kldload</code>がカーネルとの版のずれで失敗したら(下の注意点)、/usr/srcに合わせてportsからドライバをビルドし、<code>pkg lock</code>する。SDL2のportsからのビルドもあるので、時間がかかる。途中で止まったら、同じコマンドをもう一度実行すれば、済んだ所を飛ばして続きから進む。記録は<code>/var/log/usilic-setup.log</code>。</p>
 <p class="note">※最初の起動で入れるgroff・mg・texinfo・7-zip・w3mも、ここで入れる。</p>

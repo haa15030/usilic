@@ -265,11 +265,11 @@ pkg bootstrap -y && pkg install -y git
 ```
 
 ```key
-su `ABC` -c 'git clone https://github.com/haa15030/usilic.git ~/git/usilic'
+su ABC -c 'git clone https://github.com/haa15030/usilic.git ~/git/usilic'
 ```
 
 ```key
-sh ~`ABC`/git/usilic/tools/setup-freebsd.sh `ABC`
+sh ~ABC/git/usilic/tools/setup-freebsd.sh ABC
 ```
 
 ※`ABC`はインストーラで作ったユーザー名。GPUは`pciconf -l`で見分ける(NVIDIA・AMD・Intel)。違う時やAMDのHD 7000番台以前は、最後に`--gpu=nvidia`・`--gpu=amd`・`--gpu=radeon`・`--gpu=intel`を足す。コンソールのキーマップがjpならXのキーボードもjp106にし、`--swapcaps`を足すとCaps LockとCtrlを入れ替える。
