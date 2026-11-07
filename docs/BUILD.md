@@ -272,7 +272,7 @@ su ABC -c 'git clone https://github.com/haa15030/usilic.git ~/git/usilic'
 sh ~ABC/git/usilic/tools/setup-freebsd.sh ABC
 ```
 
-※`ABC`はインストーラで作ったユーザー名。GPUは`pciconf -l`で見分ける(NVIDIA・AMD・Intel)。違う時やAMDのHD 7000番台以前は、最後に`--gpu=nvidia`・`--gpu=amd`・`--gpu=radeon`・`--gpu=intel`を足す。コンソールのキーマップがjpならXのキーボードもjp106にし、`--swapcaps`を足すとCaps LockとCtrlを入れ替える。
+※`ABC`はインストーラで作ったユーザー名。GPUは`pciconf -l`で見分ける(NVIDIA・AMD・Intel)。違う時やAMDのHD 7000番台以前は、最後に`--gpu=nvidia`・`--gpu=amd`・`--gpu=radeon`・`--gpu=intel`を足す。コンソールのキーマップがjpならXのキーボードもjp106にし、`--swapcaps`を足すとCaps LockとCtrlを入れ替える。後から切り替えるには、rootで`/usr/local/etc/X11/xorg.conf.d/keyboard.conf`の`EndSection`の前に *Option "XkbOptions" "ctrl:swapcaps"* の行を足す(やめる時はその行を消す)。ログインし直すと変わる(スクリプトを`--swapcaps`付きで実行し直しても、keyboard.confが既にあれば変わらない)。USキーボード等でkeyboard.confが無い時は、後の4.の手順でXkbModel・XkbLayoutの2行を省いて作る。
 
 ※`kldload`がカーネルとの版のずれで失敗したら(下の注意点)、/usr/srcに合わせてportsからドライバをビルドし、`pkg lock`する。SDL2のportsからのビルドもあるので、時間がかかる。途中で止まったら、同じコマンドをもう一度実行すれば、済んだ所を飛ばして続きから進む。記録は`/var/log/usilic-setup.log`。
 
