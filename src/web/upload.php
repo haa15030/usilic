@@ -15,8 +15,11 @@ if (!$f || ($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
     json_out(['ok' => false, 'error' => $msg], 400);
 }
 $name = $f['name'];
-if (!valid_name($name)) {
+if (!valid_name($name, 'txt') && !valid_name($name, 'epub')) {
     json_out(['ok' => false, 'error' => '.txtか.epubだけです'], 400);
+}
+if (isset(bundled_docs()[$name])) {  // 既定の本棚(bundled_docs())は読むだけ
+    json_out(['ok' => false, 'error' => '既定の本棚と同じ名前です'], 400);
 }
 $isEpub = valid_name($name, 'epub');
 if ($isEpub && !class_exists('ZipArchive')) {

@@ -2,23 +2,55 @@
 require __DIR__ . '/config.php';
 
 // 原稿の名前として受け付けるか。置き場の外を指せないよう、ディレクトリを含む名前・
-// 隠しファイルは受け付けない。$extは'txt'か'epub'、nullならどちらでも。
+// 隠しファイルは受け付けない。$extは'txt'・'epub'・'html'、nullならどれでも。
+// .htmlは既定の本棚(bundled_docs())の手順書だけ(登録はできない、upload.php)。
 function valid_name($name, $ext = null)
 {
     if (!is_string($name) || $name === '' || $name !== basename($name)
         || $name[0] === '.' || strpos($name, ':') !== false
-        || !preg_match('/\.(txt|epub)$/', $name, $m)) {
+        || !preg_match('/\.(txt|epub|html)$/', $name, $m)) {
         return false;
     }
     return $ext === null || $m[1] === $ext;
 }
 
-// 原稿置き場の中の実際のパス。無ければfalse。
+// 2026-11-07、直接のユーザー提案("usilic-webをあらかじめ入れてもらうことにして、既定としてのBUILD.html、HELP.epub、
+// ...青空文庫サンプル.epubをtexts/に入れたヤツを配布ってのはどうかな？"): リポジトリの中の手順書・HELP・見本を、
+// 原稿置き場とは別の「既定の本棚」として並べる。手順書を読むのはusilicをビルドする(make installが原稿置き場を作る)
+// 前なので、原稿置き場には置かない。読むだけで、同じ名前の登録はできない(upload.php)。リポジトリの外へ写して
+// 置いた時は、無いものを出さないだけ。
+function bundled_docs()
+{
+    static $docs = null;
+    if ($docs === null) {
+        $root = dirname(__DIR__, 2);
+        $docs = [];
+        foreach ([
+            'BUILD.html' => $root . '/docs/BUILD.html',
+            'HELP.epub' => $root . '/doc/HELP.epub',
+            '蜘蛛の糸.epub' => __DIR__ . '/sample/蜘蛛の糸.epub',
+        ] as $name => $path) {
+            if (is_file($path)) {
+                $docs[$name] = $path;
+            }
+        }
+    }
+    return $docs;
+}
+
+// 原稿置き場(か既定の本棚)の中の実際のパス。無ければfalse。既定の本棚が先。
 function doc_path($name, $ext = null)
 {
     global $TEXT_DIR;
     if (!valid_name($name, $ext)) {
         return false;
+    }
+    $bundled = bundled_docs();
+    if (isset($bundled[$name])) {
+        return $bundled[$name];
+    }
+    if (valid_name($name, 'html')) {
+        return false;  // 原稿置き場の.htmlは見せない(手順書だけ)
     }
     $path = $TEXT_DIR . '/' . $name;
     return is_file($path) ? $path : false;

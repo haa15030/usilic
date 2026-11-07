@@ -17,6 +17,7 @@ iPadで原稿(テキスト)を縦書きで読み、校閲箇所を記録するWe
   file.php    展開した.epubの中のファイルを返す
   marks.php   記録の追加・一覧・削除
   get.php     原稿をそのまま返す(usilicが本棚から落とす用)
+  html.php    既定の本棚の手順書(BUILD.html)を見せる
   reader.css  画面
   scroll.js   慣性スクロール・キー(本文の横、本棚のディレクトリ一覧の縦で共通)
   reader.js   読む画面の操作ボタン・記録・記録一覧(.txtと.epubで共通)
@@ -24,11 +25,43 @@ iPadで原稿(テキスト)を縦書きで読み、校閲箇所を記録するWe
   epub.js     .epubの章を並べる、位置(章・文字数)
   .htaccess   Basic認証、config.php等を直接見せない
   sample/     見本の.epub(宮澤賢治〔雨ニモマケズ〕、青空文庫の本文、縦書き)
+              蜘蛛の糸.epubは既定の本棚の見本(芥川龍之介、青空文庫の図書カード92を
+              narou2epubで縦書きのEPUBにしたもの、ルビの見本)
               src/がその中身。作り直すには src/ で
               zip -X0 ../sample.epub mimetype && zip -X9r ../sample.epub META-INF OEBPS
               notes.epubは注釈の見本(縦書き、KDPの3通りの注釈の書き方: <aside epub:type=
               "footnote">・<li epub:type="endnote">・epub:typeの無い双方向のリンク)。
               notes-src/がその中身(作り直し方は上と同じ)。
+
+既定の本棚(2026-11-07)
+----------------------
+本棚の上に「手順書・見本(読むだけ)」として、リポジトリの中の次のものを並べる
+(common.phpのbundled_docs())。usilicをビルドする前(make installが原稿置き場を作る前)
+でも、usilic-webを入れればブラウザで手順書を見ながらコピー&ペーストで進められる。
+
+  BUILD.html     ビルド・インストールの手順書(docs/BUILD.html)
+  HELP.epub      usilicのHELP(doc/HELP.epub)
+  蜘蛛の糸.epub   縦書き・ルビの見本(sample/蜘蛛の糸.epub)
+
+読むだけで、同じ名前の登録はできない。リポジトリの外へ写して置いた時(下のDebianの
+rsync等)は、docs/・doc/が無いのでBUILD.html・HELP.epubは出ない。自分のマシンで使う
+時は、下のmacOSと同じく公開ディレクトリからリポジトリのsrc/webを指す(Alias)。
+
+セキュリティ(2026-11-07)
+------------------------
+usilic-web自身は次の対策をしている。
+  - 原稿の名前に/・..・先頭の.を受け付けず、置き場の外のファイルを読ませない。
+    EPUBの展開でも、..や絶対パスの項目は捨てる。
+  - 表示する文字はエスケープする(htmlspecialchars)。
+  - 本の中のスクリプト・埋め込み・送信を止める(file.php・html.phpの
+    Content-Security-Policy)。本の中のスクリプトがusilic-webを操作できないように。
+  - 登録・記録の書き換えは、usilic-web自身のページからだけ受け付ける(別のサイトの
+    ページから送らせない、common.phpのrequire_same_origin())。
+  - 下のmacOSの設置は127.0.0.1だけで受け、このMacの中からしか開けない。
+    iPad等から開くならBasic認証(.htaccess)を効かせる。
+ただし、PHP・Apache自体の脆弱性(2026年10月のPHP2Shell等)はusilic-webでは防げない。
+修正版が出たら更新すること(macOS: sudo port selfupdate && sudo port upgrade outdated、
+Debian: sudo apt update && sudo apt upgrade)。
 
 Debian 13への設置
 -----------------
@@ -81,19 +114,34 @@ Debian 13への設置
 
 macOSでの設置(http://localhost/usilic-web/)
 -------------------------------------------
-macOSにはPHPが無いので、Homebrewのhttpdとphpを使う。原稿置き場等はconfig.phpが
-macOSなら自動で~/.local/usilic-web/の下にする(このディレクトリの持ち主のホーム)。
-usilicのmake installがそのディレクトリと見本の.epubを作る。
+macOSにはPHPが無いので、MacPortsのapache2とphpを使う(2026-11-07、macOSはMacPortsに一本化、
+usilic本体と同じ。docs/BUILD.md参照)。原稿置き場等はconfig.phpがmacOSなら自動で
+~/.local/usilic-web/の下にする(このディレクトリの持ち主のホーム)。usilicのmake installが
+そのディレクトリと見本の.epubを作る(それより前でも、既定の本棚は読める)。
 
-1. brew install httpd php
+0. MacPorts(https://www.macports.org/install.php)を入れ、ターミナルを開き直す。
+   リポジトリを取ってくる(公開リポジトリはアカウント・鍵が無くても取れる)。
 
-2. $(brew --prefix)/etc/httpd/httpd.conf を直す(Listen 8080 を置き換え、末尾に足す)。
+     mkdir -p ~/git && cd ~/git && git clone https://github.com/haa15030/usilic.git
+
+1. apache2とphpを入れる。phpの版(下は8.5)は、port search --name --glob 'php8*-apache2handler'
+   で新しいものがあればそれに読み替える。入れる前に port info --version php85 で、
+   脆弱性の修正が入った版(2026年10月のPHP2Shellなら8.5.12以降)かを確かめる。
+
+     sudo port selfupdate
+     sudo port install apache2 php85 php85-apache2handler php85-zip
+
+2. phpのモジュールをapache2に登録する。
+
+     cd /opt/local/lib/apache2/modules
+     sudo /opt/local/bin/apxs -a -e -n php mod_php85.so
+
+3. /opt/local/etc/apache2/httpd.conf を直す(Listen 80 を置き換え、末尾に足す)。
    自分(ユーザー名・staff)として動かすので、~/.local/usilic-web へ書ける。
 
      Listen 127.0.0.1:80
      User ユーザー名
      Group staff
-     LoadModule php_module brewのprefix/opt/php/lib/httpd/modules/libphp.so
      <FilesMatch \.php$>
          SetHandler application/x-httpd-php
      </FilesMatch>
@@ -105,12 +153,17 @@ usilicのmake installがそのディレクトリと見本の.epubを作る。
 
    AllowOverrideを足さないので.htaccess(Basic認証)は効かない。127.0.0.1だけで
    受けるのでこのMacの中からしか開けない。iPad等からも開くなら Listen 80 にし、
-   AllowOverride AuthConfigと認証(上の4.)を足すこと(同じネットワークの誰でも
+   AllowOverride AuthConfigと認証(上のDebianの4.)を足すこと(同じネットワークの誰でも
    原稿を読み、上書きし、記録を消せてしまう)。
 
-3. ポート80で受けるので、sudoで起動する(以後ログイン時に自動で起動)。
+4. 起動する(以後ログイン時に自動で起動)。
 
-     sudo brew services start httpd
+     sudo port load apache2
+
+5. ブラウザで http://localhost/usilic-web/ を開き、「手順書・見本」のBUILD.htmlを選ぶ。
+
+   以前Homebrewのhttpd・phpで設置していたMacは、sudo brew services stop httpd で止めてから
+   上の手順にする(どちらも80番で受けるため)。
 
 Windows 11での設置(http://localhost/usilic-web/)
 -------------------------------------------------

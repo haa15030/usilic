@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1267. **usilic-web: 既定の本棚(BUILD.html・HELP.epub・蜘蛛の糸.epub)、macOSの設置をMacPortsで、セキュリティの説明(2026-11-07)**
+   - 直接のユーザー提案("ブラウザによるBUILD.html参照については、usilic-webをあらかじめ入れてもらうことにして、既定としてのBUILD.html、HELP.epub、日英縦横混在サンプル.epub（Kbt->sample）、青空文庫サンプル.epubをtexts/に入れたヤツを配布ってのはどうかな？　`http://localhost/usilic-web/`の本棚から選んだ`BUILD.html`を参照。")、青空文庫のサンプルは"`蜘蛛の糸`でいい"。日英縦横混在のサンプルは原稿の追記を待つ(ユーザー判断"あとでいい")。
+   - **困る点**: 手順書を読むのはusilicをビルドする前で、`make install`が作る原稿置き場(~/.local/usilic-web/texts)がまだ無い。
+   - **変更**: common.phpの`bundled_docs()`で、リポジトリの中のdocs/BUILD.html・doc/HELP.epub・src/web/sample/蜘蛛の糸.epub(芥川龍之介、青空文庫の図書カード92をnarou2epubで縦書きのEPUBにしたもの)を「既定の本棚」として原稿置き場とは別に並べる(本棚の上に「手順書・見本(読むだけ)」)。読むだけで、同じ名前の登録はできない。.htmlは新しいhtml.phpで、スクリプト・外のものを止めて(CSPのdefault-src 'none'、styleはインライン可)見せる。原稿置き場の.htmlは見せない。usilicの^J^Eの本棚(index.php?list=1)にも名前を出す(usilicは.epub・.txtだけを拾う)。
+   - src/web/README: 既定の本棚の節、セキュリティの節(usilic-web自身の対策と、PHP・Apache自体は更新が要ること)を足し、macOSの設置をMacPortsのapache2・php85で書き直した(port名はports.macports.orgで確認、php85-apache2handlerのapxsの手順はそのportの説明のとおり)。
+   - 確かめたこと: `php -l`と、`php -S`で、本棚に3つが並ぶこと、`?list=1`に名前が出ること、html.phpがCSP付きで200・`../README`は404、蜘蛛の糸.epubのbook.phpが200。**ブラウザでの見え方と、MacPortsのapache2・phpでの設置(port名・apxsの手順)は未確認**(このMacのMacPortsはMojaveの時のままで、移行しないと動かない)。リポジトリの外へ写して置くDebianの設置ではBUILD.html・HELP.epubは出ない。
 1266. **macOSはMacPortsに一本化(最初の起動のインストール・ビルドの手順)(2026-11-07)**
    - 直接のユーザー判断("macOSの新旧およびCPU種別によって使えたり使えなかったりするよりは（一年後にはIntel用Homebrewも使えないとなればなおさら）MacPortsに一本化しておいた方がいいと思う。手順は長くなっても見てるだけで終わるしsudoの手間くらいは大目にみてくれるのではないかと。")。発端はPHP2Shellの更新にbrewを使う是非のユーザーの問い("phpの更新にbrewを使うのはマズくない？　macOS新旧問わず、いっそ全てをbrew無しにしたらどうなる？")で、brew無しの代わりを表にして、MacPortsへの一本化・今のまま・OSで分けるの3案を示した。
    - **以前**: Homebrew(brew)があればbrew install、無ければHomebrew自体のインストーラ。Intel Macでbrewが無ければMacPorts(項目1233〜1247)。

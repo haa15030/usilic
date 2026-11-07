@@ -3,12 +3,25 @@ require __DIR__ . '/common.php';
 
 $files = array_merge(glob($TEXT_DIR . '/*.txt') ?: [], glob($TEXT_DIR . '/*.epub') ?: []);
 usort($files, function ($a, $b) { return filemtime($b) - filemtime($a); });
+$bundled = bundled_docs();  // 既定の本棚(common.phpのbundled_docs())
+
+// 一覧の行のリンク先(.epubはbook.php、.txtはread.php、既定の本棚の.htmlはhtml.php)
+function shelf_url($name)
+{
+    $page = valid_name($name, 'epub') ? 'book.php' : (valid_name($name, 'html') ? 'html.php' : 'read.php');
+    return $page . '?f=' . rawurlencode($name);
+}
 
 // usilic(^J^EのURL)用: 名前だけを1行に1つ(新しい順)。
 if (isset($_GET['list'])) {
     header('Content-Type: text/plain; charset=utf-8');
     foreach ($files as $path) {
         echo basename($path), "\n";
+    }
+    foreach ($bundled as $name => $path) {
+        if (!in_array($TEXT_DIR . '/' . $name, $files, true)) {
+            echo $name, "\n";
+        }
     }
     exit;
 }
@@ -28,13 +41,23 @@ if (isset($_GET['list'])) {
 <input type="file" id="pick" accept=".txt,.epub,text/plain,application/epub+zip" multiple hidden>
 </label>
 <p id="status"></p>
+<?php if ($bundled): ?>
+<h2>手順書・見本(読むだけ)</h2>
+<ul>
+<?php foreach ($bundled as $name => $path): ?>
+<li><a href="<?= h(shelf_url($name)) ?>"><?= h($name) ?></a>
+<span class="date"><?= date('Y-m-d H:i', filemtime($path)) ?></span></li>
+<?php endforeach; ?>
+</ul>
+<h2>原稿</h2>
+<?php endif; ?>
 <?php if (!$files): ?>
 <p>原稿がありません(<?= h($TEXT_DIR) ?>)。</p>
 <?php else: ?>
 <ul>
 <?php foreach ($files as $path):
     $name = basename($path);
-    $url = (valid_name($name, 'epub') ? 'book.php' : 'read.php') . '?f=' . rawurlencode($name); ?>
+    $url = shelf_url($name); ?>
 <li><a href="<?= h($url) ?>"><?= h($name) ?></a>
 <span class="date"><?= date('Y-m-d H:i', filemtime($path)) ?></span></li>
 <?php endforeach; ?>
