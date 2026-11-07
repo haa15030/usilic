@@ -267,13 +267,12 @@ EOF</code></pre>
 <pre class="key"><code>echo 'PATH=$HOME/.local/bin:$PATH; export PATH' &gt;&gt; ~/.bash_profile</code></pre>
 <h3>9. 日本語入力の設定</h3>
 <p>アプリケーション -&gt; 設定 -&gt; Fcitx5 設定</p>
-<p>「入力メソッド」に Mozc があることを確かめる。無ければ追加する。一覧に出なければ「現在の言語のみ表示」のチェックを外す。</p>
-<p>「グローバルオプション」タブの「入力メソッドの切り替え:」から「Control+スペース」の「-」をクリック(usilicの選択/非選択のキーと被るため)。切り替えは 半角／全角 のキーで行う -&gt; 「適用」 -&gt; 「閉じる」</p>
+<p>「入力メソッド」に Mozc があることを確かめる。無ければ追加して「適用」。一覧に出なければ「現在の言語のみ表示」のチェックを外す。 -&gt; 「閉じる」</p>
 <h3>10. usilicの起動</h3>
-<p>XfceのTerminalで、パネルを再起動する(ログインした後で <em>gmake install</em> したusilicをメニューに出すため)。</p>
-<pre class="key"><code>xfce4-panel -r</code></pre>
 <p>アプリケーション -&gt; アクセサリー -&gt; usilic をクリックする。</p>
-<p>「usilic-1.5b:~$ sudo pkg install -y groff mg texinfo 7-zip w3m」で <em>Enter</em></p>
+<p class="note">※アクセサリーにusilicが無い時だけ、XfceのTerminalでパネルを再起動してから選ぶ(ログインした後で <em>gmake install</em> したusilicがメニューに出ないことがある。2026-11-07のi5-7500では再起動しなくても出ていた)。</p>
+<pre class="key"><code>xfce4-panel -r</code></pre>
+<p>usilicが開いたら、「usilic-1.5b:~$ sudo pkg install -y groff mg texinfo 7-zip w3m」で <em>Enter</em></p>
 <p>パスワードを入力する。</p>
 <h3>注意点</h3>
 <p>以下は上の表記の区別とは別で、<code>`</code> はコマンドやファイル名を表す。</p>

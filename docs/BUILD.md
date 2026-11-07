@@ -492,21 +492,19 @@ echo 'PATH=$HOME/.local/bin:$PATH; export PATH' >> ~/.bash_profile
 
 アプリケーション -> 設定 -> Fcitx5 設定
 
-「入力メソッド」に Mozc があることを確かめる。無ければ追加する。一覧に出なければ「現在の言語のみ表示」のチェックを外す。
-
-「グローバルオプション」タブの「入力メソッドの切り替え:」から「Control+スペース」の「-」をクリック(usilicの選択/非選択のキーと被るため)。切り替えは 半角／全角 のキーで行う -> 「適用」 -> 「閉じる」
+「入力メソッド」に Mozc があることを確かめる。無ければ追加して「適用」。一覧に出なければ「現在の言語のみ表示」のチェックを外す。 -> 「閉じる」
 
 ### 10. usilicの起動
 
-XfceのTerminalで、パネルを再起動する(ログインした後で *gmake install* したusilicをメニューに出すため)。
+アプリケーション -> アクセサリー -> usilic をクリックする。
+
+※アクセサリーにusilicが無い時だけ、XfceのTerminalでパネルを再起動してから選ぶ(ログインした後で *gmake install* したusilicがメニューに出ないことがある。2026-11-07のi5-7500では再起動しなくても出ていた)。
 
 ```key
 xfce4-panel -r
 ```
 
-アプリケーション -> アクセサリー -> usilic をクリックする。
-
-「usilic-1.5b:~\$ sudo pkg install -y groff mg texinfo 7-zip w3m」で *Enter*
+usilicが開いたら、「usilic-1.5b:~\$ sudo pkg install -y groff mg texinfo 7-zip w3m」で *Enter*
 
 パスワードを入力する。
 
