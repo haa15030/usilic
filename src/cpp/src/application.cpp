@@ -1467,6 +1467,11 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       name = "LOCATE";
     } else if (cutOrigin_ == CutOrigin::Du) {
       name = "DU";
+    } else if (isGeneratedHelpEpub(fileMode_.currentFile())) {
+      // 2026-11-07、直接のユーザー報告(最初の起動のHELP、"気がつくとモードラインがこうなっていた。「HELP.epub」...
+      // モード名...は「HELP」"): HELPのページャーのl(usilicrcのKEYのM-6、^Jp^usilic-1.5b:^M)で分けた本文は、
+      // ディスクに無い作ったEPUBのファイル名になっていた。openEpub()と同じく「HELP」。
+      name = "HELP";
     } else {
       name = std::filesystem::path(fileMode_.currentFile()).filename().string();
     }
@@ -19548,6 +19553,15 @@ bool Application::pollShellHandoff() {
   in.close();
   ::unlink(path.c_str());
   if (resolved.empty()) return false;
+
+  // 2026-11-07、直接のユーザー報告("機能制限SHELLで`usilic .^M`とやると親のままカレントディレクトリ(ls)になる。子プロセス
+  // による(ls)、が反映されてない"): ページャーとして起動した時(最初の起動のHELP等、pagerLaunch_)は、親はディレクトリへ
+  // 行かない(gatePagerKey()と同じ)。受け取ったパスは、^Jpのusilicと同じく子のusilicで開く(-gは別の窓、-cは端末を明け
+  // 渡して終われば戻る)。
+  if (pagerLaunch_) {
+    programPromptDirectory_ = std::filesystem::path(resolved).parent_path().string();
+    return runExternalUsilicPager("usilic " + shellQuoteArg(resolved));
+  }
 
   if (std::filesystem::is_directory(resolved)) {
     currentMode_ = ApplicationMode::Directory;
