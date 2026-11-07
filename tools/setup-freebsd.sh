@@ -90,20 +90,25 @@ case "$gpu" in
   *) die "--gpu は nvidia・amd・radeon・intel・none のどれか" ;;
 esac
 
-# drm-kmodのポートを/usr/srcに合わせてビルドし直す(pkgのドライバが今のカーネルより新しい版向けの時)。
-build_drm_from_ports() {
-  drm=$(pkg info -d drm-kmod | awk '/drm-[0-9a-z]+-kmod-/ { sub(/^[ \t]+/, ""); sub(/-[0-9][^-]*$/, ""); print; exit }')
-  [ -n "$drm" ] || die "drm-kmodの中身のポートが分かりません(pkg info -d drm-kmod)"
+# ドライバの.koを入れたポートを/usr/srcに合わせてビルドし直す(pkgのドライバが今のカーネルより新しい版向けの時)。
+# AMD・Intelはdrm-612-kmod等、NVIDIAはnvidia-kmod等(どのポートかは、.koを入れたパッケージから調べる)。
+build_kmod_from_ports() {
+  ko=/boot/modules/$1.ko
+  pkgname=$(pkg which -q "$ko")
+  [ -n "$pkgname" ] || die "$ko を入れたパッケージが分かりません(pkg which $ko)"
+  name=$(pkg query %n "$pkgname")
+  origin=$(pkg query %o "$pkgname")
+  flavor=$(pkg annotate -Sq "$name" flavor 2>/dev/null)
   [ -f /usr/src/sys/sys/param.h ] ||
     die "/usr/src がありません。インストーラのDistribution Selectでsrcを選んで入れ直すか、カーネルと同じ版のソースを置いてください"
   kernel=$(sysctl -n kern.osreldate)
   src=$(awk '/^#define __FreeBSD_version/ { print $3 }' /usr/src/sys/sys/param.h)
   [ "$kernel" = "$src" ] || die "/usr/src の版($src)がカーネル($kernel)と違います。カーネルと同じ版のソースが要ります"
   ensure_ports
-  echo "$drm をportsからビルドします(カーネル $kernel 向け)"
-  (cd "/usr/ports/graphics/$drm" && make BATCH=yes install-missing-packages && make BATCH=yes reinstall clean) ||
-    die "$drm のビルドに失敗しました"
-  pkg lock -y "$drm"
+  echo "$name($origin${flavor:+、FLAVOR=$flavor})をportsからビルドします(カーネル $kernel 向け)"
+  (cd "/usr/ports/$origin" && make BATCH=yes ${flavor:+FLAVOR=$flavor} install-missing-packages &&
+    make BATCH=yes ${flavor:+FLAVOR=$flavor} reinstall clean) || die "$name のビルドに失敗しました"
+  pkg lock -y "$name"
 }
 
 ensure_ports() {
@@ -122,8 +127,8 @@ if [ -n "$module" ]; then
   sysrc -n kld_list 2>/dev/null | tr ' ' '\n' | grep -qx "$module" || sysrc kld_list+="$module"
   if ! kldstat -n "$module" >/dev/null 2>&1; then
     if ! kldload "$module"; then
-      if [ "$gpu" != nvidia ] && dmesg | tail -20 | grep -q "version mismatch"; then
-        build_drm_from_ports
+      if dmesg | tail -20 | grep -q "version mismatch"; then
+        build_kmod_from_ports "$module"
         kldload "$module" || die "ビルドし直しても $module を読み込めません(dmesg | tail を見てください)"
       else
         die "$module を読み込めません(dmesg | tail を見てください)"

@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1274. **tools/setup-freebsd.sh: 版のずれのportsからのビルドをNVIDIAにも(2026-11-07)**
+   - ユーザーの次の予定("RTX3050もやりたい。こちらの注意点もよろしく。")。項目1268ではNVIDIAのドライバの版のずれは「止まって知らせるだけ」だった。
+   - **変更**: `build_drm_from_ports`(drm-kmodの依存からdrm-612-kmod等を拾っていた)を`build_kmod_from_ports モジュール名`にし、/boot/modules/モジュール名.koを入れたパッケージを`pkg which`で調べて、その名前・origin・flavorでportsからビルドしてpkg lockする。NVIDIA(nvidia-modeset.ko)にもAMD・Intelと同じく、kldloadが「version mismatch」で失敗したら使う。確かめたのは`sh -n`のみ(AMD・Intelでも、ビルドするポートの選び方が変わった)。
+   - 同じやり取りで: 公開鍵の節は、個人の非公開リポジトリでデバッグする人のために残す(ユーザー判断、項目1273で外したのはスクリプトの節の※だけ)。`git clone https://github.com/haa15030/usilic`で取れたのは既定のブランチがmpi-gui-fixだから。master→mainは公開の時に(提案)。
 1273. **docs/BUILD.md: スクリプトの節のgit cloneは公開の時の書き方だけに(2026-11-07)**
    - ユーザー判断("git cloneは公開用の記述でよろしく。")。RX580で試す前の注意点として、アシスタントが「一時的に公開にするか、鍵で`git@github.com:`から」と書いたのを受けて。試す時はユーザーが一時的に公開にする。
    - **変更**: 「2.〜8.をスクリプトで進める」の最後の※から、非公開の間の鍵の登録の説明を外した(`https://github.com/haa15030/usilic.git`の行はそのまま)。手で進める手順の鍵の登録(非公開の間だけの節)はそのまま残した。docs/BUILD.htmlを作り直した。
