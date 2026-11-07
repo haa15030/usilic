@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1275. **tools/setup-freebsd.sh: ファームウェアの版のずれもportsからビルド(RX580でXfceが出なかった)(2026-11-07)**
+   - ユーザーの報告("いつもの場所（xfceが出ない）で止まった。")。RX580のマシン(ahmbsd)で、スクリプトは最後まで通った(「終了: 2026-11-07 19:25:31(かかった時間 0時間15分39秒)」、項目1269の表示が実地で出た)が、再起動するとlightdmが「greeter display server failed to start」で止まった。
+   - **原因**: amdgpu.ko(drm-612-kmod)は今回は版が合っていて読み込めたが、ファームウェアの.koがカーネルより新しい版向けだった(dmesg: `KLD amdgpu_polaris10_sdma_bin.ko: depends on kernel - not available or version mismatch`→`could not load firmware image 'amdgpu/polaris10_sdma.bin'`→`early_init of IP block <sdma_v3_0> failed -19`→`amdgpu: finishing device.`)。ドライバは途中で止まるが/dev/dri/card0は残る(Xorg.0.log: `open /dev/dri/card0: Operation not supported by device`)ので、card0があるかだけを見ていたスクリプトは気づかなかった。項目1268で「ファームウェアの版のずれは扱っていない」としていた所。
+   - **変更**: ドライバを読み込んだ後、dmesgの「KLD 〜.ko: depends on kernel - not available or version mismatch」の.koを集め、それぞれを入れたパッケージ(pkg which)のポートをflavor付きで/usr/srcに合わせてビルドしてpkg lockする(`build_kmod_from_ports`を.koのパスを取る形にし、lock済みなら飛ばす。再実行してもdmesgに再起動前の行が残っているため)。ビルドし直したら、最後に「必ず reboot」と出す(読み込み直しは再起動の時)。docs/BUILD.mdの※に足し、docs/BUILD.htmlを作り直した。確かめたのは`sh -n`とdmesgの行を拾うsedのみ。
 1274. **tools/setup-freebsd.sh: 版のずれのportsからのビルドをNVIDIAにも(2026-11-07)**
    - ユーザーの次の予定("RTX3050もやりたい。こちらの注意点もよろしく。")。項目1268ではNVIDIAのドライバの版のずれは「止まって知らせるだけ」だった。
    - **変更**: `build_drm_from_ports`(drm-kmodの依存からdrm-612-kmod等を拾っていた)を`build_kmod_from_ports モジュール名`にし、/boot/modules/モジュール名.koを入れたパッケージを`pkg which`で調べて、その名前・origin・flavorでportsからビルドしてpkg lockする。NVIDIA(nvidia-modeset.ko)にもAMD・Intelと同じく、kldloadが「version mismatch」で失敗したら使う。確かめたのは`sh -n`のみ(AMD・Intelでも、ビルドするポートの選び方が変わった)。

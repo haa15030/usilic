@@ -90,13 +90,18 @@ case "$gpu" in
   *) die "--gpu は nvidia・amd・radeon・intel・none のどれか" ;;
 esac
 
-# ドライバの.koを入れたポートを/usr/srcに合わせてビルドし直す(pkgのドライバが今のカーネルより新しい版向けの時)。
-# AMD・Intelはdrm-612-kmod等、NVIDIAはnvidia-kmod等(どのポートかは、.koを入れたパッケージから調べる)。
+# .koを入れたポートを/usr/srcに合わせてビルドし直し、pkg lockする(pkgの.koが今のカーネルより新しい版向けの時)。
+# ドライバ(AMD・Intelはdrm-612-kmod等、NVIDIAはnvidia-kmod等)も、ファームウェア(gpu-firmware-amd-kmod-polaris10等)も、
+# どのポートかは.koを入れたパッケージから調べる。既にlockしてあれば(前にビルドし直した)何もしない。
 build_kmod_from_ports() {
-  ko=/boot/modules/$1.ko
+  ko=$1
   pkgname=$(pkg which -q "$ko")
   [ -n "$pkgname" ] || die "$ko を入れたパッケージが分かりません(pkg which $ko)"
   name=$(pkg query %n "$pkgname")
+  if [ "$(pkg query %k "$name")" = 1 ]; then
+    echo "$name はビルドし直してlock済みです"
+    return 0
+  fi
   origin=$(pkg query %o "$pkgname")
   flavor=$(pkg annotate -Sq "$name" flavor 2>/dev/null)
   [ -f /usr/src/sys/sys/param.h ] ||
@@ -109,6 +114,7 @@ build_kmod_from_ports() {
   (cd "/usr/ports/$origin" && make BATCH=yes ${flavor:+FLAVOR=$flavor} install-missing-packages &&
     make BATCH=yes ${flavor:+FLAVOR=$flavor} reinstall clean) || die "$name のビルドに失敗しました"
   pkg lock -y "$name"
+  rebuilt=yes
 }
 
 ensure_ports() {
@@ -128,7 +134,7 @@ if [ -n "$module" ]; then
   if ! kldstat -n "$module" >/dev/null 2>&1; then
     if ! kldload "$module"; then
       if dmesg | tail -20 | grep -q "version mismatch"; then
-        build_kmod_from_ports "$module"
+        build_kmod_from_ports "/boot/modules/$module.ko"
         kldload "$module" || die "ビルドし直しても $module を読み込めません(dmesg | tail を見てください)"
       else
         die "$module を読み込めません(dmesg | tail を見てください)"
@@ -136,6 +142,13 @@ if [ -n "$module" ]; then
     fi
   fi
   echo "$module を読み込みました"
+  # ドライバが読み込んだファームウェア(AMDのgpu-firmware-amd-kmod-polaris10等)の.koも、版がずれていると読めない。
+  # ドライバは途中で止まるが/dev/dri/card0は残るので、dmesgで見つける(2026-11-07、RX580で実際に)。
+  rebuilt=no
+  for ko in $(dmesg | sed -n 's/^KLD \(.*\.ko\): depends on kernel - not available or version mismatch$/\1/p' | sort -u); do
+    build_kmod_from_ports "/boot/modules/$ko"
+  done
+  [ "$rebuilt" = yes ] && reboot_needed=yes
   if [ "$gpu" = nvidia ] && [ ! -f /etc/X11/xorg.conf ]; then
     nvidia-xconfig || die "nvidia-xconfig に失敗しました"
   fi
@@ -230,6 +243,9 @@ EOF
 fi
 
 say "終わりました"
+if [ "${reboot_needed:-no}" = yes ]; then
+  echo "ファームウェアをビルドし直したので、必ず reboot してください(読み込み直しは再起動の時)。"
+fi
 echo "reboot して、Xfceに $user でログインしてください。"
 echo "その後: アプリケーション → 設定 → Fcitx5 設定 でMozcがあることを確かめ、"
 echo "        アプリケーション → アクセサリー → usilic で起動します(docs/BUILD.mdの9.・10.)。"
