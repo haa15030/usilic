@@ -33412,6 +33412,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - ユーザーの報告(RX580、項目1275を取ってきて再実行した出力: "sdl2-2.32.10_2 is locked and may not be modified"→"*** pkg install に失敗しました"、"rebootしてしまったが、エラーっぽいの出た。")。
    - **原因**: 1.の`pkg install`に、4.でportsからビルドしてpkg lockしたsdl2も渡していた。入っているものでも、渡すとpkgは入れ直そうとし、lockされていると失敗する。1回目は通るが、2回目以降は必ずここで止まる(「止まったらもう一度実行すれば続きから」が成り立っていなかった)。2.のdrm-kmod・nvidia-driverも、中身をlockした後は同じことになりうる。
    - **変更**: `pkg_install`(`pkg info -e`で入っていないものだけを`pkg install -y`)を足し、1.と2.のpkg installをこれにした。確かめたのは`sh -n`のみ。
+   - **実機で確認(2026-11-07)**: RX580のマシン(ahmbsd)で、項目1276を取ってきて再実行→1.を通り、2.でファームウェア(項目1275)をportsからビルド→rebootでXfceに入り、usilicの最初のHELPが出た(ユーザー報告"今度は来た！　HELP出現🎉")。スクリプトだけでRX580(Polaris)が最後まで通ったのはこれが初めて。
 1275. **tools/setup-freebsd.sh: ファームウェアの版のずれもportsからビルド(RX580でXfceが出なかった)(2026-11-07)**
    - ユーザーの報告("いつもの場所（xfceが出ない）で止まった。")。RX580のマシン(ahmbsd)で、スクリプトは最後まで通った(「終了: 2026-11-07 19:25:31(かかった時間 0時間15分39秒)」、項目1269の表示が実地で出た)が、再起動するとlightdmが「greeter display server failed to start」で止まった。
    - **原因**: amdgpu.ko(drm-612-kmod)は今回は版が合っていて読み込めたが、ファームウェアの.koがカーネルより新しい版向けだった(dmesg: `KLD amdgpu_polaris10_sdma_bin.ko: depends on kernel - not available or version mismatch`→`could not load firmware image 'amdgpu/polaris10_sdma.bin'`→`early_init of IP block <sdma_v3_0> failed -19`→`amdgpu: finishing device.`)。ドライバは途中で止まるが/dev/dri/card0は残る(Xorg.0.log: `open /dev/dri/card0: Operation not supported by device`)ので、card0があるかだけを見ていたスクリプトは気づかなかった。項目1268で「ファームウェアの版のずれは扱っていない」としていた所。
