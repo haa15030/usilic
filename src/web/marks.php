@@ -54,6 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     json_out(['ok' => true, 'marks' => $list]);
 }
 
+require_same_origin();
 $action = $_POST['action'] ?? '';
 
 if ($action === 'add') {

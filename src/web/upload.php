@@ -6,6 +6,7 @@ require __DIR__ . '/common.php';
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_out(['ok' => false, 'error' => 'POSTのみ'], 405);
 }
+require_same_origin();
 $f = $_FILES['file'] ?? null;
 if (!$f || ($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
     $err = $f['error'] ?? UPLOAD_ERR_NO_FILE;

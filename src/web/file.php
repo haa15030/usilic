@@ -38,6 +38,11 @@ if ($root === false || $path === false || !$under($path, $root) || !is_file($pat
 
 $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
 header('Content-Type: ' . ($TYPES[$ext] ?? 'application/octet-stream'));
+// 2026-11-07、直接のユーザー依頼: 章はこのサイトのiframeで見せるので、本の中のスクリプトが動くと、usilic-webの
+// 登録・記録をこのサイトとして操作できてしまう(AO3等から落としたEPUBは中身を作っていない)。本の文書では
+// スクリプト・埋め込み・送信を止める(章の組み立てはepub.jsが外の画面から行うので影響しない)。
+header("Content-Security-Policy: script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'");
+header('X-Content-Type-Options: nosniff');
 header('Content-Length: ' . filesize($path));
 header('Cache-Control: no-cache');
 readfile($path);

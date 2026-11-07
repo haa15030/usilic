@@ -65,6 +65,30 @@ function reader_bar()
 <?php
 }
 
+// 2026-11-07、直接のユーザー依頼(CSRF): 登録・記録の書き換え(POST)は、usilic-web自身のページからだけ受け付ける。
+// ブラウザはBasic認証のパスワードを自動で付けるので、ログイン中に開いた別のサイトのページからも送らせることが
+// できてしまう。ブラウザはPOSTに送り元(Origin。古いものはRefererだけ)を付けるので、それがこのサイトと違えば断る。
+// curl等の送り元を付けないものはそのまま通す(Basic認証は要る)。
+function require_same_origin()
+{
+    if (($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '') === 'cross-site') {
+        json_out(['ok' => false, 'error' => '別のサイトからは受け付けません'], 403);
+    }
+    $from = $_SERVER['HTTP_ORIGIN'] ?? ($_SERVER['HTTP_REFERER'] ?? '');
+    if ($from === '' || $from === 'null') {
+        if ($from === 'null') {
+            json_out(['ok' => false, 'error' => '別のサイトからは受け付けません'], 403);
+        }
+        return;
+    }
+    $host = parse_url($from, PHP_URL_HOST);
+    $port = parse_url($from, PHP_URL_PORT);
+    $authority = $host === null ? '' : $host . ($port ? ':' . $port : '');
+    if (strcasecmp($authority, $_SERVER['HTTP_HOST'] ?? '') !== 0) {
+        json_out(['ok' => false, 'error' => '別のサイトからは受け付けません'], 403);
+    }
+}
+
 function json_out($data, $status = 200)
 {
     http_response_code($status);

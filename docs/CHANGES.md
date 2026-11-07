@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1265. **usilic-web: 本の中のスクリプトを止める(CSP)、登録・記録は自分のページからだけ受け付ける(CSRF)(2026-11-07)**
+   - 直接のユーザー質問("usilic-webのPHPは騒ぎになったセキュリティも問題無し？")→src/web/のPHPを読んで、PHP本体の件(2026年10月のPHP2Shell、修正版は8.5.12・8.4.27・8.3.36・8.2.35。mpiは8.5.11でPHPの更新が要る)と、コードの気になる点2つを答え、"直しといて。"
+   - **気になった点**: (1)章は同じサイトのiframe(file.php)で見せるので、EPUBの中のスクリプトがusilic-webの登録・記録をこのサイトとして操作できた(AO3等から落としたEPUBは中身を作っていない)。(2)ブラウザはBasic認証のパスワードを自動で付けるので、ログイン中に開いた別のサイトのページからupload.php・marks.phpへ送らせることができた。
+   - **変更**: file.phpの応答に`Content-Security-Policy: script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'`と`X-Content-Type-Options: nosniff`(章の組み立てはepub.jsが外の画面から行うので影響しない)。common.phpに`require_same_origin()`を足し、upload.phpとmarks.phpのPOSTで、送り元(Sec-Fetch-Site・Origin、無ければReferer)がこのサイトでなければ403。送り元を付けないcurl等はそのまま(usilicの本棚・取得はGETなので変わらない)。
+   - 確かめたこと: `php -l`と、`php -S`で別のサイトのOrigin・`Sec-Fetch-Site: cross-site`のPOSTが403になること、同じサイト・送り元無しは通ること(書き込まない`action`で)、file.phpにヘッダーが付くこと。**ブラウザで本を読む・記録する動きは未確認。**
 1264. **docs/BUILD.md(FreeBSD): ~/.bashrcにもPATHを(usilicのSHELLで`usilic`が見つからない)(2026-11-07)**
    - 直接のユーザー報告・提案("機能制限SHELLで`usilic .^M`とやってもPATHが通ってない。.bash_profileだと.profileが読まれないので.bashrcにPATH設定では？")。
    - **原因**: usilicのSHELLは、環境変数SHELLのbash等(sh等なら`bash`、`Configuration::shellArgv()`)をログインシェルとしてではなく起動するので、bashは~/.bashrcだけを読む。手順8.は~/.profile(と~/.bash_profile)にしか書いていなかった。Xfceのメニューからの起動も~/.profileを通らない。
