@@ -1,5 +1,5 @@
 #!/bin/sh
-# setup-freebsd.sh ユーザー名 [--gpu=nvidia|amd|radeon|intel|none] [--swapcaps]
+# setup-freebsd.sh ユーザー名 [--gpu=nvidia|amd|radeon|intel|none] [--noswapcaps]
 #
 # FreeBSDにusilicを入れる手順(docs/BUILD.mdのFreeBSDの節の2.〜8.)を、rootで一度に実行する(2026-11-07、
 # 直接のユーザー提案"ユーザーとrootとで実行する手順をまとめたシェルスクリプトを作るのはどう？　一発実行で終わり")。
@@ -44,16 +44,16 @@ die() { printf '\n*** %s\n' "$*"; exit 1; }
 
 user=""
 gpu=""
-swapcaps=no
+swapcaps=yes
 for arg in "$@"; do
   case "$arg" in
     --gpu=*) gpu=${arg#--gpu=} ;;
-    --swapcaps) swapcaps=yes ;;
+    --noswapcaps) swapcaps=no ;;
     -*) die "知らないオプション: $arg" ;;
     *) user=$arg ;;
   esac
 done
-[ -n "$user" ] || die "使い方: sh setup-freebsd.sh ユーザー名 [--gpu=nvidia|amd|radeon|intel|none] [--swapcaps]"
+[ -n "$user" ] || die "使い方: sh setup-freebsd.sh ユーザー名 [--gpu=nvidia|amd|radeon|intel|none] [--noswapcaps]"
 id "$user" >/dev/null 2>&1 || die "ユーザーがありません: $user"
 home=$(pw usershow "$user" | cut -d: -f9)
 repo="$home/git/usilic"
@@ -164,7 +164,7 @@ if [ ! -f "$keyboard" ]; then
         [ "$swapcaps" = yes ] && echo 'Option "XkbOptions" "ctrl:swapcaps"'
         echo 'EndSection'
       } > "$keyboard"
-      echo "Xのキーボードをjp106にしました($keyboard)"
+      echo "Xのキーボードをjp106にしました($keyboard、Caps LockとCtrlの入れ替え: $swapcaps)"
       ;;
     *) echo "コンソールのキーマップがjpではないので、Xのキーボードは設定しません" ;;
   esac

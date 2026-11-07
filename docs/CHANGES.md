@@ -33408,6 +33408,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1272. **tools/setup-freebsd.sh: Caps LockとCtrlの入れ替えを既定に(--noswapcapsで入れ替えない)(2026-11-07)**
+   - 項目1271の報告(「`--swapcaps`は既定のまま(入れ替えない)」)へのユーザーの指摘("--swapcapsを既定にすると`入れ替えない`なの？　それは困る。逆にして。")。項目1271の時のユーザーの言葉は"個人的には既定希望だが、FreeBSDユーザーはUSキーボードがほとんどかもしれんし。同じ箇所に切り替え法だけ記載しといて。"で、アシスタントは既定を変えない意味に取っていた。
+   - **変更**: スクリプトは既定で入れ替える(keyboard.confに`XkbOptions "ctrl:swapcaps"`を書く)。`--swapcaps`をやめ、入れ替えない時は`--noswapcaps`。入れ替えはコンソールのキーマップがjpでkeyboard.confを作る時だけなので、USキーボード(keyboard.confを作らない)には影響しない。作った時のメッセージに入れ替えの有無を出す。docs/BUILD.mdの※を合わせ(後から切り替えるのは行を消す・足す)、docs/BUILD.htmlを作り直した。確かめたのは`sh -n`のみ。
 1271. **docs/BUILD.md: Caps LockとCtrlの入れ替えを後から切り替える方法(2026-11-07)**
    - ユーザーの報告("reboot後も問題無し。")と判断("--swapcapsは悩ましい。個人的には既定希望だが、FreeBSDユーザーはUSキーボードがほとんどかもしれんし。同じ箇所に切り替え法だけ記載しといて。")。既定は今のまま(入れ替えない)。
    - **変更**: 「2.〜8.をスクリプトで進める」の※に、後から切り替える方法を足した: rootでkeyboard.confのEndSectionの前に`Option "XkbOptions" "ctrl:swapcaps"`を足す(やめる時は消す)、ログインし直すと変わる。スクリプトを`--swapcaps`付きで実行し直しても、keyboard.confが既にあれば変わらないこと。USキーボード等でkeyboard.confが無い時は、4.の手順でXkbModel・XkbLayoutの2行を省いて作ること。docs/BUILD.htmlを作り直した。
