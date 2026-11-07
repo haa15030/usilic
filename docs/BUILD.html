@@ -183,7 +183,7 @@ Add another user? (yes/no) [no]:</p>
 <p class="note">※<code>ABC</code>はインストーラで作ったユーザー名。GPUは<code>pciconf -l</code>で見分ける(NVIDIA・AMD・Intel)。違う時やAMDのHD 7000番台以前は、最後に<code>--gpu=nvidia</code>・<code>--gpu=amd</code>・<code>--gpu=radeon</code>・<code>--gpu=intel</code>を足す。コンソールのキーマップがjpならXのキーボードもjp106にし、Caps LockとCtrlを入れ替える(入れ替えない時は<code>--noswapcaps</code>を足す)。後から切り替えるには、rootで<code>/usr/local/etc/X11/xorg.conf.d/keyboard.conf</code>の <em>Option "XkbOptions" "ctrl:swapcaps"</em> の行を消す(入れ替えに戻す時は<code>EndSection</code>の前にその行を足す)。ログインし直すと変わる(スクリプトを実行し直しても、keyboard.confが既にあれば変わらない)。USキーボード等でkeyboard.confが無い時は、後の4.の手順でXkbModel・XkbLayoutの2行を省いて作る。</p>
 <p class="note">※<code>kldload</code>がカーネルとの版のずれで失敗したら(下の注意点)、/usr/srcに合わせてportsからドライバをビルドし、<code>pkg lock</code>する。SDL2のportsからのビルドもあるので、時間がかかる。途中で止まったら、同じコマンドをもう一度実行すれば、済んだ所を飛ばして続きから進む。記録は<code>/var/log/usilic-setup.log</code>。</p>
 <p class="note">※最初の起動で入れるgroff・mg・texinfo・7-zip・w3mも、ここで入れる。</p>
-<p class="note">※終わったら <em>reboot</em> し、9.・10.へ進む。リポジトリが非公開の間は、<em>git clone</em> にGitHubへの鍵の登録が要る(Xfceがまだ無いので、注意点の「GUIを入れない時」と同じく、ユーザーで鍵を作って別のマシンのブラウザで登録し、<code>git@github.com:haa15030/usilic.git</code>から <em>git clone</em> する)。</p>
+<p class="note">※終わったら <em>reboot</em> し、9.・10.へ進む。</p>
 <p>以下は、スクリプトを使わずに手で進める場合の手順。</p>
 <h3>2. パッケージ</h3>
 <pre class="screen"><code>「FreeBSD/amd64 (HOST) (ttyv0)

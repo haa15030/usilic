@@ -278,7 +278,7 @@ sh ~ABC/git/usilic/tools/setup-freebsd.sh ABC
 
 ※最初の起動で入れるgroff・mg・texinfo・7-zip・w3mも、ここで入れる。
 
-※終わったら *reboot* し、9.・10.へ進む。リポジトリが非公開の間は、*git clone* にGitHubへの鍵の登録が要る(Xfceがまだ無いので、注意点の「GUIを入れない時」と同じく、ユーザーで鍵を作って別のマシンのブラウザで登録し、`git@github.com:haa15030/usilic.git`から *git clone* する)。
+※終わったら *reboot* し、9.・10.へ進む。
 
 以下は、スクリプトを使わずに手で進める場合の手順。
 
