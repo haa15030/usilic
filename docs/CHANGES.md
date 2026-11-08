@@ -33408,6 +33408,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1284. **docs/BUILD.md(FreeBSD): 内蔵オーディオ(背面・前面)で聴く時の設定(2026-11-08)**
+   - ユーザーの確認("~/.config/mpv/mpv.confを削除してもOKを確認。")と質問("ユーザーによっては内蔵オーディオの出力で聴くと思うけど、そのときの設定は？")、依頼("足しといて。")。
+   - **追加**: 注意点の「音声」に、内蔵オーディオは*cat /dev/sndstat*の`Rear`・`Front`の番号を`hw.snd.default_unit`にすること、背面は何も設定しなくても既定に選ばれていることが多く(RTX3050のマシンでも最初は`pcm3`のRear Analogがdefault)audioグループに入れるだけで鳴ること、前面と背面は別の出力先でヘッドホンを挿しても自動では切り替わらないことを足した。mpv.confを消しても`hw.snd.default_unit=2`だけでmpvが鳴ることはユーザーが確かめた。docs/BUILD.htmlを作り直した。
 1283. **docs/BUILD.md(FreeBSD): 音声の出力先はhw.snd.default_unitで全体に(mplayerも鳴った)(2026-11-08)**
    - ユーザーの報告と依頼("(ls)からクリックで起動できるようになった。ただmplayerではNGなのでアプリごとに設定する必要がある？"→`hw.snd.default_unit=2`を/etc/sysctl.confにも書いて"mplayerもOK。追記よろしく。")。
    - 項目1282でmpvはmpv.confの`audio-device`で鳴ったが、mplayerは出力先を指定しない`/dev/dsp`を開くので鳴らなかった。`hw.snd.default_unit=2`で`/dev/dsp`がpcm2を指すようになり、mplayerも鳴った。項目1282で「default_unitを変えてもmpvが鳴らなかった」のは、その時まだaudioグループに入っておらず/dev/dspを開けなかったためと見ている(未確認)。
