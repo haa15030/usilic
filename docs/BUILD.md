@@ -549,6 +549,14 @@ usilicが開いたら、「usilic-1.5b:~\$ sudo pkg install -y groff mg texinfo 
 - NVIDIAでウィンドウの合成表示が有効だと、xfwm4が`glXBindTexImageEXT`で止まり、画面が固まることがある(RTX 3050・ドライバ595.112.07、2026-11-05。引き金は未特定)。マウスカーソルだけ動く状態になったら、sshから`pkill -9 xfwm4`で戻る。合成表示を切る`xfconf-query`はsshからでは届かないので、XfceのTerminalで実行する。
 - 端末に重ねる-gはmacOSだけ(Linux・FreeBSDは重ねない、ユーザー判断2026-10-31)。
 
+**パッケージとOSの更新(2026-11-08)**
+
+- スクリプト(または手の手順)でportsからビルドしたものは`pkg lock`してあるので、*pkg upgrade* で上がらない(Intelの`drm-612-kmod`、AMDのファームウェア(RX580なら`gpu-firmware-amd-kmod-polaris10`)、NVIDIAの`nvidia-kmod`と`nvidia-driver`、`sdl2`)。それ以外は普通に *pkg upgrade* してよい。ロックしたものは *pkg lock -l* で一覧できる。
+- *pkg upgrade* で「Newer FreeBSD version for package」と聞かれたら*y*(カーネルのモジュール以外は、この程度のずれなら動く)。
+- *pkg upgrade* が「is locked and may not be modified」で止まったら、ほかのパッケージがロックしたものの新しい版を要している(例: `sdl2_ttf`が新しい`sdl2`を要する)。そのパッケージを *pkg unlock -y* し、ports(*cd /usr/ports && git pull*)からビルドし直してロックする。NVIDIAは`nvidia-kmod`と`nvidia-driver`を必ず両方同じ版で(片方だけだとXが`NVRM: API mismatch`で起動しない、2026-11-08、RTX 3050で実際に)。
+- OS(カーネル)を新しいスナップショットに上げた時は、ロックしたカーネルのモジュールが古いカーネル向けのままで読み込めなくなる。`/usr/src`とportsも新しくしてから、ロックしたものを *pkg unlock -y* し、スクリプトをもう一度実行する(ロックが外れていて読み込めないものをビルドし直す)。その時のpkgの版がカーネルと合っていれば、ビルドせずにpkgの版に戻してもよい。
+- ZFSで入れたなら、大きな更新の前に *bectl create before-upgrade* しておくと、起動しなくなっても起動メニューの「Boot Environments」から更新前に戻せる。
+
 **日本語入力とSDL2**
 
 - パッケージのSDL2は`DBUS`・`FCITX`が`off`で、-gでは窓は開いても日本語が入らない(`pkg query '%Ok=%Ov' sdl2`で分かる)。ビルドしても`off`のままなら、古い設定が残っているので`make rmconfig`と`make clean`をしてからやり直す。

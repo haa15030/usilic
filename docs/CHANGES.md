@@ -33408,6 +33408,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1279. **docs/BUILD.md(FreeBSD): パッケージとOSの更新の時にどうするか(2026-11-08)**
+   - ユーザーの質問("これでiGPU、RX580、RTX3050は全てOKだが、今後packageのバージョンが上がっても大丈夫？")と依頼("足しといて。")。
+   - **追加**: 注意点に「パッケージとOSの更新」を新設。ロックしたもの(drm-612-kmod・ファームウェア・nvidia-kmod/nvidia-driver・sdl2)は*pkg upgrade*で上がらないのでふだんの更新はそのままでよいこと、版のずれの[y/N]は*y*、「is locked」で止まった時はunlockしてportsからビルドし直す(NVIDIAは両方同じ版で)、OSを新しいスナップショットに上げた時は/usr/src・portsを新しくしてunlockしスクリプトを再実行、ZFSなら*bectl create*で戻れるようにしておく。docs/BUILD.htmlを作り直した。
 1278. **tools/setup-freebsd.sh: NVIDIAのドライバ本体もportsからビルドして、カーネルモジュールと版をそろえる(RTX3050でXfceが出なかった)(2026-11-08)**
    - ユーザーの報告("xfceが出ない。")。RTX3050のマシン(ahmbsd)で、スクリプトは最後まで通った(「終了: 2026-11-08 17:02:14(かかった時間 0時間11分30秒)」)が、再起動するとlightdmが「greeter display server failed to start」で止まった。
    - **原因**: nvidia.ko・nvidia-modeset.koは読み込めていた。カーネルとの版のずれで、2.がnvidia-kmodをportsからビルドし直していた(`nvidia-kmod-620.70.06.1600029`、lock済み)。ところが、portsの最新(git clone --depth 1)のnvidia-kmodは620.70.06で、pkgのnvidia-driverは595.112.07とずれていた。NVIDIAは、Xが使うドライバ本体とカーネルモジュールの版が同じでないと動かない(dmesg: `NVRM: API mismatch: the client 'Xorg' (pid 2879)`、Xorg.0.log: `NVIDIA: Failed to initialize the NVIDIA kernel module`→`no screens found`)。pkgのパッケージはportsの少し前の状態からビルドされるので、portsの方が新しいことがある。
