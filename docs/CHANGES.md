@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1281. **FreeBSD: mpvの音が出ないのは/dev/dspの権限(ユーザーをaudioグループへ)(2026-11-08)**
+   - ユーザーの報告(RTX3050のマシン、モニターのスピーカーにHDMIで。"sysctl hw.snd.default_unitとmpv自身のメニューでやってみたけどどれもダメ。"→"ddではdsp2で出た。"→形式を固定しても"なにも起きない"、mpvの出力のスクリーンショット)。
+   - **原因**: mpvの出力に`[ao/oss] Can't open audio device /dev/dsp2: Permission denied`。16-CURRENTでは`/dev/dsp*`・`/dev/mixer*`が`root:audio`の`0660`で、ユーザーは`audio`グループに入っていなかった(ddはsudoで流したので鳴った)。項目1280で疑ったドライバ・出力先・(途中で試した)MSI・音声の形式はどれも関係なかった。出力先はNVIDIAの3つのうち`pcm2`がモニター。
+   - **変更**: tools/setup-freebsd.shの3.で、ユーザーを入れるグループに`audio`を足した(グループが無い版では飛ばす)。最後のメッセージに「Permission denied」の時の見方を足した。docs/BUILD.mdのインストーラのグループの所を *wheel video operator audio* にし、注意点の「音声」に権限のことと、NVIDIAのHDMIは出力がいくつも出るがモニターは1つだけ(RTX3050では`pcm2`)を足した。docs/BUILD.htmlを作り直した。確かめたのは`sh -n`のみ(グループに入れてからの再ログインで鳴るかはユーザーの確認待ち)。
 1280. **tools/setup-freebsd.sh: mpvと音声(pulseaudio・音量の調整・サウンドカードのドライバ)を入れる(2026-11-08)**
    - ユーザーの依頼("macOSのIINAみたいなのは無いかとpkg install mpv(Ubuntuでいつも使ってるやつ)で入ったのでLAUNCHにも設定を入れたいんだが音声が出ない。そこでaudio関連もリストに加えてみて。")。
    - **変更**: 1.のパッケージに`mpv pulseaudio pavucontrol xfce4-pulseaudio-plugin`を足した。3.で`/boot/loader.conf`に`snd_hda_load=YES snd_uaudio_load=YES`(マザーボード・HDMIとUSBの音声のドライバ)を書き、その場でもkldloadする(カーネルに組み込み済みなら失敗するが無視)。最後のメッセージに、音が出ない時の確かめ方(`cat /dev/sndstat`→`sysctl hw.snd.default_unit=N`)を足した。docs/BUILD.mdの手の手順(2.)に同じものを足し、注意点に「音声」を新設(GPUのHDMIの音声が既定の出力先になっていてスピーカーに出ないことが多い、ドライバが無い時、mixer・pavucontrol)。docs/BUILD.htmlを作り直した。src/usilicrcのLAUNCHに、コメントの例`#	.mp4	mpv`を足した。

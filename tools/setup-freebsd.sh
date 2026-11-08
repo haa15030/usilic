@@ -207,7 +207,10 @@ if [ ! -f /usr/local/etc/sudoers.d/wheel ]; then
   echo '%wheel ALL=(ALL:ALL) ALL' > /usr/local/etc/sudoers.d/wheel
   chmod 440 /usr/local/etc/sudoers.d/wheel
 fi
-for group in wheel video operator; do
+# audio: 16-CURRENTでは/dev/dsp*・/dev/mixer*がroot:audioの0660で、入っていないとmpvが「Permission denied」で
+# 音を出せない(2026-11-08、RTX3050のマシンで実際に)。audioグループの無い版(以前の0666)では飛ばす。
+for group in wheel video operator audio; do
+  pw groupshow "$group" >/dev/null 2>&1 || continue
   id -Gn "$user" | tr ' ' '\n' | grep -qx "$group" || pw groupmod "$group" -m "$user"
 done
 keyboard=/usr/local/etc/X11/xorg.conf.d/keyboard.conf
@@ -292,4 +295,5 @@ echo "reboot して、Xfceに $user でログインしてください。"
 echo "その後: アプリケーション → 設定 → Fcitx5 設定 でMozcがあることを確かめ、"
 echo "        アプリケーション → アクセサリー → usilic で起動します(docs/BUILD.mdの9.・10.)。"
 echo "音が出ない時: cat /dev/sndstat で出力先(pcmN)を見て、sysctl hw.snd.default_unit=N(docs/BUILD.mdの注意点)。"
+echo "              mpvが「Permission denied」なら、$user が audio グループに入っているか(ログインし直すと効く)。"
 echo "記録: $LOG"
