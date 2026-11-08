@@ -563,7 +563,8 @@ usilicが開いたら、「usilic-1.5b:~\$ sudo pkg install -y groff mg texinfo 
 
 - mpvの出力に`Can't open audio device /dev/dsp: Permission denied`と出たら、ユーザーが`audio`グループに入っていない。16-CURRENTでは`/dev/dsp*`・`/dev/mixer*`が`root:audio`の`0660`(*ls -l /dev/dsp\**)で、rootでなければ開けない(2026-11-08、RTX 3050のマシンで実際に。rootで流した*dd*では鳴るのにmpvでは鳴らなかった)。*pw groupmod audio -m ユーザー名* の後、Xfceからログアウトして入り直す。スクリプトは入れておく。
 - 音が出なければ、まず *cat /dev/sndstat* で音声の出力先(`pcm0:`・`pcm1:`…)と、どれが既定(`default`)かを見る。GPUのHDMIの音声(NVIDIA・AMD)と、マザーボードの出力(`Realtek`等の`analog`)のどちらが既定かを見る。モニターのスピーカーから出すならHDMIの方で、NVIDIAは`pcm0`〜`pcm2`のようにいくつも出るが、モニターがつながっているのは1つだけ(RTX 3050では`pcm2`)。どれかは、*mpv --audio-device=oss//dev/dspN ファイル*(Nは`pcmN`の番号)を順に試して確かめる(mpvの再生中のメニューでも選べる)。
-- 決まったら、mpvなら *~/.config/mpv/mpv.conf* に`audio-device=oss//dev/dspN`と書く(usilicのLAUNCHの`.mp4 mpv`等から開いた時もこれで鳴る。2026-11-08、RTX 3050のマシンで`oss//dev/dsp2`で鳴った)。mpv以外にも効かせるなら */etc/sysctl.conf* に`hw.snd.default_unit=N`を足す(その場では *sysctl hw.snd.default_unit=N*。ただしRTX 3050では、mpvの出力先を指定しない時はこれを変えても鳴らなかったので、mpvはmpv.confで指定する)。
+- 決まったら、*sysctl hw.snd.default_unit=N* で既定にし、*/etc/sysctl.conf* に`hw.snd.default_unit=N`を足して再起動後も残す。出力先を指定しないアプリが開く`/dev/dsp`がこれを指すので、mpvもmplayerも(usilicのLAUNCHから開いた時も)そのまま鳴る(2026-11-08、RTX 3050のマシンで`N=2`)。*cat /dev/sndstat* で`pcmN:`の行に`default`が付いていれば切り替わっている。
+- 1つのアプリだけ別の出力先にするなら、mpvは *~/.config/mpv/mpv.conf* に`audio-device=oss//dev/dspN`、mplayerは *~/.mplayer/config* に`ao=oss:/dev/dspN`。
 - 何も出てこない(`No devices installed`)なら、ドライバが読み込まれていない。*kldload snd_hda*(USBなら *kldload snd_uaudio*)。
 - 音量は *mixer* で見られる(*mixer vol.volume=0.8* 等)。Xfceのパネルに音量のプラグインを足すか、pavucontrolで出力先と音量を選べる。pulseaudioは、mpv等が音を出す時に自動で起動する。
 

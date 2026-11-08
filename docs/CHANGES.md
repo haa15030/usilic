@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1283. **docs/BUILD.md(FreeBSD): 音声の出力先はhw.snd.default_unitで全体に(mplayerも鳴った)(2026-11-08)**
+   - ユーザーの報告と依頼("(ls)からクリックで起動できるようになった。ただmplayerではNGなのでアプリごとに設定する必要がある？"→`hw.snd.default_unit=2`を/etc/sysctl.confにも書いて"mplayerもOK。追記よろしく。")。
+   - 項目1282でmpvはmpv.confの`audio-device`で鳴ったが、mplayerは出力先を指定しない`/dev/dsp`を開くので鳴らなかった。`hw.snd.default_unit=2`で`/dev/dsp`がpcm2を指すようになり、mplayerも鳴った。項目1282で「default_unitを変えてもmpvが鳴らなかった」のは、その時まだaudioグループに入っておらず/dev/dspを開けなかったためと見ている(未確認)。
+   - **変更**: 注意点の「音声」を、`hw.snd.default_unit=N`(と/etc/sysctl.conf)で全体の既定にするのを本筋にし、mpv.conf(`audio-device`)・~/.mplayer/config(`ao=oss:/dev/dspN`)はアプリごとに別の出力先にする時の方法にした。docs/BUILD.htmlを作り直した。
 1282. **docs/BUILD.md(FreeBSD): mpvの出力先はmpv.confのaudio-deviceで(2026-11-08)**
    - ユーザーの報告("今試したら`mpv --audio-device=oss//dev/dsp2 ファイル`でOKなんで反映よろしく。")。項目1281でaudioグループに入れた後、mpvはデバイスを開けるようになった(`AO: [oss] 48000Hz stereo float`)が、出力先を指定しないと鳴らず、`--audio-device=oss//dev/dsp2`で鳴った。
    - **変更**: 注意点の「音声」で、どの出力先がモニターかは`mpv --audio-device=oss//dev/dspN`を順に試して確かめ、決まったら`~/.config/mpv/mpv.conf`に`audio-device=oss//dev/dspN`と書く(usilicのLAUNCHから開いた時もこれで鳴る)ことにした。`hw.snd.default_unit`はmpv以外にも効かせる時の方法として残し、RTX3050ではmpvの指定なしではこれで鳴らなかったことを書いた(default_unitが再起動等で戻っていたのかは未確認)。出力先はマシンとつなぎ方で違うので、スクリプトでは設定しない。docs/BUILD.htmlを作り直した。
