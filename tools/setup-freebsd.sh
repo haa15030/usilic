@@ -5,7 +5,7 @@
 # 直接のユーザー提案"ユーザーとrootとで実行する手順をまとめたシェルスクリプトを作るのはどう？　一発実行で終わり")。
 #
 # 使い方(インストーラが終わって再起動し、rootでログインした所から。sshでつないでもよい):
-#   pkg bootstrap -y && pkg install -y git
+#   env IGNORE_OSVERSION=yes pkg bootstrap -y && env IGNORE_OSVERSION=yes pkg install -y git
 #   su ユーザー名 -c 'git clone https://github.com/haa15030/usilic.git ~/git/usilic'
 #   sh ~ユーザー名/git/usilic/tools/setup-freebsd.sh ユーザー名
 # 終わったら reboot し、Xfceにログインして、Fcitx5の設定でMozcを確かめ(docs/BUILD.mdの9.)、usilicを起動する。
@@ -60,6 +60,11 @@ repo="$home/git/usilic"
 [ -d "$repo/src/cpp" ] || die "リポジトリがありません: $repo(先に git clone してください)"
 
 export ASSUME_ALWAYS_YES=yes  # pkgの確認を省く(make install-missing-packagesの中のpkgも)
+# CURRENTでは、pkgのパッケージが今のuserlandより新しい版向け(例: 1600030と1600029)のことがよくあり、
+# pkgは「Newer FreeBSD version for package」で止まって[y/N]を聞く(-yやASSUME_ALWAYS_YESでも聞く。2026-11-08、
+# RTX3050のマシンのpkg bootstrapで実際に)。userlandのプログラムはこの程度のずれなら動くので、確認を省く。
+# カーネルモジュール(.ko)は版がずれると読み込めないので、それは2.でportsからビルドし直す。
+export IGNORE_OSVERSION=yes
 
 # ---------------------------------------------------------------- 1. パッケージ
 say "1. パッケージ"

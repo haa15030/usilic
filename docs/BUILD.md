@@ -261,8 +261,10 @@ Add another user? (yes/no) [no]:
 2.〜8.(9.の日本語入力の設定とusilicの起動の前まで)は、`tools/setup-freebsd.sh`で一度に実行できる。インストーラが終わって再起動し、rootでログインした所(sshでつないでもよい)で:
 
 ```key
-pkg bootstrap -y && pkg install -y git
+env IGNORE_OSVERSION=yes pkg bootstrap -y && env IGNORE_OSVERSION=yes pkg install -y git
 ```
+
+※`env IGNORE_OSVERSION=yes`は、CURRENTでpkgのパッケージが今のシステムより新しい版向け(例: `package: 1600030`・`running userland: 1600029`)の時に、「Newer FreeBSD version for package pkg」で止まって*Ignore the mismatch and continue? [y/N]*と聞かれるのを省くため(-yを付けても聞かれる)。付けずに聞かれたら*y*でよい。スクリプトの中も同じにしてある。
 
 ```key
 su ABC -c 'git clone https://github.com/haa15030/usilic.git ~/git/usilic'
@@ -296,6 +298,8 @@ su -
 ```
 
 *pkg bootstrap* -> *y*
+
+※*Newer FreeBSD version for package pkg*(`package: 1600030`・`running userland: 1600029`等)の後に*Ignore the mismatch and continue? [y/N]*と聞かれたら*y*。この後のpkgでも同じことを聞かれたら*y*(省くには、先に *export IGNORE_OSVERSION=yes* しておく)。
 
 ```key
 pkg update

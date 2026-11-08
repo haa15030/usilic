@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1277. **FreeBSD: pkg bootstrapが版のずれの確認で止まる(IGNORE_OSVERSION=yes)(2026-11-08)**
+   - ユーザーの報告(RTX3050のマシン、スクリプトの節の最初の *pkg bootstrap -y && pkg install -y git*: "Newer FreeBSD version for package pkg: To ignore this error set IGNORE_OSVERSION=yes - package: 1600030 - running userland: 1600029 Ignore the mismatch and continue? [y/N]"、"やはり同じ場所で止まってるのと、ここでズレのメッセージが出た。")。
+   - **原因**: CURRENTのpkgのパッケージが、インストールしたスナップショット(1600029)より新しい1600030向けにビルドされている(項目1259等のドライバの版のずれと同じ根)。pkgはこの時、`-y`でも[y/N]を聞いて止まる。手の手順では*pkg bootstrap* -> *y*としていたので気づいていたが、スクリプトの節の「一発」の手順では止まる。スクリプトの中のpkg install(1.・2.、ports の install-missing-packages)でも同じことが起こりうる。
+   - **変更**: docs/BUILD.mdのスクリプトの節の最初のコマンドを *env IGNORE_OSVERSION=yes pkg bootstrap -y && env IGNORE_OSVERSION=yes pkg install -y git* にし、理由の※を足した(rootのシェルがcshでも通るようenvで)。手の手順の*pkg bootstrap*にも※を足した。tools/setup-freebsd.shは`export IGNORE_OSVERSION=yes`。userlandのプログラムは1つ違い程度なら動く。.koは版がずれると読めないので、それは今まで通り2.でportsからビルドし直す。docs/BUILD.htmlを作り直した。確かめたのは`sh -n`のみ。
 1276. **tools/setup-freebsd.sh: 再実行が「sdl2 is locked」で止まる(入っていないパッケージだけを入れる)(2026-11-07)**
    - ユーザーの報告(RX580、項目1275を取ってきて再実行した出力: "sdl2-2.32.10_2 is locked and may not be modified"→"*** pkg install に失敗しました"、"rebootしてしまったが、エラーっぽいの出た。")。
    - **原因**: 1.の`pkg install`に、4.でportsからビルドしてpkg lockしたsdl2も渡していた。入っているものでも、渡すとpkgは入れ直そうとし、lockされていると失敗する。1回目は通るが、2回目以降は必ずここで止まる(「止まったらもう一度実行すれば続きから」が成り立っていなかった)。2.のdrm-kmod・nvidia-driverも、中身をlockした後は同じことになりうる。

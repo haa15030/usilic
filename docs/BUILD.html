@@ -177,7 +177,8 @@ Add another user? (yes/no) [no]:</p>
 <p class="note">※sshでログイン中にシステムを入れ直した場合は、ログインする側のマシンで <em>ssh-keygen -R &lt;IP&gt;</em> を実行する(ホスト鍵が変わるため)。</p>
 <h3>2.〜8.をスクリプトで進める(2026-11-07)</h3>
 <p>2.〜8.(9.の日本語入力の設定とusilicの起動の前まで)は、<code>tools/setup-freebsd.sh</code>で一度に実行できる。インストーラが終わって再起動し、rootでログインした所(sshでつないでもよい)で:</p>
-<pre class="key"><code>pkg bootstrap -y &amp;&amp; pkg install -y git</code></pre>
+<pre class="key"><code>env IGNORE_OSVERSION=yes pkg bootstrap -y &amp;&amp; env IGNORE_OSVERSION=yes pkg install -y git</code></pre>
+<p class="note">※<code>env IGNORE_OSVERSION=yes</code>は、CURRENTでpkgのパッケージが今のシステムより新しい版向け(例: <code>package: 1600030</code>・<code>running userland: 1600029</code>)の時に、「Newer FreeBSD version for package pkg」で止まって<em>Ignore the mismatch and continue? [y/N]</em>と聞かれるのを省くため(-yを付けても聞かれる)。付けずに聞かれたら<em>y</em>でよい。スクリプトの中も同じにしてある。</p>
 <pre class="key"><code>su ABC -c 'git clone https://github.com/haa15030/usilic.git ~/git/usilic'</code></pre>
 <pre class="key"><code>sh ~ABC/git/usilic/tools/setup-freebsd.sh ABC</code></pre>
 <p class="note">※<code>ABC</code>はインストーラで作ったユーザー名。GPUは<code>pciconf -l</code>で見分ける(NVIDIA・AMD・Intel)。違う時やAMDのHD 7000番台以前は、最後に<code>--gpu=nvidia</code>・<code>--gpu=amd</code>・<code>--gpu=radeon</code>・<code>--gpu=intel</code>を足す。コンソールのキーマップがjpならXのキーボードもjp106にし、Caps LockとCtrlを入れ替える(入れ替えない時は<code>--noswapcaps</code>を足す)。後から切り替えるには、rootで<code>/usr/local/etc/X11/xorg.conf.d/keyboard.conf</code>の <em>Option "XkbOptions" "ctrl:swapcaps"</em> の行を消す(入れ替えに戻す時は<code>EndSection</code>の前にその行を足す)。ログインし直すと変わる(スクリプトを実行し直しても、keyboard.confが既にあれば変わらない)。USキーボード等でkeyboard.confが無い時は、後の4.の手順でXkbModel・XkbLayoutの2行を省いて作る。</p>
@@ -191,6 +192,7 @@ Add another user? (yes/no) [no]:</p>
 <p class="note">※ここから先は、別のマシン(Mac等)からsshでつなぐと、この手順書のコマンドをブラウザからコピー&amp;ペーストでき、打ち間違いを避けられる。作ったユーザーでログインして <em>ifconfig | grep broadcast</em> を実行し、「inet」の次の値(例: <code>192.168.1.23</code>)がこのマシンのIPアドレス。別のマシンの端末で <em>ssh <code>ABC</code>@&lt;IP&gt;</em> とつなぎ、以降はそこで続ける(sshdはインストーラのSystem Configurationで既定で有効。無効なら、このマシンのrootで <em>sysrc sshd_enable=YES; service sshd start</em>)。</p>
 <pre class="key"><code>su -</code></pre>
 <p><em>pkg bootstrap</em> -&gt; <em>y</em></p>
+<p class="note">※<em>Newer FreeBSD version for package pkg</em>(<code>package: 1600030</code>・<code>running userland: 1600029</code>等)の後に<em>Ignore the mismatch and continue? [y/N]</em>と聞かれたら<em>y</em>。この後のpkgでも同じことを聞かれたら<em>y</em>(省くには、先に <em>export IGNORE_OSVERSION=yes</em> しておく)。</p>
 <pre class="key"><code>pkg update</code></pre>
 <p><em>pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf xfce4-screenshooter-plugin firefox xdg-utils python3</em> -&gt; <em>y</em></p>
 <p class="note">※firefoxの最後に長いメッセージ(boost・gcc14・libjxl・firefoxの未対応機能等)が出るが、対応が要るものは無い。</p>
