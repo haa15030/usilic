@@ -11,7 +11,8 @@
 # 終わったら reboot し、Xfceにログインして、Fcitx5の設定でMozcを確かめ(docs/BUILD.mdの9.)、usilicを起動する。
 #
 # することと順番:
-#   1. パッケージ(X11・Xfce・lightdm・firefox・日本語フォント・fcitx5・usilicのビルドと最初の起動に要るもの)
+#   1. パッケージ(X11・Xfce・lightdm・firefox・日本語フォント・fcitx5・usilicのビルドと最初の起動に要るもの、
+#      mpvと音声(pulseaudio・音量の調整))
 #   2. GPUのドライバ(pciconf -lvで見分ける。--gpuで指定もできる)。kldloadで読み込めるか試し、drm-kmodが
 #      今のカーネルと版が合わなければ(「version mismatch」)、/usr/srcに合わせてportsからビルドしてpkg lockする
 #   3. dbus・lightdmの起動、sudo(wheel)、ユーザーをwheel・videoへ、キーボード(コンソールがjpならjp106)
@@ -81,7 +82,8 @@ pkg update -q
 pkg_install git gmake pkgconf sudo bash sdl2 sdl2_ttf xfce4-screenshooter-plugin firefox xdg-utils python3 \
   xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa dejavu noto-jp \
   fcitx5 fcitx5-configtool fcitx5-gtk3 fcitx5-qt6 ja-fcitx5-mozc3 \
-  groff mg texinfo 7-zip w3m || die "pkg install に失敗しました"
+  groff mg texinfo 7-zip w3m \
+  mpv pulseaudio pavucontrol xfce4-pulseaudio-plugin || die "pkg install に失敗しました"
 
 # ---------------------------------------------------------------- 2. GPU
 say "2. GPUのドライバ"
@@ -194,8 +196,12 @@ if [ -n "$module" ]; then
 fi
 
 # ---------------------------------------------------------------- 3. 起動するもの・sudo・キーボード
-say "3. dbus・lightdm、sudo、キーボード"
+say "3. dbus・lightdm・音声、sudo、キーボード"
 sysrc dbus_enable=YES lightdm_enable=YES
+# 音声: サウンドカードのドライバ(HDA=マザーボード・HDMI、uaudio=USB)を起動時に読み込む。
+# カーネルに組み込み済みならkldloadは失敗するが、それでよい。
+sysrc -f /boot/loader.conf snd_hda_load=YES snd_uaudio_load=YES
+kldload -n snd_hda 2>/dev/null; kldload -n snd_uaudio 2>/dev/null
 mkdir -p /usr/local/etc/sudoers.d
 if [ ! -f /usr/local/etc/sudoers.d/wheel ]; then
   echo '%wheel ALL=(ALL:ALL) ALL' > /usr/local/etc/sudoers.d/wheel
@@ -285,4 +291,5 @@ fi
 echo "reboot して、Xfceに $user でログインしてください。"
 echo "その後: アプリケーション → 設定 → Fcitx5 設定 でMozcがあることを確かめ、"
 echo "        アプリケーション → アクセサリー → usilic で起動します(docs/BUILD.mdの9.・10.)。"
+echo "音が出ない時: cat /dev/sndstat で出力先(pcmN)を見て、sysctl hw.snd.default_unit=N(docs/BUILD.mdの注意点)。"
 echo "記録: $LOG"

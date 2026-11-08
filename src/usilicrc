@@ -64,6 +64,7 @@ LAUNCH
 # アプリ名が要るので、`open -a ファイル` はファイルをアプリ名とみなして
 # エラーになります。既定のアプリで開くなら -a を付けずに open だけです。
 # info は Homebrew では texinfo に入っています(brew install texinfo)。
+# Linux・FreeBSD で動画を開くなら mpv(下の .mp4 mpv の例)。
 #
 # macOS では、ここに無い suffix のファイルでも、CODE でバイナリと判定され、
 # 画像・PDF か、クイックルックが扱える種類(qlmanage -m plugins の一覧。
@@ -72,6 +73,7 @@ LAUNCH
 
 #	.mp4	open
 #	.mp4	open	-a	IINA
+#	.mp4	mpv
 	.xcf	open 	-a	GIMP
 	.info	info	-f
 	.info.gz info	-f

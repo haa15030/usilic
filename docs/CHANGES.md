@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1280. **tools/setup-freebsd.sh: mpvと音声(pulseaudio・音量の調整・サウンドカードのドライバ)を入れる(2026-11-08)**
+   - ユーザーの依頼("macOSのIINAみたいなのは無いかとpkg install mpv(Ubuntuでいつも使ってるやつ)で入ったのでLAUNCHにも設定を入れたいんだが音声が出ない。そこでaudio関連もリストに加えてみて。")。
+   - **変更**: 1.のパッケージに`mpv pulseaudio pavucontrol xfce4-pulseaudio-plugin`を足した。3.で`/boot/loader.conf`に`snd_hda_load=YES snd_uaudio_load=YES`(マザーボード・HDMIとUSBの音声のドライバ)を書き、その場でもkldloadする(カーネルに組み込み済みなら失敗するが無視)。最後のメッセージに、音が出ない時の確かめ方(`cat /dev/sndstat`→`sysctl hw.snd.default_unit=N`)を足した。docs/BUILD.mdの手の手順(2.)に同じものを足し、注意点に「音声」を新設(GPUのHDMIの音声が既定の出力先になっていてスピーカーに出ないことが多い、ドライバが無い時、mixer・pavucontrol)。docs/BUILD.htmlを作り直した。src/usilicrcのLAUNCHに、コメントの例`#	.mp4	mpv`を足した。
+   - 音が出なかった原因は未確認(ドライバが読み込まれていない、または既定の出力先がHDMIのどちらかと見ている)。確かめたのは`sh -n`のみ。
 1279. **docs/BUILD.md(FreeBSD): パッケージとOSの更新の時にどうするか(2026-11-08)**
    - ユーザーの質問("これでiGPU、RX580、RTX3050は全てOKだが、今後packageのバージョンが上がっても大丈夫？")と依頼("足しといて。")。
    - **追加**: 注意点に「パッケージとOSの更新」を新設。ロックしたもの(drm-612-kmod・ファームウェア・nvidia-kmod/nvidia-driver・sdl2)は*pkg upgrade*で上がらないのでふだんの更新はそのままでよいこと、版のずれの[y/N]は*y*、「is locked」で止まった時はunlockしてportsからビルドし直す(NVIDIAは両方同じ版で)、OSを新しいスナップショットに上げた時は/usr/src・portsを新しくしてunlockしスクリプトを再実行、ZFSなら*bectl create*で戻れるようにしておく。docs/BUILD.htmlを作り直した。

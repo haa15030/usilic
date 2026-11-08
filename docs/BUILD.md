@@ -311,9 +311,19 @@ pkg update
 
 *pkg install xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa dejavu noto-jp fcitx5 fcitx5-configtool fcitx5-gtk3 fcitx5-qt6 ja-fcitx5-mozc3* -> *y*
 
+*pkg install mpv pulseaudio pavucontrol xfce4-pulseaudio-plugin* -> *y*
+
+※動画・音声のプレーヤー(mpv、macOSのIINAの元になったもの)と、音声(pulseaudio、Xfceのパネルの音量のプラグインと、出力先・音量を選ぶpavucontrol)。
+
 ```key
 sysrc dbus_enable=YES lightdm_enable=YES
 ```
+
+```key
+sysrc -f /boot/loader.conf snd_hda_load=YES snd_uaudio_load=YES
+```
+
+※サウンドカードのドライバ(snd_hdaはマザーボードの音声とHDMI、snd_uaudioはUSBの音声)を起動時に読み込む。
 
 ### 3. GPUのドライバ
 
@@ -548,6 +558,12 @@ usilicが開いたら、「usilic-1.5b:~\$ sudo pkg install -y groff mg texinfo 
 - ログインできず`login:`のままなら、`/var/log/lightdm/x-0.log`と`/var/log/Xorg.0.log`を見る。`keyboard.conf`の書き間違いや、`kld_list`の設定漏れでXが起動しない(2026-11-05に実際に両方)。
 - NVIDIAでウィンドウの合成表示が有効だと、xfwm4が`glXBindTexImageEXT`で止まり、画面が固まることがある(RTX 3050・ドライバ595.112.07、2026-11-05。引き金は未特定)。マウスカーソルだけ動く状態になったら、sshから`pkill -9 xfwm4`で戻る。合成表示を切る`xfconf-query`はsshからでは届かないので、XfceのTerminalで実行する。
 - 端末に重ねる-gはmacOSだけ(Linux・FreeBSDは重ねない、ユーザー判断2026-10-31)。
+
+**音声(2026-11-08)**
+
+- 音が出なければ、まず *cat /dev/sndstat* で音声の出力先(`pcm0:`・`pcm1:`…)と、どれが既定(`default`)かを見る。GPUのHDMIの音声(NVIDIA・AMD)が既定になっていて、スピーカーをつないだマザーボードの出力(`Realtek`等の`analog`)に出ていないことが多い。*sysctl hw.snd.default_unit=N*(Nは`pcmN`の番号)で切り替え、*mpv ファイル* で確かめる。決まったら */etc/sysctl.conf* に`hw.snd.default_unit=N`を足すと再起動後も残る。
+- 何も出てこない(`No devices installed`)なら、ドライバが読み込まれていない。*kldload snd_hda*(USBなら *kldload snd_uaudio*)。
+- 音量は *mixer* で見られる(*mixer vol.volume=0.8* 等)。Xfceのパネルに音量のプラグインを足すか、pavucontrolで出力先と音量を選べる。pulseaudioは、mpv等が音を出す時に自動で起動する。
 
 **パッケージとOSの更新(2026-11-08)**
 
