@@ -111,7 +111,13 @@ build_kmod_from_ports() {
   ko=$1
   pkgname=$(pkg which -q "$ko")
   [ -n "$pkgname" ] || die "$ko を入れたパッケージが分かりません(pkg which $ko)"
-  name=$(pkg query %n "$pkgname")
+  build_pkg_from_ports "$(pkg query %n "$pkgname")"
+}
+
+# パッケージ名のポートを/usr/srcに合わせてビルドし直し、pkg lockする。
+build_pkg_from_ports() {
+  name=$1
+  pkgname=$name
   if [ "$(pkg query %k "$name")" = 1 ]; then
     echo "$name はビルドし直してlock済みです"
     return 0
@@ -138,6 +144,7 @@ ensure_ports() {
   fi
 }
 
+rebuilt=no
 if [ -n "$module" ]; then
   if [ "$gpu" = nvidia ]; then
     pkg_install nvidia-driver nvidia-xconfig || die "nvidia-driver を入れられません"
@@ -158,10 +165,25 @@ if [ -n "$module" ]; then
   echo "$module を読み込みました"
   # ドライバが読み込んだファームウェア(AMDのgpu-firmware-amd-kmod-polaris10等)の.koも、版がずれていると読めない。
   # ドライバは途中で止まるが/dev/dri/card0は残るので、dmesgで見つける(2026-11-07、RX580で実際に)。
-  rebuilt=no
   for ko in $(dmesg | sed -n 's/^KLD \(.*\.ko\): depends on kernel - not available or version mismatch$/\1/p' | sort -u); do
     build_kmod_from_ports "/boot/modules/$ko"
   done
+  # NVIDIAは、Xが使うドライバ本体(nvidia-driver)とカーネルモジュール(nvidia-kmod)の版が同じでないと、
+  # Xorgが「NVRM: API mismatch」で止まる。portsのnvidia-kmodはpkgより新しいことがある(2026-11-08、RTX3050で
+  # portsのnvidia-kmodが620.70.06、pkgのnvidia-driverが595.112.07だった)ので、ずれていればnvidia-driverも
+  # 同じportsからビルドし直す(nvidia-kmodの版の末尾の.1600029等はカーネルの版なので比べない)。
+  if [ "$gpu" = nvidia ]; then
+    nvver() { pkg query %v "$1" | sed 's/[_,].*//' | cut -d. -f1-3; }
+    kv=$(nvver nvidia-kmod)
+    dv=$(nvver nvidia-driver)
+    if [ -n "$kv" ] && [ "$kv" != "$dv" ]; then
+      echo "nvidia-kmod($kv)とnvidia-driver($dv)の版が違うので、nvidia-driverもportsからビルドします"
+      pkg unlock -y nvidia-driver >/dev/null 2>&1
+      build_pkg_from_ports nvidia-driver
+      [ "$(nvver nvidia-driver)" = "$kv" ] ||
+        die "nvidia-driverをビルドし直しましたが、まだnvidia-kmod($kv)と版が違います($(nvver nvidia-driver))"
+    fi
+  fi
   [ "$rebuilt" = yes ] && reboot_needed=yes
   if [ "$gpu" = nvidia ] && [ ! -f /etc/X11/xorg.conf ]; then
     nvidia-xconfig || die "nvidia-xconfig に失敗しました"
@@ -258,7 +280,7 @@ fi
 
 say "終わりました"
 if [ "${reboot_needed:-no}" = yes ]; then
-  echo "ファームウェアをビルドし直したので、必ず reboot してください(読み込み直しは再起動の時)。"
+  echo "ドライバかファームウェアをビルドし直したので、必ず reboot してください(読み込み直しは再起動の時)。"
 fi
 echo "reboot して、Xfceに $user でログインしてください。"
 echo "その後: アプリケーション → 設定 → Fcitx5 設定 でMozcがあることを確かめ、"

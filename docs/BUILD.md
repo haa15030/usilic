@@ -276,7 +276,7 @@ sh ~ABC/git/usilic/tools/setup-freebsd.sh ABC
 
 ※`ABC`はインストーラで作ったユーザー名。GPUは`pciconf -l`で見分ける(NVIDIA・AMD・Intel)。違う時やAMDのHD 7000番台以前は、最後に`--gpu=nvidia`・`--gpu=amd`・`--gpu=radeon`・`--gpu=intel`を足す。コンソールのキーマップがjpならXのキーボードもjp106にし、Caps LockとCtrlを入れ替える(入れ替えない時は`--noswapcaps`を足す)。後から切り替えるには、rootで`/usr/local/etc/X11/xorg.conf.d/keyboard.conf`の *Option "XkbOptions" "ctrl:swapcaps"* の行を消す(入れ替えに戻す時は`EndSection`の前にその行を足す)。ログインし直すと変わる(スクリプトを実行し直しても、keyboard.confが既にあれば変わらない)。USキーボード等でkeyboard.confが無い時は、後の4.の手順でXkbModel・XkbLayoutの2行を省いて作る。
 
-※`kldload`がカーネルとの版のずれで失敗したら(下の注意点)、/usr/srcに合わせてportsからドライバをビルドし、`pkg lock`する。ドライバが読むファームウェア(RX580なら`gpu-firmware-amd-kmod-polaris10`)の版のずれも*dmesg*で見つけて同じようにする(この時は最後に「必ず reboot」と出る)。SDL2のportsからのビルドもあるので、時間がかかる。途中で止まったら、同じコマンドをもう一度実行すれば、済んだ所を飛ばして続きから進む。記録は`/var/log/usilic-setup.log`。
+※`kldload`がカーネルとの版のずれで失敗したら(下の注意点)、/usr/srcに合わせてportsからドライバをビルドし、`pkg lock`する。ドライバが読むファームウェア(RX580なら`gpu-firmware-amd-kmod-polaris10`)の版のずれも*dmesg*で見つけて同じようにする(この時は最後に「必ず reboot」と出る)。NVIDIAは、portsでビルドしたカーネルモジュール(`nvidia-kmod`)がpkgのドライバ本体(`nvidia-driver`)より新しい版になることがある。版がずれているとXが`NVRM: API mismatch`で起動しないので、その時は`nvidia-driver`も同じportsからビルドしてlockする。SDL2のportsからのビルドもあるので、時間がかかる。途中で止まったら、同じコマンドをもう一度実行すれば、済んだ所を飛ばして続きから進む。記録は`/var/log/usilic-setup.log`。
 
 ※最初の起動で入れるgroff・mg・texinfo・7-zip・w3mも、ここで入れる。
 
