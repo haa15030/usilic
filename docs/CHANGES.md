@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1285. **src/web/README: FreeBSDでの設置の手順、usilicが本棚の本を落とすのはいつか(2026-11-09)**
+   - ユーザーの指摘(src/HELP_.txt:120の「localhost で既にそこにあればそこから、それ以外のモードではブラウザ等で開きます」が"わかりにくい"、"FreeBSDでは？"、"その手順もよろしく。"、"macOS・Windowsのlocalhostサーバーが本をディレクトリに置いていてそのまま開くのはいいとして、ダウンロードはいつやるわけ？")。
+   - **HELP(src/HELP_.txt・HELP_en_.txt、管理外)**: usilic-webのURLを開く時の動きを^Owのモードで分けて書き直した。「それ以外のモード」はlocalhost以外ではなく^OwのEpub以外のモード。落とすのはサーバーが別のマシンの時と、localhostでもLinux・FreeBSD等(config.phpがmacOS・Windows以外は原稿置き場を/srv/usilic-web/textsにする)の時で、macOS・Windowsのlocalhostは原稿置き場が~/.local/usilic-web/textsそのものなので落とさない(fetchUsilicWebBook()はlocalhostで既にそのファイルがある時だけ落とさない)。
+   - **README**: 「FreeBSDでの設置」を足した(apache24・mod_php84・php84-zip・php84-filter、mod_phpのためpreforkに、Includes/usilic-web.confでリポジトリのsrc/webをAlias・Require local(iPad等からはBasic認証、.htaccessのAuthUserFileはDebianの場所なので使わない)、/srv/usilic-web/の置き場をwwwで、/usr/local/etc/php/の.iniで上限、sysrc apache24_enable)。「usilicから開く」の落とす条件を同じ内容に直した。FreeBSDの実機では未確認。
 1284. **docs/BUILD.md(FreeBSD): 内蔵オーディオ(背面・前面)で聴く時の設定(2026-11-08)**
    - ユーザーの確認("~/.config/mpv/mpv.confを削除してもOKを確認。")と質問("ユーザーによっては内蔵オーディオの出力で聴くと思うけど、そのときの設定は？")、依頼("足しといて。")。
    - **追加**: 注意点の「音声」に、内蔵オーディオは*cat /dev/sndstat*の`Rear`・`Front`の番号を`hw.snd.default_unit`にすること、背面は何も設定しなくても既定に選ばれていることが多く(RTX3050のマシンでも最初は`pcm3`のRear Analogがdefault)audioグループに入れるだけで鳴ること、前面と背面は別の出力先でヘッドホンを挿しても自動では切り替わらないことを足した。mpv.confを消しても`hw.snd.default_unit=2`だけでmpvが鳴ることはユーザーが確かめた。docs/BUILD.htmlを作り直した。

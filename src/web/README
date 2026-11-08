@@ -206,13 +206,84 @@ Windowsなら自動で%USERPROFILE%\.local\usilic-web\の下にする(無けれ�
    127.0.0.1だけで受け、.htaccess(Basic認証)は効かないので、このPCの中からしか
    開けない。php -Sは開発用の簡単なサーバーで、一度に1つずつしか受けない。
 
+FreeBSDでの設置(http://localhost/usilic-web/)
+---------------------------------------------
+(2026-11-09、手順だけ。FreeBSDの実機ではまだ確かめていない。)
+apache24とmod_phpを使う。config.phpはmacOS・Windows以外なので、原稿置き場等は上のDebianと
+同じ/srv/usilic-web/の下(apacheのユーザーはwww)。usilicの本棚から落とした本は
+~/.local/usilic-web/texts/に置かれ、原稿置き場とは別なので、localhostでも落とす。
+公開ディレクトリからはmacOSと同じくリポジトリのsrc/webを指す(既定の本棚も出る)。
+以下はrootで(ユーザー名は自分の、リポジトリは~ユーザー名/git/usilic)。
+
+1. apache24とphpを入れる。phpの版(下は8.4)は、pkg search -x '^php8[0-9]+$' で
+   新しいものがあればそれに読み替える(mod_php・-zip・-filterも同じ版で)。
+   .epubの展開にzip、入力の確かめにfilterが要る。
+
+     pkg install apache24 php84 mod_php84 php84-zip php84-filter
+
+2. mod_phpはスレッドを使わないMPM(prefork)でしか動かないので、httpd.confで
+   preforkにする(既にそうなら何も変わらない)。
+
+     sed -i '' -e 's/^LoadModule mpm_event_module/#LoadModule mpm_event_module/' \
+       -e 's/^#LoadModule mpm_prefork_module/LoadModule mpm_prefork_module/' \
+       /usr/local/etc/apache24/httpd.conf
+
+3. /usr/local/etc/apache24/Includes/usilic-web.conf を作る(httpd.confがIncludes/*.confを
+   読む)。
+
+     <FilesMatch \.php$>
+         SetHandler application/x-httpd-php
+     </FilesMatch>
+     DirectoryIndex index.php index.html
+     Alias /usilic-web /home/ユーザー名/git/usilic/src/web
+     <Directory /home/ユーザー名/git/usilic/src/web>
+         Require local
+         <FilesMatch "^(config\.php|common\.php|README)$">
+             Require all denied
+         </FilesMatch>
+     </Directory>
+
+   Require localなので、このマシンの中からしか開けない(.htaccessは効かせない。
+   .htaccessのAuthUserFileはDebianの場所のため)。iPad等からも開くなら、Require local を
+   次の4行に置き換え、パスワードファイルを作る(同じネットワークの誰でも原稿を読み、
+   上書きし、記録を消せてしまうので、認証無しで開けない)。
+
+         AuthType Basic
+         AuthName "usilic web"
+         AuthUserFile /usr/local/etc/apache24/usilic-web.htpasswd
+         Require valid-user
+
+     htpasswd -c /usr/local/etc/apache24/usilic-web.htpasswd ユーザー名
+
+4. 原稿置き場・EPUBの展開先・記録の置き場を作る(Debianの5.と同じ、wwwが書き込める
+   ように。原稿置き場はグループを自分にしてscpでも置けるように)。
+
+     install -d -o www -g ユーザー名 -m 2775 /srv/usilic-web/texts
+     install -d -o www -g www /srv/usilic-web/books /srv/usilic-web/marks
+
+5. 送れるファイルの大きさの上限を広げる(標準は2MB。/usr/local/etc/php/の.iniは
+   phpが読む)。
+
+     printf 'upload_max_filesize = 64M\npost_max_size = 64M\n' > /usr/local/etc/php/99-usilic-web.ini
+
+6. 起動する(以後は起動時に自動で)。
+
+     sysrc apache24_enable=YES
+     service apache24 start
+
+   service apache24 configtest で設定の書き間違いを確かめられる。
+
+7. ブラウザで http://localhost/usilic-web/ を開き、「手順書・見本」のBUILD.htmlを選ぶ。
+
 usilicから開く
 --------------
 usilicの^J^Eの一覧には http://localhost/usilic-web/ が最初から載っている(^Jeに
 入れたusilic-webのURLも載る)。usilicrcのURL節の対処(^Owで巡回)がEpubなら、
 本棚の一覧(index.php?list=1)をusilicの一覧に出し、選んだ本を~/.local/usilic-web/
-texts/へ落として(get.php)開く。localhostで既にそこにあれば落とさない。ほかの対処
-(Open等)ならブラウザ等で開く。Basic認証の付いたサーバー(Debian)からは、~/.netrcに
+texts/へ落として(get.php)開く。落とすのは、サーバーが別のマシンの時と、localhostでも
+Debian・FreeBSD等(原稿置き場が/srv/usilic-web/texts)の時。macOS・Windowsのlocalhostは原稿
+置き場がそのディレクトリなので、落とさずにそのまま開く。ほかの対処(Open等)ならブラウザ等で
+開く。Basic認証の付いたサーバー(Debian)からは、~/.netrcに
 書いておけば落とせる(curl --netrc-optional):
 
   machine debianのホスト名 login ユーザー名 password パスワード
