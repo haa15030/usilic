@@ -5885,7 +5885,12 @@ int main(int argc, char **argv) {
     // 2026-10-11、直接のユーザー依頼("PID:は不要かなと。何かに使える値じゃないので表示する意味がない"): 「USILIC」だけ。
     fm::ContentView::programWatermark() = "USILIC";
   }
-  bool consultHistoryOnStart = !isFileLaunch && !stdinPiped && !transientLaunch;
+  // 2026-11-09、直接のユーザー依頼("普段の子プロセス(ls)も履歴保存無し以外フルスペックにしてみて"): 外部起動の子でも
+  // ディレクトリの(ls)(ファイル引数・pipeのstdinではない)なら、historyを読んで普段どおりの(ls)として動く(以前は
+  // ページャーと同じくhistoryを読まず、使えるキーも絞っていた)。historyへは書かない(-Nと同じ、gNoHistoryWrite)。
+  // 親を終わらせる単一インスタンスの決まり・初回の起動の扱いは、子には効かせない(transientLaunch)。
+  bool consultHistoryOnStart = !isFileLaunch && !stdinPiped;
+  if (consultHistoryOnStart && transientLaunch) gNoHistoryWrite = true;
 
   // Ported from str.c's set_usilicrc()/S_hist path-building: both files
   // live under $HOME/.usilic/, created if it doesn't exist yet (same
@@ -5982,7 +5987,7 @@ int main(int argc, char **argv) {
   // いたかは問わず、~/.usilic/pidに記録された(生きていれば)何であれ
   // killする。pagerモードは従来通り何個でも並行して構わない(この
   // すぐ下のtempRootDirectory自身のコメント参照)。
-  if (consultHistoryOnStart) {
+  if (consultHistoryOnStart && !transientLaunch) {
     std::string pidPath = usilicDir + "pid";
     long oldPid = 0;
     {
@@ -6024,7 +6029,7 @@ int main(int argc, char **argv) {
   // 前回セッションの内容を引き継ぐ)。pagerモード(ファイル引数/pipe
   // stdin、何個でも並行稼働してよい)だけがこの2026-08-18追加の
   // per-pid隔離(ERROR/SHELLログの相互汚染防止)の対象になる。
-  std::string tempRootDirectory = consultHistoryOnStart ? "" : pidTempDirectory;
+  std::string tempRootDirectory = consultHistoryOnStart && !transientLaunch ? "" : pidTempDirectory;
   // 2026-10-08、直接のユーザー依頼("ERRORは継続しなくていい。起動毎に新規で"): SHELLのログ(項目589)とは
   // 違い、ERRORは起動のたびに空にする(引数無しの~/.usilic/errorが前回までの分を溜め続けていた)。
   { std::ofstream((tempRootDirectory.empty() ? usilicDir : tempRootDirectory + "/") + "error", std::ios::trunc); }
@@ -6143,7 +6148,7 @@ int main(int argc, char **argv) {
   if (consultHistoryOnStart) {
     {
       std::error_code ec;
-      firstPagerStart = !std::filesystem::exists(usilicDir + "history", ec);
+      firstPagerStart = !transientLaunch && !std::filesystem::exists(usilicDir + "history", ec);
     }
     // 2026-09-20追加、直接のユーザー依頼("大きめの方針転換...historyへの
     // その場反映は^R発動のHISTORY以外でお願いしたい"): 元々の⑦提案
