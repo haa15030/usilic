@@ -931,7 +931,8 @@ class BodyConverter {
         // 2026-09-30、直接のユーザー依頼("webサイトへのリンクがわかりづらいのでアンダーライン化して
         // ほしいのと、踏んだらクイックルックへ移行してほしい"): http(s)のリンクも下線を付け、
         // "url:"を付けて記録する(EpubLayoutHints::webLinks、Application::openEpubWebLink())。
-        bool web = href.compare(0, 7, "http://") == 0 || href.compare(0, 8, "https://") == 0;
+        bool web = href.compare(0, 7, "http://") == 0 || href.compare(0, 8, "https://") == 0 ||
+                   href.compare(0, 10, "usilic-ls:") == 0;  // HELPのディレクトリのリンク(Application::openEpubWebLink())
         if (web) {
           linkTarget_ = "url:" + href;
           linkLineRecorded_ = false;

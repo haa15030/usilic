@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1288. **HELPの本文にリンク(章へ・ディレクトリを子の窓で)、HELP_.txtの^J^Eの段落にFile-managerの試用を(2026-11-09)**
+   - ユーザーの依頼("最初のHELPだが、File-manager機能の試用も加えたい。暫定だが、src/HELP_.txt:116に追記よろしく。"、文は"…^Ow の今のモードで処理します（~/.local/usilic-web/texts/ には既定本も置いてあります。主な用法は後述のファイル管理を参照してください）。"、"~/.local/usilic-web/texts/とファイル管理はリンクになっていて、前者を踏むと~/.local/usilic-web/texts/の(ls)子プロセス（historyへの記録が無い以外は機能無制限）のウィンドウ、後者はそこへ飛ぶ。")。
+   - **原稿の書き方**: `<a href="行き先">字</a>`。行き先は`#章の名前`(その名前で始まる章へ、空白可)か`usilic-ls:ディレクトリ`(~/可)。src/HELP_.txt・HELP_en_.txt(管理外)の該当の段落に入れた(英語は`#File management`)。ユーザーのHELP_.txt→HELP.txtの成形で`<a …>`がそのまま通る必要がある。
+   - **変更**: markup_to_roff(-n)は`\*[usilic-a 行き先]`…`\*[usilic-ae]`(groffでは何も出さない、空白は%20)。help_to_epub(-eとHELP.1からのEPUB)は<a href>にし、`#章の名前`は章のファイル(chNN.xhtml#top)へ。usilicのEPUB表示は`usilic-ls:`をWebのリンクと同じく下線のリンクにし(epub_to_help_markup)、踏むと`Application::launchDirectoryChild()`が子のusilicをそのディレクトリで別の窓に開く(`usilic -N ディレクトリ`、WindowsはlaunchWindowsUsilicChild)。新しい裏オプション`-N`は~/.usilic/historyを読むが書かない(main.cppのsaveHistoryToDisk()でgNoHistoryWrite)。
+   - 確かめたこと: make usilic・make install。~/HELP.txtの写しにリンクを入れて`usilic -e`で作ったEPUBに`<a href="usilic-ls:~/.local/usilic-web/texts/">`と`<a href="ch06.xhtml#top">ファイル管理</a>`が入ること。HELPの画面で踏んだ時の動きはユーザーの確認待ち。
 1287. **^J^Eの一覧に~/.local/usilic-web/texts/の本も載せる(2026-11-09)**
    - ユーザーの確認と提案(項目1286の保存先の統合が"確認OK。"、"^J^Eでは~/.local/usilic-web/texts/の内容も表示してはどうかなと。")。
    - **変更**: `Application::addUsilicWebTextBooks()`を足し、^J^Eの一覧(startPromptHistoryRecall()と^Rの切り替え)で、texts/の.epub(.で始まるもの・.part-の書きかけは除く)のうち履歴に無いものを足す。並べ替えた一覧(既定)ではほかの本と一緒にパスの順、時系列では先頭(いちばん古い所、usilic-web等の既定のURLと同じ扱い)。選んだ時は履歴の本と同じくopenRecentFileEntry()で開く。HELP(src/HELP_.txt・HELP_en_.txt、管理外)の^J^Eの説明に1文足した。Python版は変えていない。make usilic・make installは通った(動作はユーザーの確認待ち)。

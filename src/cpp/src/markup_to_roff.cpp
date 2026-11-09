@@ -310,6 +310,9 @@ std::string convertMarkupToMsRoffSource(const std::string &source) {
          // 2026-10-26: <i>(パス等)は地の字で、前後に何も出さない印(usilic -eだけが<i>にする)。<u>(注釈の付く
          // 設定項目の名前)は\fI(manでは下線)。
          ".ds usilic-i\n.ds usilic-ie\n"
+         // 2026-11-09: <a href="行き先">…</a>(HELPの中のリンク、"#章の名前"か"usilic-ls:ディレクトリ")は
+         // \*[usilic-a 行き先]…\*[usilic-ae]。groffでは何も出さず(地の字)、usilic -eだけが<a>にする。
+         ".ds usilic-a\n.ds usilic-ae\n"
          // 2026-10-10、直接のユーザー報告("~/HELP.txt平文表示と比べるとHELP.ja.1ではタブコードで始まる行で
          // 全角コロンの位置が左寄り"): manの既定のタブ位置は0.5i(5桁)ごとで、平文(8桁ごと)より左へずれる。
          // 平文と同じ8桁ごとにする。
@@ -423,6 +426,22 @@ std::string convertMarkupToMsRoffSource(const std::string &source) {
       }
     }
 
+    if (markup.compare(i, 9, "<a href=\"") == 0) {  // リンク(前置きのusilic-a参照)
+      std::size_t close = markup.find("\">", i + 9);
+      std::string target = close == std::string::npos ? std::string() : markup.substr(i + 9, close - i - 9);
+      // 章の名前の空白("#File management")は%20に(\*[…]の引数は空白で区切られる)。
+      for (std::size_t sp; (sp = target.find(' ')) != std::string::npos;) target.replace(sp, 1, "%20");
+      if (!target.empty() && target.find_first_of("\t\n\\]") == std::string::npos) {
+        out += "\\*[usilic-a " + target + "]";
+        i = close + 2;
+        continue;
+      }
+    }
+    if (markup.compare(i, 4, "</a>") == 0) {
+      out += "\\*[usilic-ae]";
+      i += 4;
+      continue;
+    }
     if (markup.compare(i, 3, "\xE2\x80\xA1") == 0) {  // ‡(前置きのusilic-note参照)
       std::size_t d = i + 3;
       while (d < markup.size() && markup[d] >= '0' && markup[d] <= '9') d++;

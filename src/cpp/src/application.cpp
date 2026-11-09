@@ -8470,6 +8470,7 @@ static bool openWithoutXdgOpen(const std::string &target, bool *found = nullptr)
 bool Application::openEpubListSiteUrl(const std::string &url) { return openEpubWebLink(url); }
 
 bool Application::openEpubWebLink(const std::string &url) {
+  if (url.compare(0, 10, "usilic-ls:") == 0) return launchDirectoryChild(url.substr(10));
   const auto &handlers = configuration_.urlHandlers();
   if (handlers.empty()) return false;
   // 2026-10-17、直接のユーザー依頼("リンクをOpenで開くのは５つの小説サイトのみ。作品IDを確認するためだからPDF等に
@@ -22598,6 +22599,29 @@ bool Application::launchHelpChild() {
   setExternalWindowSlot(1);
   runExternalUsilicPager("usilic " + quoted + "'");
   setExternalWindowSlot(0);
+  return true;
+}
+
+// 2026-11-09、直接のユーザー依頼(HELPの「~/.local/usilic-web/texts/」のリンク"を踏むと~/.local/usilic-web/texts/の
+// (ls)子プロセス(historyへの記録が無い以外は機能無制限)のウィンドウ"): HELPの<a href="usilic-ls:ディレクトリ">から、
+// 子のusilicをそのディレクトリで別の窓に開く。-N(main.cpp)で、子は~/.usilic/historyを読むが書かない。
+bool Application::launchDirectoryChild(const std::string &directory) {
+  std::string path = directory;
+  const std::string historySuffix = "/.usilic/history";  // ホームはhistoryFilePath_から(テストの仮のホームでも)
+  if (path.compare(0, 2, "~/") == 0)
+    path = historyFilePath_.substr(0, historyFilePath_.size() - historySuffix.size()) + path.substr(1);
+  std::error_code ec;
+  if (!std::filesystem::is_directory(path, ec)) {
+    showTransientNotice(activeView(), "No such directory: " + directory);
+    return false;
+  }
+#ifdef _WIN32
+  launchWindowsUsilicChild({"-N", path});
+  return true;
+#endif
+  std::string quoted = "'";
+  for (char c : path) quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
+  runExternalUsilicPager("usilic -N " + quoted + "'");
   return true;
 }
 

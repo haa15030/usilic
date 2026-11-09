@@ -120,7 +120,7 @@ bool isUpper(char c) { return c >= 'A' && c <= 'Z'; }
 
 // roffの1行の切れ端: 字、書体の切り替え(\f[B]・\fB等)、エスケープを外した字(\e・\[u3000]等)。
 struct Piece {
-  enum Kind { Text, Font, Literal } kind;
+  enum Kind { Text, Font, Literal, Link } kind;  // Link: <a href="text">、textが空なら</a>(usilic-a)
   std::string text;
   bool bracket = false;  // \f[...]の形
 };
@@ -165,6 +165,19 @@ std::vector<Piece> tokenize(const std::string &s) {
       std::size_t a = arg.find_first_not_of(' ');
       flush();
       pieces.push_back({Piece::Literal, "\xE2\x80\xA1" + (a == std::string::npos ? std::string() : arg.substr(a))});
+      i = close + 1;
+      continue;
+    }
+    if (s.compare(i, 13, "\\*[usilic-ae]") == 0) {  // リンクの終わり(convertMarkupToMsRoffSource()のusilic-a参照)
+      flush();
+      pieces.push_back({Piece::Link, ""});
+      i += 13;
+      continue;
+    }
+    if (s.compare(i, 12, "\\*[usilic-a ") == 0 && s.find(']', i) != std::string::npos) {
+      std::size_t close = s.find(']', i);
+      flush();
+      pieces.push_back({Piece::Link, s.substr(i + 12, close - i - 12)});
       i = close + 1;
       continue;
     }
@@ -215,7 +228,7 @@ std::vector<Piece> tokenize(const std::string &s) {
 std::string plain(const std::string &s) {  // エスケープを外した文字列(見出し名用)
   std::string out;
   for (const auto &p : tokenize(s))
-    if (p.kind != Piece::Font) out += p.text;
+    if (p.kind != Piece::Font && p.kind != Piece::Link) out += p.text;
   return out;
 }
 
@@ -242,6 +255,10 @@ std::string inlineHtml(const std::vector<Piece> &pieces, int col0) {
     return escapeHtml(buf);
   };
   for (const auto &p : pieces) {
+    if (p.kind == Piece::Link) {  // 章へは"#章の名前"(後でファイル名に、convertMsRoffToHelpEpub())
+      out += p.text.empty() ? std::string("</a>") : "<a href=\"" + escapeHtml(p.text) + "\">";
+      continue;
+    }
     if (p.kind != Piece::Font) {
       out += emitText(p.text);
       continue;
@@ -950,6 +967,24 @@ std::string convertMsRoffToHelpEpub(const std::string &roff, const std::string &
       body += "<p class=\"" + cls + "\">" + (stripNbspAndSpace(h).empty() ? std::string(kNbsp) : h) + "</p>\n";
     }
     files.push_back({std::string("Text/") + fname, xhtml(chapters[n].title, body, lang)});
+  }
+  // 2026-11-09: 本文のリンク<a href="#章の名前">(usilic-a)を、その名前で始まる章のファイルへ。
+  for (auto &file : files) {
+    const std::string mark = "<a href=\"#";
+    for (std::size_t at = 0; (at = file.second.find(mark, at)) != std::string::npos;) {
+      std::size_t start = at + mark.size(), end = file.second.find('"', start);
+      if (end == std::string::npos) break;
+      std::string name = file.second.substr(start, end - start);
+      for (std::size_t sp; (sp = name.find("%20")) != std::string::npos;) name.replace(sp, 3, " ");
+      for (std::size_t n = 0; n < chapters.size(); n++)
+        if (!name.empty() && chapters[n].title.compare(0, name.size(), name) == 0) {
+          char target[32];
+          std::snprintf(target, sizeof target, "ch%02zu.xhtml#top", n + 1);
+          file.second.replace(start - 1, end - start + 1, target);
+          break;
+        }
+      at = start;
+    }
   }
   for (int k = 1; k <= static_cast<int>(manualNotes.size()); k++)  // どこからも指していない「≡…∠」も注釈に
     if (!noteIds.count(manualKey(k))) {

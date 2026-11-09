@@ -264,8 +264,15 @@ std::string currentTimestampText() {
 // 参照)の両方から呼ぶ。sessionHistoryは呼び出し側が最後にpushした
 // 状態のまま(このセッション自身のjournal_を保持している)必要がある
 // ので、値渡しではなく参照で受け取る。
+// -N(HELPのディレクトリのリンクから開いた子、Application::launchDirectoryChild())の時は、historyへ書かない。
+bool gNoHistoryWrite = false;
+
 void saveHistoryToDisk(fm::History &sessionHistory, const std::string &usilicDir,
                         bool charsetExplicitlySet) {
+  if (gNoHistoryWrite) {
+    sessionHistory.clearJournal();
+    return;
+  }
   std::string historyPath = usilicDir + "history";
   std::string historyOldPath = usilicDir + "history.old";
   std::string historyLockPath = usilicDir + "history.lock";
@@ -5432,6 +5439,9 @@ int main(int argc, char **argv) {
     // -P(裏オプション、2026-10-29): -KのKEYの子で、親がページャー(最初の起動のHELP等)。KEYをページャーで使える
     // キー(HELPの行頭がタブの行)だけにする(Application::launchKeyChild()が付ける)。
     else if (std::strcmp(argv[i], "-P") == 0) keyOfPagerParent = true;
+    // -N(裏オプション、2026-11-09): HELPのディレクトリのリンクから開いた子(Application::launchDirectoryChild())。
+    // ~/.usilic/historyは読むが書かない(saveHistoryToDisk()、gNoHistoryWrite参照)。
+    else if (std::strcmp(argv[i], "-N") == 0) gNoHistoryWrite = true;
     else if (std::strcmp(argv[i], "-z") == 0) {  // gStartFontPointSize参照
       int size = i + 1 < argc ? std::atoi(argv[i + 1]) : 0;
       if (size < 4 || size > 200) {
