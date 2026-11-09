@@ -3474,6 +3474,7 @@ private:
   // ^OjでHELP.enと切り替える。
   // usilic-webの本棚から落とした本の置き場(~/.local/usilic-web/texts、openUsilicWeb()参照)。
   std::string usilicWebTextDirectory_;
+  void addUsilicWebTextBooks(std::vector<std::string> &items, bool sorted) const;  // ^J^E: texts/の本も載せる
   std::string helpPath_;
   // 2026-09-14追加、直接のユーザー依頼("モード名はTUTORIALだが読み込む
   // ファイルをTUTORIALとTUTORIAL.enとで切り替えを行う^Jaを復活して

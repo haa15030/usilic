@@ -8730,6 +8730,24 @@ bool Application::fetchUsilicWebBook(const std::string &base, const std::string 
   return openRecentFileEntry(path);
 }
 
+// 2026-11-09、直接のユーザー依頼("^J^Eでは~/.local/usilic-web/texts/の内容も表示してはどうか"): 履歴に無くても、
+// texts/(narou2epubの保存先・usilic-webの本棚から落とした本の置き場、macOS・Windowsではusilic-webの本棚そのもの)の
+// .epubを^J^Eの一覧に載せる。並べ替えた一覧(既定)ではほかの本と一緒に名前順、時系列(^R)では先頭(いちばん古い所)。
+void Application::addUsilicWebTextBooks(std::vector<std::string> &items, bool sorted) const {
+  std::error_code ec;
+  std::vector<std::string> books;
+  for (std::filesystem::directory_iterator it(usilicWebTextDirectory_, ec), end; !ec && it != end; it.increment(ec)) {
+    std::string name = it->path().filename().string();
+    if (name.empty() || name[0] == '.' || !isEpubFile(name) || !it->is_regular_file(ec)) continue;
+    std::string path = usilicWebTextDirectory_ + "/" + name;
+    if (std::find(items.begin(), items.end(), path) == items.end()) books.push_back(path);
+  }
+  if (books.empty()) return;
+  std::sort(books.begin(), books.end());
+  items.insert(items.begin(), books.begin(), books.end());
+  if (sorted) std::sort(items.begin(), items.end());
+}
+
 bool Application::webShelfShowing() const {
   return webShelfActive_ && currentMode_ == ApplicationMode::ListBrowser && listBrowserMode_.items() == webShelfNames_;
 }
@@ -14702,6 +14720,7 @@ bool Application::toggleListBrowserHistory() {
   if (promptHistoryContext_ && promptHistoryContext_->epubOnly) {  // ^J^E: EPUBだけ(startEpubList()参照)
     items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item) && !isUsilicWebUrl(item) && !isEpubListSiteUrl(item); }),
                 items.end());
+    addUsilicWebTextBooks(items, !listBrowserChronological_);
     addDefaultUsilicWebUrl(items);
   }
   if (promptHistoryContext_ && promptHistoryContext_->archiveOnly)  // ^J^A: アーカイブだけ(startArchiveList()参照)
@@ -17262,6 +17281,7 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   if (promptHistoryContext_ && promptHistoryContext_->epubOnly) {  // ^J^E: EPUBだけ(startEpubList()参照)
     items.erase(std::remove_if(items.begin(), items.end(), [](const std::string &item) { return !isEpubFile(item) && !isUsilicWebUrl(item) && !isEpubListSiteUrl(item); }),
                 items.end());
+    addUsilicWebTextBooks(items, sortDirectEntryList);
     addDefaultUsilicWebUrl(items);
   }
   if (promptHistoryContext_ && promptHistoryContext_->archiveOnly)  // ^J^A: アーカイブだけ(startArchiveList()参照)

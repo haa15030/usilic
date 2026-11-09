@@ -33408,6 +33408,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1287. **^J^Eの一覧に~/.local/usilic-web/texts/の本も載せる(2026-11-09)**
+   - ユーザーの確認と提案(項目1286の保存先の統合が"確認OK。"、"^J^Eでは~/.local/usilic-web/texts/の内容も表示してはどうかなと。")。
+   - **変更**: `Application::addUsilicWebTextBooks()`を足し、^J^Eの一覧(startPromptHistoryRecall()と^Rの切り替え)で、texts/の.epub(.で始まるもの・.part-の書きかけは除く)のうち履歴に無いものを足す。並べ替えた一覧(既定)ではほかの本と一緒にパスの順、時系列では先頭(いちばん古い所、usilic-web等の既定のURLと同じ扱い)。選んだ時は履歴の本と同じくopenRecentFileEntry()で開く。HELP(src/HELP_.txt・HELP_en_.txt、管理外)の^J^Eの説明に1文足した。Python版は変えていない。make usilic・make installは通った(動作はユーザーの確認待ち)。
 1286. **narou2epubの保存先を~/.usilic/dataから~/.local/usilic-web/textsへ(usilic-webの本棚と統合)(2026-11-09)**
    - ユーザーの依頼("なろうの保存先`~/.usilic/data/`を`~/.local/usilic-web/text/`に統合してはマズい？"→"現状の履歴はどうでもいいので統合してみて。")。きっかけは、HELPでなろうのEPUB化(SHELLで経過が出る)とusilic-webの本棚からのダウンロード(localhostでは落とさない)がどちらも「ダウンロード」に見えて混同しやすかったこと(項目1285)。
    - **変更**: tools/narou2epub.pyの-oの既定を~/.local/usilic-web/textsに(無ければ作る)。macOS・Windowsではusilic-webの本棚そのもの(config.php)なので、作った本がブラウザの本棚にも並ぶ。Linux・FreeBSDではサーバーの本棚(/srv)には出ず、本棚から落とした本と同じ置き場になるだけ。C++はnarou2epubに-oを渡さないのでコメントだけ。Python版(run_narou2epub)は読んでいる本の所か~/.usilic/dataを-oで渡していたので、C++に合わせて~/.local/usilic-web/textsにした。src/usilicrcのURL節の説明、HELP(src/HELP_.txt・HELP_en_.txt、管理外)の^J^E・Epubの説明を直した(HELPのEpubの「読んでいる本と同じディレクトリ」は、C++では以前から~/.usilic/dataで合っていなかった)。~/.usilic/dataの役目(^J^Od・^J^W等)は変えない。
