@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1286. **narou2epubの保存先を~/.usilic/dataから~/.local/usilic-web/textsへ(usilic-webの本棚と統合)(2026-11-09)**
+   - ユーザーの依頼("なろうの保存先`~/.usilic/data/`を`~/.local/usilic-web/text/`に統合してはマズい？"→"現状の履歴はどうでもいいので統合してみて。")。きっかけは、HELPでなろうのEPUB化(SHELLで経過が出る)とusilic-webの本棚からのダウンロード(localhostでは落とさない)がどちらも「ダウンロード」に見えて混同しやすかったこと(項目1285)。
+   - **変更**: tools/narou2epub.pyの-oの既定を~/.local/usilic-web/textsに(無ければ作る)。macOS・Windowsではusilic-webの本棚そのもの(config.php)なので、作った本がブラウザの本棚にも並ぶ。Linux・FreeBSDではサーバーの本棚(/srv)には出ず、本棚から落とした本と同じ置き場になるだけ。C++はnarou2epubに-oを渡さないのでコメントだけ。Python版(run_narou2epub)は読んでいる本の所か~/.usilic/dataを-oで渡していたので、C++に合わせて~/.local/usilic-web/textsにした。src/usilicrcのURL節の説明、HELP(src/HELP_.txt・HELP_en_.txt、管理外)の^J^E・Epubの説明を直した(HELPのEpubの「読んでいる本と同じディレクトリ」は、C++では以前から~/.usilic/dataで合っていなかった)。~/.usilic/dataの役目(^J^Od・^J^W等)は変えない。
+   - このMacの~/.usilic/dataにあったなろう等のEPUB(HELP.epub以外)は~/.local/usilic-web/textsへ移した(^J^Eの履歴の古いパスは開けなくなるが、ユーザーの了承済み)。make usilic・make installは通った(narou2epub.pyのインストール先に反映済み)。なろうの作品を実際に取ってきて保存先を確かめるのはユーザーの確認待ち。
 1285. **src/web/README: FreeBSDでの設置の手順、usilicが本棚の本を落とすのはいつか(2026-11-09)**
    - ユーザーの指摘(src/HELP_.txt:120の「localhost で既にそこにあればそこから、それ以外のモードではブラウザ等で開きます」が"わかりにくい"、"FreeBSDでは？"、"その手順もよろしく。"、"macOS・Windowsのlocalhostサーバーが本をディレクトリに置いていてそのまま開くのはいいとして、ダウンロードはいつやるわけ？")。
    - **HELP(src/HELP_.txt・HELP_en_.txt、管理外)**: usilic-webのURLを開く時の動きを^Owのモードで分けて書き直した。「それ以外のモード」はlocalhost以外ではなく^OwのEpub以外のモード。落とすのはサーバーが別のマシンの時と、localhostでもLinux・FreeBSD等(config.phpがmacOS・Windows以外は原稿置き場を/srv/usilic-web/textsにする)の時で、macOS・Windowsのlocalhostは原稿置き場が~/.local/usilic-web/textsそのものなので落とさない(fetchUsilicWebBook()はlocalhostで既にそのファイルがある時だけ落とさない)。

@@ -8,7 +8,7 @@
 # 2026-10-11 usilic: 元のNarouToEpub3.py(https://github.com/tojc/NarouToEpub3、Apache-2.0)を改変して
 #   usilicのtools/narou2epub.pyとした。変更点(Apache-2.0 4(b)):
 #   - 表紙のフォントをWindowsのMS明朝に決め打ちせず、macOS・Linuxの明朝体等から探す(無ければ既定のフォント)。
-#   - 出力先を -o で指定できるようにした(既定は~/.usilic/data)。最後に作ったEPUBのパスを
+#   - 出力先を -o で指定できるようにした(既定は~/.local/usilic-web/texts)。最後に作ったEPUBのパスを
 #     1行で標準出力へ書く(途中の経過は標準エラーへ)。
 #   - 挿絵・表紙の作業用のファイルは一時ディレクトリに置き、終わったら消す。
 #   - Nコードの代わりに作品のURL(https://ncode.syosetu.com/n…/)も受け付ける。
@@ -1084,11 +1084,13 @@ if __name__ == '__main__':
                         "or an Aozora Bunko card https://www.aozora.gr.jp/cards/<person>/card<no>.html, "
                         "or an Archive of Our Own work https://archiveofourown.org/works/<no> (its own EPUB download)",
                         nargs='+', required=True)
-    parser.add_argument("-o", "--output", type=str, help="output directory (default: ~/.usilic/data)")
+    parser.add_argument("-o", "--output", type=str, help="output directory (default: ~/.local/usilic-web/texts)")
     args = parser.parse_args()
 
-    # 既定は~/.usilic/data(usilicの^J^Odで開ける作業用のデータの置き場、2026-10-11、直接のユーザー依頼)。無ければ作る。
-    outputDirectory = os.path.abspath(os.path.expanduser(args.output or "~/.usilic/data"))
+    # 既定は~/.local/usilic-web/texts(2026-11-09、直接のユーザー依頼"なろうの保存先~/.usilic/data/を~/.local/usilic-web/
+    # text/に統合"。macOS・Windowsではusilic-webの本棚そのもの(src/web/config.php)なので、作った本がブラウザの本棚にも
+    # 並ぶ。usilicが本棚から落とした本の置き場とも同じ。以前は~/.usilic/data、2026-10-11)。無ければ作る。
+    outputDirectory = os.path.abspath(os.path.expanduser(args.output or "~/.local/usilic-web/texts"))
     if not args.output:
       os.makedirs(outputDirectory, exist_ok=True)
     if not os.path.isdir(outputDirectory):

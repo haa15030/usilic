@@ -295,7 +295,7 @@ URL
 #         ~/.local/usilic-web/texts へ落として開く(curl が要ります)。
 #         「小説家になろう」・「カクヨム」・青空文庫(図書カード)の作品のリンクなら、
 #         program(narou2epub)で
-#         ~/.usilic/data に EPUB を作って開く(SHELL で動く)。lxml・
+#         ~/.local/usilic-web/texts に EPUB を作って開く(SHELL で動く)。lxml・
 #         ebooklib・requests・Pillow が要ります(~/.local/lib/usilic/narou2epub
 #         のコメント参照)
 # この節が無ければ下の内容(Linux は Open が xdg-open、Copy が

@@ -8544,7 +8544,7 @@ bool Application::openEpubWebLinkWithCurrentHandler(const std::string &url) {
     return true;
   }
   // 2026-10-11、直接のユーザー依頼(EPUBの中のなろうのリンクからEPUB化して開く): 作品のリンク
-  // (ncode.syosetu.com/nNNNNxx)なら、SHELLでnarou2epubを動かす(保存先はnarou2epubの既定の~/.usilic/data)。
+  // (ncode.syosetu.com/nNNNNxx)なら、SHELLでnarou2epubを動かす(保存先はnarou2epubの既定の~/.local/usilic-web/texts、2026-11-09までは~/.usilic/data)。
   // narou2epubはSHELLの中では作り終えたEPUBを`usilic`で渡すので、pollShellHandoff()がEPUBの画面で開く。
   if (handler.name == "Epub") return runNarouToEpub(handler, url);
   if (handler.name == "Dump") {

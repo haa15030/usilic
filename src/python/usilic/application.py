@@ -4636,12 +4636,13 @@ class Application:
         return True
 
     def run_narou2epub(self, target):
-        """作品番号・URL→narou2epubで~/.usilic/data/(本を読んでいればその本の所)にEPUBを作って開く。"""
+        """作品番号・URL→narou2epubで~/.local/usilic-web/texts/にEPUBを作って開く(C++と同じ、2026-11-09)。"""
         handler = dict(self.configuration.url_handler_list()).get('Epub')
         if not handler:
             self.show_transient_notice('No Epub in URL (usilicrc)')
             return False
-        directory = os.path.dirname(self.epub.path) if self.in_epub_body() else self.data_directory().rstrip('/')
+        directory = os.path.join(os.path.expanduser('~'), '.local', 'usilic-web', 'texts')
+        os.makedirs(directory, exist_ok=True)
         return self.start_shell_run(handler + [target, '-o', directory], None, [],
                                     on_done=lambda out: self.after_narou2epub(out))
 
