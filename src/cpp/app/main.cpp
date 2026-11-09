@@ -5885,10 +5885,11 @@ int main(int argc, char **argv) {
     // 2026-10-11、直接のユーザー依頼("PID:は不要かなと。何かに使える値じゃないので表示する意味がない"): 「USILIC」だけ。
     fm::ContentView::programWatermark() = "USILIC";
   }
-  // 2026-11-09、直接のユーザー依頼("普段の子プロセス(ls)も履歴保存無し以外フルスペックにしてみて"): 外部起動の子でも
-  // ディレクトリの(ls)(ファイル引数・pipeのstdinではない)なら、historyを読んで普段どおりの(ls)として動く(以前は
-  // ページャーと同じくhistoryを読まず、使えるキーも絞っていた)。historyへは書かない(-Nと同じ、gNoHistoryWrite)。
-  // 親を終わらせる単一インスタンスの決まり・初回の起動の扱いは、子には効かせない(transientLaunch)。
+  // 2026-11-09、直接のユーザー依頼("普段の子プロセス(ls)も履歴保存無し以外フルスペックにしてみて"、続けて"履歴への
+  // 保存も無ければ読み込みもしない。^X^Fその他は既定以外真っさら"): 外部起動の子でもディレクトリの(ls)(ファイル引数・
+  // pipeのstdinではない)なら、普段どおりの(ls)として動く(以前はページャーと同じく使えるキーも絞っていた)。
+  // historyは読まず(^X^F等の一覧は既定のまま)、書かない(gNoHistoryWrite)。親を終わらせる単一インスタンスの
+  // 決まり・初回の起動の扱いも、子には効かせない(transientLaunch)。
   bool consultHistoryOnStart = !isFileLaunch && !stdinPiped;
   if (consultHistoryOnStart && transientLaunch) gNoHistoryWrite = true;
 
@@ -6167,7 +6168,7 @@ int main(int argc, char **argv) {
       }
     });
 
-    historyText = readFileIfExists(usilicDir + "history");
+    if (!transientLaunch) historyText = readFileIfExists(usilicDir + "history");
     if (!historyText.empty()) {
       history.loadHistoryText(historyText, configuration.charsetExplicitlySet());
       if (!history.isComplete()) {
@@ -6213,7 +6214,7 @@ int main(int argc, char **argv) {
 
   // historyを読まない起動(ページャー・子、consultHistoryOnStart参照)でも、その場で調整して終了時にhistoryへ
   // 残した値(フォント・行間・字間・EPUBの余白)は使う(2026-10-30、以前はusilicrcのFONT等で)。書き戻しはしない。
-  if (!consultHistoryOnStart) {
+  if (!consultHistoryOnStart || transientLaunch) {
     std::string text = readFileIfExists(usilicDir + "history");
     if (!text.empty()) {
       fm::History saved;

@@ -33408,10 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
-1289. **外部起動の子の(ls)も、履歴に書かない以外は普段どおりに(2026-11-09)**
-   - ユーザーの依頼("普段の子プロセス(ls)も履歴保存無し以外フルスペックにしてみて")。
+1289. **外部起動の子の(ls)も、履歴を読み書きしない以外は普段どおりに(2026-11-09)**
+   - ユーザーの依頼("普段の子プロセス(ls)も履歴保存無し以外フルスペックにしてみて"、続けて"書き方がマズかったけど、履歴への保存も無ければ読み込みもしない。^X^Fその他は既定以外真っさら。それでよろしく。")。
    - **以前**: 外部起動の子(USILIC_TRANSIENT、^Ou・^Jpusilic・^T等)は、ディレクトリでもページャーと同じ扱いで、~/.usilic/historyを読まず(consultHistoryOnStartが偽)、pagerLaunch_で使えるキーも絞られていた。項目1288の`-N`の子も同じで、実際にはhistoryを読んでいなかった。
-   - **変更**(main.cpp): 子でもファイル引数・pipeのstdinでなければconsultHistoryOnStartを真にし(historyを読み、pagerLaunch_も偽)、そのかわりgNoHistoryWriteを立てて書かない。単一インスタンスの決まり(~/.usilic/pidの古いusilicを終わらせる)・ERROR/SHELLの共有・初回の起動(firstPagerStart)は子には効かせない(transientLaunch)。ページャーの子は今までどおり。
+   - **変更**(main.cpp): 子でもファイル引数・pipeのstdinでなければconsultHistoryOnStartを真にし(pagerLaunch_も偽、キーの制限無し)、historyは読まず(^X^F等の一覧は既定のまま、フォント・行間・字間・EPUBの余白だけは今までどおりhistoryから)、gNoHistoryWriteを立てて書かない。単一インスタンスの決まり(~/.usilic/pidの古いusilicを終わらせる)・ERROR/SHELLの共有・初回の起動(firstPagerStart)は子には効かせない(transientLaunch)。ページャーの子は今までどおり。
 1288. **HELPの本文にリンク(章へ・ディレクトリを子の窓で)、HELP_.txtの^J^Eの段落にFile-managerの試用を(2026-11-09)**
    - ユーザーの依頼("最初のHELPだが、File-manager機能の試用も加えたい。暫定だが、src/HELP_.txt:116に追記よろしく。"、文は"…^Ow の今のモードで処理します（~/.local/usilic-web/texts/ には既定本も置いてあります。主な用法は後述のファイル管理を参照してください）。"、"~/.local/usilic-web/texts/とファイル管理はリンクになっていて、前者を踏むと~/.local/usilic-web/texts/の(ls)子プロセス（historyへの記録が無い以外は機能無制限）のウィンドウ、後者はそこへ飛ぶ。")。
    - **原稿の書き方**: `<a href="行き先">字</a>`。行き先は`#章の名前`(その名前で始まる章へ、空白可)か`usilic-ls:ディレクトリ`(~/可)。src/HELP_.txt・HELP_en_.txt(管理外)の該当の段落に入れた(英語は`#File management`)。ユーザーのHELP_.txt→HELP.txtの成形で`<a …>`がそのまま通る必要がある。
