@@ -504,8 +504,8 @@ TEST_CASE("an icon launch keeps its own font size and letter spacing apart from 
   History::setIconLaunch(false);
 }
 
-// 2026-10-22(History::clearJournal()参照): 保存(replayJournalOnto→clearJournal)を2回しても、A→B→Aは
-// ディスク上でA,B,Aのまま(以前はA,B,A,B,Aに増えていた)。
+// 2026-10-22(History::clearJournal()参照): 保存(replayJournalOnto→clearJournal)を2回しても、ディスク上の
+// 並びが増え続けない(以前はA,B,A,B,Aに増えていた)。2026-10-30以降、A→B→Aは一つ前と同じものの入れ替えで[B,A]。
 TEST_CASE("saving twice does not replay the already-saved pushes again") {
   History session(0);
   History disk(0);
@@ -517,5 +517,5 @@ TEST_CASE("saving twice does not replay the already-saved pushes again") {
   session.replayJournalOnto(disk);
   session.clearJournal();
   const auto &ring = disk.recentEntries(RingCategory::RecentFile);
-  CHECK(std::vector<std::string>(ring.begin(), ring.end()) == std::vector<std::string>{"/x/A", "/x/B", "/x/A"});
+  CHECK(std::vector<std::string>(ring.begin(), ring.end()) == std::vector<std::string>{"/x/B", "/x/A"});
 }

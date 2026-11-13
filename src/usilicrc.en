@@ -192,7 +192,7 @@ WAIT
 
 	1
 
-COPY
+CP
 # Format: `cp' (option)
 #
 # Command of CP.  (default: cp -vR)
@@ -214,7 +214,7 @@ COPY
 
 #	cp -vRi
 
-MOVE
+MV
 # Format: `mv' (option)
 #
 # Command of MV.  (default: mv -v)
@@ -222,7 +222,7 @@ MOVE
 
 #	mv -vi
 
-DELETE
+RM
 # Format: `rm' (option)
 #
 # Command of RM.  (default: rm -vr)
@@ -383,7 +383,7 @@ KEY
     K-33  F-2 l   # ^Ol   Cycle ls sort key
     K-34  F-2 C-l # ^O^L  Redraw (from SHELL) / reverse ls sort order
     K-35  .       # .     Toggle selection
-    K-36  C-SPC   # ^SPC  Toggle selection
+    K-36  C-@     # ^@  Toggle selection
     K-37  F-2 y   # ^Oy   Select all
     K-38  F-2 n   # ^On   Clear all
     K-40  F-2 c   # ^Oc   CP
@@ -470,7 +470,7 @@ KEY
     K-118 F-0 r b # ^Xrb  Jump to a bookmark
     K-119 F-0 r l # ^Xrl  List bookmarks
     K-120 F-0 r SPC # ^Xr␣  Save this place to a register
-    K-121 F-0 r C-SPC # ^Xr^␣ Save this place to a register (same as ^Xr␣)
+    K-121 F-0 r C-@ # ^Xr^@ Save this place to a register (same as ^Xr␣)
     K-122 F-0 r j # ^Xrj  Jump to a register
     K-123 F-2 C-s # ^O^S  List of matching lines (FGREP)
     K-124 F-2 F-1 C-s # ^O^J^SList of matching lines (EGREP)

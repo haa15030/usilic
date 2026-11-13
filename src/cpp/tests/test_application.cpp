@@ -124,6 +124,14 @@ bool pumpArchiveExtractToCompletion(Application &app) {
   });
 }
 
+// 2026-10-14以降、^H・^J^Hは平文のHELPのファイルを開く(Application::openPlainHelp()、
+// 既定のhelpPath_は<ホーム>/.local/lib/usilic/HELP、fixtureのホームはroot)。
+// テストではそのファイルへ本文を書いてから、loadHelpText()で本文を登録する。
+void writePlainHelp(const fs::path &root, const std::string &text) {
+  fs::create_directories(root / ".local" / "lib" / "usilic");
+  { std::ofstream(root / ".local" / "lib" / "usilic" / "HELP", std::ios::binary) << text; }
+}
+
 struct Fixture {
   fs::path root;
   RecordingDisplay display{24, 80};
@@ -502,10 +510,14 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap)/(ReadFileRaw): refused
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap)/(ReadFileRaw): outside Directory mode, falls "
                            "back to plain Enter's own behavior for that mode") {
-  REQUIRE(app.loadHelpText("Section One：first entry\ncontent\n"));
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartHelp));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.handleCommand(Command::StartCut));
+  feedText("hello");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
 
   CHECK(app.handleCommand(Command::ReadFileNoWrap));
   CHECK(app.currentMode() == ApplicationMode::CutContent);  // same as a plain Enter on a CUT segment
@@ -700,12 +712,12 @@ TEST_CASE("resolveCommand: ^S resolves to StartIncrementalGrep (literal incremen
   CHECK(Application::resolveCommand(0x13, std::nullopt) == Command::StartIncrementalGrep);
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^O ^S no longer resolves to anything (FGREP's old dedicated key, "
-                           "removed once plain ^S itself became FGREP/literal)") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O ^S opens the occurrence prompt (FGREP's matched-line list, "
+                           "2026-10-12 from ^T^S)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
-  CHECK_FALSE(app.feedByte(0x13, std::nullopt));  // ^S -- unrecognized ^O^S sequence, no-op
-  CHECK_FALSE(app.promptActive());
+  CHECK(app.feedByte(0x13, std::nullopt));  // ^S
+  CHECK(app.promptActive());
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: plain ^S (StartIncrementalGrep) opens a blank prompt labeled FGREP "
@@ -1549,12 +1561,14 @@ TEST_CASE_FIXTURE(Fixture, "activatePrompt (2026-08-12 fix): the editable field'
   // spans columns [6, 80-20) = [6, 60) -- none of the typed 'x' run
   // should reach column 60 or beyond, regardless of what (if anything)
   // the reserved trailing area itself shows.
-  std::string typed(60, 'x');  // long enough to reach right up to the boundary if unreserved
+  // 2026-11-13: 'x'だと、右端に出る一時ディレクトリの名前(ランダム)に'x'が入った時だけ失敗していたので、
+  // パスに出てこない'#'で打つ。
+  std::string typed(60, '#');  // long enough to reach right up to the boundary if unreserved
   feedText(typed);
   const std::string &row = display.rowText(23);
   for (int col = 60; col < 80; col++) {
     CAPTURE(col);
-    CHECK(row[col] != 'x');
+    CHECK(row[col] != '#');
   }
 }
 
@@ -1935,7 +1949,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): submitting a pattern from Dire
 
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK(app.activeContentView().modeLineText().find("CUT: cpmv") != std::string::npos);
+  CHECK(app.activeContentView().modeLineText().find("PART: cpmv") != std::string::npos);
 
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Cut);
@@ -2170,7 +2184,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT list: ^S, ^N, then ^G still records the pattern;
   REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
   std::string modeLine = display.rowText(display.rows() - 1);
-  CHECK(modeLine.find("CUT") != std::string::npos);
+  CHECK(modeLine.find("PART") != std::string::npos);
   CHECK(modeLine.find("FGREP") == std::string::npos);
 }
 
@@ -2184,7 +2198,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file, K-35/^Jb): splits the SELECTED en
   feedText("marker");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
 
-  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.currentMode() == ApplicationMode::CutContent);
   REQUIRE(app.cutMode().segments().size() == 3);
   CHECK(app.cutMode().segments()[0].label == "marker one");
   CHECK(app.fileMode().currentFile() == (root / "log.txt").string());  // loaded behind the scenes
@@ -2203,12 +2217,14 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file, File-origin): mode-line shows the
   REQUIRE(app.handleCommand(Command::StartCutFile));
   feedText("marker");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);  // first-time file CUT lands on segment 0 (2026-09-29)
+  REQUIRE(app.handleCommand(Command::Back));  // back to the segment list, whose mode-line shows the whole file
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
 
   auto expectedBytes = std::filesystem::file_size(root / "log.txt");
   std::string text = app.activeContentView().modeLineText();
   CHECK(text.find(std::to_string(expectedBytes)) != std::string::npos);
-  CHECK(text.find((root / "log.txt").string()) != std::string::npos);
+  CHECK(text.find(root.string()) != std::string::npos);  // trailing = the ^G destination (directory), 2026-09-29
 }
 
 // 2026-08-24 fix, a direct user follow-up question ("戻り値が正常化
@@ -2238,6 +2254,8 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file, File-origin, StartCutFile/^J^C): 
   CHECK(app.currentMode() == ApplicationMode::Directory);
   feedText("marker");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);  // first-time file CUT lands on segment 0 (2026-09-29)
+  REQUIRE(app.handleCommand(Command::Back));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
   REQUIRE(app.cutMode().segments().size() == 3);  // see the earlier "splits the SELECTED entry" test
 
@@ -2252,7 +2270,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file, File-origin, StartCutFile/^J^C): 
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.handleCommand(Command::Enter));  // select "marker" (the only/newest entry)
 
-  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.currentMode() == ApplicationMode::Cut);  // the saved position was the list level (2026-09-29), so it resumes there
   REQUIRE(app.cutMode().segments().size() == 3);  // same real split as before, not "1/1, no match"
   CHECK(app.cutMode().segments()[0].label == "marker one");  // log.txt's own content, not a directory listing
 }
@@ -2265,8 +2283,9 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file): Back returns to Directory mode, 
   REQUIRE(app.handleCommand(Command::StartCutFile));
   feedText("marker");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);  // first-time file CUT lands on segment 0 (2026-09-29)
+  REQUIRE(app.handleCommand(Command::Back));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
-
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
@@ -2309,7 +2328,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFile): typing a real file's pa
   CHECK(app.promptActive());  // chained into CutPattern, not opened as a plain file
   feedText("marker");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.currentMode() == ApplicationMode::CutContent);
   CHECK(app.cutMode().segments().size() == 3);  // log.txt's own real split, matching the other CUT-by-file tests above
 }
 
@@ -2360,13 +2379,13 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file): completing a real split records 
   REQUIRE(app.handleCommand(Command::StartCutFile));
   feedText("marker");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
 
   std::string plainPath = (root / "log.txt").string();
   std::string composite = plainPath + " \"marker\"";
   const auto &recent = history.recentEntries(RingCategory::RecentFile);
-  CHECK(std::find(recent.begin(), recent.end(), plainPath) != recent.end());
   CHECK(std::find(recent.begin(), recent.end(), composite) != recent.end());
+  CHECK(std::find(recent.begin(), recent.end(), plainPath) == recent.end());  // only the composite is pushed (skipNextRecentPush)
 }
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToRecentFile) / FILE history: selecting a composite "
@@ -2377,7 +2396,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToRecentFile) / FILE history: select
 
   REQUIRE(app.start(path()));
   CHECK(app.handleCommand(Command::GoToRecentFile));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.currentMode() == ApplicationMode::CutContent);
   REQUIRE(app.cutMode().segments().size() == 3);  // log.txt's own real split on "marker", not a plain file view
 }
 
@@ -2391,7 +2410,7 @@ TEST_CASE_FIXTURE(Fixture, "FILE history ListBrowser: Enter on a composite \"pat
   REQUIRE(app.handleCommand(Command::StartFileHistory));
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.currentMode() == ApplicationMode::CutContent);
   REQUIRE(app.cutMode().segments().size() == 3);
 }
 
@@ -2416,7 +2435,7 @@ TEST_CASE_FIXTURE(Fixture, "FILE history: a composite \"path \\\"pattern\\\"\" e
   history.pushRecent(RingCategory::RecentFile, composite);
   REQUIRE(app.start(path()));
   CHECK(app.handleCommand(Command::GoToRecentFile));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.currentMode() == ApplicationMode::CutContent);
   CHECK(app.cutMode().pattern() == "marker [a-z]");
   REQUIRE(app.cutMode().segments().size() == 3);  // marker one/two/three
 }
@@ -2429,7 +2448,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file, StartCutFile/^J^C): completing a 
   REQUIRE(app.handleCommand(Command::StartCutFile));
   feedText("marker [a-z]");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
 
   std::string plainPath = (root / "log.txt").string();
   std::string composite = plainPath + " \"marker [a-z]\"";
@@ -2539,7 +2558,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT: ^Jc pressed WHILE STILL ON THE LABEL LIST (not 
   CHECK(app.cutMode().segments()[1].label == "beta");
 }
 
-TEST_CASE_FIXTURE(Fixture, "cutView_ mode-line: top-level split shows \"CUT\" and the originating file's FULL "
+TEST_CASE_FIXTURE(Fixture, "cutView_ mode-line: top-level split shows \"PART\" and the originating file's FULL "
                            "path (2026-08-05 user-confirmed example: splitting doc/HELP.jp by \"man\" shows "
                            "trailing \"/Users/.../doc/HELP.jp\", the full path -- unlike FileMode's/CutContent's "
                            "own bare-filename convention)") {
@@ -2554,14 +2573,14 @@ TEST_CASE_FIXTURE(Fixture, "cutView_ mode-line: top-level split shows \"CUT\" an
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
 
   std::string text = app.activeContentView().modeLineText();
-  CHECK(text.rfind("CUT ", 0) == 0);
+  CHECK(text.rfind("PART ", 0) == 0);
   CHECK(text.find((root / "plain.txt").string()) != std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "cutView_ mode-line: a NESTED split shows \"CUT:<parent pattern>\" as trailing -- "
+TEST_CASE_FIXTURE(Fixture, "cutView_ mode-line: a NESTED split shows \"PART:<parent pattern>\" as trailing -- "
                            "the PARENT level's own pattern, not the just-typed one (2026-08-05 user-confirmed "
                            "example: split \"man\", select a match, re-split it by \"usilic\" -> trailing reads "
-                           "\"CUT:man\", not \"CUT:usilic\")") {
+                           "\"PART:man\", not \"PART:usilic\")") {
   REQUIRE(app.start(path()));
   int rootIdx = indexOf("subdir/");
   while (indexOf(app.directoryMode().selectedEntry()->name) != rootIdx) app.handleCommand(Command::MoveDown);
@@ -2580,8 +2599,8 @@ TEST_CASE_FIXTURE(Fixture, "cutView_ mode-line: a NESTED split shows \"CUT:<pare
 
   CHECK(app.cutMode().parentPattern() == "alpha");
   std::string text = app.activeContentView().modeLineText();
-  CHECK(text.rfind("CUT ", 0) == 0);
-  CHECK(text.find("CUT:alpha") != std::string::npos);
+  CHECK(text.rfind("PART ", 0) == 0);
+  CHECK(text.find("PART:alpha") != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "CUT: Back from CutContent returns to the Cut label list, not further") {
@@ -2821,9 +2840,13 @@ TEST_CASE_FIXTURE(Fixture, "MAN: ^J^M shows the SORTED list (^R gives HISTORY); 
   REQUIRE(app.handleCommand(Command::StartManList));
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.listBrowserMode().selectedItem() != nullptr);
-  CHECK(*app.listBrowserMode().selectedItem() == "ls");  // sorted, not most-recent-first ("ls" is also newest; "sort" must follow)
-  REQUIRE(app.listBrowserMode().items().size() == 2);
-  CHECK(app.listBrowserMode().items()[1] == "sort");
+  // 2026-10-21: "usilic"は常にMANの一覧の先頭(いちばん古い所)に収録される。残りは並べ替え済み。
+  REQUIRE(app.listBrowserMode().items().size() == 3);
+  CHECK(app.listBrowserMode().items()[0] == "usilic");
+  CHECK(app.listBrowserMode().items()[1] == "ls");
+  CHECK(app.listBrowserMode().items()[2] == "sort");  // sorted, not most-recent-first
+  REQUIRE(app.handleCommand(Command::MoveDown));  // onto "ls" (the usilic page itself sits on top)
+  CHECK(*app.listBrowserMode().selectedItem() == "ls");
   const std::string &listLine = app.activeContentView().modeLineText();
   CHECK(listLine.find("MAN") != std::string::npos);
   CHECK(listLine.find("HISTORY") == std::string::npos);
@@ -4267,7 +4290,10 @@ TEST_CASE_FIXTURE(Fixture, "LIST: Tab-completion within RecentDirectory's own co
   app.feedByte(0x15, std::nullopt);
   feedText((root / "recentdir_target_one").string());
 
-  app.feedByte(0x09, std::nullopt);  // unambiguous -- completes AND navigates there
+  app.feedByte(0x09, std::nullopt);  // unambiguous directory: completes to "<dir>/" and waits for Enter (2026-10-21)
+  CHECK(app.promptActive());
+  CHECK(app.directoryMode().currentDirectory() != (root / "recentdir_target_one").string() + "/");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M navigates there
   CHECK(app.directoryMode().currentDirectory() == (root / "recentdir_target_one").string() + "/");
 }
 
@@ -5104,17 +5130,17 @@ TEST_CASE_FIXTURE(Fixture, "^S (ListBrowser, RecentFile): triggers in-place GREP
 // 報告が検出した回帰(候補一覧閲覧中に押した^Sがモードラインに"FGREP"
 // ではなく"GREP"を出してしまう)自体の再発防止は、上の"^S (ListBrowser,
 // RecentFile)"テストが引き続き担う。
-TEST_CASE_FIXTURE(Fixture, "^O^S (ListBrowser, RecentDirectory): the leader sequence itself no longer "
-                           "resolves to anything (removed), and does NOT fall through to the bare-^S "
-                           "in-place-GREP shortcut either") {
+TEST_CASE_FIXTURE(Fixture, "^O^S (ListBrowser, RecentDirectory): the leader sequence opens the occurrence "
+                           "prompt (2026-10-12, moved from ^T^S) and does not stop at the leader alone") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
 
-  REQUIRE(app.feedByte(0x0f, std::nullopt));      // ^O (leader)
-  CHECK_FALSE(app.feedByte(0x13, std::nullopt));  // ^S -- ^O^S is unrecognized now, no-op
+  REQUIRE(app.feedByte(0x0f, std::nullopt));     // ^O (leader)
+  CHECK(app.feedByte(0x13, std::nullopt));       // ^S -- ^O^S is the occurrence prompt (2026-10-12)
+  CHECK(app.promptActive());
 
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // still just browsing, untouched
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // still in the list, the prompt is on top
 }
 
 // 2026-09-11追加、直接のユーザー報告("あとは戻り値だけ。現状空白なので
@@ -7799,9 +7825,10 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): from HELP (no cu
   REQUIRE(app.start(path()));
   // HELP (^H/^J^H) rides on Cut/CutContent (2026-09-20 rewrite) and has
   // no current file/archive of its own.
+  writePlainHelp(root, "placeholder\n");
   REQUIRE(app.loadHelpText("placeholder\n"));
   REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.currentMode() == ApplicationMode::File);
 
   CHECK(app.handleCommand(Command::GoToParentDirectory));
   CHECK(app.currentMode() == ApplicationMode::Directory);
@@ -8189,9 +8216,10 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): from Directory mode
 TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): from HELP, falls back to directoryMode_'s own "
                            "still-intact state instead of being refused") {
   REQUIRE(app.start(path()));
+  writePlainHelp(root, "placeholder\n");
   REQUIRE(app.loadHelpText("placeholder\n"));
   REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.currentMode() == ApplicationMode::File);
   CHECK(app.handleCommand(Command::GoToFileSelector));
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
@@ -9532,8 +9560,8 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleMark): toggles the mark at the c
 }
 
 // Application::toggleMark()自身の2026-09-25のコメント参照。
-TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleMark): a second directory can't be marked while another is marked "
-                           "(files still can)") {
+TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleMark): several directories can be marked at once (2026-10-12, "
+                           "^Ou opens each marked one in its own window)") {
   REQUIRE(app.start(path()));
   const auto &entries = app.directoryMode().entries();
   std::vector<int> dirs, files;
@@ -9543,14 +9571,15 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleMark): a second directory can't 
   app.activeContentView().setCursorIndex(dirs[0]);
   REQUIRE(app.handleCommand(Command::ToggleMark));
   app.activeContentView().setCursorIndex(dirs[1]);
-  CHECK_FALSE(app.handleCommand(Command::ToggleMark));
-  CHECK_FALSE(app.directoryMode().isMarked(dirs[1]));
+  CHECK(app.handleCommand(Command::ToggleMark));  // 2026-10-12: a second directory can be marked too
+  CHECK(app.directoryMode().isMarked(dirs[1]));
   app.activeContentView().setCursorIndex(files[0]);
   CHECK(app.handleCommand(Command::ToggleMark));
   CHECK(app.directoryMode().isMarked(files[0]));
   app.activeContentView().setCursorIndex(dirs[0]);  // 選択の解除はいつでもできる
   CHECK(app.handleCommand(Command::ToggleMark));
   CHECK_FALSE(app.directoryMode().isMarked(dirs[0]));
+  CHECK(app.directoryMode().isMarked(dirs[1]));  // the other directory's mark is untouched
 }
 
 // ContentView::markJumpOrigin()自身のコメント参照(2026-09-25)。
@@ -11348,29 +11377,35 @@ TEST_CASE_FIXTURE(Fixture, "^R (ToggleHistoryView): a non-consecutive revisit sh
                            "most-recent entry, so visiting A, then B, then A again leaves a genuine "
                            "duplicate in the raw chronological log)") {
   REQUIRE(app.start(path()));
+  { std::ofstream(root / "c.txt") << "c\n"; }
   history.pushRecent(RingCategory::RecentFile, (root / "a.txt").string());
   history.pushRecent(RingCategory::RecentFile, (root / "b.txt").string());
+  history.pushRecent(RingCategory::RecentFile, (root / "c.txt").string());
   history.pushRecent(RingCategory::RecentFile, (root / "a.txt").string());  // revisit, NOT consecutive
 
   REQUIRE(app.handleCommand(Command::StartFileHistory));
-  REQUIRE(app.listBrowserMode().items().size() == 2);  // sorted view: a.txt, b.txt -- de-duplicated
+  REQUIRE(app.listBrowserMode().items().size() == 3);  // sorted view: a.txt, b.txt, c.txt -- de-duplicated
 
   REQUIRE(app.handleCommand(Command::ToggleHistoryView));
-  REQUIRE(app.listBrowserMode().items().size() == 3);  // chronological view: a.txt, b.txt, a.txt again
+  REQUIRE(app.listBrowserMode().items().size() == 4);  // chronological view: a.txt, b.txt, c.txt, a.txt again
   CHECK(app.listBrowserMode().items()[0] == (root / "a.txt").string());
   CHECK(app.listBrowserMode().items()[1] == (root / "b.txt").string());
-  CHECK(app.listBrowserMode().items()[2] == (root / "a.txt").string());
+  CHECK(app.listBrowserMode().items()[2] == (root / "c.txt").string());
+  CHECK(app.listBrowserMode().items()[3] == (root / "a.txt").string());
 }
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleHistoryView): refused outside ListBrowser mode, matching "
                            "m_list()'s own echo_mess(S_errf) for a context ^R doesn't apply to -- using "
-                           "HELP (a Cut/CutContent session, see startHelp()'s own comment), since "
-                           "Directory/File/Archive/ArchiveContent now all have their OWN dedicated ^R "
-                           "meaning (see the \"^R directory-name/file-name history\"/\"^R in Archive\" "
-                           "tests)") {
+                           "a CUT session (plain.txt split by \"hello\"), since Directory/File/Archive/"
+                           "ArchiveContent now all have their OWN dedicated ^R meaning (see the "
+                           "\"^R directory-name/file-name history\"/\"^R in Archive\" tests)") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.loadHelpText("placeholder\n"));
-  REQUIRE(app.handleCommand(Command::StartHelp));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.handleCommand(Command::StartCut));
+  feedText("hello");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
 
   CHECK_FALSE(app.handleCommand(Command::ToggleHistoryView));
@@ -11434,8 +11469,8 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: Enter on a picked pattern re-
   CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: ^G restores the ORIGINAL prompt with whatever had already "
-                           "been typed before ^R was pressed, not a blank one") {
+TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: with text already typed, ^R does NOT open the list (2026-11-02: "
+                           "history recall only on a blank prompt); the typed text is kept") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("plain.txt");
@@ -11444,13 +11479,10 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: ^G restores the ORIGINAL prom
   // 2026-09-11修正: FGREPの統一によりDirectoryのまま(in-place)なので
   // ^Gは不要。
   REQUIRE(app.handleCommand(Command::StartFgrep));
-  feedText("partial");  // typed, but not yet submitted, when ^R interrupts
-  REQUIRE(app.feedByte(0x12, std::nullopt));
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
-
-  REQUIRE(app.handleCommand(Command::Back));
+  feedText("partial");  // typed, but not yet submitted, when ^R is pressed
+  app.feedByte(0x12, std::nullopt);
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // no ListBrowser: the prompt is not blank
   CHECK(app.promptActive());
-  CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.promptText() == "partial");
   CHECK(display.rowText(display.rows() - 1).find("FGREP") != std::string::npos);
 }
@@ -11567,22 +11599,28 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: the list is the RAW chronolog
   REQUIRE(app.handleCommand(Command::Back));
 
   REQUIRE(app.handleCommand(Command::StartCut));
+  feedText("world");  // a third pattern in between, so the next "man" is NOT an immediate repeat
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.handleCommand(Command::Back));
+
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("man");  // revisit, non-consecutive -- must NOT be de-duplicated away
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.handleCommand(Command::Back));
 
   REQUIRE(app.handleCommand(Command::StartCut));
   REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
-  REQUIRE(app.listBrowserMode().items().size() == 3);  // man, usilic, man -- raw order, duplicate "man" kept
+  REQUIRE(app.listBrowserMode().items().size() == 4);  // man, usilic, world, man -- raw order, duplicate "man" kept
   CHECK(app.listBrowserMode().items()[0] == "man");
   CHECK(app.listBrowserMode().items()[1] == "usilic");
-  CHECK(app.listBrowserMode().items()[2] == "man");
-  CHECK(app.activeContentView().cursorIndex() == 2);  // newest ("man", the last one) selected, not index 0
+  CHECK(app.listBrowserMode().items()[2] == "world");
+  CHECK(app.listBrowserMode().items()[3] == "man");
+  CHECK(app.activeContentView().cursorIndex() == 3);  // newest ("man", the last one) selected, not index 0
 
   std::string text = app.activeContentView().modeLineText();
   CHECK(text.rfind("HISTORY ", 0) == 0);
   std::string row = display.rowText(display.rows() - 1);
-  CHECK(row.find("CUT") != std::string::npos);  // the right-aligned category badge
+  CHECK(row.find("PART") != std::string::npos);  // the right-aligned category badge (CUT was renamed PART, 2026-10-10)
 }
 
 // -- ^R at the live SHELL prompt (integration point 3 of the ^R
@@ -12576,6 +12614,7 @@ std::string testHelpText() {
 
 // 2026-10-02追加(KEYモードの復活、Application::startKey()参照)。
 TEST_CASE_FIXTURE(Fixture, "KEY (^K): lists HELP's full-width-colon lines without the leading -- segment") {
+  writePlainHelp(root, "intro\n        ^J^C\xEF\xBC\x9A" "current directory\n           .\xEF\xBC\x9A" "mark\n");
   REQUIRE(app.loadHelpText("intro\n        ^J^C\xEF\xBC\x9A" "current directory\n           .\xEF\xBC\x9A" "mark\n"));
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
@@ -12585,6 +12624,7 @@ TEST_CASE_FIXTURE(Fixture, "KEY (^K): lists HELP's full-width-colon lines withou
 }
 
 TEST_CASE_FIXTURE(Fixture, "KEY (^K): Enter runs the selected line's key in the screen KEY was opened from") {
+  writePlainHelp(root, "intro\n         ^Xf\xEF\xBC\x9A" "file name\n");
   REQUIRE(app.loadHelpText("intro\n         ^Xf\xEF\xBC\x9A" "file name\n"));
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
@@ -12595,6 +12635,7 @@ TEST_CASE_FIXTURE(Fixture, "KEY (^K): Enter runs the selected line's key in the 
 }
 
 TEST_CASE_FIXTURE(Fixture, "^J ^B goes to the parent directory (moved from ^J ^K, which now opens KEY)") {
+  writePlainHelp(root, "x\n ^K\xEF\xBC\x9A" "key\n");
   REQUIRE(app.loadHelpText("x\n ^K\xEF\xBC\x9A" "key\n"));
   REQUIRE(app.start((root / "subdir").string()));
   app.feedByte(0x0a, std::nullopt);  // ^J
@@ -12613,83 +12654,24 @@ TEST_CASE_FIXTURE(Fixture, "HELP: with no help text loaded, shows \"HELP not fou
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^H starts HELP (StartHelp)") {
+  writePlainHelp(root, testHelpText());
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
 
   app.feedByte(0x0a, std::nullopt);  // ^J
   CHECK(app.feedByte(0x08, std::nullopt));  // ^H
-  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.currentMode() == ApplicationMode::File);  // the plain HELP file (2026-10-14: no CUT table of contents)
 }
 
-TEST_CASE_FIXTURE(Fixture, "HELP: shows the tab-delimited entries as a CUT segment list") {
+TEST_CASE_FIXTURE(Fixture, "HELP: ^H shows the plain HELP file itself, not a CUT list of its sections") {
+  writePlainHelp(root, testHelpText());
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
 
   REQUIRE(app.handleCommand(Command::StartHelp));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-  REQUIRE(app.cutMode().segments().size() == 2);
-  CHECK(app.cutMode().segments()[0].label == "Section One：first entry");
-  CHECK(app.cutMode().segments()[1].label == "Section Two：second entry");
-}
-
-TEST_CASE_FIXTURE(Fixture, "HELP: Enter on a section shows its content (CutContent), like a real CUT segment") {
-  REQUIRE(app.loadHelpText(testHelpText()));
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartHelp));
-
-  REQUIRE(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::CutContent);
-}
-
-TEST_CASE_FIXTURE(Fixture, "HELP: CutContent's mode-line shows the fixed name \"HELP\" and this segment's own "
-                           "byte size, matching FILE/DIR's own richer name+trailing format instead of a bare "
-                           "position (2026-08-04 user report/screenshot: real legacy shows \"HELP 01/48 47% "
-                           "2618  ...\")") {
-  REQUIRE(app.loadHelpText(testHelpText()));
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
-
-  std::string text = app.activeContentView().modeLineText();
-  CHECK(text.find("HELP") != std::string::npos);
-  std::size_t expectedBytes = 0;
-  for (const auto &line : app.activeContentView().lines()) expectedBytes += line.text.size() + 1;
-  CHECK(text.find(std::to_string(expectedBytes)) != std::string::npos);
-}
-
-TEST_CASE_FIXTURE(Fixture, "HELP: CutContent's mode-line trailing ALSO shows the current section's own label "
-                           "alongside the byte size (2026-08-04 user correction: a second look at the same "
-                           "screenshot showed \"2618\" and \"1.  Introduction\" both present on the real legacy "
-                           "mode-line -- the byte count doesn't get replaced by the chapter label, both appear "
-                           "together)") {
-  REQUIRE(app.loadHelpText(testHelpText()));
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.handleCommand(Command::Enter));  // selects the first section, "Section One：first entry"
-  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
-
-  std::string text = app.activeContentView().modeLineText();
-  std::size_t expectedBytes = 0;
-  for (const auto &line : app.activeContentView().lines()) expectedBytes += line.text.size() + 1;
-  CHECK(text.find(std::to_string(expectedBytes)) != std::string::npos);  // byte count still present...
-  CHECK(text.find("Section One：first entry") != std::string::npos);      // ...alongside the section's own label
-}
-
-TEST_CASE_FIXTURE(Fixture, "HELP: CutContent shows no whole-line reverse-video highlight on the current section's "
-                           "heading, matching FileMode's own plain-content behavior (2026-08-04 user report: "
-                           "legacy's \"1.  Introduction\" heading line is plain text, not reverse-video, since "
-                           "CutContent -- like plain file content -- isn't a selectable list the way the CUT/HELP "
-                           "segment-label list itself is)") {
-  REQUIRE(app.loadHelpText(testHelpText()));
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
-
-  CHECK_FALSE(app.activeContentView().cursorHighlightEnabled());
-  for (int row = 0; row < display.rows() - 1; row++)
-    for (int col = 0; col < display.columns(); col++) CHECK_FALSE(display.standoutAt(row, col));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.activeContentView().lines().size() == 5);
+  CHECK(app.activeContentView().lines()[1].text == "Section one content line A.");
 }
 
 TEST_CASE_FIXTURE(Fixture, "CUT (real, File-origin): CutContent's mode-line shows the originating file's own "
@@ -12709,8 +12691,8 @@ TEST_CASE_FIXTURE(Fixture, "CUT (real, File-origin): CutContent's mode-line show
   CHECK(text.find("HELP") == std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "HELP: Back returns to wherever the user was, not always Directory") {
-  { std::ofstream(root / "plain2.txt") << "hello\n"; }
+TEST_CASE_FIXTURE(Fixture, "HELP: Back from the plain HELP returns to Directory (where ^H was entered from)") {
+  writePlainHelp(root, testHelpText());
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
@@ -12719,98 +12701,27 @@ TEST_CASE_FIXTURE(Fixture, "HELP: Back returns to wherever the user was, not alw
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
   REQUIRE(app.handleCommand(Command::StartHelp));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.currentMode() == ApplicationMode::File);
 
   REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::File);  // back to File mode, not Directory
+  CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
-TEST_CASE_FIXTURE(Fixture, "HELP (cutView_, the TOC level): mode-line shows the TOC LISTING's own byte size "
-                           "(what's actually on screen), not HELP.jp's much larger total, plus the "
-                           "originating directory, padded to the row's edge (2026-08-23 fix, a real report + "
-                           "reference: \"HELP\" \"01/26 TOP\" \"<byte count>\" \"/path/    \"; corrected "
-                           "2026-08-24 -- a direct user report the FIRST version showed the whole file's own "
-                           "size instead of the TOC's, e.g. \"413\" expected, the much larger whole-file size "
-                           "shown instead)") {
+TEST_CASE_FIXTURE(Fixture, "FGREP from within the plain HELP: runs in place and shows the FGREP mode line") {
+  writePlainHelp(root, testHelpText());
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartHelp));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-
-  std::size_t tocBytes = app.activeContentView().totalByteCount();
-  CHECK(tocBytes != testHelpText().size());  // the TOC listing is a strict subset of the whole file
-  std::string text = app.activeContentView().modeLineText();
-  CHECK(text.find(std::to_string(tocBytes)) != std::string::npos);
-  CHECK(text.find(path()) != std::string::npos);
-}
-
-// 2026-08-24 fix, a direct user report ("HELPの1. Introductionページ
-// 上で^S→戻り値不良、正しくは「CUT:1.  Introduction」"): grepView_'s
-// own return-destination field only ever populated for
-// grepReturnMode_==Directory, leaving it blank for every other origin
-// (File, CutContent -- e.g. FGREP run from within a HELP chapter's own
-// content). CutContent mirrors cutContentView_'s own "CUT:<segment
-// label>" convention.
-//
-// 2026-09-11修正: FGREPもGREP(Basic)と同じin-place方式になった
-// (startGrepPrompt()自身のコメント参照)ため、CutContent
-// (isGrepInPlaceEligibleMode()対象)のまま切り替わらない――上のgrepView_
-// 自身の専用ロジック(セグメントのラベルまで含めた"CUT:<segment
-// label>")はもう経由せず、cutContentView_自身のin-place分岐
-// (application.cpp、2026-09-11、GREP/Basic向けに先行して実装済み)が
-// 代わりに使われる。この分岐はセグメントラベルまでは持ち込まず、
-// 起点の種別だけを示す汎用の"name"変数(HELP起点なら"HELP")を
-// trailing3へ流用する――GREP(Basic)がCutContent起点で既にそうして
-// いたのと同じ、より粗い表示。セグメントラベルの粒度を保つかどうかは
-// 今回のFGREP/EGREP統一の範囲外の別論点として残す。
-TEST_CASE_FIXTURE(Fixture, "FGREP from within a HELP chapter's own content: mode line shows \"HELP\" as the "
-                           "return-destination field (in-place, matching GREP/Basic's own established "
-                           "CutContent convention), not blank") {
-  REQUIRE(app.loadHelpText(testHelpText()));
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.currentMode() == ApplicationMode::Cut);
-  REQUIRE(app.handleCommand(Command::Enter));  // select "Section One：first entry"
-  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
+  REQUIRE(app.currentMode() == ApplicationMode::File);
 
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("content");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
+  REQUIRE(app.currentMode() == ApplicationMode::File);
 
   const std::string &row = display.rowText(23);
   CHECK(row.find("FGREP") != std::string::npos);
   CHECK(row.find("(fgrep)") != std::string::npos);
-  CHECK(row.find("HELP") != std::string::npos);  // not blank
-}
-
-// 2026-08-24 fix (same report, its OWN follow-up correction): the
-// FIRST version of this fix only touched grepView_'s own POST-
-// submission mode line -- but the user's actual repro hits ^J^W WHILE
-// STILL TYPING the pattern, before ever pressing Enter, i.e. while
-// drawPromptLabel()'s own prompt-time "destinationDirectory" field is
-// what's on screen (a SEPARATE mechanism, computed via
-// previousModeName(grepReturnMode_) -- which has no per-instance CUT
-// segment state, so it only ever gave the bare "CUT"). Now uses
-// cutContentReturnLabel() there too, the same helper.
-TEST_CASE_FIXTURE(Fixture, "FGREP prompt (not yet submitted) from within a HELP chapter: the prompt row's "
-                           "own return-destination field already shows \"CUT:<chapter label>\", not the "
-                           "bare \"CUT\"") {
-  REQUIRE(app.loadHelpText(testHelpText()));
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.handleCommand(Command::Enter));  // "Section One：first entry"
-  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
-
-  REQUIRE(app.handleCommand(Command::StartFgrep));  // ^S -- prompt now active, currentMode_ still CutContent
-  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
-  REQUIRE(app.promptActive());
-
-  // 2026-09-20、drawPromptLabel()自身のCutContent分岐の修正参照:
-  // 新HELPの本物のラベル("Section One：first entry")はeditableWidth
-  // を侵食するほど長いので、"CUT:"接頭辞を残したまま値の先頭だけを
-  // 生かす切り詰めが働く。
-  CHECK(display.rowText(23).find("CUT:Section One...") != std::string::npos);
 }
 
 // 2026-08-24 fix, a real report + the user's own careful trace: ^J^W
@@ -12874,36 +12785,20 @@ TEST_CASE_FIXTURE(Fixture, "^J^W pressed while an editable FGREP prompt is still
   CHECK(app.promptText() == "content");
 }
 
-// 2026-08-24 fix, a direct user report + their own diagnosis:
-// "^J^Wは現在表示データのcatだが、FGREPの守備範囲はモードラインだけ
-// なので同モードの^J^Wは本来意味が無い...見た目で言えば背景の
-// Introductionページがcatされるのが自然". FGREP/EGREP results are
-// just a filtered VIEW over whatever the search ran FROM
-// (grepReturnMode_) -- catting grepView_'s own matched-only lines lost
-// everything that didn't match. shellInsertBufferContent() now
-// substitutes grepReturnMode_ for currentMode_==Grep, both for naming
-// AND content, so ^J^W from a Grep results screen writes the ORIGIN's
-// full content instead.
 TEST_CASE_FIXTURE(Fixture, "^J^W from a Grep results screen writes the ORIGIN's own full content, not just "
                            "the matched lines") {
+  writePlainHelp(root, testHelpText());
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.handleCommand(Command::Enter));  // "Section One：first entry"
-  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
+  REQUIRE(app.currentMode() == ApplicationMode::File);
 
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("line A");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  // 2026-09-11修正: FGREPもin-place方式になったため、CutContent
-  // (isGrepInPlaceEligibleMode()対象)のまま切り替わらない――専用の
-  // フィルタ済みビュー(マッチした行だけ)には一度も切り替わらないので、
-  // このテスト自身が守っていたバグ("マッチ行だけがcatされる")は、
-  // その原因だった専用結果画面自体が無くなったことで構造上再発し得
-  // なくなった。セグメント自身の全3行(見出し+line A+line B)がずっと
-  // 見えたままであることを、その代わりに確認する。
-  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
-  REQUIRE(app.activeContentView().lines().size() == 3);  // full segment content, not filtered to "line A" alone
+  // FGREPはin-place方式(Fileのまま、マッチした行だけの一覧には切り替わらない)。
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.activeContentView().lines().size() == 5);  // full HELP, not filtered to "line A" alone
 
   if (!app.handleCommand(Command::ShellInsertBufferContent)) {
     MESSAGE("bash not available or handshake failed -- skipping");
@@ -12918,22 +12813,16 @@ TEST_CASE_FIXTURE(Fixture, "^J^W from a Grep results screen writes the ORIGIN's 
   REQUIRE(in.good());
   std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
   CHECK(content.find("line A") != std::string::npos);
-  CHECK(content.find("line B") != std::string::npos);  // the FULL chapter, not just the matched line
+  CHECK(content.find("line B") != std::string::npos);  // the FULL HELP, not just the matched line
 }
 
-// 2026-08-23 fix, a real report: "^J^H→...→続いて^G^G→戻り値不良
-// 「CUT: ^  [0-9]+¥.」（「usilic 1.5b」が正解）" -- returnFromCut() is
-// shared by every CutMode-backed screen that can return to Directory,
-// not just a real user-initiated ^J^C search; HELP reuses the exact
-// same machinery internally (kHelpPattern's own section-heading
-// regex), and backing all the way out of it used to leave that
-// internal pattern behind as a "CUT: <pattern>" search annotation.
-TEST_CASE_FIXTURE(Fixture, "HELP: backing all the way out to Directory does NOT leave a stale \"CUT: "
-                           "<internal pattern>\" search annotation behind") {
+TEST_CASE_FIXTURE(Fixture, "HELP: backing all the way out to Directory leaves no \"CUT: ...\" search "
+                           "annotation behind") {
+  writePlainHelp(root, testHelpText());
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartHelp));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.currentMode() == ApplicationMode::File);
 
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
@@ -12942,7 +12831,8 @@ TEST_CASE_FIXTURE(Fixture, "HELP: backing all the way out to Directory does NOT 
   CHECK(display.rowText(23).find("usilic-1.5b") != std::string::npos);  // the normal watermark is back, not squeezed out
 }
 
-TEST_CASE_FIXTURE(Fixture, "HELP: invoked mid-CUT preserves the real session; Back restores it") {
+TEST_CASE_FIXTURE(Fixture, "HELP: invoked mid-CUT opens the plain HELP; Back returns to Directory") {
+  writePlainHelp(root, testHelpText());
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
@@ -12952,118 +12842,50 @@ TEST_CASE_FIXTURE(Fixture, "HELP: invoked mid-CUT preserves the real session; Ba
   feedText("hello");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
-  std::string realPattern = app.cutMode().pattern();
-  auto realSegmentCount = app.cutMode().segments().size();
 
   REQUIRE(app.handleCommand(Command::StartHelp));
-  CHECK(app.cutMode().pattern() != realPattern);  // now showing HELP's own split
-  REQUIRE(app.cutMode().segments().size() == 2);
-
-  REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-  CHECK(app.cutMode().pattern() == realPattern);  // the real CUT session, restored intact
-  CHECK(app.cutMode().segments().size() == realSegmentCount);
-}
-
-// 2026-09-14追加、直接のユーザー報告("-g: HELPのカーソル行が保存され
-// ていない（^Hで常に最上行）"): startHelp()は非ネストの分岐で常に
-// cutMode_.split()(内部でcursorIndex()を0へリセットする)を呼ぶため、
-// 一度^Gで抜けてから再び^Hで戻ると、前回どのセクションを見ていたかに
-// 関わらず常に先頭から始まっていた。
-TEST_CASE_FIXTURE(Fixture, "HELP: re-entering after Back resumes at the previously-viewed section, "
-                           "not always the top") {
-  REQUIRE(app.loadHelpText(testHelpText()));
-  REQUIRE(app.start(path()));
-
-  REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.cutMode().segments().size() == 2);
-  REQUIRE(app.handleCommand(Command::MoveDown));  // move to the second section
-  REQUIRE(app.activeContentView().cursorIndex() == 1);
+  CHECK(app.currentMode() == ApplicationMode::File);  // the plain HELP file, not a CUT split of HELP
 
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
-
-  REQUIRE(app.handleCommand(Command::StartHelp));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-  CHECK(app.activeContentView().cursorIndex() == 1);  // resumed, not reset to 0
 }
 
-TEST_CASE_FIXTURE(Fixture, "HELP: a genuinely NEW top-level CUT session started in between does NOT leak "
-                           "its own cursor position into a later HELP re-entry") {
+TEST_CASE_FIXTURE(Fixture, "HELP: ^J^K (GoToFileSelector) from the plain HELP goes to Directory") {
+  writePlainHelp(root, testHelpText());
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
-
-  REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.handleCommand(Command::MoveDown));
-  REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-
-  // A real CUT session, started fresh from Directory -- cutOrigin_ is
-  // no longer Help, so the "resume" logic must not fire for it either.
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.handleCommand(Command::StartCut));
-  feedText("hello");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Cut);
-  if (app.cutMode().segments().size() > 1) REQUIRE(app.handleCommand(Command::MoveDown));
-  REQUIRE(app.handleCommand(Command::Back));
-
-  REQUIRE(app.handleCommand(Command::StartHelp));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-  CHECK(app.activeContentView().cursorIndex() == 0);  // fresh HELP entry, not the CUT session's own leftover index
-}
-
-// 2026-09-14追加、直接のユーザー報告("HELP画面で^J^J/^J^K/^O^K/
-// （どこでもキー）が利かない（一度でも（ls）へ行けばOK）"):
-// goToFileSelector()/goToParentFromFileOrArchive()/jumpToPathPrefix()
-// はCut/CutContentを常にFile起点として扱い、fileMode_.currentFile()
-// を読んでいた――一度も実ファイルをFileモードで開いていないセッション
-// (起動直後に直接^Hを押した場合等)では、それが空のままなので常に
-// 失敗していた。以下の3件はいずれも、REQUIRE(app.start(path()))の
-// 直後、Directory一覧に触れることはあってもEnterで実ファイルを一度も
-// 開かないまま^Hへ直行する――「一度でも(ls)で何か開けばOK」に見えて
-// いた報告と対をなす、「開いていない」状態の再現。
-TEST_CASE_FIXTURE(Fixture, "HELP: ^J^K (GoToFileSelector) works even if no real file has ever been opened "
-                           "this session (falls back to directoryMode_'s own still-intact state)") {
-  REQUIRE(app.loadHelpText(testHelpText()));
-  REQUIRE(app.start(path()));
-  REQUIRE(app.fileMode().currentFile().empty());  // never opened a real file -- the failure precondition
   REQUIRE(app.handleCommand(Command::StartHelp));
   CHECK(app.handleCommand(Command::GoToFileSelector));
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
-TEST_CASE_FIXTURE(Fixture, "HELP: ^O^K (GoToParentDirectory) works even if no real file has ever been "
-                           "opened this session") {
+TEST_CASE_FIXTURE(Fixture, "HELP: ^O^K (GoToParentDirectory) from the plain HELP goes to Directory") {
+  writePlainHelp(root, testHelpText());
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
-  REQUIRE(app.fileMode().currentFile().empty());
   REQUIRE(app.handleCommand(Command::StartHelp));
   CHECK(app.handleCommand(Command::GoToParentDirectory));
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
-TEST_CASE_FIXTURE(Fixture, "HELP: ^J-digit (JumpToPathPrefix, the \"anywhere\" key) works even if no real "
-                           "file has ever been opened this session") {
+TEST_CASE_FIXTURE(Fixture, "HELP: ^J-digit (JumpToPathPrefix, the \"anywhere\" key) from the plain HELP works") {
+  writePlainHelp(root, testHelpText());
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
-  REQUIRE(app.fileMode().currentFile().empty());
   REQUIRE(app.handleCommand(Command::StartHelp));
   app.feedByte(0x0a, std::nullopt);  // ^J
   CHECK(app.feedByte('1', std::nullopt));  // ^J1
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleResize: reflows HELP's own content (a top-level split)") {
+TEST_CASE_FIXTURE(Fixture, "handleResize: reflows the plain HELP's own content") {
   std::string longHelp =
       "A：x\nabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\nB：x\ntext\n";
+  writePlainHelp(root, longHelp);
   REQUIRE(app.loadHelpText(longHelp));
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.handleCommand(Command::Enter));  // into Section One's content
-  CHECK(app.currentMode() == ApplicationMode::CutContent);
+  REQUIRE(app.currentMode() == ApplicationMode::File);
 
   display.setSize(24, 10);
   app.handleResize();
@@ -13072,27 +12894,6 @@ TEST_CASE_FIXTURE(Fixture, "handleResize: reflows HELP's own content (a top-leve
   for (int row = 0; row < display.rows(); row++)
     if (display.rowText(row).substr(0, 10) == "abcdefghij") sawWrappedLine = true;
   CHECK(sawWrappedLine);
-}
-
-TEST_CASE_FIXTURE(Fixture, "handleResize: does NOT reflow HELP when it's nested on top of a real CUT session") {
-  std::string longHelp =
-      "A：x\nabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\nB：x\ntext\n";
-  REQUIRE(app.loadHelpText(longHelp));
-  REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.handleCommand(Command::StartCut));
-  feedText("hello");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.handleCommand(Command::StartHelp));  // pushed -- canGoBack() is now true
-  REQUIRE(app.cutMode().canGoBack());
-
-  display.setSize(24, 10);
-  app.handleResize();  // must not crash; content reflow is skipped for nested levels
-
-  REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Cut);  // the real CUT session is still intact
 }
 
 // -- Recorded macros (p_km, ^X(/^X)/^Xe) --
@@ -13373,13 +13174,17 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: LOCATE results -- a click selects,
 // 既存の穴だった。Directory/Du/Archive自身のテストと全く同じ形――
 // HELPを具体例として使う(testHelpText()経由、他のCUT起点でも同じ
 // 仕組みなので代表例として十分)。
-TEST_CASE_FIXTURE(Fixture, "handleMouseClick: CUT segment list (HELP as a concrete example) -- a click "
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: CUT segment list (log.txt split as a concrete example) -- a click "
                            "selects, a second click on the already-selected row opens it") {
-  REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartHelp));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.handleCommand(Command::StartCut));
+  feedText("marker");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
-  REQUIRE(app.cutMode().segments().size() == 2);
+  REQUIRE(app.cutMode().segments().size() == 3);
   REQUIRE(app.activeContentView().cursorIndex() == 0);
 
   REQUIRE(app.handleMouseClick(1, 0));  // click row 1 (the second segment), not yet selected -- just selects it
@@ -14029,8 +13834,9 @@ TEST_CASE_FIXTURE(Fixture, "^R real recall (HISTORY chronological view): a candi
   history.pushRecent(RingCategory::RecentFgrepPattern, pattern);
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFgrep));  // plain prompt, not direct-entry
-  feedText("x");
-  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R: real mid-typing recall (directEntry=false)
+  // 2026-11-02: ^R recalls history only on a blank prompt (text already typed -> ^R does nothing),
+  // so no text is typed before it.
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R: real recall (directEntry=false)
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.listBrowserMode().selectedItem() != nullptr);
   REQUIRE(*app.listBrowserMode().selectedItem() == pattern);
@@ -15343,7 +15149,9 @@ TEST_CASE_FIXTURE(Fixture, "^J^U/^Ju: FILE/DIR/MAN accesses are mirrored into th
   }
   REQUIRE(app.handleCommand(Command::Back));
   REQUIRE(app.handleCommand(Command::StartUsilicToc));
-  CHECK(app.underlineMode().entries() == std::vector<std::string>{"MAN", "DIR", "FILE", "PROGRAM", "WORK", "USILIC"});
+  // 2026-10-10: PROGRAMはTOOLへ改名。ARC・EPUB・PARTの見出しも増えた(9見出し)。
+  CHECK(app.underlineMode().entries() ==
+        std::vector<std::string>{"MAN", "DIR", "FILE", "TOOL", "WORK", "USILIC", "ARC", "EPUB", "PART"});
   REQUIRE(app.handleCommand(Command::MoveDown));
   REQUIRE(app.handleCommand(Command::MoveDown));
   REQUIRE(app.handleCommand(Command::Enter));
@@ -15353,7 +15161,7 @@ TEST_CASE_FIXTURE(Fixture, "^J^U/^Ju: FILE/DIR/MAN accesses are mirrored into th
   CHECK(pos("ls (man)") == static_cast<long>(files.size()));
   CHECK(pos("/tmp/aaa/") == static_cast<long>(files.size()));
   REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.underlineMode().entries().size() == 5);
+  CHECK(app.underlineMode().entries().size() == 9);  // the USILIC table of contents (9 headings)
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
@@ -15632,7 +15440,9 @@ TEST_CASE_FIXTURE(Fixture, "^J^Ow opens the WORK group of the USILIC table of co
   CHECK(app.currentMode() == ApplicationMode::Underline);
   CHECK(app.underlineMode().entries().empty());  // まだ^X^Wしていない
   REQUIRE(app.handleCommand(Command::Back));  // 目次へ
-  CHECK(app.underlineMode().entries() == std::vector<std::string>{"MAN", "DIR", "FILE", "PROGRAM", "WORK", "USILIC"});
+  // 2026-10-10: PROGRAMはTOOLへ改名。ARC・EPUB・PARTの見出しも増えた(9見出し)。
+  CHECK(app.underlineMode().entries() ==
+        std::vector<std::string>{"MAN", "DIR", "FILE", "TOOL", "WORK", "USILIC", "ARC", "EPUB", "PART"});
 }
 
 // 同日、"EGREPの一覧を復活して欲しい": usilicrcのEGREP節(旧GREP)の実例が
@@ -15679,7 +15489,9 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: ^Ou opens the selected results in an externa
     return true;
   });
   REQUIRE(app.handleCommand(Command::StartUnderlineView));
-  CHECK(launched.find("unset USILIC USILIC_HANDOFF; usilic -c '" + b.string() + "'") != std::string::npos);
+  // 2026-10-09以降の起動行: "unset USILIC USILIC_HANDOFF; "の後に、cdと子の環境変数(USILIC_TRANSIENT等)が付く。
+  CHECK(launched.find("unset USILIC USILIC_HANDOFF; ") != std::string::npos);
+  CHECK(launched.find(" -c '" + b.string() + "'") != std::string::npos);
   CHECK(launched.find(a.string()) == std::string::npos);
   CHECK(app.currentMode() == ApplicationMode::Locate);
 }

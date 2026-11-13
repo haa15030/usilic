@@ -917,12 +917,12 @@ TEST_CASE("renderModeLine: rightWatermark is right-aligned, not reverse-video, a
   v.redraw();
 
   // "/tmp/dir/ 1/3 TOP (ls)" occupies columns 0-21 (see the plain-gaps
-  // test above); " usilic-1.5b " (14 chars) is right-aligned at the
-  // last 14 columns (26-39 of a 40-column display).
+  // test above); " usilic-1.5b " (13 chars) is right-aligned at the
+  // last 13 columns (27-39 of a 40-column display).
   std::string row = d.rowText(5);
-  CHECK(row.substr(26, 14) == " usilic-1.5b ");
+  CHECK(row.substr(27, 13) == " usilic-1.5b ");
   CHECK(d.standoutAt(5, 27) == false);  // bold, not reverse-video, unlike name/position/trailing
-  CHECK(row.substr(22, 4) == "    ");   // the gap between trailing and the watermark stays plain/blank
+  CHECK(row.substr(22, 5) == "     ");  // the gap between trailing and the watermark stays plain/blank
 
   // Too narrow to fit both the drawn fields AND the watermark -- dropped entirely, not truncated.
   RecordingDisplay narrow(10, 25);
@@ -1592,8 +1592,8 @@ TEST_CASE("scrollModeLineSegments: rightWatermark is emitted as its own plain-ga
   CHECK(segments[0].text == "/tmp/dir/");
   CHECK(segments[2].text == "1/3 TOP");
   CHECK(segments[4].text == "(ls)");
-  // The 4-column plain gap (columns 22-25 of 40) between trailing and the watermark.
-  CHECK(segments[5].text == "    ");
+  // The 5-column plain gap (columns 22-26 of 40) between trailing and the watermark.
+  CHECK(segments[5].text == "     ");
   CHECK_FALSE(segments[5].standout);
   CHECK_FALSE(segments[5].bold);
   // The watermark itself: bold, NOT standout -- unlike every other field segment above.

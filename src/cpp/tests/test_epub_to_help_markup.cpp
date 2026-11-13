@@ -77,17 +77,18 @@ TEST_CASE("epubToHelpMarkup: EPUB2 ncx labels, headings are chapters, linear=no 
   };
   auto out = fm::epubToHelpMarkup(readerFor(files));
   REQUIRE(out);
+  // 字の並び(明朝体の<serif>、見出しは<big>、2026-09-29以降の既定)も含めた出力。
   CHECK(*out ==
-        "〓題〓\t\n"  // ncxの"Start"(フラグメント無し)はファイル先頭の段落
+        "<serif>〓題〓</serif>\t\n"  // ncxの"Start"(フラグメント無し)はファイル先頭の段落
         "\n"
-        "<b>　目次</b>\t\n"
-        "a b\n"  // 本文中のタブは章の印にならない
+        "<serif><big><b>　目次</b></big></serif>\t\n"
+        "<serif>a b</serif>\n"  // 本文中のタブは章の印にならない
         "\n"
-        "<b>第<i>一</i>章</b>\t\n"
-        "<b>強調</b>\n"  // 太字の入れ子はトグルなので外側の1組だけ
-        "・x\n"
-        "1. y\n"
-        "2. z\n"
+        "<serif><big><b>第<i>一</i>章</b></big></serif>\t\n"
+        "<serif><b>強調</b></serif>\n"  // 太字の入れ子はトグルなので外側の1組だけ
+        "<serif>・x</serif>\n"
+        "<serif>1. y</serif>\n"
+        "<serif>2. z</serif>\n"
         "\n");
 }
 
@@ -105,13 +106,13 @@ TEST_CASE("epubToHelpMarkup: empty heading followed by text keeps the TOC label 
   };
   auto out = fm::epubToHelpMarkup(readerFor(files));
   REQUIRE(out);
-  CHECK(*out == "<b>章</b>\t\n本文[image: title 1.jpg]\n\n");
+  CHECK(*out == "<b>章</b>\t\n<serif>本文[image: title 1.jpg]</serif>\n\n");
   CHECK(fm::findEpubImageMember(readerFor(files), "title 1.jpg") == std::optional<std::string>("OEBPS/Image/title 1.jpg"));
   CHECK_FALSE(fm::findEpubImageMember(readerFor(files), "none.jpg"));
 }
 
 TEST_CASE("epubToHelpMarkup: in-book links are underlined and mapped to their target line; "
-          "external links are plain") {
+          "http(s) links are underlined too (2026-09-30) but not mapped to a line") {
   std::map<std::string, std::string> files = {
       {"META-INF/container.xml", kContainer},
       {"OEBPS/content.opf", R"(<package><manifest>
@@ -126,16 +127,16 @@ TEST_CASE("epubToHelpMarkup: in-book links are underlined and mapped to their ta
   auto out = fm::epubToHelpMarkup(readerFor(files), &links);
   REQUIRE(out);
   CHECK(*out ==
-        "<b>目次</b>\t\n"
-        "<u>第一章</u>\n"
-        "第二章\n"
-        "外\n"
-        "　<u>先頭</u>\n"
+        "<serif><big><b>目次</b></big></serif>\t\n"
+        "<serif><u>第一章</u></serif>\n"
+        "<serif>第二章</serif>\n"
+        "<serif><u>外</u></serif>\n"
+        "<serif>　<u>先頭</u></serif>\n"
         "\n"
-        "前\n"
+        "<serif>前</serif>\n"
         "\n"
-        "<b>第一章</b>\t\n"
-        "本文\n"
+        "<serif><big><b>第一章</b></big></serif>\t\n"
+        "<serif>本文</serif>\n"
         "\n");
   CHECK(links == std::map<int, int>{{2, 9}, {5, 7}});
 }

@@ -285,11 +285,12 @@ TEST_CASE("MACRO directive: M-n key K-numbers, skipping the -- marker and empty 
 // M-n・キー・要素の間をタブではなく空白で区切った行も読める。
 TEST_CASE("MACRO directive: fields separated by spaces instead of tabs") {
   Configuration config;
-  REQUIRE(config.loadRcText("MACRO\n  M-1 ; K-1 K-2 K-14   # ^G^P^M\nM-2 h K-105\n", true));
+  // "h"は既定のKEY(K-105)が使うので、マクロのキーには使えない(key_bindings.cppのkey conflicts)。空いている"z"を使う。
+  REQUIRE(config.loadRcText("MACRO\n  M-1 ; K-1 K-2 K-14   # ^G^P^M\nM-2 z K-105\n", true));
   REQUIRE(config.macros().size() == 2);
   CHECK(config.macros()[0].keySpec == ";");
   CHECK(config.macros()[0].items.size() == 3);
-  CHECK(config.macros()[1].keySpec == "h");
+  CHECK(config.macros()[1].keySpec == "z");
   CHECK(config.errors().empty());
 }
 
@@ -503,7 +504,9 @@ TEST_CASE("Configuration: FILTER/LAUNCH section names (the former FILE/EXEC are 
   REQUIRE(config.loadRcText("FILTER\n\t.gz\tgzip\t-dc\n\nLAUNCH\n\t.xcf\topen\t-a\tGIMP\n", true));
   CHECK(config.errors().empty());
   fm::Configuration old;
-  CHECK_FALSE(old.loadRcText("FILTER\n\t.gz\tgzip\t-dc\n", true));
+  CHECK_FALSE(old.loadRcText("FILE\n\t.gz\tgzip\t-dc\n", true));  // the former name is an unrecognized directive
+  fm::Configuration oldExec;
+  CHECK_FALSE(oldExec.loadRcText("EXEC\n\t.xcf\topen\t-a\tGIMP\n", true));
 }
 
 TEST_CASE("the removed font and spacing sections (2026-10-30) still load without errors") {
