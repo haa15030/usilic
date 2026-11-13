@@ -53,6 +53,9 @@ git pull
    `make usilic`が`mac_cursor.mm`の中で止まる(下の「Command Line ToolsのclangとSDKの版の不一致」)。
 2. [MacPorts](https://www.macports.org/install.php)(未導入の場合): そのMacのmacOSの版に合う`.pkg`を入れたら、
    **ターミナルを開き直す**(`/opt/local/bin`をPATHに足す`~/.zprofile`は、開いたままのウィンドウには反映されない)。
+   開き直さずに続けるなら`source ~/.zprofile`。`which port`が`/opt/local/bin/port`を出せばよい
+   (`sudo port …`が`sudo: port: command not found`になるのは、たいていこれ。2026-11-13、Sequoiaのクリーンインストールで)。
+   なお、最初から PATH にある`/usr/local/bin`は macOS の`/etc/paths`によるもので、MacPortsとは関係ない。
    2026-11-07から、macOSの版やCPU(Intel・Apple Silicon)によらずMacPortsに一本化した(ユーザー判断)。
    Homebrewは古いmacOS(Big Sur等)に対応しておらず、Intel Macには新しく入れられず(2026-11-06、インストーラが
    `Homebrew on macOS is only supported on Apple Silicon processors!`で止まる)、2027年9月以降はIntel Macでは

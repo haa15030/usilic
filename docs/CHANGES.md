@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1290. **docs/BUILD.md(macOS): MacPortsを入れた直後の`sudo: port: command not found`(2026-11-13)**
+   - ユーザーの報告("クリーンインストール後のmacOS Sequoiaで…Intel用の.pkgをダウンロード後インストール、そのあとの`sudo port selfupdate`で`sudo: port: command not found`で止まった")。
+   - 原因: `~/.zprofile`には`/opt/local/bin`が書き込まれていたが、インストール前から開いていたウィンドウには読み込まれていなかった(`source ~/.zprofile`で`which port`が`/opt/local/bin/port`に)。最初からPATHにある`/usr/local/bin`は`/etc/paths`(path_helper)由来で、MacPortsとは無関係。
+   - 手順2に`source ~/.zprofile`と`which port`での確かめ方、`/usr/local/bin`の由来を足した。
+
 1289. **外部起動の子の(ls)も、履歴を読み書きしない以外は普段どおりに(2026-11-09)**
    - ユーザーの依頼("普段の子プロセス(ls)も履歴保存無し以外フルスペックにしてみて"、続けて"書き方がマズかったけど、履歴への保存も無ければ読み込みもしない。^X^Fその他は既定以外真っさら。それでよろしく。")。
    - **以前**: 外部起動の子(USILIC_TRANSIENT、^Ou・^Jpusilic・^T等)は、ディレクトリでもページャーと同じ扱いで、~/.usilic/historyを読まず(consultHistoryOnStartが偽)、pagerLaunch_で使えるキーも絞られていた。項目1288の`-N`の子も同じで、実際にはhistoryを読んでいなかった。
