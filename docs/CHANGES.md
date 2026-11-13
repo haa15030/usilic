@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1292. **tools/setup-debian.sh: Debian 13・UbuntuをSSHだけの最低限のインストールから一度に(2026-11-13)**
+   - ユーザーの依頼("Debian13はインストール時のTaskselでSSHしか選ばない環境へログイン後、スクリプトで完了まで（手動で行いたい場合の手順も併記）。ただしUbuntuはどうなのかなと。同じような環境作れる？"、"Linuxの方はその方針でsetup-debian.shを書いてみて")。UbuntuはServer版のISOで「Ubuntu Server (minimized)」+OpenSSHにすれば同じような所から始められる。
+   - **スクリプト**(tools/setup-freebsd.shと同じ作り、rootで実行、/etc/os-releaseでDebianかUbuntuか): 1.パッケージ(Ubuntuのminimizedは先にunminimize。X11・Xfce・lightdm・firefox(DebianはESR)・日本語フォント・fcitx5+Mozc・ビルドと最初の起動に要るもの・mpvとPipeWire+xfce4-pulseaudio-plugin+pavucontrol。版で名前の変わるものは1つずつ入れて無くても止めない)、2.GPU(lspci。DebianのNVIDIAはnon-freeを足してnvidia-driver、Ubuntuはubuntu-drivers、AMD・IntelはDebianだけファームウェア)、3.ja_JP.UTF-8・graphical.target・sudo/video/audio・/etc/default/keyboardがjpならjp106+ctrl:swapcaps、4.~/.xprofile・PATH・make usilic && make install。NVIDIAは合成表示を切るxfwm4.xmlを置く。記録は/var/log/usilic-setup.log。
+   - **音声**: Linuxでは出力先(内蔵・HDMI)をパネルのプラグインかpavucontrolで切り換えるだけでよい(PipeWireが装置を並べ、mpv等は既定でそこへ)。HDMIが出なければpavucontrolの「設定」でカードの構成を変える。
+   - **docs/BUILD.md**: Linuxの節を、インストーラ(Debian・Ubuntu)、スクリプト、手で進める手順、注意点(音声・HDMI・NVIDIAとセキュアブートのMOK・Ubuntuのfirefoxはsnap)、ビルドだけ、に書き直した。実機での通しの確認はまだ。
+
 1291. **docs/BUILD.md: `make test`は任意で時間がかかる、と明記(2026-11-13)**
    - ユーザーの報告("make testでエラーが大量に出た")と依頼("BUILDには時間がかかるのと実行は任意であることを記載よろしく")。失敗は1383件中77件で、どれも仕様を変えた後に直していない古いテスト(テストを今の仕様に合わせる作業は別の項目で)。
    - macOSの手順5から`make test`を外して「任意・時間がかかる・使うだけなら不要」と書き、Linuxの手順の`make test`にも「任意」の注を付けた。

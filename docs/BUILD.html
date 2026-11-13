@@ -94,6 +94,62 @@ make usilic</code></pre>
 <h3>Intel Mac(Sequoia)固有の注意点</h3>
 <p>(Homebrewで入れたSDL2を使っていた頃の記録。MacPortsのSDL2でも<code>-ld_classic</code>はそのまま付く。) Xcode 15以降のデフォルトリンカ(通称ld-prime)が、Homebrew製の一部dylib構成(<code>sdl2_ttf</code>が<code>sdl2</code>ではなく<code>sdl2-compat</code>を参照する構成など)で「ライブラリもリンクコマンドも正しいのにシンボルが見つからない」という既知の非互換を起こすことがある(docs/CHANGES.md項目419で実際に発生・特定)。対策として<code>Makefile</code>のDarwin向け<code>LDLIBS</code>に<code>-Wl,-ld_classic</code>(旧リンカの強制指定)を組み込み済みなので、<strong>上記の手順通りに<code>make</code>すれば追加の対応は不要</strong>。万一同種のリンクエラーが再発した場合は、<code>pkg-config --cflags --libs sdl2 SDL2_ttf</code>の出力・<code>file</code>/ <code>lipo -info</code>でのアーキテクチャ・<code>nm -gU</code>でのシンボルの実エクスポート状況、の3点を順に確認するとよい(docs/CHANGES.md項目419の調査ログに実例あり)。</p>
 <h2 id="s3">Linux (Ubuntu/Debian系)</h2>
+<p>Debian 13とUbuntu(26.10等)を、GUIの無い最低限のインストール(SSHだけ)から始める手順(2026-11-13、FreeBSDと同じ作り。実機での通しの確認はまだ)。手で進める時は「3.〜6.を手で進める」、既にデスクトップのあるUbuntu等でビルドだけするならいちばん下の「ビルドだけ」。</p>
+<h3>1. インストーラー</h3>
+<p><strong>Debian 13</strong>(netinstのISO):</p>
+<ul><li>言語・キーボードで日本語(キーボードは「日本語」)を選ぶ。スクリプトはこれ(<code>/etc/default/keyboard</code>の<code>XKBLAYOUT="jp"</code>)を見てjp106にする。</li><li>rootのパスワードは設定してよい(設定するとsudoが入らず、作ったユーザーもsudoできないが、スクリプトが直す)。</li><li>「ソフトウェアの選択」(tasksel)では、「Debian デスクトップ環境」「GNOME」等のチェックを<strong>すべて外し</strong>、「SSH server」だけ(「標準システムユーティリティ」は付けたままでよい)。</li></ul>
+<p><strong>Ubuntu 26.10</strong>(Desktop版ではなく<strong>Server版</strong>のISO。Desktop版は最小のインストールでもGNOMEが入る):</p>
+<ul><li>キーボードは「Japanese」。</li><li>インストールの種類で「<strong>Ubuntu Server (minimized)</strong>」を選ぶ(Debianの「SSH server」だけに近い)。</li><li>「<strong>Install OpenSSH server</strong>」にチェックを入れる。</li><li>「Featured Server Snaps」は何も選ばない。</li><li>作ったユーザーは最初からsudoできる(rootのパスワードは無い)。minimizedで削られたmanのページ等は、スクリプトが<code>unminimize</code>で戻す。</li></ul>
+<p class="note">※sshでログイン中にシステムを入れ直した場合は、ログインする側のマシンで <em>ssh-keygen -R &lt;IP&gt;</em> を実行する(ホスト鍵が変わるため)。</p>
+<h3>2. 3.〜6.をスクリプトで進める</h3>
+<p>インストーラが終わって再起動したら、別のマシンから <em>ssh <code>ABC</code>@&lt;IP&gt;</em> でつなぐ(IPはこのマシンで <em>ip -4 addr</em> の<code>inet</code>)。</p>
+<p>Debianは <em>su -</em>、Ubuntuは <em>sudo -i</em> でrootになり:</p>
+<pre class="key"><code>apt-get update &amp;&amp; apt-get install -y git</code></pre>
+<pre class="key"><code>su ABC -c 'git clone https://github.com/haa15030/usilic.git ~/git/usilic'</code></pre>
+<pre class="key"><code>sh ~ABC/git/usilic/tools/setup-debian.sh ABC</code></pre>
+<p class="note">※<code>ABC</code>はインストーラで作ったユーザー名。DebianかUbuntuかは<code>/etc/os-release</code>で見分ける。GPUは<code>lspci</code>で見分ける(違う時は最後に<code>--gpu=nvidia</code>・<code>--gpu=amd</code>・<code>--gpu=intel</code>・<code>--gpu=none</code>)。キーボードがjpならjp106にし、Caps LockとCtrlを入れ替える(入れ替えない時は<code>--noswapcaps</code>)。途中で止まったら、同じコマンドをもう一度実行すれば続きから進む。記録は<code>/var/log/usilic-setup.log</code>。</p>
+<p class="note">※終わったら <em>reboot</em> し、6.へ進む(NVIDIAの合成表示はスクリプトが切ってある)。</p>
+<h3>3.〜6.を手で進める</h3>
+<h4>3. パッケージ</h4>
+<p>rootで(Ubuntu Server (minimized)なら先に <em>unminimize</em> して <em>y</em>):</p>
+<pre class="key"><code>apt-get update</code></pre>
+<pre class="key"><code>apt-get install -y git build-essential pkg-config libncurses-dev libsdl2-dev libsdl2-ttf-dev sudo bash xdg-utils python3 pciutils locales man-db</code></pre>
+<pre class="key"><code>apt-get install -y xorg xfce4 xfce4-terminal xfce4-screenshooter lightdm lightdm-gtk-greeter dbus-x11 dbus-user-session fonts-ipafont fonts-noto-cjk fonts-dejavu</code></pre>
+<pre class="key"><code>apt-get install -y fcitx5 fcitx5-mozc fcitx5-config-qt fcitx5-frontend-gtk3 fcitx5-frontend-qt6</code></pre>
+<pre class="key"><code>apt-get install -y groff mg info p7zip-full w3m unzip</code></pre>
+<pre class="key"><code>apt-get install -y mpv pipewire pipewire-pulse pipewire-alsa wireplumber pavucontrol xfce4-pulseaudio-plugin</code></pre>
+<p>firefoxは、Debianは <em>apt-get install -y firefox-esr</em>、Ubuntuは <em>apt-get install -y firefox</em>(snapで入る)。</p>
+<p class="note">※<code>p7zip-full</code>が無い版では<code>7zip</code>。<code>fcitx5-frontend-qt6</code>が無い版では<code>fcitx5-frontend-qt5</code>。</p>
+<p class="note">※SDL2は、パッケージのもので日本語入力(fcitx5)が使える(FreeBSDのようにビルドし直さない)。</p>
+<h4>4. GPUのドライバ</h4>
+<div class="table"><table><thead><tr><th>GPU</th><th>Debian 13</th><th>Ubuntu</th></tr></thead><tbody><tr><td>NVIDIA</td><td>non-freeを足して(下の※) <em>apt-get install -y linux-headers-amd64 nvidia-driver firmware-misc-nonfree</em></td><td><em>apt-get install -y ubuntu-drivers-common &amp;&amp; ubuntu-drivers install</em></td></tr><tr><td>AMD</td><td>non-freeを足して <em>apt-get install -y firmware-amd-graphics</em></td><td>何もしない</td></tr><tr><td>Intel</td><td>non-freeを足して <em>apt-get install -y firmware-misc-nonfree</em></td><td>何もしない</td></tr></tbody></table></div>
+<p class="note">※Debianのnon-free: <code>/etc/apt/sources.list.d/debian.sources</code>の<code>Components:</code>の行を<code>Components: main contrib non-free non-free-firmware</code>にし(古い形の<code>/etc/apt/sources.list</code>なら各<code>deb</code>行の<code>main</code>の後ろを同じに)、<em>apt-get update</em>。</p>
+<p class="note">※NVIDIAは、Xfceに初めてログインした後、端末で <em>xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false</em>(合成表示を切る。FreeBSDで画面が固まったことがある)。</p>
+<h4>5. 日本語・起動・sudo・キーボード・usilic</h4>
+<p>rootで:</p>
+<pre class="key"><code>sed -i 's/^# *\(ja_JP\.UTF-8 UTF-8\)/\1/' /etc/locale.gen &amp;&amp; locale-gen</code></pre>
+<p>(Ubuntuは <em>locale-gen ja_JP.UTF-8</em>)</p>
+<pre class="key"><code>systemctl set-default graphical.target</code></pre>
+<pre class="key"><code>usermod -aG sudo,video,audio ABC</code></pre>
+<p>キーボードは<code>/etc/default/keyboard</code>を<code>XKBMODEL="jp106"</code>・<code>XKBLAYOUT="jp"</code>・<code>XKBOPTIONS="ctrl:swapcaps"</code>にする(XとコンソールとでCaps LockとCtrlを入れ替える。入れ替えないなら<code>XKBOPTIONS=""</code>)。</p>
+<p>ユーザーに戻って(<em>exit</em>):</p>
+<pre class="key"><code>cat &gt; ~/.xprofile &lt;&lt;'EOF'
+export LANG=ja_JP.UTF-8
+export GTK_IM_MODULE=fcitx
+export QT_IM_MODULE=fcitx
+export XMODIFIERS=@im=fcitx
+export SDL_IM_MODULE=fcitx
+EOF</code></pre>
+<pre class="key"><code>echo 'PATH=$HOME/.local/bin:$PATH; export PATH' &gt;&gt; ~/.profile; echo 'PATH=$HOME/.local/bin:$PATH; export PATH' &gt;&gt; ~/.bashrc</code></pre>
+<p class="note">※~/.bashrcにも足すのは、usilicのSHELLがbashをログインシェルとしてではなく起動し、~/.bashrcだけを読むため(FreeBSDの8.と同じ)。</p>
+<pre class="key"><code>cd ~/git/usilic/src/cpp &amp;&amp; make usilic &amp;&amp; make install</code></pre>
+<pre class="key"><code>sudo reboot</code></pre>
+<h4>6. 日本語入力・音声・usilicの起動</h4>
+<p>lightdmのログイン画面でログインし、Xfceに入る。</p>
+<ul><li>アプリケーション -&gt; 設定 -&gt; Fcitx 5 の設定 で、「入力メソッド」にMozcがあることを確かめる(無ければ追加して「適用」)。</li><li>音声: パネルに音量のアイコンが無ければ、パネルを右クリック -&gt; パネル -&gt; 新しいアイテムの追加 -&gt; 「PulseAudio プラグイン」。出力先(マザーボードの内蔵・HDMI)は、そのアイコンかpavucontrol(アプリケーション -&gt; マルチメディア -&gt; PulseAudio 音量調節)で切り換える。再生中の音もそのまま付いてくる。</li><li>アプリケーション -&gt; アクセサリー -&gt; usilic で起動する。</li></ul>
+<h3>注意点(Linux)</h3>
+<ul><li><strong>音声</strong>: 音声のサーバーはPipeWire(<code>pipewire-pulse</code>がPulseAudioの役)。マザーボードの内蔵もHDMIもALSAの装置として自動で並び、mpv・mplayerは何も設定しなくてもそこへ出す。FreeBSDのような<code>hw.snd.default_unit</code>やアプリごとの設定、audioグループは要らない(systemd-logindがログインした人に権限を渡す)。</li><li><strong>HDMIが出力先に出ない</strong>: 音源のカードの構成が「アナログ出力」だけになっている。pavucontrolの「設定」タブで、そのカードの構成を「Digital Stereo (HDMI) Output」等にする。NVIDIA・AMDのGPUのHDMIは、マザーボードの音源とは別のカードとして並ぶ。</li><li><strong>NVIDIAとセキュアブート</strong>: UEFIのセキュアブートが有効だと、DKMSでビルドしたNVIDIAのモジュールは署名を登録(MOK)するまで読み込まれない。インストールの途中か再起動の時に青い「Perform MOK management」の画面が出たら、「Enroll MOK」を選び、インストールの時に決めたパスワードを入れる。分からなければ、UEFIの設定でセキュアブートを切る。</li><li><strong>Ubuntuのfirefox</strong>: aptの<code>firefox</code>はsnapを入れる中継ぎのパッケージ。minimizedでsnapdが無い時は <em>apt-get install -y snapd</em> してから。</li></ul>
+<h3>ビルドだけ(デスクトップが既にある時)</h3>
 <pre><code>sudo apt-get update
 sudo apt-get install -y build-essential libncurses-dev pkg-config \
     libsdl2-dev libsdl2-ttf-dev git

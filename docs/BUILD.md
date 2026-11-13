@@ -133,6 +133,161 @@ Xcode 15以降のデフォルトリンカ(通称ld-prime)が、Homebrew製の
 
 ## Linux (Ubuntu/Debian系)
 
+Debian 13とUbuntu(26.10等)を、GUIの無い最低限のインストール(SSHだけ)から始める手順(2026-11-13、FreeBSDと同じ作り。
+実機での通しの確認はまだ)。手で進める時は「3.〜6.を手で進める」、既にデスクトップのあるUbuntu等でビルドだけするなら
+いちばん下の「ビルドだけ」。
+
+### 1. インストーラー
+
+**Debian 13**(netinstのISO):
+
+- 言語・キーボードで日本語(キーボードは「日本語」)を選ぶ。スクリプトはこれ(`/etc/default/keyboard`の`XKBLAYOUT="jp"`)を見てjp106にする。
+- rootのパスワードは設定してよい(設定するとsudoが入らず、作ったユーザーもsudoできないが、スクリプトが直す)。
+- 「ソフトウェアの選択」(tasksel)では、「Debian デスクトップ環境」「GNOME」等のチェックを**すべて外し**、「SSH server」だけ(「標準システムユーティリティ」は付けたままでよい)。
+
+**Ubuntu 26.10**(Desktop版ではなく**Server版**のISO。Desktop版は最小のインストールでもGNOMEが入る):
+
+- キーボードは「Japanese」。
+- インストールの種類で「**Ubuntu Server (minimized)**」を選ぶ(Debianの「SSH server」だけに近い)。
+- 「**Install OpenSSH server**」にチェックを入れる。
+- 「Featured Server Snaps」は何も選ばない。
+- 作ったユーザーは最初からsudoできる(rootのパスワードは無い)。minimizedで削られたmanのページ等は、スクリプトが`unminimize`で戻す。
+
+※sshでログイン中にシステムを入れ直した場合は、ログインする側のマシンで *ssh-keygen -R \<IP\>* を実行する(ホスト鍵が変わるため)。
+
+### 2. 3.〜6.をスクリプトで進める
+
+インストーラが終わって再起動したら、別のマシンから *ssh `ABC`@\<IP\>* でつなぐ(IPはこのマシンで *ip -4 addr* の`inet`)。
+
+Debianは *su -*、Ubuntuは *sudo -i* でrootになり:
+
+```key
+apt-get update && apt-get install -y git
+```
+
+```key
+su ABC -c 'git clone https://github.com/haa15030/usilic.git ~/git/usilic'
+```
+
+```key
+sh ~ABC/git/usilic/tools/setup-debian.sh ABC
+```
+
+※`ABC`はインストーラで作ったユーザー名。DebianかUbuntuかは`/etc/os-release`で見分ける。GPUは`lspci`で見分ける(違う時は最後に`--gpu=nvidia`・`--gpu=amd`・`--gpu=intel`・`--gpu=none`)。キーボードがjpならjp106にし、Caps LockとCtrlを入れ替える(入れ替えない時は`--noswapcaps`)。途中で止まったら、同じコマンドをもう一度実行すれば続きから進む。記録は`/var/log/usilic-setup.log`。
+
+※終わったら *reboot* し、6.へ進む(NVIDIAの合成表示はスクリプトが切ってある)。
+
+### 3.〜6.を手で進める
+
+#### 3. パッケージ
+
+rootで(Ubuntu Server (minimized)なら先に *unminimize* して *y*):
+
+```key
+apt-get update
+```
+
+```key
+apt-get install -y git build-essential pkg-config libncurses-dev libsdl2-dev libsdl2-ttf-dev sudo bash xdg-utils python3 pciutils locales man-db
+```
+
+```key
+apt-get install -y xorg xfce4 xfce4-terminal xfce4-screenshooter lightdm lightdm-gtk-greeter dbus-x11 dbus-user-session fonts-ipafont fonts-noto-cjk fonts-dejavu
+```
+
+```key
+apt-get install -y fcitx5 fcitx5-mozc fcitx5-config-qt fcitx5-frontend-gtk3 fcitx5-frontend-qt6
+```
+
+```key
+apt-get install -y groff mg info p7zip-full w3m unzip
+```
+
+```key
+apt-get install -y mpv pipewire pipewire-pulse pipewire-alsa wireplumber pavucontrol xfce4-pulseaudio-plugin
+```
+
+firefoxは、Debianは *apt-get install -y firefox-esr*、Ubuntuは *apt-get install -y firefox*(snapで入る)。
+
+※`p7zip-full`が無い版では`7zip`。`fcitx5-frontend-qt6`が無い版では`fcitx5-frontend-qt5`。
+
+※SDL2は、パッケージのもので日本語入力(fcitx5)が使える(FreeBSDのようにビルドし直さない)。
+
+#### 4. GPUのドライバ
+
+| GPU | Debian 13 | Ubuntu |
+|---|---|---|
+| NVIDIA | non-freeを足して(下の※) *apt-get install -y linux-headers-amd64 nvidia-driver firmware-misc-nonfree* | *apt-get install -y ubuntu-drivers-common && ubuntu-drivers install* |
+| AMD | non-freeを足して *apt-get install -y firmware-amd-graphics* | 何もしない |
+| Intel | non-freeを足して *apt-get install -y firmware-misc-nonfree* | 何もしない |
+
+※Debianのnon-free: `/etc/apt/sources.list.d/debian.sources`の`Components:`の行を`Components: main contrib non-free non-free-firmware`にし(古い形の`/etc/apt/sources.list`なら各`deb`行の`main`の後ろを同じに)、*apt-get update*。
+
+※NVIDIAは、Xfceに初めてログインした後、端末で *xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false*(合成表示を切る。FreeBSDで画面が固まったことがある)。
+
+#### 5. 日本語・起動・sudo・キーボード・usilic
+
+rootで:
+
+```key
+sed -i 's/^# *\(ja_JP\.UTF-8 UTF-8\)/\1/' /etc/locale.gen && locale-gen
+```
+
+(Ubuntuは *locale-gen ja_JP.UTF-8*)
+
+```key
+systemctl set-default graphical.target
+```
+
+```key
+usermod -aG sudo,video,audio ABC
+```
+
+キーボードは`/etc/default/keyboard`を`XKBMODEL="jp106"`・`XKBLAYOUT="jp"`・`XKBOPTIONS="ctrl:swapcaps"`にする(XとコンソールとでCaps LockとCtrlを入れ替える。入れ替えないなら`XKBOPTIONS=""`)。
+
+ユーザーに戻って(*exit*):
+
+```key
+cat > ~/.xprofile <<'EOF'
+export LANG=ja_JP.UTF-8
+export GTK_IM_MODULE=fcitx
+export QT_IM_MODULE=fcitx
+export XMODIFIERS=@im=fcitx
+export SDL_IM_MODULE=fcitx
+EOF
+```
+
+```key
+echo 'PATH=$HOME/.local/bin:$PATH; export PATH' >> ~/.profile; echo 'PATH=$HOME/.local/bin:$PATH; export PATH' >> ~/.bashrc
+```
+
+※~/.bashrcにも足すのは、usilicのSHELLがbashをログインシェルとしてではなく起動し、~/.bashrcだけを読むため(FreeBSDの8.と同じ)。
+
+```key
+cd ~/git/usilic/src/cpp && make usilic && make install
+```
+
+```key
+sudo reboot
+```
+
+#### 6. 日本語入力・音声・usilicの起動
+
+lightdmのログイン画面でログインし、Xfceに入る。
+
+- アプリケーション -> 設定 -> Fcitx 5 の設定 で、「入力メソッド」にMozcがあることを確かめる(無ければ追加して「適用」)。
+- 音声: パネルに音量のアイコンが無ければ、パネルを右クリック -> パネル -> 新しいアイテムの追加 -> 「PulseAudio プラグイン」。出力先(マザーボードの内蔵・HDMI)は、そのアイコンかpavucontrol(アプリケーション -> マルチメディア -> PulseAudio 音量調節)で切り換える。再生中の音もそのまま付いてくる。
+- アプリケーション -> アクセサリー -> usilic で起動する。
+
+### 注意点(Linux)
+
+- **音声**: 音声のサーバーはPipeWire(`pipewire-pulse`がPulseAudioの役)。マザーボードの内蔵もHDMIもALSAの装置として自動で並び、mpv・mplayerは何も設定しなくてもそこへ出す。FreeBSDのような`hw.snd.default_unit`やアプリごとの設定、audioグループは要らない(systemd-logindがログインした人に権限を渡す)。
+- **HDMIが出力先に出ない**: 音源のカードの構成が「アナログ出力」だけになっている。pavucontrolの「設定」タブで、そのカードの構成を「Digital Stereo (HDMI) Output」等にする。NVIDIA・AMDのGPUのHDMIは、マザーボードの音源とは別のカードとして並ぶ。
+- **NVIDIAとセキュアブート**: UEFIのセキュアブートが有効だと、DKMSでビルドしたNVIDIAのモジュールは署名を登録(MOK)するまで読み込まれない。インストールの途中か再起動の時に青い「Perform MOK management」の画面が出たら、「Enroll MOK」を選び、インストールの時に決めたパスワードを入れる。分からなければ、UEFIの設定でセキュアブートを切る。
+- **Ubuntuのfirefox**: aptの`firefox`はsnapを入れる中継ぎのパッケージ。minimizedでsnapdが無い時は *apt-get install -y snapd* してから。
+
+### ビルドだけ(デスクトップが既にある時)
+
 ```
 sudo apt-get update
 sudo apt-get install -y build-essential libncurses-dev pkg-config \
