@@ -12,7 +12,7 @@
 #
 # することと順番:
 #   1. パッケージ(X11・Xfce・lightdm・firefox・日本語フォント・fcitx5・usilicのビルドと最初の起動に要るもの、
-#      mpvと音声(pulseaudio・音量の調整))
+#      mpvと音声(pulseaudio・音量の調整・既定の装置を選ぶdsbmixer))
 #   2. GPUのドライバ(pciconf -lvで見分ける。--gpuで指定もできる)。kldloadで読み込めるか試し、drm-kmodが
 #      今のカーネルと版が合わなければ(「version mismatch」)、/usr/srcに合わせてportsからビルドしてpkg lockする
 #   3. dbus・lightdmの起動、sudo(wheel)、ユーザーをwheel・videoへ、キーボード(コンソールがjpならjp106)
@@ -83,7 +83,7 @@ pkg_install git gmake pkgconf sudo bash sdl2 sdl2_ttf xfce4-screenshooter-plugin
   xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa dejavu noto-jp \
   fcitx5 fcitx5-configtool fcitx5-gtk3 fcitx5-qt6 ja-fcitx5-mozc3 \
   groff mg texinfo 7-zip w3m \
-  mpv pulseaudio pavucontrol xfce4-pulseaudio-plugin || die "pkg install に失敗しました"
+  mpv pulseaudio pavucontrol xfce4-pulseaudio-plugin dsbmixer || die "pkg install に失敗しました"
 
 # ---------------------------------------------------------------- 2. GPU
 say "2. GPUのドライバ"
@@ -146,6 +146,20 @@ ensure_ports() {
   fi
 }
 
+# 別のマシンへディスクを付け替えた時(2026-11-13、RTX3050のマシンで入れたディスクをi5-4570Sに付けてXが起動しなかった):
+# 前のGPUのモジュールをkld_listから外し、NVIDIAのxorg.conf(nvidia-xconfigが作ったもの)をよける(戻す時のために残す)。
+for m in nvidia-modeset amdgpu radeonkms i915kms; do
+  [ "$m" = "$module" ] && continue
+  if sysrc -n kld_list 2>/dev/null | tr ' ' '\n' | grep -qx "$m"; then
+    sysrc kld_list-="$m"
+    echo "kld_listから前のGPUの $m を外しました"
+  fi
+done
+if [ "$gpu" != nvidia ] && [ -f /etc/X11/xorg.conf ] && grep -q '"nvidia"' /etc/X11/xorg.conf; then
+  mv /etc/X11/xorg.conf /etc/X11/xorg.conf.nvidia
+  echo "NVIDIAの /etc/X11/xorg.conf を /etc/X11/xorg.conf.nvidia へよけました"
+fi
+
 rebuilt=no
 if [ -n "$module" ]; then
   if [ "$gpu" = nvidia ]; then
@@ -198,6 +212,9 @@ fi
 # ---------------------------------------------------------------- 3. 起動するもの・sudo・キーボード
 say "3. dbus・lightdm・音声、sudo、キーボード"
 sysrc dbus_enable=YES lightdm_enable=YES
+# LAN: インストーラはifconfig_rge0="DHCP"のようにインターフェースの名前で書くので、別のマシン(em0等)へディスクを
+# 付け替えるとつながらない(2026-11-13)。名前ごとの設定の無いインターフェースもDHCPにする。
+[ -n "$(sysrc -n ifconfig_DEFAULT 2>/dev/null)" ] || sysrc ifconfig_DEFAULT="DHCP"
 # 音声: サウンドカードのドライバ(HDA=マザーボード・HDMI、uaudio=USB)を起動時に読み込む。
 # カーネルに組み込み済みならkldloadは失敗するが、それでよい。
 sysrc -f /boot/loader.conf snd_hda_load=YES snd_uaudio_load=YES
@@ -271,6 +288,13 @@ gmake usilic
 gmake install
 EOF
 
+# IntelのiGPU(i5-4570SのHaswellで確認)では、GTK4のアプリ(pavucontrol等)がGPUで描こうとして、drm-kmod(linuxkpi)の
+# 「lkpi_vmf_insert_pfn_prot_locked: page rename failed: page is mapped」を繰り返し、kill -9でも止まらなくなる
+# (2026-11-13)。GTK4をGPUを使わずに描かせる。
+if [ "$gpu" = intel ]; then
+  su - "$user" -c 'grep -qx "export GSK_RENDERER=cairo" ~/.xprofile || echo "export GSK_RENDERER=cairo" >> ~/.xprofile'
+fi
+
 # NVIDIAはウィンドウの合成表示を切っておく(有効のままだと画面が固まることがある、docs/BUILD.mdの注意点)。
 # Xfceがまだ一度も起動していないので、xfconf-queryの代わりに設定ファイルを置く(既にあれば触らない)。
 if [ "$gpu" = nvidia ]; then
@@ -295,5 +319,6 @@ echo "reboot して、Xfceに $user でログインしてください。"
 echo "その後: アプリケーション → 設定 → Fcitx5 設定 でMozcがあることを確かめ、"
 echo "        アプリケーション → アクセサリー → usilic で起動します(docs/BUILD.mdの9.・10.)。"
 echo "音が出ない時: cat /dev/sndstat で出力先(pcmN)を見て、sysctl hw.snd.default_unit=N(docs/BUILD.mdの注意点)。"
+echo "              パッケージのmpvはOSSにだけ出すので、PulseAudio(パネル・pavucontrol)の出力先の切り換えは効かない。"
 echo "              mpvが「Permission denied」なら、$user が audio グループに入っているか(ログインし直すと効く)。"
 echo "記録: $LOG"

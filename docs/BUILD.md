@@ -470,9 +470,9 @@ pkg update
 
 *pkg install xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa dejavu noto-jp fcitx5 fcitx5-configtool fcitx5-gtk3 fcitx5-qt6 ja-fcitx5-mozc3* -> *y*
 
-*pkg install mpv pulseaudio pavucontrol xfce4-pulseaudio-plugin* -> *y*
+*pkg install mpv pulseaudio pavucontrol xfce4-pulseaudio-plugin dsbmixer* -> *y*
 
-※動画・音声のプレーヤー(mpv、macOSのIINAの元になったもの)と、音声(pulseaudio、Xfceのパネルの音量のプラグインと、出力先・音量を選ぶpavucontrol)。
+※動画・音声のプレーヤー(mpv、macOSのIINAの元になったもの)と、音声(pulseaudio、Xfceのパネルの音量のプラグインと、出力先・音量を選ぶpavucontrol、FreeBSDの既定の装置と音量を見るdsbmixer)。パッケージのmpvはOSSにだけ出すので、mpvの出力先は既定の装置で決まる(下の注意点の「音声」)。
 
 ```key
 sysrc dbus_enable=YES lightdm_enable=YES
@@ -717,6 +717,13 @@ usilicが開いたら、「usilic-1.5b:~\$ sudo pkg install -y groff mg texinfo 
 - ログインできず`login:`のままなら、`/var/log/lightdm/x-0.log`と`/var/log/Xorg.0.log`を見る。`keyboard.conf`の書き間違いや、`kld_list`の設定漏れでXが起動しない(2026-11-05に実際に両方)。
 - NVIDIAでウィンドウの合成表示が有効だと、xfwm4が`glXBindTexImageEXT`で止まり、画面が固まることがある(RTX 3050・ドライバ595.112.07、2026-11-05。引き金は未特定)。マウスカーソルだけ動く状態になったら、sshから`pkill -9 xfwm4`で戻る。合成表示を切る`xfconf-query`はsshからでは届かないので、XfceのTerminalで実行する。
 - 端末に重ねる-gはmacOSだけ(Linux・FreeBSDは重ねない、ユーザー判断2026-10-31)。
+- IntelのiGPU(i5-4570SのHaswell、2026-11-13)では、GTK4のアプリ(pavucontrol等)を開くと固まり、*kill -9* でも止まらず(*ps* で`R`のままCPU99%)、*dmesg* に`lkpi_vmf_insert_pfn_prot_locked: page rename failed: page is mapped`が並ぶ。GTK4がGPUで描く所でdrm-kmod(linuxkpi)の不具合を踏んでいる(*procstat -kk PID* で`vm_fault`→`lkpi_vmf_insert_pfn_prot_locked`)。そのプロセスは再起動しないと消えない。`~/.xprofile`に`export GSK_RENDERER=cairo`を書いてGPUを使わずに描かせる(スクリプトは`--gpu=intel`の時に書く)。固まったpavucontrolが残っていると、次からは「Failed to register: タイムアウトしました」で開かない(同時に1つしか起動しない作りのため)。
+- mpvの「ioctl(I915_GEM_USERPTR) failed. Try running as root but expect poor stability.」は、IntelのiGPUで映像をGPUで描く時の警告で、映像は出る(rootで動かす必要は無い)。固まるようなら *mpv --vo=x11*(`~/.config/mpv/mpv.conf`に`vo=x11`)。
+
+**別のマシンへディスクを付け替えた時(2026-11-13)**
+
+- RTX 3050のマシンで入れたディスクをi5-4570S(IntelのiGPU)に付けたら、Xfceが出ずLANもつながらなかった。スクリプトを`--gpu=…`で実行し直せば、前のGPUのモジュールを`kld_list`から外し、NVIDIAの`/etc/X11/xorg.conf`を`/etc/X11/xorg.conf.nvidia`へよけ、新しいGPUのドライバを入れる(NVIDIAのマシンへ戻す時は、`xorg.conf.nvidia`を`xorg.conf`へ戻して`--gpu=nvidia`)。ただし、スクリプトはネットワークが要るので、先に下のLANを直す。
+- LAN: インストーラは`/etc/rc.conf`に`ifconfig_rge0="DHCP"`のようにインターフェースの名前で書く。別のマシン(Intelのem0等、*ifconfig -l* で分かる)ではそれが効かず、つながらない。rootで *sysrc ifconfig_DEFAULT="DHCP"*(名前ごとの設定の無いインターフェースもDHCPにする、スクリプトも書く)。その場で直すなら *dhclient em0*。IPアドレスが来ても外へ出られない(*ping 8.8.8.8* が`No route to host`)時は、*netstat -rn -f inet | grep default* にルーターが無い。*route add default ルーターのアドレス* で当座をしのぎ、再起動の後も無ければ *sysrc defaultrouter="ルーターのアドレス"*。DNSだけ引ける(*host* は答える)のは、ルーター自身がDNSで、同じLANの中ならデフォルトルートが無くても届くから。
 
 **音声(2026-11-08)**
 
@@ -726,7 +733,9 @@ usilicが開いたら、「usilic-1.5b:~\$ sudo pkg install -y groff mg texinfo 
 - マザーボードの内蔵オーディオで聴くなら、*cat /dev/sndstat* の`Rear`(背面の緑の端子、スピーカー)か`Front`(前面のヘッドホン端子)の番号にする(RTX 3050のマシンでは`pcm3: <Realtek ALC892 (Rear Analog 7.1/2.0)>`・`pcm4: <Realtek ALC892 (Front Analog)>`)。背面は、何も設定しなくても既定(`default`)に選ばれていることが多く、その時は`audio`グループに入れるだけで鳴る(番号を変えるのはHDMIのモニターのスピーカーで聴く時)。前面と背面は別の出力先なので、ヘッドホンを挿しても自動では切り替わらない。ヘッドホンで聴く時は前面の番号にする。
 - 1つのアプリだけ別の出力先にするなら、mpvは *~/.config/mpv/mpv.conf* に`audio-device=oss//dev/dspN`、mplayerは *~/.mplayer/config* に`ao=oss:/dev/dspN`。
 - 何も出てこない(`No devices installed`)なら、ドライバが読み込まれていない。*kldload snd_hda*(USBなら *kldload snd_uaudio*)。
-- 音量は *mixer* で見られる(*mixer vol.volume=0.8* 等)。Xfceのパネルに音量のプラグインを足すか、pavucontrolで出力先と音量を選べる。pulseaudioは、mpv等が音を出す時に自動で起動する。
+- 音量は *mixer* で見られる(*mixer vol.volume=0.8* 等)。dsbmixer(実機のXfceの端末で *dsbmixer*。sshからは *DISPLAY=:0 dsbmixer*)は装置ごとのタブで音量を見られる。既定の装置の切り換えはrootが要り、dsbmixerからは変わらないことがあるので、その時は *sudo sysctl hw.snd.default_unit=N*。
+- **パッケージのmpvはOSSにだけ出す**(*mpv --ao=help* に`pulse`が無い、2026-11-13)。そのため、Xfceのパネルの音量のプラグインやpavucontrolでPulseAudioの出力先を切り換えても、mpvの音は付いてこない(pavucontrolの「再生」タブにmpvが出ない)。mpvの出力先は、上の`hw.snd.default_unit`(または`audio-device=oss//dev/dspN`)で決める。PulseAudioは、PulseAudioに出すアプリ(Xfceのシステム音等)の出力先だけを決める。パネルのアイコンの赤い斜線(消音)はPulseAudioの既定の出力先のもので、mpvの音とは関係ない。PulseAudioはFreeBSDの全部の`/dev/dspN`を出力先として並べる(*pactl list short sinks* の`oss_output.dspN`)。`pactl`のたびに出る「caps.c: Normally all extra capabilities would be dropped now…」は、FreeBSDにLinuxのcapabilitiesが無いという警告で、無視してよい。
+- **i5-4570S(Haswell)のiGPUでは、HDMIから音が出なかった**(2026-11-13、映像は出る)。*mpv --audio-device=oss//dev/dsp0* (`pcm0: <Intel Haswell (HDMI/DP 8ch)>`)は、音が進まないので映像も止まる。*sysctl dev.hdaa.0* に出口(pin)が`nid3`の1つしか無く、*dmesg* にモニターのELDも出ない(Linuxは起動の時にHaswellの音の部品へ全部の出口を見せる命令を送り、i915がモニターの接続を伝えるので、同じマシンのDebianではHDMIで鳴った)。試したのはこの1台だけ。このマシンでは背面(`pcm1: Rear Analog`)か前面(`pcm2: Front Analog`)で聴き、`hw.snd.default_unit`をそれにする(HDMIの番号にするとmpv・mplayerが止まる)。ディスクを付け替えたら、`/etc/sysctl.conf`の`hw.snd.default_unit`も新しいマシンの番号に直す(RTX 3050のマシンの`2`はHDMI、i5-4570Sでは前面)。
 
 **パッケージとOSの更新(2026-11-08)**
 

@@ -33408,6 +33408,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1293. **FreeBSD: ディスクを別のマシン(i5-4570S、HaswellのiGPU)へ付け替えて分かったこと(2026-11-13)**
+   - ユーザーの報告("FreeBSDはi5-4570SのiGPUマシンに取り付けて起動したらいつものxfceが出ない箇所で止まった"、"イーサネットがつながってない"、pavucontrolが固まる、mpvの音が出ない・赤い斜線が消えない、HDMIで音が出ない)と依頼("それでよろしく")。
+   - **Xfceが出ない**: RTX3050用のkld_list(nvidia-modeset)と/etc/X11/xorg.conf(nvidia-xconfig)が残っていた。スクリプトは、前のGPUのモジュールをkld_listから外し、NVIDIAのxorg.confをxorg.conf.nvidiaへよけるようにした(--gpu=intelで実行し直すとi915kmsで起動、確認済み)。
+   - **LAN**: ifconfig_rge0="DHCP"がem0に効かない。スクリプトがifconfig_DEFAULT="DHCP"を書く。デフォルトルートが無い時の当座の手当ても注意点に。
+   - **pavucontrolが固まる**: GTK4がGPUで描く所でdrm-kmod(linuxkpi)の`lkpi_vmf_insert_pfn_prot_locked: page rename failed: page is mapped`を繰り返し、kill -9でも消えない(procstat -kkで確認)。~/.xprofileのGSK_RENDERER=cairoで開くようになった。スクリプトは--gpu=intelの時に書く。
+   - **mpvの音**: パッケージのmpvはOSSだけ(--ao=helpにpulseが無い)なので、PulseAudioの出力先の切り換えは効かない。出力先はhw.snd.default_unit。dsbmixerをパッケージに足した(既定の装置の切り換えはrootが要り、sysctlで)。
+   - **HDMIの音**: i5-4570Sでは出なかった(映像は出る。hdaaの出口がnid3の1つだけでELDも無い。同じマシンのDebianでは鳴った)。試した範囲としてBUILD.mdに書いた。
+
 1292. **tools/setup-debian.sh: Debian 13・UbuntuをSSHだけの最低限のインストールから一度に(2026-11-13)**
    - ユーザーの依頼("Debian13はインストール時のTaskselでSSHしか選ばない環境へログイン後、スクリプトで完了まで（手動で行いたい場合の手順も併記）。ただしUbuntuはどうなのかなと。同じような環境作れる？"、"Linuxの方はその方針でsetup-debian.shを書いてみて")。UbuntuはServer版のISOで「Ubuntu Server (minimized)」+OpenSSHにすれば同じような所から始められる。
    - **スクリプト**(tools/setup-freebsd.shと同じ作り、rootで実行、/etc/os-releaseでDebianかUbuntuか): 1.パッケージ(Ubuntuのminimizedは先にunminimize。X11・Xfce・lightdm・firefox(DebianはESR)・日本語フォント・fcitx5+Mozc・ビルドと最初の起動に要るもの・mpvとPipeWire+xfce4-pulseaudio-plugin+pavucontrol。版で名前の変わるものは1つずつ入れて無くても止めない)、2.GPU(lspci。DebianのNVIDIAはnon-freeを足してnvidia-driver、Ubuntuはubuntu-drivers、AMD・IntelはDebianだけファームウェア)、3.ja_JP.UTF-8・graphical.target・sudo/video/audio・/etc/default/keyboardがjpならjp106+ctrl:swapcaps、4.~/.xprofile・PATH・make usilic && make install。NVIDIAは合成表示を切るxfwm4.xmlを置く。記録は/var/log/usilic-setup.log。
