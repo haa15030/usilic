@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1291. **docs/BUILD.md: `make test`は任意で時間がかかる、と明記(2026-11-13)**
+   - ユーザーの報告("make testでエラーが大量に出た")と依頼("BUILDには時間がかかるのと実行は任意であることを記載よろしく")。失敗は1383件中77件で、どれも仕様を変えた後に直していない古いテスト(テストを今の仕様に合わせる作業は別の項目で)。
+   - macOSの手順5から`make test`を外して「任意・時間がかかる・使うだけなら不要」と書き、Linuxの手順の`make test`にも「任意」の注を付けた。
+
 1290. **docs/BUILD.md(macOS): MacPortsを入れた直後の`sudo: port: command not found`(2026-11-13)**
    - ユーザーの報告("クリーンインストール後のmacOS Sequoiaで…Intel用の.pkgをダウンロード後インストール、そのあとの`sudo port selfupdate`で`sudo: port: command not found`で止まった")。
    - 原因: `~/.zprofile`には`/opt/local/bin`が書き込まれていたが、インストール前から開いていたウィンドウには読み込まれていなかった(`source ~/.zprofile`で`which port`が`/opt/local/bin/port`に)。最初からPATHにある`/usr/local/bin`は`/etc/paths`(path_helper)由来で、MacPortsとは無関係。

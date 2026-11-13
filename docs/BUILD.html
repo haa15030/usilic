@@ -78,14 +78,13 @@ git pull</code></pre>
 <pre><code>ssh-keygen -t ed25519
 pbcopy &lt; ~/.ssh/id_ed25519.pub</code></pre>
 <p>ブラウザで<code>https://github.com/settings/keys</code>を開いてGitHubにサインインし、New SSH keyのKeyに貼って登録する(Titleは任意、Key typeはそのまま)。登録できたか確かめる(初回は<code>yes</code>、Hi ...! と出ればよい):</p>
-<pre><code>ssh -T git@github.com</code></pre></li><li>クローンしてビルド(<code>make usilic</code>で<code>build/usilic</code>ができ、<code>make test</code>で単体テスト一式(doctest)を実行する):
+<pre><code>ssh -T git@github.com</code></pre></li><li>クローンしてビルド(<code>make usilic</code>で<code>build/usilic</code>ができる):
 <pre><code>mkdir -p ~/git
 cd ~/git
 git clone -b mpi-gui-fix git@github.com:haa15030/usilic.git
 cd usilic/src/cpp
-make usilic
-make test</code></pre>
-<p class="note">※macOSのzshは、打ち込んだ行の<code>#</code>を注釈として扱わない(<code>interactivecomments</code>が既定で無効)。注釈付きの行を貼ると<code>zsh: no matches found</code>等になるので、このファイルの枠には注釈を書かない。</p></li><li>(任意)<code>/usr/local/bin/U</code>としてインストール(<code>INSTALL_NAME</code>が<code>usilic</code>ではなく<code>U</code>なのは、<code>src/install.sh</code>が入れる旧C版<code>/usr/local/bin/usilic</code>と衝突しないよう、日常的に試すための短い専用名としてユーザー自身が選んだもの):
+make usilic</code></pre>
+<p><code>make test</code>(単体テスト一式、doctest)の実行は任意。テスト用のビルドと実行にかなり時間がかかる(テストは1400件近い)。usilicを使うだけなら不要。※macOSのzshは、打ち込んだ行の<code>#</code>を注釈として扱わない(<code>interactivecomments</code>が既定で無効)。注釈付きの行を貼ると<code>zsh: no matches found</code>等になるので、このファイルの枠には注釈を書かない。</p></li><li>(任意)<code>/usr/local/bin/U</code>としてインストール(<code>INSTALL_NAME</code>が<code>usilic</code>ではなく<code>U</code>なのは、<code>src/install.sh</code>が入れる旧C版<code>/usr/local/bin/usilic</code>と衝突しないよう、日常的に試すための短い専用名としてユーザー自身が選んだもの):
 <pre><code>sudo make install</code></pre></li></ol>
 <h3>Command Line ToolsのclangとSDKの版の不一致</h3>
 <p>Big Sur(mpr、2026-11-06)で、<code>make usilic</code>が次のエラーで止まった:</p>
@@ -102,7 +101,7 @@ sudo apt-get install -y build-essential libncurses-dev pkg-config \
 git clone https://github.com/haa15030/usilic.git
 cd usilic/src/cpp
 make usilic
-make test</code></pre>
+make test    # 任意(時間がかかる、上のmacOSの手順5参照)</code></pre>
 <h2 id="s4">FreeBSD(2026-11-05、16.0-CURRENT・RTX 3050でインストールから通しで確認)</h2>
 <p>Makefileは GNU make の書き方なので、FreeBSD標準の<code>make</code>ではなく<code>gmake</code>を使う。コンパイラ(clang)とncursesはベースシステムにある。</p>
 <p>順番は、インストーラ→パッケージ→GUI(X11・Xfce)→日本語入力→公開鍵の登録(非公開の間だけ)→ビルド。GUIを先にするのは、公開鍵の登録にFreeBSD上のfirefoxを使えるようにするため。</p>

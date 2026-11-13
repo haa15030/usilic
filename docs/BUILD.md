@@ -81,15 +81,16 @@ git pull
    ```
    ssh -T git@github.com
    ```
-5. クローンしてビルド(`make usilic`で`build/usilic`ができ、`make test`で単体テスト一式(doctest)を実行する):
+5. クローンしてビルド(`make usilic`で`build/usilic`ができる):
    ```
    mkdir -p ~/git
    cd ~/git
    git clone -b mpi-gui-fix git@github.com:haa15030/usilic.git
    cd usilic/src/cpp
    make usilic
-   make test
    ```
+   `make test`(単体テスト一式、doctest)の実行は任意。テスト用のビルドと実行にかなり時間がかかる(テストは1400件近い)。
+   usilicを使うだけなら不要。
    ※macOSのzshは、打ち込んだ行の`#`を注釈として扱わない(`interactivecomments`が既定で無効)。
    注釈付きの行を貼ると`zsh: no matches found`等になるので、このファイルの枠には注釈を書かない。
 6. (任意)`/usr/local/bin/U`としてインストール(`INSTALL_NAME`が
@@ -140,7 +141,7 @@ sudo apt-get install -y build-essential libncurses-dev pkg-config \
 git clone https://github.com/haa15030/usilic.git
 cd usilic/src/cpp
 make usilic
-make test
+make test    # 任意(時間がかかる、上のmacOSの手順5参照)
 ```
 
 ## FreeBSD(2026-11-05、16.0-CURRENT・RTX 3050でインストールから通しで確認)
