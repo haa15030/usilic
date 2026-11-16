@@ -33408,6 +33408,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1295. **Linux: Debian 13.7・Ubuntu 26.10を1台のSSDに入れて分かったこと、BIOSでも起動、スワップの共用(2026-11-17)**
+   - ユーザーの報告と依頼("ubuntu 26.10 と Debian 13.7 でインストールしてみ手順はそれぞれ`src/ubuntu_build.txt`、`src/debian_build.txt` だが128GBの外付けSSDを折半でインストールし、BIOS、UEFIのいずれでも起動可能な実例としてみた"、"設定項目名の色指定は、=os.png、=ot.pngとも同じオレンジ色かもしれないが、BUILD.htmlへの反映はそれでよろしく"、BIOSの起動は"debianもUEFIでインストールしたのちdebian上でgrub-pcによりMBRへインストール"で"やり方教えて")。
+   - **docs/BUILD.md**: Linuxの1.を、ユーザーの手順のメモからFreeBSDと同じ表記(設定項目名は色付き)の画面ごとの手順に書き直した。Ubuntuを先に(Debianを先にするとUbuntuのインストーラがDebianの区画を空きと扱う)、どちらもUEFIで入れる。新しい節「BIOS(CSM)でも起動できるようにする(Debianから)」: os-prober、`grub-pc-bin`(`grub-pc`は`grub-efi-amd64`と同時に入らない)、GPTにBIOS boot区画が無ければセクタ34〜2047に`sgdisk`で作る、`grub-install --target=i386-pc`、保護MBRの起動フラグ、他のマシンのUEFI用に`force_efi_extra_removable`。新しい節「Ubuntuのスワップファイルを使う(Debianから)」: Ubuntuの区画を`/mnt/ubuntu`へ`nofail`でつなぎ`/swap.img`を`/etc/fstab`へ。注意点に、Ubuntuの名前解決と`python3-venv`、6.にFcitx 5が起動していない時のこと、Ubuntuのfriendly-recoveryの表示は害が無いこと。
+   - **docs/md2html.py**: `<span style="color:#e95420">`(Ubuntu・Debianのインストーラのオレンジ)を`item-orange`(明るい背景で#d9480f、暗い背景で#ff8a50)にする。それまでは色に関係なく水色の`item`だった。
+   - **tools/setup-debian.sh**: `python3-venv`を入れる(無いとnarou2epubのvenvが"ensurepip is not available"で作れない、=oq.png・=or.png)。Fcitx 5の自動起動を`~/.config/autostart`へ(Debian・Ubuntuとも最初のログインで「DBusがFcitxと接続できませんでした」)。Ubuntuのsystemd-networkdにDHCPのドメインを使わせる`/etc/systemd/networkd.conf.d/usilic.conf`(`/etc/resolv.conf`が`search .`でホスト名`mpi`が引けず、スクリーンショットを送るのにIPアドレスが要った。Debianはdhcpcdが`domain`を入れるので引ける)。
+   - **src/cpp/tools/narou2epub**: venvの作成に失敗するとpipの無い作りかけが残り、`python3-venv`を入れた後も作り直さずに失敗し続けた。pipの無いvenvは消して作り直し、作れない時はDebian系なら`apt-get install python3-venv`を案内する。
+   - BIOSの起動とスワップの共用は、実機ではまだ試していない。
+
 1294. **単体テストを今の仕様に合わせた(77件の失敗→0)、src/usilicrc.enの古い名前(2026-11-13)**
    - ユーザーの報告("make testでエラーが大量に出た")と依頼("testが設定してある以上は2.で"、"テストはHaikuに任せる"、"テストを流していい")。1383件中77件の失敗は、仕様を変えた後に直していない古いテスト。
    - **Haiku(サブエージェント)の直し**(tests/だけ): HELPの目次(CUT)廃止(10/13・14)に合わせて平文HELPの挙動へ(writePlainHelp()で一時ホームにHELPを書く、/usr/local/lib/usilic/HELPに左右されない)、目次専用の9件は削除。CUT→PART(10/10)、^O^Sは一致行の一覧(10/12)、ファイルCUTはまずCutContentへ(9/29)、履歴の並び(10/30)、^Rは空のプロンプトだけ(11/02)、MANの一覧の先頭にusilic(10/21)、ディレクトリの複数マーク(10/12)、Tab補完は確定で止まる(10/21)、USILICの目次、外部ページャーの起動行、EPUB変換の<serif>・<big>・下線、透かしの桁、MACROのキーの衝突、FILTER/LAUNCHの旧名の確かめ。

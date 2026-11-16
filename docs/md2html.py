@@ -14,17 +14,17 @@ from pathlib import Path
 CSS = """
 :root {
   --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --line: #d0d7de; --box: #f6f8fa;
-  --item: #0097a7; --value: #b35900; --link: #0969da;
+  --item: #0097a7; --item-orange: #d9480f; --value: #b35900; --link: #0969da;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #16191d; --fg: #e6e8eb; --muted: #9aa4ae; --line: #3a4048; --box: #22262b;
-    --item: #26c6da; --value: #f0a35e; --link: #58a6ff;
+    --item: #26c6da; --item-orange: #ff8a50; --value: #f0a35e; --link: #58a6ff;
   }
 }
 :root[data-theme="dark"] {
   --bg: #16191d; --fg: #e6e8eb; --muted: #9aa4ae; --line: #3a4048; --box: #22262b;
-  --item: #26c6da; --value: #f0a35e; --link: #58a6ff;
+  --item: #26c6da; --item-orange: #ff8a50; --value: #f0a35e; --link: #58a6ff;
 }
 * { box-sizing: border-box; }
 body {
@@ -43,6 +43,7 @@ li { margin: .3rem 0; }
 nav { padding: .5rem 1rem; background: var(--box); border: 1px solid var(--line); border-radius: 6px; }
 nav ul { margin: .2rem 0; list-style: none; padding: 0; }
 .item { color: var(--item); }
+.item-orange { color: var(--item-orange); }
 strong { white-space: pre-wrap; }
 code, em, pre { font-family: ui-monospace, Menlo, Consolas, "DejaVu Sans Mono", "IPAGothic", monospace; }
 code { color: var(--value); font-size: .92em; }
@@ -61,7 +62,9 @@ th { background: var(--box); }
 """
 
 ESCAPED = re.compile(r"\\([\\`*_{}\[\]()<>#+.!$@|-])")
-SPAN = re.compile(r'&lt;span style="color:#[0-9a-fA-F]{6}"&gt;(.*?)&lt;/span&gt;')
+SPAN = re.compile(r'&lt;span style="color:#([0-9a-fA-F]{6})"&gt;(.*?)&lt;/span&gt;')
+# 設定項目名の色: FreeBSDのインストーラの水色と、Ubuntu・Debianのインストーラのオレンジ(2026-11-17)。
+SPAN_CLASS = {"e95420": "item-orange"}
 BULLET = re.compile(r"( *)- (.*)")
 NUMBER = re.compile(r"( *)(\d+)\. (.*)")
 FENCE = re.compile(r"\s*```(\S*)\s*$")
@@ -84,7 +87,7 @@ def inline(text):
     text = re.sub(r"(?<![\"'(])https?://[A-Za-z0-9._~:/?#\[\]@!$&'+,;=%-]+",
                   lambda m: keep('<a href="%s">%s</a>' % (html.escape(m.group(0)), html.escape(m.group(0)))), text)
     text = html.escape(text, quote=False)
-    text = SPAN.sub(r'<span class="item">\1</span>', text)
+    text = SPAN.sub(lambda m: '<span class="%s">%s</span>' % (SPAN_CLASS.get(m.group(1).lower(), "item"), m.group(2)), text)
     text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
     text = re.sub(r"\*(?![\s*])(.+?)(?<![\s*])\*", r"<em>\1</em>", text)
     for _ in range(2):  # リンクの中のコード等、預けた物の中に預けた物がある時のため

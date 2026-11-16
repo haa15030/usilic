@@ -134,24 +134,125 @@ Xcode 15以降のデフォルトリンカ(通称ld-prime)が、Homebrew製の
 ## Linux (Ubuntu/Debian系)
 
 Debian 13とUbuntu(26.10等)を、GUIの無い最低限のインストール(SSHだけ)から始める手順(2026-11-13、FreeBSDと同じ作り。
-実機での通しの確認はまだ)。手で進める時は「3.〜6.を手で進める」、既にデスクトップのあるUbuntu等でビルドだけするなら
-いちばん下の「ビルドだけ」。
+2026-11-16にDebian 13.7とUbuntu 26.10を、128GBの外付けSSDを半分ずつ使って入れ、通しで確かめた)。手で進める時は
+「3.〜6.を手で進める」、既にデスクトップのあるUbuntu等でビルドだけするならいちばん下の「ビルドだけ」。
+
+手順(1.)の表記の区別(FreeBSDと同じ。インストーラの画面の色に合わせて、設定項目名だけ色を変えてある):
+
+- <span style="color:#e95420">設定項目名</span>
+- **選択対象のハイライト表示**
+- `自分で決めてよい値`
+- *キー入力*
+- [Enterで選択]
+- 「表示文字列」
 
 ### 1. インストーラー
 
-**Debian 13**(netinstのISO):
+1台のSSDにUbuntuとDebianを並べ、UEFIでもBIOS(CSM)でも起動できるようにする例(片方だけなら、その節だけでよい)。
+**Ubuntuを先に入れる**(Debianを先に入れると、Ubuntuのインストーラは既にあるDebianの区画を「空き」として扱ってしまう)。
+どちらもUEFIで入れ、BIOSでの起動は最後にDebianから足す(下の「BIOS(CSM)でも起動できるようにする」)。
 
-- 言語・キーボードで日本語(キーボードは「日本語」)を選ぶ。スクリプトはこれ(`/etc/default/keyboard`の`XKBLAYOUT="jp"`)を見てjp106にする。
-- rootのパスワードは設定してよい(設定するとsudoが入らず、作ったユーザーもsudoできないが、スクリプトが直す)。
-- 「ソフトウェアの選択」(tasksel)では、「Debian デスクトップ環境」「GNOME」等のチェックを**すべて外し**、「SSH server」だけ(「標準システムユーティリティ」は付けたままでよい)。
+#### Ubuntu 26.10(Server版のISO)
 
-**Ubuntu 26.10**(Desktop版ではなく**Server版**のISO。Desktop版は最小のインストールでもGNOMEが入る):
+Desktop版ではなく**Server版**のISO(Desktop版は最小のインストールでもGNOMEが入る)。
 
-- キーボードは「Japanese」。
-- インストールの種類で「**Ubuntu Server (minimized)**」を選ぶ(Debianの「SSH server」だけに近い)。
-- 「**Install OpenSSH server**」にチェックを入れる。
-- 「Featured Server Snaps」は何も選ばない。
-- 作ったユーザーは最初からsudoできる(rootのパスワードは無い)。minimizedで削られたmanのページ等は、スクリプトが`unminimize`で戻す。
+<span style="color:#e95420">GNU GRUB</span> -> **Try or Install Ubuntu Server**
+
+<span style="color:#e95420">Welcome!</span> -> **English**
+
+<span style="color:#e95420">Keyboard configuration</span> -> *Tab* で「Layout:」へ -> **Japanese** ->  
+「Variant:」-> **Japanese** -> [Done]
+
+<span style="color:#e95420">Choose the type of installation</span> -> **Ubuntu Server (minimized)** を *Space* で選ぶ -> [Done]  
+(Debianの「SSH server」だけに近い。削られたmanのページ等は、2.のスクリプトが`unminimize`で戻す)
+
+<span style="color:#e95420">Network configuration</span> -> 「DHCPv4」のアドレスが出たら [Done]
+
+<span style="color:#e95420">Proxy configuration</span> -> 「Proxy address:」(使わなければ空) -> [Done]
+
+<span style="color:#e95420">Ubuntu archive mirror configuration</span> -> 「Mirror address:」`http://jp.archive.ubuntu.com/ubuntu/` ->  
+「... Reading package lists...」-> [Done]
+
+<span style="color:#e95420">Guided storage configuration</span> -> **Custom storage layout** -> [Done]
+
+<span style="color:#e95420">Storage configuration</span> -> **Realtek_RTL9210_NVME_…**(環境による) の **free space** -> [Add GPT Partition] ->  
+「Size (max 119.240G):」`50G` -> 「Format:」**ext4** -> 「Mount:」**/** -> [Create] -> [Done]
+
+※空のSSDなら、先にSSDの行を選んで [Use As Boot Device](UEFIの起動に要るEFIシステム区画ができる)。前のインストールの区画が残っていて使い回すなら、その区画を選んで [Edit] -> 「Format:」**ext4** -> 「Mount:」**/** -> [Save]。
+
+※スワップは区画を作らず、Ubuntuが`/swap.img`(ファイル)を作る。Debianからも使える(下の「Ubuntuのスワップファイルを使う」)。
+
+<span style="color:#e95420">Confirm destructive action</span> -> [Continue]
+
+<span style="color:#e95420">Profile configuration</span> -> 「Your name:」`DEF` -> 「Your servers name:」`HOST` ->  
+「Pick a username:」`ABC` -> 「Choose a password:」`GHI` -> 「Confirm your password:」`GHI` -> [Done]
+
+<span style="color:#e95420">SSH configuration</span> -> **Install OpenSSH server** を *Space* で選ぶ ->  
+**Allow password authentication over SSH** -> [Done]
+
+<span style="color:#e95420">Featured server snaps</span> -> 何も選ばず [Done]
+
+<span style="color:#e95420">Installing system</span> ...
+
+<span style="color:#e95420">Installation complete!</span> -> [Reboot Now] ->  
+「Please remove the installation medium, then press ENTER:」-> USBメモリを抜いて *Enter*
+
+再起動したら`ABC`でログインし、時刻を日本にする(Server版は協定世界時のまま):
+
+```key
+sudo timedatectl set-timezone Asia/Tokyo
+```
+
+※作ったユーザーは最初からsudoできる(rootのパスワードは無い)。
+
+※最初の`apt`の途中で「Failed to disable unit: Unit friendly-recovery.service does not exist」と出るのは害が無い(minimizedには無いサービスを止めようとしているだけ)。
+
+#### Debian 13(netinstのISO)
+
+UEFIのインストーラが起動するよう、マザーボードの設定でCSMを無効にしておく(CSMが有効だとBIOSのインストーラが起動することがある)。
+
+<span style="color:#e95420">GNU GRUB</span> -> **Install**
+
+<span style="color:#e95420">Select a language</span> -> 「Language:」**Japanese - 日本語**
+
+<span style="color:#e95420">場所の選択</span> -> 「国・領土・地域:」**日本**
+
+<span style="color:#e95420">キーボードの設定</span> -> 「利用するキーマップ:」**日本語**  
+(スクリプトはこれ(`/etc/default/keyboard`の`XKBLAYOUT="jp"`)を見てjp106にする)
+
+<span style="color:#e95420">ネットワークの設定</span> -> 「ホスト名:」`HOST` -> 「ドメイン名:」`DOMAIN`(無ければ空)
+
+<span style="color:#e95420">Debian アーカイブのミラーを選択</span> -> 「Debian アーカイブミラーの国:」**日本** ->  
+「Debian アーカイブミラー:」**deb.debian.org** -> 「HTTP プロキシの情報(なければ空):」->  
+「Debian アーカイブミラーを確認しています」...
+
+<span style="color:#e95420">ユーザとパスワードのセットアップ</span> -> 「root のパスワード:」空のまま *Enter* -> 確認も空のまま *Enter* ->  
+「新しいユーザの本名(フルネーム):」`DEF` -> 「あなたのアカウントのユーザ名:」`ABC` -> パスワード `GHI` -> 確認 `GHI`
+
+※rootのパスワードを空にすると、作ったユーザーがsudoできるようになる(設定した時は、2.のスクリプトがsudoのグループに入れる)。
+
+<span style="color:#e95420">ディスクのパーティショニング</span> -> 「パーティショニングの方法:」**手動** ->  
+**SCSI1 (0,0,0) (sda) - 128.0 GB Realtek RTL9210 NVME**(環境による) の **73.2 GB 空き領域** ->  
+**新しいパーティションの作成** -> 「新しいパーティションのサイズ:」`53.2 GB` -> **先頭** ->  
+(利用方法 ext4・マウントポイント / のまま) **パーティションのセットアップを終了** ->  
+**20.0 GB 空き領域** -> **新しいパーティションの作成** -> `20.0 GB` -> **先頭** ->  
+**利用方法: ext4 ジャーナリングファイルシステム** -> **スワップ領域** -> **パーティションのセットアップを終了** ->  
+**パーティショニングの終了とディスクへの変更の書き込み** -> 「ディスクに変更を書き込みますか?」**はい**
+
+※Ubuntuの区画(ext4)とEFIシステム区画には触らない(EFIシステム区画はそのまま共用される)。
+
+※スワップの区画を作らずにUbuntuの`/swap.img`を使うなら、空き領域を全部`/`にし、「スワップ領域が選択されていません」には **いいえ**(戻らない)。インストールの後で下の「Ubuntuのスワップファイルを使う」。
+
+<span style="color:#e95420">ベースシステムをインストールしています</span> ...
+
+<span style="color:#e95420">popularity-contest を設定しています</span> -> どちらでもよい
+
+<span style="color:#e95420">ソフトウェアの選択</span> -> 「インストールするソフトウェアの選択:」は *Space* で **SSH server** だけ  
+(「Debian デスクトップ環境」「GNOME」等は外す。「標準システムユーティリティ」は付けたままでよい)
+
+<span style="color:#e95420">インストールの完了</span> -> 「システム時間を UTC に設定していますか?」**はい** -> [続ける]
+
+※Ubuntuは、Debianの起動メニュー(GRUB)に「Ubuntu」として出る。出なければ下の「BIOS(CSM)でも起動できるようにする」の1.。
 
 ※sshでログイン中にシステムを入れ直した場合は、ログインする側のマシンで *ssh-keygen -R \<IP\>* を実行する(ホスト鍵が変わるため)。
 
@@ -159,7 +260,7 @@ Debian 13とUbuntu(26.10等)を、GUIの無い最低限のインストール(SSH
 
 インストーラが終わって再起動したら、別のマシンから *ssh `ABC`@\<IP\>* でつなぐ(IPはこのマシンで *ip -4 addr* の`inet`)。
 
-Debianは *su -*、Ubuntuは *sudo -i* でrootになり:
+*sudo -i* でrootになり(Debianでrootのパスワードを設定した時は *su -*):
 
 ```key
 apt-get update && apt-get install -y git
@@ -188,7 +289,7 @@ apt-get update
 ```
 
 ```key
-apt-get install -y git build-essential pkg-config libncurses-dev libsdl2-dev libsdl2-ttf-dev sudo bash xdg-utils python3 pciutils locales man-db
+apt-get install -y git build-essential pkg-config libncurses-dev libsdl2-dev libsdl2-ttf-dev sudo bash xdg-utils python3 python3-venv pciutils locales man-db
 ```
 
 ```key
@@ -275,15 +376,109 @@ sudo reboot
 
 lightdmのログイン画面でログインし、Xfceに入る。
 
-- アプリケーション -> 設定 -> Fcitx 5 の設定 で、「入力メソッド」にMozcがあることを確かめる(無ければ追加して「適用」)。
+- アプリケーション -> 設定 -> Fcitx 5 の設定 で、「入力メソッド」にMozcがあることを確かめる(無ければ追加して「適用」)。「DBusがFcitxと接続できませんでした。Fcitxは動いていますか?」と出たら、Fcitx 5が自動で起動していない。その画面の「Fcitx 5 を実行する」でつながる。次から自動で起動するよう、端末で *mkdir -p ~/.config/autostart && cp /usr/share/applications/org.fcitx.Fcitx5.desktop ~/.config/autostart/*(スクリプトは済ませてある)。
 - 音声: パネルに音量のアイコンが無ければ、パネルを右クリック -> パネル -> 新しいアイテムの追加 -> 「PulseAudio プラグイン」。出力先(マザーボードの内蔵・HDMI)は、そのアイコンかpavucontrol(アプリケーション -> マルチメディア -> PulseAudio 音量調節)で切り換える。再生中の音もそのまま付いてくる。
 - アプリケーション -> アクセサリー -> usilic で起動する。
+
+### BIOS(CSM)でも起動できるようにする(Debianから)
+
+UEFIで入れたDebianに、BIOS用のGRUBを足す。BIOSで起動した時もDebianの起動メニュー(UEFIと同じ`/boot/grub/grub.cfg`)が出て、そこからUbuntuも選べる。Debianにrootでログインし(*sudo -i*):
+
+1\. 起動メニューにUbuntuが出るようにする(インストーラが他のOSを見つけた時は済んでいる):
+
+```key
+grep -n OS_PROBER /etc/default/grub
+```
+
+`GRUB_DISABLE_OS_PROBER=false`の行が無ければ:
+
+```key
+apt-get install -y os-prober && echo 'GRUB_DISABLE_OS_PROBER=false' >> /etc/default/grub && update-grub
+```
+
+2\. SSDの名前を確かめる(以下`sda`の例。USBの外付けなら`TRAN`が`usb`):
+
+```key
+lsblk -o NAME,SIZE,TRAN,PARTTYPENAME,MOUNTPOINTS
+```
+
+3\. GPTのSSDでBIOSのGRUBを起動するには、中身を置く1MBほどの「BIOS boot」区画が要る。区画の一覧で`BIOS boot`(コードEF02)を探す:
+
+```key
+apt-get install -y gdisk grub-pc-bin
+```
+
+```key
+sgdisk -p /dev/sda
+```
+
+無ければ、先頭の区画の前の隙間(セクタ34〜2047、どのインストーラも区画を2048から始めるので空いている)に作る:
+
+```key
+sgdisk -a 1 -n 0:34:2047 -t 0:ef02 -c 0:biosgrub /dev/sda
+```
+
+4\. BIOS用のGRUBをSSDの先頭(MBR)とBIOS boot区画へ書く:
+
+```key
+grub-install --target=i386-pc /dev/sda
+```
+
+「Installation finished. No error reported.」と出ればよい。マザーボードの設定でCSMを有効にし(UEFIのブートを無効にできるならそうして)起動を確かめる。
+
+※`grub-pc`(パッケージ)ではなく`grub-pc-bin`なのは、`grub-pc`はUEFIの`grub-efi-amd64`と同時に入れられない(入れるとUEFI側が外れる)ため。`grub-pc-bin`はBIOS用のファイルだけで、UEFIの方はそのまま。
+
+※`grub-efi-amd64`が更新されてもBIOS側は書き直されないので、GRUBの大きな更新の後は4.をもう一度実行しておく(起動メニューの`grub.cfg`は共用なので、カーネルの更新だけなら要らない)。
+
+※BIOSで「起動できるディスクが無い」と言われたら、そのマザーボードは保護MBRの起動フラグを見ている: *parted /dev/sda disk_set pmbr_boot on*。これでUEFIで起動しなくなる機械があるので、その時は`off`に戻す。
+
+※他のマシンにつないでUEFIで起動するには、SSDのEFIシステム区画の`EFI/BOOT/BOOTX64.EFI`(機械に登録の無いディスクを起動する時の決まった場所)が要る。Debianのを置く:
+
+```key
+echo 'grub-efi-amd64 grub2/force_efi_extra_removable boolean true' | debconf-set-selections && dpkg-reconfigure -f noninteractive grub-efi-amd64
+```
+
+### Ubuntuのスワップファイルを使う(Debianから)
+
+UbuntuはSSDの区画ではなく`/swap.img`(Ubuntuの`/`の中のファイル)をスワップにしている。Debianからも、Ubuntuの区画を`/mnt/ubuntu`へつないで同じファイルを使える(同時に動くことは無いので、2つのOSで共用して困らない。休止状態(ハイバネート)を使わない場合)。Debianのrootで:
+
+1\. Ubuntuの区画を探す(`ext4`で、Debianの`/`ではない方。`LABEL`か大きさで見分ける):
+
+```key
+lsblk -o NAME,SIZE,FSTYPE,UUID,MOUNTPOINTS
+```
+
+2\. `/etc/fstab`へ足す(`UUID`は1.のUbuntuの区画の値。`nofail`は、Ubuntuの区画が無くてもDebianの起動を止めないため):
+
+```key
+mkdir -p /mnt/ubuntu
+```
+
+```key
+echo 'UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx /mnt/ubuntu ext4 defaults,nofail 0 2' >> /etc/fstab
+```
+
+```key
+echo '/mnt/ubuntu/swap.img none swap sw,nofail 0 0' >> /etc/fstab
+```
+
+3\. つないで有効にする(次からは起動の時に自動で):
+
+```key
+systemctl daemon-reload && mount /mnt/ubuntu && swapon -a && swapon --show
+```
+
+※Debianにもスワップの区画を作ったなら、`swapon --show`に両方が出る(両方使われる)。区画を外すなら、`/etc/fstab`の`swap`の区画の行を消す。
+
+※Ubuntuの`/swap.img`の大きさはUbuntuのインストーラが決める(`swapon --show`の`SIZE`)。逆にUbuntuからDebianのスワップの区画を使うこともでき、その時はUbuntuの`/etc/fstab`へ`UUID=(スワップの区画) none swap sw,nofail 0 0`を足し、`/swap.img`の行を消してファイルも消す。
 
 ### 注意点(Linux)
 
 - **音声**: 音声のサーバーはPipeWire(`pipewire-pulse`がPulseAudioの役)。マザーボードの内蔵もHDMIもALSAの装置として自動で並び、mpv・mplayerは何も設定しなくてもそこへ出す。FreeBSDのような`hw.snd.default_unit`やアプリごとの設定、audioグループは要らない(systemd-logindがログインした人に権限を渡す)。
 - **HDMIが出力先に出ない**: 音源のカードの構成が「アナログ出力」だけになっている。pavucontrolの「設定」タブで、そのカードの構成を「Digital Stereo (HDMI) Output」等にする。NVIDIA・AMDのGPUのHDMIは、マザーボードの音源とは別のカードとして並ぶ。
 - **NVIDIAとセキュアブート**: UEFIのセキュアブートが有効だと、DKMSでビルドしたNVIDIAのモジュールは署名を登録(MOK)するまで読み込まれない。インストールの途中か再起動の時に青い「Perform MOK management」の画面が出たら、「Enroll MOK」を選び、インストールの時に決めたパスワードを入れる。分からなければ、UEFIの設定でセキュアブートを切る。
+- **Ubuntuでホスト名(`mpi`等)が引けない**: Debianは`/etc/resolv.conf`にDHCPのドメイン(`domain …`)が入り、`ssh mpi`・`scp … mpi:`がルーターのDNSで`mpi.ドメイン`として引ける。UbuntuのServer版はsystemd-networkdがDHCPのドメインを使わない設定なので(`/etc/resolv.conf`が`nameserver 127.0.0.53`と`search .`)、IPアドレスを打つしかなかった。スクリプトは`/etc/systemd/networkd.conf.d/usilic.conf`に`[DHCPv4]`の`UseDomains=yes`を置く(再起動の後で`resolvectl domain`にドメインが出る)。手でするなら同じファイルを作って再起動。
+- **小説のEPUB(`narou2epub`)で「ensurepip is not available」**: Debian・Ubuntuは、Pythonのvenvに`python3-venv`が要る(スクリプトは入れてある)。手で *sudo apt-get install python3-venv* した後は、そのままもう一度実行すればよい(作りかけのvenvは作り直す)。
 - **Ubuntuのfirefox**: aptの`firefox`はsnapを入れる中継ぎのパッケージ。minimizedでsnapdが無い時は *apt-get install -y snapd* してから。
 
 ### ビルドだけ(デスクトップが既にある時)

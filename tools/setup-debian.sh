@@ -103,7 +103,7 @@ apt-get update || die "apt-get update に失敗しました"
 # firefox: DebianはESR(firefox-esr)。Ubuntuのfirefoxはsnapを入れる中継ぎのパッケージ。
 if [ "$distro" = debian ]; then firefox=firefox-esr; else firefox=firefox; fi
 apt_install git build-essential pkg-config libncurses-dev libsdl2-dev libsdl2-ttf-dev sudo bash \
-  xdg-utils python3 pciutils locales man-db \
+  xdg-utils python3 python3-venv pciutils locales man-db \
   xorg xfce4 xfce4-terminal xfce4-screenshooter lightdm lightdm-gtk-greeter dbus-x11 dbus-user-session \
   fonts-ipafont fonts-noto-cjk fonts-dejavu \
   fcitx5 fcitx5-mozc fcitx5-config-qt fcitx5-frontend-gtk3 \
@@ -207,6 +207,17 @@ if [ -f "$keyboard" ] && grep -q '^XKBLAYOUT="jp"' "$keyboard"; then
 else
   echo "/etc/default/keyboard のレイアウトがjpではないので、キーボードは設定しません"
 fi
+# 名前解決(2026-11-17、直接のユーザー報告: Ubuntuでは`mpi`等のホスト名が引けずIPアドレスを打つしかなかった)。
+# DebianはDHCPのドメインが/etc/resolv.confのdomainに入るが、UbuntuのServer版のsystemd-networkdはDHCPの
+# ドメインを使わない(resolv.confがsearch .)。networkd全体の既定を使う方へ変える(次の起動から)。
+if [ "$distro" = ubuntu ] && systemctl is-enabled systemd-networkd >/dev/null 2>&1; then
+  conf=/etc/systemd/networkd.conf.d/usilic.conf
+  if [ ! -f "$conf" ]; then
+    mkdir -p "$(dirname "$conf")"
+    printf '[DHCPv4]\nUseDomains=yes\n\n[DHCPv6]\nUseDomains=yes\n' > "$conf"
+    echo "DHCPのドメインで名前を引くようにしました($conf、再起動の後から)"
+  fi
+fi
 
 # ---------------------------------------------------------------- 4. ユーザーの設定とusilic
 say "4. $user の設定とusilicのビルド"
@@ -225,6 +236,13 @@ export QT_IM_MODULE=fcitx
 export XMODIFIERS=@im=fcitx
 export SDL_IM_MODULE=fcitx
 XPROFILE
+fi
+# Fcitx 5を、Xfceにログインした時に起動する(2026-11-17、直接のユーザー報告: Debian・Ubuntuとも最初のログインで
+# 「DBusがFcitxと接続できませんでした」。パッケージは自動起動をim-configに任せていて、Xfceでは起動しなかった)。
+app=/usr/share/applications/org.fcitx.Fcitx5.desktop
+if [ -f "$app" ] && [ ! -f "$HOME/.config/autostart/org.fcitx.Fcitx5.desktop" ]; then
+  mkdir -p "$HOME/.config/autostart"
+  cp "$app" "$HOME/.config/autostart/"
 fi
 cd "$HOME/git/usilic/src/cpp"
 make usilic

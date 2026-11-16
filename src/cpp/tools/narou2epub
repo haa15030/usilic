@@ -19,9 +19,20 @@ if [ "$1" != "-h" ] && [ "$1" != "--help" ] &&
    ! "$python" -c 'import requests, lxml, ebooklib, PIL' 2>/dev/null; then
   venv=${USILIC_VENV:-$HOME/.local/lib/usilic/venv}
   echo "narou2epub: $venv へ lxml ebooklib requests Pillow を入れます(初めての1回だけ)" >&2
+  # 2026-11-17、直接のユーザー報告(Debian 13・Ubuntu 26.10で"ensurepip is not available"): Debian系は
+  # python3-venvが無いとvenvがpip無しの作りかけで残り、python3-venvを入れた後も次からは作り直さずに
+  # pipで失敗し続ける。pipの無いvenvは消して作り直し、作れない時はDebian系の入れ方を出す。
+  if [ -x "$venv/bin/python" ] && ! "$venv/bin/python" -m pip --version >/dev/null 2>&1; then
+    rm -rf "$venv"
+  fi
   if [ ! -x "$venv/bin/python" ]; then
     command -v python3 >/dev/null 2>&1 || { echo "narou2epub: python3 が見つかりません" >&2; exit 1; }
-    python3 -m venv "$venv" >&2 || exit $?
+    if ! python3 -m venv "$venv" >&2; then
+      rm -rf "$venv"
+      [ -r /etc/debian_version ] &&
+        echo "narou2epub: Debian・Ubuntuでは先に sudo apt-get install python3-venv を実行してください" >&2
+      exit 1
+    fi
   fi
   "$venv/bin/python" -m pip install lxml ebooklib requests Pillow >&2 || exit $?
   python=$venv/bin/python
