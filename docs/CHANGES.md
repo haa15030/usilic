@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1297. **mac_cursor.mm: macOS 14以降のSDKで出る`NSApplicationActivateIgnoringOtherApps`の非推奨の警告を止めた(2026-11-18)**
+   - 直接のユーザー報告(真っさらなSequoiaのmpsで`make usilic`の"'NSApplicationActivateIgnoringOtherApps' is deprecated: first deprecated in macOS 14.0")。mpsはXcode本体の新しいSDKでビルドしたので初めて出た。
+   - macOS 14以降では効かないだけで害は無く、Big Sur等では前面に出すのにこれが要るため、呼び出しは残して`activateThisApplication()`の中だけ`#pragma clang diagnostic`で警告を止めた。同時に出る`ld: warning: -ld_classic is deprecated`は項目419のもの(そのまま)。
+
 1296. **docs/BUILD.md(macOS): Xcode本体のライセンスに未同意で`make usilic`が止まる(2026-11-18)**
    - 直接のユーザー報告("真っさらなSequoiaで試したらこんなのが出た。"、`make usilic`で"You have not agreed to the Xcode and Apple SDKs license.")。Xcode本体が入っていて`xcode-select`がそちらを指し、ライセンスに同意していないと、`make`の時点で止まる。
    - 手順1に、`sudo xcodebuild -license accept`(またはCommand Line Toolsへ`xcode-select -s`)を足した。

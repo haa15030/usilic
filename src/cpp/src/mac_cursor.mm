@@ -69,8 +69,13 @@ void systemBeep() { NSBeep(); }
 bool macKeyboardIsJis() { return KBGetLayoutType(LMGetKbdType()) == kKeyboardJIS; }
 
 void activateThisApplication() {
+  // 2026-11-18、直接のユーザー報告(Sequoiaのmpsで、Xcode本体のmacOS 14以降のSDKだと非推奨の警告): macOS 14以降では
+  // ignoringOtherAppsは効かないだけで害は無く、Big Sur等の古いmacOSではこれが要るので、そのまま使い警告だけ止める。
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
   [[NSRunningApplication currentApplication] activateWithOptions:NSApplicationActivateIgnoringOtherApps];
   [NSApp activateIgnoringOtherApps:YES];
+#pragma clang diagnostic pop
 }
 
 bool thisApplicationIsFrontmost() {
