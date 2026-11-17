@@ -51,6 +51,13 @@ git pull
    ```
    古いまま使うと、コンパイラ(clang)より新しいSDKが既定になっていることがあり、
    `make usilic`が`mac_cursor.mm`の中で止まる(下の「Command Line ToolsのclangとSDKの版の不一致」)。
+   Xcode本体(App Store)も入っていると、`make usilic`が
+   `You have not agreed to the Xcode and Apple SDKs license.`で止まることがある(2026-11-18、Sequoiaのクリーンインストールで)。
+   `xcode-select -p`がXcode本体(`/Applications/Xcode.app/…`)を指していて、そのライセンスにまだ同意していない。同意する:
+   ```
+   sudo xcodebuild -license accept
+   ```
+   (Xcode本体を使わないなら、代わりに *sudo xcode-select -s /Library/Developer/CommandLineTools* でCommand Line Toolsへ切り換えてもよい)
 2. [MacPorts](https://www.macports.org/install.php)(未導入の場合): そのMacのmacOSの版に合う`.pkg`を入れたら、
    **ターミナルを開き直す**(`/opt/local/bin`をPATHに足す`~/.zprofile`は、開いたままのウィンドウには反映されない)。
    開き直さずに続けるなら`source ~/.zprofile`。`which port`が`/opt/local/bin/port`を出せばよい

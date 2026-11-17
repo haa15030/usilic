@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1296. **docs/BUILD.md(macOS): Xcode本体のライセンスに未同意で`make usilic`が止まる(2026-11-18)**
+   - 直接のユーザー報告("真っさらなSequoiaで試したらこんなのが出た。"、`make usilic`で"You have not agreed to the Xcode and Apple SDKs license.")。Xcode本体が入っていて`xcode-select`がそちらを指し、ライセンスに同意していないと、`make`の時点で止まる。
+   - 手順1に、`sudo xcodebuild -license accept`(またはCommand Line Toolsへ`xcode-select -s`)を足した。
+
 1295. **Linux: Debian 13.7・Ubuntu 26.10を1台のSSDに入れて分かったこと、BIOSでも起動、スワップの共用(2026-11-17)**
    - ユーザーの報告と依頼("ubuntu 26.10 と Debian 13.7 でインストールしてみ手順はそれぞれ`src/ubuntu_build.txt`、`src/debian_build.txt` だが128GBの外付けSSDを折半でインストールし、BIOS、UEFIのいずれでも起動可能な実例としてみた"、"設定項目名の色指定は、=os.png、=ot.pngとも同じオレンジ色かもしれないが、BUILD.htmlへの反映はそれでよろしく"、BIOSの起動は"debianもUEFIでインストールしたのちdebian上でgrub-pcによりMBRへインストール"で"やり方教えて")。
    - **docs/BUILD.md**: Linuxの1.を、ユーザーの手順のメモからFreeBSDと同じ表記(設定項目名は色付き)の画面ごとの手順に書き直した。Ubuntuを先に(Debianを先にするとUbuntuのインストーラがDebianの区画を空きと扱う)、どちらもUEFIで入れる。新しい節「BIOS(CSM)でも起動できるようにする(Debianから)」: os-prober、`grub-pc-bin`(`grub-pc`は`grub-efi-amd64`と同時に入らない)、GPTにBIOS boot区画が無ければセクタ34〜2047に`sgdisk`で作る、`grub-install --target=i386-pc`、保護MBRの起動フラグ、他のマシンのUEFI用に`force_efi_extra_removable`。新しい節「Ubuntuのスワップファイルを使う(Debianから)」: Ubuntuの区画を`/mnt/ubuntu`へ`nofail`でつなぎ`/swap.img`を`/etc/fstab`へ。注意点に、Ubuntuの名前解決と`python3-venv`、6.にFcitx 5が起動していない時のこと、Ubuntuのfriendly-recoveryの表示は害が無いこと。
