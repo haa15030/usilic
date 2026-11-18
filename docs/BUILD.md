@@ -218,6 +218,8 @@ sudo timedatectl set-timezone Asia/Tokyo
 
 UEFIのインストーラが起動するよう、マザーボードの設定でCSMを無効にしておく(CSMが有効だとBIOSのインストーラが起動することがある)。
 
+ISOは**netinst**(`debian-13.x.0-amd64-netinst.iso`、14のテスト版なら`debian-testing-amd64-netinst.iso`)を使う。ネットブート用の小さな`mini.iso`は中にカーネルしか無く、ファイルシステムのモジュールとファームウェアをインストール中にネットから取るため、`mini.iso`のカーネルとアーカイブのカーネルの版がずれていると、パーティショニングの「利用方法」に**ext4が出ず**先へ進めない。最初に「見つからないファームウェアファイル: rtl_nic/rtl8125b-2.fw」等と聞かれるのも`mini.iso`だから(2026-11-18、i5-9400Fの機械で13.7・14とも)。
+
 <span style="color:#e95420">GNU GRUB</span> -> **Install**
 
 <span style="color:#e95420">Select a language</span> -> 「Language:」**Japanese - 日本語**

@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1298. **docs/BUILD.md(Linux): Debianは`mini.iso`ではなくnetinstを使う(2026-11-18)**
+   - 直接のユーザー報告(i5-9400F+RTX 3050の機械でUbuntuの後にDebian 14・13.7を入れると、最初に「見つからないファームウェアファイル: rtl_nic/rtl8125b-2.fw rtl_nic/rtl8168h-2.fw」と聞かれ、続けるとパーティショニングの「利用方法」にext4だけが出ず進めない。ISOは"Downloads/mini -14.ISOだと思う"、DHCPのアドレスは来ている)。
+   - `mini.iso`(ネットブート)はカーネル以外をネットから取るので、カーネルの版がアーカイブとずれるとext4のモジュールが読み込めない、ファームウェアも入っていない、と見立てた(実機のsyslogでの確認はまだ)。Debianの1.に、netinstを使うことと、この症状を書いた。
+
 1297. **mac_cursor.mm: macOS 14以降のSDKで出る`NSApplicationActivateIgnoringOtherApps`の非推奨の警告を止めた(2026-11-18)**
    - 直接のユーザー報告(真っさらなSequoiaのmpsで`make usilic`の"'NSApplicationActivateIgnoringOtherApps' is deprecated: first deprecated in macOS 14.0")。mpsはXcode本体の新しいSDKでビルドしたので初めて出た。
    - macOS 14以降では効かないだけで害は無く、Big Sur等では前面に出すのにこれが要るため、呼び出しは残して`activateThisApplication()`の中だけ`#pragma clang diagnostic`で警告を止めた。同時に出る`ld: warning: -ld_classic is deprecated`は項目419のもの(そのまま)。

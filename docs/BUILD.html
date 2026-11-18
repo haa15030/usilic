@@ -134,6 +134,7 @@ make usilic</code></pre>
 <p class="note">※最初の<code>apt</code>の途中で「Failed to disable unit: Unit friendly-recovery.service does not exist」と出るのは害が無い(minimizedには無いサービスを止めようとしているだけ)。</p>
 <h4>Debian 13(netinstのISO)</h4>
 <p>UEFIのインストーラが起動するよう、マザーボードの設定でCSMを無効にしておく(CSMが有効だとBIOSのインストーラが起動することがある)。</p>
+<p>ISOは<strong>netinst</strong>(<code>debian-13.x.0-amd64-netinst.iso</code>、14のテスト版なら<code>debian-testing-amd64-netinst.iso</code>)を使う。ネットブート用の小さな<code>mini.iso</code>は中にカーネルしか無く、ファイルシステムのモジュールとファームウェアをインストール中にネットから取るため、<code>mini.iso</code>のカーネルとアーカイブのカーネルの版がずれていると、パーティショニングの「利用方法」に<strong>ext4が出ず</strong>先へ進めない。最初に「見つからないファームウェアファイル: rtl_nic/rtl8125b-2.fw」等と聞かれるのも<code>mini.iso</code>だから(2026-11-18、i5-9400Fの機械で13.7・14とも)。</p>
 <p><span class="item-orange">GNU GRUB</span> -&gt; <strong>Install</strong></p>
 <p><span class="item-orange">Select a language</span> -&gt; 「Language:」<strong>Japanese - 日本語</strong></p>
 <p><span class="item-orange">場所の選択</span> -&gt; 「国・領土・地域:」<strong>日本</strong></p>
