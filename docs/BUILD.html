@@ -128,8 +128,7 @@ make usilic</code></pre>
 <p><span class="item-orange">Installing system</span> ...</p>
 <p><span class="item-orange">Installation complete!</span> -&gt; [Reboot Now] -&gt;<br>
 「Please remove the installation medium, then press ENTER:」-&gt; USBメモリを抜いて <em>Enter</em></p>
-<p>再起動したら<code>ABC</code>でログインし、時刻を日本にする(Server版は協定世界時のまま):</p>
-<pre class="key"><code>sudo timedatectl set-timezone Asia/Tokyo</code></pre>
+<p class="note">※時刻はServer版では協定世界時のまま。2.のスクリプトが日本(<em>timedatectl set-timezone Asia/Tokyo</em>)にする。</p>
 <p class="note">※作ったユーザーは最初からsudoできる(rootのパスワードは無い)。</p>
 <p class="note">※最初の<code>apt</code>の途中で「Failed to disable unit: Unit friendly-recovery.service does not exist」と出るのは害が無い(minimizedには無いサービスを止めようとしているだけ)。</p>
 <h4>Debian 13(netinstのISO)</h4>
@@ -191,6 +190,9 @@ make usilic</code></pre>
 <p>rootで:</p>
 <pre class="key"><code>sed -i 's/^# *\(ja_JP\.UTF-8 UTF-8\)/\1/' /etc/locale.gen &amp;&amp; locale-gen</code></pre>
 <p>(Ubuntuは <em>locale-gen ja_JP.UTF-8</em>)</p>
+<pre class="key"><code>update-locale LANG=ja_JP.UTF-8</code></pre>
+<p>(システム全体の言語。インストーラをEnglishで進めた時は、これが無いとXfceのメニューもusilicのHELPも英語になる)</p>
+<pre class="key"><code>timedatectl set-timezone Asia/Tokyo</code></pre>
 <pre class="key"><code>systemctl set-default graphical.target</code></pre>
 <pre class="key"><code>usermod -aG sudo,video,audio ABC</code></pre>
 <p>キーボードは<code>/etc/default/keyboard</code>を<code>XKBMODEL="jp106"</code>・<code>XKBLAYOUT="jp"</code>・<code>XKBOPTIONS="ctrl:swapcaps"</code>にする(XとコンソールとでCaps LockとCtrlを入れ替える。入れ替えないなら<code>XKBOPTIONS=""</code>)。</p>
@@ -208,7 +210,7 @@ EOF</code></pre>
 <pre class="key"><code>sudo reboot</code></pre>
 <h4>6. 日本語入力・音声・usilicの起動</h4>
 <p>lightdmのログイン画面でログインし、Xfceに入る。</p>
-<ul><li>アプリケーション -&gt; 設定 -&gt; Fcitx 5 の設定 で、「入力メソッド」にMozcがあることを確かめる(無ければ追加して「適用」)。「DBusがFcitxと接続できませんでした。Fcitxは動いていますか?」と出たら、Fcitx 5が自動で起動していない。その画面の「Fcitx 5 を実行する」でつながる。次から自動で起動するよう、端末で <em>mkdir -p ~/.config/autostart &amp;&amp; cp /usr/share/applications/org.fcitx.Fcitx5.desktop ~/.config/autostart/</em>(スクリプトは済ませてある)。</li><li>音声: パネルに音量のアイコンが無ければ、パネルを右クリック -&gt; パネル -&gt; 新しいアイテムの追加 -&gt; 「PulseAudio プラグイン」。出力先(マザーボードの内蔵・HDMI)は、そのアイコンかpavucontrol(アプリケーション -&gt; マルチメディア -&gt; PulseAudio 音量調節)で切り換える。再生中の音もそのまま付いてくる。</li><li>アプリケーション -&gt; アクセサリー -&gt; usilic で起動する。</li></ul>
+<ul><li>アプリケーション -&gt; 設定 -&gt; Fcitx 5 の設定 で、「入力メソッド」にMozcがあることを確かめる(無ければ右の一覧のMozcを左へ移して「適用」。Englishで入れると無かった。スクリプトは<code>~/.config/fcitx5/profile</code>にMozcを入れてある)。「DBusがFcitxと接続できませんでした。Fcitxは動いていますか?」と出たら、Fcitx 5が自動で起動していない。その画面の「Fcitx 5 を実行する」でつながる。次から自動で起動するよう、端末で <em>mkdir -p ~/.config/autostart &amp;&amp; cp /usr/share/applications/org.fcitx.Fcitx5.desktop ~/.config/autostart/</em>(スクリプトは済ませてある)。</li><li>音声: パネルに音量のアイコンが無ければ、パネルを右クリック -&gt; パネル -&gt; 新しいアイテムの追加 -&gt; 「PulseAudio プラグイン」。出力先(マザーボードの内蔵・HDMI)は、そのアイコンかpavucontrol(アプリケーション -&gt; マルチメディア -&gt; PulseAudio 音量調節)で切り換える。再生中の音もそのまま付いてくる。</li><li>アプリケーション -&gt; アクセサリー -&gt; usilic で起動する。</li></ul>
 <h3>BIOS(CSM)でも起動できるようにする(Debianから)</h3>
 <p>UEFIで入れたDebianに、BIOS用のGRUBを足す。BIOSで起動した時もDebianの起動メニュー(UEFIと同じ<code>/boot/grub/grub.cfg</code>)が出て、そこからUbuntuも選べる。Debianにrootでログインし(<em>sudo -i</em>):</p>
 <p>1. 起動メニューにUbuntuが出るようにする(インストーラが他のOSを見つけた時は済んでいる):</p>
@@ -243,7 +245,7 @@ EOF</code></pre>
 <p class="note">※Debianにもスワップの区画を作ったなら、<code>swapon --show</code>に両方が出る(両方使われる)。区画を外すなら、<code>/etc/fstab</code>の<code>swap</code>の区画の行を消す。</p>
 <p class="note">※Ubuntuの<code>/swap.img</code>の大きさはUbuntuのインストーラが決める(<code>swapon --show</code>の<code>SIZE</code>)。逆にUbuntuからDebianのスワップの区画を使うこともでき、その時はUbuntuの<code>/etc/fstab</code>へ<code>UUID=(スワップの区画) none swap sw,nofail 0 0</code>を足し、<code>/swap.img</code>の行を消してファイルも消す。</p>
 <h3>注意点(Linux)</h3>
-<ul><li><strong>音声</strong>: 音声のサーバーはPipeWire(<code>pipewire-pulse</code>がPulseAudioの役)。マザーボードの内蔵もHDMIもALSAの装置として自動で並び、mpv・mplayerは何も設定しなくてもそこへ出す。FreeBSDのような<code>hw.snd.default_unit</code>やアプリごとの設定、audioグループは要らない(systemd-logindがログインした人に権限を渡す)。</li><li><strong>HDMIが出力先に出ない</strong>: 音源のカードの構成が「アナログ出力」だけになっている。pavucontrolの「設定」タブで、そのカードの構成を「Digital Stereo (HDMI) Output」等にする。NVIDIA・AMDのGPUのHDMIは、マザーボードの音源とは別のカードとして並ぶ。</li><li><strong>NVIDIAとセキュアブート</strong>: UEFIのセキュアブートが有効だと、DKMSでビルドしたNVIDIAのモジュールは署名を登録(MOK)するまで読み込まれない。インストールの途中か再起動の時に青い「Perform MOK management」の画面が出たら、「Enroll MOK」を選び、インストールの時に決めたパスワードを入れる。分からなければ、UEFIの設定でセキュアブートを切る。</li><li><strong>Ubuntuでホスト名(<code>mpi</code>等)が引けない</strong>: Debianは<code>/etc/resolv.conf</code>にDHCPのドメイン(<code>domain …</code>)が入り、<code>ssh mpi</code>・<code>scp … mpi:</code>がルーターのDNSで<code>mpi.ドメイン</code>として引ける。UbuntuのServer版はsystemd-networkdがDHCPのドメインを使わない設定なので(<code>/etc/resolv.conf</code>が<code>nameserver 127.0.0.53</code>と<code>search .</code>)、IPアドレスを打つしかなかった。スクリプトは<code>/etc/systemd/networkd.conf.d/usilic.conf</code>に<code>[DHCPv4]</code>の<code>UseDomains=yes</code>を置く(再起動の後で<code>resolvectl domain</code>にドメインが出る)。手でするなら同じファイルを作って再起動。</li><li><strong>小説のEPUB(<code>narou2epub</code>)で「ensurepip is not available」</strong>: Debian・Ubuntuは、Pythonのvenvに<code>python3-venv</code>が要る(スクリプトは入れてある)。手で <em>sudo apt-get install python3-venv</em> した後は、そのままもう一度実行すればよい(作りかけのvenvは作り直す)。</li><li><strong>Ubuntuのfirefox</strong>: aptの<code>firefox</code>はsnapを入れる中継ぎのパッケージ。minimizedでsnapdが無い時は <em>apt-get install -y snapd</em> してから。</li></ul>
+<ul><li><strong>音声</strong>: 音声のサーバーはPipeWire(<code>pipewire-pulse</code>がPulseAudioの役)。マザーボードの内蔵もHDMIもALSAの装置として自動で並び、mpv・mplayerは何も設定しなくてもそこへ出す。FreeBSDのような<code>hw.snd.default_unit</code>やアプリごとの設定、audioグループは要らない(systemd-logindがログインした人に権限を渡す)。</li><li><strong>HDMIが出力先に出ない</strong>: 音源のカードの構成が「アナログ出力」だけになっている。pavucontrolの「設定」タブで、そのカードの構成を「Digital Stereo (HDMI) Output」等にする。NVIDIA・AMDのGPUのHDMIは、マザーボードの音源とは別のカードとして並ぶ。</li><li><strong>NVIDIAとセキュアブート</strong>: UEFIのセキュアブートが有効だと、DKMSでビルドしたNVIDIAのモジュールは署名を登録(MOK)するまで読み込まれない。インストールの途中か再起動の時に青い「Perform MOK management」の画面が出たら、「Enroll MOK」を選び、インストールの時に決めたパスワードを入れる。分からなければ、UEFIの設定でセキュアブートを切る。</li><li><strong>インストーラをEnglishで進めた時</strong>(BIOSで起動したDebianのテキストのインストーラは「Language:」に日本語が無い。日本語の文字を出せない画面のため。起動メニューの <strong>Graphical install</strong> なら日本語を選べる): メニューやusilicのHELPが英語になるのは、システムの言語(<code>/etc/default/locale</code>)が<code>en_US.UTF-8</code>のままだから。rootで <em>update-locale LANG=ja_JP.UTF-8</em> して、ログインし直す(スクリプトは済ませてある)。時刻は <em>timedatectl set-timezone Asia/Tokyo</em>。既にFcitx 5を一度起動していたら、Mozcは6.のとおり手で足す。</li><li><strong>Ubuntuでホスト名(<code>mpi</code>等)が引けない</strong>: Debianは<code>/etc/resolv.conf</code>にDHCPのドメイン(<code>domain …</code>)が入り、<code>ssh mpi</code>・<code>scp … mpi:</code>がルーターのDNSで<code>mpi.ドメイン</code>として引ける。UbuntuのServer版はsystemd-networkdがDHCPのドメインを使わない設定なので(<code>/etc/resolv.conf</code>が<code>nameserver 127.0.0.53</code>と<code>search .</code>)、IPアドレスを打つしかなかった。スクリプトは<code>/etc/systemd/networkd.conf.d/usilic.conf</code>に<code>[DHCPv4]</code>の<code>UseDomains=yes</code>を置く(再起動の後で<code>resolvectl domain</code>にドメインが出る)。手でするなら同じファイルを作って再起動。</li><li><strong>小説のEPUB(<code>narou2epub</code>)で「ensurepip is not available」</strong>: Debian・Ubuntuは、Pythonのvenvに<code>python3-venv</code>が要る(スクリプトは入れてある)。手で <em>sudo apt-get install python3-venv</em> した後は、そのままもう一度実行すればよい(作りかけのvenvは作り直す)。</li><li><strong>Ubuntuのfirefox</strong>: aptの<code>firefox</code>はsnapを入れる中継ぎのパッケージ。minimizedでsnapdが無い時は <em>apt-get install -y snapd</em> してから。</li></ul>
 <h3>ビルドだけ(デスクトップが既にある時)</h3>
 <pre><code>sudo apt-get update
 sudo apt-get install -y build-essential libncurses-dev pkg-config \

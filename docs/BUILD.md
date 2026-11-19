@@ -204,11 +204,7 @@ Desktop版ではなく**Server版**のISO(Desktop版は最小のインストー�
 <span style="color:#e95420">Installation complete!</span> -> [Reboot Now] ->  
 「Please remove the installation medium, then press ENTER:」-> USBメモリを抜いて *Enter*
 
-再起動したら`ABC`でログインし、時刻を日本にする(Server版は協定世界時のまま):
-
-```key
-sudo timedatectl set-timezone Asia/Tokyo
-```
+※時刻はServer版では協定世界時のまま。2.のスクリプトが日本(*timedatectl set-timezone Asia/Tokyo*)にする。
 
 ※作ったユーザーは最初からsudoできる(rootのパスワードは無い)。
 
@@ -346,6 +342,16 @@ sed -i 's/^# *\(ja_JP\.UTF-8 UTF-8\)/\1/' /etc/locale.gen && locale-gen
 (Ubuntuは *locale-gen ja_JP.UTF-8*)
 
 ```key
+update-locale LANG=ja_JP.UTF-8
+```
+
+(システム全体の言語。インストーラをEnglishで進めた時は、これが無いとXfceのメニューもusilicのHELPも英語になる)
+
+```key
+timedatectl set-timezone Asia/Tokyo
+```
+
+```key
 systemctl set-default graphical.target
 ```
 
@@ -385,7 +391,7 @@ sudo reboot
 
 lightdmのログイン画面でログインし、Xfceに入る。
 
-- アプリケーション -> 設定 -> Fcitx 5 の設定 で、「入力メソッド」にMozcがあることを確かめる(無ければ追加して「適用」)。「DBusがFcitxと接続できませんでした。Fcitxは動いていますか?」と出たら、Fcitx 5が自動で起動していない。その画面の「Fcitx 5 を実行する」でつながる。次から自動で起動するよう、端末で *mkdir -p ~/.config/autostart && cp /usr/share/applications/org.fcitx.Fcitx5.desktop ~/.config/autostart/*(スクリプトは済ませてある)。
+- アプリケーション -> 設定 -> Fcitx 5 の設定 で、「入力メソッド」にMozcがあることを確かめる(無ければ右の一覧のMozcを左へ移して「適用」。Englishで入れると無かった。スクリプトは`~/.config/fcitx5/profile`にMozcを入れてある)。「DBusがFcitxと接続できませんでした。Fcitxは動いていますか?」と出たら、Fcitx 5が自動で起動していない。その画面の「Fcitx 5 を実行する」でつながる。次から自動で起動するよう、端末で *mkdir -p ~/.config/autostart && cp /usr/share/applications/org.fcitx.Fcitx5.desktop ~/.config/autostart/*(スクリプトは済ませてある)。
 - 音声: パネルに音量のアイコンが無ければ、パネルを右クリック -> パネル -> 新しいアイテムの追加 -> 「PulseAudio プラグイン」。出力先(マザーボードの内蔵・HDMI)は、そのアイコンかpavucontrol(アプリケーション -> マルチメディア -> PulseAudio 音量調節)で切り換える。再生中の音もそのまま付いてくる。
 - アプリケーション -> アクセサリー -> usilic で起動する。
 
@@ -486,6 +492,7 @@ systemctl daemon-reload && mount /mnt/ubuntu && swapon -a && swapon --show
 - **音声**: 音声のサーバーはPipeWire(`pipewire-pulse`がPulseAudioの役)。マザーボードの内蔵もHDMIもALSAの装置として自動で並び、mpv・mplayerは何も設定しなくてもそこへ出す。FreeBSDのような`hw.snd.default_unit`やアプリごとの設定、audioグループは要らない(systemd-logindがログインした人に権限を渡す)。
 - **HDMIが出力先に出ない**: 音源のカードの構成が「アナログ出力」だけになっている。pavucontrolの「設定」タブで、そのカードの構成を「Digital Stereo (HDMI) Output」等にする。NVIDIA・AMDのGPUのHDMIは、マザーボードの音源とは別のカードとして並ぶ。
 - **NVIDIAとセキュアブート**: UEFIのセキュアブートが有効だと、DKMSでビルドしたNVIDIAのモジュールは署名を登録(MOK)するまで読み込まれない。インストールの途中か再起動の時に青い「Perform MOK management」の画面が出たら、「Enroll MOK」を選び、インストールの時に決めたパスワードを入れる。分からなければ、UEFIの設定でセキュアブートを切る。
+- **インストーラをEnglishで進めた時**(BIOSで起動したDebianのテキストのインストーラは「Language:」に日本語が無い。日本語の文字を出せない画面のため。起動メニューの **Graphical install** なら日本語を選べる): メニューやusilicのHELPが英語になるのは、システムの言語(`/etc/default/locale`)が`en_US.UTF-8`のままだから。rootで *update-locale LANG=ja_JP.UTF-8* して、ログインし直す(スクリプトは済ませてある)。時刻は *timedatectl set-timezone Asia/Tokyo*。既にFcitx 5を一度起動していたら、Mozcは6.のとおり手で足す。
 - **Ubuntuでホスト名(`mpi`等)が引けない**: Debianは`/etc/resolv.conf`にDHCPのドメイン(`domain …`)が入り、`ssh mpi`・`scp … mpi:`がルーターのDNSで`mpi.ドメイン`として引ける。UbuntuのServer版はsystemd-networkdがDHCPのドメインを使わない設定なので(`/etc/resolv.conf`が`nameserver 127.0.0.53`と`search .`)、IPアドレスを打つしかなかった。スクリプトは`/etc/systemd/networkd.conf.d/usilic.conf`に`[DHCPv4]`の`UseDomains=yes`を置く(再起動の後で`resolvectl domain`にドメインが出る)。手でするなら同じファイルを作って再起動。
 - **小説のEPUB(`narou2epub`)で「ensurepip is not available」**: Debian・Ubuntuは、Pythonのvenvに`python3-venv`が要る(スクリプトは入れてある)。手で *sudo apt-get install python3-venv* した後は、そのままもう一度実行すればよい(作りかけのvenvは作り直す)。
 - **Ubuntuのfirefox**: aptの`firefox`はsnapを入れる中継ぎのパッケージ。minimizedでsnapdが無い時は *apt-get install -y snapd* してから。

@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1299. **Linux: Englishで入れた時の日本語化、時刻をスクリプトで(2026-11-19)**
+   - 直接のユーザー報告と依頼: 内蔵のSSDがある機械で、USBの外付けSSDへDebianをUEFIで入れると、BIOS boot区画を作っても、GRUBが内蔵のSSDの既存のEFI区画へ入った(`/boot/efi`が内蔵のSSD)。そこでCSMを有効にしてBIOSのインストーラで入れたら(grub-pcは入れる先を選べるので問題無し)、"Language:に日本語が無い。やむなくEnglishで進めてみたけれどもxfceのメニューが日本語化されておらずusilicのHELPも英語モードで立ち上がる。fcitxもまずはmozcを有効化したのち、デフォではmozcが無いので右側のリストから左へ移動して使用可にする必要がある"。"ubuntuとdebianの割り振りも検討中なので、メニューの日本語化の箇所だけBUILD.md修正よろしく。他の要望としてはtimedatectlをスクリプトに取り込んでほしい"。
+   - **tools/setup-debian.sh**: `update-locale LANG=ja_JP.UTF-8`(`~/.xprofile`のLANGだけでは、lightdmとXfceのセッションは`/etc/default/locale`の言語のまま)。`timedatectl set-timezone Asia/Tokyo`。Fcitx 5をまだ起動していなければ、`~/.config/fcitx5/profile`をキーボード(jpかus)+Mozcで作る。
+   - **docs/BUILD.md**: Ubuntuの手での`timedatectl`はスクリプトへ。手で進める5.に`update-locale`と`timedatectl`。6.にMozcが無い時は右の一覧から左へ。注意点に「インストーラをEnglishで進めた時」(BIOSのテキストのインストーラは日本語を出せないので一覧に無い、Graphical installなら選べる)。内蔵のSSDのEFI区画の件と、UbuntuとDebianの割り振りは、ユーザーの検討を待つ(BUILD.mdはまだ)。
+
 1298. **docs/BUILD.md(Linux): Debianは`mini.iso`ではなくnetinstを使う(2026-11-18)**
    - 直接のユーザー報告(i5-9400F+RTX 3050の機械でUbuntuの後にDebian 14・13.7を入れると、最初に「見つからないファームウェアファイル: rtl_nic/rtl8125b-2.fw rtl_nic/rtl8168h-2.fw」と聞かれ、続けるとパーティショニングの「利用方法」にext4だけが出ず進めない。ISOは"Downloads/mini -14.ISOだと思う"、DHCPのアドレスは来ている)。
    - `mini.iso`(ネットブート)はカーネル以外をネットから取るので、カーネルの版がアーカイブとずれるとext4のモジュールが読み込めない、ファームウェアも入っていない、と見立てた(実機のsyslogでの確認はまだ)。Debianの1.に、netinstを使うことと、この症状を書いた。

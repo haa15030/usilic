@@ -175,7 +175,7 @@ esac
 [ "$distro" = ubuntu ] && [ "$gpu" != nvidia ] && echo "Ubuntuはファームウェア(linux-firmware)が入っているので、何もしません"
 
 # ---------------------------------------------------------------- 3. ロケール・lightdm・sudo・キーボード
-say "3. 日本語のロケール、lightdm、sudo、キーボード"
+say "3. 日本語のロケール・時刻、lightdm、sudo、キーボード"
 if ! locale -a 2>/dev/null | grep -qi '^ja_JP\.utf-\?8$'; then
   if [ -f /etc/locale.gen ]; then
     sed -i 's/^# *\(ja_JP\.UTF-8 UTF-8\)/\1/' /etc/locale.gen
@@ -184,6 +184,19 @@ if ! locale -a 2>/dev/null | grep -qi '^ja_JP\.utf-\?8$'; then
   else
     locale-gen ja_JP.UTF-8 || die "locale-gen に失敗しました"
   fi
+fi
+# システム全体の言語を日本語に(2026-11-19、直接のユーザー報告: BIOSで起動したDebianのインストーラは「Language:」に
+# 日本語が無く、Englishで入れるとXfceのメニューもusilicのHELPも英語になった。~/.xprofileのLANGだけでは、
+# lightdmとXfceのセッションの言語は/etc/default/localeのまま)。
+if ! grep -q '^LANG=ja_JP\.UTF-8' /etc/default/locale 2>/dev/null; then
+  update-locale LANG=ja_JP.UTF-8 || die "update-locale に失敗しました"
+  echo "システムの言語を ja_JP.UTF-8 にしました(/etc/default/locale)"
+fi
+# 時刻を日本に(2026-11-19、直接のユーザー依頼"timedatectlをスクリプトに取り込んでほしい"。UbuntuのServer版と
+# Englishで入れたDebianは協定世界時等のまま)。
+if [ "$(timedatectl show -p Timezone --value 2>/dev/null)" != Asia/Tokyo ]; then
+  timedatectl set-timezone Asia/Tokyo || die "timedatectl set-timezone に失敗しました"
+  echo "時刻を日本(Asia/Tokyo)にしました"
 fi
 # 起動したらlightdmのログイン画面にする(SSHだけのインストールは文字の画面(multi-user.target)が既定)。
 systemctl enable lightdm >/dev/null 2>&1 || true
@@ -243,6 +256,15 @@ app=/usr/share/applications/org.fcitx.Fcitx5.desktop
 if [ -f "$app" ] && [ ! -f "$HOME/.config/autostart/org.fcitx.Fcitx5.desktop" ]; then
   mkdir -p "$HOME/.config/autostart"
   cp "$app" "$HOME/.config/autostart/"
+fi
+# Fcitx 5の入力メソッドにMozcを入れておく(2026-11-19、直接のユーザー報告: Englishで入れると、Fcitx 5の設定で
+# Mozcを右の一覧から左へ移さないと使えなかった。日本語のロケールで初めて起動した時だけ自動で入る)。
+profile="$HOME/.config/fcitx5/profile"
+if [ ! -f "$profile" ]; then
+  if grep -q '^XKBLAYOUT="jp"' /etc/default/keyboard 2>/dev/null; then layout=jp; else layout=us; fi
+  mkdir -p "$(dirname "$profile")"
+  printf '[Groups/0]\nName=Default\nDefault Layout=%s\nDefaultIM=mozc\n\n[Groups/0/Items/0]\nName=keyboard-%s\nLayout=\n\n[Groups/0/Items/1]\nName=mozc\nLayout=\n\n[GroupOrder]\n0=Default\n' \
+    "$layout" "$layout" > "$profile"
 fi
 cd "$HOME/git/usilic/src/cpp"
 make usilic
