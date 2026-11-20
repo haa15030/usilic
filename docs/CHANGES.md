@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1300. **端末版: `…|usilic`(標準入力がパイプ)でCPU 100%のまま固まった(Linux、2026-11-20)**
+   - 直接のユーザー報告: Debian 12のrescue-USB(4GBのRAMDISK)で、sshから`df|usilic`とすると固まり、`ps`では`usilic`が99.9%。
+   - 原因: 端末版の実行ループ(`app/main.cpp`の`runTerminalPhase()`と慣性スクロールの`runCoastLoop()`)は、キーを待つ`poll()`で標準入力(fd 0)を見ていた(Darwinで`/dev/tty`という別名のfdを`poll()`するとPOLLNVALになる回避、ファイル冒頭のコメント)。パイプでは書き手(df)が終わると、キーが無くても`poll()`がすぐ戻る。LinuxではPOLLHUPだけでPOLLINが立たないので、`continue`の空回りになり、キー(`keyInput`、`/dev/tty`)を一度も読まなかった。macOSはPOLLINも立つので空回りせず(修正前の版も、ptyで`ls / | usilic`がCPU 0%で`q`で終わるのを確かめた)。
+   - 修正: `keyPollFd()`。標準入力が端末ならこれまでどおりfd 0。端末でなければ、標準出力・標準エラーの端末を名前(例: `/dev/pts/1`)で開き直したfdを`poll()`する(`/dev/tty`という別名ではないのでDarwinでも正しく待て、`keyInput`の`/dev/tty`と同じ端末の入力が届く)。どちらも端末でなければ`keyInput.fd()`。
+   - 確かめたこと: macOSのptyで`ls / | usilic`がCPU 0%、`q`で終わる(修正後)。Linuxでの確認はユーザーの実機待ち。
+
 1299. **Linux: Englishで入れた時の日本語化、時刻をスクリプトで(2026-11-19)**
    - 直接のユーザー報告と依頼: 内蔵のSSDがある機械で、USBの外付けSSDへDebianをUEFIで入れると、BIOS boot区画を作っても、GRUBが内蔵のSSDの既存のEFI区画へ入った(`/boot/efi`が内蔵のSSD)。そこでCSMを有効にしてBIOSのインストーラで入れたら(grub-pcは入れる先を選べるので問題無し)、"Language:に日本語が無い。やむなくEnglishで進めてみたけれどもxfceのメニューが日本語化されておらずusilicのHELPも英語モードで立ち上がる。fcitxもまずはmozcを有効化したのち、デフォではmozcが無いので右側のリストから左へ移動して使用可にする必要がある"。"ubuntuとdebianの割り振りも検討中なので、メニューの日本語化の箇所だけBUILD.md修正よろしく。他の要望としてはtimedatectlをスクリプトに取り込んでほしい"。
    - **tools/setup-debian.sh**: `update-locale LANG=ja_JP.UTF-8`(`~/.xprofile`のLANGだけでは、lightdmとXfceのセッションは`/etc/default/locale`の言語のまま)。`timedatectl set-timezone Asia/Tokyo`。Fcitx 5をまだ起動していなければ、`~/.config/fcitx5/profile`をキーボード(jpかus)+Mozcで作る。

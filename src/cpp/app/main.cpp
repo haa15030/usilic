@@ -1079,6 +1079,31 @@ void scrollByWheel(fm::Application &app, fm::Display &display, int direction, in
   }
 }
 
+// 2026-11-20、直接のユーザー報告(Debianのrescue-USBで、sshから`df|usilic`とするとCPU 100%のまま固まる): キーを
+// 待つpoll()は標準入力(fd 0)を見ていた(ファイル冒頭のコメント、Darwinで/dev/ttyという別名のfdをpollすると
+// POLLNVALになるため)が、`…|usilic`ではfd 0がパイプで、書き手(df)が終わるとキーが無くてもpoll()がすぐ戻り
+// (LinuxではPOLLHUPだけでPOLLINが立たない)、空回りしてキー(keyInput、/dev/tty)を一度も読まなかった。
+// 標準入力が端末でない時は、標準出力・標準エラーの端末を名前(例: /dev/pts/1)で開き直したfdをpollする
+// (/dev/ttyという別名ではないのでDarwinでも正しくpollでき、keyInputの/dev/ttyと同じ端末の入力が届く)。
+// どちらも端末でなければkeyInput.fd()。
+int keyPollFd(const fm::KeyInput &keyInput) {
+#ifdef _WIN32
+  (void)keyInput;
+  return STDIN_FILENO;  // posix_compat.hppのpoll()はfd 0をコンソールとして待つ
+#else
+  static int opened = -2;
+  if (::isatty(STDIN_FILENO)) return STDIN_FILENO;
+  if (opened == -2) {
+    opened = -1;
+    for (int candidate : {STDOUT_FILENO, STDERR_FILENO}) {
+      const char *name = ::isatty(candidate) ? ::ttyname(candidate) : nullptr;
+      if (name && (opened = ::open(name, O_RDONLY | O_NOCTTY | O_CLOEXEC)) >= 0) break;
+    }
+  }
+  return opened >= 0 ? opened : keyInput.fd();
+#endif
+}
+
 // 2026-10-02追加: readByte()がESCを返した直後に呼ぶ。素の矢印("\x1b[A"〜"\x1b[D"、"\x1bOA"〜
 // "\x1bOD")なら最後の字('A'=↑、'B'=↓、'C'=→、'D'=←)を返す。それ以外、または`accept`に無い
 // 矢印なら読んだ分を戻して0(peekMouseSgr()と同じ)。
@@ -1353,7 +1378,7 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
     for (;;) {
       auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
       int timeoutMs = remaining.count() > 0 ? static_cast<int>(remaining.count()) : 0;
-      struct pollfd fd{STDIN_FILENO, POLLIN, 0};
+      struct pollfd fd{keyPollFd(keyInput), POLLIN, 0};
       if (poll(&fd, 1, timeoutMs) <= 0 || !(fd.revents & POLLIN)) {
         if (std::chrono::steady_clock::now() >= deadline) break;
         continue;
@@ -1956,7 +1981,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
         app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive() && !app.promptActive();
 
     struct pollfd fds[2];
-    fds[0].fd = STDIN_FILENO;  // see file comment on why this, not keyInput.fd(), is polled
+    fds[0].fd = keyPollFd(keyInput);  // see file comment on why this, not keyInput.fd(), is polled (stdin unless piped)
     fds[0].events = POLLIN;
     fds[1].fd = watchShellPty ? app.shell().ptyFd() : -1;  // negative fd: poll() ignores this slot
     fds[1].events = POLLIN;
