@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1301. **tools/setup-debian.sh: `~/.xprofile`が既にあってもFcitxの設定を足す(2026-11-20)**
+   - 直接のユーザー依頼: rescue-USBは色々なキーボードで使うので、スクリプトの`--noswapcaps`(`/etc/default/keyboard`、入れた時に決まる)では合わない。U.shが`~/.emacs.d/init.el`を書く時に`~/.xprofile`へ`setxkbmap -option ctrl:swapcaps`を足し、HHKB等なら外す。
+   - U.sh(リポジトリ外、`src/U_proto.sh`)のDOT_FILESが、`-u`ではsetup-debian.shより先に`~/.xprofile`(入れ替えの部分だけ)を作る。setup-debian.shは`~/.xprofile`が無い時だけFcitxの環境変数を書いていたので、書かれなくなる。ファイルの有無ではなく`GTK_IM_MODULE`の有無で見て、無ければ末尾に足すようにした。
+   - 確かめたこと: `sh -n`。
+
 1300. **端末版: `…|usilic`(標準入力がパイプ)でCPU 100%のまま固まった(Linux、2026-11-20)**
    - 直接のユーザー報告: Debian 12のrescue-USB(4GBのRAMDISK)で、sshから`df|usilic`とすると固まり、`ps`では`usilic`が99.9%。
    - 原因: 端末版の実行ループ(`app/main.cpp`の`runTerminalPhase()`と慣性スクロールの`runCoastLoop()`)は、キーを待つ`poll()`で標準入力(fd 0)を見ていた(Darwinで`/dev/tty`という別名のfdを`poll()`するとPOLLNVALになる回避、ファイル冒頭のコメント)。パイプでは書き手(df)が終わると、キーが無くても`poll()`がすぐ戻る。LinuxではPOLLHUPだけでPOLLINが立たないので、`continue`の空回りになり、キー(`keyInput`、`/dev/tty`)を一度も読まなかった。macOSはPOLLINも立つので空回りせず(修正前の版も、ptyで`ls / | usilic`がCPU 0%で`q`で終わるのを確かめた)。

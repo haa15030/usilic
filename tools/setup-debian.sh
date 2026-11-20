@@ -241,8 +241,9 @@ for rc in .profile .bashrc; do
   grep -qxF "$line" "$HOME/$rc" 2>/dev/null || echo "$line" >> "$HOME/$rc"
 done
 if [ -f "$HOME/.bash_profile" ]; then grep -qxF "$line" "$HOME/.bash_profile" || echo "$line" >> "$HOME/.bash_profile"; fi
-if [ ! -f "$HOME/.xprofile" ]; then
-  cat > "$HOME/.xprofile" <<'XPROFILE'
+# 有無はファイルではなく中身で見る(src/U.shが先にCtrlとCaps Lockの入れ替えだけの~/.xprofileを作ることがある)。
+if ! grep -q 'GTK_IM_MODULE' "$HOME/.xprofile" 2>/dev/null; then
+  cat >> "$HOME/.xprofile" <<'XPROFILE'
 export LANG=ja_JP.UTF-8
 export GTK_IM_MODULE=fcitx
 export QT_IM_MODULE=fcitx
