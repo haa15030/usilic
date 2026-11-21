@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1304. **docs/BUILD.md: 仮の名前ABC・DEF・GHIを実際の値に、矢印`->`を`-->`に(2026-11-21)**
+   - 直接のユーザー依頼: 仮に入れてあったユーザー名`ABC`・本名`DEF`・パスワード`GHI`を、`usilic`・`Yu Silic`・`U`に(秘密ではない、U.shのSMBFSの例と同じ)。ユーザーは「ABC,DEF,GHI→usilic,U,Yu Silic」と書いたが、BUILD.mdでの使い方(Your name・Full nameがDEF)に合わせてDEFを本名にした。
+   - 矢印: `→`はフォントによって半角の幅になって見づらいので`->`にしていたが、これも今ひとつなので`-->`に(151か所)。FreeBSDのインストーラの画面の文字「->- Test default keymap」はそのまま。
+
 1303. **src/U.sh・src/U_proto.sh(Linuxのrescue-USB・RAMDISKを作るスクリプト)をリポジトリに入れる(2026-11-21)**
    - 直接のユーザー依頼: U.shもLinux用のスクリプトとしてリポジトリに含める。これまではどちらもgitの管理外で、変更の前の版に戻せなかった。
    - `src/U.sh`は11/19の版(ユーザーが実機の`/opt/U.sh`に置いてきた元の版)。`src/U_proto.sh`はその試作で、実機ではこれを`/opt/U.sh`・`/mnt/debian/opt/U.sh`へ写して使う。
