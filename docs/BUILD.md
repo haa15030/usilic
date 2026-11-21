@@ -163,46 +163,46 @@ Debian 13とUbuntu(26.10等)を、GUIの無い最低限のインストール(SSH
 
 Desktop版ではなく**Server版**のISO(Desktop版は最小のインストールでもGNOMEが入る)。
 
-<span style="color:#e95420">GNU GRUB</span> --> **Try or Install Ubuntu Server**
+<span style="color:#e95420">GNU GRUB</span> ＞ **Try or Install Ubuntu Server**
 
-<span style="color:#e95420">Welcome!</span> --> **English**
+<span style="color:#e95420">Welcome!</span> ＞ **English**
 
-<span style="color:#e95420">Keyboard configuration</span> --> *Tab* で「Layout:」へ --> **Japanese** -->  
-「Variant:」--> **Japanese** --> [Done]
+<span style="color:#e95420">Keyboard configuration</span> ＞ *Tab* で「Layout:」へ ＞ **Japanese** ＞  
+「Variant:」＞ **Japanese** ＞ [Done]
 
-<span style="color:#e95420">Choose the type of installation</span> --> **Ubuntu Server (minimized)** を *Space* で選ぶ --> [Done]  
+<span style="color:#e95420">Choose the type of installation</span> ＞ **Ubuntu Server (minimized)** を *Space* で選ぶ ＞ [Done]  
 (Debianの「SSH server」だけに近い。削られたmanのページ等は、2.のスクリプトが`unminimize`で戻す)
 
-<span style="color:#e95420">Network configuration</span> --> 「DHCPv4」のアドレスが出たら [Done]
+<span style="color:#e95420">Network configuration</span> ＞ 「DHCPv4」のアドレスが出たら [Done]
 
-<span style="color:#e95420">Proxy configuration</span> --> 「Proxy address:」(使わなければ空) --> [Done]
+<span style="color:#e95420">Proxy configuration</span> ＞ 「Proxy address:」(使わなければ空) ＞ [Done]
 
-<span style="color:#e95420">Ubuntu archive mirror configuration</span> --> 「Mirror address:」`http://jp.archive.ubuntu.com/ubuntu/` -->  
-「... Reading package lists...」--> [Done]
+<span style="color:#e95420">Ubuntu archive mirror configuration</span> ＞ 「Mirror address:」`http://jp.archive.ubuntu.com/ubuntu/` ＞  
+「... Reading package lists...」＞ [Done]
 
-<span style="color:#e95420">Guided storage configuration</span> --> **Custom storage layout** --> [Done]
+<span style="color:#e95420">Guided storage configuration</span> ＞ **Custom storage layout** ＞ [Done]
 
-<span style="color:#e95420">Storage configuration</span> --> **Realtek_RTL9210_NVME_…**(環境による) の **free space** --> [Add GPT Partition] -->  
-「Size (max 119.240G):」`50G` --> 「Format:」**ext4** --> 「Mount:」**/** --> [Create] --> [Done]
+<span style="color:#e95420">Storage configuration</span> ＞ **Realtek_RTL9210_NVME_…**(環境による) の **free space** ＞ [Add GPT Partition] ＞  
+「Size (max 119.240G):」`50G` ＞ 「Format:」**ext4** ＞ 「Mount:」**/** ＞ [Create] ＞ [Done]
 
-※空のSSDなら、先にSSDの行を選んで [Use As Boot Device](UEFIの起動に要るEFIシステム区画ができる)。前のインストールの区画が残っていて使い回すなら、その区画を選んで [Edit] --> 「Format:」**ext4** --> 「Mount:」**/** --> [Save]。
+※空のSSDなら、先にSSDの行を選んで [Use As Boot Device](UEFIの起動に要るEFIシステム区画ができる)。前のインストールの区画が残っていて使い回すなら、その区画を選んで [Edit] ＞ 「Format:」**ext4** ＞ 「Mount:」**/** ＞ [Save]。
 
 ※スワップは区画を作らず、Ubuntuが`/swap.img`(ファイル)を作る。Debianからも使える(下の「Ubuntuのスワップファイルを使う」)。
 
-<span style="color:#e95420">Confirm destructive action</span> --> [Continue]
+<span style="color:#e95420">Confirm destructive action</span> ＞ [Continue]
 
-<span style="color:#e95420">Profile configuration</span> --> 「Your name:」`Yu Silic` --> 「Your servers name:」`HOST` -->  
-「Pick a username:」`usilic` --> 「Choose a password:」`U` --> 「Confirm your password:」`U` --> [Done]
+<span style="color:#e95420">Profile configuration</span> ＞ 「Your name:」`Yu Silic` ＞ 「Your servers name:」`HOST` ＞  
+「Pick a username:」`usilic` ＞ 「Choose a password:」`U` ＞ 「Confirm your password:」`U` ＞ [Done]
 
-<span style="color:#e95420">SSH configuration</span> --> **Install OpenSSH server** を *Space* で選ぶ -->  
-**Allow password authentication over SSH** --> [Done]
+<span style="color:#e95420">SSH configuration</span> ＞ **Install OpenSSH server** を *Space* で選ぶ ＞  
+**Allow password authentication over SSH** ＞ [Done]
 
-<span style="color:#e95420">Featured server snaps</span> --> 何も選ばず [Done]
+<span style="color:#e95420">Featured server snaps</span> ＞ 何も選ばず [Done]
 
 <span style="color:#e95420">Installing system</span> ...
 
-<span style="color:#e95420">Installation complete!</span> --> [Reboot Now] -->  
-「Please remove the installation medium, then press ENTER:」--> USBメモリを抜いて *Enter*
+<span style="color:#e95420">Installation complete!</span> ＞ [Reboot Now] ＞  
+「Please remove the installation medium, then press ENTER:」＞ USBメモリを抜いて *Enter*
 
 ※時刻はServer版では協定世界時のまま。2.のスクリプトが日本(*timedatectl set-timezone Asia/Tokyo*)にする。
 
@@ -216,33 +216,33 @@ UEFIのインストーラが起動するよう、マザーボードの設定でC
 
 ISOは**netinst**(`debian-13.x.0-amd64-netinst.iso`、14のテスト版なら`debian-testing-amd64-netinst.iso`)を使う。ネットブート用の小さな`mini.iso`は中にカーネルしか無く、ファイルシステムのモジュールとファームウェアをインストール中にネットから取るため、`mini.iso`のカーネルとアーカイブのカーネルの版がずれていると、パーティショニングの「利用方法」に**ext4が出ず**先へ進めない。最初に「見つからないファームウェアファイル: rtl_nic/rtl8125b-2.fw」等と聞かれるのも`mini.iso`だから(2026-11-18、i5-9400Fの機械で13.7・14とも)。
 
-<span style="color:#e95420">GNU GRUB</span> --> **Install**
+<span style="color:#e95420">GNU GRUB</span> ＞ **Install**
 
-<span style="color:#e95420">Select a language</span> --> 「Language:」**Japanese - 日本語**
+<span style="color:#e95420">Select a language</span> ＞ 「Language:」**Japanese - 日本語**
 
-<span style="color:#e95420">場所の選択</span> --> 「国・領土・地域:」**日本**
+<span style="color:#e95420">場所の選択</span> ＞ 「国・領土・地域:」**日本**
 
-<span style="color:#e95420">キーボードの設定</span> --> 「利用するキーマップ:」**日本語**  
+<span style="color:#e95420">キーボードの設定</span> ＞ 「利用するキーマップ:」**日本語**  
 (スクリプトはこれ(`/etc/default/keyboard`の`XKBLAYOUT="jp"`)を見てjp106にする)
 
-<span style="color:#e95420">ネットワークの設定</span> --> 「ホスト名:」`HOST` --> 「ドメイン名:」`DOMAIN`(無ければ空)
+<span style="color:#e95420">ネットワークの設定</span> ＞ 「ホスト名:」`HOST` ＞ 「ドメイン名:」`DOMAIN`(無ければ空)
 
-<span style="color:#e95420">Debian アーカイブのミラーを選択</span> --> 「Debian アーカイブミラーの国:」**日本** -->  
-「Debian アーカイブミラー:」**deb.debian.org** --> 「HTTP プロキシの情報(なければ空):」-->  
+<span style="color:#e95420">Debian アーカイブのミラーを選択</span> ＞ 「Debian アーカイブミラーの国:」**日本** ＞  
+「Debian アーカイブミラー:」**deb.debian.org** ＞ 「HTTP プロキシの情報(なければ空):」＞  
 「Debian アーカイブミラーを確認しています」...
 
-<span style="color:#e95420">ユーザとパスワードのセットアップ</span> --> 「root のパスワード:」空のまま *Enter* --> 確認も空のまま *Enter* -->  
-「新しいユーザの本名(フルネーム):」`Yu Silic` --> 「あなたのアカウントのユーザ名:」`usilic` --> パスワード `U` --> 確認 `U`
+<span style="color:#e95420">ユーザとパスワードのセットアップ</span> ＞ 「root のパスワード:」空のまま *Enter* ＞ 確認も空のまま *Enter* ＞  
+「新しいユーザの本名(フルネーム):」`Yu Silic` ＞ 「あなたのアカウントのユーザ名:」`usilic` ＞ パスワード `U` ＞ 確認 `U`
 
 ※rootのパスワードを空にすると、作ったユーザーがsudoできるようになる(設定した時は、2.のスクリプトがsudoのグループに入れる)。
 
-<span style="color:#e95420">ディスクのパーティショニング</span> --> 「パーティショニングの方法:」**手動** -->  
-**SCSI1 (0,0,0) (sda) - 128.0 GB Realtek RTL9210 NVME**(環境による) の **73.2 GB 空き領域** -->  
-**新しいパーティションの作成** --> 「新しいパーティションのサイズ:」`53.2 GB` --> **先頭** -->  
-(利用方法 ext4・マウントポイント / のまま) **パーティションのセットアップを終了** -->  
-**20.0 GB 空き領域** --> **新しいパーティションの作成** --> `20.0 GB` --> **先頭** -->  
-**利用方法: ext4 ジャーナリングファイルシステム** --> **スワップ領域** --> **パーティションのセットアップを終了** -->  
-**パーティショニングの終了とディスクへの変更の書き込み** --> 「ディスクに変更を書き込みますか?」**はい**
+<span style="color:#e95420">ディスクのパーティショニング</span> ＞ 「パーティショニングの方法:」**手動** ＞  
+**SCSI1 (0,0,0) (sda) - 128.0 GB Realtek RTL9210 NVME**(環境による) の **73.2 GB 空き領域** ＞  
+**新しいパーティションの作成** ＞ 「新しいパーティションのサイズ:」`53.2 GB` ＞ **先頭** ＞  
+(利用方法 ext4・マウントポイント / のまま) **パーティションのセットアップを終了** ＞  
+**20.0 GB 空き領域** ＞ **新しいパーティションの作成** ＞ `20.0 GB` ＞ **先頭** ＞  
+**利用方法: ext4 ジャーナリングファイルシステム** ＞ **スワップ領域** ＞ **パーティションのセットアップを終了** ＞  
+**パーティショニングの終了とディスクへの変更の書き込み** ＞ 「ディスクに変更を書き込みますか?」**はい**
 
 ※Ubuntuの区画(ext4)とEFIシステム区画には触らない(EFIシステム区画はそのまま共用される)。
 
@@ -250,12 +250,12 @@ ISOは**netinst**(`debian-13.x.0-amd64-netinst.iso`、14のテスト版なら`de
 
 <span style="color:#e95420">ベースシステムをインストールしています</span> ...
 
-<span style="color:#e95420">popularity-contest を設定しています</span> --> どちらでもよい
+<span style="color:#e95420">popularity-contest を設定しています</span> ＞ どちらでもよい
 
-<span style="color:#e95420">ソフトウェアの選択</span> --> 「インストールするソフトウェアの選択:」は *Space* で **SSH server** だけ  
+<span style="color:#e95420">ソフトウェアの選択</span> ＞ 「インストールするソフトウェアの選択:」は *Space* で **SSH server** だけ  
 (「Debian デスクトップ環境」「GNOME」等は外す。「標準システムユーティリティ」は付けたままでよい)
 
-<span style="color:#e95420">インストールの完了</span> --> 「システム時間を UTC に設定していますか?」**はい** --> [続ける]
+<span style="color:#e95420">インストールの完了</span> ＞ 「システム時間を UTC に設定していますか?」**はい** ＞ [続ける]
 
 ※Ubuntuは、Debianの起動メニュー(GRUB)に「Ubuntu」として出る。出なければ下の「BIOS(CSM)でも起動できるようにする」の1.。
 
@@ -391,9 +391,9 @@ sudo reboot
 
 lightdmのログイン画面でログインし、Xfceに入る。
 
-- アプリケーション --> 設定 --> Fcitx 5 の設定 で、「入力メソッド」にMozcがあることを確かめる(無ければ右の一覧のMozcを左へ移して「適用」。Englishで入れると無かった。スクリプトは`~/.config/fcitx5/profile`にMozcを入れてある)。「DBusがFcitxと接続できませんでした。Fcitxは動いていますか?」と出たら、Fcitx 5が自動で起動していない。その画面の「Fcitx 5 を実行する」でつながる。次から自動で起動するよう、端末で *mkdir -p ~/.config/autostart && cp /usr/share/applications/org.fcitx.Fcitx5.desktop ~/.config/autostart/*(スクリプトは済ませてある)。
-- 音声: パネルに音量のアイコンが無ければ、パネルを右クリック --> パネル --> 新しいアイテムの追加 --> 「PulseAudio プラグイン」。出力先(マザーボードの内蔵・HDMI)は、そのアイコンかpavucontrol(アプリケーション --> マルチメディア --> PulseAudio 音量調節)で切り換える。再生中の音もそのまま付いてくる。
-- アプリケーション --> アクセサリー --> usilic で起動する。
+- アプリケーション ＞ 設定 ＞ Fcitx 5 の設定 で、「入力メソッド」にMozcがあることを確かめる(無ければ右の一覧のMozcを左へ移して「適用」。Englishで入れると無かった。スクリプトは`~/.config/fcitx5/profile`にMozcを入れてある)。「DBusがFcitxと接続できませんでした。Fcitxは動いていますか?」と出たら、Fcitx 5が自動で起動していない。その画面の「Fcitx 5 を実行する」でつながる。次から自動で起動するよう、端末で *mkdir -p ~/.config/autostart && cp /usr/share/applications/org.fcitx.Fcitx5.desktop ~/.config/autostart/*(スクリプトは済ませてある)。
+- 音声: パネルに音量のアイコンが無ければ、パネルを右クリック ＞ パネル ＞ 新しいアイテムの追加 ＞ 「PulseAudio プラグイン」。出力先(マザーボードの内蔵・HDMI)は、そのアイコンかpavucontrol(アプリケーション ＞ マルチメディア ＞ PulseAudio 音量調節)で切り換える。再生中の音もそのまま付いてくる。
+- アプリケーション ＞ アクセサリー ＞ usilic で起動する。
 
 ### BIOS(CSM)でも起動できるようにする(Debianから)
 
@@ -529,52 +529,52 @@ NVIDIAのGPUを使う例で書いている。AMD・Intelは「3. GPUのドライ
 
 ### 1. インストーラー
 
-<span style="color:#0097a7">Welcome</span> --> [Install]
+<span style="color:#0097a7">Welcome</span> ＞ [Install]
 
-<span style="color:#0097a7">Keymap Selection</span> --> 「Japanese 106」を *Space* で選ぶ -->  
+<span style="color:#0097a7">Keymap Selection</span> ＞ 「Japanese 106」を *Space* で選ぶ ＞  
 一番上の行 **>>> Continue with jp.kbd keymap** で [Select]  
 (2行目の「->- Test default keymap」 は試し打ちだけ)
 
-<span style="color:#0097a7">Set Hostname</span> --> `HOST` [OK]
+<span style="color:#0097a7">Set Hostname</span> ＞ `HOST` [OK]
 
-<span style="color:#0097a7">Select Installation type</span> --> [Distribution Sets] (従来のtarball、portsとは無関係)
+<span style="color:#0097a7">Select Installation type</span> ＞ [Distribution Sets] (従来のtarball、portsとは無関係)
 
-<span style="color:#0097a7">Distribution Select</span> --> 「src」を選ぶ --> [OK]
+<span style="color:#0097a7">Distribution Select</span> ＞ 「src」を選ぶ ＞ [OK]
 
-<span style="color:#0097a7">Network Installation</span> --> [OK]
+<span style="color:#0097a7">Network Installation</span> ＞ [OK]
 
-<span style="color:#0097a7">Network Configuration</span> --> **rge0 RTL8125** (環境による) --> [Auto]
+<span style="color:#0097a7">Network Configuration</span> ＞ **rge0 RTL8125** (環境による) ＞ [Auto]
 
-<span style="color:#0097a7">Partitioning</span> --> **Auto (ZFS) Guided Root-on-ZFS** --> [OK]
+<span style="color:#0097a7">Partitioning</span> ＞ **Auto (ZFS) Guided Root-on-ZFS** ＞ [OK]
 
-<span style="color:#0097a7">ZFS Configuration</span> --> 「zroot」 --> [OK] -->  
-**>>> Install Proceed with Installation** [Select] -->  
-**stripe Stripe - No Redundancy** [OK] -->  
-**nda0 Patriot M.2 P300 128GB**（環境による）を選ぶ [OK] --> [YES]
+<span style="color:#0097a7">ZFS Configuration</span> ＞ 「zroot」 ＞ [OK] ＞  
+**>>> Install Proceed with Installation** [Select] ＞  
+**stripe Stripe - No Redundancy** [OK] ＞  
+**nda0 Patriot M.2 P300 128GB**（環境による）を選ぶ [OK] ＞ [YES]
 
-<span style="color:#0097a7">Mirror Selection</span> --> **http://download.freebsd.org Main Site** --> [OK]
+<span style="color:#0097a7">Mirror Selection</span> ＞ **http://download.freebsd.org Main Site** ＞ [OK]
 
 <span style="color:#0097a7">Fetching Distribution</span> ...
 
 <span style="color:#0097a7">Archive Extraction</span> ...
 
-<span style="color:#0097a7">Boot Configuration</span> --> [Yes]
+<span style="color:#0097a7">Boot Configuration</span> ＞ [Yes]
 
-<span style="color:#0097a7">Set root password</span> --> Password --> Repeat password --> [OK]
+<span style="color:#0097a7">Set root password</span> ＞ Password ＞ Repeat password ＞ [OK]
 
-<span style="color:#0097a7">Time Zone Selector</span> --> **5  Asia** --> **20 Japan** --> [OK] -->  
-<span style="color:#0097a7">Confirmation</span> --> [Yes]
+<span style="color:#0097a7">Time Zone Selector</span> ＞ **5  Asia** ＞ **20 Japan** ＞ [OK] ＞  
+<span style="color:#0097a7">Confirmation</span> ＞ [Yes]
 
-<span style="color:#0097a7">Time & Date</span> --> [Set Date] (合ってれば [Skip]) -->  
+<span style="color:#0097a7">Time & Date</span> ＞ [Set Date] (合ってれば [Skip]) ＞  
 [Set Time] (合ってれば [Skip])
 
-<span style="color:#0097a7">System Configuration</span> --> [OK]
+<span style="color:#0097a7">System Configuration</span> ＞ [OK]
 
-<span style="color:#0097a7">System Hardening</span> --> [OK]
+<span style="color:#0097a7">System Hardening</span> ＞ [OK]
 
 <span style="color:#0097a7">FreeBSD firmware installation</span> ...
 
-<span style="color:#0097a7">Add User Accounts</span> --> [Yes]
+<span style="color:#0097a7">Add User Accounts</span> ＞ [Yes]
 
 ```screen
 「FreeBSD Installer
@@ -582,22 +582,22 @@ NVIDIAのGPUを使う例で書いている。AMD・Intelは「3. GPUのドライ
 Add Users」
 ```
 
-Username: `usilic` -->  
-Full name: `Yu Silic` -->  
-Uid: (Leave empty for default): -->  
-Login group [usilic]: -->  
+Username: `usilic` ＞  
+Full name: `Yu Silic` ＞  
+Uid: (Leave empty for default): ＞  
+Login group [usilic]: ＞  
 Login group is usilic Invite usilic into other groups? [] : *wheel video operator audio*  
-Login class [default]: -->  
-Shell (sh csh tcsh nologin) [sh]: -->  
-Home directory [/home/usilic] -->  
-Home directory permissions (Leave empty for default): -->  
-Enable ZFS encryption? (yes/no) [no] -->  
-Use password-based authentication? [yes]: -->  
-Use an empty password? (yes/no) [no]: -->  
-Use a random password? (yes/no) [no]: -->  
+Login class [default]: ＞  
+Shell (sh csh tcsh nologin) [sh]: ＞  
+Home directory [/home/usilic] ＞  
+Home directory permissions (Leave empty for default): ＞  
+Enable ZFS encryption? (yes/no) [no] ＞  
+Use password-based authentication? [yes]: ＞  
+Use an empty password? (yes/no) [no]: ＞  
+Use a random password? (yes/no) [no]: ＞  
 Enter password: `U`  
 Enter password again: `U`  
-Lock out the account after creation? [no]: -->
+Lock out the account after creation? [no]: ＞
 
 ```screen
 「Username    : usilic
@@ -613,16 +613,16 @@ Lock out the account after creation? [no]: -->
   Locked      : no」
 ```
 
-OK? (yes/no) [yes]: -->  
+OK? (yes/no) [yes]: ＞  
 adduser: INFO: Successfully added (usilic) to the user database.  
 Add another user? (yes/no) [no]:
 
-<span style="color:#0097a7">Final Configuration</span> -->  
-**Finish Apply configuration and exit installer** --> [Select]
+<span style="color:#0097a7">Final Configuration</span> ＞  
+**Finish Apply configuration and exit installer** ＞ [Select]
 
-<span style="color:#0097a7">Manual Configuration</span> --> [No]
+<span style="color:#0097a7">Manual Configuration</span> ＞ [No]
 
-<span style="color:#0097a7">Complete</span> --> [Reboot]
+<span style="color:#0097a7">Complete</span> ＞ [Reboot]
 
 ※sshでログイン中にシステムを入れ直した場合は、ログインする側のマシンで *ssh-keygen -R \<IP\>* を実行する(ホスト鍵が変わるため)。
 
@@ -667,7 +667,7 @@ sh ~usilic/git/usilic/tools/setup-freebsd.sh usilic
 su -
 ```
 
-*pkg bootstrap* --> *y*
+*pkg bootstrap* ＞ *y*
 
 ※*Newer FreeBSD version for package pkg*(`package: 1600030`・`running userland: 1600029`等)の後に*Ignore the mismatch and continue? [y/N]*と聞かれたら*y*。この後のpkgでも同じことを聞かれたら*y*(省くには、先に *export IGNORE_OSVERSION=yes* しておく)。
 
@@ -675,13 +675,13 @@ su -
 pkg update
 ```
 
-*pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf xfce4-screenshooter-plugin firefox xdg-utils python3* --> *y*
+*pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf xfce4-screenshooter-plugin firefox xdg-utils python3* ＞ *y*
 
 ※firefoxの最後に長いメッセージ(boost・gcc14・libjxl・firefoxの未対応機能等)が出るが、対応が要るものは無い。
 
-*pkg install xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa dejavu noto-jp fcitx5 fcitx5-configtool fcitx5-gtk3 fcitx5-qt6 ja-fcitx5-mozc3* --> *y*
+*pkg install xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa dejavu noto-jp fcitx5 fcitx5-configtool fcitx5-gtk3 fcitx5-qt6 ja-fcitx5-mozc3* ＞ *y*
 
-*pkg install mpv pulseaudio pavucontrol xfce4-pulseaudio-plugin dsbmixer* --> *y*
+*pkg install mpv pulseaudio pavucontrol xfce4-pulseaudio-plugin dsbmixer* ＞ *y*
 
 ※動画・音声のプレーヤー(mpv、macOSのIINAの元になったもの)と、音声(pulseaudio、Xfceのパネルの音量のプラグインと、出力先・音量を選ぶpavucontrol、FreeBSDの既定の装置と音量を見るdsbmixer)。パッケージのmpvはOSSにだけ出すので、mpvの出力先は既定の装置で決まる(下の注意点の「音声」)。
 
@@ -823,7 +823,7 @@ xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false
 
 鍵を作って、公開鍵を表示する。
 
-*ssh-keygen -t ed25519* --> shプロンプトに戻るまでは *Enter* のみ
+*ssh-keygen -t ed25519* ＞ shプロンプトに戻るまでは *Enter* のみ
 
 *cat ~/.ssh/id_ed25519.pub*(折り返し無しでコピーする)
 
@@ -831,11 +831,11 @@ firefoxで *https://github.com/settings/keys* へアクセスし、GitHubのア�
 
 New SSH key をクリック
 
-Title --> `任意`
+Title ＞ `任意`
 
-Key type --> そのまま
+Key type ＞ そのまま
 
-Key --> 先ほどコピーした公開鍵をペースト
+Key ＞ 先ほどコピーした公開鍵をペースト
 
 Authentication keys の欄に、Titleの公開鍵が登録されていることを確かめる。
 
@@ -845,7 +845,7 @@ Authentication keys の欄に、Titleの公開鍵が登録されていること�
 
 Terminalで実行する。
 
-*ssh -T git\@github.com* --> 初回は *yes*(Hi ...! と出ればよい)
+*ssh -T git\@github.com* ＞ 初回は *yes*(Hi ...! と出ればよい)
 
 ```key
 mkdir git
@@ -891,13 +891,13 @@ echo 'PATH=$HOME/.local/bin:$PATH; export PATH' >> ~/.bash_profile
 
 ### 9. 日本語入力の設定
 
-アプリケーション --> 設定 --> Fcitx5 設定
+アプリケーション ＞ 設定 ＞ Fcitx5 設定
 
-「入力メソッド」に Mozc があることを確かめる。無ければ追加して「適用」。一覧に出なければ「現在の言語のみ表示」のチェックを外す。 --> 「閉じる」
+「入力メソッド」に Mozc があることを確かめる。無ければ追加して「適用」。一覧に出なければ「現在の言語のみ表示」のチェックを外す。 ＞ 「閉じる」
 
 ### 10. usilicの起動
 
-アプリケーション --> アクセサリー --> usilic をクリックする。
+アプリケーション ＞ アクセサリー ＞ usilic をクリックする。
 
 ※アクセサリーにusilicが無い時だけ、XfceのTerminalでパネルを再起動してから選ぶ(ログインした後で *gmake install* したusilicがメニューに出ないことがある。2026-11-07のi5-7500では再起動しなくても出ていた)。
 
