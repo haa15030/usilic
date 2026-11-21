@@ -33408,6 +33408,22 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1303. **src/U.sh・src/U_proto.sh(Linuxのrescue-USB・RAMDISKを作るスクリプト)をリポジトリに入れる(2026-11-21)**
+   - 直接のユーザー依頼: U.shもLinux用のスクリプトとしてリポジトリに含める。これまではどちらもgitの管理外で、変更の前の版に戻せなかった。
+   - `src/U.sh`は11/19の版(ユーザーが実機の`/opt/U.sh`に置いてきた元の版)。`src/U_proto.sh`はその試作で、実機ではこれを`/opt/U.sh`・`/mnt/debian/opt/U.sh`へ写して使う。
+   - U_proto.shのここまでの主な変更(どれも`bash -n`・`dash -n`だけ、実機は未確認のものを含む):
+     - `-m sdX -`: USBへの写しをtarからddに(tarでは16GBのUSBメモリに1時間ほどかかった)。ルート区画は元の区画より小さくしない。ファイルの写しはtarに`v`。
+     - `-d`: ??GB-base(8GB以上、STRAGE)の上で、tasksel(Debian)・メタパッケージ(Ubuntu)のデスクトップを一覧から番号で選んで入れ、`8GB-名前.img`に保存。
+     - `-i`: `/mnt/debian`のusilicの要るファイルだけをRAMDISKへ写す(足りないライブラリは`ldd`と`/var/lib/dpkg/info/*.list`で探して入れる)。
+     - DOT_FILES: `~/.xprofile`にCtrlとCaps Lockの入れ替え(`NOSWAP_KBD`に合うキーボード、HHKB等がつながっていれば入れ替えない)。
+     - `-o … -p`: `dpkg --purge`は依存関係を解かないので、3回まで繰り返し、残ったものと理由をU.logへ。Ubuntuの`linux-modules-*`も対象から外す。
+     - Debian 13(6.12)向けに、`/usr/src`のtmpfsを2200000K、`BUILD_IMG_GB`を7に(ユーザーが実機で1600000K・4GB・5GBでは足りないと確認)。
+     - `-u`の「4GB-rescue.img: not created.」: rescueはDEBIAN区画に保存するのに、STRAGEを見て確かめていた。
+     - ビルド用のイメージ(`$BUILD.img`)はSTRAGEにだけ置く。DEBIAN区画の圧縮した控え(`$BUILD.gz`)はやめた(ユーザーの判断、"4GB-rescue.imgと違って簡単に作れる"、カーネルは元のSSDで作り直す)。
+     - `ON_EXTERN`等の「EXTERN」を「UBUNTU」に(他のディストリビューションと区別する)。
+     - `-u`: `EXTRA_GB`(8)のカーネルと`RAM-*+8gb-base.gz`を4GBのカーネルに続けて作り、4GB-rescue.imgとusilicのビルド環境の前に止まって続けるか尋ねる(8GBの土台が収まるかを先に見る、ユーザーの依頼)。
+   - 気をつけること: 両方のファイルの`SMBFS`の書き方の例(コメント)に、LANのアドレスとユーザー名・パスワードが書いてある。公開(`usilic/usilic`)の前に見直す。
+
 1302. **docs/BUILD.md(FreeBSD): USBのディスクにUFSで入れると、再起動でルートが見つからない(2026-11-21)**
    - 直接のユーザー報告と依頼: 16.0-CURRENTを外付けのSSD(RealtekのRTL9210のUSB変換)の区画にUFSで入れたら、再起動で`Root mount waiting for: usbus0`の後に`mountroot>`。*ufs:/dev/da1p5* で起動したが、シングルユーザーで止まった。`/etc/fstab`はインストーラが`/dev/da2p5`・`/dev/da2p1`と書いていた(インストールの時はUSB機器が1つ多かった)。
    - **docs/BUILD.md**: FreeBSDの注意点(インストールとパッケージ)に、`mountroot>`での答え方と、GPTのラベル(`/dev/gpt/fbsdroot`・`/dev/gpt/efiboot`)と`loader.conf`の`vfs.root.mountfrom`・`kern.cam.boot_delay`での直し方。ユーザーが実機で起動・ログインまで確認。
