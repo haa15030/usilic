@@ -920,6 +920,11 @@ usilicが開いたら、「usilic-1.5b:~\$ sudo pkg install -y groff mg texinfo 
 - 最初の起動のインストールの案内で入らなかったものは、次の起動でもう一度だけ実行し、その後はモードラインに「見つかりません」と出すだけなので、手で入れる。
 - `su`はwheelグループのユーザーだけ。インストーラで入れなかったユーザーは`pw groupmod wheel -m ユーザー名`。
 - `noto-jp`は-cの表示に要る(無いと端末で豆腐になる字がある)。入れた後はログインし直す。
+- USBでつないだディスク(外付けのSSD等)にUFSで入れると、再起動で`Root mount waiting for: usbus0`の後に`mountroot>`で止まることがある(2026-11-21、16.0-CURRENT、RealtekのUSB変換(RTL9210)のケースで実際に)。インストーラは`/etc/fstab`に`/dev/da2p5`のような装置の名前で書くが、`da`の番号は挿さっているUSB機器の数で変わる(インストールの時はインストーラのUSBメモリ等もあって`da2`、再起動の後は`da1`だった)。`mountroot>`で *?* を打つと見えている名前が出るので、*ufs:/dev/da1p5* のように答えれば起動する(`nda1`のような内蔵のNVMeの区画を指定しても、`unknown file system`等で起動しない)。起動したら、区画に名前(GPTのラベル)を付けて、番号の代わりにそれで指定する(LinuxのfstabのUUID=にあたる。FreeBSDでは`/dev/gpt/ラベル`・`/dev/gptid/UUID`・`/dev/ufsid/ID`がある):
+  - *gpart modify -i 5 -l fbsdroot da1* と *gpart modify -i 1 -l efiboot da1*(`-i`は区画の番号、`da1`はその時の名前。EFI区画はほかのOSと共用でも、ラベルを付けて差し支えない。`Operation not permitted`なら先に *sysctl kern.geom.debugflags=16*)
+  - `/etc/fstab`の`/dev/da2p5`を`/dev/gpt/fbsdroot`に、`/dev/da2p1`を`/dev/gpt/efiboot`に書き換える。
+  - `/boot/loader.conf`に`vfs.root.mountfrom="ufs:/dev/gpt/fbsdroot"`と`kern.cam.boot_delay="10000"`(USBのディスクが見えるまで待つ)を足す。
+  - ZFSで入れればプールの名前で探すので、この問題は起きない。
 
 **GPUと画面**
 

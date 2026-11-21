@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1302. **docs/BUILD.md(FreeBSD): USBのディスクにUFSで入れると、再起動でルートが見つからない(2026-11-21)**
+   - 直接のユーザー報告と依頼: 16.0-CURRENTを外付けのSSD(RealtekのRTL9210のUSB変換)の区画にUFSで入れたら、再起動で`Root mount waiting for: usbus0`の後に`mountroot>`。*ufs:/dev/da1p5* で起動したが、シングルユーザーで止まった。`/etc/fstab`はインストーラが`/dev/da2p5`・`/dev/da2p1`と書いていた(インストールの時はUSB機器が1つ多かった)。
+   - **docs/BUILD.md**: FreeBSDの注意点(インストールとパッケージ)に、`mountroot>`での答え方と、GPTのラベル(`/dev/gpt/fbsdroot`・`/dev/gpt/efiboot`)と`loader.conf`の`vfs.root.mountfrom`・`kern.cam.boot_delay`での直し方。ユーザーが実機で起動・ログインまで確認。
+
 1301. **tools/setup-debian.sh: `~/.xprofile`が既にあってもFcitxの設定を足す(2026-11-20)**
    - 直接のユーザー依頼: rescue-USBは色々なキーボードで使うので、スクリプトの`--noswapcaps`(`/etc/default/keyboard`、入れた時に決まる)では合わない。U.shが`~/.emacs.d/init.el`を書く時に`~/.xprofile`へ`setxkbmap -option ctrl:swapcaps`を足し、HHKB等なら外す。
    - U.sh(リポジトリ外、`src/U_proto.sh`)のDOT_FILESが、`-u`ではsetup-debian.shより先に`~/.xprofile`(入れ替えの部分だけ)を作る。setup-debian.shは`~/.xprofile`が無い時だけFcitxの環境変数を書いていたので、書かれなくなる。ファイルの有無ではなく`GTK_IM_MODULE`の有無で見て、無ければ末尾に足すようにした。
