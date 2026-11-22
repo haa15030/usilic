@@ -607,8 +607,9 @@ _unmount_part() {
 }
 
 _dd_build_img() {
-    echo "dd if=/dev/zero of=$mnt_strage/opt/$BUILD.img bs=1KB count=$BUILD_IMG_KB"
-    dd if=/dev/zero of=$mnt_strage/opt/$BUILD.img bs=1KB count=$BUILD_IMG_KB
+    # dd で 0 を書かず、中身の無いファイルにする（mkfs.ext4 が要る所だけ書く。USB等の遅いSTRAGEで数分短くなる）
+    echo "truncate -s $((BUILD_IMG_KB*1000)) $mnt_strage/opt/$BUILD.img"
+    truncate -s $((BUILD_IMG_KB*1000)) $mnt_strage/opt/$BUILD.img
     echo "mkfs.ext4 -q $mnt_strage/opt/$BUILD.img"
     mkfs.ext4 -q $mnt_strage/opt/$BUILD.img
 }
@@ -873,8 +874,9 @@ _update_base() {
     echo "tar cf - /lib/modules/$_new_module /usr/src/linux-headers-$_new_module 2>/dev/null| tar xf - -C /tmp/loop1.$TMP_LABEL"
     tar cf - /lib/modules/$_new_module /usr/src/linux-headers-$_new_module 2>/dev/null| tar xf - -C /tmp/loop1.$TMP_LABEL
     _new_kb=$((_new_gb*1000*1000))
-    echo "dd if=/dev/zero of=$mnt_strage/opt/IMG0.img bs=1KB count=$_new_kb"
-    dd if=/dev/zero of=$mnt_strage/opt/IMG0.img bs=1KB count=$_new_kb
+    echo "truncate -s $((_new_kb*1000)) $mnt_strage/opt/IMG0.img"
+    rm -f $mnt_strage/opt/IMG0.img
+    truncate -s $((_new_kb*1000)) $mnt_strage/opt/IMG0.img
     echo "mkfs.ext4 -q $mnt_strage/opt/IMG0.img"
     mkfs.ext4 -q $mnt_strage/opt/IMG0.img
     echo "mount -o loop $mnt_strage/opt/IMG0.img /tmp/loop0.$TMP_LABEL"
@@ -2033,8 +2035,10 @@ _save_host() {
         fi
     done
     if [ "$_work_area" = "opt" ] || [ $_ram_img_kb -gt "`_tmpfs_size | tail -n1`" ]; then # _ram_img_kbが/dev/shmの空きよりも大きい
-        echo "dd if=/dev/zero of=$_bld/IMG0.img bs=1KB count=$_ram_img_kb"
-        dd if=/dev/zero of=$_bld/IMG0.img bs=1KB count=$_ram_img_kb 2>/tmp/error.$TMP_LABEL
+        # dd で 0 を書かず、中身の無いファイルにする（空きは上で確かめた）
+        echo "truncate -s $((_ram_img_kb*1000)) $_bld/IMG0.img"
+        rm -f $_bld/IMG0.img
+        truncate -s $((_ram_img_kb*1000)) $_bld/IMG0.img 2>/tmp/error.$TMP_LABEL
         if [ $? -ne 0 ]; then
             echo "$1: IMG0.img: `tail -n1 /tmp/error.$TMP_LABEL` : $LINENO" | tee -a /tmp/log.$TMP_LABEL
             rm -f $_bld/IMG0.img
@@ -2049,8 +2053,8 @@ _save_host() {
         _fs $LINENO umount /tmp/loop0.$TMP_LABEL
         echo "mount -t tmpfs -o size=${_ram_img_kb}K /dev/shm /tmp/shm0.$TMP_LABEL"
         _fs $LINENO mount -t tmpfs -o size=${_ram_img_kb}K /dev/shm /tmp/shm0.$TMP_LABEL
-        echo "dd if=/dev/zero of=/tmp/shm0.$TMP_LABEL/IMG0.img bs=1KB count=$_ram_img_kb"
-        dd if=/dev/zero of=/tmp/shm0.$TMP_LABEL/IMG0.img bs=1KB count=$_ram_img_kb
+        echo "truncate -s $((_ram_img_kb*1000)) /tmp/shm0.$TMP_LABEL/IMG0.img"
+        truncate -s $((_ram_img_kb*1000)) /tmp/shm0.$TMP_LABEL/IMG0.img
         mkfs.ext4 -q /tmp/shm0.$TMP_LABEL/IMG0.img
         echo "mount -o loop /tmp/shm0.$TMP_LABEL/IMG0.img /tmp/loop0.$TMP_LABEL"
         _fs $LINENO mount -o loop /tmp/shm0.$TMP_LABEL/IMG0.img /tmp/loop0.$TMP_LABEL
@@ -2473,8 +2477,8 @@ EOF
         _fs $LINENO umount /tmp/shm0.$TMP_LABEL
         echo "mount -t tmpfs -o size=${TEMPLATE_KB}K /dev/shm /tmp/shm0.$TMP_LABEL"
         _fs $LINENO mount -t tmpfs -o size=${TEMPLATE_KB}K /dev/shm /tmp/shm0.$TMP_LABEL
-        echo "dd if=/dev/zero of=/tmp/shm0.$TMP_LABEL/IMG1.img bs=1KB count=$TEMPLATE_KB"
-        dd if=/dev/zero of=/tmp/shm0.$TMP_LABEL/IMG1.img bs=1KB count=$TEMPLATE_KB
+        echo "truncate -s $((TEMPLATE_KB*1000)) /tmp/shm0.$TMP_LABEL/IMG1.img"
+        truncate -s $((TEMPLATE_KB*1000)) /tmp/shm0.$TMP_LABEL/IMG1.img
         mkfs.ext4 -q /tmp/shm0.$TMP_LABEL/IMG1.img
         _fs $LINENO umount /tmp/loop1.$TMP_LABEL
         echo "mount -o loop /tmp/shm0.$TMP_LABEL/IMG1.img /tmp/loop1.$TMP_LABEL"
