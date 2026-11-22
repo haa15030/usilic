@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1315. **src/U_proto.sh: 4GB-rescueにemacs-noxを推奨パッケージ無しで入れる(2026-11-22)**
+   - 直接のユーザー報告と依頼: 項目1313・1314の後の4GB-rescue(使用可286848KB)で、`. U -o current.u`で控えてからemacsを入れ、使用可95604KBで収まった。入れたのは`emacs-nox`("nox。レスキュー版だしGTKは不要。")。
+   - 修正: `RESCUE_LIST_NOREC="emacs-nox"`を新設し、`-u`の4GB-rescueで`RESCUE_LIST`の後に`apt-get install -y --no-install-recommends`で入れる(`RESCUE_LIST`のままだと推奨のmailutils・exim4も入る、項目1306)。
+   - 確かめたこと: `bash -n`・`dash -n`。
+
 1314. **src/U_proto.sh: RAMDISKでCtrlとCaps Lockが入れ替わらなかった(2026-11-22)**
    - 直接のユーザー報告: 4GB-rescueで`setxkbmap -query`に`ctrl:swapcaps`が無く、`setxkbmap -option ctrl:swapcaps`を手で実行して入れ替わった。`/etc/default/keyboard`は`XKBOPTIONS="ctrl:swapcaps"`、`~/.xprofile`にU.shのswapcapsの分あり、HHKBはつながっていない(無線の「2.4G Wireless」)、`xfconf-query -c keyboard-layout`は空。
    - 見込み(確かめてはいない): XのキーボードのXKBの既定は、udev(keyboard-configurationの規則)が`/etc/default/keyboard`から読んで入力デバイスに付ける。udevが読んだのは起動の時の土台(BASE、swapcapsが無い)の方で、イメージを展開した後もそのままだった。`~/.xprofile`の`setxkbmap`は効くはずだが、無線のキーボードがつなぎ直されるとXがデバイスの既定に戻す等で消えた可能性。

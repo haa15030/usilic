@@ -40,7 +40,10 @@ readonly SHM_LIST="home tmp var"
 # --- 4GB-rescue版パッケージリスト（任意）
 # -u は tools/setup-debian.sh（xorg・xfce4・fcitx5-mozc・日本語フォント・firefox-esr・mpv・usilicのビルド等）と
 # これを入れた状態を 4GB-rescue.img として保存する（setup-debian.sh が入れるものは書かない。RAMDISKの空きを残すため最小限に）
-RESCUE_LIST="gparted gdisk" # emacs は外した（4GBのRAMDISKに収まらなかった、mailutils・exim4 も一緒に入る）
+RESCUE_LIST="gparted gdisk"
+# 推奨パッケージ（Recommends）を入れずに入れるもの。emacs は推奨で mailutils・exim4 も入り、GTK版と一緒だと
+# 4GBのRAMDISKに収まらなかった。emacs-nox を --no-install-recommends で入れると約190MB（Debian 13で収まった）
+RESCUE_LIST_NOREC="emacs-nox"
 
 # --- -d（8GB等、4GBより大きなRAMDISKの ?GB-base 上）で選んだデスクトップと一緒に入れる日本語環境
 # デスクトップの一覧は、Debian では tasksel の *-desktop、Ubuntu では下の「Ubuntu用の設定」の DESKTOP_LIST
@@ -335,7 +338,7 @@ if [ "$ON_UBUNTU" ]; then
     JP_LIST="language-pack-ja language-pack-gnome-ja fcitx5-mozc fonts-noto-cjk"
     BASE_LIST="arch-install-scripts" # 必要なら "linux-firmware" も（1GB前後あるので RAMDISK 容量に注意）
 fi
-readonly RESCUE_LIST RESCUE_LIST_X BASE_LIST JP_LIST
+readonly RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X BASE_LIST JP_LIST
 
 _on_line() { # 現在のネット接続状態（readonly の $ON_LINE は起動時の値のまま）
     ip a | grep 'inet ' | grep global
@@ -2481,6 +2484,10 @@ EOF
         fi
         echo "apt-get install -y $RESCUE_LIST"
         apt-get install -y $RESCUE_LIST
+        if [ "$RESCUE_LIST_NOREC" ]; then
+            echo "apt-get install -y --no-install-recommends $RESCUE_LIST_NOREC"
+            apt-get install -y --no-install-recommends $RESCUE_LIST_NOREC
+        fi
         _output_u ${RESCUE_GB}GB-rescue.u $LINENO # 何が入っているかの記録
         _save_host $1 rescue
         if [ "$RESCUE_DEV_PURGE" ]; then # SSDのrootでは、またusilicをビルドできるように戻す
