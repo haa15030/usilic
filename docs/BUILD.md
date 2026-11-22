@@ -496,6 +496,7 @@ systemctl daemon-reload && mount /mnt/ubuntu && swapon -a && swapon --show
 - **Ubuntuでホスト名(`mpi`等)が引けない**: Debianは`/etc/resolv.conf`にDHCPのドメイン(`domain …`)が入り、`ssh mpi`・`scp … mpi:`がルーターのDNSで`mpi.ドメイン`として引ける。UbuntuのServer版はsystemd-networkdがDHCPのドメインを使わない設定なので(`/etc/resolv.conf`が`nameserver 127.0.0.53`と`search .`)、IPアドレスを打つしかなかった。スクリプトは`/etc/systemd/networkd.conf.d/usilic.conf`に`[DHCPv4]`の`UseDomains=yes`を置く(再起動の後で`resolvectl domain`にドメインが出る)。手でするなら同じファイルを作って再起動。
 - **小説のEPUB(`narou2epub`)で「ensurepip is not available」**: Debian・Ubuntuは、Pythonのvenvに`python3-venv`が要る(スクリプトは入れてある)。手で *sudo apt-get install python3-venv* した後は、そのままもう一度実行すればよい(作りかけのvenvは作り直す)。
 - **Ubuntuのfirefox**: aptの`firefox`はsnapを入れる中継ぎのパッケージ。minimizedでsnapdが無い時は *apt-get install -y snapd* してから。
+- **有線LANの片方(`enp5s0`等)が消えた**(2026-11-21、Z390 UDのRealtek RTL8125B): 前の日まで使えていたNICが、Linuxだけで`ip a`に出なくなった(dmesgにも何も無い)。同じマシンのWindows 11とFreeBSDでは見えていた。Windowsの高速スタートアップ(または休止)で終わると、NICが省電力の状態のまま残り、Linuxのドライバ(r8169)がそこから起こせないことがある。Windowsで *powercfg /h off* (管理者のコマンドプロンプト)して高速スタートアップを切り、Windowsから「再起動」ではなく「シャットダウン」してから電源を30秒ほど抜く。それでも戻らなければ、別のOS(Windows・FreeBSD等)を一度起動するとNICが初期化し直されて戻ることがある(今回はFreeBSDを起動した後、Linuxでも`Link is Up`になった。BIOSのFast Bootは元から無効だったので関係なかった)。
 
 ### ビルドだけ(デスクトップが既にある時)
 

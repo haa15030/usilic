@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1307. **docs/BUILD.md(Linux): 有線LANの片方(enp5s0)がLinuxだけで消えた(2026-11-22)**
+   - 直接のユーザー報告と依頼(2026-11-21): Z390 UDのRTL8125B(`enp5s0`、ケーブルがつながっている方)が、前の日まで使えていたのにUbuntu・Debian 12のRAMDISKで`ip a`に出ず、dmesgにも何も無い。Windows 11とFreeBSDでは見えた。前の晩はWindows 11を最後に「シャットダウン」したが、高速スタートアップ(休止)だった可能性。FreeBSDを試した後、Debian 13のrescueのdmesgで`enp5s0: Link is Up - 1Gbps/Full`に戻った。BIOSのFast Bootは元から無効。
+   - 確かめられてはいないが、高速スタートアップでNICが省電力の状態のまま残り、r8169が起こせなかった見込み。注意点(Linux)に、`powercfg /h off`・シャットダウンして電源を抜く・別のOSを一度起動する、の対処を書いた(ユーザーの判断、"今書いておいて")。
+
 1306. **src/U_proto.sh: 4GB-rescueからemacsを外す(2026-11-22)**
    - 直接のユーザー判断: 4GBのRAMDISKに収まらなかった(項目1305)ので、emacsを削って作り直す。
    - `RESCUE_LIST`を`gparted gdisk`に。emacsの推奨で入っていた`mailutils`・exim4等も入らなくなる。DOT_FILESの`~/.emacs.d/init.el`等はそのまま書く(害は無い)。
