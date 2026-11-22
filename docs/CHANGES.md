@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1308. **src/U_proto.sh: カーネルのモジュールを1つずつ署名しない(MODULE_SIG_ALL、2026-11-22)**
+   - 直接のユーザー依頼: カーネルのビルドで、オブジェクトごとに署名する既定でYesの設定をNoにすれば多少は削れる(4GBのRAMDISKに収まらなかった、項目1305)。
+   - `_compile`で`scripts/config --disable MODULE_SIG_ALL`(`make modules_install`・`bindeb-pkg`の時に全部のモジュールへ署名を付ける設定)。署名は1つ数百バイトなので、数千のモジュールで数MB(`/usr/lib/modules/6.12.117+4gb`は91028KB)。
+   - `MODULE_SIG`(読み込む時に署名を確かめる)は残す。Debianの設定は`MODULE_SIG_FORCE`が無効なので、署名の無いモジュールも読み込み、最初の1回にdmesgへ「module verification failed … tainting kernel」と出るだけ。ただしUEFIのセキュアブートが有効だとlockdownで読み込まれないが、U.shのカーネル自体が署名されていないので元からセキュアブートでは起動しない。
+   - 確かめたこと: `bash -n`・`dash -n`。
+
 1307. **docs/BUILD.md(Linux): 有線LANの片方(enp5s0)がLinuxだけで消えた(2026-11-22)**
    - 直接のユーザー報告と依頼(2026-11-21): Z390 UDのRTL8125B(`enp5s0`、ケーブルがつながっている方)が、前の日まで使えていたのにUbuntu・Debian 12のRAMDISKで`ip a`に出ず、dmesgにも何も無い。Windows 11とFreeBSDでは見えた。前の晩はWindows 11を最後に「シャットダウン」したが、高速スタートアップ(休止)だった可能性。FreeBSDを試した後、Debian 13のrescueのdmesgで`enp5s0: Link is Up - 1Gbps/Full`に戻った。BIOSのFast Bootは元から無効。
    - 確かめられてはいないが、高速スタートアップでNICが省電力の状態のまま残り、r8169が起こせなかった見込み。注意点(Linux)に、`powercfg /h off`・シャットダウンして電源を抜く・別のOSを一度起動する、の対処を書いた(ユーザーの判断、"今書いておいて")。

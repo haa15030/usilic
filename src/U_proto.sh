@@ -746,6 +746,10 @@ EOF
     # デバッグ情報排除指定（choice: NONE / TOOLCHAIN_DEFAULT / DWARF4 / DWARF5 を全部切って NONE を明示）
     echo "scripts/config --file ../build/.config --disable DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT --disable DEBUG_INFO_DWARF4 --disable DEBUG_INFO_DWARF5 --enable DEBUG_INFO_NONE"
     scripts/config --file ../build/.config --disable DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT --disable DEBUG_INFO_DWARF4 --disable DEBUG_INFO_DWARF5 --enable DEBUG_INFO_NONE
+    # モジュールを1つずつ署名しない（MODULE_SIG_ALL、署名は1つ数百バイト）。MODULE_SIG（署名の確かめ）は残し、
+    # 署名の無いモジュールも読み込む（MODULE_SIG_FORCE は元から無効。読み込むとカーネルが「tainted」になるだけ）
+    echo "scripts/config --file ../build/.config --disable MODULE_SIG_ALL"
+    scripts/config --file ../build/.config --disable MODULE_SIG_ALL
     if [ "$ON_UBUNTU" ]; then # Ubuntu の署名鍵（debian/canonical-*.pem）はソースに含まれないので常に空にする
 	echo "scripts/config --file ../build/.config --set-str SYSTEM_TRUSTED_KEYS '' --set-str SYSTEM_REVOCATION_KEYS ''"
 	scripts/config --file ../build/.config --set-str SYSTEM_TRUSTED_KEYS "" --set-str SYSTEM_REVOCATION_KEYS ""
