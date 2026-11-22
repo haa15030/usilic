@@ -33408,6 +33408,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1319. **C++版: occurの一覧(^O^S・^O^J^S)の中でも^S・^J^Sで検索する(2026-11-22)**
+   - 直接のユーザー報告と依頼: HISTORY.mdを`^O^J^S"^<"^M`でユーザー発言の一覧にし、さらに`^SUEFI^M`しようとしたが利かなかった。無効にした理由は→アシスタントの調べ: 意図して無効にしたのではなく、旧版の「GREPの結果の中からGREPを始めない」をそのまま引き継ぎ、in-placeの対象(`isGrepInPlaceEligibleMode()`)にGREPの一覧が無かった。CUTの一覧は項目(2026-09-26)で足したが、occur(項目723、2026-10-10)はその後にできたので検討されていなかった。"使用頻度ありそうなのでoccurの一覧でも^Sと^J^Sを使えるようにして"。
+   - 難しいところ: 検索とoccurの一覧が、一致(`grepMode_`)・戻り先(`grepReturnMode_`)・構文(`grepSyntax_`)・`grepOccurList_`等を共用している。そのまま許すと、検索がoccurの一覧の中身と戻り先を書き換えて、`^M`・`^G`で元のファイルへ戻れなくなる。
+   - 変更: occurの一覧(記録の一覧は除く)を対象に。一覧から^S・^J^Sのプロンプトを開く時に一覧の状態を退避し(`beginGrepListSearch()`、`grepListSearchSaved_`)、検索は画面に出さない別の`GrepMode`(`grepListSearchMode_`、`grepSearcher()`)で行う。プロンプトもin-placeも終わったら(`deactivateGrepInPlace()`、キー1つごとの前後)戻す(`restoreGrepListSearch()`)。一覧の中から一覧(^O^S)は今まで通り開かない。検索の間のモードラインは、名前・バッジが検索の方、戻り値の欄が「FGREP: (occurの文字列)」。
+   - 確かめたこと: `make usilic`、新しい試験(occurの一覧で^S"three"→3行目、^G→一覧のまま、^J^S"t[wx]o"→2行目→^MでFILEの`marker two`→^G→一覧→^G→FILE)と、GREP関係の既存の試験96件。`make install`・`make app`。
+
+1320. **C++版: ^Sの文字列が一致しなくなった時に「No String」をすぐ出す(2026-11-22)**
+   - 直接のユーザー依頼: ^Sのあとに入れる文字列がマッチしなくなったら行数のエリアが消えるのはいいとして、そのあとの^Mで「No String」が出る。どうせ出すなら行数エリアが消えると同時のほうがいい。
+   - それまで: 一致が無くなると、プロンプトの行の行数(N/M)の場所が空になり、「No String」はモードラインに設定されるがライブ中はプロンプトの行がそれを覆っていた(^Mで初めて見える設計)。
+   - 変更: `liveIncrementalGrepSearch()`で、一致が無い時は行数の場所に「No String」(日本語の時は日本語)を出す。打った文字列はそのすぐ右に見えている。
+   - 確かめたこと: 新しい試験(^S"log"では出ず、続けて"zzz"で出る)。
+
 1318. **docs/BUILD.md(Linux): BIOSで入れたDebianに、UEFIでの起動を足す(2026-11-22)**
    - 直接のユーザー依頼: Debian 13は、他のディスクに既にあるEFIシステム区画へインストーラがGRUBを書いてしまう(CHANGES.md:33524の件)のでUEFIでは入れられず、BIOSモードで入れて`/dev/sdc`(USBの外付けSSD、GPT、BIOS boot区画は無い)のMBRから起動している。Ubuntuとの共用ならどちらのGRUBからも互いに起動できるが、問題はDebian 13を単独で入れる場合。USBメモリへのコピー(`-m`)はEFIシステム区画とBIOS boot区画を用意している。BIOSモードでも確保しておいた方がいいか→アシスタントが勧め、"BUILD.mdに書き足して"。
    - Debian 13の節に、他のディスクにEFIシステム区画がある機械ではUEFIで入れずBIOSのインストーラで入れる、の※を足した(それまでの記述はUEFIで入れる前提だけだった)。

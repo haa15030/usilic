@@ -826,6 +826,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       directoryView_(display),
       fileView_(display),
       grepView_(display),
+      grepListSearchView_(display),
       cutView_(display),
       cutContentView_(display),
       manView_(display),
@@ -843,6 +844,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       directoryMode_(directoryView_, modeStack_, history, configuration),
       fileMode_(fileView_, history, configuration, encoding, width),
       grepMode_(grepView_, configuration),
+      grepListSearchMode_(grepListSearchView_, configuration),
       cutMode_(cutView_, cutModeStack_, configuration),
       manMode_(manView_, history, configuration, encoding, width),
       programMode_(keyInput, display, history),
@@ -1886,6 +1888,14 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     ContentView::ModeLineFields fields{name, std::to_string(grepView_.totalByteCount()),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", badge};
     fields.trailing3 = path;
+    // occurの一覧の中を^S・^J^Sで検索している間(grepListSearchSaved_参照): ManMode等と同じく名前・バッジは
+    // 検索の方。戻り値の欄はこの一覧そのもの(^Gは検索を解くだけで一覧に留まる)。
+    if (grepView_.grepInPlaceActive() || grepView_.grepNoMatchActive()) {
+      GrepSyntax listSyntax = grepListSearchSaved_ ? grepListSearchSaved_->syntax : grepSyntax_;
+      fields.name = grepView_.grepInPlaceLabel();
+      fields.trailing2 = grepView_.grepInPlaceProgramBadge();
+      fields.trailing3 = std::string(grepSyntaxLabel(listSyntax)) + ": " + grepMode_.pattern();
+    }
     return fields;
   });
   // grepView_自身の空の結果のプレースホルダー("<pattern>: No String"、
@@ -4278,7 +4288,13 @@ bool Application::feedByteImpl(int byte, std::optional<KeyInput::SpecialKey> spe
   bool wasRecording = recordingMacro_;
   macroControlKey_ = false;
 
+  // occurの一覧の中の検索(grepListSearchSaved_参照)が終わっていれば、退避したoccurの一覧の状態を戻す。
+  if (grepListSearchSaved_ && promptKind_ == PromptKind::None && !grepInPlaceActive_) restoreGrepListSearch();
   bool result = dispatchByte(byte, special);
+  if (grepListSearchSaved_ && promptKind_ == PromptKind::None && !grepInPlaceActive_) {
+    restoreGrepListSearch();
+    if (currentMode_ == ApplicationMode::Grep) activeView().redraw();  // モードラインをoccurの一覧のものに
+  }
 
   if (wasRecording) {
     if (wasLeaderXPending) {
@@ -11465,7 +11481,7 @@ bool Application::activateGrepInPlace() {
   // ――このセッションが「最初の」activationかどうかを、下でtargetの
   // カーソルが動かされる前に判定しておく必要がある。
   bool wasAlreadyActive = grepInPlaceActive_;
-  const auto &matches = grepMode_.matches();
+  const auto &matches = grepSearcher().matches();
   if (matches.empty()) {
     // 2026-09-10修正、直接のユーザー報告(usilic -c git/usilicで再現:
     // "^[i.→さらに␣→.␣はマッチしないのにハイライトが消えない"):
@@ -11479,7 +11495,7 @@ bool Application::activateGrepInPlace() {
     // 意図していたケース)には影響せず、このインクリメンタルサーチ
     // 特有のケースだけを正しく後始末できる。
     deactivateGrepInPlace();
-    std::string message = grepMode_.pattern() + ": No String";
+    std::string message = grepSearcher().pattern() + ": No String";
     // 2026-09-11追加、直接のユーザー依頼のFGREP/EGREP統一(ContentView::
     // setGrepInPlaceLabel()自身のコメント参照): 各ModeLineFieldsProvider
     // がgrepNoMatchActive()の間に出すname欄も、grepSyntax_に応じた
@@ -11588,6 +11604,8 @@ void Application::deactivateGrepInPlace() {
   // updateGrepInPlacePositionText()自身のコメント参照――セッション
   // 終了時は通常のposition表示(カーソル行/総行数)へ戻す。
   activeView().setPositionTextOverride(std::nullopt);
+  // occurの一覧の中の検索が終わった(プロンプトも閉じている)なら、occurの一覧の状態を戻す(続く^M・^G等のため)。
+  if (grepInPlaceOriginMode_ == ApplicationMode::Grep && promptKind_ == PromptKind::None) restoreGrepListSearch();
   activeView().redraw();
 }
 
@@ -15607,23 +15625,55 @@ bool Application::isGrepInPlaceEligibleMode(ApplicationMode mode) const {
     // 見出しへ移動して^Mでそのセグメントを開けるようにする。
     case ApplicationMode::Cut:
       return true;
+    // 2026-11-22、直接のユーザー依頼("使用頻度ありそうなのでoccurの一覧でも^Sと^J^Sを使えるようにして"): occurの
+    // 一覧(^O^S・^O^J^S)の中も。それ以外のGREPの一覧(記録の一覧等)は今まで通り対象外。検索の間は
+    // grepOccurList_ではなくgrepListSearchSaved_で見る(executeGrep()が検索の途中でgrepOccurList_を書くため)。
+    case ApplicationMode::Grep:
+      return (grepOccurList_ && !grepMarksList_) || grepListSearchSaved_.has_value();
     default:
       return false;
   }
 }
 
+// grepListSearchSaved_自身の宣言コメント参照(application.hpp)。occurの一覧(currentMode_==Grep)から^S・^J^Sの
+// プロンプトを開く時に、検索が上書きするoccurの一覧の状態を退避する。
+void Application::beginGrepListSearch() {
+  if (currentMode_ != ApplicationMode::Grep || grepListSearchSaved_) return;
+  grepListSearchSaved_ = GrepListSearchSaved{grepReturnMode_, grepReturnListCategory_, grepSyntax_, grepOccurList_,
+                                             grepMarksList_};
+}
+
+void Application::restoreGrepListSearch() {
+  if (!grepListSearchSaved_) return;
+  grepReturnMode_ = grepListSearchSaved_->returnMode;
+  grepReturnListCategory_ = grepListSearchSaved_->returnListCategory;
+  grepSyntax_ = grepListSearchSaved_->syntax;
+  grepOccurList_ = grepListSearchSaved_->occurList;
+  grepMarksList_ = grepListSearchSaved_->marksList;
+  grepListSearchSaved_.reset();
+}
+
+// 検索に使うGrepMode: occurの一覧の中の検索ならgrepListSearchMode_(一覧そのものを書き換えない)。
+GrepMode &Application::grepSearcher() { return grepListSearchSaved_ ? grepListSearchMode_ : grepMode_; }
+
 bool Application::startOccurPrompt(GrepSyntax syntax) {
+  if (currentMode_ == ApplicationMode::Grep) return false;  // 一覧の中から一覧は開かない(今まで通り)
   if (!startGrepPrompt(syntax)) return false;
   grepOccurPending_ = true;
   return true;
 }
 
 bool Application::startGrepPrompt(GrepSyntax syntax) {
-  if (currentMode_ == ApplicationMode::Grep) return false;
+  // occurの一覧の中の検索(isGrepInPlaceEligibleMode()のGrep参照)だけは開く。一覧から開く一覧(occur・^O^S)は無し。
+  bool inList = currentMode_ == ApplicationMode::Grep;
+  if (inList && (grepOccurPending_ || !isGrepInPlaceEligibleMode(currentMode_))) return false;
+  if (inList) beginGrepListSearch();
   grepOccurPending_ = false;  // occurはstartOccurPrompt()がこの後で立てる
-  grepMarksList_ = false;
-  grepJumpMode_.reset();
-  clearGrepJumpHighlight();
+  if (!inList) {  // occurの一覧の記録・飛んだ先は、一覧へ戻った時のために残す
+    grepMarksList_ = false;
+    grepJumpMode_.reset();
+    clearGrepJumpHighlight();
+  }
   grepSyntax_ = syntax;
   grepReturnMode_ = currentMode_;
   // grepReturnListCategory_自身の宣言コメント参照: grepReturnMode_が
@@ -15679,6 +15729,7 @@ bool Application::egrepReverseKey(int byte, std::optional<KeyInput::SpecialKey> 
 
 bool Application::startIncrementalGrepPrompt() {
   if (!isGrepInPlaceEligibleMode(currentMode_)) return false;
+  beginGrepListSearch();  // occurの一覧の中なら(それ自身のコメント参照)
   grepSyntax_ = GrepSyntax::Fixed;
   grepReturnMode_ = currentMode_;
   // 2026-10-09: EmacsのC-sと同じく、検索を始めた行をマークリングへ(^X^Xで戻れる、Command::SetMark参照)
@@ -15698,7 +15749,7 @@ void Application::liveIncrementalGrepSearch() {
     std::vector<std::string> sourceLines;
     sourceLines.reserve(source.lines().size());
     for (const auto &line : source.lines()) sourceLines.push_back(line.text);
-    if (grepMode_.searchInProcess(sourceLines, pattern)) {
+    if (grepSearcher().searchInProcess(sourceLines, pattern)) {
       grepInPlaceOriginMode_ = grepReturnMode_;
       activateGrepInPlace();
     }
@@ -15712,7 +15763,13 @@ void Application::liveIncrementalGrepSearch() {
   // 空文字列ではなく「マッチ番号/総マッチ数」を渡す(マッチが無い/
   // まだ検索していない間はgrepInPlaceActive_がfalseなので自動的に
   // 空文字列のまま――呼び出し元を選ぶ条件分岐は不要)。
-  drawPromptLabel(promptKind_, grepInPlaceMatchLabel());
+  // 2026-11-22、直接のユーザー依頼("^Sのあとに入れる文字列がマッチしなくなったら行数のエリアが消えるのは
+  // いいとしてそのあとの^Mで「No String」が出る。どうせ出すなら行数エリアが消えると同時のほうがいい"):
+  // 一致が無くなった時は、行数(N/M)の場所に「No String」を出す(打った文字列はすぐ右に見えている)。
+  std::string positionText = grepInPlaceMatchLabel();
+  if (!pattern.empty() && !grepInPlaceActive_ && grepSearcher().matches().empty())
+    positionText = localizeMessage("No String");
+  drawPromptLabel(promptKind_, positionText);
   promptEditor_.redraw();
 }
 
@@ -16735,7 +16792,7 @@ bool Application::submitPrompt() {
   // 失敗経路(executeGrep()がマッチ0件でfalseを返す、既存の
   // "zzz: No String"テスト参照)と同じ「この操作は何も確定しなかった」
   // という規約に揃えるため。
-  if (incrementalGrepActive_ && kind == PromptKind::GrepPattern && grepMode_.matches().empty()) {
+  if (incrementalGrepActive_ && kind == PromptKind::GrepPattern && grepSearcher().matches().empty()) {
     activeView().redraw();
     return false;
   }
@@ -18557,9 +18614,12 @@ bool Application::executeGrep(const std::string &pattern) {
 
   // 縦書きの本文からの一覧(occur)は、横書きの一覧を一度描かずに縦書きで描く(epubGrepFirst_参照)。
   bool verticalList = grepOccurPending_ && grepReturnMode_ == ApplicationMode::File && epubBookVertical();
-  grepMode_.setRedrawOnSearch(!verticalList);
-  bool found = grepMode_.search(sourceLines, pattern, grepSyntax_);
-  grepMode_.setRedrawOnSearch(true);
+  // occurの一覧の中の検索(grepSearcher()参照)は、画面に出さない一覧で探す(描かない)。
+  GrepMode &searcher = grepSearcher();
+  bool listSearch = &searcher != &grepMode_;
+  searcher.setRedrawOnSearch(!verticalList && !listSearch);
+  bool found = searcher.search(sourceLines, pattern, grepSyntax_);
+  searcher.setRedrawOnSearch(true);
   if (!found) {
     if (!redrawEpubVerticalForGrep(source)) source.redraw();
     return false;
@@ -18583,7 +18643,7 @@ bool Application::executeGrep(const std::string &pattern) {
   // だけで判定する(startGrepPrompt()自身のコメントも参照、EGREP用の
   // 候補一覧起動(startRegexPromptList())自体をこの統一で廃止した)。
   bool occur = std::exchange(grepOccurPending_, false);
-  grepOccurList_ = occur;  // shellInsertBufferContent()参照
+  if (!listSearch) grepOccurList_ = occur;  // shellInsertBufferContent()参照(occurの一覧の中の検索では一覧のまま)
   if (!occur && isGrepInPlaceEligibleMode(grepReturnMode_)) {
     grepInPlaceOriginMode_ = grepReturnMode_;
     return activateGrepInPlace();

@@ -3494,6 +3494,7 @@ private:
   ContentView directoryView_;
   ContentView fileView_;
   ContentView grepView_;
+  ContentView grepListSearchView_;  // grepListSearchMode_の一覧(画面には出さない)
   ContentView cutView_;
   ContentView cutContentView_;
   ContentView manView_;
@@ -3511,6 +3512,19 @@ private:
   // 一覧(ApplicationMode::Grep)にする。leaderOJPending_は^Oの後の^Jを見た。
   bool grepOccurPending_ = false;
   bool grepOccurList_ = false;  // 今のGrepの一覧が^O^S・^O^J^Sの一致した行の一覧か(shellInsertBufferContent()参照)
+  // occurの一覧の中を検索している間(grepListSearchMode_参照)、検索が上書きするoccurの一覧の状態を退避しておく。
+  // 検索が終わったら(プロンプトもin-placeも終わったら)restoreGrepListSearch()で戻す。
+  struct GrepListSearchSaved {
+    ApplicationMode returnMode;
+    RingCategory returnListCategory;
+    GrepSyntax syntax;
+    bool occurList;
+    bool marksList;
+  };
+  std::optional<GrepListSearchSaved> grepListSearchSaved_;
+  void beginGrepListSearch();
+  void restoreGrepListSearch();
+  GrepMode &grepSearcher();
   // GREPの結果一覧から^Mで飛んだ先の画面(FILE・(ls)・MAN・LOCATE・DU・SHELL以外、それらは各自の戻り先で扱う)。
   // その画面の^Gで一覧へ戻し、戻り値の欄に「FGREP: 文字列」を出す(2026-10-10)。
   std::optional<ApplicationMode> grepJumpMode_;
@@ -3576,6 +3590,10 @@ private:
   DirectoryMode directoryMode_;
   FileMode fileMode_;
   GrepMode grepMode_;
+  // 2026-11-22、直接のユーザー依頼("使用頻度ありそうなのでoccurの一覧でも^Sと^J^Sを使えるようにして"): occurの
+  // 一覧(ApplicationMode::Grep)の中を^S・^J^Sで検索する時は、一覧そのもの(grepMode_の一致・grepView_の行)を
+  // 書き換えないよう、こちらで探す(grepSearcher())。
+  GrepMode grepListSearchMode_;
   CutMode cutMode_;
   ManMode manMode_;
   ProgramMode programMode_;

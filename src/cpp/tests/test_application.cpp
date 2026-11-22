@@ -2123,6 +2123,60 @@ TEST_CASE_FIXTURE(Fixture, "CUT: splitting log.txt on 'marker' produces one segm
   CHECK(app.cutMode().segments()[2].label == "marker three");
 }
 
+// 2026-11-22追加、直接のユーザー依頼("使用頻度ありそうなのでoccurの一覧でも^Sと^J^Sを使えるようにして"):
+// occur(^O^S)の一覧の中でも^S/^J^Sがin-placeで効き、一致した行へ移って、^Mでその行の元の画面へ飛べる。
+// 検索がoccurの一覧そのもの(grepMode_の一致・戻り先)を書き換えないこと。
+TEST_CASE_FIXTURE(Fixture, "occur list: ^S and ^J^S search the listed lines in place, ^M still opens the source line") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> occur
+  feedText("marker");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.grepMode().matches().size() == 3);
+
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S in the list
+  REQUIRE(app.promptActive());
+  feedText("three");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.activeContentView().cursorIndex() == 2);
+  CHECK(app.grepMode().matches().size() == 3);  // the occur list itself is untouched
+
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G ends the search, stays on the list
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  feedText("t[wx]o");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.activeContentView().cursorIndex() == 1);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M -> the source line in FILE
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.activeContentView().cursorIndex() == 2);  // "marker two"
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G -> back to the occur list
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G -> the file
+  CHECK(app.currentMode() == ApplicationMode::File);
+}
+
+// 2026-11-22追加、直接のユーザー依頼("^Sのあとに入れる文字列がマッチしなくなったら行数のエリアが消えるのは
+// いいとしてそのあとの^Mで「No String」が出る。どうせ出すなら行数エリアが消えると同時のほうがいい"):
+TEST_CASE_FIXTURE(Fixture, "^S: 'No String' shows on the prompt row as soon as the typed text stops matching") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S
+  feedText("log");
+  CHECK(display.rowText(display.rows() - 1).find("No String") == std::string::npos);
+  feedText("zzz");
+  CHECK(display.rowText(display.rows() - 1).find("No String") != std::string::npos);
+  CHECK(app.promptActive());
+}
+
 // 2026-09-26追加、直接のユーザー依頼("CUT一覧上のF/EGREPを実装して"):
 // CUTの見出し一覧でも^S(FGREP)/^J^S(EGREP)がin-placeで効き、マッチした
 // 見出しへカーソルが移って、そのまま^Mでそのセグメントを開ける。
