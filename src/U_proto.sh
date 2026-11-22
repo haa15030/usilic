@@ -1535,19 +1535,30 @@ erase_base() { # -e)
 }
 
 _diff_sh() { # RAMDISK稼働中（バックグラウンド）: /opt/U.shが書き換えられたら$MNT_DEBIAN/opt/U.diffへ差分を、ログの増えた分も$MNT_DEBIAN/optへ
-    local _log
+    # （$MNT_DEBIAN/opt/U.sh 自体は書き換えない。差分を見てSSD側へ反映するかを決める）
+    local _log _mounted _stamp=/tmp/diff_sh.$TMP_LABEL
 
     if [ ! "$DIFF_SH" ]; then
         return
     fi
+    touch -r /opt/U.sh $_stamp # 最後に見た /opt/U.sh の時刻
     while [ -f "/opt/BASE.u" ]
     do
-        while [ "`ls -t /opt | head -n1`" != "U.sh" ]
+        # /opt で一番新しいのが U.sh か、で見ると、書き換えた直後（5秒以内）に . U を実行して
+        # U.log_* が後から書かれた時に見落とす。U.sh の時刻だけを見る
+        while [ ! /opt/U.sh -nt $_stamp ]
         do
             sleep 5
         done
-        touch /opt/BASE.u
-        _fs $LINENO mount $MNT_DEBIAN
+        touch -r /opt/U.sh $_stamp
+        # 元からマウントされていれば外さない（-s 等が $MNT_DEBIAN へ書いている途中で外すと、
+        # その後の書き込みが ram0 の /mnt/debian へ行って RAMDISK が溢れる）
+        if mountpoint -q $MNT_DEBIAN; then
+            _mounted=y
+        else
+            _mounted=""
+            _fs $LINENO mount $MNT_DEBIAN
+        fi
         if [ ! "`$DIFF_SH $MNT_DEBIAN/opt/U.sh /opt/U.sh | tee $MNT_DEBIAN/opt/U.diff`" ]; then
             rm -f $MNT_DEBIAN/opt/U.diff /opt/U.diff
         else
@@ -1560,7 +1571,9 @@ _diff_sh() { # RAMDISK稼働中（バックグラウンド）: /opt/U.shが書�
                 cat /dev/null > $_log
             fi
         done
-        _fs $LINENO umount $MNT_DEBIAN
+        if [ ! "$_mounted" ]; then
+            _fs $LINENO umount $MNT_DEBIAN
+        fi
     done
 }
 

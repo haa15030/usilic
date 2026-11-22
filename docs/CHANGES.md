@@ -33408,6 +33408,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1317. **src/U_proto.sh: RAMDISKの`_diff_sh`(U.shの差分とログをSSDへ)の見落としと、`$MNT_DEBIAN`を外してしまう件(2026-11-22)**
+   - 直接のユーザー依頼: RAMDISK上の`/opt/U.sh`に変更があれば`/mnt/debian/opt`へも反映する仕組み(`_diff_sh`)に問題が無いかチェック。
+   - 仕組み: `-r`がバックグラウンドで起動し、`/opt/U.sh`が書き換えられたら`$MNT_DEBIAN/opt/U.diff`へ差分(`diff -ru`)を書き、`/opt/U.log_*`の増えた分を`$MNT_DEBIAN/opt`へ足す。SSDの`U.sh`自体は書き換えない。
+   - 問題1: 書き換えを「`/opt`で一番新しいのが`U.sh`か」で見ていたので、書き換えて5秒以内に`. U`を実行し、`U.log_*`が後から書かれると見落とした。→ 前に見た`U.sh`の時刻(`/tmp/diff_sh.*`、`touch -r`)より新しいか(`-nt`)で見る。
+   - 問題2: 毎回`$MNT_DEBIAN`をマウントして最後に外していた。`-s`等が`$MNT_DEBIAN`へ書く途中(項目1316でイメージをSTRAGEで作るようになり、その間`$MNT_DEBIAN`は使用中でない)に外れると、その後の書き込みがram0の`/mnt/debian`へ行ってRAMDISKが溢れる。→ 元からマウントされていれば外さない。
+   - 確かめたこと: `bash -n`・`dash -n`。
+
 1316. **src/U_proto.sh: rescue-USBの`-s`は、作るのも控えもSTRAGEで(2026-11-22)**
    - 直接のユーザー依頼: USBメモリの場合、4GBのコピーに1時間以上かかっていて、STRAGE無しの作業は実用的でない。STRAGEが無ければ`-s`で設定を促すメッセージを出すか`-a`を自動で実行。STRAGEがあればそこへ`.BAK.img`で控え、新しく作ったrescue.imgを`/mnt/debian/opt`へ写せば、USBメモリが控えを持たなくて済む。
    - 修正(`_save_host`、rescueの時):
