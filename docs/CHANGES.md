@@ -33408,6 +33408,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1325. **src/U_proto.sh: `/usr/local/bin/U`のシェルの切り替えは、最後の引数が`-d`・`-b`(`-dash`・`-bash`)と同じ時だけ(2026-11-23)**
+   - アシスタントの見直しで見つけ、ユーザーが「完全一致でよろしく」(言われて思い出した、と)。
+   - 前は、最後の引数に「-d」か「-b」が含まれるだけで切り替えていた。例えば`. U -s test-build`は`-b`に当たり、`SH=buildash`(「-」の後ろ＋ash)を/opt/U.optに書く。次の起動でrc.localが`buildash /opt/U.sh -r`を動かして失敗し、RAMDISKにホストのイメージが展開されない。`-dash`・`-bash`も「dashash」「bashash」になっていた。
+   - 変更:
+     - 引数が2つ以上で、最後が`-d`・`-dash`ならdash、`-b`・`-bash`ならbash。その引数を外してU.shへ渡す。
+     - `/usr/local/bin/U`は無い時だけ作っていたので、中身が今の版と違えば書き直すように(U.shを動かした時)。
+   - 確かめたこと: `bash -n`・`dash -n`。sudo・sed・U.shを置き換えて、`-s test-build`・`-d`・`-s foo -d`・`-k . -bash`・`-n`・`-c /mnt/usb -b`。
+
 1324. **src/U_proto.sh: `-u`・`-s`でカーネルのモジュールを/tmpへ移さず、tarの`--exclude`で外す(2026-11-23)**
    - アシスタントの見直し(U.shで問題のありそうな所)で見つけ、ユーザーが「--excludeでよろしく」。
    - 前は、イメージを作る間`/usr/lib/modules/*`(RAMの土台を作る時は`/usr/src/linux-headers*`も)を`/tmp/modules.*`へ`mv`し、tarの後に戻していた。Debian 13の/tmpはtmpfs(RAM)なので、これはRAMへのコピーとSSDからの削除で、途中で止まったり停電したりするとSSDのモジュールが無くなる(起動の時に/tmpから戻す作りも、tmpfsは再起動で消えるので効かない)。

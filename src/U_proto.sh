@@ -2606,27 +2606,45 @@ main() {
     if [ "$TERM" = "linux" ]; then
 	LANG=C # 文字化け回避
     fi
-    if [ ! -f /usr/local/bin/U ]; then
-	cat <<EOF > /usr/local/bin/U
-ARG="\$1 \$2 \$3 \$4 \$5 \$6 \$7 \$8 \$9"
-OPTION=\`echo \$ARG | awk '{print \$NF}'\`
-if [ "\`id -u\`" -ne 0 ]; then
+    # /usr/local/bin/U（'. U 〜' で読む）。中身が今の版と違えば書き直す（前は無い時だけ作っていた）
+    cat <<'EOF' > /tmp/U.$TMP_LABEL
+ARG="$1 $2 $3 $4 $5 $6 $7 $8 $9"
+if [ "`id -u`" -ne 0 ]; then
     SUDO=sudo
 else
     SUDO=""
 fi
-if [ "\`echo \$OPTION | grep -i -e \-d -e \-b\`" ]; then
-    if [ "\$1" != "\$OPTION" ]; then
-        SH=\`echo \$OPTION | awk -F\- '{print \$2}'\`ash
-        sudo sed -i -e s/\`grep ^SH= /opt/U.opt\`/SH=\`echo \$OPTION | awk -F\- '{print \$2}'\`ash/ /opt/U.opt
-	ARG=\`echo \$ARG | sed -e s/\\\$OPTION//\`
-    fi   
-else
-    SH=\`grep ^SH= /opt/U.opt | awk -FSH= '{print \$2}'\`
+# 2つ以上の引数の最後が -d・-b（-dash・-bash）と同じ時だけ、U.sh を動かすシェルを切り替える（/opt/U.opt の SH=）
+# （前は最後の引数に「-d」「-b」が含まれるだけで切り替わり、'. U -s test-build' 等で SH=buildash になった）
+SH=""
+if [ $# -ge 2 ]; then
+    eval "OPTION=\${$#}"
+    case "$OPTION" in
+        -d|-dash) SH=dash ;;
+        -b|-bash) SH=bash ;;
+    esac
 fi
-\$SUDO \$SH /opt/U.sh \$ARG
+if [ "$SH" ]; then
+    $SUDO sed -i -e "s/^SH=.*/SH=$SH/" /opt/U.opt
+    ARG=""
+    _u_i=1
+    for _u_a in "$@"
+    do
+        if [ $_u_i -lt $# ]; then
+            ARG="$ARG $_u_a"
+        fi
+        _u_i=$((_u_i+1))
+    done
+else
+    SH=`grep ^SH= /opt/U.opt | awk -FSH= '{print $2}'`
+fi
+$SUDO ${SH:-bash} /opt/U.sh $ARG
 EOF
+    if ! cmp -s /tmp/U.$TMP_LABEL /usr/local/bin/U; then
+        echo "-> /usr/local/bin/U"
+        cat /tmp/U.$TMP_LABEL > /usr/local/bin/U
     fi
+    rm -f /tmp/U.$TMP_LABEL
     if [ ! -f /opt/U.opt ]; then
 	echo "STRAGE=\"\"" > /opt/U.opt
 	echo "SH=$SH" >> /opt/U.opt
