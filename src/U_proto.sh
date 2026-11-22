@@ -235,6 +235,7 @@ fi
 readonly TMP_LABEL=`ls -t /tmp/log.?????? | head -n1 | sed -e 's@^/tmp/log\.@@'` # 2つ以上あれば新しい方
 chmod 644 /tmp/log.$TMP_LABEL
 readonly MNT_DEBIAN=/mnt/$DEBIAN
+readonly U_SH=`readlink -f "$0"` # 今動いている U.sh（オプションがあるかを見る。/opt/U.sh とは限らない）
 readonly OPT_BUILD=/opt/build # カーネル.deb は build/の親ディレクトリに作成される
 readonly MEM_TOTAL_KB=`grep MemTotal /proc/meminfo | awk -F: '{print $2}' | awk '{print $1}'`
 readonly MEM_TOTAL_GB=$((MEM_TOTAL_KB/1000/1000))
@@ -2989,7 +2990,7 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	DOT_FILES
     fi
     _c=`echo \\-${_option} | awk -F-- '{print $2}'` # 「echo -e（および-n）」を回避
-    if [ "$_c" ] && [ "$_c" != "-" ] && [ "`grep -e '-.)' /opt/U.sh | grep -ve '# -.)' -ve '-.).' | grep $_c`" ]; then    
+    if [ "$_c" ] && [ "$_c" != "-" ] && [ "`grep -e '-.)' $U_SH | grep -ve '# -.)' -ve '-.).' | grep $_c`" ]; then    
 	case "$_option" in
 	    -a)
 		add_strage $_option

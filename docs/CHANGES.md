@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1329. **src/U_proto.sh: オプションがあるかを、/opt/U.shではなく今動いているU.shで見る(2026-11-23)**
+   - アシスタントの見直しで見つけ、ユーザーが「今動いているU.shで確認するようにして」。
+   - 前は、mainでオプション(`-a)`等の行)があるかを`/opt/U.sh`をgrepして決めていた。別の所のU.sh(`sudo bash ~/U_proto.sh -f`等)を動かすと、/opt/U.shの古い版に無いオプションは「Invalid option」になった。
+   - 変更: 始めに`readlink -f "$0"`(mainで`cd`する前)を`U_SH`に取り、それをgrepする。
+   - 確かめたこと: `bash -n`・`dash -n`。
+
 1328. **src/U_proto.sh: イメージのファイルを`dd if=/dev/zero`ではなく`truncate`で作る(2026-11-23)**
    - アシスタントの見直しで見つけ、ユーザーが「ddはtruncateでよろしく」。
    - 前は、`-s`のホストのイメージ(4GB等)・`-u`のRAMの土台(IMG0.img、TEMPLATEのIMG1.img)・ビルド用のイメージ($BUILD.img、7GB)を、全部0で書いてからmkfs.ext4していた。STRAGEがUSBだと数分かかる。
