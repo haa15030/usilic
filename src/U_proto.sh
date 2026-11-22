@@ -2710,17 +2710,10 @@ EOF
         fi
         _update_base $_new_gb
     done
-    # 4GB-rescue を作る前に、RAMの土台が収まったかを見て止められるようにする（もう一度 -u で続きから）
-    # （rescue はDEBIAN区画（ここでは /opt）だけを見る。STRAGEに古いものがあっても作る）
-    if [ "$EXTRA_GB" ] && [ ! -f /opt/${RESCUE_GB}GB-rescue.img ]; then
+    # 止まらずに ${RESCUE_GB}GB-rescue と usilic まで作る（rescue-USB を作るのが本分。usilic を含める形を既定にする）
+    if [ ! -f /opt/${RESCUE_GB}GB-rescue.img ]; then
         ls -l /opt/RAM-* /opt/linux-image-*
         df -h / $mnt_strage
-        echo "n: stop here. The root is left as BASE (no desktop: X, Xfce, lightdm come with ${RESCUE_GB}GB-rescue)."
-        read -p "Continue to ${RESCUE_GB}GB-rescue.img and usilic? (Y/n): " _yn
-        if [ "$_yn" ] && [ "$_yn" != "Y" ] && [ "$_yn" != "y" ]; then
-            echo "$1: stopped before ${RESCUE_GB}GB-rescue.img (to continue: '. U -u'). : $LINENO" >> /tmp/log.$TMP_LABEL
-            return
-        fi
     fi
     # 4GB-rescue: tools/setup-debian.sh と RESCUE_LIST で作った環境（ビルドにだけ要るものは外す）を 4GB-rescue.img に保存する。
     # DEBIAN区画（SSDのroot）はこの環境のまま残す
