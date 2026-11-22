@@ -1481,7 +1481,7 @@ erase_base() { # -e)
     if [ "`_is_inst light-locker`" ] && [ "`ps auxw | grep light-locker | grep -v grep`" ]; then
         killall light-locker
     fi
-    _pkgs=`dpkg -l | awk '$1 == "ii" && $2 ~ /^linux-image/ {print $2}' | grep +`
+    _pkgs=`dpkg -l | awk '$1 == "ii" && $2 ~ /^linux-image/ {print $2}' | grep -E '[+][0-9]+gb$'`
     if [ "$_pkgs" ]; then
         dpkg --purge $_pkgs
     fi
@@ -2422,7 +2422,7 @@ EOF
     fi
     rm -f /boot/initrd*+${RESCUE_GB}gb* # RAMDISKの土台（RAM-*-base.gz）を initrd として使うので要らない
     _update_base $RESCUE_GB
-    for _new_kernel in `ls /opt | grep linux-image | grep + | grep -v +${RESCUE_GB}gb`
+    for _new_kernel in `ls /opt | grep linux-image | grep -E '[+][0-9]+gb_' | grep -v +${RESCUE_GB}gb`
     do
         _new_gb=`echo $_new_kernel | awk -F+ '{print $2}' | awk -F_ '{print $1}' | sed -e 's/gb//'`
         if [ "$mnt_strage" = "$MNT_DEBIAN" ]; then
@@ -2708,7 +2708,7 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
     if [ ! "$mnt_strage" ]; then
 	mnt_strage=$MNT_DEBIAN
     fi
-    _NEW_KERNEL_LIST=`ls /opt | grep linux-image | grep + | grep -ve +${RESCUE_GB}gb`
+    _NEW_KERNEL_LIST=`ls /opt | grep linux-image | grep -E '[+][0-9]+gb_' | grep -ve +${RESCUE_GB}gb`
     if [ ! "$ON_UBUNTU" ] && [ "$_NEW_KERNEL_LIST" ] && [ "$mnt_strage" = "$MNT_DEBIAN" ]; then
 	echo "To update 'RAM-`echo $_NEW_KERNEL_LIST | awk -Flinux-image- '{print $2}' | awk -F_ '{print $1}'`-base.gz', please setup strage-area."
     fi

@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1309. **src/U_proto.sh: Debian 13で`-e`がDebian自身のカーネルまで外そうとした(2026-11-22)**
+   - 直接のユーザー報告: Debian 13のNONE-KERNELで`. U -e`すると、`+8gb`等に続けて`linux-image-6.12.117+deb13-amd64`も`dpkg --purge`しようとし、「linux-image-amd64 は以下に依存します」で断られた(外れずに済んだ)。
+   - 原因: U.shが作ったカーネルを名前の「+」で見分けていた(`grep +`)。Debian 12までのカーネルは`6.1.0-xx-amd64`で「+」が無かったが、Debian 13は`6.12.117+deb13-amd64`。
+   - 修正: `-e`の外すカーネルを`+数字gb`で終わる名前に(`grep -E '[+][0-9]+gb$'`)。`-u`と起動の時の、/optの`+??gb`のカーネルの.debの一覧も`[+][0-9]+gb_`に。
+   - 確かめたこと: `bash -n`・`dash -n`、`grep -E`の型を3つの名前で。
+
 1308. **src/U_proto.sh: カーネルのモジュールを1つずつ署名しない(MODULE_SIG_ALL、2026-11-22)**
    - 直接のユーザー依頼: カーネルのビルドで、オブジェクトごとに署名する既定でYesの設定をNoにすれば多少は削れる(4GBのRAMDISKに収まらなかった、項目1305)。
    - `_compile`で`scripts/config --disable MODULE_SIG_ALL`(`make modules_install`・`bindeb-pkg`の時に全部のモジュールへ署名を付ける設定)。署名は1つ数百バイトなので、数千のモジュールで数MB(`/usr/lib/modules/6.12.117+4gb`は91028KB)。
