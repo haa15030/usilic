@@ -1683,6 +1683,11 @@ _start_rc() { # next_host でホストイメージを展開した後、systemd �
 	echo "systemctl start NetworkManager.service"
 	systemctl start --no-block NetworkManager.service 2>> /tmp/error.$TMP_LABEL
     fi
+    # キーボードの設定（/etc/default/keyboard の XKBOPTIONS 等）を udev に読み直させてから X を起動する。
+    # udev が起動の時に読んだのは土台（BASE）の /etc/default/keyboard で、イメージ側の ctrl:swapcaps が X の既定に入らなかった
+    echo "udevadm trigger --subsystem-match=input --action=change"
+    udevadm trigger --subsystem-match=input --action=change 2>> /tmp/error.$TMP_LABEL
+    udevadm settle --timeout=10 2>/dev/null
     if [ -L /etc/systemd/system/display-manager.service ]; then # DM は最後に
 	echo "systemctl start display-manager.service"
 	systemctl start --no-block display-manager.service 2>> /tmp/error.$TMP_LABEL

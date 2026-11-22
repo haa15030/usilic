@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1314. **src/U_proto.sh: RAMDISKでCtrlとCaps Lockが入れ替わらなかった(2026-11-22)**
+   - 直接のユーザー報告: 4GB-rescueで`setxkbmap -query`に`ctrl:swapcaps`が無く、`setxkbmap -option ctrl:swapcaps`を手で実行して入れ替わった。`/etc/default/keyboard`は`XKBOPTIONS="ctrl:swapcaps"`、`~/.xprofile`にU.shのswapcapsの分あり、HHKBはつながっていない(無線の「2.4G Wireless」)、`xfconf-query -c keyboard-layout`は空。
+   - 見込み(確かめてはいない): XのキーボードのXKBの既定は、udev(keyboard-configurationの規則)が`/etc/default/keyboard`から読んで入力デバイスに付ける。udevが読んだのは起動の時の土台(BASE、swapcapsが無い)の方で、イメージを展開した後もそのままだった。`~/.xprofile`の`setxkbmap`は効くはずだが、無線のキーボードがつなぎ直されるとXがデバイスの既定に戻す等で消えた可能性。
+   - 修正: `_start_rc`でDMを起動する前に`udevadm trigger --subsystem-match=input --action=change`と`udevadm settle`。X の既定そのものにイメージ側の設定が入る。
+   - 確かめたこと: `bash -n`・`dash -n`。
+
 1313. **src/U_proto.sh: RAMDISKのext4のroot用の予約を無くす(tune2fs -m 0、2026-11-22)**
    - 直接のユーザー依頼: Debian 13の新しい4GB-rescueで起動し、`df`の`/dev/root`が3764096KB中、使用3460848KB・使用可91552KB(98%)。差の約210MBはmkfs.ext4の既定の5%の予約。RAMDISKでは使い道が無いので、アシスタントの提案で`tune2fs -m 0`を入れる(ユーザーの判断、"tune2fs -m 0 を入れて")。
    - 修正: `-r`(rc.local)の初めに`tune2fs -m 0 /dev/ram0`。土台(`RAM-*-base.gz`)は作り直さなくてよい。`_save_host`の収まるかの確かめ(dfの大きさ、予約を含む)は変わらない。
