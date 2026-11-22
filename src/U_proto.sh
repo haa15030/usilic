@@ -2184,6 +2184,95 @@ save_host() { # -s)
     _save_host $1 $2 $3 $4
 }
 
+file_system() { # -f) マウントできる区画（-a と同じ一覧＋vfat）から番号を選んで /mnt/番号 へ。'. U -f -' で全部外す
+    # fstab は書き換えない（再起動すれば無くなる）。もうどこかにマウントされている区画は、/mnt/番号 をそこへのリンクにする
+    local _sel=/tmp/sel.$TMP_LABEL _line _n _uuid _dev _dir _mp _src
+
+    if [ "$ON_WSL" ]; then
+	echo "$1: Not supported. : $LINENO" >> /tmp/log.$TMP_LABEL
+	return
+    fi
+    cd /opt
+    if [ "$2" = "-" ]; then
+	for _dir in `ls -d /mnt/[0-9]* 2>/dev/null`
+	do
+	    if [ -L $_dir ]; then
+		echo "rm $_dir"
+		rm -f $_dir
+	    else
+		echo "umount $_dir"
+		_fs $LINENO umount $_dir
+		if ! _is_mounted $_dir; then
+		    rmdir $_dir 2>/dev/null
+		fi
+	    fi
+	done
+	return
+    elif [ "$2" ]; then
+	echo "$1 $2: Invalid option ('. U -f' or '. U -f -'). : $LINENO" >> /tmp/log.$TMP_LABEL
+	return
+    fi
+    echo " No)TYPE DEVICENAME UUID (free) [mounted]"
+    _list_parts m ntfs exfat ext4 vfat > $_sel
+    echo
+    while read _line
+    do
+	_n=${_line%%)*}
+	_uuid=`echo $_line | sed -n 's/.* UUID=//p'`
+	_dev=`blkid -U $_uuid`
+	_dir=/mnt/$_n
+	_mp=`findmnt -no TARGET $_dev 2>/dev/null | head -n1`
+	# 前の /mnt/番号（番号は区画の増減で変わる）は外す
+	if [ -L $_dir ]; then
+	    rm -f $_dir
+	elif _is_mounted $_dir; then
+	    _src=`findmnt -no SOURCE $_dir`
+	    if [ "$_src" != "$_dev" ]; then
+		echo "umount $_dir ($_src)"
+		_fs $LINENO umount $_dir
+	    fi
+	fi
+	if [ "$_mp" = "$_dir" ]; then
+	    echo "$_dir: $_dev (already mounted)"
+	elif [ "$_mp" ]; then
+	    rmdir $_dir 2>/dev/null
+	    echo "ln -s $_mp $_dir"
+	    ln -s $_mp $_dir
+	else
+	    mkdir -p $_dir
+	    # 休止したWindows（高速スタートアップ）のNTFS等は読み書きではマウントできないので、読むだけで
+	    if mount -o rw UUID=$_uuid $_dir 2>/tmp/error.$TMP_LABEL || mount -o ro UUID=$_uuid $_dir 2>>/tmp/error.$TMP_LABEL; then
+		echo "mount $_dev $_dir (`findmnt -no FSTYPE,OPTIONS $_dir | cut -d, -f1`)"
+	    else
+		echo "$1: $_dev: can't mount. `head -n1 /tmp/error.$TMP_LABEL` : $LINENO" >> /tmp/log.$TMP_LABEL
+		rmdir $_dir 2>/dev/null
+	    fi
+	fi
+    done < $_sel
+    rm -f $_sel
+}
+
+_list_mnt_no() { # -v: -f でマウントした /mnt/番号 の素性と中身
+    local _dir _real _info
+
+    for _dir in `ls -d /mnt/[0-9]* 2>/dev/null`
+    do
+	_real=`readlink -f $_dir`
+	if _is_mounted $_real; then
+	    _info=`findmnt -no SOURCE,FSTYPE $_real`
+	    _info="$_info `blkid -c /dev/null -s UUID -o value ${_info%% *}` (`findmnt -no OPTIONS $_real | cut -d, -f1`)"
+	else
+	    _info="(not mounted)"
+	fi
+	if [ "$_real" != "$_dir" ]; then
+	    _info="$_info -> $_real"
+	fi
+	echo
+	echo "$_dir: $_info"
+	ls -l $_dir/ | grep -v '^total'
+    done
+}
+
 tm() { # -t)
     local _mnt _part
     
@@ -2673,6 +2762,7 @@ verbose() { # -v)
 	ls -l $mnt_strage/opt/ >> /tmp/mess.$TMP_LABEL
 	cd /opt
     fi
+    _list_mnt_no >> /tmp/mess.$TMP_LABEL
     echo >> /tmp/mess.$TMP_LABEL
     df >> /tmp/mess.$TMP_LABEL
     $PAGER /tmp/mess.$TMP_LABEL
@@ -2921,8 +3011,9 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	elif [ "$ON_RAMDISK" ]; then
 	    echo "/dev/shm : `_tmpfs_size | tail -n1`"
 	    echo "img-size : $((`df | grep \/$ | awk '{print $3}'`*$_numerator/10))"
-	    echo ". U [-acdikmnosv]"
+	    echo ". U [-acdfikmnosv]"
 	    echo "  -c(hange_root) [/mnt/usb]" >> /tmp/mess.$TMP_LABEL
+	    echo "  -f(ile_system) [-] : /mnt/No." >> /tmp/mess.$TMP_LABEL
 	    echo "  -d(esktop) : on ??GB-base (8GB~, STRAGE)" >> /tmp/mess.$TMP_LABEL
 	    echo "  -i(nclude) : usilic from $MNT_DEBIAN" >> /tmp/mess.$TMP_LABEL
 	    echo "  -k(ernel_remake) . or - or / or ?? (STRAGE)" >> /tmp/mess.$TMP_LABEL
@@ -2933,22 +3024,24 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	    echo "  -a(dd_strage)" >> /tmp/mess.$TMP_LABEL
 	elif [ "$ON_NONE" ]; then
 	    if [ -f /opt/BASE.u ]; then
-		echo ". U [-acekonuv]"
+		echo ". U [-acefkonuv]"
 		echo "  -c(hange_root) [/mnt/usb]" >> /tmp/mess.$TMP_LABEL
 		echo "  -e(rase_base)" >> /tmp/mess.$TMP_LABEL
 		echo "  -k(ernel_remake) . or - or / or $RESCUE_GB or ??" >> /tmp/mess.$TMP_LABEL
 		echo "  -n(ext_host)" >> /tmp/mess.$TMP_LABEL
 		echo "  -o(utput_u) . or filename [-i(nstall) or -p(urge)]" >> /tmp/mess.$TMP_LABEL
 	    else
-		echo ". U [-auv]"
+		echo ". U [-afuv]"
 	    fi
+	    echo "  -f(ile_system) [-] : /mnt/No." >> /tmp/mess.$TMP_LABEL
 	    echo "  -u(pdate_base)" >> /tmp/mess.$TMP_LABEL
 	    echo "  -a(dd_strage)" >> /tmp/mess.$TMP_LABEL
 	elif [ "$ON_TORAM" ]; then
 	    echo ". U [-ov]"
 	    echo "  -o(utput_u) . or filename [-i(nstall) or -p(urge)]" >> /tmp/mess.$TMP_LABEL
 	else
-	    echo ". U [-aknouv]"
+	    echo ". U [-afknouv]"
+	    echo "  -f(ile_system) [-] : /mnt/No." >> /tmp/mess.$TMP_LABEL
 	    echo "  -k(ernel_remake) . or - or $RESCUE_GB or ??" >> /tmp/mess.$TMP_LABEL
 	    echo "  -n(ext_host)" >> /tmp/mess.$TMP_LABEL
 	    echo "  -o(utput_u) . or filename [-i(nstall) or -p(urge)]" >> /tmp/mess.$TMP_LABEL
@@ -3004,6 +3097,9 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	    -e)
 		erase_base $_option
 		;;
+	    -f)
+		file_system $_option $_ARG_1
+		;;
 	    -i)
 		include_usilic $_option
 		;;
@@ -3039,7 +3135,7 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	echo "$_option: Invalid option. : $LINENO" >> /tmp/log.$TMP_LABEL
     fi
     _fs $LINENO umount /tmp/shm0.$TMP_LABEL
-    if [ "$_option" != "-v" ] && [ "$_option" != "-a" ]; then
+    if [ "$_option" != "-v" ] && [ "$_option" != "-a" ] && [ "$_option" != "-f" ]; then
 	if [ "$ON_RAMDISK" ]; then
 	    _fs $LINENO umount $MNT_DEBIAN
 	    _fs $LINENO umount /boot/efi
