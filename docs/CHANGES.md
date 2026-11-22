@@ -33408,6 +33408,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1324. **src/U_proto.sh: `-u`・`-s`でカーネルのモジュールを/tmpへ移さず、tarの`--exclude`で外す(2026-11-23)**
+   - アシスタントの見直し(U.shで問題のありそうな所)で見つけ、ユーザーが「--excludeでよろしく」。
+   - 前は、イメージを作る間`/usr/lib/modules/*`(RAMの土台を作る時は`/usr/src/linux-headers*`も)を`/tmp/modules.*`へ`mv`し、tarの後に戻していた。Debian 13の/tmpはtmpfs(RAM)なので、これはRAMへのコピーとSSDからの削除で、途中で止まったり停電したりするとSSDのモジュールが無くなる(起動の時に/tmpから戻す作りも、tmpfsは再起動で消えるので効かない)。
+   - 変更:
+     - `_save_host`: `--exclude=usr/lib/modules/*`。Ubuntuの`+`(今のカーネルのモジュールは入れる)は、`$UNAME_R`以外のディレクトリを1つずつ`--exclude`。
+     - `update_base`のRAMの土台(TEMPLATE-*-base): `--exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*'`。
+     - `_update_base`: 写すモジュールとヘッダは名前で指しているので、他のヘッダを/tmpへ逃がす`mv`は要らず、外した。
+     - mainの/tmpから戻す所は、前の版で止まった分のために残した。
+   - 確かめたこと: `bash -n`・`dash -n`。
+
 1323. **src/U_proto.sh: `-m`はddだけに、書きかけのUSBと同じUUIDにならないように(2026-11-22)**
    - 直接のユーザー報告と依頼: BUILDイメージを7Gにして`. U -u`は1時間12分(i7-9700KF、32GB。カーネルソースの展開まで7分、4GBのカーネルの.debが32分、8GBが8分)。USBメモリへのddのコピーは15分で、1時間以上かかったtarの仕様は廃棄でいい。ただしUUIDが同じ点は懸念で、USBメモリの不良・容量不足・停電等で途中で止まると、再起動でSSDではなくUSBメモリから起動しようとして失敗する。fstabができたら(子プロセスで監視して)すぐUUIDを変えれば、と。
    - 見立て: ddはファイルではなく区画の塊を順に写すので、fstabが書かれる時を待って直すことはできない。書きかけの区画をマウントするのも危ない(読むのが壊れた途中の状態、マウントで書いた分はddが上書き)。問題になるのはfstabではなく、先頭にあるext4のスーパーブロックのUUIDで、SSDのGRUB(`search --fs-uuid`)がUSBの書きかけを選ぶ。今まではddの最初の塊でUUIDが同じになり、dd・e2fsck・resize2fs・e2fsckの後に`tune2fs -U random`だった。

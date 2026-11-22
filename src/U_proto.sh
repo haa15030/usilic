@@ -832,14 +832,9 @@ _update_base() {
     _fs $LINENO umount /tmp/loop1.$TMP_LABEL
     echo "mount -o loop /tmp/shm0.$TMP_LABEL/IMG1.img /tmp/loop1.$TMP_LABEL"
     _fs $LINENO mount -o loop /tmp/shm0.$TMP_LABEL/IMG1.img /tmp/loop1.$TMP_LABEL
-    echo "mkdir -p /tmp/modules.$TMP_LABEL/headers"
-    mkdir -p /tmp/modules.$TMP_LABEL/headers
-    echo "mv /usr/src/linux-headers* /tmp/modules.$TMP_LABEL/headers 2>/dev/null"
-    mv /usr/src/linux-headers* /tmp/modules.$TMP_LABEL/headers 2>/dev/null
+    # このカーネルのモジュールとヘッダだけを写す（名前で指すので、他のものを /tmp へ逃がさなくてよい）
     echo "tar cf - /lib/modules/$_new_module /usr/src/linux-headers-$_new_module 2>/dev/null| tar xf - -C /tmp/loop1.$TMP_LABEL"
     tar cf - /lib/modules/$_new_module /usr/src/linux-headers-$_new_module 2>/dev/null| tar xf - -C /tmp/loop1.$TMP_LABEL
-    echo "mv /tmp/modules.$TMP_LABEL/headers/* /usr/src 2>/dev/null"
-    mv /tmp/modules.$TMP_LABEL/headers/* /usr/src 2>/dev/null
     _new_kb=$((_new_gb*1000*1000))
     echo "dd if=/dev/zero of=$mnt_strage/opt/IMG0.img bs=1KB count=$_new_kb"
     dd if=/dev/zero of=$mnt_strage/opt/IMG0.img bs=1KB count=$_new_kb
@@ -1975,22 +1970,26 @@ _save_host() {
         echo "mount -o loop /tmp/shm0.$TMP_LABEL/IMG0.img /tmp/loop0.$TMP_LABEL"
         _fs $LINENO mount -o loop /tmp/shm0.$TMP_LABEL/IMG0.img /tmp/loop0.$TMP_LABEL
     fi
-    mkdir -p /tmp/modules.$TMP_LABEL
     cd /
-    echo "mv usr/lib/modules/* /tmp/modules.$TMP_LABEL"
-    mv usr/lib/modules/* /tmp/modules.$TMP_LABEL
-    if [ "$_plus" = "+" ]; then
-        mv /tmp/modules.$TMP_LABEL/$UNAME_R usr/lib/modules
-    fi
+    # カーネルのモジュールは入れない（RAMの土台の側にある）。tar で外す（前は /tmp へ mv していたが、Debian 13 の /tmp は
+    # tmpfs なので、途中で止まったり停電したりすると SSD の /usr/lib/modules が無くなった）
     _excl=""
+    if [ "$_plus" = "+" ]; then # 今のカーネルのものだけ入れる
+        for _x in usr/lib/modules/*
+        do
+            if [ "${_x##*/}" != "$UNAME_R" ]; then
+                _excl="$_excl --exclude=$_x"
+            fi
+        done
+    else
+        _excl="--exclude=usr/lib/modules/*"
+    fi
     for _x in $IMG_EXCLUDE # 「--exclude=home/*/…」はファイル名に当たらないので展開されない
     do
         _excl="$_excl --exclude=$_x"
     done
     echo "tar cf - $_excl [e-h]* root srv usr var | tar xfp - -C /tmp/loop0.$TMP_LABEL"
     tar cf - $_excl [e-h]* root srv usr var | tar xfp - -C /tmp/loop0.$TMP_LABEL 2>/tmp/error.$TMP_LABEL
-    echo "mv /tmp/modules.$TMP_LABEL/* usr/lib/modules"
-    mv /tmp/modules.$TMP_LABEL/* usr/lib/modules
     _tmp_debian $_plus
     cd /tmp/$DEBIAN.$TMP_LABEL
     tar cf - * | tar xfp - -C /tmp/loop0.$TMP_LABEL
@@ -2396,16 +2395,10 @@ EOF
         echo "mount -o loop /tmp/shm0.$TMP_LABEL/IMG1.img /tmp/loop1.$TMP_LABEL"
         _fs $LINENO mount -o loop /tmp/shm0.$TMP_LABEL/IMG1.img /tmp/loop1.$TMP_LABEL
         apt-get clean
-        mkdir -p /tmp/modules.$TMP_LABEL/modules /tmp/modules.$TMP_LABEL/headers
         cd /
-        echo "mv /usr/lib/modules/* /tmp/modules.$TMP_LABEL/modules"
-        mv /usr/lib/modules/* /tmp/modules.$TMP_LABEL/modules
-        mv /usr/src/linux-headers* /tmp/modules.$TMP_LABEL/headers 2>/dev/null
-        echo "tar cf - [e-h]* root srv usr var | tar xfp - -C /tmp/loop1.$TMP_LABEL"
-        tar cf - [e-h]* root srv usr var | tar xfp - -C /tmp/loop1.$TMP_LABEL 2>/tmp/error.$TMP_LABEL
-        echo "mv /tmp/modules.$TMP_LABEL/modules/* /usr/lib/modules"
-        mv /tmp/modules.$TMP_LABEL/modules/* /usr/lib/modules
-        mv /tmp/modules.$TMP_LABEL/headers/* /usr/src 2> /dev/null
+        # カーネルのモジュールとヘッダは tar で外す（/tmp へ mv すると、tmpfs なので途中で止まった時に SSD から消える）
+        echo "tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' [e-h]* root srv usr var | tar xfp - -C /tmp/loop1.$TMP_LABEL"
+        tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' [e-h]* root srv usr var | tar xfp - -C /tmp/loop1.$TMP_LABEL 2>/tmp/error.$TMP_LABEL
         if [ -s /tmp/error.$TMP_LABEL ]; then
             echo "$1: `cat /tmp/error.$TMP_LABEL` : $LINENO" | tee -a /tmp/log.$TMP_LABEL
             cd /opt
@@ -2644,7 +2637,7 @@ EOF
     fi
     . /opt/U.opt
     mnt_strage=$STRAGE
-    if [ -d /tmp/modules.$TMP_LABEL ]; then
+    if [ -d /tmp/modules.$TMP_LABEL ]; then # 前の版の U.sh が /tmp へ逃がしたまま止まった分（今の版は逃がさない）
 	if [ -d /tmp/modules.$TMP_LABEL/modules ] && [ "`ls /tmp/modules.$TMP_LABEL/modules`" ]; then # モジュールバックアップ分（by save_host()）があればリストア
 	    echo "mv /tmp/modules.$TMP_LABEL/modules/* /usr/lib/modules/ 2>/dev/null"
 	    mv /tmp/modules.$TMP_LABEL/modules/* /usr/lib/modules/ 2>/dev/null
