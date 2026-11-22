@@ -33408,6 +33408,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1312. **src/U_proto.sh: RAMDISKがSTRAGEに残った古い4GB-rescue.imgで起動した(2026-11-22)**
+   - 直接のユーザー報告: `-e`から作り直し、`-u`の「Continue to 4GB-rescue.img and usilic?」でnを選んでリブート。4GBのRAMDISKは前より悪化(`/dev/root`の残りゼロ、sshもつながらない)。SSDの`/opt`に4GB-rescue.imgは無い。`hostname`は`4GB-rescue`、`/usr`が3.6G。STRAGEに前の日の18時に作った4GB-rescue.imgがあった。あわせてNONE-KERNELでlightdmが立ち上がらない。
+   - 原因: `-r`はrescueをDEBIAN区画に無ければSTRAGEでも探していた。`_save_host`は今はrescueを必ずDEBIAN区画に置くが、`-e`はSSDの`/opt`しか消さないので、前の版が置いた古いもの(emacs入り、ram0に入りきらなかったもの)が残り、それを2GB以下の土台の上に展開した。`-u`の確認と作るかの判断もSTRAGEを見ていた。
+   - lightdmの方は不具合ではない: `-u`は土台を作る前にSSDのrootをBASE(インストール直後の状態)へ戻し、X・Xfce・lightdmはrescueを作る段階のtools/setup-debian.shが入れるので、nで止めるとデスクトップの無いまま残る。
+   - 修正: `-r`はrescueをDEBIAN区画だけで探す(無ければ「not exist (booted as 4GB-base)」を画面にも出す)。`-u`の確認と作るかの判断もDEBIAN区画(`/opt`)だけを見る。確認の前に「n: … no desktop …」と出す。
+   - 確かめたこと: `bash -n`・`dash -n`。
+
 1311. **src/U_proto.sh: `-p`で外れないものを同じように3回試し、理由もログに残らなかった(2026-11-22)**
    - 直接のユーザー報告: Debian 13で`-e`すると、`dpkg --purge openssl`が「shim-signed-common は以下に依存 (depends) します: openssl.」で3回とも断られ、U.logは「-o DEBIAN.u -p: not purged: openssl」だけだった。
    - opensslが残るのは、`shim-signed-common`(`_bar`のgrep -vで記録に載せないもの)がopensslを要しているため。外さなくてよい(しかたない)。

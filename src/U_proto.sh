@@ -1768,15 +1768,19 @@ rc_local_only() { # -r)
     if [ ! "$_next_host" ]; then
         _next_host=${RAMDISK_GB}GB-base
     fi
-    if [ ! "`echo $_next_host | grep base$`" ]; then # ホストのイメージを展開（rescue はDEBIAN区画、それ以外はSTRAGEを先に探す）
-        if [ "$_next_host" = "${RAMDISK_GB}GB-rescue" ] && [ -f $MNT_DEBIAN/opt/$_next_host.img ]; then
-            _img=$MNT_DEBIAN/opt/$_next_host.img
+    if [ ! "`echo $_next_host | grep base$`" ]; then # ホストのイメージを展開（rescue はDEBIAN区画だけ、それ以外はSTRAGEを先に探す）
+        # rescue は _save_host が必ずDEBIAN区画に置く。STRAGEにあるのは前の版の U.sh が置いた古いもの（使わない）
+        if [ "$_next_host" = "${RAMDISK_GB}GB-rescue" ]; then
+            if [ -f $MNT_DEBIAN/opt/$_next_host.img ]; then
+                _img=$MNT_DEBIAN/opt/$_next_host.img
+            fi
         elif [ -f $mnt_strage/opt/$_next_host.img ]; then
             _img=$mnt_strage/opt/$_next_host.img
         elif [ -f $MNT_DEBIAN/opt/$_next_host.img ]; then
             _img=$MNT_DEBIAN/opt/$_next_host.img
-        else
-            echo "-r: $_next_host.img: not exist. : $LINENO" >> /tmp/log.$TMP_LABEL
+        fi
+        if [ ! "$_img" ]; then
+            echo "-r: $_next_host.img: not exist (booted as ${RAMDISK_GB}GB-base). : $LINENO" | tee -a /tmp/log.$TMP_LABEL
             _next_host=${RAMDISK_GB}GB-base
         fi
     fi
@@ -2441,9 +2445,11 @@ EOF
         _update_base $_new_gb
     done
     # 4GB-rescue を作る前に、RAMの土台が収まったかを見て止められるようにする（もう一度 -u で続きから）
-    if [ "$EXTRA_GB" ] && [ ! -f /opt/${RESCUE_GB}GB-rescue.img ] && [ ! -f $mnt_strage/opt/${RESCUE_GB}GB-rescue.img ]; then
+    # （rescue はDEBIAN区画（ここでは /opt）だけを見る。STRAGEに古いものがあっても作る）
+    if [ "$EXTRA_GB" ] && [ ! -f /opt/${RESCUE_GB}GB-rescue.img ]; then
         ls -l /opt/RAM-* /opt/linux-image-*
         df -h / $mnt_strage
+        echo "n: stop here. The root is left as BASE (no desktop: X, Xfce, lightdm come with ${RESCUE_GB}GB-rescue)."
         read -p "Continue to ${RESCUE_GB}GB-rescue.img and usilic? (Y/n): " _yn
         if [ "$_yn" ] && [ "$_yn" != "Y" ] && [ "$_yn" != "y" ]; then
             echo "$1: stopped before ${RESCUE_GB}GB-rescue.img (to continue: '. U -u'). : $LINENO" >> /tmp/log.$TMP_LABEL
@@ -2452,7 +2458,7 @@ EOF
     fi
     # 4GB-rescue: tools/setup-debian.sh と RESCUE_LIST で作った環境（ビルドにだけ要るものは外す）を 4GB-rescue.img に保存する。
     # DEBIAN区画（SSDのroot）はこの環境のまま残す
-    if [ ! -f /opt/${RESCUE_GB}GB-rescue.img ] && [ ! -f $mnt_strage/opt/${RESCUE_GB}GB-rescue.img ]; then
+    if [ ! -f /opt/${RESCUE_GB}GB-rescue.img ]; then
         if [ "`_is_inst libelf-dev`" ]; then # カーネルのビルドに使ったもの（build-dep等）が残っていれば、BASEへ戻して外す
             _output_u BASE.u -p $LINENO
             apt-get autoremove --purge -y
