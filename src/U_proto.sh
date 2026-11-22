@@ -669,6 +669,34 @@ _mount_build_img() { # ビルド用イメージ（$BUILD.img）はSTRAGEにだ�
     _fs $LINENO mount -o loop $mnt_strage/opt/$BUILD.img $OPT_BUILD
 }
 
+# --- -u の区切りごとの経過時間（/opt/U_update.log、マニュアルの目安用。動きには関わらない）
+LAP_START=""
+LAP_PREV=""
+_hms() { # $1 秒 -> h:mm:ss
+    printf '%d:%02d:%02d' $(($1/3600)) $(($1%3600/60)) $(($1%60))
+}
+
+_lap_start() { # $1 オプション。機械の素性を見出しにして測り始める
+    LAP_START=`date +%s`
+    LAP_PREV=$LAP_START
+    {
+	echo
+	echo "=== U.sh $1 `date '+%F %T'` `hostname` (`grep -m1 'model name' /proc/cpuinfo | sed -e 's/.*: //'`, `nproc` threads, ${MEM_TOTAL_GB}GB, BUILD_IMG_GB=$BUILD_IMG_GB, STRAGE=`findmnt -no SOURCE,FSTYPE --target $mnt_strage 2>/dev/null | head -n1`) ==="
+	echo "time      +lap     total    step"
+    } >> /opt/U_update.log
+}
+
+_lap() { # $1 区切りの名前（_lap_start の後だけ記録）
+    local _now
+
+    if [ ! "$LAP_START" ]; then
+	return
+    fi
+    _now=`date +%s`
+    printf '%s  %s  %s  %s\n' "`date +%T`" "`_hms $((_now-LAP_PREV))`" "`_hms $((_now-LAP_START))`" "$1" | tee -a /opt/U_update.log
+    LAP_PREV=$_now
+}
+
 _echo_error() {
     if [ "$2" ]; then
 	echo $1 : $2
@@ -759,6 +787,7 @@ _compile() {
 	    fi
 	fi
 	df
+	_lap "$LINUX_SOURCE -> /usr/src"
     fi
     echo "cd /usr/src/$LINUX_SOURCE"
     cd /usr/src/$LINUX_SOURCE
@@ -839,6 +868,7 @@ EOF
     make modules -j9 O=../build/ LOCALVERSION=$_new_version
     echo "make bindeb-pkg O=../build/ LOCALVERSION=$_new_version"
     make bindeb-pkg O=../build/ LOCALVERSION=$_new_version
+    _lap "linux-image-*$_new_version .deb"
     if [ ! -L $MNT_DEBIAN ]; then
 	echo "mv /opt/*.deb /opt/linux-upstream* $MNT_DEBIAN/opt"
 	mv /opt/*.deb /opt/linux-upstream* $MNT_DEBIAN/opt
@@ -933,6 +963,7 @@ _update_base() {
     _fs $LINENO umount /tmp/shm0.$TMP_LABEL
     echo "gzip -c $mnt_strage/opt/IMG0.img > /opt/$_new_base.gz"
     gzip -c $mnt_strage/opt/IMG0.img > /opt/$_new_base.gz
+    _lap "$_new_base.gz"
     echo "rm -f $mnt_strage/opt/IMG0.img"
     rm -f $mnt_strage/opt/IMG0.img
     df /
@@ -1627,13 +1658,13 @@ erase_base() { # -e)
         mkdir -p /tmp/bak.$TMP_LABEL
         cd /opt || return
         # カーネルの.deb（linux-image-*+??gb 等）も消す（-u でビルドし直す。ビルド用イメージはSTRAGEに残るので初回の1/4ほどで済む）
-        echo "mv -fv *.sh U.opt DEBIAN.u grub.ORG /tmp/bak.$TMP_LABEL"
-        mv -fv *.sh U.opt DEBIAN.u grub.ORG /tmp/bak.$TMP_LABEL 2>/dev/null
+        echo "mv -fv *.sh U.opt DEBIAN.u grub.ORG U_update.log /tmp/bak.$TMP_LABEL"
+        mv -fv *.sh U.opt DEBIAN.u grub.ORG U_update.log /tmp/bak.$TMP_LABEL 2>/dev/null
         echo "rm -rf /opt/* /usr/local/bin/U"
         rm -rf /opt/* /usr/local/bin/U
         cd /tmp/bak.$TMP_LABEL || return
-        echo "mv -fv *.sh U.opt DEBIAN.u grub.ORG /opt"
-        mv -fv *.sh U.opt DEBIAN.u grub.ORG /opt 2>/dev/null
+        echo "mv -fv *.sh U.opt DEBIAN.u grub.ORG U_update.log /opt"
+        mv -fv *.sh U.opt DEBIAN.u grub.ORG U_update.log /opt 2>/dev/null
         cd /opt
         echo "update-grub"
         update-grub
@@ -2541,6 +2572,7 @@ update_base() { # -u)
         return
     fi
     export DEBIAN_FRONTEND=noninteractive
+    _lap_start $1
     cd /opt
     if [ ! -f /opt/BASE.u ]; then
         _output_u DEBIAN.u -p $LINENO
@@ -2684,6 +2716,7 @@ EOF
         _fs $LINENO umount /tmp/loop1.$TMP_LABEL
         echo "gzip -c /tmp/shm0.$TMP_LABEL/IMG1.img > /opt/$TEMPLATE_BASE.gz"
         gzip -c /tmp/shm0.$TMP_LABEL/IMG1.img > /opt/$TEMPLATE_BASE.gz
+        _lap "$TEMPLATE_BASE.gz"
         _fs $LINENO umount /tmp/shm0.$TMP_LABEL
         df
     fi
@@ -2748,8 +2781,10 @@ EOF
         apt-get upgrade -y
         if ! _setup_usilic; then
             echo "$1: tools/setup-debian.sh failed. : $LINENO" >> /tmp/log.$TMP_LABEL
+            _lap "(stopped) tools/setup-debian.sh failed"
             return
         fi
+        _lap "usilic (tools/setup-debian.sh)"
         echo "apt-get install -y $RESCUE_LIST"
         apt-get install -y $RESCUE_LIST
         if [ "$RESCUE_LIST_NOREC" ]; then
@@ -2758,6 +2793,7 @@ EOF
         fi
         _output_u ${RESCUE_GB}GB-rescue.u $LINENO # 何が入っているかの記録
         _save_host $1 rescue
+        _lap "${RESCUE_GB}GB-rescue.img"
         if [ "$RESCUE_DEV_PURGE" ]; then # SSDのrootでは、またusilicをビルドできるように戻す
             echo "apt-get install -y $RESCUE_DEV_PURGE"
             apt-get install -y $RESCUE_DEV_PURGE
@@ -2769,6 +2805,7 @@ EOF
     fi
     rm -f /opt/current.u
     update-grub
+    _lap "done"
     _rescue_entry=`_entry_titles / | grep "^RAM-.*+${RESCUE_GB}gb-base$" | tail -n1`
     if [ "$_rescue_entry" ]; then
         echo "grub-set-default '$_rescue_entry'"

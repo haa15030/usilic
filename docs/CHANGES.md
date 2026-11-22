@@ -33408,6 +33408,19 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1335. **src/U_proto.sh: `-u`の区切りごとの経過時間を/opt/U_update.logに記録する(2026-11-23)**
+   - 直接のユーザー依頼: `-u`の所要時間(1時間12分、項目1323)は、その場で測ったのではなく画面の録画から読み取ったもの。同じ区切りごとの経過時間をログに記録してほしい。動きには関係ないが、目安としてマニュアルに書ける。
+   - 変更: `-u`の始めに見出し(日時・ホスト名・CPU・スレッド数・メモリ・BUILD_IMG_GB・STRAGEのデバイスと種類)を書き、区切りごとに「時刻 前の区切りから 始めから 区切りの名前」を1行ずつ(画面にも出す)。区切りは次の通り(作らずに済んだものは出ない)。
+     - TEMPLATE-*-base.gz(RAMの土台)
+     - linux-source-* -> /usr/src(カーネルのソースの展開)
+     - linux-image-*+4gb .deb・+8gb .deb(カーネルごと)
+     - RAM-*+4gb-base.gz・RAM-*+8gb-base.gz
+     - usilic (tools/setup-debian.sh)(失敗した時は「(stopped) …」)
+     - 4GB-rescue.img
+     - done
+   - `-k`で`_compile`を使う時は記録しない(`-u`で測り始めた時だけ)。`-e`の`rm -rf /opt/*`でも消さずに残す。
+   - 確かめたこと: `bash -n`・`dash -n`。
+
 1334. **src/U_proto.sh: KDEのWaylandのセッションで、アイコンから起動したusilicのCtrlとCaps Lockが入れ替わらなかった(2026-11-23)**
    - 直接のユーザー報告: 8GB-baseからKDEのデスクトップを起動すると、swapcapsがZuttyでは効くが、アイコンから起動したusilic(`-i`で取り込み)では効かない。Cinnamonではアイコンからの起動でも効く。Zuttyで`echo $XDG_SESSION_TYPE`は`wayland`。
    - 見立て: 入れ替えは~/.xprofileの`setxkbmap`(項目1314等)で、これはXのサーバーに効く。KDEのWaylandのセッションでは、X11のアプリ(Zutty)が使うXwaylandにだけ効き、KDE(KWin)自身のキーボードの設定(~/.config/kxkbrc)には効かない。Cinnamonは今もXのセッションなので効く。
