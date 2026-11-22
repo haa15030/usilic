@@ -505,16 +505,44 @@ _tmpfs_size() {
 	done
 }
 
-_fs() {
+_die() { # ログ（/tmp/log.*、$1 があれば足す）を出して U.sh を終える（main の最後と同じ出し方）
+    if [ "$1" ]; then
+	echo "$1" >> /tmp/log.$TMP_LABEL
+    fi
+    cd /opt
+    grep -v '^ : ' /tmp/log.$TMP_LABEL | sed '/^$/d' | tee -a /opt/U.log_`date "+%F"`
+    exit 1
+}
+
+_is_mounted() { # $1（マウントポイントか区画のデバイス名）がマウントされていれば真（/etc/mtab の文字列の一部ではなく、ちょうど同じもの）
+    if [ -b "$1" ]; then
+	awk -v d="$1" '$1 == d {f = 1} END {exit !f}' /proc/mounts
+    else
+	mountpoint -q "$1" 2>/dev/null
+    fi
+}
+
+FS_TRY=""
+_fs_try() { # _fs と同じだが、マウントできなくても U.sh を終えずに 1 を返す（起動の時の -r、一覧を作る時の仮のマウント等）
+    local _r
+
+    FS_TRY=y
+    _fs "$@"
+    _r=$?
+    FS_TRY=""
+    return $_r
+}
+
+_fs() { # mount・umount（$1 が数字なら行番号）。マウントできなければ、メッセージをログへ書いて U.sh を終える
     local _i _op _lineno _args="$1 $2 $3 $4 $5 $6 $7 $8 $9"
     local _mount_point=`echo $_args | awk '{print $NF}'`
 
     cd /opt
     if [ ! "$_mount_point" ] || [ "$_mount_point" = "/opt/" ] || [ -L "$_mount_point" ]; then
-	return
+	return 0
     fi
     if [ "$KEEP_MNT_DEBIAN" ] && [ "$_mount_point" = "$MNT_DEBIAN" ]; then
-	return
+	return 0
     fi
     if [ "`echo $1 | grep -E '^[0-9]+$'`" ]; then
 	_lineno="${1}: "
@@ -526,6 +554,7 @@ _fs() {
     fi
     cat /dev/null > /tmp/tmp.$TMP_LABEL
     if [ "$_op" = "mount" ]; then
+	# 前にマウントしたもの（ループのイメージ等）が残っていれば外してから（外せない＝使用中なら、そのまま使う）
 	if [ -d $_mount_point ]; then
 	    umount $_mount_point 2>/dev/null
 	else
@@ -537,14 +566,22 @@ _fs() {
 	if [ -s /tmp/tmp.$TMP_LABEL ]; then
 	    echo "$_lineno`cat /tmp/tmp.$TMP_LABEL`"
 	    break
-	fi	    
-	if ( [ "$_op" = "mount" ] && [ "`fgrep $_mount_point /etc/mtab`" ] ) || ( [ "$_op" = "umount" ] && [ ! "`fgrep $_mount_point /etc/mtab`" ] ); then
+	fi
+	if ( [ "$_op" = "mount" ] && _is_mounted $_mount_point ) || ( [ "$_op" = "umount" ] && ! _is_mounted $_mount_point ); then
 	    break
 	fi
-	`$_args > /tmp/tmp.$TMP_LABEL 2>&1`
+	$_args > /tmp/tmp.$TMP_LABEL 2>&1
 	sleep 1
     done
     cd - > /dev/null
+    if [ "$_op" = "mount" ] && ! _is_mounted $_mount_point; then
+	echo "${_lineno}$_args: failed. `head -n1 /tmp/tmp.$TMP_LABEL`" >> /tmp/log.$TMP_LABEL
+	if [ "$FS_TRY" ]; then
+	    return 1
+	fi
+	_die
+    fi
+    return 0
 }
 
 _is_inst() { # $1（パッケージ名、完全一致）が入っていれば「ii  $1」を出力。$2が「+」なら、無い時だけ入れる
@@ -1026,7 +1063,7 @@ _list_strage() {
 		cd /opt
 		umount $_device
 	    fi
-	    _fs $LINENO mount -o rw UUID=$_uuid /tmp/mount.$TMP_LABEL
+	    _fs_try $LINENO mount -o rw UUID=$_uuid /tmp/mount.$TMP_LABEL
 	    _strage_gb=$((`df $_device | grep $_device | awk '{print $4}'`/1000/1000))
 	    if [ "$_i" -lt 10 ]; then
 		echo " $_i)$_fs $_device $_uuid ($_strage_gb GB)"
@@ -1767,12 +1804,13 @@ rc_local_only() { # -r)
         do
             mkdir -p /opt/shm.$TMP_LABEL/$_shm
             mv /$_shm/* /$_shm/.*  /opt/shm.$TMP_LABEL/$_shm 2>/dev/null
-            _fs $LINENO mount -t tmpfs $_TMPFS_OPT /dev/shm /$_shm
+            _fs_try $LINENO mount -t tmpfs $_TMPFS_OPT /dev/shm /$_shm # できなければ、元のディレクトリへ戻すだけ
             mv /opt/shm.$TMP_LABEL/$_shm/.* /opt/shm.$TMP_LABEL/$_shm/* /$_shm 2>/dev/null
         done
     fi
-    _fs $LINENO mount $MNT_DEBIAN
-    _fs $LINENO mount $mnt_strage
+    # 起動の時なので、マウントできなくても止めない（イメージが見つからず ?GB-base のまま起動する）
+    _fs_try $LINENO mount $MNT_DEBIAN
+    _fs_try $LINENO mount $mnt_strage
     cp $MNT_DEBIAN/opt/BASE.u /opt
     cd /opt
     _next_host=`grep "^NEXT${RAMDISK_GB}=" /opt/U.opt | tail -n1 | sed -e "s/^NEXT${RAMDISK_GB}=//"`
@@ -1797,12 +1835,16 @@ rc_local_only() { # -r)
     fi
     if [ "$_img" ]; then
         echo "tar xfp $_img -> /"
-        _fs $LINENO mount -o loop,ro $_img /tmp/loop0.$TMP_LABEL
-        cd /tmp/loop0.$TMP_LABEL
-        # 起動中のRAMDISKのもの（fstab は rc.local が u_root= で書いた）とtar自身は上書きしない。イメージ自体は書き換えない
-        tar cf - --exclude=etc/fstab --exclude=etc/rc.local --exclude=etc/network/interfaces --exclude=usr/bin/tar * | tar xfp - -C /
-        cd /opt
-        _fs $LINENO umount /tmp/loop0.$TMP_LABEL
+        if _fs_try $LINENO mount -o loop,ro $_img /tmp/loop0.$TMP_LABEL; then
+            cd /tmp/loop0.$TMP_LABEL
+            # 起動中のRAMDISKのもの（fstab は rc.local が u_root= で書いた）とtar自身は上書きしない。イメージ自体は書き換えない
+            tar cf - --exclude=etc/fstab --exclude=etc/rc.local --exclude=etc/network/interfaces --exclude=usr/bin/tar * | tar xfp - -C /
+            cd /opt
+            _fs $LINENO umount /tmp/loop0.$TMP_LABEL
+        else
+            _next_host=${RAMDISK_GB}GB-base
+            _img=""
+        fi
     fi
     DOT_FILES
     cat <<EOF > /tmp/hosts.$TMP_LABEL
@@ -2763,10 +2805,8 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
     elif [ "$SMBFS" ]; then
 	grep -ve /mnt/cifs /etc/fstab > /tmp/fstab.$TMP_LABEL
 	_is_inst cifs-utils +
-	_fs $LINENO mount -t cifs -o `echo $SMBFS | awk '{print $4}'` `echo $SMBFS | awk '{print $1}'` `echo $SMBFS | awk '{print $2}'` > /tmp/error.$TMP_LABEL
-	if [ -s /tmp/error.$TMP_LABEL ]; then
-	    cat /tmp/error.$TMP_LABEL >> /tmp/log.$TMP_LABEL
-	    mnt_strage=""
+	if ! _fs_try $LINENO mount -t cifs -o `echo $SMBFS | awk '{print $4}'` `echo $SMBFS | awk '{print $1}'` `echo $SMBFS | awk '{print $2}'`; then
+	    mnt_strage="" # 失敗はログに書いた
 	else
 	    mnt_strage=/mnt/cifs
 	    echo $SMBFS >> /tmp/fstab.$TMP_LABEL
