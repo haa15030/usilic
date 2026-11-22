@@ -1828,7 +1828,7 @@ EOF
 }
 
 _save_host() {
-    local _new_host _host_list _ram_img_kb _used_kb _free_kb _plus _bak="" _excl _x _dst
+    local _new_host _host_list _ram_img_kb _used_kb _free_kb _plus _bak="" _excl _x _dst _bld
     local _work_area=$WORK_AREA
     local _shm_kb _cap_kb _mod_kb _need_kb
 
@@ -1869,6 +1869,12 @@ _save_host() {
         echo "$1: $_new_host: Strage-area needed ('. U -a'). Without it, only ${RAMDISK_GB}GB-rescue can be saved. : $LINENO" >> /tmp/log.$TMP_LABEL
         return
     fi
+    # rescue-USB（DEBIAN区画がUSBメモリ）でSTRAGEが無い: USBメモリの上で4GBのイメージを作り、控えも置くと1時間以上かかるので、
+    # 先にSTRAGEを設定してもらう（STRAGEがあれば、作るのも控えもSTRAGEで、USBメモリへは出来たイメージを1回写すだけ）
+    if [ "$mnt_strage" = "$MNT_DEBIAN" ] && [ "$_new_host" = "${RAMDISK_GB}GB-rescue" ] && [ "`_on_usb`" ]; then
+        echo "$1: $_new_host: on a USB memory, Strage-area needed (too slow without it). Type '. U -a', then '. U $1 $2'. : $LINENO" | tee -a /tmp/log.$TMP_LABEL
+        return
+    fi
     if [ "$4" = "-" ] || [ "$ON_NONE" ] || ( [ "$ON_UBUNTU" ] && [ ! "$ON_RAMDISK" ] ); then
         _work_area=opt
     fi
@@ -1899,48 +1905,63 @@ _save_host() {
     else
         _dst=$mnt_strage/opt
     fi
-    # rescue の上書き: 今のイメージを .BAK.gz に圧縮してから消す（失敗したらそこから戻す）。
-    # .BAK.gz は保存先に、入らなければSTRAGEに置く
+    # イメージを作る場所: rescue でSTRAGEがあればSTRAGE（出来てから保存先へ写す）、それ以外は保存先
+    _bld=$_dst
+    if [ "$_new_host" = "${RAMDISK_GB}GB-rescue" ] && [ "$mnt_strage" != "$MNT_DEBIAN" ]; then
+        _bld=$mnt_strage/opt
+    fi
+    # rescue の上書き: 今のイメージを控えてから消す（失敗したらそこから戻す）。
+    # STRAGEがあれば、STRAGEへ .BAK.img としてそのまま写す（圧縮しない。保存先（USBメモリ等）に控えを置かない）。
+    # STRAGEが無ければ、保存先に .BAK.gz を圧縮して置く
     if [ "$_new_host" = "${RAMDISK_GB}GB-rescue" ] && [ -f $_dst/$_new_host.img ]; then
-        for _x in $_dst $mnt_strage/opt
-        do
-            echo "gzip -c $_dst/$_new_host.img > $_x/$_new_host.BAK.gz"
-            if gzip -c $_dst/$_new_host.img > $_x/$_new_host.BAK.gz; then
-                _bak=$_x/$_new_host.BAK.gz
-                break
+        if [ "$_bld" != "$_dst" ]; then
+            echo "cp $_dst/$_new_host.img $_bld/$_new_host.BAK.img"
+            if cp $_dst/$_new_host.img $_bld/$_new_host.BAK.img; then
+                _bak=$_bld/$_new_host.BAK.img
+            else
+                rm -f $_bld/$_new_host.BAK.img
             fi
-            rm -f $_x/$_new_host.BAK.gz
-        done
+        else
+            echo "gzip -c $_dst/$_new_host.img > $_dst/$_new_host.BAK.gz"
+            if gzip -c $_dst/$_new_host.img > $_dst/$_new_host.BAK.gz; then
+                _bak=$_dst/$_new_host.BAK.gz
+            else
+                rm -f $_dst/$_new_host.BAK.gz
+            fi
+        fi
         if [ ! "$_bak" ]; then
-            echo "$1: $_new_host.BAK.gz: failed (no space?). : $LINENO" | tee -a /tmp/log.$TMP_LABEL
+            echo "$1: $_new_host.BAK: failed (no space?). : $LINENO" | tee -a /tmp/log.$TMP_LABEL
             cd /opt
             return
         fi
         rm -f $_dst/$_new_host.img
         ls -l $_bak
     fi
-    # 保存先にイメージを置く空きがあるか
-    _free_kb=`df -k $_dst/ | sed -n 2p | awk '{print $4}'`
-    echo "free: ${_free_kb}KB ($_dst)"
-    if [ "$_ram_img_kb" -gt "$_free_kb" ]; then
-        echo "$1: $_new_host: img ${_ram_img_kb}KB > free ${_free_kb}KB ($_dst). : $LINENO" | tee -a /tmp/log.$TMP_LABEL
-        _restore_bak $_bak $_dst/$_new_host.img
-        cd /opt
-        return
-    fi
-    if [ "$_work_area" = "opt" ] || [ $_ram_img_kb -gt "`_tmpfs_size | tail -n1`" ]; then # _ram_img_kbが/dev/shmの空きよりも大きい
-        echo "dd if=/dev/zero of=$_dst/IMG0.img bs=1KB count=$_ram_img_kb"
-        dd if=/dev/zero of=$_dst/IMG0.img bs=1KB count=$_ram_img_kb 2>/tmp/error.$TMP_LABEL
-        if [ $? -ne 0 ]; then
-            echo "$1: IMG0.img: `tail -n1 /tmp/error.$TMP_LABEL` : $LINENO" | tee -a /tmp/log.$TMP_LABEL
-            rm -f $_dst/IMG0.img
+    # 保存先（と作る場所）にイメージを置く空きがあるか
+    for _x in `echo $_dst $_bld | tr ' ' '\n' | sort -u`
+    do
+        _free_kb=`df -k $_x/ | sed -n 2p | awk '{print $4}'`
+        echo "free: ${_free_kb}KB ($_x)"
+        if [ "$_ram_img_kb" -gt "$_free_kb" ]; then
+            echo "$1: $_new_host: img ${_ram_img_kb}KB > free ${_free_kb}KB ($_x). : $LINENO" | tee -a /tmp/log.$TMP_LABEL
             _restore_bak $_bak $_dst/$_new_host.img
             cd /opt
             return
         fi
-        mkfs.ext4 -q $_dst/IMG0.img
-        echo "mount -o loop $_dst/IMG0.img /tmp/loop0.$TMP_LABEL"
-        _fs $LINENO mount -o loop $_dst/IMG0.img /tmp/loop0.$TMP_LABEL
+    done
+    if [ "$_work_area" = "opt" ] || [ $_ram_img_kb -gt "`_tmpfs_size | tail -n1`" ]; then # _ram_img_kbが/dev/shmの空きよりも大きい
+        echo "dd if=/dev/zero of=$_bld/IMG0.img bs=1KB count=$_ram_img_kb"
+        dd if=/dev/zero of=$_bld/IMG0.img bs=1KB count=$_ram_img_kb 2>/tmp/error.$TMP_LABEL
+        if [ $? -ne 0 ]; then
+            echo "$1: IMG0.img: `tail -n1 /tmp/error.$TMP_LABEL` : $LINENO" | tee -a /tmp/log.$TMP_LABEL
+            rm -f $_bld/IMG0.img
+            _restore_bak $_bak $_dst/$_new_host.img
+            cd /opt
+            return
+        fi
+        mkfs.ext4 -q $_bld/IMG0.img
+        echo "mount -o loop $_bld/IMG0.img /tmp/loop0.$TMP_LABEL"
+        _fs $LINENO mount -o loop $_bld/IMG0.img /tmp/loop0.$TMP_LABEL
     else
         _fs $LINENO umount /tmp/loop0.$TMP_LABEL
         echo "mount -t tmpfs -o size=${_ram_img_kb}K /dev/shm /tmp/shm0.$TMP_LABEL"
@@ -1984,14 +2005,19 @@ _save_host() {
     _fs $LINENO umount /tmp/loop0.$TMP_LABEL
     if [ -s /tmp/error.$TMP_LABEL ]; then
         echo "$1: `cat /tmp/error.$TMP_LABEL` : $LINENO" | tee -a /tmp/log.$TMP_LABEL
-        rm -f $_dst/IMG0.img
+        rm -f $_bld/IMG0.img
         _fs $LINENO umount /tmp/shm0.$TMP_LABEL
         _restore_bak $_bak $_dst/$_new_host.img
         return
     fi
-    if [ -f $_dst/IMG0.img ]; then
-        echo "mv $_dst/IMG0.img $_dst/$_new_host.img"
-        mv $_dst/IMG0.img $_dst/$_new_host.img
+    if [ -f $_bld/IMG0.img ]; then
+        echo "mv $_bld/IMG0.img $_dst/$_new_host.img"
+        if ! mv $_bld/IMG0.img $_dst/$_new_host.img; then
+            echo "$1: $_new_host.img: failed (no space?). : $LINENO" | tee -a /tmp/log.$TMP_LABEL
+            rm -f $_dst/$_new_host.img $_bld/IMG0.img
+            _restore_bak $_bak $_dst/$_new_host.img
+            return
+        fi
     else
         echo "mv /tmp/shm0.$TMP_LABEL/IMG0.img $_dst/$_new_host.img"
         if ! mv /tmp/shm0.$TMP_LABEL/IMG0.img $_dst/$_new_host.img; then #_44)
@@ -2020,7 +2046,8 @@ _save_host() {
 }
 
 _ramdisk_cap_kb() { # $1 GB の RAMDISK（_update_base と同じ大きさで mkfs.ext4）に入る量（KB、df の大きさ）
-    local _img=/opt/cap.$TMP_LABEL.img _mnt=/tmp/cap.$TMP_LABEL _kb=""
+    # /tmp に作る（RAMDISKでは /opt は ram0 の中で、空きが少ないと mkfs.ext4 のジャーナル等が書けない。/tmp は tmpfs）
+    local _img=/tmp/cap.$TMP_LABEL.img _mnt=/tmp/cap.$TMP_LABEL _kb=""
 
     rm -f $_img
     if truncate -s $(($1*1000*1000*1000)) $_img && mkfs.ext4 -q $_img; then # 中身の無いファイル（実際の場所はほとんど使わない）
@@ -2035,10 +2062,25 @@ _ramdisk_cap_kb() { # $1 GB の RAMDISK（_update_base と同じ大きさで mkf
     echo $_kb
 }
 
-_restore_bak() { # $1（.BAK.gz）があれば $2 へ戻す
+_restore_bak() { # $1（.BAK.gz か .BAK.img）があれば $2 へ戻す
     if [ "$1" ] && [ -f "$1" ]; then
-        echo "zcat $1 > $2"
-        zcat $1 > $2
+        case "$1" in
+            *.gz)
+                echo "zcat $1 > $2"
+                zcat $1 > $2 ;;
+            *)
+                echo "cp $1 $2"
+                cp $1 $2 ;;
+        esac
+    fi
+}
+
+_on_usb() { # DEBIAN区画がUSBのディスク（USBメモリ等）にあれば「usb」と出す
+    local _disk
+
+    _disk=`lsblk -ndo PKNAME $DEBIAN_ROOT_PART 2>/dev/null`
+    if [ "$_disk" ]; then
+        lsblk -ndo TRAN /dev/$_disk 2>/dev/null | grep -x usb
     fi
 }
 

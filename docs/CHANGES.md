@@ -33408,6 +33408,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1316. **src/U_proto.sh: rescue-USBの`-s`は、作るのも控えもSTRAGEで(2026-11-22)**
+   - 直接のユーザー依頼: USBメモリの場合、4GBのコピーに1時間以上かかっていて、STRAGE無しの作業は実用的でない。STRAGEが無ければ`-s`で設定を促すメッセージを出すか`-a`を自動で実行。STRAGEがあればそこへ`.BAK.img`で控え、新しく作ったrescue.imgを`/mnt/debian/opt`へ写せば、USBメモリが控えを持たなくて済む。
+   - 修正(`_save_host`、rescueの時):
+     - STRAGEが無く、DEBIAN区画がUSBのディスク(`lsblk`の`TRAN`が`usb`、新設の`_on_usb`)なら、「`. U -a`の後に`. U -s .`」と出して止める(`-a`は区画を選ぶ対話なので自動では実行しない)。SSD等でSTRAGEが無い時は今まで通り。
+     - STRAGEがあれば、今のrescueはSTRAGEへ`4GB-rescue.BAK.img`として写す(圧縮しない)。イメージはSTRAGE(か、入ればtmpfs)で作り、出来てから保存先(DEBIAN区画)へ1回写す。保存先へ写すのに失敗したら控えから戻す。空きは保存先と作る場所の両方で確かめる。
+     - STRAGEが無い時の控えは保存先の`.BAK.gz`だけ(前はSTRAGEも候補にしていたが、同じ場所だった)。`_restore_bak`は`.BAK.img`も戻せる。
+   - あわせて: 収まるかを確かめる`_ramdisk_cap_kb`の試しのイメージを`/opt`から`/tmp`へ。RAMDISKの上では`/opt`はram0の中で、残り約93MBではmkfs.ext4のジャーナル(4GBで64MB)等が書けないおそれがあった。
+   - 確かめたこと: `bash -n`・`dash -n`。
+
 1315. **src/U_proto.sh: 4GB-rescueにemacs-noxを推奨パッケージ無しで入れる(2026-11-22)**
    - 直接のユーザー報告と依頼: 項目1313・1314の後の4GB-rescue(使用可286848KB)で、`. U -o current.u`で控えてからemacsを入れ、使用可95604KBで収まった。入れたのは`emacs-nox`("nox。レスキュー版だしGTKは不要。")。
    - 修正: `RESCUE_LIST_NOREC="emacs-nox"`を新設し、`-u`の4GB-rescueで`RESCUE_LIST`の後に`apt-get install -y --no-install-recommends`で入れる(`RESCUE_LIST`のままだと推奨のmailutils・exim4も入る、項目1306)。
