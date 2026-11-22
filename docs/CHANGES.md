@@ -33408,6 +33408,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1305. **src/U_proto.sh: 4GB-rescue.imgがRAMDISKに収まるかの確認が甘く、起動の時に場所が尽きた(2026-11-22)**
+   - 直接のユーザー報告: Debian 13の4GB-rescue.imgで起動はし、usilicも日本語入力も使えたが、`/`の残りが0で、起動の時にNo space left on deviceらしいエラーが数十行。
+   - ユーザーのログ(journal・`df`): rc.localの`U.sh -r`がイメージの中身をRAMDISKへtarで展開する途中で尽きた(`tar: usr/sbin/exim4: Wrote only 9728 of 10240 bytes`、以下`usr/sbin`・`usr/include`の`Cannot write: No space left on device`)。書けなかった`avahi-daemon`・`exim4`は起動で`Exec format error`等。`/dev/root`は3764096KB中3735636KB、`/usr/lib/modules/6.12.117+4gb`は91028KB。
+   - 原因: `_save_host`の最後の確認は「イメージの中身の使用量 > `RAMDISK_GB`×1000×1000KB」だった。実際のRAMDISKは、同じ大きさで`mkfs.ext4`したext4なので、dfの大きさは4GBで3764096KB(約6%少ない)。そのうえ、イメージから外したカーネルのモジュールがRAMの土台の側に入っている。逆に`SHM_LIST`(home・tmp・var)の分は、`-r`でtmpfsの方に入るのでRAMDISKを使わない。
+   - 修正: `_ramdisk_cap_kb`(同じ大きさの中身の無いファイルを`mkfs.ext4`してdfの大きさを見る)と比べ、「中身 − SHM_LISTの分 + `/usr/lib/modules/*+??gb` + `RAMDISK_MARGIN_KB`(50000)」が超えたら、何KB超えたかをU.logに書く(これまでどおりイメージは残す)。
+   - ほかのjournalのもの: `Failed to open /dev/shm device`(U.shがtmpfsを`/dev/shm`という名前でマウントするので、systemdがそれを装置として開こうとする、害は無い)、lightdmのAccountsService、6.12の`CPA detected W^X violation`は未対応。
+   - 確かめたこと: `bash -n`・`dash -n`。
+
 1304. **docs/BUILD.md: 仮の名前ABC・DEF・GHIを実際の値に、矢印`->`を`＞`に(2026-11-21)**
    - 直接のユーザー依頼: 仮に入れてあったユーザー名`ABC`・本名`DEF`・パスワード`GHI`を、`usilic`・`Yu Silic`・`U`に(秘密ではない、U.shのSMBFSの例と同じ)。ユーザーは「ABC,DEF,GHI→usilic,U,Yu Silic」と書いたが、BUILD.mdでの使い方(Your name・Full nameがDEF)に合わせてDEFを本名にした。
    - 矢印: `→`はフォントによって半角の幅になって見づらいので`->`にしていたが、これも今ひとつなので`-->`に(151か所)。さらに全角の`＞`に(どのフォントでも全角の幅、和文のメニューをたどる記法として一般的)。FreeBSDのインストーラの画面の文字「->- Test default keymap」はそのまま。

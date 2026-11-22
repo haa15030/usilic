@@ -21,6 +21,7 @@ readonly RESCUE_DEV_PURGE="build-essential pkg-config libncurses-dev libsdl2-dev
 # --- -s・-u のイメージ（?GB-*.img）に入れないもの（/ からの相対、* 可）
 # usilic は ~/.local に入っていて、rescue ではビルドしないのでリポジトリ（.git とビルドの中間ファイルで1GB近く）は要らない
 readonly IMG_EXCLUDE="home/*/git/usilic home/*/.cache"
+readonly RAMDISK_MARGIN_KB=50000 # RAMDISKに収まるかの確認で残す余裕（起動してから / に書かれる分）
 
 # --- データ保存（-s）の作業エリア設定
 # 下記$WORK_AREAが｢opt｣の時は作業エリアとして$STRAGE/opt（デフォルトはtmpfs）を使用する他
@@ -1802,7 +1803,7 @@ EOF
 _save_host() {
     local _new_host _host_list _ram_img_kb _used_kb _free_kb _plus _bak="" _excl _x _dst
     local _work_area=$WORK_AREA
-    local _RAMDISK_KB=$((RAMDISK_GB*1000*1000))
+    local _shm_kb _cap_kb _mod_kb _need_kb
 
     if [ "`hostname | grep GB-base$`" ] && [ "$2" = "." ]; then
         echo "$1: Can't save to base-host. : $LINENO" >> /tmp/log.$TMP_LABEL
@@ -1945,6 +1946,14 @@ _save_host() {
     cd /opt
     df /tmp/loop0.$TMP_LABEL
     _used_kb=`df -k /tmp/loop0.$TMP_LABEL | sed -n 2p | awk '{print $3}'` # イメージの中身の実際の使用量
+    # そのうちRAMDISK（ram0）に入る分（SHM_LIST のディレクトリは、-r で tmpfs の方に入る）
+    _shm_kb=0
+    for _x in $SHM_LIST
+    do
+        if [ -d /tmp/loop0.$TMP_LABEL/$_x ]; then
+            _shm_kb=$((_shm_kb + `du -skx /tmp/loop0.$TMP_LABEL/$_x | cut -f1`))
+        fi
+    done
     _fs $LINENO umount /tmp/loop0.$TMP_LABEL
     if [ -s /tmp/error.$TMP_LABEL ]; then
         echo "$1: `cat /tmp/error.$TMP_LABEL` : $LINENO" | tee -a /tmp/log.$TMP_LABEL
@@ -1970,12 +1979,33 @@ _save_host() {
     ls -l $_dst/${RAMDISK_GB}GB* $_bak
     df $_dst/
     # RAMDISKに収まるか（最後のチェック）。収まらなくてもイメージは残す（中を見て削るものを決められるように）
-    echo "$_new_host.img: used ${_used_kb}KB / RAMDISK ${_RAMDISK_KB}KB"
-    if [ ! "$_plus" ] && [ "$_used_kb" -gt "$_RAMDISK_KB" ]; then
-        echo "$1: $_new_host.img: used ${_used_kb}KB > ${RAMDISK_GB}GB RAMDISK (can't boot). : $LINENO" | tee -a /tmp/log.$TMP_LABEL
+    # RAMDISKに入るのは「中身 − SHM_LIST の分 ＋ カーネルのモジュール（RAMの土台の側にある）＋ 余裕」。
+    # RAMDISK の容量は ${RAMDISK_GB}GB ではなく、同じ大きさで mkfs.ext4 した時の df の大きさ（4GB で 3764096KB）
+    _cap_kb=`_ramdisk_cap_kb $RAMDISK_GB`
+    _mod_kb=`du -skc /usr/lib/modules/*+${RAMDISK_GB}gb 2>/dev/null | tail -n1 | cut -f1`
+    _need_kb=$((_used_kb - _shm_kb + ${_mod_kb:-0} + RAMDISK_MARGIN_KB))
+    echo "$_new_host.img: used ${_used_kb}KB - $SHM_LIST ${_shm_kb}KB + modules ${_mod_kb}KB + margin ${RAMDISK_MARGIN_KB}KB = ${_need_kb}KB / RAMDISK ${_cap_kb}KB"
+    if [ ! "$_plus" ] && [ "$_cap_kb" ] && [ "$_need_kb" -gt "$_cap_kb" ]; then
+        echo "$1: $_new_host.img: ${_need_kb}KB > ${RAMDISK_GB}GB RAMDISK ${_cap_kb}KB (over $((_need_kb - _cap_kb))KB, can't boot). : $LINENO" | tee -a /tmp/log.$TMP_LABEL
         echo "mount -o loop,ro $_dst/$_new_host.img /mnt; du -sh /mnt/* /mnt/usr/* /mnt/usr/share/*" >> /tmp/log.$TMP_LABEL
     fi
     cd /opt
+}
+
+_ramdisk_cap_kb() { # $1 GB の RAMDISK（_update_base と同じ大きさで mkfs.ext4）に入る量（KB、df の大きさ）
+    local _img=/opt/cap.$TMP_LABEL.img _mnt=/tmp/cap.$TMP_LABEL _kb=""
+
+    rm -f $_img
+    if truncate -s $(($1*1000*1000*1000)) $_img && mkfs.ext4 -q $_img; then # 中身の無いファイル（実際の場所はほとんど使わない）
+        mkdir -p $_mnt
+        if mount -o loop,ro $_img $_mnt; then
+            _kb=`df -k $_mnt | sed -n 2p | awk '{print $2}'`
+            umount $_mnt
+        fi
+        rmdir $_mnt
+    fi
+    rm -f $_img
+    echo $_kb
 }
 
 _restore_bak() { # $1（.BAK.gz）があれば $2 へ戻す
