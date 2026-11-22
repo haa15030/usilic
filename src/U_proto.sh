@@ -514,7 +514,7 @@ _fs() {
     if [ "$KEEP_MNT_DEBIAN" ] && [ "$_mount_point" = "$MNT_DEBIAN" ]; then
 	return
     fi
-    if [ "`echo $1 | egrep '^[0-9]+$'`" ]; then
+    if [ "`echo $1 | grep -E '^[0-9]+$'`" ]; then
 	_lineno="${1}: "
 	_args=`echo $_args | sed -e "s/$1 //"`
 	_op=$2
@@ -868,7 +868,7 @@ _update_base() {
 }
 
 _output_u() {
-    local _u="." _diff _pkgs _pkg _try
+    local _u="." _diff _pkgs _pkg _try _prev
     local _bar="dpkg --get-selections | \
        grep -ve \
        deinstall$ -ve \
@@ -899,7 +899,7 @@ _output_u() {
     
     _ARG="$1 $2 $3 $4 $5 $6 $7 $8 $9"
     _lineno=`echo $_ARG | awk '{print $NF}'`
-    _lineno=`echo $_lineno | egrep '^[0-9]+$'`
+    _lineno=`echo $_lineno | grep -E '^[0-9]+$'` # egrep は Debian 13 で「obsolescent」と出る
     if [ ! "$1" ] || [ "$1" = "-p" ] || [ "$1" = "-i" ] || ( [ "$1" = "." ] && ( [ "$2" = "-p" ] || [ "$2" = "-i" ] ) ); then
 	echo "Please type '. U -o . or filename'[Enter] : $_lineno" >> /tmp/log.$TMP_LABEL
 	return
@@ -915,15 +915,20 @@ _output_u() {
 	if [ "`$_diff`" ]; then
 	    # dpkg --purge は依存関係を解かない。残す側（$1 にあるもの）が要しているもの（Depends や、mail-transport-agent の
 	    # ような仮想パッケージ）は「dependency problems」で外さずに残す。外すもの同士の順番の都合で残ったものは、
-	    # もう一度やれば外れるので3回まで。それでも残ったものは、dpkg の理由（〜 depends on 〜）と一緒にログへ
+	    # もう一度やれば外れるので3回まで（減らなくなったらやめる）。それでも残ったものは、dpkg の理由（〜 depends on 〜）と一緒にログへ
+	    # （記録に載せないもの（_bar の grep -v、shim-signed-common 等）が要しているものも残る。例: Debian 13 の openssl）
 	    _try=0
 	    _pkgs=`echo "$_diff | $_to_u | tr '\n' ' '" | sh`
-	    while [ "$_pkgs" ] && [ "$_try" -lt 3 ]
+	    _pkgs=`echo $_pkgs`
+	    _prev=""
+	    while [ "$_pkgs" ] && [ "$_pkgs" != "$_prev" ] && [ "$_try" -lt 3 ]
 	    do
 		echo "dpkg --purge $_pkgs"
-		dpkg --purge $_pkgs 2>&1 | tee /tmp/purge.$TMP_LABEL
+		LC_ALL=C dpkg --purge $_pkgs 2>&1 | tee /tmp/purge.$TMP_LABEL # ログの理由を英語のまま grep するため
 		echo $_bar | sh > /tmp/current.$TMP_LABEL
+		_prev=$_pkgs
 		_pkgs=`echo "$_diff | $_to_u | tr '\n' ' '" | sh`
+		_pkgs=`echo $_pkgs`
 		_try=$((_try+1))
 	    done
 	    if [ "$_pkgs" ]; then
@@ -1071,7 +1076,7 @@ add_strage() { # -a)
     read -p "Input No:" _n
     _STRAGE_INFO=`cat /tmp/strage.$TMP_LABEL | awk -F\# '{print $2}' | fgrep $_n\) | head -n1`
     echo
-    if [ ! "$_n" ] || [ ! "`echo $_n | egrep '^[0-9]+$'`" ]; then
+    if [ ! "$_n" ] || [ ! "`echo $_n | grep -E '^[0-9]+$'`" ]; then
 	echo "$1: $_n: Invalid No." >> /tmp/log.$TMP_LABEL
     elif [ "$_n" = "0" ]; then
 	echo "STRAGE=\"\"" >> /tmp/opt.$TMP_LABEL
@@ -1337,7 +1342,7 @@ desktop_select() { # -d)
     read -p "Input No (e.g. '2' or '2 5'):" _sel
     for _i in $_sel
     do
-        if [ ! "`echo $_i | egrep '^[0-9]+$'`" ] || [ "$_i" -lt 1 ] || [ "$_i" -ge "$_n" ]; then
+        if [ ! "`echo $_i | grep -E '^[0-9]+$'`" ] || [ "$_i" -lt 1 ] || [ "$_i" -ge "$_n" ]; then
             echo "$1: $_i: Invalid No. : $LINENO" >> /tmp/log.$TMP_LABEL
             return
         fi

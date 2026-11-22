@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1311. **src/U_proto.sh: `-p`で外れないものを同じように3回試し、理由もログに残らなかった(2026-11-22)**
+   - 直接のユーザー報告: Debian 13で`-e`すると、`dpkg --purge openssl`が「shim-signed-common は以下に依存 (depends) します: openssl.」で3回とも断られ、U.logは「-o DEBIAN.u -p: not purged: openssl」だけだった。
+   - opensslが残るのは、`shim-signed-common`(`_bar`のgrep -vで記録に載せないもの)がopensslを要しているため。外さなくてよい(しかたない)。
+   - 修正: 外す一覧が減らなくなったら繰り返しをやめる。`dpkg --purge`を`LC_ALL=C`で動かし、U.logへの理由(` depends on `)を日本語の環境でも拾えるようにした(画面のdpkgの出力も英語になる)。一覧の余分な空白も詰める。`egrep`(Debian 13で「obsolescent」と出る)を`grep -E`に。
+   - 確かめたこと: `bash -n`・`dash -n`。
+
 1310. **src/U_proto.sh: `-e`でカーネルの.debも消す(2026-11-22)**
    - 直接のユーザー判断: `-e`の後、カーネルのビルドも含めて真っ新から作り直す。ビルドし直す時間は初回の1/4ほど(2025年8月にU.shで確かめた)なので許容範囲。
    - `-e`は`/opt`の`*.sh`・`U.opt`・`DEBIAN.u`・`grub.ORG`・`*.deb`を残していたが、`*.deb`を外した。`-u`は/optに`linux-image-*+4gb*.deb`があるとビルドせずにそれを入れていた。STRAGEのビルド用イメージ(`BUILD_DEBIAN.img`)は残る(これがあるので速い)。
