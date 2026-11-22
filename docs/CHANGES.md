@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1306. **src/U_proto.sh: 4GB-rescueからemacsを外す(2026-11-22)**
+   - 直接のユーザー判断: 4GBのRAMDISKに収まらなかった(項目1305)ので、emacsを削って作り直す。
+   - `RESCUE_LIST`を`gparted gdisk`に。emacsの推奨で入っていた`mailutils`・exim4等も入らなくなる。DOT_FILESの`~/.emacs.d/init.el`等はそのまま書く(害は無い)。
+
 1305. **src/U_proto.sh: 4GB-rescue.imgがRAMDISKに収まるかの確認が甘く、起動の時に場所が尽きた(2026-11-22)**
    - 直接のユーザー報告: Debian 13の4GB-rescue.imgで起動はし、usilicも日本語入力も使えたが、`/`の残りが0で、起動の時にNo space left on deviceらしいエラーが数十行。
    - ユーザーのログ(journal・`df`): rc.localの`U.sh -r`がイメージの中身をRAMDISKへtarで展開する途中で尽きた(`tar: usr/sbin/exim4: Wrote only 9728 of 10240 bytes`、以下`usr/sbin`・`usr/include`の`Cannot write: No space left on device`)。書けなかった`avahi-daemon`・`exim4`は起動で`Exec format error`等。`/dev/root`は3764096KB中3735636KB、`/usr/lib/modules/6.12.117+4gb`は91028KB。

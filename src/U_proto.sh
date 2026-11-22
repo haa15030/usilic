@@ -40,7 +40,7 @@ readonly SHM_LIST="home tmp var"
 # --- 4GB-rescue版パッケージリスト（任意）
 # -u は tools/setup-debian.sh（xorg・xfce4・fcitx5-mozc・日本語フォント・firefox-esr・mpv・usilicのビルド等）と
 # これを入れた状態を 4GB-rescue.img として保存する（setup-debian.sh が入れるものは書かない。RAMDISKの空きを残すため最小限に）
-RESCUE_LIST="emacs gparted gdisk"
+RESCUE_LIST="gparted gdisk" # emacs は外した（4GBのRAMDISKに収まらなかった、mailutils・exim4 も一緒に入る）
 
 # --- -d（8GB等、4GBより大きなRAMDISKの ?GB-base 上）で選んだデスクトップと一緒に入れる日本語環境
 # デスクトップの一覧は、Debian では tasksel の *-desktop、Ubuntu では下の「Ubuntu用の設定」の DESKTOP_LIST
