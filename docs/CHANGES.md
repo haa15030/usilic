@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1321. **src/U_proto.sh: `-d`の「Please boot 4GB-base」を8GB-baseに(2026-11-22)**
+   - 直接のユーザー依頼: `-d`だが、4GBのRAMDISKでは最小のxfce4でも収まらないので`Please boot 4GB-base`ではNG。8GB-baseで。
+   - 原因: SSDの上(RAMDISKでない時)は`RAMDISK_GB`が`RESCUE_GB`(4)なので、`${RAMDISK_GB}GB-base`が4GB-baseになっていた。4GB-baseで起動した時は別の「too small」(`. U -k 8 /`から)を出していた。
+   - 修正: どちらも「Please boot 8GB-base (RAM-*+8gb-base, '. U -n'; 4GB is too small for a desktop)」に。大きさは`EXTRA_GB`(無ければ`RESCUE_GB`の2倍)。8GBのカーネルと土台は`-u`が作るので、`-k 8 /`の案内は外した。
+   - 確かめたこと: `bash -n`・`dash -n`。
+
 1319. **C++版: occurの一覧(^O^S・^O^J^S)の中でも^S・^J^Sで検索する(2026-11-22)**
    - 直接のユーザー報告と依頼: HISTORY.mdを`^O^J^S"^<"^M`でユーザー発言の一覧にし、さらに`^SUEFI^M`しようとしたが利かなかった。無効にした理由は→アシスタントの調べ: 意図して無効にしたのではなく、旧版の「GREPの結果の中からGREPを始めない」をそのまま引き継ぎ、in-placeの対象(`isGrepInPlaceEligibleMode()`)にGREPの一覧が無かった。CUTの一覧は項目(2026-09-26)で足したが、occur(項目723、2026-10-10)はその後にできたので検討されていなかった。"使用頻度ありそうなのでoccurの一覧でも^Sと^J^Sを使えるようにして"。
    - 難しいところ: 検索とoccurの一覧が、一致(`grepMode_`)・戻り先(`grepReturnMode_`)・構文(`grepSyntax_`)・`grepOccurList_`等を共用している。そのまま許すと、検索がoccurの一覧の中身と戻り先を書き換えて、`^M`・`^G`で元のファイルへ戻れなくなる。

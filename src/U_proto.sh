@@ -1305,13 +1305,12 @@ grub-editenv /boot/grub/grubenv set 'saved_entry=$_rescue_entry'
 
 desktop_select() { # -d)
     local _list=/tmp/desktop.$TMP_LABEL _sel _n _i _task _name _line _pairs="" _yn
+    # 使う RAMDISK の大きさ: RESCUE_GB（4GB）では最小の xfce4 でも収まらないので、EXTRA_GB（8GB、-u が作る）
+    local _gb=${EXTRA_GB:-$((RESCUE_GB*2))}
 
-    if [ ! "$ON_RAMDISK" ] || [ ! "`hostname | grep GB-base$`" ]; then
-        echo "$1: Please boot ${RAMDISK_GB}GB-base ('. U -n'). : $LINENO" >> /tmp/log.$TMP_LABEL
-        return
-    fi
-    if [ "$RAMDISK_GB" -le "$RESCUE_GB" ]; then
-        echo "$1: ${RAMDISK_GB}GB RAMDISK: too small. On the SSD: '. U -k 8 /' -> '. U -u' -> boot RAM-*+8gb-base. : $LINENO" >> /tmp/log.$TMP_LABEL
+    if [ ! "$ON_RAMDISK" ] || [ ! "`hostname | grep GB-base$`" ] || [ "$RAMDISK_GB" -le "$RESCUE_GB" ]; then
+        # SSD の上（RAMDISK_GB は RESCUE_GB）や 4GB-base で「Please boot 4GB-base」と出していた
+        echo "$1: Please boot ${_gb}GB-base (RAM-*+${_gb}gb-base, '. U -n'; ${RESCUE_GB}GB is too small for a desktop). : $LINENO" >> /tmp/log.$TMP_LABEL
         return
     fi
     _fs $LINENO mount $MNT_DEBIAN
