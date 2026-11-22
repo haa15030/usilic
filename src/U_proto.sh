@@ -1047,39 +1047,93 @@ _change_root() {
     fi
 }
 
-_list_strage() {
-    local _i=$1 _j=2 _fs=$2
-    local _device _uuid _line _line_list _strage_gb
+_list_strage() { # $1 から番号を振って、$2（ntfs・exfat・ext4 等）の区画を出す。/tmp/strage.* に「_i=次の番号 #番号)STRAGE=/mnt/$2 UUID=〜」
+    # DEBIAN区画は出さない。マウント中の区画は外さずにそのまま空きを見る（前は外して、外したままだった）
+    local _i=$1 _type=$2
+    local _device _uuid _strage_gb _mp _tmp=/tmp/mount.$TMP_LABEL
 
-#    _line_list=`blkid | fgrep -v /dev/ram | fgrep -v $DEBIAN_ROOT_UUID | grep $_fs`
-    _line_list=`blkid | fgrep -v /dev/ram | grep $_fs`
-    _line=`echo $_line_list | awk -F/dev/ '{print $'$_j'}'`
-    while [ "$_line" ]
+    for _device in `blkid -o device -t TYPE=$_type 2>/dev/null | grep -v '^/dev/ram' | sort`
     do
-	_device=/dev/`echo $_line | awk -F: '{print $1}'`
-	_uuid=`echo $_line | awk -F' UUID=' '{print $2}' | awk '{print $1}' | sed -e 's/\"//g'`
-	if [ "$_uuid" ]; then
-	    if [ "`grep ^$_device /etc/mtab`" ]; then
-		cd /opt
-		umount $_device
-	    fi
-	    _fs_try $LINENO mount -o rw UUID=$_uuid /tmp/mount.$TMP_LABEL
-	    _strage_gb=$((`df $_device | grep $_device | awk '{print $4}'`/1000/1000))
-	    if [ "$_i" -lt 10 ]; then
-		echo " $_i)$_fs $_device $_uuid ($_strage_gb GB)"
-	    else
-		echo "$_i)$_fs $_device $_uuid ($_strage_gb GB)"
-	    fi
-	    while [ "`fgrep /tmp/mount.$TMP_LABEL /etc/mtab`" ]
-	    do
-		umount /tmp/mount.$TMP_LABEL
-		sleep 1
-	    done
-	    _i=$((_i+1))
- 	    echo "_i=$_i #$((_i-1)))STRAGE=/mnt/$_fs UUID=$_uuid" >> /tmp/strage.$TMP_LABEL
+	_uuid=`blkid -c /dev/null -s UUID -o value $_device`
+	if [ ! "$_uuid" ] || [ "$_uuid" = "$DEBIAN_ROOT_UUID" ]; then
+	    continue
 	fi
-	_j=$((_j+1))
-	_line=`echo $_line_list | awk -F/dev/ '{print $'$_j'}'`
+	_mp=`findmnt -no TARGET $_device 2>/dev/null | head -n1`
+	if [ "$_mp" ]; then
+	    _strage_gb=$((`df -k $_mp | sed -n 2p | awk '{print $4}'`/1000/1000))
+	    _mp=" [$_mp]"
+	else # 空きを見るための仮のマウント（休止したWindowsのNTFS等は読むだけで）。できなくても止めない（_fs を使わない）
+	    mkdir -p $_tmp
+	    umount $_tmp 2>/dev/null
+	    mount -o rw UUID=$_uuid $_tmp 2>/dev/null || mount -o ro UUID=$_uuid $_tmp 2>/dev/null
+	fi
+	if [ "$_mp" ]; then
+	    :
+	elif mountpoint -q $_tmp; then
+	    _strage_gb=$((`df -k $_tmp | sed -n 2p | awk '{print $4}'`/1000/1000))
+	    _fs $LINENO umount $_tmp
+	else
+	    echo "  -)$_type $_device $_uuid (can't mount)"
+	    continue
+	fi
+	if [ "$_i" -lt 10 ]; then
+	    echo " $_i)$_type $_device $_uuid ($_strage_gb GB)$_mp"
+	else
+	    echo "$_i)$_type $_device $_uuid ($_strage_gb GB)$_mp"
+	fi
+	_i=$((_i+1))
+	echo "_i=$_i #$((_i-1)))STRAGE=/mnt/$_type UUID=$_uuid" >> /tmp/strage.$TMP_LABEL
+    done
+}
+
+_list_parts() { # $2 以降の種類の区画を 1) から一覧に出し、番号を選んでもらう（$1 が「m」なら複数）。選んだ行（「STRAGE=/mnt/種類 UUID=〜」）を出す
+    local _i=1 _n _type _sel _ok _multi=$1 _min=0
+
+    shift
+    cat /dev/null > /tmp/strage.$TMP_LABEL
+    for _type in "$@"
+    do
+	if [ "$_type" = "ntfs" ]; then
+	    _is_inst ntfs-3g + > /dev/tty
+	elif [ "$_type" = "exfat" ]; then
+	    _is_inst exfat-fuse + > /dev/tty
+	fi
+	_list_strage $_i $_type > /dev/tty
+	. /tmp/strage.$TMP_LABEL
+    done
+    echo "  )<EXIT>" > /dev/tty
+    if [ "$_multi" = "m" ]; then
+	_min=1
+    fi
+    while :
+    do
+	if [ "$_multi" = "m" ]; then
+	    read -p "Input No (e.g. '2' or '2 5'):" _sel < /dev/tty
+	else
+	    read -p "Input No:" _sel < /dev/tty
+	fi
+	_ok=y
+	for _n in $_sel
+	do
+	    if [ ! "`echo $_n | grep -E '^[0-9]+$'`" ] || [ "$_n" -lt "$_min" ] || [ "$_n" -ge "$_i" ]; then
+		_ok=""
+	    fi
+	done
+	if [ "$_multi" != "m" ] && [ "`echo $_sel | wc -w`" -gt 1 ]; then
+	    _ok=""
+	fi
+	if [ "$_ok" ]; then
+	    break
+	fi
+	echo "$_sel: Invalid No. ($_min-$((_i-1)))" > /dev/tty
+    done
+    for _n in $_sel
+    do
+	if [ "$_n" -eq 0 ]; then
+	    echo "0)"
+	else
+	    grep "#${_n})" /tmp/strage.$TMP_LABEL | head -n1 | awk -F\# '{print $2}'
+	fi
     done
 }
 
@@ -1096,22 +1150,13 @@ add_strage() { # -a)
 	return
     fi
     grep -v ^STRAGE= /opt/U.opt > /tmp/opt.$TMP_LABEL
-    cat /dev/null > /tmp/strage.$TMP_LABEL
-    echo " 0)TYPE DEVICENAME UUID (free)"
-    _is_inst ntfs-3g +
-    _list_strage $_i ntfs
-    . /tmp/strage.$TMP_LABEL
-    _is_inst exfat-fuse +
-    _list_strage $_i exfat
-    . /tmp/strage.$TMP_LABEL
-    _list_strage $_i ext4
-    . /tmp/strage.$TMP_LABEL
-    echo "  )<EXIT>"
-    read -p "Input No:" _n
-    _STRAGE_INFO=`cat /tmp/strage.$TMP_LABEL | awk -F\# '{print $2}' | fgrep $_n\) | head -n1`
+    echo " 0)TYPE DEVICENAME UUID (free) [mounted]"
+    # 一覧に無い番号は入れられない（もう一度聞く。空なら終える）
+    _STRAGE_INFO=`_list_parts - ntfs exfat ext4`
+    _n=`echo $_STRAGE_INFO | awk -F\) '{print $1}'`
     echo
-    if [ ! "$_n" ] || [ ! "`echo $_n | grep -E '^[0-9]+$'`" ]; then
-	echo "$1: $_n: Invalid No." >> /tmp/log.$TMP_LABEL
+    if [ ! "$_n" ]; then
+	return
     elif [ "$_n" = "0" ]; then
 	echo "STRAGE=\"\"" >> /tmp/opt.$TMP_LABEL
 	mv /tmp/opt.$TMP_LABEL /opt/U.opt
@@ -1121,7 +1166,7 @@ add_strage() { # -a)
 	cd /opt
 	if [ "$ON_RAMDISK" ]; then
 	    _opt_img=$MNT_DEBIAN
-	    mount $_opt_img
+	    _fs $LINENO mount $_opt_img
 	else
 	    _opt_img=""
 	fi
@@ -1150,9 +1195,7 @@ add_strage() { # -a)
 	    mv /tmp/fstab.$TMP_LABEL /etc/fstab
 	    systemctl daemon-reload
 	fi
-	if [ ! "`fgrep $mnt_strage /etc/mtab`" ]; then
-	    _fs $LINENO mount $mnt_strage
-	fi
+	_fs $LINENO mount $mnt_strage
 	if [ ! -d "$mnt_strage/opt" ]; then
 	    mkdir $mnt_strage/opt
 	fi
