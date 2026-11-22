@@ -214,6 +214,8 @@ Desktop版ではなく**Server版**のISO(Desktop版は最小のインストー�
 
 UEFIのインストーラが起動するよう、マザーボードの設定でCSMを無効にしておく(CSMが有効だとBIOSのインストーラが起動することがある)。
 
+※**他のディスク(Windowsの内蔵SSD等)にEFIシステム区画がある機械では、UEFIで入れない**。UEFIのインストーラは、入れる先とは別のディスクでも既にあるEFIシステム区画へGRUBを書き、`/boot/efi`もそこになる(2026-11-16、USBの外付けSSDへ入れて、GRUBが内蔵SSDのEFI区画へ入った)。その時はCSMを有効にしてBIOSのインストーラで入れ(BIOS用のGRUBは書く先のディスクを選べる)、UEFIでの起動は後で足す(下の「BIOSで入れたDebianに、UEFIでの起動を足す」)。
+
 ISOは**netinst**(`debian-13.x.0-amd64-netinst.iso`、14のテスト版なら`debian-testing-amd64-netinst.iso`)を使う。ネットブート用の小さな`mini.iso`は中にカーネルしか無く、ファイルシステムのモジュールとファームウェアをインストール中にネットから取るため、`mini.iso`のカーネルとアーカイブのカーネルの版がずれていると、パーティショニングの「利用方法」に**ext4が出ず**先へ進めない。最初に「見つからないファームウェアファイル: rtl_nic/rtl8125b-2.fw」等と聞かれるのも`mini.iso`だから(2026-11-18、i5-9400Fの機械で13.7・14とも)。
 
 <span style="color:#e95420">GNU GRUB</span> ＞ **Install**
@@ -452,6 +454,71 @@ grub-install --target=i386-pc /dev/sda
 ```key
 echo 'grub-efi-amd64 grub2/force_efi_extra_removable boolean true' | debconf-set-selections && dpkg-reconfigure -f noninteractive grub-efi-amd64
 ```
+
+### BIOSで入れたDebianに、UEFIでの起動を足す
+
+上の※のとおりDebianをBIOS(CSM)のインストーラで入れた時、UEFIでも起動できるようにする。インストーラを使わず`grub-install`に書く先を自分で指定するので、他のディスクのEFIシステム区画には触らない(src/U.shの`-m`がUSBメモリに書くのと同じやり方)。
+
+**入れる時に用意しておくもの**(Debianだけを入れるディスクの場合):
+
+- **EFIシステム区画にする100MBほどの空き**。BIOSのインストーラはEFIシステム区画を作れないので、先頭(か最後)を空けておき、後で作る。
+- ディスクがGPTなら、**BIOS boot区画**(1MB)。パーティショニングで、先頭の小さな空き領域に「利用方法:」**BIOS ブート領域** で作る。作り忘れても、後で上の「BIOS(CSM)でも起動できるようにする」の3.で先頭の隙間に作れる(無いとBIOS用のGRUBはディスクの中に置く場所が無い)。空のディスクにBIOSのインストーラで入れると区画表はMBR(msdos)になり、その時は要らない。
+
+UbuntuとSSDを共用していてEFIシステム区画が既にある時は、Ubuntuの起動メニュー(UEFI)からDebianも起動できるので、これは要らない。その区画の`EFI/BOOT/BOOTX64.EFI`は(UbuntuやWindowsの)ものなので、下の`--removable`で上書きしない。
+
+Debianにrootでログインし(*sudo -i*):
+
+1\. ディスクの名前と区画表の種類(`PTTYPE`が`gpt`か`dos`)を確かめる(以下`sda`の例):
+
+```key
+lsblk -o NAME,SIZE,TRAN,PTTYPE,PARTTYPENAME,MOUNTPOINTS
+```
+
+2\. 空けておいた所にEFIシステム区画を作る。GPTなら(`sgdisk -p`の最後の「Total free space」と区画の並びで空きを確かめ、`-n 0:開始:終了`を合わせる。下は空いている先頭の100MBの例):
+
+```key
+apt-get install -y gdisk dosfstools grub-efi-amd64-bin
+```
+
+```key
+sgdisk -p /dev/sda
+```
+
+```key
+sgdisk -n 0:2048:+100M -t 0:ef00 -c 0:EFI /dev/sda && partprobe /dev/sda
+```
+
+MBR(`dos`)なら *fdisk /dev/sda* で *n*(空きに100MB) ＞ *t*(その区画) ＞ `ef` ＞ *w*。
+
+3\. FAT32にして、仮の場所へつなぐ(`/etc/fstab`には書かない。`/boot/efi`にするとGRUBの更新がこちらを書き換えようとする):
+
+```key
+mkfs.vfat -F 32 -n EFI /dev/sda1
+```
+
+```key
+mkdir -p /mnt/esp && mount /dev/sda1 /mnt/esp
+```
+
+(`sda1`は2.で作った区画)
+
+4\. UEFI用のGRUBを書く。`--removable`で`EFI/BOOT/BOOTX64.EFI`(機械に登録の無いディスクを起動する時の決まった場所)に置くので、他の機械につないでも起動できる。`--no-nvram`で、機械の起動の設定(NVRAM)には触らない(BIOSで起動している今はもともと触れない):
+
+```key
+grub-install --target=x86_64-efi --efi-directory=/mnt/esp --boot-directory=/boot --removable --no-nvram --no-uefi-secure-boot
+```
+
+```key
+umount /mnt/esp
+```
+
+「Installation finished. No error reported.」と出ればよい。マザーボードの設定でCSMを無効にし、UEFIで起動を確かめる(起動メニューの`/boot/grub/grub.cfg`はBIOSと共用)。
+
+※`grub-efi-amd64`(パッケージ)ではなく`grub-efi-amd64-bin`なのは、`grub-efi-amd64`はBIOSの`grub-pc`と同時に入れられない(入れるとBIOS側が外れる)ため。
+
+※`grub-pc`が更新されてもUEFI側は書き直されないので、GRUBの大きな更新の後は3.の`mount`と4.をもう一度実行しておく(カーネルの更新だけなら要らない)。
+
+※セキュアブートには対応しない(署名の無いGRUB)。UEFIの設定でセキュアブートを切っておく。
 
 ### Ubuntuのスワップファイルを使う(Debianから)
 

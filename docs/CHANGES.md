@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1318. **docs/BUILD.md(Linux): BIOSで入れたDebianに、UEFIでの起動を足す(2026-11-22)**
+   - 直接のユーザー依頼: Debian 13は、他のディスクに既にあるEFIシステム区画へインストーラがGRUBを書いてしまう(CHANGES.md:33524の件)のでUEFIでは入れられず、BIOSモードで入れて`/dev/sdc`(USBの外付けSSD、GPT、BIOS boot区画は無い)のMBRから起動している。Ubuntuとの共用ならどちらのGRUBからも互いに起動できるが、問題はDebian 13を単独で入れる場合。USBメモリへのコピー(`-m`)はEFIシステム区画とBIOS boot区画を用意している。BIOSモードでも確保しておいた方がいいか→アシスタントが勧め、"BUILD.mdに書き足して"。
+   - Debian 13の節に、他のディスクにEFIシステム区画がある機械ではUEFIで入れずBIOSのインストーラで入れる、の※を足した(それまでの記述はUEFIで入れる前提だけだった)。
+   - 新しい節「BIOSで入れたDebianに、UEFIでの起動を足す」: 入れる時に用意しておくもの(EFIシステム区画にする100MBの空き、GPTならBIOS boot区画)、`sgdisk`(MBRなら`fdisk`)でEFIシステム区画を作り、`/etc/fstab`に書かない仮の場所へつないで`grub-install --target=x86_64-efi --efi-directory=/mnt/esp --removable --no-nvram --no-uefi-secure-boot`(`grub-efi-amd64-bin`、`grub-pc`と同時に入れられる)。Ubuntu等とEFIシステム区画を共用している時は要らず、`--removable`で他のOSの`BOOTX64.EFI`を上書きしないこと。
+   - 確かめていないこと: この節の手順そのものは実機で通していない(`-m`の`grub-install`と同じ組み合わせ)。BIOSのインストーラのパーティショニングに「BIOS ブート領域」が出るのはGPTのディスクの時。
+
 1317. **src/U_proto.sh: RAMDISKの`_diff_sh`(U.shの差分とログをSSDへ)の見落としと、`$MNT_DEBIAN`を外してしまう件(2026-11-22)**
    - 直接のユーザー依頼: RAMDISK上の`/opt/U.sh`に変更があれば`/mnt/debian/opt`へも反映する仕組み(`_diff_sh`)に問題が無いかチェック。
    - 仕組み: `-r`がバックグラウンドで起動し、`/opt/U.sh`が書き換えられたら`$MNT_DEBIAN/opt/U.diff`へ差分(`diff -ru`)を書き、`/opt/U.log_*`の増えた分を`$MNT_DEBIAN/opt`へ足す。SSDの`U.sh`自体は書き換えない。
