@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1334. **src/U_proto.sh: KDEのWaylandのセッションで、アイコンから起動したusilicのCtrlとCaps Lockが入れ替わらなかった(2026-11-23)**
+   - 直接のユーザー報告: 8GB-baseからKDEのデスクトップを起動すると、swapcapsがZuttyでは効くが、アイコンから起動したusilic(`-i`で取り込み)では効かない。Cinnamonではアイコンからの起動でも効く。Zuttyで`echo $XDG_SESSION_TYPE`は`wayland`。
+   - 見立て: 入れ替えは~/.xprofileの`setxkbmap`(項目1314等)で、これはXのサーバーに効く。KDEのWaylandのセッションでは、X11のアプリ(Zutty)が使うXwaylandにだけ効き、KDE(KWin)自身のキーボードの設定(~/.config/kxkbrc)には効かない。Cinnamonは今もXのセッションなので効く。
+   - 変更: DOT_FILESで、~/.config/kxkbrcの`[Layout]`に`Options=…ctrl:swapcaps`と`ResetOldOptions=true`を書く(ほかのOptions・ほかの行はそのまま)。入れ替えるかは~/.xprofileと同じくNOSWAP_KBDで決めるが、kxkbrcはログインの時ではなく、書く時(起動の時の`-r`等)につながっているキーボードで決まる。NOSWAP_KBDが""なら書かない。
+   - 確かめたこと: `bash -n`・`dash -n`。取り出した部分を、既にkxkbrcがある時(ほかのOptionsあり)・HHKBがつながっている時・kxkbrcが無い時で。KDEの実機では未確認。
+
 1333. **src/U_proto.sh: `-u`で「Continue to 4GB-rescue.img and usilic?」と聞かずに最後まで作る(2026-11-23)**
    - 直接のユーザー依頼: Nと答える場面(アシスタントの挙げた3つ)は、(1) RAM-*-base.gzで先に起動を試す→Debian 13でも4GBで起動できると分かったので確認済み、(2) 空きが心配→必要な容量をマニュアルに書けばよい、(3) カーネルと土台だけ→rescue-USBを作るのが本分なのでレスキュー機能は必須で、U.shはusilicリポジトリにあるのでusilicを含める形を既定にしたい。立ち止まらないよう修正を。
    - 変更: 問いを外した。RAM-*・カーネルの.debの`ls -l`と`df -h`は、4GB-rescue.imgを作る前に今まで通り出す。最後の「Reboot now?」(初回だけ)はそのまま。

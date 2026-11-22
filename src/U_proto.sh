@@ -161,6 +161,28 @@ fi
 EOF
         chown $USR:$USR /home/$USR/.xprofile
     fi
+    # ~/.config/kxkbrc　KDE の Wayland のセッションでは ~/.xprofile の setxkbmap が効かない（Zutty 等の X11 のアプリだけ入れ替わる）ので、
+    # KDE のキーボードの設定にも書く（[Layout] の Options。入れ替えるかは、この時（起動の時）につながっているキーボードで決める）
+    if [ "$NOSWAP_KBD" ]; then
+        _kx=/home/$USR/.config/kxkbrc
+        mkdir -p /home/$USR/.config
+        _kopt=`sed -n '/^\[Layout\]/,/^\[/s/^Options=//p' $_kx 2>/dev/null | tr ',' '\n' | grep -vx 'ctrl:swapcaps' | grep -v '^$'`
+        if ! grep -qiE "^N: Name=\".*($NOSWAP_KBD)" /proc/bus/input/devices 2>/dev/null; then
+            _kopt="$_kopt
+ctrl:swapcaps"
+        fi
+        _kopt=`echo "$_kopt" | grep -v '^$' | paste -sd, -`
+        touch $_kx
+        awk -v o="$_kopt" '
+            /^\[/ {sec = ($0 == "[Layout]")}
+            sec && /^(Options|ResetOldOptions)=/ {next}
+            {print}
+            $0 == "[Layout]" {print "Options=" o; print "ResetOldOptions=true"; done = 1}
+            END {if (!done) {print "[Layout]"; print "Options=" o; print "ResetOldOptions=true"}}' $_kx > /tmp/kxkbrc.$TMP_LABEL
+        cat /tmp/kxkbrc.$TMP_LABEL > $_kx
+        rm -f /tmp/kxkbrc.$TMP_LABEL
+        chown $USR:$USR $_kx
+    fi
 
     # ~/.config/autostart/light-locker.desktop　light-locker（画面ロック）を起動しない（/etc/xdg/autostart の同名ファイルを打ち消す）
     mkdir -p /home/$USR/.config/autostart
