@@ -196,32 +196,36 @@ EOF
 # 'sudo fatlabel /dev/nvme0n1p1 SONOMA'[Enter]
 # 'sudo fatlabel /dev/nvme1n1p1 MOJAVE'[Enter]
 # 'sudo fatlabel /dev/nvme2n1p1 WIN11'[Enter]
+# GRUBをUEFIで起動した時（.efi を chainload できる時）に、そのラベルの区画がある項目だけ出る。
+# 項目に savedefault は付けない（付けると GRUB_DEFAULT=saved で次から既定がその項目になり、時間切れでまた OpenCore・Windows へ行く）。
+# 選んだOSが機械の起動順（UEFIの BootOrder）の先頭を自分に書き換える時は、そちらで止める:
+#   Windows: 管理者のコマンドプロンプトで 'bcdedit /set {fwbootmgr} displayorder {bootmgr} /addlast'
+#   OpenCore: config.plist の UEFI → Quirks → RequestBootVarRouting を true（macOS が書く起動順を OpenCore の中だけに留める）
 #
 readonly GRUB_CUSTOM="
-menuentry 'macOS Sonoma' {
+if [ \"\$grub_platform\" = \"efi\" ]; then
+	insmod part_gpt
 	insmod part_msdos
 	insmod fat
-	set root='hd0,msdos1'
-	search --no-floppy --set=root --label SONOMA
-	chainloader /EFI/Boot/BOOTx64.efi
-	savedefault
-}
-menuentry 'macOS Mojave' {
-	insmod part_msdos
-	insmod fat
-	set root='hd0,msdos1'
-	search --no-floppy --set=root --label MOJAVE
-	chainloader /EFI/Boot/BOOTx64.efi
-	savedefault
-}
-menuentry 'Windows 11' {
-	insmod part_msdos
-	insmod fat
-	set root='hd0,msdos1'
-	search --no-floppy --set=root --label WIN11
-	chainloader /EFI/Microsoft/Boot/bootmgfw.efi
-	savedefault
-}
+	if search --no-floppy --set=u_esp --label SONOMA; then
+		menuentry 'macOS Sonoma' {
+			search --no-floppy --set=root --label SONOMA
+			chainloader /EFI/Boot/BOOTx64.efi
+		}
+	fi
+	if search --no-floppy --set=u_esp --label MOJAVE; then
+		menuentry 'macOS Mojave' {
+			search --no-floppy --set=root --label MOJAVE
+			chainloader /EFI/Boot/BOOTx64.efi
+		}
+	fi
+	if search --no-floppy --set=u_esp --label WIN11; then
+		menuentry 'Windows 11' {
+			search --no-floppy --set=root --label WIN11
+			chainloader /EFI/Microsoft/Boot/bootmgfw.efi
+		}
+	fi
+fi
 "
 #
 #readonly GRUB_CUSTOM=""

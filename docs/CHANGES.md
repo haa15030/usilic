@@ -33408,6 +33408,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1331. **src/U_proto.sh: GRUB_CUSTOM(macOS・Windowsの起動項目)からsavedefaultを外し、UEFIでラベルの区画がある時だけ出す(2026-11-23)**
+   - アシスタントの見直し(見本の起動項目がコメントアウトされずに毎回40_customへ入る、BIOSで入れたSSDでは.efiをchainloadできない)に、ユーザーが: macOS・Windows 11等が同居する機械でレスキューUSBから選べるようにしたかった名残だが、一度それらを選ぶと次からはOpenCore・Windowsのブートマネージャーから起動してしまい、結局使えなかった。GRUBに固定する方法があれば温存、無ければ削除。
+   - 見立て: 原因の1つはGRUBの側にある。項目に`savedefault`が付いていて、`-u`で`GRUB_DEFAULT=saved`にしているので、一度選ぶと次からの既定がその項目になり、時間切れでまたOpenCore・Windowsへ行く。もう1つは、選んだOS自身がUEFIの起動順(BootOrder)の先頭を自分に書き換えること(Windowsは更新等で、macOSは起動ディスクの設定で)。
+   - 変更(温存):
+     - `savedefault`を外した(既定は前の項目のまま)。
+     - `if [ "$grub_platform" = "efi" ]`の中に入れ、`search --label`でその区画が見つかった項目だけ出す(BIOSで起動したGRUB、ラベルの無い機械では出ない)。`part_gpt`も読む。
+     - 起動順を書き換えさせない方法をコメントに: Windowsは`bcdedit /set {fwbootmgr} displayorder {bootmgr} /addlast`、OpenCoreは`UEFI → Quirks → RequestBootVarRouting`を`true`。
+     - 字下げした項目は`-n`の一覧(`_entry_titles`、行頭の`menuentry '`)に出ない。GRUBのメニューで選ぶ。
+   - 確かめたこと: `bash -n`・`dash -n`、GRUB_CUSTOMの展開(`$grub_platform`がシェルで展開されずに残る)。実機のGRUBでは未確認。
+
 1330. **src/U_proto.sh: `-f`(file_system)で、選んだ区画を/mnt/番号へマウントする(2026-11-23)**
    - 直接のユーザー依頼: `-t`(録画兼ファイルサーバーで今も使っている間に合わせ、オプション一覧には出していない)を、Ubuntu・FreeBSD・Windowsと共存する機械でも使えるよう正式なオプションにしたい。ただ`$MNTS`に/mntへのマウント名を書く方式はfstabの編集が要るので、`-f`で`-a`と同じ一覧を出し、番号を選べば`/mnt/番号`で見られるように。`-v`では番号の素性も含めてls。
    - 変更:
