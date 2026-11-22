@@ -1307,6 +1307,9 @@ desktop_select() { # -d)
     local _list=/tmp/desktop.$TMP_LABEL _sel _n _i _task _name _line _pairs="" _yn
     # 使う RAMDISK の大きさ: RESCUE_GB（4GB）では最小の xfce4 でも収まらないので、EXTRA_GB（8GB、-u が作る）
     local _gb=${EXTRA_GB:-$((RESCUE_GB*2))}
+    # debconf の問い（既定のディスプレイマネージャ等）・設定ファイルを置き換えるかの問いで止まらないように（既定の答え／今のファイルを残す）
+    # （. U で読むので export せず、apt-get ごとに付ける。export は ( ) の中だけ）
+    local _apt="env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
 
     if [ ! "$ON_RAMDISK" ] || [ ! "`hostname | grep GB-base$`" ] || [ "$RAMDISK_GB" -le "$RESCUE_GB" ]; then
         # SSD の上（RAMDISK_GB は RESCUE_GB）や 4GB-base で「Please boot 4GB-base」と出していた
@@ -1373,10 +1376,10 @@ desktop_select() { # -d)
     echo "apt-get update -y"
     apt-get update -y
     echo "apt-get upgrade -y"
-    apt-get upgrade -y
-    _install_standard
+    $_apt upgrade < /dev/null
+    (export DEBIAN_FRONTEND=noninteractive; _install_standard < /dev/null)
     echo "apt-get install -y $JP_LIST"
-    apt-get install -y $JP_LIST
+    $_apt install $JP_LIST < /dev/null
     _output_u JP.u $LINENO # デスクトップを入れる前（2つ目からはここまで戻してから入れる）
     _n=0
     for _line in $_pairs
@@ -1385,7 +1388,7 @@ desktop_select() { # -d)
         _name=${_line#*:}
         if [ "$_n" -gt 0 ]; then
             _output_u JP.u -p $LINENO
-            apt-get autoremove --purge -y
+            $_apt autoremove --purge < /dev/null
             if [ "$ON_UBUNTU" ]; then
                 _desktop_ubuntu off
             fi
@@ -1396,11 +1399,11 @@ desktop_select() { # -d)
         echo "HOST:${RAMDISK_GB}GB-$_name"
         if [ "$ON_UBUNTU" ]; then
             echo "apt-get install -y $DESKTOP_APT_OPT $_task"
-            apt-get install -y $DESKTOP_APT_OPT $_task
+            $_apt install $DESKTOP_APT_OPT $_task < /dev/null # < /dev/null: 抜けた問いがあっても待たずにエラーで終わる
             _desktop_ubuntu on
         else
             echo "apt-get install -y task-$_task"
-            apt-get install -y task-$_task
+            $_apt install task-$_task < /dev/null
         fi
         _save_host $1 $_name . # STRAGEの ?GB-名前.img（あれば上書き）
         _n=$((_n+1))

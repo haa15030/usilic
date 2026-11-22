@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1322. **src/U_proto.sh: `-d`でデスクトップを入れる時、debconf等の問いで止まらないように(2026-11-22)**
+   - 直接のユーザーの懸念と依頼: Debian 10か11のどれかのデスクトップでは、設定のところでウィンドウマネージャーを選ぶ場面があり、そこでインストールが止まった記憶がある。今後そんな場面があったとして打つ手は→"ぜひ進めて"。
+   - 原因の見当(未確認): `DEBIAN_FRONTEND=noninteractive`はrc_local_onlyの`-u`の所だけで、起動し直した後の`-d`には効いていない。`apt-get -y`はapt自身の確認にしか答えず、debconfの問い(既定のディスプレイマネージャ`shared/default-x-display-manager`等)・設定ファイルを置き換えるかの問いはdialogで入力を待つ。
+   - 変更: desktop_selectのapt-get(upgrade・JP_LIST・autoremove・デスクトップ)に`env DEBIAN_FRONTEND=noninteractive`と`-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold`(既定の答え、無ければ今のファイルを残す)と`< /dev/null`(抜けた問いがあっても待たずにエラーで終わる)。`. U`で読むのでexportはせず、`_install_standard`だけは( )の中でexport。既定に任せたくない問いが分かったら、入れる前に`debconf-set-selections`で答えを書く。
+   - 確かめたこと: `bash -n`・`dash -n`。
+
 1321. **src/U_proto.sh: `-d`の「Please boot 4GB-base」を8GB-baseに(2026-11-22)**
    - 直接のユーザー依頼: `-d`だが、4GBのRAMDISKでは最小のxfce4でも収まらないので`Please boot 4GB-base`ではNG。8GB-baseで。
    - 原因: SSDの上(RAMDISKでない時)は`RAMDISK_GB`が`RESCUE_GB`(4)なので、`${RAMDISK_GB}GB-base`が4GB-baseになっていた。4GB-baseで起動した時は別の「too small」(`. U -k 8 /`から)を出していた。
