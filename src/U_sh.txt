@@ -1,0 +1,147 @@
+名称#
+④U.sh - rescue-USB・RAMDISK を作るスクリプト（Debian 13・Ubuntu）㊿#
+#
+概要#
+④sudo bash /opt/U.sh（初回）㊿#
+④. U [-a|-c [dir]|-d|-e|-f [-]|-i|-k arg|-m device|-n|-o arg|-s name|-u|-v] [-d|-b]㊿#
+#
+説明#
+④U.sh は、SSD 等に入れた Debian 13（または Ubuntu）を土台に、メモリの上（RAMDISK）で動くシステムと、それを入れた rescue-USB を作るスクリプトです。
+RAMDISK の大きさ（4GB・8GB 等）ごとにカーネルを作り、BASE（最小限のシステム）の状態を RAM-カーネル名-base.gz として GRUB の initrd にします。
+その上に展開するシステム（ホスト）は ?GB-名前.img として保存しておき、起動の時に /etc/rc.local（U.sh -r）が展開します。
+4GB-rescue.img には、tools/setup-debian.sh（X・Xfce・日本語入力・usilic のビルド等）で作った環境と、RESCUE_LIST のパッケージが入ります。#
+#
+RAMDISK で動いている間は、SSD 等に書くのは '. U -s' 等で保存する時だけなので、どれだけ使っても元の区画は変わりません。
+電源を切れば RAMDISK の中身は消えます。#
+#
+本文中で使用している主な表記は以下の通りです。㊿#
+#
+⑦  DEBIAN区画㊿ : ⑲U.sh を置いた Debian（Ubuntu）のルートの区画（RAMDISK からは /mnt/debian）㊿#
+⑦ NONE-KERNEL㊿ : ⑲DEBIAN区画をディストリビューションのカーネル（〜-amd64・〜-generic）で起動した状態㊿#
+⑦     RAMDISK㊿ : ⑲RAM-*-base.gz で起動した状態（/ は /dev/ram0）㊿#
+⑦      STRAGE㊿ : ⑲作業とホストの保存に使う別の区画（ext4・ntfs・exfat、'. U -a' で選ぶ）㊿#
+⑦      ?GB-base㊿ : ⑲ホストを展開しない RAMDISK（BASE の状態）㊿#
+⑦      ホスト㊿ : ⑲?GB-名前.img（?GB-rescue.img を含む）㊿#
+⑦      /opt/U.opt㊿ : ⑲STRAGE・次に展開するホスト（NEXT?=）・実行シェル（SH=）の記録㊿#
+#
+始め方            ㊿：⑲初回の実行⊥㊿#
+#
+⑧U.sh を DEBIAN区画の /opt/U.sh に置き、root で "bash /opt/U.sh"^M とします。
+/usr/local/bin/U と /opt/U.opt を作り、/opt/DEBIAN.u（インストールした時のパッケージの一覧）を記録します。
+以後は一般ユーザーで ". U"^M（sudo で U.sh を実行）とし、オプションを付けなければ、その時に使えるオプションの一覧を出して Option: - で聞きます。#
+#
+最後の引数に -d（-dash）・-b（-bash）を付けると、U.sh を動かすシェルを dash・bash に切り換えます（/opt/U.opt の SH=、次の起動の rc.local にも引き継ぎます）。
+メッセージ（ログ）は最後にまとめて出し、/opt/U.log_日付 にも残します。#
+#
+rescue-USB の作り方      ㊿：⑲手順⊥㊿#
+#
+⑧1. Debian 13 を SSD 等に最小限（「標準システムユーティリティ」のみ）で入れ、U.sh を /opt に置いて "sudo bash /opt/U.sh"^M とします。
+2. ". U -a"^M で STRAGE を選びます（カーネルのビルドに要ります）。
+3. ". U -u"^M で、4GB・8GB のカーネル、RAM-*-base.gz、4GB-rescue.img（usilic を含む）までを作ります。
+途中で問いはありません（tools/setup-debian.sh は github から取るので、ネットにつながっている必要があります）。
+最後に「Reboot now?」に y で答えると、RAM-*+4gb-base で起動し、4GB-rescue を展開します。
+4. 4GB-rescue の上で USB メモリを挿し、". U -m sdX"^M（lsblk(8) で確かめたデバイス名）で USB メモリへ写します。
+USB メモリの中身はすべて消えます。#
+#
+Ubuntu では、4GB に BASE が収まらないので、RAMDISK は 8GB だけ（8GB-base・8GB-rescue）です。
+dracut を使っていれば、ルートの区画を tmpfs へ写して起動する「TORAM」の項目も作ります。#
+#
+所要時間・容量の目安   ㊿：⑲'. U -u'⊥㊿#
+#
+⑧i7-9700KF・メモリ 32GB（BUILD_IMG_GB=7）での例です（/opt/U_update.log に、区切りごとの経過時間が残ります）。㊿#
+#
+⑦     7 分㊿ : ⑲開始からカーネルのソースの展開（/usr/src）まで㊿#
+⑦    32 分㊿ : ⑲4GB のカーネル（.deb）㊿#
+⑦     8 分㊿ : ⑲8GB のカーネル（.deb、4GB の分を使い回すので短い）㊿#
+⑦1 時間 12 分㊿ : ⑲RAM-*-base.gz・4GB-rescue.img・usilic までの合計㊿#
+⑦    15 分㊿ : ⑲'. U -m' の USB メモリへの dd（16GB の USB メモリ、要確認）㊿#
+#
+⑧STRAGE には、ビルド用のイメージ（BUILD_IMG_GB、Debian 13 では 7GB）と、作業用のイメージ（RAMDISK の大きさ、8GB まで）を置くので、20GB 以上の空きを用意してください（要確認）。
+DEBIAN区画の /opt には、カーネルの .deb・RAM-*-base.gz・4GB-rescue.img が入ります（合計の大きさは要確認）。
+'. U -m' の USB メモリは、ルート（ROOT_GB、14GiB）が DEBIAN区画より小さくならない大きさが要り、足りなければ消す前にやめます。#
+#
+オプション        ㊿：⑲'. U' の後に付けるもの⊥㊿#
+#
+④   -a㊿：⑲STRAGE を選ぶ（0 で STRAGE を使わない）㊿#
+④   -c [dir]㊿：⑲DEBIAN区画（または dir）へ arch-chroot㊿#
+④   -d㊿：⑲8GB-base の上でデスクトップを選んで入れ、?GB-名前.img に保存（STRAGE が要る）㊿#
+④   -e㊿：⑲NONE-KERNEL で、-u で作ったものを消して DEBIAN.u の状態へ戻す㊿#
+④   -f [-]㊿：⑲区画を選んで /mnt/番号 へマウント（- で全部外す）㊿#
+④   -i㊿：⑲DEBIAN区画でビルドした usilic を RAMDISK へ取り込む㊿#
+④   -k arg㊿：⑲カーネルを作り直す（. 今の設定・- ディストリビューションの設定・数字 RAMDISK の GB）㊿#
+④   -m device㊿：⑲RAMDISK の上で、DEBIAN区画を USB メモリ（sdX）へ写して rescue-USB にする㊿#
+④   -n㊿：⑲次に起動するホスト・GRUB の項目を選んで再起動㊿#
+④   -o arg㊿：⑲パッケージの一覧（. ホスト名.u・名前.u、-i でその一覧へ足す・-p でその一覧へ戻す）㊿#
+④   -s name㊿：⑲今のホストを ?GB-name.img に保存（. で今のホスト名で上書き）㊿#
+④   -u㊿：⑲NONE-KERNEL で、カーネル・RAM-*-base.gz・?GB-rescue.img を作る（作ってあるものは飛ばす）㊿#
+④   -v㊿：⑲DEBIAN区画・STRAGE の /opt、/mnt/番号、df を表示㊿#
+#
+⑧使えるオプションは、NONE-KERNEL・RAMDISK 等の状態で変わります（オプション無しの ". U"^M で表示される一覧の通り）。
+RAMDISK の上で -s で保存できるのは、STRAGE が無ければ ?GB-rescue だけです。㊿#
+#
+④-a㊿：⑲STRAGE⊥㊿#
+#
+⑧ntfs・exfat・ext4 の区画を、番号・種類・デバイス名・UUID・空きの GB（マウント中ならそのマウントポイント）で一覧にします。
+一覧に無い番号を入れるともう一度聞き、何も入れずに ^M で終えます。
+DEBIAN区画は一覧に出ません。
+選んだ区画は /etc/fstab と /opt/U.opt に書き、/mnt/ext4（ntfs・exfat）にマウントします。#
+#
+④-f㊿：⑲/mnt/番号⊥㊿#
+#
+⑧-a と同じ一覧（vfat も）から番号を選ぶ（"2 5" のように複数でも）と、/mnt/2・/mnt/5 にマウントします。
+/etc/fstab は書き換えないので、再起動すれば無くなります。
+読み書きでマウントできない区画（高速スタートアップで休止した Windows の NTFS 等）は、読むだけでマウントします。
+もうマウントされている区画は、/mnt/番号 をそのマウントポイントへのリンクにします。
+番号は区画の増減で変わるので、どの区画かは ". U -v"^M で確かめてください。#
+#
+④-n㊿：⑲次の起動⊥㊿#
+#
+⑧?GB-名前.img（STRAGE と DEBIAN区画の /opt）と GRUB の項目を一覧にし、選んだものを次に起動するようにします（GRUB の saved_entry と /opt/U.opt の NEXT?=）。
+メモリが足りない、またはその大きさのカーネルが無いホストは出ません。#
+#
+④-d㊿：⑲デスクトップ⊥㊿#
+#
+⑧Debian では tasksel の *-desktop、Ubuntu では DESKTOP_LIST から番号で選び（"2 5" のように複数でも）、JP_LIST（日本語環境）と一緒に入れて ?GB-名前.img に保存します。
+2 つ目からは、日本語環境だけを入れた状態へ戻してから入れます。
+debconf の問い（既定のディスプレイマネージャ等）では止まらず、既定の答えで進みます。#
+#
+設定            ㊿：⑲U.sh の始めの変数⊥㊿#
+#
+⑦      ROOT_GB㊿ : ⑲-m で作る USB のルートの区画（GiB、既定 14）㊿#
+⑦     EXTRA_GB㊿ : ⑲-u で RESCUE_GB に続けて作るカーネル（既定 8、作らないなら ""）㊿#
+⑦    SETUP_OPT㊿ : ⑲tools/setup-debian.sh に渡すオプション（既定 --gpu=none）㊿#
+⑦RESCUE_DEV_PURGE㊿ : ⑲usilic のビルドの後、4GB-rescue から外すもの㊿#
+⑦  IMG_EXCLUDE㊿ : ⑲イメージに入れないもの（/ からの相対）㊿#
+⑦     SHM_LIST㊿ : ⑲RAMDISK で tmpfs に置くディレクトリ（既定 home tmp var）㊿#
+⑦  RESCUE_LIST㊿ : ⑲4GB-rescue に足すパッケージ㊿#
+⑦      JP_LIST㊿ : ⑲-d でデスクトップと一緒に入れる日本語環境㊿#
+⑦   NOSWAP_KBD㊿ : ⑲Ctrl と Caps Lock を入れ替えないキーボードの名前㊿#
+⑦  GRUB_CUSTOM㊿ : ⑲GRUB に足す起動項目（macOS・Windows 等）㊿#
+⑦      DIFF_SH㊿ : ⑲RAMDISK で /opt/U.sh を書き換えた時の差分の取り方㊿#
+#
+⑧BUILD_IMG_GB（ビルド用のイメージの大きさ）は Debian 13 で 7GB です（6.12 では 5GB では足りません）。#
+#
+注意点            ㊿：⑲⊥㊿#
+#
+⑧① RAMDISK の上で /opt/U.sh を書き換えると、DEBIAN区画の /opt/U.diff に差分が残り、次に ". U"^M とした時に表示して「Patch now?」と聞きます。#
+#
+② -m は区画ごと dd で写します。
+途中で止まっても USB 側に DEBIAN区画と同じ UUID の区画が残らないよう、先頭を最後に書いてすぐ UUID を変えます。#
+#
+③ GRUB_CUSTOM の macOS・Windows の項目は、UEFI で起動した GRUB で、fatlabel(8) で付けたラベルの区画がある時だけ出ます。
+それらの OS が UEFI の起動順の先頭を自分に書き換える時は、Windows では管理者のコマンドプロンプトで "bcdedit /set {fwbootmgr} displayorder {bootmgr} /addlast"^M、OpenCore では config.plist の UEFI → Quirks → RequestBootVarRouting を true にします。#
+#
+④ KDE（Wayland）では、Ctrl と Caps Lock の入れ替えを ~/.xprofile ではなく ~/.config/kxkbrc に書きます。#
+#
+⑤ -u が github から取る usilic のリポジトリ（~/git/usilic、tools/setup-debian.sh もここにある）は、非公開の間は取れません（git clone に認証が要ります）。㊿#
+#
+ファイル⊥㊿#
+⑦  /opt/U.sh㊿ : ⑲本体㊿#
+⑦ /opt/U.opt㊿ : ⑲STRAGE・NEXT?=・SH=㊿#
+⑦ /opt/*.u㊿ : ⑲パッケージの一覧（DEBIAN.u・BASE.u・?GB-rescue.u 等）㊿#
+⑦/opt/U.log_日付㊿ : ⑲メッセージ㊿#
+⑦/opt/U_update.log㊿ : ⑲-u の区切りごとの経過時間㊿#
+⑦/usr/local/bin/U㊿ : ⑲'. U' で読むもの（U.sh が作る）㊿#
+#
+関連項目⊥㊿#
+④usilic(1)、tools/setup-debian.sh、docs/BUILD.md㊿#
