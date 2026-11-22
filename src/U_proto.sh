@@ -1749,6 +1749,11 @@ rc_local_only() { # -r)
         return
     fi
     timedatectl set-local-rtc 0
+    # RAMDISK（ram0）の ext4 は root 用の予約（mkfs.ext4 の既定で5%、4GB で約210MB）を持たない。RAMDISK では使い道が無い
+    if [ -b /dev/ram0 ]; then
+        echo "tune2fs -m 0 /dev/ram0"
+        tune2fs -m 0 /dev/ram0 > /dev/null
+    fi
     if [ "$SHM_LIST" ] && [ "$MEM_TOTAL_GB" -ge "$RESCUE_GB" ]; then
         cd /
         mkdir -p /opt/shm.$TMP_LABEL
