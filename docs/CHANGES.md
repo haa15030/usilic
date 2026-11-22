@@ -33408,6 +33408,24 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1332. **src/U_proto.sh: Ubuntuでも`-u`で8GBのRAMDISK用カーネル・RAM-*+8gb-base.gz・8GB-rescue.imgを作り、STRAGEを外付けで使う(2026-11-23)**
+   - 直接のユーザー依頼: Ubuntuでは(極小かどうか分からないが)システムが4GB-base.gzに入らず、SSDで動かすだけにしていた。古めのマザーボードでは/以下をそのまま固めた8GB.bz2でも起動できたりする(稼働中の録画機GA-H67M-D2-B3がまさにこれ)ので、8GB-base.gzで8GB-rescue.imgを起動するよう改修してみて。mainの`mnt_strage=$MNT_DEBIAN`は無意味なので削除。8GB-rescueができるならDebianと同じく外部STRAGEに。
+   - 前は:
+     - Ubuntuの`-u`はTORAM(ルートの区画をtmpfsへコピーして起動、dracut)の項目を作るだけ。
+     - mainの`if [ "$ON_UBUNTU" ] && [ "$ON_UBUNTU" != "$UNAME_R" ]`(/etc/issueの中身とカーネルの版で、同じになりようがない)で、Ubuntuは必ず`mnt_strage=$MNT_DEBIAN`(STRAGEを使わない)。UbuntuのRAMDISKで`-s 名前`等は「Strage-area needed」で止まったはず。
+   - 変更:
+     - `ON_NONE`(ディストリビューションのカーネルで区画から起動)に、Ubuntuの`〜-generic`も入れる(TORAMで起動している時は除く)。これでUbuntuのSSDでも`-u`・`-e`・`-a`等がDebianのSSDと同じ流れになる。
+     - UbuntuのRESCUE_GBを9から8に。EXTRA_GB(8)と同じなので、4GBのような2つ目のカーネルは作らない。UbuntuのRAMDISKでも、RAMDISK_GBはカーネルの名前(`+8gb`)から取る(前は9に決め打ち)。
+     - Ubuntuの`-u`: Debianと同じく、DEBIAN.u・BASE.u・RAMの土台(TEMPLATE-*-base.gz)・`+8gb`のカーネル(.debはSTRAGEのビルド用イメージで)・RAM-*+8gb-base.gz・8GB-rescue.img(tools/setup-debian.shはUbuntuにも対応)。TORAMの項目も、40_customを作り直した後に今まで通り作る(dracutの時だけ)。
+     - BASE_LIST(Ubuntu)に`-m`で使うgdisk・dosfstools・grub-pc-bin・grub-efi-amd64-binを足した(Debianと同じ)。
+     - RAMの土台のfstab(`_tmp_debian`): ルートの行を「/dev/ram / ext4 errors=remount-ro 0 1」に書き直す(前は`UUID=…`を置き換えるだけで、Ubuntuの`/dev/disk/by-uuid/…`・`defaults`の行は残り、RAMDISKだと見分けられなかった)。ルートの区画の中のスワップファイル(Ubuntuの/swap.img)の行はコメントにする。
+     - RAMの土台(Ubuntu)に`/etc/systemd/system/rc-local.service`を置いて有効にする(systemdのrc.localの互換が無くなっても`-r`が動くように。互換があってもこちらが優先)。
+     - mainの`mnt_strage=$MNT_DEBIAN`を消した(STRAGEはDebianと同じ扱い)。「To update 'RAM-…-base.gz', please setup strage-area」もUbuntuで出す。
+     - `-s`はRAMDISKの上だけ(前はUbuntuのSSDでも、今のホスト名で`9GB-名前.img`を作った。この作りは、作ったカーネルでSSDから起動した時だけに残した)。
+     - `-d`の大きさの確かめを「RAMDISK_GBがEXTRA_GB(8)より小さければ」に(前はRESCUE_GB以下で、Ubuntuの8GB-baseでは断られる)。
+     - mainの、wgetを外す(apt-listchangesが無ければ)のはDebianだけ。
+   - 確かめたこと: `bash -n`・`dash -n`、fstabの書き直し(Debian・Ubuntuの形の見本で)。Ubuntuの実機では未確認(カーネルのソース・.config、RAMDISKでのsystemd・netplan等)。
+
 1331. **src/U_proto.sh: GRUB_CUSTOM(macOS・Windowsの起動項目)からsavedefaultを外し、UEFIでラベルの区画がある時だけ出す(2026-11-23)**
    - アシスタントの見直し(見本の起動項目がコメントアウトされずに毎回40_customへ入る、BIOSで入れたSSDでは.efiをchainloadできない)に、ユーザーが: macOS・Windows 11等が同居する機械でレスキューUSBから選べるようにしたかった名残だが、一度それらを選ぶと次からはOpenCore・Windowsのブートマネージャーから起動してしまい、結局使えなかった。GRUBに固定する方法があれば温存、無ければ削除。
    - 見立て: 原因の1つはGRUBの側にある。項目に`savedefault`が付いていて、`-u`で`GRUB_DEFAULT=saved`にしているので、一度選ぶと次からの既定がその項目になり、時間切れでまたOpenCore・Windowsへ行く。もう1つは、選んだOS自身がUEFIの起動順(BootOrder)の先頭を自分に書き換えること(Windowsは更新等で、macOSは起動ディスクの設定で)。

@@ -249,11 +249,16 @@ readonly NUMERATOR=11 # $NUMERATOR * ｢ルートファイルシステムサイ�
 readonly DISPLAY_MANAGER_LIST="lightdm sddm gdm3 wdm xdm"
 readonly UNAME_R=`uname -r`
 readonly ON_WSL=`echo $UNAME_R | fgrep 'WSL'`
-readonly ON_NONE=`echo $UNAME_R | fgrep 'amd64'`
 readonly ON_RAMDISK=`fgrep -e 'remount-ro' /etc/fstab | fgrep /dev/ram`
 readonly ON_LINE=`ip a | grep 'inet ' | grep global`
 readonly ON_UBUNTU=`cat /etc/issue|grep -v 'Debian GNU/Linux'`
 readonly ON_TORAM=`[ "$(findmnt -no FSTYPE / 2>/dev/null)" = tmpfs ] && echo y` # ルートの区画をtmpfsへコピーして起動している（Ubuntu、-u で設定）
+# ディストリビューションのカーネルでSSD等の区画から起動している（Debian: 〜-amd64、Ubuntu: 〜-generic。TORAM は除く）
+if [ ! "$ON_TORAM" ]; then
+    readonly ON_NONE=`echo $UNAME_R | grep -E -e 'amd64$' -e '-generic$'`
+else
+    readonly ON_NONE=""
+fi
 # 通常カーネル稼働時に $MNT_DEBIAN が既にマウント済みなら、symlink 化も mount/umount もせずそのまま使う
 if [ ! "$ON_RAMDISK" ] && mountpoint -q $MNT_DEBIAN 2>/dev/null; then
     readonly KEEP_MNT_DEBIAN=y
@@ -266,9 +271,13 @@ _fstab_uuid() { # /etc/fstab で $1 にマウントする区画のUUID（UUID=�
 if [ "$ON_UBUNTU" ]; then
     readonly BUILD=BUILD_UBUNTU
     readonly BUILD_IMG_GB=7 # kernel-7.3.0 では 6GB では不足
-    readonly RESCUE_GB=9
-    readonly KERNEL_VERSION=`echo $UNAME_R | sed -e 's/[-+].*//'` # 7.0.0-xx-generic / 7.0.0+9gb -> 7.0.0
-    readonly RAMDISK_GB=$RESCUE_GB
+    readonly RESCUE_GB=8 # Ubuntu の土台は 4GB に収まらない（-u は ${RESCUE_GB}GB-base で ${RESCUE_GB}GB-rescue を起動する。EXTRA_GB は作らない）
+    readonly KERNEL_VERSION=`echo $UNAME_R | sed -e 's/[-+].*//'` # 7.0.0-xx-generic / 7.0.0+8gb -> 7.0.0
+    if [ "$ON_RAMDISK" ]; then
+        readonly RAMDISK_GB=`echo $UNAME_R | awk -F'+' '{print $2}' | sed -e s/gb//` # カーネル名から抽出
+    else
+        readonly RAMDISK_GB=$RESCUE_GB
+    fi
     readonly TEMPLATE_MB=3000
     if [ "$ON_RAMDISK" ] || [ "$ON_TORAM" ]; then
         readonly LINUX_CONFIG=config-$UNAME_R
@@ -327,7 +336,8 @@ BASE_LIST="firmware-realtek firmware-misc-nonfree firmware-amd-graphics firmware
 readonly PAGER=more
 
 # --- Ubuntu（ON_UBUNTU）用の設定 ------------------------------------
-# Ubuntu では -u で「ルートの区画を tmpfs へコピーして起動する」項目（TORAM）を作る（RAMDISK用カーネルは -k で作れる）
+# Ubuntu でも -u は Debian と同じく ${RESCUE_GB}GB（8GB）の RAMDISK 用カーネル・RAM-*-base.gz・${RESCUE_GB}GB-rescue.img を作る。
+# あわせて「ルートの区画を tmpfs へコピーして起動する」項目（TORAM、dracut の時）も作る
 if [ "$ON_UBUNTU" ]; then
     readonly STD_LIST="ubuntu-standard"
     readonly NO_SNAP=y # snapd を入れず Firefox は Mozilla 公式 apt リポジトリの deb 版を使う（snap を使うなら ""）
@@ -340,7 +350,7 @@ if [ "$ON_UBUNTU" ]; then
     readonly DESKTOP_LIST="ubuntu-desktop-minimal:GNOME xubuntu-core:Xfce kubuntu-desktop:KDE-Plasma lubuntu-desktop:LXQt ubuntu-mate-core:MATE"
     readonly DESKTOP_APT_OPT="--no-install-recommends" # 推奨パッケージも入れるなら ""
     JP_LIST="language-pack-ja language-pack-gnome-ja fcitx5-mozc fonts-noto-cjk"
-    BASE_LIST="arch-install-scripts" # 必要なら "linux-firmware" も（1GB前後あるので RAMDISK 容量に注意）
+    BASE_LIST="arch-install-scripts gdisk dosfstools grub-pc-bin grub-efi-amd64-bin" # 必要なら "linux-firmware" も（1GB前後あるので RAMDISK 容量に注意）
 fi
 readonly RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X BASE_LIST JP_LIST
 
@@ -1386,7 +1396,7 @@ desktop_select() { # -d)
     # （. U で読むので export せず、apt-get ごとに付ける。export は ( ) の中だけ）
     local _apt="env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
 
-    if [ ! "$ON_RAMDISK" ] || [ ! "`hostname | grep GB-base$`" ] || [ "$RAMDISK_GB" -le "$RESCUE_GB" ]; then
+    if [ ! "$ON_RAMDISK" ] || [ ! "`hostname | grep GB-base$`" ] || [ "$RAMDISK_GB" -lt "$_gb" ]; then
         # SSD の上（RAMDISK_GB は RESCUE_GB）や 4GB-base で「Please boot 4GB-base」と出していた
         echo "$1: Please boot ${_gb}GB-base (RAM-*+${_gb}gb-base, '. U -n'; ${RESCUE_GB}GB is too small for a desktop). : $LINENO" >> /tmp/log.$TMP_LABEL
         return
@@ -1821,8 +1831,11 @@ _tmp_debian() {
     if [ ! "$1" ] || [ "$1" = "+" ]; then
 	echo "mkdir etc"
 	mkdir etc
-	echo 'fgrep -ve /boot/efi -ve /mnt/ext4 -ve /mnt/ntfs -ve /mnt/exfat /etc/fstab | sed -e "s/UUID=$DEBIAN_ROOT_UUID/\/dev\/ram/" > etc/fstab'
-	fgrep -ve /mnt/debian -ve /boot/efi -ve /mnt/ext4 -ve /mnt/ntfs -ve /mnt/exfat /etc/fstab | sed -e "s/UUID=$DEBIAN_ROOT_UUID/\/dev\/ram/" > etc/fstab
+	echo 'fgrep -ve /mnt/debian -ve /boot/efi -ve /mnt/ext4 -ve /mnt/ntfs -ve /mnt/exfat /etc/fstab | awk (/ -> /dev/ram, swap file -> #) > etc/fstab'
+	# ルートの行は「/dev/ram / ext4 errors=remount-ro」（ON_RAMDISK はこれで見分ける。Ubuntu の fstab は /dev/disk/by-uuid/〜 で
+	# errors=remount-ro も無い）。ルートの区画の中のスワップファイル（Ubuntu の /swap.img）は RAMDISK に無いので外す
+	fgrep -ve /mnt/debian -ve /boot/efi -ve /mnt/ext4 -ve /mnt/ntfs -ve /mnt/exfat /etc/fstab | \
+	    awk '$1 !~ /^#/ && $2 == "/" {print "/dev/ram / ext4 errors=remount-ro 0 1"; next} $1 ~ /^\// && $1 !~ /^\/dev\// && $3 == "swap" {print "#" $0; next} {print}' > etc/fstab
 	echo 'echo "UUID=$DEBIAN_ROOT_UUID $MNT_DEBIAN ext4 rw,noauto	    0 1" >> etc/fstab'
 	echo "UUID=$DEBIAN_ROOT_UUID $MNT_DEBIAN ext4 rw,noauto	    0 1" >> etc/fstab
 	if [ "$1" = "+" ]; then
@@ -1928,7 +1941,7 @@ _save_host() {
     fi
     _fs $LINENO mount $MNT_DEBIAN
     _fs $LINENO mount $mnt_strage
-    if [ "$ON_UBUNTU" ] && [ ! "$ON_RAMDISK" ]; then
+    if [ "$ON_UBUNTU" ] && [ ! "$ON_RAMDISK" ] && [ ! "$ON_NONE" ]; then
         _new_host=`hostname`
         if [ ! "`echo $_new_host|fgrep ${RAMDISK_GB}GB`" ]; then
             _new_host=${RAMDISK_GB}GB-$_new_host
@@ -2181,7 +2194,7 @@ _on_usb() { # DEBIAN区画がUSBのディスク（USBメモリ等）にあれば
 }
 
 save_host() { # -s)
-    if [ ! "$ON_RAMDISK" ] && [ ! "$ON_UBUNTU" ]; then
+    if [ ! "$ON_RAMDISK" ] && ( [ ! "$ON_UBUNTU" ] || [ "$ON_NONE" ] || [ "$ON_TORAM" ] ); then
         echo "$1: Not on a RAMDISK. : $LINENO" >> /tmp/log.$TMP_LABEL
         return
     fi
@@ -2501,10 +2514,6 @@ EOF
 update_base() { # -u)
     local _new_gb _new_kernel _rescue_kernel _rescue_entry _first="" _yn
 
-    if [ "$ON_UBUNTU" ] && [ ! "$ON_RAMDISK" ] && [ ! "$ON_TORAM" ]; then
-        _toram_setup $1
-        return
-    fi
     if [ ! "$ON_NONE" ]; then
         echo "$1: Not on a NONE-KERNEL. : $LINENO" >> /tmp/log.$TMP_LABEL
         return
@@ -2559,6 +2568,9 @@ menuentry 'NONE-KERNEL' {
 	savedefault
 }
 EOF
+    fi
+    if [ "$ON_UBUNTU" ]; then # TORAM（dracut の時だけ。update-grub もする）
+        _toram_setup $1
     fi
     if [ -L /usr/src/build ] && cd /usr/src; then
         rm -f build CONFIG_NONE
@@ -2627,6 +2639,26 @@ ${_sh:-bash} /opt/U.sh -r
 EOF
         sed -i /tmp/loop1.$TMP_LABEL/etc/rc.local -e "s|@MNT_DEBIAN@|$MNT_DEBIAN|"
         chmod 755 /tmp/loop1.$TMP_LABEL/etc/rc.local
+        if [ "$ON_UBUNTU" ]; then # rc.local を動かすユニット（systemd の rc.local の互換（generator）より優先される。無くなっても動く）
+            cat <<'EOF' > /tmp/loop1.$TMP_LABEL/etc/systemd/system/rc-local.service
+[Unit]
+Description=/etc/rc.local (U.sh -r)
+ConditionFileIsExecutable=/etc/rc.local
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/etc/rc.local
+TimeoutSec=0
+RemainAfterExit=yes
+GuessMainPID=no
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            mkdir -p /tmp/loop1.$TMP_LABEL/etc/systemd/system/multi-user.target.wants
+            ln -sf ../rc-local.service /tmp/loop1.$TMP_LABEL/etc/systemd/system/multi-user.target.wants/rc-local.service
+        fi
         _fs $LINENO umount /tmp/loop1.$TMP_LABEL
         echo "gzip -c /tmp/shm0.$TMP_LABEL/IMG1.img > /opt/$TEMPLATE_BASE.gz"
         gzip -c /tmp/shm0.$TMP_LABEL/IMG1.img > /opt/$TEMPLATE_BASE.gz
@@ -2891,7 +2923,7 @@ EOF
     ln -sf /tmp/log.$TMP_LABEL /opt/U.log
     cd /opt
     cd ..
-    if [ "$ON_NONE" ]; then
+    if [ "$ON_NONE" ] && [ ! "$ON_UBUNTU" ]; then
 	if [ "`dpkg -l | grep wget | grep ^ii`" ] && [ ! "`_is_inst apt-listchanges`" ]; then # wget標準システムユーティリティの有無をapt-listchanges
 	    dpkg --purge wget # U.sh をゲットしたあとは不要
 	fi
@@ -2942,9 +2974,7 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	_enabled_units > /opt/rc_systemd.txt
     fi
     grep -ve /mnt/cifs -ve /mnt/ntfs -ve /mnt/exfat -ve /mnt/ext4 /etc/fstab > /tmp/fstab.$TMP_LABEL
-    if [ "$ON_UBUNTU" ] && [ "$ON_UBUNTU" != "$UNAME_R" ]; then
-	mnt_strage=$MNT_DEBIAN
-    elif [ "$SMBFS" ]; then
+    if [ "$SMBFS" ]; then
 	grep -ve /mnt/cifs /etc/fstab > /tmp/fstab.$TMP_LABEL
 	_is_inst cifs-utils +
 	if ! _fs_try $LINENO mount -t cifs -o `echo $SMBFS | awk '{print $4}'` `echo $SMBFS | awk '{print $1}'` `echo $SMBFS | awk '{print $2}'`; then
@@ -2976,7 +3006,7 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	mnt_strage=$MNT_DEBIAN
     fi
     _NEW_KERNEL_LIST=`ls /opt | grep linux-image | grep -E '[+][0-9]+gb_' | grep -ve +${RESCUE_GB}gb`
-    if [ ! "$ON_UBUNTU" ] && [ "$_NEW_KERNEL_LIST" ] && [ "$mnt_strage" = "$MNT_DEBIAN" ]; then
+    if [ "$_NEW_KERNEL_LIST" ] && [ "$mnt_strage" = "$MNT_DEBIAN" ]; then
 	echo "To update 'RAM-`echo $_NEW_KERNEL_LIST | awk -Flinux-image- '{print $2}' | awk -F_ '{print $1}'`-base.gz', please setup strage-area."
     fi
     if [ "$DIFF_SH" ] && [ -f "/opt/U.diff" ]; then
