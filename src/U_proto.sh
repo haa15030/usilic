@@ -317,7 +317,6 @@ readonly TEMPLATE_KB=$((TEMPLATE_MB*1000))
 readonly LINUX_SOURCE=linux-source-$KERNEL_VERSION
 readonly TEMPLATE_BASE=TEMPLATE-$KERNEL_VERSION-base
 readonly RAM_DIR_LIST="boot dev media opt proc run sys usr/lib/modules tmp mnt/$DEBIAN" # $MNT_DEBIAN はNG
-readonly DUP_DIR_LIST="dev media mnt proc run sys tmp"
 # arch-install-scripts（arch-chroot）・gdisk（sgdisk）・dosfstools（mkfs.vfat）・grub-*-bin（BIOSとUEFIの両方のGRUB）は -m で使う
 BASE_LIST="firmware-realtek firmware-misc-nonfree firmware-amd-graphics firmware-nvidia-gsp arch-install-scripts gdisk dosfstools grub-pc-bin grub-efi-amd64-bin"
 readonly PAGER=more
@@ -1148,14 +1147,14 @@ change_root() { # -c)
 
 make_usb() { # -m)
     local _SRC_DISK _DST_DISK _DST_EFI_PART _DST_ROOT_PART _DST_STRAGE_PART
-    local _need _root_end _root_kb _src_kb _code _rescue_entry _yn _cat=$3
+    local _need _root_end _root_kb _src_kb _code _rescue_entry _yn
 
     if [ ! "$ON_RAMDISK" ]; then
         echo "$1: Not on a RAMDISK. : $LINENO" >> /tmp/log.$TMP_LABEL
         return
     fi
     if [ ! "$2" ] || ( [ "$3" ] && [ "$3" != "-" ] ); then
-        echo "$1: Please type '. U -m devicename (-)'[Enter] : $LINENO" >> /tmp/log.$TMP_LABEL
+        echo "$1: Please type '. U -m devicename'[Enter] : $LINENO" >> /tmp/log.$TMP_LABEL # 「-」は前のファイルごとのコピーとの区別（今は dd だけなので無くてもよい）
         return
     fi
     if [ ! "`echo $2 | grep '^sd[a-z][a-z]*$'`" ]; then
@@ -1184,13 +1183,17 @@ make_usb() { # -m)
         return
     fi
     # EFI(100MiB)・BIOS boot(1MiB)・ルート(ROOT_GB)・STRAGE(残り)。残りが512MiBに満たなければ、ルートを残り全部にする
-    # 区画ごとコピー（-）では、ルートはDEBIAN区画より小さくできないので、DEBIAN区画の方が大きければそれ（MiB単位に切り上げ＋1MiB）にする
+    # 区画ごと dd で写すので、ルートはDEBIAN区画より小さくできない。DEBIAN区画の方が大きければそれ（MiB単位に切り上げ＋1MiB）にする
+    # （ファイルごとの tar は16GBのUSBメモリで1時間以上かかったので止めた。dd は15分）
     _root_kb=$((ROOT_GB*1024*1024))
-    if [ "$_cat" ]; then
-        _src_kb=$((`blockdev --getsize64 $DEBIAN_ROOT_PART`/1024))
-        if [ "$_src_kb" -gt "$_root_kb" ]; then
-            _root_kb=$(( (_src_kb+2047)/1024*1024 ))
-        fi
+    _src_kb=$((`blockdev --getsize64 $DEBIAN_ROOT_PART`/1024))
+    if [ "$_src_kb" -gt "$_root_kb" ]; then
+        _root_kb=$(( (_src_kb+2047)/1024*1024 ))
+    fi
+    # 足りなければ、消す前にやめる（EFI・BIOS boot・GPT の分）
+    if [ "`blockdev --getsize64 $_DST_DISK`" -lt "$(( (_src_kb + 103*1024) * 1024 ))" ]; then
+        echo "$1: $_DST_DISK: too small for $DEBIAN_ROOT_PART ($((_src_kb/1024))MiB). : $LINENO" >> /tmp/log.$TMP_LABEL
+        return
     fi
     _need=$(( (_root_kb + (101 + 512)*1024) * 1024 ))
     if [ "`blockdev --getsize64 $_DST_DISK`" -lt "$_need" ]; then
@@ -1231,44 +1234,34 @@ make_usb() { # -m)
     udevadm settle
     sleep 2
     cat /dev/null > /tmp/error.$TMP_LABEL
-    if [ "$_cat" ]; then # 区画ごとコピー（DEBIAN区画をROOT_GB以下にしてある時）
-        if [ "`blockdev --getsize64 $DEBIAN_ROOT_PART`" -gt "`blockdev --getsize64 $_DST_ROOT_PART`" ]; then
-            echo "$1: $_DST_ROOT_PART is smaller than $DEBIAN_ROOT_PART. : $LINENO" >> /tmp/log.$TMP_LABEL
-            return
-        fi
-        # 大きな塊で順に書くので、ファイルごと（小さなファイルが多い）より速い。空き領域も書くので、時間は区画の大きさで決まる
-        echo "dd if=$DEBIAN_ROOT_PART of=$_DST_ROOT_PART bs=4M conv=fsync status=progress"
-        if ! dd if=$DEBIAN_ROOT_PART of=$_DST_ROOT_PART bs=4M conv=fsync status=progress; then
-            echo "dd failed." > /tmp/error.$TMP_LABEL
-        else
+    if [ "`blockdev --getsize64 $DEBIAN_ROOT_PART`" -gt "`blockdev --getsize64 $_DST_ROOT_PART`" ]; then
+        echo "$1: $_DST_ROOT_PART is smaller than $DEBIAN_ROOT_PART. : $LINENO" >> /tmp/log.$TMP_LABEL
+        return
+    fi
+    # 大きな塊で順に書くので、ファイルごと（小さなファイルが多い）より速い。空き領域も書くので、時間は区画の大きさで決まる
+    # 先頭の4MiB（ext4 のスーパーブロック＝UUID がある）は最後に書き、すぐ UUID を変える。途中で止まっても（USBの不良・
+    # 停電等）USB側に同じ UUID の ext4 が無いので、SSD の GRUB（search --fs-uuid）が USB の書きかけを選ばない
+    echo "dd if=/dev/zero of=$_DST_ROOT_PART bs=4M count=1 conv=fsync" # 前に途中で止まった時の残り
+    dd if=/dev/zero of=$_DST_ROOT_PART bs=4M count=1 conv=fsync 2>/dev/null
+    echo "dd if=$DEBIAN_ROOT_PART of=$_DST_ROOT_PART bs=4M skip=1 seek=1 conv=fsync status=progress"
+    if ! dd if=$DEBIAN_ROOT_PART of=$_DST_ROOT_PART bs=4M skip=1 seek=1 conv=fsync status=progress; then
+        echo "dd failed." > /tmp/error.$TMP_LABEL
+    else
+        echo "dd if=$DEBIAN_ROOT_PART of=$_DST_ROOT_PART bs=4M count=1 conv=fsync; tune2fs -U random $_DST_ROOT_PART"
+        if dd if=$DEBIAN_ROOT_PART of=$_DST_ROOT_PART bs=4M count=1 conv=fsync 2>/dev/null; then
+            echo y | tune2fs -U random $_DST_ROOT_PART # 確かめ（e2fsck）は後。先にやると同じ UUID の時間が延びる
             e2fsck -f -p $_DST_ROOT_PART
             echo "resize2fs $_DST_ROOT_PART"
             resize2fs $_DST_ROOT_PART
+        else
+            echo "dd failed (first 4MiB)." > /tmp/error.$TMP_LABEL
         fi
-    else # ファイルごとコピー
-        echo "mkfs.ext4 -q -F $_DST_ROOT_PART"
-        mkfs.ext4 -q -F $_DST_ROOT_PART
-        _fs $LINENO mount $MNT_DEBIAN
-        _fs $LINENO mount $_DST_ROOT_PART /mnt/usb
-        cd $MNT_DEBIAN
-        echo "tar cf - boot [e-i]* opt root srv [u-v]* | tar xvfp - -C /mnt/usb"
-        tar cf - boot [e-i]* opt root srv [u-v]* | tar xvfp - -C /mnt/usb 2>/tmp/error.$TMP_LABEL
-        if [ ! -s /tmp/error.$TMP_LABEL ]; then
-            _tmp_debian -
-            cd /tmp/$DEBIAN.$TMP_LABEL
-            tar cf - * | tar xfp - -C /mnt/usb
-        fi
-        cd /opt
-        _fs $LINENO umount /mnt/usb
-        _fs $LINENO umount $MNT_DEBIAN
     fi
     if [ -s /tmp/error.$TMP_LABEL ]; then
         echo "$1: `cat /tmp/error.$TMP_LABEL` : $LINENO" | tee -a /tmp/log.$TMP_LABEL
         return
     fi
     e2fsck -f -p $_DST_ROOT_PART
-    echo "tune2fs -U random $_DST_ROOT_PART"
-    echo y | tune2fs -U random $_DST_ROOT_PART
     echo "mkfs.vfat -F 32 -n EFI $_DST_EFI_PART"
     mkfs.vfat -F 32 -n EFI $_DST_EFI_PART > /dev/null
     if [ "$_DST_STRAGE_PART" ]; then
@@ -1729,13 +1722,8 @@ _tmp_debian() {
     mkdir /tmp/$DEBIAN.$TMP_LABEL
     echo "cd /tmp/$DEBIAN.$TMP_LABEL"
     cd /tmp/$DEBIAN.$TMP_LABEL
-    if [ "$1" = "-" ]; then
-	echo "mkdir -p $DUP_DIR_LIST"
-	mkdir -p $DUP_DIR_LIST
-    else
-	echo "mkdir -p $RAM_DIR_LIST"
-	mkdir -p $RAM_DIR_LIST
-    fi
+    echo "mkdir -p $RAM_DIR_LIST"
+    mkdir -p $RAM_DIR_LIST
     echo "mknod dev/console c 5 1"
     mknod dev/console c 5 1
     echo "chmod 600 dev/console"
