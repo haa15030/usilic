@@ -1509,13 +1509,14 @@ erase_base() { # -e)
         cat /tmp/40_custom.$TMP_LABEL > /etc/grub.d/40_custom
         mkdir -p /tmp/bak.$TMP_LABEL
         cd /opt || return
-        echo "mv -fv *.sh U.opt DEBIAN.u grub.ORG *.deb /tmp/bak.$TMP_LABEL"
-        mv -fv *.sh U.opt DEBIAN.u grub.ORG *.deb /tmp/bak.$TMP_LABEL 2>/dev/null
+        # カーネルの.deb（linux-image-*+??gb 等）も消す（-u でビルドし直す。ビルド用イメージはSTRAGEに残るので初回の1/4ほどで済む）
+        echo "mv -fv *.sh U.opt DEBIAN.u grub.ORG /tmp/bak.$TMP_LABEL"
+        mv -fv *.sh U.opt DEBIAN.u grub.ORG /tmp/bak.$TMP_LABEL 2>/dev/null
         echo "rm -rf /opt/* /usr/local/bin/U"
         rm -rf /opt/* /usr/local/bin/U
         cd /tmp/bak.$TMP_LABEL || return
-        echo "mv -fv *.sh U.opt DEBIAN.u grub.ORG *.deb /opt"
-        mv -fv *.sh U.opt DEBIAN.u grub.ORG *.deb /opt 2>/dev/null
+        echo "mv -fv *.sh U.opt DEBIAN.u grub.ORG /opt"
+        mv -fv *.sh U.opt DEBIAN.u grub.ORG /opt 2>/dev/null
         cd /opt
         echo "update-grub"
         update-grub
