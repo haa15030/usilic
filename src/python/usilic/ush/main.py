@@ -8,6 +8,7 @@ from .fs import MountError, fs
 from .options import add_strage, change_root, file_system, next_host, page_with_usilic, verbose
 from .packages import output_u
 from .save import save
+from .desktop import desktop_select, erase_base
 from .system import System
 
 
@@ -107,6 +108,10 @@ def run(argv, system=None, uname=None, out=None):
             change_root(env, log, args, out)
         elif option == '-s':
             save(env, log, option, args, out)
+        elif option == '-d':
+            desktop_select(env, log, option, ask, out)
+        elif option == '-e':
+            erase_base(env, log, option, ask, out)
     except MountError:
         code = 1
     if option not in ('-v', '-a', '-f'):  # U.shのmainの最後: マウントしたものを外す(-v・-a・-fは見るために残す)

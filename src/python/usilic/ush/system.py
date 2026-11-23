@@ -146,6 +146,12 @@ class System:
     def euid(self):
         return os.geteuid()
 
+    def sleep(self, seconds):
+        """待つ(FakeSystemは待たずにFalse、待ち続けるループを抜ける)。"""
+        import time
+        time.sleep(seconds)
+        return True
+
 
 class FakeSystem(System):
     """テスト用。parts: {デバイス: {'TYPE':, 'UUID':, 'free_kb':, 'mountable': True/'ro'/False}}、
@@ -168,6 +174,9 @@ class FakeSystem(System):
 
     def euid(self):
         return self._euid
+
+    def sleep(self, seconds):
+        return False
 
     # --- コマンド
     def shell(self, command, cwd=None):

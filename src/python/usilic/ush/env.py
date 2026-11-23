@@ -48,6 +48,30 @@ def assignments(text):
     return values
 
 
+# U.shの設定の部分(関数より前、「readonly RESCUE_LIST RESCUE_LIST_NOREC 〜」の行まで)を、bashに読ませて取る値
+# (UbuntuだけJP_LIST等を上書きする等、U.shの書き方のままの値になる)
+CONFIG_END = '^readonly RESCUE_LIST RESCUE_LIST_NOREC'
+CONFIG_NAMES = ('DEBIAN USR ROOT_GB EXTRA_GB SETUP_OPT RESCUE_DEV_PURGE IMG_EXCLUDE RAMDISK_MARGIN_KB WORK_AREA SHM_LIST '
+                'RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X JP_LIST USILIC_TOOLS NOSWAP_KBD MNTS SMBFS GRUB_CUSTOM '
+                'DST_STRAGE_FS BUILD BUILD_IMG_GB RESCUE_GB KERNEL_VERSION TEMPLATE_MB LINUX_CONFIG PURGE_LIST CONFIG_NONE '
+                'LINUX_SOURCE TEMPLATE_BASE BASE_LIST STD_LIST NO_SNAP NETPLAN_NM DESKTOP_LIST DESKTOP_APT_OPT '
+                'NETWORK_MANAGER_CONF DISPLAY_MANAGER_LIST OPT_BUILD').split()
+
+
+def evaluate_config(system, path=U_SH):
+    """U.shの設定の部分をbashで読み、{名前: 値}(読めなければ空)。"""
+    script = ('eval "$(sed -n "1,/%s/p" %s)" >/dev/null 2>&1; for v in %s; do printf "%%s=%%s\\0" "$v" "${!v}"; done'
+              % (CONFIG_END, path, ' '.join(CONFIG_NAMES)))
+    code, text = system.run(['bash', '-c', script])
+    values = {}
+    if code == 0:
+        for item in text.split('\0'):
+            if '=' in item:
+                k, v = item.split('=', 1)
+                values[k] = v
+    return values
+
+
 class Env:
     def __init__(self, system, uname=None):
         self.system = system
@@ -69,9 +93,21 @@ class Env:
             self.debian_root_uuid = self.fstab_uuid('/')
         else:
             self.debian_root_uuid = system.output(['findmnt', '-no', 'UUID', '/']).strip()
-        def conf(name, default):  # 利用者が書き換える設定(今のU.shの値、無ければU.shの既定)
+        self.config = evaluate_config(system) if ush is not None else {}
+
+        def conf(name, default):  # 利用者が書き換える設定(今のU.shをbashで読んだ値、無ければ行から、それも無ければ既定)
+            if name in self.config:
+                return self.config[name]
             v = shell_value(ush, name)
             return default if v is None else v
+        self.conf = conf
+        self.user = conf('USR', '')
+        if not self.user:  # インストーラで作ったユーザー(/homeの最初の一般ユーザー)
+            for line in (system.read_text('/etc/passwd') or '').splitlines():
+                f = line.split(':')
+                if len(f) >= 6 and f[2].isdigit() and 1000 <= int(f[2]) < 60000 and f[5].startswith('/home/'):
+                    self.user = f[0]
+                    break
         self.img_exclude = conf('IMG_EXCLUDE', 'home/*/git/usilic home/*/.cache').split()
         self.ramdisk_margin_kb = int(conf('RAMDISK_MARGIN_KB', '50000'))
         self.work_area = conf('WORK_AREA', 'tmpfs')

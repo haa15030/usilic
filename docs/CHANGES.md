@@ -33408,6 +33408,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1354. **src/python: U.shのPython版に-d・-e、U.shの設定はbashで読む(2026-11-23)**
+   - 直接のユーザー依頼: 「このまま終わりまで行っていい」の続き。
+   - 変更1(env.py): U.shの設定の部分(関数より前、「readonly RESCUE_LIST RESCUE_LIST_NOREC …」の行まで)を、今の/opt/U.shからbashで読み(`eval "$(sed -n …)"`)、値を受け取る(`evaluate_config`)。UbuntuだけJP_LIST・BASE_LIST等を上書きする等、U.shの書き方のままの値になる(1行ずつ読むと、後の行のUbuntuの値を取り違える)。macOSのbash 3.2では`. <(…)`が利かないのでeval。ユーザー(USR)も。
+   - 変更2(desktop.py): -d(`desktop_select`、デスクトップのホストからBASE.uへ戻す・テキストのコンソールからだけ・最後に「Start … now?」も)、-e(`erase_base`、RAMDISKのカーネル・BASEへ足したパッケージ・/optの中身を消してDEBIAN.uへ、U.sh・記録・grubの元は残す)。使うもの: `on_line`・`net_restart`・`apt_sources_ubuntu`・`no_snap_ubuntu`・`install_standard`・`netplan_nm`・`desktop_ubuntu`・`usilic_libs`・`put_usilic`・`has_desktop`・`in_gui`。DOT_FILESはU.shの設定の部分(利用者が書き換える所)にあるので、今の/opt/U.shのままbashで動かす(`dot_files`)。
+   - system.py: `sleep`(FakeSystemは待たない)。
+   - 確かめたこと: tests/test_ush.py(25件、-d(taskselの一覧からX-desktopだけ、task-…・JP.u・STRAGEへ保存、Nなら「'. U -n' to boot」)、デスクトップのホストからの-d(multi-user.target、BASE.uへ戻すpurge、ホスト名・NEXT8=・graphical.target)、-e(RAMDISKのカーネルのpurge、STRAGEを外す、DEBIAN.uへ戻す、/optのU.sh・DEBIAN.uは残す、update-grub))。U.shの設定をbashで読むのはmacOSでsrc/U_proto.shを読んで確かめた。
+
 1353. **src/python: U.shのPython版に-s(save_host・_save_host)(2026-11-23)**
    - 直接のユーザー依頼: 「このまま終わりまで行っていい」の続き。
    - 変更: usilic/ush/save.py。U.shと同じ手順(ベースのホストへ「.」で保存しない、名前の付け方(「.」・「名前 .」で上書き、無ければ?GB-名前、NONE-KERNELはrescue、UbuntuのSSDは「+」)、STRAGEが無ければrescueだけ、USBメモリのDEBIAN区画でSTRAGEが無いrescueは断る、/usr/srcを外す、apt-get clean、イメージの大きさ(NONE-KERNELは使用量×1.1+100MB、RAMDISKは/とSHM_LISTのtmpfsの使用量×1.1)、保存先(rescueはDEBIAN区画、他はSTRAGE)と作る場所、rescueの上書きの控え(.BAK.imgか.BAK.gz、失敗したら戻す)、空き、tmpfsかSTRAGEの上でtruncate+mkfs.ext4+ループ、tarでモジュールとIMG_EXCLUDEを除いて写す、RAMDISKの骨組み(`tmp_debian`、etc/fstabの書き換え)、RAMDISKに収まるかの確かめ)。`tmpfs_size`・`ramdisk_cap_kb`・`restore_bak`・`on_usb`も。-d・-uもこれを使う。

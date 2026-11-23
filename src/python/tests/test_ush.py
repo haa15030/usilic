@@ -242,6 +242,56 @@ class UshTest(unittest.TestCase):
         code, out = run(system, '-s', 'KDE', '.')
         self.assertIn('-s: 8GB-KDE: img 3850000KB > free 1000KB (/mnt/ext4/opt).', out)  # (3000000+500000)*1.1
 
+    def test_d(self):
+        system = self.save_fake(packages=['acl'])
+        system.hostname = '8GB-base'
+        system.results['tasksel --list-tasks'] = (0, 'u kde-desktop\tKDE Plasma\nu gnome-desktop\tGNOME\n'
+                                                     'u web-server\tweb server\n')
+        code, out = run(system, '-d', '--ans=1', '--ans=Y', '--ans=n')
+        self.assertIn(' 1)KDE-Plasma (kde-desktop)', out)
+        self.assertIn(' 2)GNOME (gnome-desktop)', out)
+        self.assertNotIn('web', out.split('Input No')[0])
+        self.assertTrue(any('task-kde-desktop' in c for c in system.calls))
+        self.assertTrue(any('task-japanese-desktop' in c for c in system.calls) or 'install' in out)
+        self.assertIn('/opt/JP.u', ' '.join(' '.join(c) for c in system.calls))
+        self.assertTrue(any(c[0] == 'mv' and c[-1] == '/mnt/ext4/opt/8GB-KDE-Plasma.img' for c in system.calls))
+        self.assertNotIn(['systemctl', 'isolate', 'graphical.target'], system.calls)
+        self.assertIn("-d: '. U -n' to boot.", out)
+
+    def test_d_from_desktop_host(self):
+        system = self.save_fake(packages=['acl', 'sddm'])
+        system.files['/opt/BASE.u'] = 'acl\t\t\t\n'
+        system.results['tasksel --list-tasks'] = (0, 'u gnome-desktop\tGNOME\n')
+        code, out = run(system, '-d', '--ans=1', '--ans=Y', '--ans=Y')
+        self.assertIn('(8GB-KDE -> BASE.u: the desktop stops now)', out)
+        self.assertIn(['systemctl', 'isolate', 'multi-user.target'], system.calls)
+        self.assertIn('dpkg --purge sddm', out)
+        self.assertIn(['hostnamectl', 'set-hostname', '8GB-GNOME'], system.calls)
+        self.assertIn('NEXT8=8GB-GNOME', system.files['/opt/U.opt'])
+        self.assertEqual(system.calls[-1][:3] if system.calls[-1][0] == 'systemctl' else
+                         [c for c in system.calls if c[:2] == ['systemctl', 'isolate']][-1],
+                         ['systemctl', 'isolate', 'graphical.target'])
+
+    def test_e(self):
+        system = FakeSystem(parts={'/dev/nvme0n1p2': {'TYPE': 'ext4', 'UUID': 'ROOT'},
+                                   '/dev/sdd1': {'TYPE': 'ext4', 'UUID': 'DDD'}},
+                            mounted={'/': '/dev/nvme0n1p2', '/mnt/ext4': '/dev/sdd1'},
+                            files={'/etc/fstab': 'UUID=ROOT / ext4 errors=remount-ro 0 1\n', '/opt/BASE.u': 'a\n',
+                                   '/opt/DEBIAN.u': 'acl\t\t\t\n', '/opt/U.sh': '', '/opt/U.opt': '',
+                                   '/opt/grub.ORG': 'x', '/opt/RAM-6.12-base.gz': 'x', '/opt/linux-image-x.deb': 'x'},
+                            packages=['acl', 'gparted'], euid=0)
+        system.results['dpkg -l'] = (0, 'ii  linux-image-6.12.57+4gb 1 amd64 x\nii  linux-image-6.12.57-amd64 1 amd64 x\n')
+        lines = []
+        code = ush_main.run(['-e', '--ans=Y'], system=system, uname='6.12.57-amd64', out=lines.append)
+        out = '\n'.join(lines)
+        self.assertIn(['dpkg', '--purge', 'linux-image-6.12.57+4gb'], system.calls)
+        self.assertIn('dpkg --purge gparted', out)
+        self.assertNotIn('/mnt/ext4', system.mounted)
+        self.assertIn(['rm', '-rf', '/opt/RAM-6.12-base.gz'], system.calls)
+        self.assertNotIn(['rm', '-rf', '/opt/U.sh'], system.calls)
+        self.assertNotIn(['rm', '-rf', '/opt/DEBIAN.u'], system.calls)
+        self.assertIn(['update-grub'], system.calls)
+
 
 if __name__ == '__main__':
     unittest.main()
