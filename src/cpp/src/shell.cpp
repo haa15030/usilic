@@ -2023,7 +2023,10 @@ bool Shell::inputEchoOff() const {
 #else
   if (!foregroundJobRunning()) return false;
   struct termios t {};
-  return ::tcgetattr(masterFd_, &t) == 0 && !(t.c_lflag & ECHO);
+  // 2026-11-23、直接のユーザー報告(Debian 13のデスクトップのSHELLで". U -f"等の番号の入力がエコーされず、"66"等に
+  // なった): Debian 13のsudo(1.9.14からuse_ptyが既定)は、コマンドを別の擬似端末で動かし、その間こちらの端末を
+  // raw(ECHOもICANONも無し)にする。パスワード(getpass)はICANONを残してECHOだけ切るので、ICANONがある時だけ隠す。
+  return ::tcgetattr(masterFd_, &t) == 0 && !(t.c_lflag & ECHO) && (t.c_lflag & ICANON);
 #endif
 }
 
