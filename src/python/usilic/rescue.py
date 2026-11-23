@@ -92,9 +92,21 @@ def need_password():
         return True
 
 
+# U.shのPython版(usilic/ush/、ush.py)。移したオプション(ush.PORTED)はこちらで動かす
+USH_PY = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'ush.py')
+
+
+def engine(args):
+    """argsを動かすもの: 移したオプションはPython版(ush.py)、他はU.sh。"""
+    from .ush import PORTED
+    if args and args[0] in PORTED and os.path.isfile(USH_PY):
+        return [sys.executable or 'python3', USH_PY]
+    return ['bash', U_SH]
+
+
 def command(args, password):
-    """U.shを動かすargv(sudo -Sで、パスワードは標準入力から。rootならsudo無し)。"""
-    argv = ['bash', U_SH] + list(args)
+    """U.sh(移したオプションはPython版)を動かすargv(sudo -Sで、パスワードは標準入力から。rootならsudo無し)。"""
+    argv = engine(args) + list(args)
     if os.geteuid() == 0:
         return argv
     if password is None:

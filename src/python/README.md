@@ -142,3 +142,13 @@ C++版と違う所: ページャーの読み込み方。C++版は画面が要る
   番号の一覧から選び、引数の要るもの(-s name等)はモードラインで打つ。U.shがその後に聞くこと(再起動するか等)も
   モードラインで聞く。sudoのパスワードはモードラインで(*で出す)。U.shは別のセッションで動かし、出力
   (/tmp/usilic-rescue.log)をSHELLの`tail -f`で見る(usilicを終えてもU.shは止まらない)。Linuxだけ
+
+## U.shのPython版(2026-11-23、`ush.py`・`usilic/ush/`)
+
+- 旧C版(old/)とC++版の関係と同じく、U.sh(旧シェル版、src/U_proto.sh)の機能をオプションごとに移す。移したのは
+  `-v`・`-f`(`usilic/ush/__init__.py`のPORTED)。他は今まで通り/opt/U.sh。/opt/BASE.uの状態にはpython3が無い
+  (-uの最初の一歩)ので、U.shはそのために残る
+- `sudo python3 src/python/ush.py -f`(U.shと同じ引数、`--list`・`--ans=`・`--batch`も)。RESCUE(^J^R)は、移した
+  オプションをこちらで動かす
+- 外への働きかけは`usilic/ush/system.py`のSystemに集めてあり、テスト(tests/test_ush.py)は偽の区画・マウント
+  (FakeSystem)で手順を確かめる(実機に触れない)

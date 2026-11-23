@@ -2543,7 +2543,7 @@ _install_usilic_py() { # Python 版の usilic（src/python、RESCUE の ^J^R で
     fi
     rm -rf /usr/local/lib/usilic-py
     mkdir -p /usr/local/lib/usilic-py
-    (cd $_src && tar cf - --exclude=__pycache__ usilic.py usilic) | tar xf - -C /usr/local/lib/usilic-py
+    (cd $_src && tar cf - --exclude=__pycache__ usilic.py ush.py usilic) | tar xf - -C /usr/local/lib/usilic-py # ush.py: U.sh の Python 版
     printf '#!/bin/sh\nexec python3 /usr/local/lib/usilic-py/usilic.py "$@"\n' > /usr/local/bin/usilic-py
     chmod 755 /usr/local/bin/usilic-py
     echo "usilic-py -> /usr/local/lib/usilic-py (RESCUE: ^J^R)"

@@ -33408,6 +33408,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1350. **src/python: U.shのPython版(ush.py・usilic/ush/)の骨組みと-v・-f(2026-11-23)**
+   - 直接のユーザー提案: いっそU.shの機能全体をusilic.pyに取り込んだら。C++版と旧C版のように、Python版と旧シェル版。規模が大きすぎるか。アシスタントの答え(約3000行で、移せない大きさではない。オプションごとに移し、移していないものはU.shを呼ぶ。1. 骨組み(rootで動く部分、コマンドを記録だけする試しの形)、2. -v・-f・-a・-n、3. -s・-d・-o・-e・-c・-k、4. -m・-u、5. -r)に、ユーザーが「/opt/BASE.uにはpythonが無いのでそこだけU.shが必要だな。リポジトリには(カーネルリメークが必須の口実でもある)旧C版も同梱なのでU.shがあってもおかしくない。1,2から進めてみて」。
+   - 変更(1. 骨組み): src/python/ush.py(入口、`sudo python3 ush.py -f`)と、usilic/ush/。
+     - system.py: 外への働きかけ(コマンド・/proc/mounts・ファイル・mkdir・ln・rm)をSystemに集めた。テスト用のFakeSystemは、区画(blkid)・マウント・ファイルを手元の表で持ち、mount・umount等を記録して表を書き換える(実機に触れない)。
+     - env.py: U.shの始めの変数(ON_WSL・ON_RAMDISK・ON_UBUNTU・ON_TORAM・ON_NONE・KEEP_MNT_DEBIAN・DEBIAN_ROOT_UUID)。設定のDEBIANは今の/opt/U.shの「readonly DEBIAN=」から、STRAGE・UUIDは/opt/U.optから読む。
+     - fs.py: `_fs`・`_fs_try`・`_is_mounted`(マウントできなければMountError=U.shの`_die`)。
+     - main.py: 引数はU.shと同じ(`--list`・`--ans=`・`--batch`も)、`_ask`、ログ(終わる時に出して/opt/U.log_日付へ、RAMDISKならDEBIAN区画へも)。rootでなければ断る。移していないオプションは「not in the Python version yet (use /opt/U.sh)」で終わりの値2。
+   - 変更(2. -v・-f): parts.py(`_list_strage`・`_list_parts`、一覧の行はU.shと同じ形)、options.py(`verbose`・`_list_mnt_no`・`file_system`・`_page`はこのusilic.pyのページャー)。-a・-nは次に。
+   - RESCUE(rescue.py): 移したオプション(`ush.PORTED`)は`python3 ush.py`で、他は今まで通り`bash /opt/U.sh`で動かす。
+   - src/U_proto.sh: `_install_usilic_py`でush.pyも/usr/local/lib/usilic-pyへ。
+   - 確かめたこと: tests/test_ush.py(FakeSystemで、-f --listの一覧(DEBIAN区画を出さない、休止したNTFSは読むだけで仮にマウントして空きを見る、マウントできない区画は「-)」、仮のマウントを外す)、-f --ans='1 3'(1は読むだけでマウント、3はマウント済みなので/mnt/3をリンクに)、範囲外の番号、-f -、-v(DEBIAN区画をマウント、/mnt/番号の素性)、STRAGEのマウント、マウントの失敗のログ)・tests/test_rescue。Linuxの実機では未確認。
+
 1349. **src/python: RESCUEの-fでsudoのパスワードを聞かなかった、^X^Dの一覧で打った「/media」が「~//media」になった(2026-11-23)**
    - 直接のユーザー報告1: -fでは「sudo: パスワードが必要です」と出るのに、SHELLのプロンプトに戻ってしまうので入れられず、マウントされない。
    - 原因1: sudoの覚えたパスワードは端末ごと(timestamp_type=tty)。usilicの端末で前にsudoしていると、`sudo -n true`が通るので、パスワードを聞かなかった。U.shを動かす別のセッション(端末が無い)の`sudo -n`は通らない。
