@@ -224,6 +224,15 @@ StartupNotify=false
 Terminal=false
 Hidden=false
 EOF
+    # ~/.config/autostart/polkit-mate-authentication-agent-1.desktop　LXDE では lxpolkit と MATE の認証エージェントの両方が起動し、
+    # 「An authentication agent already exists for the given subject」と出た。MATE が無いホスト（LXDE 等）では MATE の方を起動しない
+    _pk=/home/$USR/.config/autostart/polkit-mate-authentication-agent-1.desktop
+    if [ -f /etc/xdg/autostart/lxpolkit.desktop ] && [ -f /etc/xdg/autostart/polkit-mate-authentication-agent-1.desktop ] && \
+       [ ! -f /usr/share/xsessions/mate.desktop ]; then
+        printf '[Desktop Entry]\n# U.sh: lxpolkit と重なるので起動しない\nType=Application\nName=MATE Authentication Agent\nExec=true\nHidden=true\n' > $_pk
+    elif grep -q '^# U.sh:' $_pk 2>/dev/null; then
+        rm -f $_pk
+    fi
     chown -R $USR:$USR /home/$USR/.config
     touch /tmp/dot_files.$TMP_LABEL
 }

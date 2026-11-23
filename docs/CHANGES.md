@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1347. **src/U_proto.sh: LXDEで認証エージェントが2つ起動していた(MATEの方を起動しない、2026-11-23)**
+   - 直接のユーザー報告: LXDEだけ、デスクトップに「GDBus.Error:org.freedesktop.PolicyKit1.Error.Failed: An authentication agent already exists for the given subject」と出た。/etc/xdg/autostartにlxpolkit.desktopとpolkit-mate-authentication-agent-1.desktopの両方がある(diodon・orcaのものもある)。
+   - 変更: DOT_FILES(起動の時と、`-d`で保存する前)で、lxpolkitとMATEの認証エージェントの両方があり、MATEのセッション(/usr/share/xsessions/mate.desktop)が無いホストでは、~/.config/autostart/polkit-mate-authentication-agent-1.desktop(`Hidden=true`、「# U.sh:」の印)を置いて、MATEの方を起動しない。条件に合わなくなれば、印のあるものだけ消す。
+   - 確かめたこと: `bash -n`・`dash -n`。LXDEの実機では未確認。
+
 1346. **src/U_proto.sh: `-v`をmoreでなくusilicで(戻って読める、2026-11-23)**
    - 直接のユーザー報告と提案: moreのまずい点は戻れないこと。STRAGE付きで`-v`すると、lsは分かるが残りは出ない。最後までページを送ってdfが出た時にはmoreも終わっていて、lsへは戻れない。moreの代わりにusilicでは。
    - 変更: `_page`を足し、`-v`の表示に使う。/usr/local/bin/usilic-py(項目1345)があればそれ、無ければユーザーの~/.local/bin/usilic -c(rootの~/.usilicを作らないよう`runuser -u $USR`で)、無ければless、無ければ今まで通り`$PAGER`(more)。usilicはqで終える。
