@@ -162,7 +162,7 @@ python3 は、-o -p・-e で外しません（BASE.u 等の記録に載せませ
 #
 ⑧ Ubuntu は 25.10 から、mv・cp・ls 等の基本コマンドを、C で書かれた GNU coreutils から Rust で書き直した uutils（coreutils-from-uutils）に入れ替えました（sudo も sudo-rs に）。
 uutils は GNU と同じ動きを目指していますが、端のケースはまだ違うことがあります（例: GNU の mv は「mv /home/.」を断りますが、uutils では /home そのものが写り、-r で起動するたびに /home/home ができました）。
-U.sh は何十年分の GNU の動きを前提に書いてあるので、Ubuntu では最初に（DEBIAN.u を記録する前に）"apt-get install --allow-remove-essential coreutils-from-gnu" で GNU 版へ入れ替えます。
+U.sh は何十年分の GNU の動きを前提に書いてあるので、Ubuntu では最初に（DEBIAN.u を記録する前に）"apt-get install --allow-remove-essential coreutils-from-gnu coreutils-from-uutils-" で GNU 版へ入れ替えます。
 uutils のままにするなら、U.sh の GNU_COREUTILS を "" にします。
 既に DEBIAN.u を記録した後で入れ替えた時は、DEBIAN.u の coreutils-from-uutils の行も coreutils-from-gnu に直します（直さないと、DEBIAN.u へ戻す時に GNU 版を外そうとします）。#
 #

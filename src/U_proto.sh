@@ -3294,8 +3294,9 @@ EOF
 	fi
     fi
     if [ "$ON_UBUNTU" ] && [ "$GNU_COREUTILS" ] && [ "`_is_inst coreutils-from-uutils`" ]; then # DEBIAN.u を記録する前に GNU 版へ
-	echo "apt-get install -y --allow-remove-essential coreutils-from-gnu"
-	apt-get install -y --allow-remove-essential coreutils-from-gnu
+	# uutils は必須（Essential）なので、apt は自分では外さない（「競合」で止まる）。名前の後ろの「-」で外すと指定する
+	echo "apt-get install -y --allow-remove-essential coreutils-from-gnu coreutils-from-uutils-"
+	apt-get install -y --allow-remove-essential coreutils-from-gnu coreutils-from-uutils-
     fi
     if [ "$ON_NONE" ] && [ ! -f /opt/DEBIAN.u ]; then # 入れたばかりの状態の記録（Ubuntu も。-u がここへ戻してから BASE を作る）
 	_output_u DEBIAN.u $LINENO

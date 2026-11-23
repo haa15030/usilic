@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1378. **src/U_proto.sh・src/python・src/U_sh.txt: GNU版への入れ替えで、uutilsを名指しで外す(2026-11-24)**
+   - 直接のユーザーの話: `. U -v`で項目1376の入れ替えが「coreutils-from-gnu : 先行依存: gnu-coreutils しかし、インストールされようとしていません / 競合: coreutils-from」「coreutils-from-uutils : 競合: coreutils-from」「E: Unable to satisfy dependencies. Reached two conflicting assignments」で止まり、mvはuutilsのまま。
+   - 原因: coreutils-from-uutilsは必須(Essential)なので、aptは競合を解くために自分では外さない。
+   - 変更: `apt-get install -y --allow-remove-essential coreutils-from-gnu coreutils-from-uutils-`(名前の後ろの「-」で外すと指定)。マニュアルも。
+   - 確かめたこと: tests/test_ush.py。`bash -n`・`dash -n`。
+
 1377. **src/python: TORAMの-nは、SSDのルートの区画をマウントしてgrubenvを書く(2026-11-24)**
    - 直接のユーザーの話: 「TORAMを試してみた。システムはちゃんとtmpfsで起動したものの、そこで. U -n でNONE-KERNELを選んでも再起動後はTORAMがハイライト表示となった。これはしょうがないかな？」
    - 原因: TORAMはSSDのルートをtmpfsへ写して起動する。SSDのUbuntuでは/mnt/debianは「/へのリンク」なので、写したものはtmpfsの/を指す。-nはその/mnt/debian/boot/grub/grubenvのsaved_entryを書き換えたので、tmpfsの上で消え、SSDのgrubenvは前のまま(TORAM)だった。
