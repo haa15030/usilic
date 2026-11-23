@@ -33408,6 +33408,17 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1339. **src/U_proto.sh: `-i`を廃止して起動の時にusilicを入れる。`-d`をデスクトップのホストからも、終わったらその場で起動(2026-11-23)**
+   - 直接のユーザー報告: GNOMEでは「アプリを表示」に最初からアイコンがあって起動もできるが、swapcapsは利かない(Zuttyは利く)。ログアウトした後はアイコンからも利く。
+   - 直接のユーザー提案1: 必要なファイルが`-r`で入るなら、`-i`を廃止して、usilicが無ければ常に入れればいい。
+   - 変更1: `include_usilic`・`_boot_usilic_libs`を`_put_usilic`にまとめた。`-r`の終わりで、デスクトップ(/usr/share/xsessions・wayland-sessionsに.desktop)があるホストなら、ホームにusilicが無ければDEBIAN区画のもの(~/.local)を入れ、足りないライブラリも入れる。`-i`のcase・ヘルプの行は外した(`-o`の`-i`(install)はそのまま)。
+   - 直接のユーザー提案2: KDEからGNOMEを入れるには、一旦8GB-baseで起動し直す必要がある。その場でウィンドウマネージャを閉じて再ログインするか、`-o -p`でBASEまで戻してから環境とusilicを入れ、ウィンドウマネージャを起動できないか。
+   - 変更2: `-d`を、8GB-KDE等のデスクトップのホストの上でも動かす。`systemctl isolate multi-user.target`でデスクトップを止め、`_output_u BASE.u -p`・`autoremove --purge`(Ubuntuは`_desktop_ubuntu off`も)でBASEへ戻してから、今まで通り入れる。デスクトップの中の端末から動かすと、その端末ごと消えるので断る(祖先のプロセスにDISPLAY・WAYLAND_DISPLAYがあるかを見る`_in_gui`)。テキストのコンソール(Ctrl+Alt+F3等)かsshで動かす。ホームのファイルは戻さない。
+   - 変更3: 保存する前に、DOT_FILES(kxkbrc・dconf等)と`_put_usilic`をやっておく(起動の時に書くだけでは、自動ログインがそれより先だと最初のログインで効かない。ログアウトした後は利いたという報告と合う)。
+   - 変更4: `-d`の最後に「Start ?GB-名前 now? (Y/n)」。Yなら、ホスト名(/etc/hostname・hostnamectl・/etc/hostsの127.0.1.1)とU.optの`NEXT?=`を最後に入れたデスクトップにして、`systemctl isolate graphical.target`。起動し直さなくていい。Nなら今まで通り`. U -n`。
+   - src/U_sh.txtの`-i`・`-d`・注意点も直した。
+   - 確かめたこと: `bash -n`・`dash -n`。実機では未確認。
+
 1338. **src/U_proto.sh: GNOME(Wayland)でもCtrlとCaps Lockを入れ替える(dconfのシステムの既定、2026-11-23)**
    - アシスタントの答え(Debian 13・Ubuntuで既定がWaylandのセッションはKDEとGNOMEだけ。GNOMEは~/.xprofileもkxkbrcも読まず、gsettingsの`org.gnome.desktop.input-sources xkb-options`を使う)と2つの案に、ユーザーが「案1.でよろしく」。
    - 変更: DOT_FILESで、dconfがあれば`/etc/dconf/db/local.d/00-U-swapcaps`に`xkb-options=['ctrl:swapcaps']`を書いて`dconf update`。`/etc/dconf/profile/user`が無ければ`user-db:user`・`system-db:local`で作り、あって`system-db:local`が無ければ足す。NOSWAP_KBDのキーボードがつながっていればファイルを消す(kxkbrcと同じく、起動の時に決まる)。ユーザーが自分でxkb-optionsを設定していれば、そちらが優先。

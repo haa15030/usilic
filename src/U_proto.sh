@@ -1459,17 +1459,29 @@ grub-editenv /boot/grub/grubenv set 'saved_entry=$_rescue_entry'
 }
 
 desktop_select() { # -d)
-    local _list=/tmp/desktop.$TMP_LABEL _sel _n _i _task _name _line _pairs="" _yn
+    local _list=/tmp/desktop.$TMP_LABEL _sel _n _i _task _name _line _pairs="" _yn _from=""
     # 使う RAMDISK の大きさ: RESCUE_GB（4GB）では最小の xfce4 でも収まらないので、EXTRA_GB（8GB、-u が作る）
     local _gb=${EXTRA_GB:-$((RESCUE_GB*2))}
     # debconf の問い（既定のディスプレイマネージャ等）・設定ファイルを置き換えるかの問いで止まらないように（既定の答え／今のファイルを残す）
     # （. U で読むので export せず、apt-get ごとに付ける。export は ( ) の中だけ）
     local _apt="env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
 
-    if [ ! "$ON_RAMDISK" ] || [ ! "`hostname | grep GB-base$`" ] || [ "$RAMDISK_GB" -lt "$_gb" ]; then
+    if [ ! "$ON_RAMDISK" ] || [ ! "`hostname | grep GB-`" ] || [ "$RAMDISK_GB" -lt "$_gb" ]; then
         # SSD の上（RAMDISK_GB は RESCUE_GB）や 4GB-base で「Please boot 4GB-base」と出していた
         echo "$1: Please boot ${_gb}GB-base (RAM-*+${_gb}gb-base, '. U -n'; ${RESCUE_GB}GB is too small for a desktop). : $LINENO" >> /tmp/log.$TMP_LABEL
         return
+    fi
+    if [ ! "`hostname | grep GB-base$`" ]; then # デスクトップ等のホスト（8GB-KDE 等）: BASE.u へ戻してから入れる（起動し直さなくていい）
+        if [ "`_in_gui`" ]; then
+            # 戻すとデスクトップ（とその中の端末）ごと消えるので、テキストのコンソール（Ctrl+Alt+F3 等）か ssh から
+            echo "$1: On `hostname`: log in on a text console (Ctrl+Alt+F3) and type '. U -d' there. : $LINENO" >> /tmp/log.$TMP_LABEL
+            return
+        fi
+        if [ ! -f /opt/BASE.u ]; then
+            echo "$1: /opt/BASE.u: not exist. : $LINENO" >> /tmp/log.$TMP_LABEL
+            return
+        fi
+        _from=`hostname`
     fi
     _fs $LINENO mount $MNT_DEBIAN
     _fs $LINENO mount $mnt_strage
@@ -1520,9 +1532,21 @@ desktop_select() { # -d)
     do
         echo "-> $mnt_strage/opt/${RAMDISK_GB}GB-${_line#*:}.img"
     done
+    if [ "$_from" ]; then
+        echo "($_from -> BASE.u: the desktop stops now)"
+    fi
     read -p "Install and save? (Y/N): " _yn
     if [ "$_yn" != "Y" ] && [ "$_yn" != "y" ]; then
         return
+    fi
+    if [ "$_from" ]; then
+        echo "systemctl isolate multi-user.target"
+        systemctl isolate multi-user.target # ディスプレイマネージャとデスクトップを止める
+        _output_u BASE.u -p $LINENO
+        $_apt autoremove --purge < /dev/null
+        if [ "$ON_UBUNTU" ]; then
+            _desktop_ubuntu off
+        fi
     fi
     if [ ! "`_on_line`" ]; then
         _net_restart
@@ -1560,11 +1584,32 @@ desktop_select() { # -d)
             echo "apt-get install -y task-$_task"
             $_apt install task-$_task < /dev/null
         fi
+        # 保存する前に、起動の時（-r）と同じ設定（swapcaps の kxkbrc・dconf 等）と usilic を入れておく
+        # （起動の時に書くだけだと、自動ログインがそれより先だと最初のログインで効かない）
+        rm -f /tmp/dot_files.$TMP_LABEL
+        DOT_FILES
+        _put_usilic $1
         _save_host $1 $_name . # STRAGEの ?GB-名前.img（あれば上書き）
         _n=$((_n+1))
     done
     rm -f /opt/JP.u $MNT_DEBIAN/opt/JP.u
-    echo "$1:$_pairs -> '. U -n' to boot. : $LINENO" >> /tmp/log.$TMP_LABEL
+    echo "$1:$_pairs : $LINENO" >> /tmp/log.$TMP_LABEL
+    # 最後に入れたもの（今の RAMDISK の中身）は、そのままそのホストとして起動できる
+    _name=${RAMDISK_GB}GB-$_name
+    read -p "Start $_name now? (Y/n): " _yn
+    if [ "$_yn" ] && [ "$_yn" != "Y" ] && [ "$_yn" != "y" ]; then
+        echo "$1: '. U -n' to boot. : $LINENO" >> /tmp/log.$TMP_LABEL
+        return
+    fi
+    echo $_name > /etc/hostname
+    hostnamectl set-hostname $_name
+    sed -i /etc/hosts -e "s/^127\.0\.1\.1[[:space:]].*/127.0.1.1\t$_name/"
+    grep -v "^NEXT${RAMDISK_GB}=" /opt/U.opt > /tmp/opt.$TMP_LABEL # 次に起動する時も同じホスト（-n と同じ）
+    echo "NEXT${RAMDISK_GB}=$_name" >> /tmp/opt.$TMP_LABEL
+    cat /tmp/opt.$TMP_LABEL > /opt/U.opt
+    cp /opt/U.opt $MNT_DEBIAN/opt
+    echo "systemctl isolate graphical.target"
+    systemctl isolate graphical.target
 }
 
 _usilic_libs() { # $2 の usilic に足りないライブラリ（ldd の not found）を、DEBIAN区画の dpkg の記録（/var/lib/dpkg/info/*.list）から引いて入れる（$1 オプション）
@@ -1595,53 +1640,60 @@ _usilic_libs() { # $2 の usilic に足りないライブラリ（ldd の not fo
     fi
 }
 
-_boot_usilic_libs() { # -r: 展開したホストの usilic（~/.local/bin、前に -i で入れて保存したもの）にライブラリが足りなければ入れる
-    # （アイコンから起動すると、端末からと違って「shared libraries」のメッセージも出ずに何も起きない。起動の時は root なので sudo は要らない）
-    local _bin=/home/$USR/.local/bin/usilic _i
-
-    if [ ! -x $_bin ] || [ ! "`ldd $_bin 2>/dev/null | grep 'not found'`" ] || ! mountpoint -q $MNT_DEBIAN; then
-        return
-    fi
-    for _i in `seq 1 30` # rc.local はネットにつながる前に動くことがある
-    do
-        if [ "`_on_line`" ]; then
-            break
-        fi
-        sleep 2
-    done
-    echo "-r: `hostname`: $_bin: missing libraries -> install : $LINENO" >> /tmp/log.$TMP_LABEL
-    _usilic_libs -r $_bin
-}
-
-include_usilic() { # -i)
-    local _home=/home/$USR _src _rc
+_put_usilic() { # DEBIAN区画でビルドした usilic（~/.local）を RAMDISK のホームへ入れる（$1 オプション）。ライブラリが足りなければ入れる
+    local _home=/home/$USR _src=$MNT_DEBIAN/home/$USR _rc _i
     local _line='PATH=$HOME/.local/bin:$PATH; export PATH'
     local _files=".local/bin/usilic .local/lib/usilic .local/share/applications/usilic.desktop .local/usilic-web"
 
-    if [ ! "$ON_RAMDISK" ]; then
-        echo "$1: Not on a RAMDISK. : $LINENO" >> /tmp/log.$TMP_LABEL
+    if [ ! "$ON_RAMDISK" ] || ! mountpoint -q $MNT_DEBIAN || [ ! -x $_src/.local/bin/usilic ]; then
         return
     fi
-    _fs $LINENO mount $MNT_DEBIAN
-    _src=$MNT_DEBIAN$_home
-    if [ ! -x $_src/.local/bin/usilic ]; then
-        echo "$1: $_src/.local/bin/usilic: No such file (build it on the SSD: tools/setup-debian.sh). : $LINENO" >> /tmp/log.$TMP_LABEL
-        return
+    if [ ! -x $_home/.local/bin/usilic ]; then # 前に入れて保存したもの（イメージの中）があれば、そのまま
+        cd $_src
+        echo "cd $_src; tar cf - $_files | tar xfp - -C $_home"
+        tar cf - `ls -d $_files 2>/dev/null` | tar xfp - -C $_home
+        cd /opt
+        for _rc in .profile .bashrc
+        do
+            if [ ! "`grep -xF "$_line" $_home/$_rc 2>/dev/null`" ]; then
+                echo "$_line" >> $_home/$_rc
+                chown $USR:$USR $_home/$_rc
+            fi
+        done
+        command -v update-desktop-database > /dev/null 2>&1 && update-desktop-database $_home/.local/share/applications
+        echo "$1: usilic -> $_home/.local : $LINENO" >> /tmp/log.$TMP_LABEL
     fi
-    _usilic_libs $1 $_src/.local/bin/usilic
-    cd $_src
-    echo "cd $_src; tar cf - $_files | tar xvfp - -C $_home"
-    tar cf - `ls -d $_files 2>/dev/null` | tar xvfp - -C $_home
-    cd /opt
-    for _rc in .profile .bashrc
+    if [ "`ldd $_home/.local/bin/usilic 2>/dev/null | grep 'not found'`" ]; then
+        # （アイコンから起動すると、端末からと違って「shared libraries」のメッセージも出ずに何も起きない）
+        for _i in `seq 1 30` # rc.local はネットにつながる前に動くことがある
+        do
+            if [ "`_on_line`" ]; then
+                break
+            fi
+            sleep 2
+        done
+        echo "$1: usilic: missing libraries -> install : $LINENO" >> /tmp/log.$TMP_LABEL
+        _usilic_libs $1 $_home/.local/bin/usilic
+    fi
+}
+
+_has_desktop() { # デスクトップ（X11 か Wayland のセッション）が入っていれば「desktop」
+    if [ "`ls /usr/share/xsessions /usr/share/wayland-sessions 2>/dev/null | grep '\.desktop$'`" ]; then
+        echo desktop
+    fi
+}
+
+_in_gui() { # この U.sh がデスクトップの中（の端末）から動いていれば「gui」（祖先のプロセスの DISPLAY・WAYLAND_DISPLAY を見る。sudo は消すので）
+    local _p=$$
+
+    while [ "$_p" ] && [ "$_p" -gt 1 ]
     do
-        if [ ! "`grep -xF "$_line" $_home/$_rc 2>/dev/null`" ]; then
-            echo "$_line" >> $_home/$_rc
-            chown $USR:$USR $_home/$_rc
+        if tr '\0' '\n' < /proc/$_p/environ 2>/dev/null | grep -qE '^(DISPLAY|WAYLAND_DISPLAY)='; then
+            echo gui
+            return
         fi
+        _p=`awk '/^PPid:/ {print $2}' /proc/$_p/status 2>/dev/null`
     done
-    command -v update-desktop-database > /dev/null 2>&1 && update-desktop-database $_home/.local/share/applications
-    echo "$1: usilic -> $_home/.local (to keep it: '. U -s .'). : $LINENO" >> /tmp/log.$TMP_LABEL
 }
 
 erase_base() { # -e)
@@ -2019,7 +2071,9 @@ EOF
         hostnamectl set-hostname $_next_host
         _start_rc
     fi
-    _boot_usilic_libs
+    if [ "`_has_desktop`" ]; then # -i（取り込み）は廃止。デスクトップのあるホストには、無ければ入れる
+        _put_usilic -r
+    fi
     cd /opt
     _diff_sh &
 }
@@ -3138,11 +3192,10 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	elif [ "$ON_RAMDISK" ]; then
 	    echo "/dev/shm : `_tmpfs_size | tail -n1`"
 	    echo "img-size : $((`df | grep \/$ | awk '{print $3}'`*$_numerator/10))"
-	    echo ". U [-acdfikmnosv]"
+	    echo ". U [-acdfkmnosv]"
 	    echo "  -c(hange_root) [/mnt/usb]" >> /tmp/mess.$TMP_LABEL
 	    echo "  -f(ile_system) [-] : /mnt/No." >> /tmp/mess.$TMP_LABEL
-	    echo "  -d(esktop) : on ??GB-base (8GB~, STRAGE)" >> /tmp/mess.$TMP_LABEL
-	    echo "  -i(nclude) : usilic from $MNT_DEBIAN" >> /tmp/mess.$TMP_LABEL
+	    echo "  -d(esktop) : on ??GB-* (8GB~, STRAGE; on a desktop host: from a text console)" >> /tmp/mess.$TMP_LABEL
 	    echo "  -k(ernel_remake) . or - or / or ?? (STRAGE)" >> /tmp/mess.$TMP_LABEL
 	    echo "  -m(ake_usb) device [-]" >> /tmp/mess.$TMP_LABEL
 	    echo "  -n(ext_host)" >> /tmp/mess.$TMP_LABEL
@@ -3226,9 +3279,6 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 		;;
 	    -f)
 		file_system $_option $_ARG_1
-		;;
-	    -i)
-		include_usilic $_option
 		;;
 	    -k)
 		kernel_remake $_option $_ARG_1 $_ARG_2 $_ARG_3
