@@ -2,6 +2,8 @@
 展開し、DOT_FILES・ホスト名・サービスの初期化(_start_rc)、デスクトップがあればusilicを入れる。U.shと同じ手順。
 起動の時なので、マウントできなくても止めない(イメージが見つからなければ?GB-baseのまま起動する)。
 """
+import os
+
 from .desktop import dot_files, has_desktop, put_usilic
 from .fs import fs
 from .prepare import enabled_units
@@ -67,13 +69,17 @@ def rc_local_only(env, log, option, out):
         out('tune2fs -m 0 /dev/ram0')
         system.run(['tune2fs', '-m', '0', '/dev/ram0'])
     if env.shm_list and env.mem_total_gb >= env.rescue_gb:
-        keep = env.tmp + '/shm'
+        # 預ける所はU.shと同じく/optに(SHM_LISTの「tmp」で/tmpにtmpfsを重ねると、/tmpの下(env.tmp)に預けたものが
+        # 隠れて戻せず、後の「var」等も消えた)
+        keep = '/opt/shm.%d' % os.getpid()
         for d in env.shm_list:
             system.makedirs('%s/%s' % (keep, d))
             system.shell('mv /%s/* /%s/.* %s/%s 2>/dev/null' % (d, d, keep, d))
             # できなければ、元のディレクトリへ戻すだけ
             fs(env, log, 'mount', '-t', 'tmpfs', '-o', 'size=%dK' % env.tmpfs_kb, '/dev/shm', '/' + d, try_only=True)
             system.shell('mv %s/%s/.* %s/%s/* /%s 2>/dev/null' % (keep, d, keep, d, d))
+            system.run(['rmdir', '%s/%s' % (keep, d)])  # 戻せなかったものがあれば残る
+        system.run(['rmdir', keep])
     # 起動の時なので、マウントできなくても止めない(イメージが見つからず?GB-baseのまま起動する)
     fs(env, log, 'mount', env.mnt_debian, try_only=True)
     strage = env.strage or env.mnt_debian
