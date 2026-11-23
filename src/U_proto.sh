@@ -2134,9 +2134,11 @@ rc_local_only() { # -r)
         for _shm in $SHM_LIST
         do
             mkdir -p /opt/shm.$TMP_LABEL/$_shm
-            mv /$_shm/* /$_shm/.*  /opt/shm.$TMP_LABEL/$_shm 2>/dev/null
+            # 「.*」は「.」「..」も含む。uutils（Ubuntu 26.04 の rust-coreutils）の mv は「/home/.」を /home そのものとして
+            # 写し、/home/home ができた。隠しファイルは「.[!.]*」「..?*」で（合うものが無ければ、そのまま mv のエラーになるだけ）
+            mv /$_shm/* /$_shm/.[!.]* /$_shm/..?* /opt/shm.$TMP_LABEL/$_shm 2>/dev/null
             _fs_try $LINENO mount -t tmpfs $_TMPFS_OPT /dev/shm /$_shm # できなければ、元のディレクトリへ戻すだけ
-            mv /opt/shm.$TMP_LABEL/$_shm/.* /opt/shm.$TMP_LABEL/$_shm/* /$_shm 2>/dev/null
+            mv /opt/shm.$TMP_LABEL/$_shm/* /opt/shm.$TMP_LABEL/$_shm/.[!.]* /opt/shm.$TMP_LABEL/$_shm/..?* /$_shm 2>/dev/null
         done
     fi
     # 起動の時なので、マウントできなくても止めない（イメージが見つからず ?GB-base のまま起動する）

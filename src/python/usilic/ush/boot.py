@@ -74,10 +74,12 @@ def rc_local_only(env, log, option, out):
         keep = '/opt/shm.%d' % os.getpid()
         for d in env.shm_list:
             system.makedirs('%s/%s' % (keep, d))
-            system.shell('mv /%s/* /%s/.* %s/%s 2>/dev/null' % (d, d, keep, d))
+            # 「.*」は「.」「..」も含む。uutils(Ubuntu 26.04のrust-coreutils)のmvは「/home/.」を/homeそのものとして写し、
+            # /home/homeができた。隠しファイルは「.[!.]*」「..?*」で(合うものが無ければ、そのままmvのエラーになるだけ)
+            system.shell('mv /{0}/* /{0}/.[!.]* /{0}/..?* {1}/{0} 2>/dev/null'.format(d, keep))
             # できなければ、元のディレクトリへ戻すだけ
             fs(env, log, 'mount', '-t', 'tmpfs', '-o', 'size=%dK' % env.tmpfs_kb, '/dev/shm', '/' + d, try_only=True)
-            system.shell('mv %s/%s/.* %s/%s/* /%s 2>/dev/null' % (keep, d, keep, d, d))
+            system.shell('mv {1}/{0}/* {1}/{0}/.[!.]* {1}/{0}/..?* /{0} 2>/dev/null'.format(d, keep))
             system.run(['rmdir', '%s/%s' % (keep, d)])  # 戻せなかったものがあれば残る
         system.run(['rmdir', keep])
     # 起動の時なので、マウントできなくても止めない(イメージが見つからず?GB-baseのまま起動する)

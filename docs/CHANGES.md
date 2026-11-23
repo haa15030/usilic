@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1375. **src/U_proto.sh・src/python: -rでSHM_LISTの中身を移すmvに「.*」を使わない(Ubuntuで/home/homeができた)(2026-11-24)**
+   - 直接のユーザーの話: UbuntuのRAMで起動したら、/home/homeの下にhome(空)とusilic(16項目、本物は18項目)があった(どれも起動の時刻)。SSDの/homeにもrescueのイメージの/homeにも無かったので、起動の時の-rが作った。
+   - 原因: -rはSHM_LIST(home tmp var)の中身を`mv /home/* /home/.* 預け先`で移し、tmpfsを重ねてから戻す。「.*」は「.」「..」にも合う。GNUのmvは「/home/.」を断るが、Ubuntu 26.04の既定のmv(uutils、rust-coreutils)は/homeそのものとして写した(別のファイルシステムへなのでコピー)ようで、戻した時に/home/homeになった。U.shも同じ書き方。
+   - 変更: 隠しファイルは「.[!.]*」「..?*」で(合うものが無ければ、そのままmvのエラーになるだけで2>/dev/nullに)。U.shとPython版。
+   - 確かめたこと: macOSのshで、隠しファイル・「..x」・ディレクトリが移り「.」「..」は移らないこと。tests/test_ush.py。`bash -n`・`dash -n`。
+
 1374. **src/U_proto.sh・src/python: Ubuntuのrc-local.serviceに、イメージを展開し終わるまでログインさせない(Before=)(2026-11-24)**
    - 直接のユーザーの話: UbuntuのRAM-7.3.1+8gb-baseで起動したら、いつもあるはずの待ちが無く、ログインすると/にいた。プロンプトは8GB-baseだが、journalctl -u rc-localではホスト名8GB-rescueでrc.localが最後(display-managerの起動・usilicの確認)まで動いていた。/home/usilicにはrescueのもの(Desktop・.local等)があった。
    - 原因: rc.localが8GB-rescue.imgを展開している途中でログインできた(SHM_LISTで/homeをtmpfsへ付け替えている最中だったので/に出て、ホスト名も変わる前)。Debianのgetty@.serviceはrc-local.serviceの後(After=)だが、Ubuntu 26.04のsystemd 261(258でrc.localの互換が無くなった)では待たない。U.shが置くUbuntu用のrc-local.serviceにも順番が無かった。
