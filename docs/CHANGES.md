@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1370. **src/U_proto.sh・src/python: RAM-*-base.gzをgzipでなくxzで(名前は.gzのまま)(2026-11-24)**
+   - 直接のユーザーの話: 1.13GBのRAM-7.3.1+8gb-base.gzでZ390UDを起動したら、UbuntuのGRUB(UEFI)で「error: Out of memory.」、Debian 13のGRUB(BIOS)で「error: the size of initrd is bigger than addr_max.」。DebianのRAM-6.12.117+8gb-base.gz(561MB)は起動できている。
+   - 変更: RAM-*-base.gzを`xz -T0 --check=crc32`で作る。GRUBはinitrdを丸ごとメモリに読むので、小さいほどいい(firmwareは圧縮済みで縮まないが、モジュール・プログラム等はgzipより2〜3割縮む)。カーネルは中身の形を見て展開する(RD_XZ、Debian・Ubuntuの設定で有効)ので、名前は.gzのまま(GRUBの項目・-m等を変えずに済む)。カーネルのxzはCRC64を確かめられないので--check=crc32。xz-utilsが無ければ入れる。
+   - 確かめたこと: tests/test_ush.py。`bash -n`・`dash -n`。実機ではまだ(項目1369と合わせて-uをやり直して確かめる)。
+
 1369. **src/U_proto.sh・src/python: RAMの土台に、ホームのgit・.local・.cacheを写さない。Ubuntuは無線LANとSOFのfirmwareも外す(2026-11-24)**
    - 直接のユーザーの話: 項目1366の後もRAM-7.3.1+8gb-base.gzは1.13GB。展開した中身は/usr/lib/firmware 497M(intel 173M: iwlwifi 89M・sof約56M、nvidia 105M: ga102 75M・tu102 27M、mediatek 38M、ath10k/11k/12k 50M等)、/usr/lib/modules 576M、/var/lib/apt 186M、/home 167M(~/git 113M・~/.local 54M)。グラボはRTX3050(GA106/107、nouveauはnvidia/ga102のGSPが要るので残す)。「sofって何？」への答え(Intelの新しいノートパソコンの音声のDSPで動くfirmware、デスクトップのHD Audioには要らない)に「レスキューなので外そう。」
    - 変更1: TEMPLATE(RAMの土台)を作るtarで、`home/*/git`(-uがcloneしたusilic)・`home/*/.local`(前のrescueで作ったusilic、DEBIAN.uへ戻しても包みでないので残る)・`home/*/.cache`を写さない。rescueのイメージはSSDから別に作るので、rescueには入る。

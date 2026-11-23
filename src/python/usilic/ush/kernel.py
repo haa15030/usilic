@@ -301,8 +301,13 @@ def update_base_image(env, log, gb, out, lap):
     system.write_text(loop0 + '/etc/hosts', hosts.replace(env.debian, '%dGB-base' % gb, 1))
     for point in (loop0, loop1, shm0):
         fs(env, log, 'umount', point)
-    out('gzip -c %s > /opt/%s.gz' % (img0, base))
-    system.shell('gzip -c %s > /opt/%s.gz' % (img0, base))
+    # gzipでなくxzで(GRUBはinitrdを丸ごとメモリに読むので、小さいほどいい。Ubuntuの1.13GBはUEFIで「Out of memory」、
+    # BIOSで「the size of initrd is bigger than addr_max」になった)。カーネルは中身の形(xz)を見て展開する(RD_XZ)ので、
+    # 名前は.gzのまま(GRUBの項目等を変えずに済む)。カーネルのxzはCRC64を確かめられないので--check=crc32
+    from .parts import install_if_missing
+    install_if_missing(env, 'xz-utils', out)
+    out('xz -T0 --check=crc32 -c %s > /opt/%s.gz' % (img0, base))
+    system.shell('xz -T0 --check=crc32 -c %s > /opt/%s.gz' % (img0, base))
     lap(base + '.gz', out)
     system.run(['rm', '-f', img0])
     out(system.output(['df', '/']).rstrip('\n'))

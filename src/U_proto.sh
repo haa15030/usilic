@@ -1057,8 +1057,12 @@ _update_base() {
     _fs $LINENO umount /tmp/loop0.$TMP_LABEL
     _fs $LINENO umount /tmp/loop1.$TMP_LABEL
     _fs $LINENO umount /tmp/shm0.$TMP_LABEL
-    echo "gzip -c $mnt_strage/opt/IMG0.img > /opt/$_new_base.gz"
-    gzip -c $mnt_strage/opt/IMG0.img > /opt/$_new_base.gz
+    # gzip でなく xz で（GRUB は initrd を丸ごとメモリに読むので、小さいほどいい。Ubuntu の 1.13GB は UEFI で「Out of memory」、
+    # BIOS で「the size of initrd is bigger than addr_max」になった）。カーネルは中身の形（xz）を見て展開する（RD_XZ）ので、
+    # 名前は .gz のまま（GRUB の項目等を変えずに済む）。カーネルの xz は CRC64 を確かめられないので --check=crc32
+    _is_inst xz-utils +
+    echo "xz -T0 --check=crc32 -c $mnt_strage/opt/IMG0.img > /opt/$_new_base.gz"
+    xz -T0 --check=crc32 -c $mnt_strage/opt/IMG0.img > /opt/$_new_base.gz
     _lap "$_new_base.gz"
     echo "rm -f $mnt_strage/opt/IMG0.img"
     rm -f $mnt_strage/opt/IMG0.img
