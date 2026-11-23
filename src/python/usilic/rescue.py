@@ -15,12 +15,15 @@ import re
 import shlex
 import subprocess
 import sys
+import threading
 
 U_SH = '/opt/U.sh'
 LOG = '/tmp/usilic-rescue.log'
 
 # 番号の一覧を出すオプション
 LIST_OPTIONS = ('-a', '-d', '-f', '-n')
+# すぐ終わって出力を見るだけのもの: SHELLのtail -fでなく、出力をFILEで(^Gで戻る)
+VIEW_OPTIONS = ('-v',)
 # 一覧の番号(または引数)の後にU.shが聞くこと(U.shの_askの順)。(問い, 既定の答え)
 QUESTIONS = {
     '-d': [('Install and save? (Y/N) ', 'N'), ('Start it now? (Y/n) ', 'Y')],
@@ -128,6 +131,9 @@ def start(args, password):
         log.close()
         return None
     log.close()
+    # 終わったら待ち取る(待ち取らないとゾンビとして残り、tail --pid=がいつまでも終わらなかった。-vの後のSHELLで、
+    # プロンプトが戻らずqも利かないと報告された)
+    threading.Thread(target=proc.wait, daemon=True).start()
     try:
         if password is not None:
             proc.stdin.write((password + '\n').encode())

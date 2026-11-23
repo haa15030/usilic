@@ -2056,6 +2056,10 @@ class Application:
             if not items:
                 return self.rescue_show_output(out)
             return self.rescue_show_list(items, lambda item: self.rescue_after_number(option, item))
+        if option in rescue.VIEW_OPTIONS:  # -v: 出力をFILEで(戻って読める、^Gで戻る)
+            out = self.rescue_capture([option, '--batch'])
+            self.rescue_password = None
+            return out is not None and self.rescue_show_output(out)
         if rescue.takes_argument(display):  # 「-s 」と出して、名前等を打ってもらう
             self.start_prompt(pr.RESCUE, option + ' ', self.rescue_argument_entered)
             self.prompt.message = display.split(')', 1)[1].strip() + ': '

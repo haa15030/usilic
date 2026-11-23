@@ -33408,6 +33408,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1348. **src/python: RESCUEの後のSHELLでtail -fが終わらなかった、-vは出力をFILEで(2026-11-23)**
+   - 直接のユーザー報告: ^J^Rの後に-vを選んだ後のSHELLでは、qが利かない。
+   - 原因: RESCUEはU.shを`subprocess.Popen`で動かし、待ち取っていなかったので、U.shが終わってもゾンビとして残った。SHELLの`tail --pid=PID -f`はゾンビを生きているとみなすので、いつまでも終わらずプロンプトが戻らなかった(qはtailへの入力になるだけ)。
+   - 変更1: `rescue.start()`で、待ち取る(`proc.wait`)スレッドを動かす。U.shが終わればtailも終わり、SHELLのプロンプトが戻る。
+   - 変更2: -v(`rescue.VIEW_OPTIONS`)は、SHELLのtail -fでなく、`U.sh -v --batch`の出力をFILEで見せる(戻って読める。Python版のFILEのqは、ページャーとして起動した時だけ終わる。戻るのは^G)。
+   - 確かめたこと: tests/test_rescue。偽のU.shを置いた擬似端末で、^J^R→-vで`-v --batch`の出力がFILEに出ること。Popenの後に待ち取るスレッドを動かすとゾンビが残らないこと(待ち取らないと残る)をmacOSで。tail --pidはmacOSに無いので、Linuxの実機では未確認。
+
 1347. **src/U_proto.sh: LXDEで認証エージェントが2つ起動していた(MATEの方を起動しない、2026-11-23)**
    - 直接のユーザー報告: LXDEだけ、デスクトップに「GDBus.Error:org.freedesktop.PolicyKit1.Error.Failed: An authentication agent already exists for the given subject」と出た。/etc/xdg/autostartにlxpolkit.desktopとpolkit-mate-authentication-agent-1.desktopの両方がある(diodon・orcaのものもある)。
    - 変更: DOT_FILES(起動の時と、`-d`で保存する前)で、lxpolkitとMATEの認証エージェントの両方があり、MATEのセッション(/usr/share/xsessions/mate.desktop)が無いホストでは、~/.config/autostart/polkit-mate-authentication-agent-1.desktop(`Hidden=true`、「# U.sh:」の印)を置いて、MATEの方を起動しない。条件に合わなくなれば、印のあるものだけ消す。
