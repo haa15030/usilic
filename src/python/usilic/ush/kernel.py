@@ -196,6 +196,13 @@ def compile_kernel(env, log, option, args, out, lap):
         for name in disable:
             cmd += ['--disable', name]
         system.run(cmd, cwd=src)
+    enable = env.conf('KERNEL_ENABLE', '').split()
+    if enable:  # 足すもの(LEGACY_PTYS: 旧C版のSHELLはBSD形式の擬似端末を使う)
+        out('scripts/config --file ../build/.config --enable ' + ' '.join(enable))
+        cmd = ['scripts/config', '--file', '../build/.config']
+        for name in enable:
+            cmd += ['--enable', name]
+        system.run(cmd, cwd=src)
     if env.on_ubuntu:  # Ubuntuの署名鍵(debian/canonical-*.pem)はソースに含まれないので常に空に
         system.run(['scripts/config', '--file', '../build/.config', '--set-str', 'SYSTEM_TRUSTED_KEYS', '',
                     '--set-str', 'SYSTEM_REVOCATION_KEYS', ''], cwd=src)

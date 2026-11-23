@@ -79,6 +79,8 @@ readonly KERNEL_DISABLE="PCCARD ISDN ATM FDDI HIPPI ARCNET HAMRADIO CAN WAN IEEE
     INFINIBAND NET_VENDOR_MELLANOX NET_VENDOR_CHELSIO NET_VENDOR_QLOGIC NET_VENDOR_CAVIUM NET_VENDOR_HUAWEI
     NET_VENDOR_PENSANDO NET_VENDOR_NETRONOME NET_DSA SCSI_QLA_FC SCSI_LPFC SCSI_BFA SCSI_QEDF FCOE
     STAGING GREYBUS SURFACE_PLATFORMS CHROME_PLATFORMS USB_GADGET KUNIT RUNTIME_TESTING_MENU"
+# 足すもの（scripts/config --enable）。LEGACY_PTYS: 旧C版（old/）の SHELL は BSD 形式の擬似端末（/dev/ptyXX）を使う
+readonly KERNEL_ENABLE="LEGACY_PTYS"
 
 # --- /etc/hosts への追加分（オプション）
 #
@@ -966,6 +968,10 @@ EOF
     if [ "$KERNEL_DISABLE" ]; then # 今では使われないもの等を外す（/lib/modules を小さく）
         echo "scripts/config --file ../build/.config --disable" $KERNEL_DISABLE
         scripts/config --file ../build/.config `for _c in $KERNEL_DISABLE; do printf -- '--disable %s ' $_c; done`
+    fi
+    if [ "$KERNEL_ENABLE" ]; then
+        echo "scripts/config --file ../build/.config --enable" $KERNEL_ENABLE
+        scripts/config --file ../build/.config `for _c in $KERNEL_ENABLE; do printf -- '--enable %s ' $_c; done`
     fi
     if [ "$ON_UBUNTU" ]; then # Ubuntu の署名鍵（debian/canonical-*.pem）はソースに含まれないので常に空にする
 	echo "scripts/config --file ../build/.config --set-str SYSTEM_TRUSTED_KEYS '' --set-str SYSTEM_REVOCATION_KEYS ''"

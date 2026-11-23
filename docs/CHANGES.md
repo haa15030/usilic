@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1372. **src/U_proto.sh・src/python: 作るカーネルにCONFIG_LEGACY_PTYSを足す(KERNEL_ENABLE)(2026-11-24)**
+   - 直接のユーザーの話: 「ついでにCONFIG_LEGACY_PTYSも=yにしといて。旧CではSHELLがそれを使うんで。」
+   - 変更: 設定`KERNEL_ENABLE`(-k・-uで作るカーネルの.configに、scripts/config --enableで足す)を置き、既定は`LEGACY_PTYS`(旧C版(old/)のSHELLが使うBSD形式の擬似端末/dev/ptyXX)。KERNEL_DISABLEの後に。
+   - 確かめたこと: tests/test_ush.py。`bash -n`・`dash -n`。
+
 1371. **src/U_proto.sh・src/python: 作るカーネルから今では使われないもの等を外す(KERNEL_DISABLE)(2026-11-24)**
    - 直接のユーザーの話: 「サイズ縮小のための手はまだあると思うんだが。さきほどのCONFIG_...のうち、削れるだけ削る。PCMCIAを始め今では使われそうにないものまで全てを網羅しているはずなのでそこを絞り込めば/lib/modulesもかなり減るのでは？」(UbuntuのRAM-*-base.gzの/usr/lib/modulesは576MB)
    - 変更: 設定`KERNEL_DISABLE`(-k・-uで作るカーネルの.configを、scripts/config --disableで外す。親を外せばolddefconfigでその下も外れる)。外すもの: PCカード(PCCARD)・ISDN・ATM・FDDI・HIPPI・ARCNET・HAMRADIO・CAN・WAN・IEEE802154・NFC・FIREWIRE・PARPORT、無線LAN(WLAN、firmwareも外している)、テレビ・カメラ(MEDIA_SUPPORT)、ノートパソコン・組み込みの音声(SND_SOC・SOUNDWIRE。デスクトップのHD AudioはSND_HDAで残る)、センサー(IIO)、ジョイスティック・タブレット・タッチスクリーン、サーバーのNIC(Mellanox・Chelsio・QLogic・Cavium・Huawei・Pensando・Netronome)・DSA・FCのHBA(QLA・LPFC・BFA・QEDF・FCoE)・InfiniBand、STAGING・GREYBUS、Surface・Chromebook、USB_GADGET、テスト用(KUNIT・RUNTIME_TESTING_MENU)。Debian・Ubuntuとも。外さないなら""。
