@@ -189,6 +189,13 @@ def compile_kernel(env, log, option, args, out, lap):
                 ['scripts/config', '--file', '../build/.config', '--disable', 'MODULE_SIG_ALL']):
         out(' '.join(cmd))
         system.run(cmd, cwd=src)
+    disable = env.conf('KERNEL_DISABLE', '').split()
+    if disable:  # 今では使われないもの等を外す(/lib/modulesを小さく)
+        out('scripts/config --file ../build/.config --disable ' + ' '.join(disable))
+        cmd = ['scripts/config', '--file', '../build/.config']
+        for name in disable:
+            cmd += ['--disable', name]
+        system.run(cmd, cwd=src)
     if env.on_ubuntu:  # Ubuntuの署名鍵(debian/canonical-*.pem)はソースに含まれないので常に空に
         system.run(['scripts/config', '--file', '../build/.config', '--set-str', 'SYSTEM_TRUSTED_KEYS', '',
                     '--set-str', 'SYSTEM_REVOCATION_KEYS', ''], cwd=src)

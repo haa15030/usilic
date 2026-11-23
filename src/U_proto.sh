@@ -69,6 +69,17 @@ readonly BUILD_LIST="build-dep linux"
 #RESCUE_LIST_X=""
 #readonly BUILD_LIST=""
 
+# --- -k・-u で作るカーネルから外すもの（scripts/config --disable、親を外せばその下も外れる）
+# 配布のカーネルの設定は今では使われないものまで全部入りで、/lib/modules（RAM-*-base.gz に入る）が大きい（Ubuntu 576MB）。
+# PCカード・ISDN・ATM 等の古いもの、無線LAN（firmware も外している）、テレビ・カメラ（MEDIA_SUPPORT）、ノートパソコン・
+# 組み込みの音声（SND_SOC。デスクトップの HD Audio は SND_HDA で残る）、センサー（IIO）、サーバーの NIC・HBA・InfiniBand、
+# staging、テスト用。外さないなら ""
+readonly KERNEL_DISABLE="PCCARD ISDN ATM FDDI HIPPI ARCNET HAMRADIO CAN WAN IEEE802154 NFC FIREWIRE PARPORT
+    WLAN MEDIA_SUPPORT SND_SOC SOUNDWIRE IIO INPUT_JOYSTICK INPUT_TABLET INPUT_TOUCHSCREEN
+    INFINIBAND NET_VENDOR_MELLANOX NET_VENDOR_CHELSIO NET_VENDOR_QLOGIC NET_VENDOR_CAVIUM NET_VENDOR_HUAWEI
+    NET_VENDOR_PENSANDO NET_VENDOR_NETRONOME NET_DSA SCSI_QLA_FC SCSI_LPFC SCSI_BFA SCSI_QEDF FCOE
+    STAGING GREYBUS SURFACE_PLATFORMS CHROME_PLATFORMS USB_GADGET KUNIT RUNTIME_TESTING_MENU"
+
 # --- /etc/hosts への追加分（オプション）
 #
 readonly BAK_HOST="192.168.3.1	router"
@@ -952,6 +963,10 @@ EOF
     # 署名の無いモジュールも読み込む（MODULE_SIG_FORCE は元から無効。読み込むとカーネルが「tainted」になるだけ）
     echo "scripts/config --file ../build/.config --disable MODULE_SIG_ALL"
     scripts/config --file ../build/.config --disable MODULE_SIG_ALL
+    if [ "$KERNEL_DISABLE" ]; then # 今では使われないもの等を外す（/lib/modules を小さく）
+        echo "scripts/config --file ../build/.config --disable" $KERNEL_DISABLE
+        scripts/config --file ../build/.config `for _c in $KERNEL_DISABLE; do printf -- '--disable %s ' $_c; done`
+    fi
     if [ "$ON_UBUNTU" ]; then # Ubuntu の署名鍵（debian/canonical-*.pem）はソースに含まれないので常に空にする
 	echo "scripts/config --file ../build/.config --set-str SYSTEM_TRUSTED_KEYS '' --set-str SYSTEM_REVOCATION_KEYS ''"
 	scripts/config --file ../build/.config --set-str SYSTEM_TRUSTED_KEYS "" --set-str SYSTEM_REVOCATION_KEYS ""
