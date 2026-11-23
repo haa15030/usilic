@@ -103,7 +103,9 @@ def compile_kernel(env, log, option, args, out, lap):
     system.stream(['apt', 'update'], out)
     errors = env.tmp + '/build-dep.err'
     system.makedirs(env.tmp)
-    system.shell('apt %s -y 2>%s' % (env.conf('BUILD_LIST', 'build-dep linux'), errors))
+    command = 'apt %s -y' % env.conf('BUILD_LIST', 'build-dep linux')
+    out(command)  # 長い(ビルドに要るものを入れる)ので、出たものをその場で出す(エラーは後で見るのでファイルへ)
+    system.stream(['sh', '-c', '%s 2>%s' % (command, errors)], out)
     src = '/usr/src/' + source
     if not system.exists(src) or 'ok installed' not in system.output(['dpkg-query', '-W', '-f=${Status}', 'make']):
         system.stream(['apt', 'update'], out)
@@ -175,7 +177,8 @@ def compile_kernel(env, log, option, args, out, lap):
                 system.interactive(['make', 'oldconfig'], cwd=src)
             out('make menuconfig')
             system.interactive(['make', 'menuconfig'], cwd=src)
-        system.shell('cp .config .. && make mrproper && cp ../.config .', cwd=src)
+        out('make mrproper')
+        system.stream(['sh', '-c', 'cp .config .. && make mrproper && cp ../.config .'], out, cwd=src)
     opt_build = env.conf('OPT_BUILD', '/opt/build')
     out('ln -sf %s /usr/src' % opt_build)
     system.run(['ln', '-sf', opt_build, '/usr/src'])

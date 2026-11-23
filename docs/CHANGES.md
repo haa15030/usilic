@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1363. **src/python: -kの`apt build-dep linux -y`・`make mrproper`の出力をその場で出す(2026-11-23)**
+   - 直接のユーザーの話: 「BUILD_UBUNTU.imgを-o loopでマウントしたあとの`2 packages can be upgraded. Run 'apt list --upgradable' to see them.`で止まってる。」
+   - 原因: その`apt update`の次の`apt build-dep linux -y`(BUILD_LIST、カーネルのビルドに要るものを入れる、長い)を、Python版は出力をためて捨てていた(U.shは端末へ出す)。止まったのではなく、何も出さずに動いていた。`make mrproper`も同じ。
+   - 変更: どちらも動かす前に名前を出し、出力を1行ずつその場で出す(`system.stream`)。build-depのエラー出力は今まで通りファイルへ(後でPURGE_LISTを外すかを決めるのに使う)。
+   - 確かめたこと: tests/test_ush.py。
+
 1362. **src/U_proto.sh・src/python: -uで、リポジトリのPython版が古い(ush.pyが無い)時はusilic-pyを入れ替えない(2026-11-23)**
    - 直接のユーザーの話: UbuntuでPython版の-uを動かしたら、`create /usr/lib/dracut/modules.d/99ramdisk-root`の後に「FileNotFoundError: … /usr/local/lib/usilic-py/usilic/ush/data/module-setup.sh」で止まった。
    - 原因: -uは~/git/usilicをGitHubからcloneし、そのsrc/pythonを/usr/local/lib/usilic-pyへ入れ直す(`install_usilic_py`)。GitHubのmpi-gui-fixはまだpushしておらず(61コミット前)、ush.py・usilic/ush/が無い。入れ直す時は先にrm -rfで消すので、手で写した新しいPython版(動いているush.pyのdata/も)が消え、古いusilic.pyだけが残った。その後のtoram_setupがdata/module-setup.shを読めずに止まった。
