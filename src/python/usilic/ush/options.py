@@ -249,12 +249,23 @@ def next_host(env, log, ask, out):
     if env.on_wsl:
         log.add('-n: Not supported.')
         return
-    fs(env, log, 'mount', env.mnt_debian)
+    root = env.mnt_debian
+    if env.on_toram:
+        # TORAMの/mnt/debianはSSDの「/へのリンク」を写したもので、tmpfsの/を指す(grubenvを書いても再起動で消え、
+        # TORAMのまま起動した)。SSDのルートの区画を別にマウントして、そちらのgrubenvへ
+        root = env.tmp + '/root'
+        system.makedirs(root)
+        if not env.debian_root_part or \
+                not fs(env, log, 'mount', env.debian_root_part, root, try_only=True):
+            log.add('-n: %s: cannot mount the root partition.' % (env.debian_root_part or '?'))
+            return
+    else:
+        fs(env, log, 'mount', env.mnt_debian)
     if env.strage:
         fs(env, log, 'mount', env.strage)
-    titles = entry_titles(system, env.mnt_debian)
+    titles = entry_titles(system, root)
     names = set()
-    for directory in (env.strage + '/opt' if env.strage else None, env.mnt_debian + '/opt'):
+    for directory in (env.strage + '/opt' if env.strage else None, root + '/opt'):
         if directory:
             names.update(n[:-4] for n in system.listdir(directory) if re.match(r'^[0-9]+GB-.*\.img$', n))
     for t in titles:
@@ -279,18 +290,23 @@ def next_host(env, log, ask, out):
         gb = int(name.split('GB-', 1)[0])
         lines = [l for l in (system.read_text('/opt/U.opt') or '').splitlines() if not l.startswith('NEXT%d=' % gb)]
         _write_opt(env, lines + ['NEXT%d=%s' % (gb, name)])
+        if env.on_toram:  # TORAMの/optはtmpfs。SSDの方へも(RAMDISKで起動した時のrc.localはそちらを読む)
+            system.write_text(root + '/opt/U.opt', ''.join(l + '\n' for l in lines + ['NEXT%d=%s' % (gb, name)]), 0o644)
         out('NEXT%d=%s -> /opt/U.opt' % (gb, name))
         name = [t for t in titles if re.match(r'^RAM-.*\+%dgb-base$' % gb, t)][-1]
     # GRUB_DEFAULT=saved(-uで設定)なので、update-grubせずgrubenvのsaved_entryだけ書き換える
-    grubenv = env.mnt_debian + '/boot/grub/grubenv'
+    grubenv = root + '/boot/grub/grubenv'
     out('grub-editenv %s set saved_entry=%s' % (grubenv, name))
     system.run(['grub-editenv', grubenv, 'set', 'saved_entry=' + name])
-    grub = system.read_text(env.mnt_debian + '/etc/default/grub') or ''
+    grub = system.read_text(root + '/etc/default/grub') or ''
     if not re.search(r'^GRUB_DEFAULT=saved', grub, re.M):
-        log.add("-n: GRUB_DEFAULT is not 'saved' in %s/etc/default/grub." % env.mnt_debian)
+        log.add("-n: GRUB_DEFAULT is not 'saved' in %s/etc/default/grub." % root)
+    if env.on_toram:
+        fs(env, log, 'umount', root)
     yn = ask('Reboot now? (Y/n): ', 'n').strip()
     if yn in ('', 'Y', 'y'):
-        fs(env, log, 'umount', env.mnt_debian)
+        if not env.on_toram:
+            fs(env, log, 'umount', env.mnt_debian)
         system.run(['reboot'])
 
 
