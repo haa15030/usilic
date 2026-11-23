@@ -1,5 +1,6 @@
 """移したオプション(U.shの同じ名前の関数)。"""
 import os
+import re
 import sys
 import tempfile
 
@@ -168,6 +169,21 @@ def add_strage(env, log, ask, out):
         log.add('-a: STRAGE="" -> /opt/U.opt')
         return
     part = chosen[0]
+    strage = '/mnt/' + part.kind
+    # 選んだ区画が他の所(-fの/mnt/番号、デスクトップの/media/〜等)にマウントされていれば外す(ntfs-3g・exfat-fuseは
+    # 同じ区画を2か所にマウントできず「already exclusively opened」で止まった)。使用中なら、U.optを書き換える前にやめる
+    relink = []
+    for point in system.output(['findmnt', '-rno', 'TARGET', '-S', 'UUID=' + part.uuid]).split():
+        if point == strage:
+            continue
+        out('umount ' + point)
+        system.run(['umount', point])
+        if system.is_mountpoint(point):
+            log.add('%s: busy.' % point)
+            log.add("-a: close it (or '. U -f -'), then '. U -a' again.")
+            return
+        if re.match(r'^/mnt/[0-9]', point):
+            relink.append(point)
     opt_img = ''
     if env.on_ramdisk:
         opt_img = env.mnt_debian
@@ -177,7 +193,6 @@ def add_strage(env, log, ask, out):
         fs(env, log, 'umount', env.strage)
     _write_opt(env, others + [part.strage()])
     log.add(part.strage() + ' -> /opt/U.opt')
-    strage = '/mnt/' + part.kind
     system.makedirs(strage)
     fstab = [l for l in (system.read_text('/etc/fstab') or '').splitlines()
              if l.strip() and not any(m in l for m in ('/mnt/ext4', '/mnt/ntfs', '/mnt/exfat'))]
@@ -185,6 +200,9 @@ def add_strage(env, log, ask, out):
     system.write_text('/etc/fstab', ''.join(l + '\n' for l in fstab))
     system.run(['systemctl', 'daemon-reload'])
     fs(env, log, 'mount', strage)
+    for point in relink:  # 外した-fの/mnt/番号は、STRAGEへのリンクに
+        if system.rmdir(point) and system.symlink(strage, point):
+            out('ln -s %s %s' % (strage, point))
     system.makedirs(strage + '/opt')
     df = system.output(['df']).rstrip('\n')
     out(df)

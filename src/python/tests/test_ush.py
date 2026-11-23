@@ -459,6 +459,16 @@ class UshTest(unittest.TestCase):
         call = [c for c in system.calls if c[:1] == ['runuser']][0]
         self.assertEqual(call[:6], ['runuser', '-u', 'usilic', '--', 'env', 'HOME=/home/usilic'])  # ユーザーのHOMEで
 
+    def test_a_releases_f_mount(self):
+        system = fake(mounted={'/mnt/1': '/dev/sdd1'})
+        system.dirs.add('/mnt/1')
+        code, out = run(system, '-a', '--ans=2')
+        self.assertIn('umount /mnt/1', out)
+        self.assertEqual(system.mounted.get('/mnt/ext4'), '/dev/sdd1')       # 2か所にはマウントしない
+        self.assertNotIn('/mnt/1', system.mounted)
+        self.assertEqual(system.links.get('/mnt/1'), '/mnt/ext4')           # -fの/mnt/1はSTRAGEへのリンクに
+        self.assertIn('STRAGE=/mnt/ext4 UUID=DDD', system.files['/opt/U.opt'])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -255,6 +255,9 @@ class FakeSystem(System):
 
     def _findmnt(self, args):
         target = args[-1]
+        if target.startswith('UUID='):  # -S UUID=〜: その区画のマウントポイント
+            dev = next((d for d, i in self.parts.items() if i['UUID'] == target[5:]), None)
+            return 0, ''.join(m + '\n' for m, d in sorted(self.mounted.items()) if d == dev)
         fields = args[args.index('-no') + 1] if '-no' in args else 'TARGET'
         if fields == 'TARGET':  # デバイス -> マウントポイント
             return 0, ''.join(m + '\n' for m, d in sorted(self.mounted.items()) if d == target)

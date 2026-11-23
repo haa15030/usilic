@@ -1293,8 +1293,31 @@ _list_parts() { # $2 以降の種類の区画を 1) から一覧に出し、番�
     done
 }
 
+_release_part() { # UUID $1 の区画が $2 以外にマウントされていれば外す（-a: ntfs-3g・exfat-fuse は同じ区画を2か所にマウント
+    # できず、-f の /mnt/番号 にマウントしたままの区画を STRAGE に選ぶと「already exclusively opened」で止まった）。
+    # 外せなければ（使用中）1 を返す。外した -f の /mnt/番号 は RELINK に（後で STRAGE へのリンクにする）
+    local _mp
+
+    RELINK=""
+    for _mp in `findmnt -rno TARGET -S UUID=$1 2>/dev/null`
+    do
+        if [ "$_mp" = "$2" ]; then
+            continue
+        fi
+        echo "umount $_mp"
+        umount $_mp 2>/dev/null
+        if mountpoint -q $_mp; then
+            echo "$_mp: busy." >> /tmp/log.$TMP_LABEL
+            return 1
+        fi
+        case "$_mp" in
+            /mnt/[0-9]*) RELINK="$RELINK $_mp" ;;
+        esac
+    done
+}
+
 add_strage() { # -a)
-    local _opt_img _STRAGE_INFO
+    local _opt_img _STRAGE_INFO _uuid _new _x
     local _i=1 _n STRAGE
 
     if [ "$ON_WSL" ]; then
@@ -1320,6 +1343,12 @@ add_strage() { # -a)
 	echo "$1: STRAGE=\"\" -> /opt/U.opt" >> /tmp/log.$TMP_LABEL
     elif [ "$_n" ]; then
 	cd /opt
+	_uuid=`echo $_STRAGE_INFO | sed -n 's/.* UUID=//p'`
+	_new=`echo $_STRAGE_INFO | sed -n 's/.*STRAGE=\([^ ]*\).*/\1/p'`
+	if ! _release_part $_uuid $_new; then # 使用中なら、U.opt を書き換える前にやめる
+	    echo "$1: close it (or '. U -f -'), then '. U -a' again. : $LINENO" >> /tmp/log.$TMP_LABEL
+	    return
+	fi
 	if [ "$ON_RAMDISK" ]; then
 	    _opt_img=$MNT_DEBIAN
 	    _fs $LINENO mount $_opt_img
@@ -1352,6 +1381,10 @@ add_strage() { # -a)
 	    systemctl daemon-reload
 	fi
 	_fs $LINENO mount $mnt_strage
+	for _x in $RELINK # 外した -f の /mnt/番号 は、STRAGE へのリンクに
+	do
+	    rmdir $_x 2>/dev/null && ln -s $mnt_strage $_x && echo "ln -s $mnt_strage $_x"
+	done
 	if [ ! -d "$mnt_strage/opt" ]; then
 	    mkdir $mnt_strage/opt
 	fi

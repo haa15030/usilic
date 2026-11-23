@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1359. **src/U_proto.sh・src/python: -aで、選んだ区画が-fの/mnt/番号等にマウントされていると止まった(2026-11-23)**
+   - 直接のユーザー報告: -fはOKだが、-aではエラーが出た。-fで/dev/nvme0n1p1(NTFS)を/mnt/1にマウントした後、-aで同じ区画を選ぶと「Mount is denied because the NTFS volume is already exclusively opened.」「mount /mnt/ntfs: failed.」。U.optはSTRAGE=/mnt/ntfsに書き換わっていた。
+   - 原因: ntfs-3g・exfat-fuseは同じ区画を2か所にマウントできない(ext4はできる)。-aは他の所にマウントされているかを見ずに/mnt/ntfsへマウントしていた。
+   - 変更: U.shに`_release_part`。-aで選んだ区画が、STRAGEのマウントポイント以外(-fの/mnt/番号、デスクトップの/media/〜等)にマウントされていれば、先に外す(`findmnt -rno TARGET -S UUID=〜`)。外せなければ(使用中)、U.optを書き換える前にやめて「close it (or '. U -f -'), then '. U -a' again.」。外した-fの/mnt/番号は、STRAGEへマウントした後にSTRAGEへのリンクにする(/mnt/番号から今まで通り見られる)。Python版の`add_strage`も同じに。
+   - 確かめたこと: `bash -n`・`dash -n`、tests/test_ush.py(35件、-fの/mnt/1にマウントした区画を-aで選ぶと、/mnt/1を外して/mnt/ext4へ、/mnt/1はリンクに)。実機では未確認。
+
 1358. **src/U_proto.sh・src/python: `-v`のページャーのusilicを、ユーザーのHOMEで(groffの警告が大量に出た)(2026-11-23)**
    - 直接のユーザー報告: `. U -v`をすると「troff:<standard input>:2066: warning: cannot select font 'JPM'」が大量に出る(8GB-LXDE)。
    - 原因(見立て): 項目1346の`_page`は、usilic-pyが無ければユーザーの~/.local/bin/usilic -cを`runuser -u ユーザー`で動かす。`runuser -u`はHOMEをrootのもの(/root)のままにするので、usilicが~/.usilicを見つけられず「最初の起動」になり、HELPをgroffで組む時の警告が、そのまま端末に出た。
