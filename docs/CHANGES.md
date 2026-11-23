@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1361. **src/python: apt-get install・apt updateの出力をためずに、その場で出す(2026-11-23)**
+   - 直接のユーザーの話: 「ubuntuのusilic.pyの-aはapt-get install -y ntfs-3g、exfat-fuseがすごく時間がかかってるんだが。2,3分してやっと終わった。一覧は出てるので続けてみる。」
+   - 原因: Python版の`install_if_missing`(-a・-fの区画の一覧の前のntfs-3g・exfat-fuse等)と-o … -iの`apt-get install`、Ubuntuのaptの設定を直した後の`apt update`は、出力を終わりまでためてから出していた(またはまったく出さなかった)。U.shは端末へそのまま出す。かかる時間そのもの(ダウンロード・dpkgのロック待ち等)はU.shと同じはずだが、Python版では何も出ないまま待たされ、止まったように見えた。
+   - 変更: これらを`system.stream`(1行ずつその場で出す)に。`apt update -y`は、動かす前にその旨も出す。
+   - 確かめたこと: tests/test_ush.py。
+
 1360. **src/python・src/U_proto.sh: `-v`をページャーでなく、/mntの(ls)の上にFILEで開く(^Gで/mntへ)(2026-11-23)**
    - 直接のユーザーの話と依頼: `. U -v`でusilicの画面が出た(既定のページャーをusilicにしたため)。dfの/mnt/1・/mnt/2を見た時、無性にそこへ行きたいと感じた。RESCUE(^J^R)なら^Gで抜ければどこへでも行けるが、`. U -v`で起動したPython版では^Gで(ls)へ戻れるのか。アシスタントの答え(ページャーとして起動するので^Gは何もせず、qで終えるだけ。案: (ls)の/mntで起動して、その上に-vの表示をFILEで開く)に、ユーザーが「ubuntuでは作り直したやつで進めたいのでよろしく」。
    - 変更1(src/python/usilic.py): 環境変数`USILIC_OPEN=ファイル`とディレクトリで起動すると、そのディレクトリの(ls)の上に、ファイルをFILEで開く(ページャーではない。rawなのでFILEの履歴には載せない)。そのファイルから^Gで戻る時は、ファイルのディレクトリ(/tmp)へは移らず、起動した(ls)へ(`keep_directory_for`)。その時はインストールの案内を出さない。最初の起動(~/.usilic/historyが無い)ならHELPが先(開かない)。

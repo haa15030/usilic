@@ -65,8 +65,7 @@ def install_if_missing(env, package, out):
     if 'ok installed' in system.output(['dpkg-query', '-W', '-f=${Status}', package]):
         return
     out('apt-get install -y ' + package)
-    for line in system.output(['apt-get', 'install', '-y', package]).splitlines():
-        out(line)
+    system.stream(['apt-get', 'install', '-y', package], out)  # 長いので、出たものをその場で出す
 
 
 NONE = '0'  # -aの「0)」(STRAGEを使わない)

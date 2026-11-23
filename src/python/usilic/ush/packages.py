@@ -84,9 +84,7 @@ def install_from(env, log, record_name, out):
     if not packages:
         return False
     out('apt-get install -y ' + ' '.join(packages))
-    code, message = system.run(['apt-get', 'install', '-y'] + packages)
-    for line in message.splitlines():
-        out(line)
+    code = system.stream(['apt-get', 'install', '-y'] + packages, out)
     if code != 0:
         for p in packages:
             if system.run(['apt-get', 'install', '-y', p])[0] != 0:

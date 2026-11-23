@@ -74,13 +74,15 @@ def apt_sources_ubuntu(env, out):
         if system.exists('/etc/apt/sources.list'):
             out('mv /etc/apt/sources.list /etc/apt/sources.list.U-bak')
             system.run(['mv', '/etc/apt/sources.list', '/etc/apt/sources.list.U-bak'])
-        system.run(['apt', 'update', '-y'])
+        out('apt update -y')
+        system.stream(['apt', 'update', '-y'], out)
     elif not re.search(r'^Types:.*deb-src', text, re.M) or not re.search(r'^Components:.*universe', text, re.M):
         out('sed -i %s (deb-src, universe multiverse)' % src)
         text = re.sub(r'^Types: deb$', 'Types: deb deb-src', text, flags=re.M)
         text = re.sub(r'^Components:.*$', 'Components: main restricted universe multiverse', text, flags=re.M)
         system.write_text(src, text)
-        system.run(['apt', 'update', '-y'])
+        out('apt update -y')
+        system.stream(['apt', 'update', '-y'], out)
 
 
 def no_snap_ubuntu(env, out):
@@ -100,7 +102,8 @@ def no_snap_ubuntu(env, out):
                       'mozilla main\n')
     system.write_text('/etc/apt/preferences.d/U-mozilla',
                       'Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n')
-    system.run(['apt', 'update', '-y'])
+    out('apt update -y')
+    system.stream(['apt', 'update', '-y'], out)
 
 
 def install_standard(env, out):
