@@ -52,7 +52,7 @@ JP_LIST="task-japanese-desktop"
 # --- usilic が使うツール（usilic の最初の起動で sudo apt install を案内するもの、app/main.cpp の offerGroffInstallOnce()）
 # デスクトップのあるホストへ usilic を入れる時（-r・-d）に、無ければ入れておく（~/.usilic が前のホストから残っていると
 # usilic は「最初の起動」にならず、案内せずに「見つからない」と知らせるだけになる）
-USILIC_TOOLS="groff mg info p7zip-full w3m unzip fonts-noto-cjk"
+USILIC_TOOLS="groff mg info p7zip-full w3m unzip fonts-noto-cjk python3"
 
 # --- CtrlとCaps Lockの入れ替え（~/.xprofile、Xにログインした時）
 # rescue-USBは色々なキーボードで使うので、入れ替えるかはログインの時につながっているキーボードで決める。
@@ -1050,7 +1050,9 @@ _output_u() {
        shim-signed-common -ve \
        shim-unsigned -ve \
        linux-headers -ve \
-       linux-image | \
+       linux-image -ve \
+       ^python3 -ve \
+       ^libpython3 | \
        sed -e 's/\tinstall//' -e 's/\tpurge//'"
     local _to_u="grep -v \
        ^+++ | \
@@ -2495,9 +2497,8 @@ tm() { # -t)
     fi
 }
 
-_setup_usilic() { # usilicの環境（tools/setup-debian.sh）を作り、ビルドにだけ要るもの（RESCUE_DEV_PURGE）を外す
+_get_usilic_repo() { # usilic のリポジトリ（~/git/usilic）を取る・新しくする
     local _home=`getent passwd "$USR" | cut -d: -f6`
-    local _bin _lib _pkgs
 
     _is_inst git +
     if [ ! -d "$_home/git/usilic" ]; then
@@ -2507,6 +2508,30 @@ _setup_usilic() { # usilicの環境（tools/setup-debian.sh）を作り、ビル
         echo "git pull ($_home/git/usilic)"
         su "$USR" -c 'cd ~/git/usilic && git pull --ff-only'
     fi
+}
+
+_install_usilic_py() { # Python 版の usilic（src/python、RESCUE の ^J^R で U.sh を使う）を /usr/local/lib/usilic-py へ、usilic-py で起動
+    # （RAM-*-base.gz を作る前に入れるので、?GB-base・rescue・デスクトップのどのホストにもある。python3 は _output_u が外さない）
+    local _src=`getent passwd "$USR" | cut -d: -f6`/git/usilic/src/python
+
+    _is_inst python3 +
+    if [ ! -f $_src/usilic.py ]; then
+        echo "-u: $_src/usilic.py: not exist (usilic-py not installed). : $LINENO" >> /tmp/log.$TMP_LABEL
+        return
+    fi
+    rm -rf /usr/local/lib/usilic-py
+    mkdir -p /usr/local/lib/usilic-py
+    (cd $_src && tar cf - --exclude=__pycache__ usilic.py usilic) | tar xf - -C /usr/local/lib/usilic-py
+    printf '#!/bin/sh\nexec python3 /usr/local/lib/usilic-py/usilic.py "$@"\n' > /usr/local/bin/usilic-py
+    chmod 755 /usr/local/bin/usilic-py
+    echo "usilic-py -> /usr/local/lib/usilic-py (RESCUE: ^J^R)"
+}
+
+_setup_usilic() { # usilicの環境（tools/setup-debian.sh）を作り、ビルドにだけ要るもの（RESCUE_DEV_PURGE）を外す
+    local _home=`getent passwd "$USR" | cut -d: -f6`
+    local _bin _lib _pkgs
+
+    _get_usilic_repo || return 1
     sh "$_home/git/usilic/tools/setup-debian.sh" "$USR" $SETUP_OPT || return 1
     _bin=$_home/.local/bin/usilic
     if [ "$RESCUE_DEV_PURGE" ] && [ -x "$_bin" ]; then
@@ -2697,6 +2722,9 @@ update_base() { # -u)
         _output_u BASE.u $LINENO #_10)　BASE.u保存
         chmod 444 /opt/BASE.u
     fi
+    # Python 版の usilic（RESCUE）と python3 を、RAM-*-base.gz を作る前に（取れなくても止めない）
+    _get_usilic_repo
+    _install_usilic_py
     apt-get autoremove -y
     _output_u current.u $LINENO
     head -n5 /etc/grub.d/40_custom > /tmp/40_custom.$TMP_LABEL

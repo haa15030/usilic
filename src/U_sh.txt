@@ -149,8 +149,17 @@ debconf の問い（既定のディスプレイマネージャ等）では止ま
 #
 ⑥ -u が github から取る usilic のリポジトリ（~/git/usilic、tools/setup-debian.sh もここにある）は、非公開の間は取れません（git clone に認証が要ります）。㊿#
 #
+⑦ -u は、Python 版の usilic（src/python）を /usr/local/lib/usilic-py に入れます（RAM-*-base.gz を作る前なので、どのホストにもあります）。
+"usilic-py"^M で起動し、^J^R（RESCUE）で U.sh のオプションを一覧から選びます。
+-a・-d・-f・-n は番号の一覧から選び、引数（-s の名前等）・その後の問い（再起動するか等）・sudo のパスワードはモードラインで答えます。
+U.sh は別のプロセスで動き、出力（/tmp/usilic-rescue.log）を SHELL の tail -f で見ます（usilic を終えても U.sh は止まりません）。
+テキストのコンソール（Ctrl+Alt+F3）や ssh でも使えるので、デスクトップのホストの -d にも使えます。
+python3 は、-o -p・-e で外しません（BASE.u 等の記録に載せません）。#
+#
 ファイル⊥㊿#
 ⑦  /opt/U.sh㊿ : ⑲本体㊿#
+⑦  /usr/local/bin/usilic-py㊿ : ⑲Python 版の usilic（^J^R の RESCUE）㊿#
+⑦  /tmp/usilic-rescue.log㊿ : ⑲RESCUE で動かした U.sh の出力㊿#
 ⑦ /opt/U.opt㊿ : ⑲STRAGE・NEXT?=・SH=㊿#
 ⑦ /opt/*.u㊿ : ⑲パッケージの一覧（DEBIAN.u・BASE.u・?GB-rescue.u 等）㊿#
 ⑦/opt/U.log_日付㊿ : ⑲メッセージ㊿#

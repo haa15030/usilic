@@ -33408,6 +33408,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1345. **src/U_proto.sh: `-u`でpython3とPython版のusilic(usilic-py)を入れる、python3は外さない(usilicのRESCUEの3、2026-11-23)**
+   - 直接のユーザー依頼: 項目1343のアシスタントの手順(3. `-u`でpython3とPython版をRAM-*-baseとrescueに入れる。`/usr/local/bin/U`はU.shのまま)を「やってみて」。
+   - 変更1: `_setup_usilic`のgit clone・pullを`_get_usilic_repo`に分けた。`update_base`のBASE.uの後(RAM-*-base.gzを作る前)に、`_get_usilic_repo`(取れなくても止めない)と`_install_usilic_py`を呼ぶ。`_install_usilic_py`はpython3を入れ、~/git/usilic/src/pythonのusilic.pyとusilic/を/usr/local/lib/usilic-pyへ写し、/usr/local/bin/usilic-py(`exec python3 …/usilic.py "$@"`)を置く。
+   - 変更2: `_output_u`の`_bar`に`^python3`・`^libpython3`を足した。記録(BASE.u・DEBIAN.u・JP.u等)にも載せず、`-o -p`・`-e`・`-d`で外さない(RESCUEがその間も使えるように。前に作ったBASE.uにpython3が無くても外れない)。
+   - 変更3: `USILIC_TOOLS`にpython3(C++版のnarou2epub・url2pdf)。
+   - src/U_sh.txtに注意点⑦(usilic-pyと^J^R)とファイルを足した。
+   - 確かめたこと: `bash -n`・`dash -n`。実機の`-u`では未確認。
+
 1344. **src/python: RESCUEモード(^J^R、/opt/U.shの前に付ける画面、usilicのRESCUEの2、2026-11-23)**
    - 直接のユーザー依頼: 項目1343のアシスタントの手順(2. Python版にRESCUEモード(^J^R)。一覧は^X^Fと同じ、入力はモードライン)を「やってみて」。
    - 変更(src/python/usilic/rescue.py・application.py・prompt.py・key_bindings.py): `^J^R`(K-156、Python版だけ。C++版は156を空けておく)で、`/opt/U.sh --list`の出力から、そのホストで使えるオプションの一覧(「-a(dd_strage)」等)を出す。
