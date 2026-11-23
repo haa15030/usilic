@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1356. **src/python: U.shのPython版に-m(rescue-USBを作る)(2026-11-23)**
+   - 直接のユーザー依頼: 「このまま終わりまで行っていい」の続き。
+   - 変更: usilic/ush/usb.py(`make_usb`)。U.shと同じ手順: RAMDISKの上で/dev/sd?だけ、DEBIAN区画のあるディスクは断る、両方のディスクのマウントを外す、区画の大きさ(EFI 100MiB・BIOS boot 1MiB・ルートはROOT_GBかDEBIAN区画の大きい方・STRAGEは残りが512MiB以上なら)、足りなければ消す前にやめる、「Erase … ?」、sgdisk、ddで先頭の4MiBを最後に書いてすぐtune2fs -U random、e2fsck・resize2fs、mkfs(EFI・STRAGEはDST_STRAGE_FS)、fstab・40_customのUUIDを直し(/boot/efiの行は作り直し、スワップは#)、U.optはSTRAGE=""・NEXT?=?GB-rescue、arch-chrootでGRUBをBIOSとUEFIの両方へ(--no-nvram)、saved_entryはrescueのRAM-*。
+   - 確かめたこと: tests/test_ush.py(28件、32GBのUSB(STRAGEあり、ddの順、fstab・40_custom・U.opt・GRUB)、12GB(STRAGE無し)、5GB(消す前にやめる)、sd?でない、--listなら聞いた所で止まって消さない)。
+
 1355. **src/python: U.shのPython版に-k(カーネルの作り直し)と、-uのRAMの土台(2026-11-23)**
    - 直接のユーザー依頼: 「このまま終わりまで行っていい」の続き。
    - 変更: usilic/ush/kernel.py。-k(`kernel_remake`・`compile_kernel`=`_compile`): STRAGEのビルド用イメージ(無いかBUILD_IMG_GBより小さければ作り直す)を/opt/buildへ、build-dep、linux-sourceを/usr/srcへ(メモリがあればtmpfs)、.config(「.」は今のカーネル、「-」は配布のカーネル、数字はそのGBのRAMDISK、CONFIG_BLK_DEV_RAM_SIZE等)、make oldconfig・menuconfig(2つ目の引数が「/」なら既定の答えで、menuconfigはしない)、scripts/config、make・modules・bindeb-pkg(LOCALVERSION=+?gb等)、.debをDEBIAN区画の/optへ。-uが使う`Lap`(/opt/U_update.logの経過時間)・`update_base_image`(`_update_base`)・`ram_entry`(`_ram_entry`)・`correct_uuid`(`_correct_uuid`、-mも使う)も。

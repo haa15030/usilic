@@ -15,6 +15,7 @@ python3が無い(-uの最初の一歩)ので、U.shはそのために残る。
   save.py     -s(save_host・_save_host、-d・-uも使う)
   desktop.py  -d(desktop_select)・-e(erase_base)、ネット・Ubuntuのapt・usilicを入れる・DOT_FILES
   kernel.py   -k(kernel_remake・_compile)、-uのRAMの土台(_update_base)・起動項目・経過時間
+  usb.py      -m(make_usb、rescue-USBを作る)
   main.py     引数・ログ(/opt/U.log_日付)
 """
-PORTED = ('-a', '-c', '-d', '-e', '-f', '-k', '-n', '-o', '-s', '-v')
+PORTED = ('-a', '-c', '-d', '-e', '-f', '-k', '-m', '-n', '-o', '-s', '-v')

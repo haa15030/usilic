@@ -306,6 +306,57 @@ class UshTest(unittest.TestCase):
         code, out = run(fake(), '-k', '16')
         self.assertIn("-k: Strage-area needed ('. U -a').", out)
 
+    def usb_fake(self, usb_bytes):
+        system = fake(files={'/mnt/usb/etc/fstab': 'UUID=ROOT / ext4 errors=remount-ro 0 1\n'
+                                                   'UUID=OLDEFI /boot/efi vfat umask=0077 0 1\n/swapfile none swap sw 0 0\n',
+                             '/mnt/usb/etc/grub.d/40_custom': "menuentry 'RAM-6.12.57+4gb-base' {\n"
+                                                              "\tsearch --fs-uuid --set=root ROOT\n}\n",
+                             '/opt/U.opt': 'STRAGE=""\nSH=dash\n'})
+        system.parts['/dev/sde'] = {'TYPE': '', 'UUID': ''}
+        system.parts['/dev/sde3'] = {'TYPE': 'ext4', 'UUID': 'NEWROOT'}
+        system.parts['/dev/sde1'] = {'TYPE': 'vfat', 'UUID': 'EFI1'}
+        system.dirs.update({'/mnt/usb/dev', '/mnt/usb/proc', '/mnt/usb/sys'})
+        system.results.update({
+            'lsblk -no pkname /dev/nvme0n1p2': (0, 'nvme0n1\n'),
+            'blockdev --getsize64 /dev/nvme0n1p2': (0, '%d\n' % (10 * 1024 ** 3)),
+            'blockdev --getsize64 /dev/sde': (0, '%d\n' % usb_bytes),
+            'blockdev --getsize64 /dev/sde3': (0, '%d\n' % (14 * 1024 ** 3))})
+        return system
+
+    def test_m(self):
+        system = self.usb_fake(32 * 1000 ** 3)
+        code, out = run(system, '-m', 'sde', '--ans=Y')
+        self.assertIn('/dev/sde4:STRAGE(ext4)', out)
+        sgdisk = [c for c in system.calls if c[0] == 'sgdisk' and c[1] != '-Z'][0]
+        self.assertIn('3:0:+%dK' % (14 * 1024 * 1024), sgdisk)
+        self.assertIn('4:0:0', sgdisk)
+        dd = [c for c in system.calls if c[0] == 'dd']
+        self.assertEqual(dd[1][1:], ['if=/dev/nvme0n1p2', 'of=/dev/sde3', 'bs=4M', 'skip=1', 'seek=1', 'conv=fsync',
+                                     'status=progress'])
+        self.assertEqual(dd[2][-2:], ['count=1', 'conv=fsync'])      # 先頭の4MiBは最後に
+        fstab = system.files['/mnt/usb/etc/fstab']
+        self.assertIn('UUID=NEWROOT / ext4', fstab)
+        self.assertIn('UUID=EFI1 /boot/efi vfat', fstab)
+        self.assertNotIn('OLDEFI', fstab)
+        self.assertIn('#/swapfile none swap', fstab)
+        self.assertIn('NEWROOT', system.files['/mnt/usb/etc/grub.d/40_custom'])
+        self.assertEqual(system.files['/mnt/usb/opt/U.opt'], 'STRAGE=""\nNEXT4=4GB-rescue\nSH=dash\n')
+        chroot = [c for c in system.calls if c[:2] == ['arch-chroot', '/mnt/usb']][0]
+        self.assertIn("saved_entry=RAM-6.12.57+4gb-base", chroot[-1])
+
+    def test_m_small_and_checks(self):
+        system = self.usb_fake(12 * 1024 ** 3)
+        code, out = run(system, '-m', 'sde', '--ans=Y')
+        self.assertIn('/dev/sde3:/(rest)', out)
+        self.assertNotIn('4:0:0', [c for c in system.calls if c[0] == 'sgdisk'][-1])
+        code, out = run(self.usb_fake(5 * 1024 ** 3), '-m', 'sde', '--ans=Y')
+        self.assertIn('/dev/sde: too small for /dev/nvme0n1p2 (10240MiB).', out)
+        code, out = run(self.usb_fake(32 * 1000 ** 3), '-m', 'nvme1n1')
+        self.assertIn('nvme1n1: sd? only.', out)
+        system = self.usb_fake(32 * 1000 ** 3)
+        code, out = run(system, '-m', 'sde', '--list')                    # 聞いた所で止まる(消さない)
+        self.assertFalse(any(c[0] == 'sgdisk' for c in system.calls))
+
 
 if __name__ == '__main__':
     unittest.main()

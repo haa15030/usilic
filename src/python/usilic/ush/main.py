@@ -10,6 +10,7 @@ from .packages import output_u
 from .save import save
 from .desktop import desktop_select, erase_base
 from .kernel import kernel_remake
+from .usb import make_usb
 from .system import System
 
 
@@ -115,6 +116,8 @@ def run(argv, system=None, uname=None, out=None):
             erase_base(env, log, option, ask, out)
         elif option == '-k':
             kernel_remake(env, log, option, args, out)
+        elif option == '-m':
+            make_usb(env, log, option, args, ask, out)
     except MountError:
         code = 1
     if option not in ('-v', '-a', '-f'):  # U.shのmainの最後: マウントしたものを外す(-v・-a・-fは見るために残す)
