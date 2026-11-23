@@ -1113,13 +1113,13 @@ _output_u() {
 	if [ "`$_diff`" ]; then
 	    # dpkg --purge は依存関係を解かない。残す側（$1 にあるもの）が要しているもの（Depends や、mail-transport-agent の
 	    # ような仮想パッケージ）は「dependency problems」で外さずに残す。外すもの同士の順番の都合で残ったものは、
-	    # もう一度やれば外れるので3回まで（減らなくなったらやめる）。それでも残ったものは、dpkg の理由（〜 depends on 〜）と一緒にログへ
+	    # もう一度やれば外れるので10回まで（減らなくなったらやめる。依存が python3-pil→libraqm0→libharfbuzz0b→libgraphite2-3 のように深いと3回では残った）。それでも残ったものは、dpkg の理由（〜 depends on 〜）と一緒にログへ
 	    # （記録に載せないもの（_bar の grep -v、shim-signed-common 等）が要しているものも残る。例: Debian 13 の openssl）
 	    _try=0
 	    _pkgs=`echo "$_diff | $_to_u | tr '\n' ' '" | sh`
 	    _pkgs=`echo $_pkgs`
 	    _prev=""
-	    while [ "$_pkgs" ] && [ "$_pkgs" != "$_prev" ] && [ "$_try" -lt 3 ]
+	    while [ "$_pkgs" ] && [ "$_pkgs" != "$_prev" ] && [ "$_try" -lt 10 ]
 	    do
 		echo "dpkg --purge $_pkgs"
 		LC_ALL=C dpkg --purge $_pkgs 2>&1 | tee /tmp/purge.$TMP_LABEL # ログの理由を英語のまま grep するため

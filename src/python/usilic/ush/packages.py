@@ -52,7 +52,7 @@ def write_record(env, log, name, lines, out, option='-o'):
 
 def purge_to(env, log, record_name, out):
     """記録へ戻す(-p): 記録に無いものをdpkg --purge。dpkg --purgeは依存関係を解かないので、残す側が要しているものは
-    「dependency problems」で外さずに残る。外すもの同士の順番の都合で残ったものは、もう一度やれば外れるので3回まで
+    「dependency problems」で外さずに残る。外すもの同士の順番の都合で残ったものは、もう一度やれば外れるので10回まで(依存が深いと3回では残った)
     (減らなくなったらやめる)。それでも残ったものは、dpkgの理由と一緒にログへ。外したかどうか(True)を返す。"""
     system = env.system
     record = system.read_text('/opt/' + record_name)
@@ -64,7 +64,7 @@ def purge_to(env, log, record_name, out):
     if not packages:
         return False
     previous, tries, reasons = None, 0, []
-    while packages and packages != previous and tries < 3:
+    while packages and packages != previous and tries < 10:
         out('dpkg --purge ' + ' '.join(packages))
         reasons = []  # 長い(数百のパッケージ)ので、出たものをその場で出しながら、ログ用に取っておく
 

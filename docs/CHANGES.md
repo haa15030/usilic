@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1368. **src/U_proto.sh・src/python: 記録へ戻す`dpkg --purge`のやり直しを3回から10回まで(2026-11-24)**
+   - 直接のユーザーの話: Ubuntuで-uをやり直した後のU.logに「-o DEBIAN.u -p: not purged: … libdeflate0 libfribidi0 libgraphite2-3 libharfbuzz0b … libwebp7 …」と、それが外れなかった理由(python3-pil・libraqm0・libharfbuzz0b・libtiff6等が要している)が出た。
+   - 原因: dpkg --purgeは依存関係を解かないので、外すもの同士で要しているものは1回では外れず、やり直しで1段ずつ外れる。rescueが入れたpython3-pil→libraqm0→libharfbuzz0b→libgraphite2-3のように依存が深いと、3回では残った。
+   - 変更: 減らなくなるまで、10回までやり直す(減らなくなればやめるのは今まで通り)。
+   - 確かめたこと: tests/test_ush.py。`bash -n`・`dash -n`。
+
 1367. **src/U_proto.sh・src/python: UbuntuでもDEBIAN.u(入れたばかりの状態の記録)を作る。Python版は記録が無い時に戻さない(2026-11-23)**
    - 直接のユーザーの話: 8GB-rescue.*も消してから-uをやり直す話の後、「DEBIAN.uとはubuntu.uのこと？」
    - 調べたこと: DEBIAN.u(最初にU.shを動かした時の、入れたばかりの状態の記録)は、Debianの時だけ作っていた(wgetを外すのと同じ条件の中)。-uはBASE.uが無い時にDEBIAN.uへ戻してからBASEを作るが、Ubuntuでは記録が無く、U.shの`_output_u`は「not exist」で何もしない。そのため、rescue(setup-debian.sh等)が入れたものが残ったままBASE.uになる。さらにPython版の`purge_to`・`install_from`は、記録が無い時に空の記録として扱い、`purge_to`は今あるものを全部dpkg --purgeしようとする作りだった(危ない)。
