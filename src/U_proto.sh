@@ -183,6 +183,23 @@ ctrl:swapcaps"
         rm -f /tmp/kxkbrc.$TMP_LABEL
         chown $USR:$USR $_kx
     fi
+    # /etc/dconf/db/local.d/00-U-swapcaps　GNOME（Wayland のセッション）も ~/.xprofile・kxkbrc を読まない。
+    # gsettings の org.gnome.desktop.input-sources xkb-options の、システム全体の既定として書く（ユーザーが自分で設定していればそちらが優先）。
+    # 入れ替えるかは kxkbrc と同じく、この時（起動の時）につながっているキーボードで決める
+    if [ "$NOSWAP_KBD" ] && command -v dconf > /dev/null 2>&1; then
+        mkdir -p /etc/dconf/profile /etc/dconf/db/local.d
+        if [ ! -f /etc/dconf/profile/user ]; then
+            printf 'user-db:user\nsystem-db:local\n' > /etc/dconf/profile/user
+        elif ! grep -qx 'system-db:local' /etc/dconf/profile/user; then
+            echo 'system-db:local' >> /etc/dconf/profile/user
+        fi
+        if grep -qiE "^N: Name=\".*($NOSWAP_KBD)" /proc/bus/input/devices 2>/dev/null; then
+            rm -f /etc/dconf/db/local.d/00-U-swapcaps
+        else
+            printf "[org/gnome/desktop/input-sources]\nxkb-options=['ctrl:swapcaps']\n" > /etc/dconf/db/local.d/00-U-swapcaps
+        fi
+        dconf update
+    fi
 
     # ~/.config/autostart/light-locker.desktop　light-locker（画面ロック）を起動しない（/etc/xdg/autostart の同名ファイルを打ち消す）
     mkdir -p /home/$USR/.config/autostart
