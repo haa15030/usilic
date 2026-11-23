@@ -79,13 +79,8 @@ readonly SMBFS=""
 #readonly MNTS=""
 readonly MNTS="ubuntu"
 #
-# --- /opt/U.sh に変更がある場合、差分を表示 ->
-# 『Patch now? (Y/n):』に'y'[Enter] ->
-# $MNT_DEBIAN/opt/U.shに変更を反映
-# 下記は差分表示に使用するコマンドとオプション
-# コメントアウトで差分記録なし
-#
-readonly DIFF_SH="diff -ru"
+# --- RAMDISK の上で /opt/U.sh を書き換えたら、$MNT_DEBIAN/opt/U.sh へも写すこと（写さないと再起動で消える）
+# （以前の差分の記録（U.diff・「Patch now?」）は廃止。書き換えた直後だと記録されないことがあり、more の表示も扱いにくかった）
 
 # マニュアル　第3章　注意点③
 #
@@ -564,8 +559,29 @@ _die() { # ログ（/tmp/log.*、$1 があれば足す）を出して U.sh を�
 	echo "$1" >> /tmp/log.$TMP_LABEL
     fi
     cd /opt
-    grep -v '^ : ' /tmp/log.$TMP_LABEL | sed '/^$/d' | tee -a /opt/U.log_`date "+%F"`
+    grep -v '^ : ' /tmp/log.$TMP_LABEL | sed '/^$/d' > /tmp/tmp.$TMP_LABEL
+    _save_log /tmp/tmp.$TMP_LABEL
     exit 1
+}
+
+_save_log() { # ログ $1 を出して /opt/U.log_日付 へ足す。RAMDISK なら DEBIAN区画の /opt/U.log_日付 へも（再起動で消えないように）
+    local _log=U.log_`date "+%F"` _mounted=""
+
+    if [ ! -s $1 ]; then
+        return
+    fi
+    cat $1 | tee -a /opt/$_log
+    if [ "$ON_RAMDISK" ]; then
+        if mountpoint -q $MNT_DEBIAN; then
+            _mounted=y
+        elif ! _fs_try $LINENO mount $MNT_DEBIAN > /dev/null 2>&1; then
+            return
+        fi
+        cat $1 >> $MNT_DEBIAN/opt/$_log
+        if [ ! "$_mounted" ]; then
+            umount $MNT_DEBIAN
+        fi
+    fi
 }
 
 _is_mounted() { # $1（マウントポイントか区画のデバイス名）がマウントされていれば真（/etc/mtab の文字列の一部ではなく、ちょうど同じもの）
@@ -1442,7 +1458,7 @@ make_usb() { # -m)
     _correct_uuid /mnt/usb/etc/fstab $DEBIAN_ROOT_PART $_DST_ROOT_PART $_DST_EFI_PART || return
     sed -i /mnt/usb/etc/fstab -e '/^[^#].*[[:space:]]swap[[:space:]]/s/^/#/' # SSDのスワップはUSBには無い
     _correct_uuid /mnt/usb/etc/grub.d/40_custom $DEBIAN_ROOT_PART $_DST_ROOT_PART || return
-    rm -f /mnt/usb/opt/U.opt /mnt/usb/opt/U.diff
+    rm -f /mnt/usb/opt/U.opt /mnt/usb/opt/U.diff # U.diff は以前の版が残したもの
     printf 'STRAGE=""\nNEXT%s=%sGB-rescue\nSH=%s\n' $RESCUE_GB $RESCUE_GB $SH > /mnt/usb/opt/U.opt
     _fs $LINENO mount $_DST_EFI_PART /mnt/usb/boot/efi
     _rescue_entry=`_entry_titles /mnt/usb | grep "^RAM-.*+${RESCUE_GB}gb-base$" | tail -n1`
@@ -1766,49 +1782,6 @@ erase_base() { # -e)
     ls -l /opt | grep -v total
 }
 
-_diff_sh() { # RAMDISK稼働中（バックグラウンド）: /opt/U.shが書き換えられたら$MNT_DEBIAN/opt/U.diffへ差分を、ログの増えた分も$MNT_DEBIAN/optへ
-    # （$MNT_DEBIAN/opt/U.sh 自体は書き換えない。差分を見てSSD側へ反映するかを決める）
-    local _log _mounted _stamp=/tmp/diff_sh.$TMP_LABEL
-
-    if [ ! "$DIFF_SH" ]; then
-        return
-    fi
-    touch -r /opt/U.sh $_stamp # 最後に見た /opt/U.sh の時刻
-    while [ -f "/opt/BASE.u" ]
-    do
-        # /opt で一番新しいのが U.sh か、で見ると、書き換えた直後（5秒以内）に . U を実行して
-        # U.log_* が後から書かれた時に見落とす。U.sh の時刻だけを見る
-        while [ ! /opt/U.sh -nt $_stamp ]
-        do
-            sleep 5
-        done
-        touch -r /opt/U.sh $_stamp
-        # 元からマウントされていれば外さない（-s 等が $MNT_DEBIAN へ書いている途中で外すと、
-        # その後の書き込みが ram0 の /mnt/debian へ行って RAMDISK が溢れる）
-        if mountpoint -q $MNT_DEBIAN; then
-            _mounted=y
-        else
-            _mounted=""
-            _fs $LINENO mount $MNT_DEBIAN
-        fi
-        if [ ! "`$DIFF_SH $MNT_DEBIAN/opt/U.sh /opt/U.sh | tee $MNT_DEBIAN/opt/U.diff`" ]; then
-            rm -f $MNT_DEBIAN/opt/U.diff /opt/U.diff
-        else
-            cp $MNT_DEBIAN/opt/U.diff /opt
-        fi
-        for _log in /opt/U.log_*
-        do
-            if [ -s "$_log" ]; then
-                cat $_log >> $MNT_DEBIAN/opt/${_log##*/}
-                cat /dev/null > $_log
-            fi
-        done
-        if [ ! "$_mounted" ]; then
-            _fs $LINENO umount $MNT_DEBIAN
-        fi
-    done
-}
-
 kernel_remake() { # -k)
     if ( [ "$ON_NONE" ] || [ "$ON_RAMDISK" ] ) && [ "$mnt_strage" = "$MNT_DEBIAN" ]; then # $BUILD.img を展開する場所
         echo "$1: Strage-area needed ('. U -a'). : $LINENO" >> /tmp/log.$TMP_LABEL
@@ -2075,7 +2048,6 @@ EOF
         _put_usilic -r
     fi
     cd /opt
-    _diff_sh &
 }
 
 _save_host() {
@@ -3156,25 +3128,6 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
     if [ "$_NEW_KERNEL_LIST" ] && [ "$mnt_strage" = "$MNT_DEBIAN" ]; then
 	echo "To update 'RAM-`echo $_NEW_KERNEL_LIST | awk -Flinux-image- '{print $2}' | awk -F_ '{print $1}'`-base.gz', please setup strage-area."
     fi
-    if [ "$DIFF_SH" ] && [ -f "/opt/U.diff" ]; then
-	_fs $LINENO mount $MNT_DEBIAN
-	if [ "$PAGER" = "less" ]; then
-	    LANG=ja_JP.UTF-8 # コメント欄にある日本語コードのバイナリ解釈を回避
-	fi
-	$PAGER $MNT_DEBIAN/opt/U.diff
-	read -p "Patch now? (Y/n): " _yn
-	if [ ! "$_yn" ] || [ "$_yn" = "Y" ] || [ "$_yn" = "y" ]; then
-	    _is_inst patch +
-	    patch -d $MNT_DEBIAN/opt < $MNT_DEBIAN/opt/U.diff
-	    rm -f $MNT_DEBIAN/opt/U.diff
-	    if [ -L $MNT_DEBIAN ]; then
-		echo "-> /opt/U.sh"
-	    else
-		echo "-> $MNT_DEBIAN/opt/U.sh"
-		rm -f /opt/U.diff
-	    fi
-	fi
-    fi
     cat /dev/null > /tmp/mess.$TMP_LABEL
     if [ "$1" ]; then
 	_option=$1
@@ -3322,9 +3275,7 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
     fi
     grep -v '^ : ' /tmp/log.$TMP_LABEL > /tmp/tmp.$TMP_LABEL
     sed '/^$/d' < /tmp/tmp.$TMP_LABEL > /tmp/log.$TMP_LABEL
-    if [ -s /tmp/log.$TMP_LABEL ]; then 
-	cat /tmp/log.$TMP_LABEL | tee -a /opt/U.log_`date "+%F"`
-    fi
+    _save_log /tmp/log.$TMP_LABEL
 }
 
 main $1 $2 $3 $4 $5

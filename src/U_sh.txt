@@ -128,7 +128,9 @@ debconf の問い（既定のディスプレイマネージャ等）では止ま
 #
 注意点            ㊿：⑲⊥㊿#
 #
-⑧① RAMDISK の上で /opt/U.sh を書き換えると、DEBIAN区画の /opt/U.diff に差分が残り、次に ". U"^M とした時に表示して「Patch now?」と聞きます。#
+⑧① RAMDISK の上で /opt/U.sh を書き換えたら、DEBIAN区画の /mnt/debian/opt/U.sh へも写します（写さないと、再起動で元に戻ります）。
+例: "sudo cp /opt/U.sh /mnt/debian/opt"^M（/mnt/debian は ". U -v" 等でマウントされている時）。
+ログ（/opt/U.log_日付）は、U.sh が終わる時に DEBIAN区画の /opt へも足します。#
 #
 ② -m は区画ごと dd で写します。
 途中で止まっても USB 側に DEBIAN区画と同じ UUID の区画が残らないよう、先頭を最後に書いてすぐ UUID を変えます。#
