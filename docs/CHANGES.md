@@ -33408,6 +33408,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1349. **src/python: RESCUEの-fでsudoのパスワードを聞かなかった、^X^Dの一覧で打った「/media」が「~//media」になった(2026-11-23)**
+   - 直接のユーザー報告1: -fでは「sudo: パスワードが必要です」と出るのに、SHELLのプロンプトに戻ってしまうので入れられず、マウントされない。
+   - 原因1: sudoの覚えたパスワードは端末ごと(timestamp_type=tty)。usilicの端末で前にsudoしていると、`sudo -n true`が通るので、パスワードを聞かなかった。U.shを動かす別のセッション(端末が無い)の`sudo -n`は通らない。
+   - 変更1: `rescue.need_password()`の`sudo -n true`も、別のセッション(`start_new_session=True`)で確かめる。
+   - 直接のユーザー報告2: /media/usilic/9758-DF4Aがマウントされていたので、^X^Dで/mediaと打って^Mしたら、/home/usilic//media/は無いと言われた。C++版では直っているはずのバグ。
+   - 原因2: 一覧で字を打つと、選んでいた項目(/home/usilic/)に続けて打つ。C++版のPathResolver::resolve()は、途中の「//」から後を打ち直したパスとみなす(emacsと同じ)が、Python版の`resolve_path()`はそうしていなかった。
+   - 変更2: `resolve_path()`をC++に合わせた(途中の「//」・「~/」から後、末尾の「/~」は「~」)。
+   - 確かめたこと: `resolve_path()`を/home/usilic/を基準に、「/home/usilic//media」→/media、「sub」→/home/usilic/sub、「x/~/doc」→~/docで。tests/test_rescue。Linuxの実機では未確認。
+
 1348. **src/python: RESCUEの後のSHELLでtail -fが終わらなかった、-vは出力をFILEで(2026-11-23)**
    - 直接のユーザー報告: ^J^Rの後に-vを選んだ後のSHELLでは、qが利かない。
    - 原因: RESCUEはU.shを`subprocess.Popen`で動かし、待ち取っていなかったので、U.shが終わってもゾンビとして残った。SHELLの`tail --pid=PID -f`はゾンビを生きているとみなすので、いつまでも終わらずプロンプトが戻らなかった(qはtailへの入力になるだけ)。

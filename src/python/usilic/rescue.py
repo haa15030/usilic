@@ -82,9 +82,12 @@ def need_password():
     """sudoにパスワードが要るか(rootなら要らない、sudo -nで確かめる)。"""
     if os.geteuid() == 0:
         return False
+    # 2026-11-23、直接のユーザー報告(-fで「sudo: パスワードが必要です」と出てSHELLのプロンプトに戻り、マウントされない):
+    # sudoの覚えたパスワードは端末ごと(timestamp_type=tty)なので、usilicの端末ではsudo -nが通っても、別のセッション
+    # (start()、端末が無い)のsudo -nは通らない。確かめる時も別のセッションで。
     try:
         return subprocess.run(['sudo', '-n', 'true'], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL, timeout=10).returncode != 0
+                              stderr=subprocess.DEVNULL, timeout=10, start_new_session=True).returncode != 0
     except (OSError, subprocess.TimeoutExpired):
         return True
 

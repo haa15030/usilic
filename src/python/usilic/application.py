@@ -1146,8 +1146,23 @@ class Application:
 
     # --- ファイルを開く ---
     def resolve_path(self, text, base=None):
-        """入力のパス: ~は家、相対は(ls)のディレクトリ基準。"""
-        text = os.path.expanduser(text.strip())
+        """入力のパス: ~は家、相対は(ls)のディレクトリ基準(C++のPathResolver::resolve())。"""
+        text = text.strip()
+        # 2026-11-23、直接のユーザー報告(^X^Dの一覧で/mediaと打つと「/home/usilic//media/が無い」): 一覧から打ち始めると、
+        # 選んでいた項目(/home/usilic/)に続けて打つ。C++と同じく、途中の「//」・「~/」から後を打ち直したパスとみなす。
+        # 末尾の「/~」は「~」(legacyのM_ldir・M_lfile)。
+        if text.endswith('/~'):
+            text = '~'
+        home = os.path.expanduser('~')
+        if text == '~':
+            text = home
+        elif text.startswith('~/'):
+            text = home + text[1:]
+        elif '~/' in text:
+            text = home + text[text.find('~/') + 1:]
+        double = text.rfind('//')
+        if double >= 0:
+            text = text[double + 1:]
         if not os.path.isabs(text):
             text = os.path.join(base or self.directory_mode.current_directory or os.getcwd(), text)
         return os.path.normpath(text) + ('/' if text.endswith('/') and len(text) > 1 else '')
