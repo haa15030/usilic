@@ -141,7 +141,8 @@ debconf の問い（既定のディスプレイマネージャ等）では止ま
 ④ KDE（Wayland）では、Ctrl と Caps Lock の入れ替えを ~/.xprofile ではなく ~/.config/kxkbrc に、GNOME では dconf のシステムの既定に書きます。
 どちらもログインの時に読むので、書いた後はログインし直すと効きます。#
 #
-⑤ デスクトップのあるホストを起動すると、ホームに usilic が無ければ DEBIAN区画でビルドしたものを入れ、足りないライブラリも入れます（前の -i の代わり）。#
+⑤ デスクトップのあるホストを起動すると、ホームに usilic が無ければ DEBIAN区画でビルドしたものを入れ、足りないライブラリと、usilic が使うツール（USILIC_TOOLS）も入れます（前の -i の代わり）。
+ログインすると usilic（-g）が出るよう、~/.config/autostart にも置きます。#
 #
 ⑥ -u が github から取る usilic のリポジトリ（~/git/usilic、tools/setup-debian.sh もここにある）は、非公開の間は取れません（git clone に認証が要ります）。㊿#
 #

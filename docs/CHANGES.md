@@ -33408,6 +33408,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1341. **src/U_proto.sh: デスクトップのホストに、usilicが使うツールと、ログインした時のusilicの自動起動も入れる(2026-11-23)**
+   - 直接のユーザー報告1: ~/.usilicはデスクトップ間でも共有されるので、最初のHELPが出ないまま、mg・w3m・notoフォントが足りないというメッセージが出る。マウスに触っただけで消えるのは不親切。最初のHELPの起動と同じように、SHELLに移ってsudoの入力待ちでインストールしたほうがいい(なぜそうなっていないのか)。
+   - 答え: usilicがインストールを入力欄に置くのは、最初の起動(~/.usilic/historyが無い)と、その次の起動で1回だけ。ほかの起動では見つからないものを知らせるだけ(2026-11-04のユーザー依頼、FreeBSDでsudoが無かった件で決めた)。項目1339の`-d`は、前のデスクトップのホーム(~/.usilic)を残したまま入れるので、2つ目からのデスクトップでは最初の起動にならない。
+   - 変更1: `USILIC_TOOLS`(groff mg info p7zip-full w3m unzip fonts-noto-cjk、app/main.cppのofferGroffInstallOnce()のLinuxの一覧)を足した。`_put_usilic`(`-r`・`-d`)で、入っていないものを`apt-get install`する。
+   - 直接のユーザー提案2: デスクトップによって、ログインした後にターミナルが出たり出なかったりする。それなら、いつもusilicが出るほうがいいのでは。ターミナルが出るなら横にでも。
+   - 変更2: `_put_usilic`で、~/.local/share/applications/usilic.desktopを~/.config/autostartへ写す(どのデスクトップでも、ログインするとusilic -gが出る)。「横に」並べる位置は決めていない(Waylandではアプリが窓の位置を決められない。X11でもウィンドウマネージャによる)。
+   - src/U_sh.txtの注意点⑤に足した。
+   - 確かめたこと: `bash -n`・`dash -n`。
+
 1340. **src/U_proto.sh: `_diff_sh`(U.diff・「Patch now?」)を廃止、ログは終わる時にDEBIAN区画へも(2026-11-23)**
    - 直接のユーザー報告と判断: sshで/opt/U.shを上書きした後、デスクトップのSHELLで`. U -f`等とすると、変わった所が`more`で出て、端末の設定に対応していないSHELLでは扱いにくい。前に指摘があった通り、書き換えた直後に動かすと差分が出ないこともある。U.shを変えたら/mnt/debian/opt/U.shへも写すことをマニュアルに書いた上で、`_diff_sh()`は削除でいい。
    - 変更: `_diff_sh`(rc_local_onlyのバックグラウンド)・`DIFF_SH`・mainの始めのU.diffの表示と`patch`を外した。`_diff_sh`がしていた、ログ(/opt/U.log_日付)をDEBIAN区画へ写すことは、`_save_log`(`_die`とmainの最後)で、終わる時にDEBIAN区画の/opt/U.log_日付へも足す形にした(マウントされていなければ、マウントして足して外す)。

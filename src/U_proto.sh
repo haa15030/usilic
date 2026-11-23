@@ -49,6 +49,11 @@ RESCUE_LIST_NOREC="emacs-nox"
 # デスクトップの一覧は、Debian では tasksel の *-desktop、Ubuntu では下の「Ubuntu用の設定」の DESKTOP_LIST
 JP_LIST="task-japanese-desktop"
 
+# --- usilic が使うツール（usilic の最初の起動で sudo apt install を案内するもの、app/main.cpp の offerGroffInstallOnce()）
+# デスクトップのあるホストへ usilic を入れる時（-r・-d）に、無ければ入れておく（~/.usilic が前のホストから残っていると
+# usilic は「最初の起動」にならず、案内せずに「見つからない」と知らせるだけになる）
+USILIC_TOOLS="groff mg info p7zip-full w3m unzip fonts-noto-cjk"
+
 # --- CtrlとCaps Lockの入れ替え（~/.xprofile、Xにログインした時）
 # rescue-USBは色々なキーボードで使うので、入れ替えるかはログインの時につながっているキーボードで決める。
 # 名前（/proc/bus/input/devices の N: Name=）がこれに合うキーボード（最初からAの左がCtrl）がつながっていれば入れ替えない。
@@ -1657,7 +1662,7 @@ _usilic_libs() { # $2 の usilic に足りないライブラリ（ldd の not fo
 }
 
 _put_usilic() { # DEBIAN区画でビルドした usilic（~/.local）を RAMDISK のホームへ入れる（$1 オプション）。ライブラリが足りなければ入れる
-    local _home=/home/$USR _src=$MNT_DEBIAN/home/$USR _rc _i
+    local _home=/home/$USR _src=$MNT_DEBIAN/home/$USR _rc _i _tools="" _libs
     local _line='PATH=$HOME/.local/bin:$PATH; export PATH'
     local _files=".local/bin/usilic .local/lib/usilic .local/share/applications/usilic.desktop .local/usilic-web"
 
@@ -1679,7 +1684,20 @@ _put_usilic() { # DEBIAN区画でビルドした usilic（~/.local）を RAMDISK
         command -v update-desktop-database > /dev/null 2>&1 && update-desktop-database $_home/.local/share/applications
         echo "$1: usilic -> $_home/.local : $LINENO" >> /tmp/log.$TMP_LABEL
     fi
-    if [ "`ldd $_home/.local/bin/usilic 2>/dev/null | grep 'not found'`" ]; then
+    # ログインした時に usilic（-g）を出す（デスクトップによって端末が出たり出なかったりするので、usilic は必ず）
+    if [ -f $_home/.local/share/applications/usilic.desktop ]; then
+        mkdir -p $_home/.config/autostart
+        cp $_home/.local/share/applications/usilic.desktop $_home/.config/autostart
+        chown -R $USR:$USR $_home/.config/autostart
+    fi
+    for _i in $USILIC_TOOLS
+    do
+        if [ ! "`_is_inst $_i`" ]; then
+            _tools="$_tools $_i"
+        fi
+    done
+    _libs=`ldd $_home/.local/bin/usilic 2>/dev/null | grep 'not found'`
+    if [ "$_tools" ] || [ "$_libs" ]; then
         # （アイコンから起動すると、端末からと違って「shared libraries」のメッセージも出ずに何も起きない）
         for _i in `seq 1 30` # rc.local はネットにつながる前に動くことがある
         do
@@ -1688,6 +1706,17 @@ _put_usilic() { # DEBIAN区画でビルドした usilic（~/.local）を RAMDISK
             fi
             sleep 2
         done
+    fi
+    if [ "$_tools" ]; then
+        echo "$1: usilic:$_tools -> install : $LINENO" >> /tmp/log.$TMP_LABEL
+        echo "apt-get install -y$_tools"
+        if ! apt-get install -y $_tools < /dev/null; then
+            apt-get update -y
+            apt-get install -y $_tools < /dev/null
+        fi
+        apt-get clean
+    fi
+    if [ "$_libs" ]; then
         echo "$1: usilic: missing libraries -> install : $LINENO" >> /tmp/log.$TMP_LABEL
         _usilic_libs $1 $_home/.local/bin/usilic
     fi
