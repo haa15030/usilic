@@ -33408,6 +33408,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1353. **src/python: U.shのPython版に-s(save_host・_save_host)(2026-11-23)**
+   - 直接のユーザー依頼: 「このまま終わりまで行っていい」の続き。
+   - 変更: usilic/ush/save.py。U.shと同じ手順(ベースのホストへ「.」で保存しない、名前の付け方(「.」・「名前 .」で上書き、無ければ?GB-名前、NONE-KERNELはrescue、UbuntuのSSDは「+」)、STRAGEが無ければrescueだけ、USBメモリのDEBIAN区画でSTRAGEが無いrescueは断る、/usr/srcを外す、apt-get clean、イメージの大きさ(NONE-KERNELは使用量×1.1+100MB、RAMDISKは/とSHM_LISTのtmpfsの使用量×1.1)、保存先(rescueはDEBIAN区画、他はSTRAGE)と作る場所、rescueの上書きの控え(.BAK.imgか.BAK.gz、失敗したら戻す)、空き、tmpfsかSTRAGEの上でtruncate+mkfs.ext4+ループ、tarでモジュールとIMG_EXCLUDEを除いて写す、RAMDISKの骨組み(`tmp_debian`、etc/fstabの書き換え)、RAMDISKに収まるかの確かめ)。`tmpfs_size`・`ramdisk_cap_kb`・`restore_bak`・`on_usb`も。-d・-uもこれを使う。
+   - env.py: U.shの設定(IMG_EXCLUDE・RAMDISK_MARGIN_KB・WORK_AREA・SHM_LIST)を今の/opt/U.shから、RAMDISK_GB・RESCUE_GB・DEBIAN_ROOT_PART。作業の場所は/tmp/ush.PID(U.shの/tmp/〜.$TMP_LABEL)。
+   - main.py: U.shのmainの最後と同じく、-v・-a・-f以外は終わる時にDEBIAN区画・/boot/efi・/opt/build・STRAGEを外し、作業の場所を消す。
+   - system.py: `shell`(sh -c、*の展開・パイプ)・`stream`(長いコマンドの出力を1行ずつ)。FakeSystemはtmpfs・ループのマウント、dfのマウントポイントの下、コマンド行ごとの答え。
+   - 確かめたこと: tests/test_ush.py(22件、-sの新しい名前(tmpfsの上で作り、モジュールを除いてtar、RAMDISKの骨組みのfstab、STRAGEへmv)・同じ名前があれば断る・ベースのホストへ「.」・STRAGEが無い・空きが足りない(/と/homeのtmpfsの使用量×1.1))。
+
 1352. **src/python: U.shのPython版に-o・-c(2026-11-23)**
    - 直接のユーザー依頼: 「このまま終わりまで行っていい。よろしく。」(U.shの残りのオプションを全部Python版へ)。
    - 変更: usilic/ush/packages.py(-o、`_output_u`)。記録の形はU.shと同じ(dpkg --get-selectionsから、カーネル・GRUB・shim・mokutil・os-prober・python3等を除き「\tinstall」を消した行)で、U.shが作ったBASE.u・DEBIAN.u等をそのまま使える。比べるのはパッケージ名で。「-o 名前」記録、「.」はホスト名.u、「-o 名前 -p」記録に無いものをdpkg --purge(3回まで、残ったものはdpkgの理由と一緒にログへ)、「-o 名前 -i」記録にあって無いものをapt-get install(止まったら1つずつ)、戻した・足した後はcurrent.u。BASE.u・DEBIAN.uは無い時だけ作る。RAMDISKならDEBIAN区画の/optへも。

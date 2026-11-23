@@ -8,14 +8,29 @@ import subprocess
 
 
 class System:
-    def run(self, argv, input_text=None):
+    def run(self, argv, input_text=None, cwd=None):
         """argvを動かし(終わるまで待つ)、(終わりの値, 標準出力+標準エラー出力)。動かせなければ(127, 理由)。"""
         try:
             result = subprocess.run(argv, input=input_text.encode() if input_text is not None else None,
-                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=cwd)
         except OSError as e:
             return 127, str(e)
         return result.returncode, result.stdout.decode('utf-8', 'replace')
+
+    def shell(self, command, cwd=None):
+        """sh -c command(*の展開・パイプの要るもの、tarでイメージを作る等)。(終わりの値, 出力)。"""
+        return self.run(['sh', '-c', command], cwd=cwd)
+
+    def stream(self, argv, out, cwd=None):
+        """argvを動かし、出力を1行ずつoutへ(apt-get・コンパイル等、長いもの)。終わりの値。"""
+        try:
+            proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=cwd)
+        except OSError as e:
+            out(str(e))
+            return 127
+        for raw in proc.stdout:
+            out(raw.decode('utf-8', 'replace').rstrip('\n'))
+        return proc.wait()
 
     def output(self, argv):
         """argvの標準出力(失敗しても、出たものを返す)。"""
@@ -148,16 +163,33 @@ class FakeSystem(System):
         self.packages = list(packages)   # 入っているパッケージ(dpkg --get-selections)
         self.held = set(held)            # dpkg --purgeで外れないもの(残す側が要している)
         self.hostname = hostname
+        self.shell_results = {}          # sh -cの頭の文字列 -> (終わりの値, 出力)
+        self.results = {}                # コマンド行(空白でつないだもの) -> (終わりの値, 出力)(先に見る)
 
     def euid(self):
         return self._euid
 
     # --- コマンド
-    def run(self, argv, input_text=None):
+    def shell(self, command, cwd=None):
+        self.calls.append(['sh', '-c', command] + (['(cwd=%s)' % cwd] if cwd else []))
+        for prefix, (code, text) in self.shell_results.items():
+            if command.startswith(prefix):
+                return code, text
+        return 0, ''
+
+    def stream(self, argv, out, cwd=None):
+        code, text = self.run(argv)
+        for line in text.splitlines():
+            out(line)
+        return code
+
+    def run(self, argv, input_text=None, cwd=None):
         self.calls.append(list(argv))
         while argv and (argv[0] == 'env' or '=' in argv[0]):  # env LC_ALL=C 〜
             argv = argv[1:]
         name = argv[0]
+        if ' '.join(argv) in self.results:
+            return self.results[' '.join(argv)]
         if name == 'hostname':
             return 0, self.hostname + '\n'
         if name == 'dpkg' and argv[1:2] == ['--get-selections']:
@@ -186,8 +218,9 @@ class FakeSystem(System):
                 return 0, ''
             return 32, 'umount: %s: not mounted.' % target
         if name == 'df':
-            path = argv[-1]
-            dev = self.mounted.get(path)
+            path = argv[-1].rstrip('/') or '/'
+            under = [m for m in self.mounted if path == m or path.startswith(m.rstrip('/') + '/')]
+            dev = self.mounted.get(max(under, key=len)) if under else None
             kb = self.parts.get(dev, {}).get('free_kb', 0)
             return 0, 'Filesystem 1K-blocks Used Available Use%% Mounted on\n%s 1 1 %d 1%% %s\n' % (dev, kb, path)
         if name == 'ls':
@@ -229,6 +262,10 @@ class FakeSystem(System):
         source = args[-2] if len(args) >= 2 else None
         options = args[args.index('-o') + 1] if '-o' in args else ''
         dev = None
+        if ('-t' in args and args[args.index('-t') + 1] == 'tmpfs') or 'loop' in options.split(','):
+            self.mounted[target] = source  # tmpfs・ループ(イメージ)
+            self.dirs.add(target)
+            return 0, ''
         if source and source.startswith('UUID='):
             for d, info in self.parts.items():
                 if info['UUID'] == source[5:]:

@@ -69,6 +69,27 @@ class Env:
             self.debian_root_uuid = self.fstab_uuid('/')
         else:
             self.debian_root_uuid = system.output(['findmnt', '-no', 'UUID', '/']).strip()
+        def conf(name, default):  # 利用者が書き換える設定(今のU.shの値、無ければU.shの既定)
+            v = shell_value(ush, name)
+            return default if v is None else v
+        self.img_exclude = conf('IMG_EXCLUDE', 'home/*/git/usilic home/*/.cache').split()
+        self.ramdisk_margin_kb = int(conf('RAMDISK_MARGIN_KB', '50000'))
+        self.work_area = conf('WORK_AREA', 'tmpfs')
+        self.shm_list = conf('SHM_LIST', 'home tmp var').split()
+        self.numerator = 11
+        self.rescue_gb = 8 if self.on_ubuntu else 4
+        m = re.search(r'\+([0-9]+)gb', self.uname)
+        from_uname = int(m.group(1)) if m else 0
+        if self.on_ramdisk:
+            self.ramdisk_gb = from_uname
+        elif self.on_ubuntu or self.on_none or self.on_wsl:
+            self.ramdisk_gb = self.rescue_gb
+        else:
+            self.ramdisk_gb = from_uname
+        self.debian_root_part = system.output(['blkid', '-U', self.debian_root_uuid]).strip() \
+            if self.debian_root_uuid else ''
+        self.tmp = '/tmp/ush.%d' % os.getpid()  # U.shの/tmp/〜.$TMP_LABEL(loop0・shm0・debian等をこの下に)
+        self.ush = ush
         self.opt = assignments(system.read_text(U_OPT))
         self.strage = self.opt.get('STRAGE', '')   # U.shのmnt_strage
         self.uuid = self.opt.get('UUID', '')

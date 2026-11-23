@@ -29,6 +29,10 @@ def fake(**extra):
     return FakeSystem(parts=parts, mounted=mounted, files=files, dirs={'/mnt'}, **extra)
 
 
+def system_tmp(system):
+    return [c[2] for c in system.calls if c[:2] == ['mkdir', '-p'] and c[2].startswith('/tmp/ush.')][0]
+
+
 def run(system, *argv):
     lines = []
     code = ush_main.run(list(argv), system=system, uname='6.12.57+8gb', out=lines.append)
@@ -43,7 +47,7 @@ class UshTest(unittest.TestCase):
         self.assertIsNone(shell_value('X=1\n', 'Y'))
 
     def test_not_ported(self):
-        code, out = run(fake(), '-s', 'foo')
+        code, out = run(fake(), '-z', 'foo')
         self.assertEqual(code, 2)
         self.assertIn('not in the Python version', out)
 
@@ -196,6 +200,47 @@ class UshTest(unittest.TestCase):
         self.assertIn(['umount', '-R', '/mnt/debian'], system.calls)
         code, out = run(fake(), '-c', '/mnt/usb', '--batch')
         self.assertIn('/mnt/usb: No such directory.', out)
+
+    def save_fake(self, **kw):
+        system = fake(files={'/opt/U.opt': 'STRAGE=/mnt/ext4 UUID=DDD\n',
+                             '/etc/fstab': FSTAB + 'UUID=DDD /mnt/ext4 ext4 rw,noauto 0 1\n',
+                             '/proc/meminfo': 'MemTotal: 16000000 kB\n'}, hostname='8GB-KDE', **kw)
+        system.parts['/dev/sdd1']['free_kb'] = 70000000
+        system.parts['/dev/nvme0n1p2']['free_kb'] = 20000000
+        system.results['df'] = (0, 'Filesystem 1K-blocks Used Available Use% Mounted on\n'
+                                   '/dev/ram0 8000000 3000000 5000000 40% /\n'
+                                   'tmpfs 16000000 1000 16000000 1% /dev/shm\n'
+                                   'tmpfs 16000000 500000 15500000 4% /home\n')
+        return system
+
+    def test_s_new_and_exist(self):
+        system = self.save_fake()
+        code, out = run(system, '-s', 'GNOME')
+        self.assertIn('HOST:8GB-GNOME', out)
+        self.assertIn('free: 70000000KB (/mnt/ext4/opt)', out)
+        self.assertTrue(any(c[:2] == ['sh', '-c'] and c[2].startswith("tar cf - --exclude='usr/lib/modules/*'")
+                            for c in system.calls))
+        self.assertIn(['mv', system_tmp(system) + '/shm0/IMG0.img', '/mnt/ext4/opt/8GB-GNOME.img'], system.calls)
+        self.assertIn('/dev/null', ' '.join(' '.join(c) for c in system.calls))      # RAMDISKの骨組み(mknod dev/null)
+        fstab = [v for k, v in system.files.items() if k.endswith('/debian/etc/fstab')][0]
+        self.assertTrue(fstab.startswith('/dev/ram / ext4 errors=remount-ro 0 1\n'))
+        self.assertIn('UUID=ROOT /mnt/debian ext4 rw,noauto', fstab)
+        system.files['/mnt/ext4/opt/8GB-GNOME.img'] = 'x'
+        code, out = run(system, '-s', 'GNOME')
+        self.assertIn("8GB-GNOME: already exist. To overwrite, type '. U -s GNOME .'", out)
+
+    def test_s_base_and_strage(self):
+        code, out = run(fake(), '-s', '.')
+        self.assertIn("Can't save to base-host.", out)
+        system = fake(hostname='8GB-KDE')
+        code, out = run(system, '-s', 'KDE', '.')
+        self.assertIn("Strage-area needed ('. U -a'). Without it, only 8GB-rescue can be saved.", out)
+
+    def test_s_too_big(self):
+        system = self.save_fake()
+        system.parts['/dev/sdd1']['free_kb'] = 1000
+        code, out = run(system, '-s', 'KDE', '.')
+        self.assertIn('-s: 8GB-KDE: img 3850000KB > free 1000KB (/mnt/ext4/opt).', out)  # (3000000+500000)*1.1
 
 
 if __name__ == '__main__':

@@ -7,6 +7,7 @@ from .env import Env
 from .fs import MountError, fs
 from .options import add_strage, change_root, file_system, next_host, page_with_usilic, verbose
 from .packages import output_u
+from .save import save
 from .system import System
 
 
@@ -104,10 +105,30 @@ def run(argv, system=None, uname=None, out=None):
             output_u(env, log, args, out)
         elif option == '-c':
             change_root(env, log, args, out)
+        elif option == '-s':
+            save(env, log, option, args, out)
     except MountError:
         code = 1
+    if option not in ('-v', '-a', '-f'):  # U.shのmainの最後: マウントしたものを外す(-v・-a・-fは見るために残す)
+        finish(env, log)
     log.save(env, out)
     return code
+
+
+def finish(env, log):
+    from .fs import is_mounted
+    system = env.system
+    try:
+        if env.on_ramdisk:
+            fs(env, log, 'umount', env.mnt_debian, wait=0)
+            fs(env, log, 'umount', '/boot/efi', wait=0)
+        fs(env, log, 'umount', '/opt/build', wait=0)
+        if env.strage:
+            fs(env, log, 'umount', env.strage, wait=0)
+    except MountError:
+        pass
+    if system.isdir(env.tmp) and not any(m.startswith(env.tmp + '/') for _, m, _, _ in system.mounts()):
+        system.run(['rm', '-rf', env.tmp])
 
 
 def main():

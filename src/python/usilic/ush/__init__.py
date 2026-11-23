@@ -12,6 +12,7 @@ python3が無い(-uの最初の一歩)ので、U.shはそのために残る。
   parts.py    _list_strage・_list_parts(区画の一覧と選ぶ番号)
   options.py  -a(add_strage)・-f(file_system)・-n(next_host)・-v(verbose)
   packages.py -o(_output_u、パッケージの記録と、記録へ戻す・足す)
+  save.py     -s(save_host・_save_host、-d・-uも使う)
   main.py     引数・ログ(/opt/U.log_日付)
 """
-PORTED = ('-a', '-c', '-f', '-n', '-o', '-v')
+PORTED = ('-a', '-c', '-f', '-n', '-o', '-s', '-v')
