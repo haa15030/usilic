@@ -59,6 +59,22 @@ class System:
         except OSError:
             return False
 
+    def write_text(self, path, text, mode=None):
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(text)
+            if mode is not None:
+                os.chmod(path, mode)
+            return True
+        except OSError:
+            return False
+
+    def mtime(self, path):
+        try:
+            return os.path.getmtime(path)
+        except OSError:
+            return None
+
     def exists(self, path):
         return os.path.exists(path)
 
@@ -198,8 +214,12 @@ class FakeSystem(System):
                     dev = d
         elif source and source in self.parts:
             dev = source
-        elif source is None or source == target:  # fstab
+        elif source is None or source == target:  # fstab(「fstab:マウントポイント」か、/etc/fstabのUUID=の行)
             dev = self.files.get('fstab:' + target)
+            for line in (self.files.get('/etc/fstab') or '').splitlines():
+                fields = line.split()
+                if dev is None and len(fields) >= 2 and fields[1] == target and fields[0].startswith('UUID='):
+                    dev = next((d for d, i in self.parts.items() if i['UUID'] == fields[0][5:]), None)
         if dev is None or dev not in self.parts:
             return 32, 'mount: %s: special device does not exist.' % (source or dev)
         mountable = self.parts.get(dev, {}).get('mountable', True)
@@ -223,6 +243,14 @@ class FakeSystem(System):
         self.calls.append(['append', path])
         self.files[path] = self.files.get(path, '') + text
         return True
+
+    def write_text(self, path, text, mode=None):
+        self.calls.append(['write', path])
+        self.files[path] = text
+        return True
+
+    def mtime(self, path):
+        return self.files.get('mtime:' + path)
 
     def exists(self, path):
         return path in self.files or path in self.dirs or path in self.links or path in self.mounted

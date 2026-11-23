@@ -69,9 +69,13 @@ def install_if_missing(env, package, out):
         out(line)
 
 
+NONE = '0'  # -aの「0)」(STRAGEを使わない)
+
+
 def list_parts(env, log, kinds, ask, out, multi=False, tmp='/tmp/mount.ush'):
-    """_list_parts(): kindsの区画を1)から一覧に出し、番号を選んでもらう(multiなら幾つでも)。選んだ[Part]
-    (空なら選ばない・終える)。範囲に無い番号はもう一度聞く(答えを前から渡された時は聞き直せないので終える)。"""
+    """_list_parts(): kindsの区画を1)から一覧に出し、番号を選んでもらう(multiなら幾つでも、-fの時)。選んだ[Part]
+    (空なら選ばない・終える)。1つだけ選ぶ時(-a)は0も選べて、[NONE]。範囲に無い番号はもう一度聞く(答えを前から
+    渡された時は聞き直せないので終える)。"""
     parts = []
     for kind in kinds:
         if kind == 'ntfs':
@@ -84,14 +88,17 @@ def list_parts(env, log, kinds, ask, out, multi=False, tmp='/tmp/mount.ush'):
     while True:
         answer = ask("Input No (e.g. '2' or '2 5'):" if multi else 'Input No:')
         words = answer.split()
-        ok = all(w.isdigit() and int(w) in by_number for w in words) and (multi or len(words) <= 1)
+        low = 1 if multi else 0
+        ok = all(w.isdigit() and (int(w) in by_number or (not multi and int(w) == 0)) for w in words) and \
+            (multi or len(words) <= 1)
         if ok:
             chosen = []
             for w in words:
-                if by_number[int(w)] not in chosen:
-                    chosen.append(by_number[int(w)])
+                item = NONE if int(w) == 0 else by_number[int(w)]
+                if item not in chosen:
+                    chosen.append(item)
             return chosen
-        out('%s: Invalid No. (1-%d)' % (answer, len(parts)))
+        out('%s: Invalid No. (%d-%d)' % (answer, low, len(parts)))
         if ask.batch:
             return []
 

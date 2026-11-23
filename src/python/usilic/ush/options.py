@@ -131,3 +131,139 @@ def page_with_usilic(system, text):
     else:
         system.interactive(['less', path])
     os.unlink(path)
+
+
+def _write_opt(env, lines):
+    """/opt/U.optを書き、RAMDISKならDEBIAN区画の/opt/U.optへも。"""
+    system = env.system
+    text = ''.join(l + '\n' for l in lines)
+    system.write_text('/opt/U.opt', text, 0o644)
+    if env.on_ramdisk:
+        system.write_text(env.mnt_debian + '/opt/U.opt', text, 0o644)
+
+
+def add_strage(env, log, ask, out):
+    """-a(add_strage()): STRAGE(イメージ等を置く区画)を選んで/opt/U.optへ(STRAGE=/mnt/種類 UUID=〜)。0)はSTRAGEを
+    使わない(STRAGE="")。選んだ区画は/etc/fstabに/mnt/種類(noauto)で書いてマウントし、空きが10GBより多ければ
+    カーネルのビルド用イメージ($BUILD.img)をDEBIAN区画から写す。"""
+    from .parts import NONE
+    system = env.system
+    if env.on_wsl:
+        log.add('-a: Not supported.')
+        return
+    if env.strage == '/mnt/cifs':
+        log.add('-a: STRAGE=/mnt/cifs.')
+        return
+    others = [l for l in (system.read_text('/opt/U.opt') or '').splitlines() if not l.startswith('STRAGE=')]
+    out(' 0)TYPE DEVICENAME UUID (free) [mounted]')
+    chosen = list_parts(env, log, ['ntfs', 'exfat', 'ext4'], ask, out, tmp=default_tmp())
+    out('')
+    if not chosen:
+        return
+    if chosen[0] == NONE:
+        _write_opt(env, others + ['STRAGE=""'])
+        log.add('-a: STRAGE="" -> /opt/U.opt')
+        return
+    part = chosen[0]
+    opt_img = ''
+    if env.on_ramdisk:
+        opt_img = env.mnt_debian
+        fs(env, log, 'mount', opt_img)
+    if env.strage and env.strage != env.mnt_debian:
+        out('umount ' + env.strage)
+        fs(env, log, 'umount', env.strage)
+    _write_opt(env, others + [part.strage()])
+    log.add(part.strage() + ' -> /opt/U.opt')
+    strage = '/mnt/' + part.kind
+    system.makedirs(strage)
+    fstab = [l for l in (system.read_text('/etc/fstab') or '').splitlines()
+             if l.strip() and not any(m in l for m in ('/mnt/ext4', '/mnt/ntfs', '/mnt/exfat'))]
+    fstab.append('UUID=%s %s %s rw,noauto 0 1' % (part.uuid, strage, part.kind))
+    system.write_text('/etc/fstab', ''.join(l + '\n' for l in fstab))
+    system.run(['systemctl', 'daemon-reload'])
+    fs(env, log, 'mount', strage)
+    system.makedirs(strage + '/opt')
+    df = system.output(['df']).rstrip('\n')
+    out(df)
+    free_gb = 0
+    for line in system.output(['df', '-k', strage]).splitlines()[1:2]:
+        try:
+            free_gb = int(line.split()[3]) // 1000 // 1000
+        except (IndexError, ValueError):
+            pass
+    build = '%s/opt/%s.img' % (opt_img, env.ubuntu_build)
+    if free_gb > 10 and system.exists(build):
+        destination = strage + '/opt/' + build.rsplit('/', 1)[1]
+        source_time, destination_time = system.mtime(build), system.mtime(destination)
+        copy = destination_time is None
+        if not copy and source_time is not None and source_time > destination_time:  # cp -iu: 新しければ聞いて
+            copy = ask('overwrite %s? (y/n) ' % destination, 'n').strip().lower() == 'y'
+        if copy:
+            out('cp -uv %s %s/opt' % (build, strage))
+            for line in system.output(['cp', '-uv', build, strage + '/opt']).splitlines():
+                out(line)
+    out('')
+    out('STRAGE(%s/opt):' % strage)
+    out('\n'.join(l for l in system.output(['ls', '-l', strage + '/opt/']).rstrip('\n').splitlines()
+                  if not l.startswith('total')))
+    out('')
+
+
+def entry_titles(system, root):
+    """_entry_titles(): root/etc/grub.d/40_customの起動項目名。"""
+    import re
+    text = system.read_text(root.rstrip('/') + '/etc/grub.d/40_custom') or ''
+    return [m.group(1) for m in re.finditer(r"^menuentry '([^']*)'", text, re.M)]
+
+
+def next_host(env, log, ask, out):
+    """-n(next_host()): 次に起動するホスト(?GB-*.imgと?GB-base)・GRUBの項目を選ぶ。ホストならU.optのNEXT?=と、
+    その大きさのRAM-*+?gb-baseを、GRUBのgrubenvのsaved_entryへ(update-grubはしない)。最後に再起動するか聞く。"""
+    import re
+    system = env.system
+    if env.on_wsl:
+        log.add('-n: Not supported.')
+        return
+    fs(env, log, 'mount', env.mnt_debian)
+    if env.strage:
+        fs(env, log, 'mount', env.strage)
+    titles = entry_titles(system, env.mnt_debian)
+    names = set()
+    for directory in (env.strage + '/opt' if env.strage else None, env.mnt_debian + '/opt'):
+        if directory:
+            names.update(n[:-4] for n in system.listdir(directory) if re.match(r'^[0-9]+GB-.*\.img$', n))
+    for t in titles:
+        m = re.match(r'^RAM-.*\+([0-9]+)gb-base$', t)
+        if m:
+            names.add(m.group(1) + 'GB-base')
+    choices = []
+    for name in sorted(names):
+        gb = int(name.split('GB-', 1)[0])
+        if gb > env.mem_total_gb or not any(re.match(r'^RAM-.*\+%dgb-base$' % gb, t) for t in titles):
+            continue  # メモリが足りないか、そのカーネルが無い
+        choices.append(('H', name))
+    choices += [('E', t) for t in titles if not t.startswith('RAM-')]
+    for i, (_, name) in enumerate(choices, 1):
+        out(' %d)%s' % (i, name))
+    out('  )<EXIT>')
+    answer = ask('Input No:').strip()
+    if not answer.isdigit() or not 1 <= int(answer) <= len(choices):
+        return
+    kind, name = choices[int(answer) - 1]
+    if kind == 'H':
+        gb = int(name.split('GB-', 1)[0])
+        lines = [l for l in (system.read_text('/opt/U.opt') or '').splitlines() if not l.startswith('NEXT%d=' % gb)]
+        _write_opt(env, lines + ['NEXT%d=%s' % (gb, name)])
+        out('NEXT%d=%s -> /opt/U.opt' % (gb, name))
+        name = [t for t in titles if re.match(r'^RAM-.*\+%dgb-base$' % gb, t)][-1]
+    # GRUB_DEFAULT=saved(-uで設定)なので、update-grubせずgrubenvのsaved_entryだけ書き換える
+    grubenv = env.mnt_debian + '/boot/grub/grubenv'
+    out('grub-editenv %s set saved_entry=%s' % (grubenv, name))
+    system.run(['grub-editenv', grubenv, 'set', 'saved_entry=' + name])
+    grub = system.read_text(env.mnt_debian + '/etc/default/grub') or ''
+    if not re.search(r'^GRUB_DEFAULT=saved', grub, re.M):
+        log.add("-n: GRUB_DEFAULT is not 'saved' in %s/etc/default/grub." % env.mnt_debian)
+    yn = ask('Reboot now? (Y/n): ', 'n').strip()
+    if yn in ('', 'Y', 'y'):
+        fs(env, log, 'umount', env.mnt_debian)
+        system.run(['reboot'])

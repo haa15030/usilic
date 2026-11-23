@@ -10,7 +10,7 @@ python3が無い(-uの最初の一歩)ので、U.shはそのために残る。
   env.py      U.shの始めの変数(ON_RAMDISK・MNT_DEBIAN・STRAGE等)
   fs.py       _fs・_fs_try・_is_mounted
   parts.py    _list_strage・_list_parts(区画の一覧と選ぶ番号)
-  options.py  -v(verbose)・-f(file_system)
+  options.py  -a(add_strage)・-f(file_system)・-n(next_host)・-v(verbose)
   main.py     引数・ログ(/opt/U.log_日付)
 """
-PORTED = ('-v', '-f')
+PORTED = ('-a', '-f', '-n', '-v')

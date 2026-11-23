@@ -5,6 +5,7 @@ STRAGE・UUIDは/opt/U.opt(-aが書く)から。
 """
 import os
 import re
+import shlex
 
 U_SH = '/opt/U.sh'
 U_OPT = '/opt/U.opt'
@@ -32,6 +33,21 @@ def shell_value(text, name):
     return value
 
 
+def assignments(text):
+    """/opt/U.optの行の「名前=値」(1行に幾つでも、-aは「STRAGE=/mnt/ntfs UUID=〜」と1行に書く)。後の行が勝つ。"""
+    values = {}
+    for line in (text or '').splitlines():
+        try:
+            words = shlex.split(line, comments=True)
+        except ValueError:
+            continue
+        for w in words:
+            m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)=(.*)$', w)
+            if m:
+                values[m.group(1)] = m.group(2)
+    return values
+
+
 class Env:
     def __init__(self, system, uname=None):
         self.system = system
@@ -53,9 +69,13 @@ class Env:
             self.debian_root_uuid = self.fstab_uuid('/')
         else:
             self.debian_root_uuid = system.output(['findmnt', '-no', 'UUID', '/']).strip()
-        opt = system.read_text(U_OPT) or ''
-        self.strage = shell_value(opt, 'STRAGE') or ''   # U.shのmnt_strage
-        self.uuid = shell_value(opt, 'UUID') or ''
+        self.opt = assignments(system.read_text(U_OPT))
+        self.strage = self.opt.get('STRAGE', '')   # U.shのmnt_strage
+        self.uuid = self.opt.get('UUID', '')
+        meminfo = system.read_text('/proc/meminfo') or ''
+        m = re.search(r'^MemTotal:\s*(\d+)', meminfo, re.M)
+        self.mem_total_gb = int(m.group(1)) // 1000 // 1000 if m else 0
+        self.ubuntu_build = 'BUILD_UBUNTU' if self.on_ubuntu else 'BUILD_DEBIAN'  # U.shのBUILD(カーネルのビルド用イメージ)
 
     def fstab_uuid(self, mount_point):
         """_fstab_uuid(): /etc/fstabで$1にマウントする区画のUUID(UUID=〜と/dev/disk/by-uuid/〜のどちらでも)。"""

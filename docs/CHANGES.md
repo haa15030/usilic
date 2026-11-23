@@ -33408,6 +33408,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1351. **src/python: U.shのPython版に-a・-n(2026-11-23)**
+   - 直接のユーザー依頼: 項目1350(骨組みと-v・-f)の後、「続けて。」(アシスタントの案の2の残り、-a・-n)。
+   - 変更: usilic/ush/options.pyに`add_strage`(-a)・`next_host`(-n)・`entry_titles`(`_entry_titles`)。U.shと同じ手順。
+     - -a: ntfs・exfat・ext4の一覧から1つ(0)はSTRAGE=""、`list_parts`に0を足した)。/opt/U.optのSTRAGE=の行を「STRAGE=/mnt/種類 UUID=〜」に(RAMDISKならDEBIAN区画の/opt/U.optへも)。/etc/fstabの/mnt/ext4・ntfs・exfatの行を「UUID=〜 /mnt/種類 種類 rw,noauto 0 1」にしてdaemon-reload、マウントして/optを作る。空きが10GBより多ければ$BUILD.img(BUILD_DEBIAN・BUILD_UBUNTU)を写す(U.shのcp -iuと同じく、無ければ写し、写し先が古ければ聞く)。
+     - -n: STRAGE・DEBIAN区画の/optの?GB-*.imgと、40_customのRAM-*+?gb-baseの?GB-baseのうち、メモリが足り、その大きさのカーネルがあるもの、続けてRAM-でないGRUBの項目。ホストならU.optのNEXT?=とその大きさのRAM-*+?gb-baseを、GRUBの項目ならその名前を、grub-editenvでsaved_entryへ。GRUB_DEFAULT=savedでなければログに。最後に「Reboot now? (Y/n)」(前から答えを渡す時の既定はn)。
+   - env.py: /opt/U.optの読み方を、1行に幾つもの「名前=値」(-aは「STRAGE=/mnt/ntfs UUID=〜」と1行に書く)に直した(項目1350はUUIDを取り損ねていた)。MemTotal(GB)・BUILDも。
+   - PORTEDは-a・-f・-n・-v。RESCUE(^J^R)は、これらをush.pyで動かす。
+   - 確かめたこと: tests/test_ush.py(16件、-aで番号を選ぶ・0・ビルド用イメージを写す時と写さない時、-nの一覧(メモリ・カーネルの無い16GBは出ない、GRUBの項目)・NEXT8=・saved_entry・再起動、U.optの1行に2つの値)・tests/test_rescue。Linuxの実機では未確認。
+
 1350. **src/python: U.shのPython版(ush.py・usilic/ush/)の骨組みと-v・-f(2026-11-23)**
    - 直接のユーザー提案: いっそU.shの機能全体をusilic.pyに取り込んだら。C++版と旧C版のように、Python版と旧シェル版。規模が大きすぎるか。アシスタントの答え(約3000行で、移せない大きさではない。オプションごとに移し、移していないものはU.shを呼ぶ。1. 骨組み(rootで動く部分、コマンドを記録だけする試しの形)、2. -v・-f・-a・-n、3. -s・-d・-o・-e・-c・-k、4. -m・-u、5. -r)に、ユーザーが「/opt/BASE.uにはpythonが無いのでそこだけU.shが必要だな。リポジトリには(カーネルリメークが必須の口実でもある)旧C版も同梱なのでU.shがあってもおかしくない。1,2から進めてみて」。
    - 変更(1. 骨組み): src/python/ush.py(入口、`sudo python3 ush.py -f`)と、usilic/ush/。

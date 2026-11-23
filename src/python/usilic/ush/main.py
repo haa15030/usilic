@@ -5,7 +5,7 @@ import sys
 from . import PORTED
 from .env import Env
 from .fs import MountError, fs
-from .options import file_system, page_with_usilic, verbose
+from .options import add_strage, file_system, next_host, page_with_usilic, verbose
 from .system import System
 
 
@@ -95,6 +95,10 @@ def run(argv, system=None, uname=None, out=None):
             verbose(env, log, ask, out, lambda text: page_with_usilic(system, text))
         elif option == '-f':
             file_system(env, log, args, ask, out)
+        elif option == '-a':
+            add_strage(env, log, ask, out)
+        elif option == '-n':
+            next_host(env, log, ask, out)
     except MountError:
         code = 1
     log.save(env, out)

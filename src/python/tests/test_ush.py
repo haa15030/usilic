@@ -107,6 +107,61 @@ class UshTest(unittest.TestCase):
         self.assertIn('mount /mnt/debian: failed.', out)
         self.assertTrue(any(c[0] == 'append' and c[1].startswith('/opt/U.log_') for c in system.calls))
 
+    def test_uopt_one_line(self):
+        from usilic.ush.env import assignments
+        self.assertEqual(assignments('STRAGE=/mnt/ntfs UUID=AAA\nSH=bash\nNEXT8=8GB-KDE\n'),
+                         {'STRAGE': '/mnt/ntfs', 'UUID': 'AAA', 'SH': 'bash', 'NEXT8': '8GB-KDE'})
+        self.assertEqual(assignments('STRAGE=""\n'), {'STRAGE': ''})
+
+    def test_a_choose(self):
+        system = fake(files={'/opt/U.opt': 'STRAGE=""\nSH=bash\n', '/mnt/debian/opt/BUILD_DEBIAN.img': 'x'})
+        code, out = run(system, '-a', '--ans=2')
+        self.assertEqual(code, 0)
+        self.assertIn(' 2)ext4 /dev/sdd1 DDD (7 GB)', out)
+        self.assertNotIn('vfat', out)                                   # -aはntfs・exfat・ext4だけ
+        self.assertEqual(system.files['/opt/U.opt'], 'SH=bash\nSTRAGE=/mnt/ext4 UUID=DDD\n')
+        self.assertEqual(system.files['/mnt/debian/opt/U.opt'], system.files['/opt/U.opt'])  # RAMDISK: DEBIAN区画へも
+        self.assertIn('UUID=DDD /mnt/ext4 ext4 rw,noauto 0 1', system.files['/etc/fstab'])
+        self.assertIn('UUID=ROOT /mnt/debian ext4 noauto 0 1', system.files['/etc/fstab'])
+        self.assertEqual(system.mounted.get('/mnt/ext4'), '/dev/sdd1')
+        self.assertNotIn(['cp', '-uv', '/mnt/debian/opt/BUILD_DEBIAN.img', '/mnt/ext4/opt'], system.calls)  # 7GBは10GB以下
+
+    def test_a_copies_build_image(self):
+        system = fake(files={'/mnt/debian/opt/BUILD_DEBIAN.img': 'x'})
+        system.parts['/dev/sdd1']['free_kb'] = 70000000
+        run(system, '-a', '--ans=2')
+        self.assertIn(['cp', '-uv', '/mnt/debian/opt/BUILD_DEBIAN.img', '/mnt/ext4/opt'], system.calls)
+
+    def test_a_zero(self):
+        system = fake(files={'/opt/U.opt': 'STRAGE=/mnt/ext4 UUID=DDD\nSH=bash\n'})
+        code, out = run(system, '-a', '--ans=0')
+        self.assertEqual(system.files['/opt/U.opt'], 'SH=bash\nSTRAGE=""\n')
+        self.assertIn('-a: STRAGE="" -> /opt/U.opt', out)
+
+    def test_n(self):
+        custom = ("menuentry 'RAM-6.12.57+4gb-base' {\n}\nmenuentry 'RAM-6.12.57+8gb-base' {\n}\n"
+                  "menuentry 'macOS Sonoma' {\n}\n")
+        system = fake(files={'/mnt/debian/etc/grub.d/40_custom': custom, '/proc/meminfo': 'MemTotal: 16000000 kB\n',
+                             '/mnt/debian/opt/4GB-rescue.img': 'x', '/mnt/debian/opt/8GB-KDE.img': 'x',
+                             '/mnt/debian/opt/16GB-big.img': 'x',
+                             '/mnt/debian/etc/default/grub': 'GRUB_DEFAULT=saved\n'})
+        code, out = run(system, '-n', '--ans=4', '--ans=n')
+        lines = [l for l in out.splitlines() if l[:3].strip().rstrip(')').isdigit()]
+        self.assertEqual(lines, [' 1)4GB-base', ' 2)4GB-rescue', ' 3)8GB-KDE', ' 4)8GB-base', ' 5)macOS Sonoma'])
+        self.assertIn('NEXT8=8GB-base', system.files['/opt/U.opt'])     # 16GBはカーネルもメモリも無い
+        self.assertIn(['grub-editenv', '/mnt/debian/boot/grub/grubenv', 'set', 'saved_entry=RAM-6.12.57+8gb-base'],
+                      system.calls)
+        self.assertNotIn(['reboot'], system.calls)
+
+    def test_n_grub_entry_and_reboot(self):
+        custom = "menuentry 'RAM-6.12.57+4gb-base' {\n}\nmenuentry 'Windows 11' {\n}\n"
+        system = fake(files={'/mnt/debian/etc/grub.d/40_custom': custom, '/proc/meminfo': 'MemTotal: 8000000 kB\n'})
+        code, out = run(system, '-n', '--ans=2', '--ans=y')
+        self.assertIn(['grub-editenv', '/mnt/debian/boot/grub/grubenv', 'set', 'saved_entry=Windows 11'], system.calls)
+        self.assertIn("GRUB_DEFAULT is not 'saved'", out)
+        self.assertIn(['reboot'], system.calls)
+        self.assertEqual(system.calls[system.calls.index(['reboot']) - 1], ['umount', '/mnt/debian'])
+
 
 if __name__ == '__main__':
     unittest.main()
