@@ -451,6 +451,14 @@ class UshTest(unittest.TestCase):
         self.assertEqual([o for o, _ in rescue.parse_options(out)],
                          ['-a', '-c', '-d', '-f', '-k', '-m', '-n', '-o', '-s', '-v'])
 
+    def test_v_pager_as_user(self):
+        from usilic.ush.env import Env
+        from usilic.ush.options import page_with_usilic
+        system = fake(files={'/etc/passwd': 'root:x:0:0::/root:/bin/bash\nusilic:x:1000:1000::/home/usilic:/bin/bash\n'})
+        page_with_usilic(Env(system, '6.12.57+8gb'), 'text')
+        call = [c for c in system.calls if c[:1] == ['runuser']][0]
+        self.assertEqual(call[:6], ['runuser', '-u', 'usilic', '--', 'env', 'HOME=/home/usilic'])  # ユーザーのHOMEで
+
 
 if __name__ == '__main__':
     unittest.main()

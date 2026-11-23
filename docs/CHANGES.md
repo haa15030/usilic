@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1358. **src/U_proto.sh・src/python: `-v`のページャーのusilicを、ユーザーのHOMEで(groffの警告が大量に出た)(2026-11-23)**
+   - 直接のユーザー報告: `. U -v`をすると「troff:<standard input>:2066: warning: cannot select font 'JPM'」が大量に出る(8GB-LXDE)。
+   - 原因(見立て): 項目1346の`_page`は、usilic-pyが無ければユーザーの~/.local/bin/usilic -cを`runuser -u ユーザー`で動かす。`runuser -u`はHOMEをrootのもの(/root)のままにするので、usilicが~/.usilicを見つけられず「最初の起動」になり、HELPをgroffで組む時の警告が、そのまま端末に出た。
+   - 変更: `_page`(U.sh)と`page_with_usilic`(Python版)で、usilicは`runuser -u ユーザー -- env HOME=/home/ユーザー`で動かし、標準エラー出力は捨てる。表示するファイルはユーザーが読めるように644に。Python版もusilic-pyをユーザーで(前はrootのまま動かしていた)。
+   - 確かめたこと: `bash -n`・`dash -n`、tests/test_ush.py(34件、ページャーをユーザーのHOMEで動かすこと)。実機では未確認。
+
 1357. **src/python: U.shのPython版に-u・-r・下準備・オプションの一覧、`. U`と起動の時はPython版で(2026-11-23)**
    - 直接のユーザー依頼: 「このまま終わりまで行っていい」の続き(これでU.shのオプションは全部)。
    - 変更1: usilic/ush/update.py(-u、`update_base`): BASE.u・python3とusilic-py・40_custom(GRUB_CUSTOM)・journald・GRUB_DEFAULT=saved・NONE-KERNELの項目・TORAM(Ubuntu、`toram_setup`)・テンプレート(`make_template`、rc.local等)・RAMDISKのカーネル(無ければ`compile_kernel`)・RAMの土台・?GB-rescue(`setup_usilic`・RESCUE_LIST・`save_host`)・update-grub・grub-set-default・NEXT?=・最初なら再起動を聞く。`get_usilic_repo`・`install_usilic_py`も。テンプレートに書くrc.local・rc-local.service・dracutのモジュール(99ramdisk-root)は、U.shに埋め込んであったものを機械的に取り出してusilic/ush/data/へ。

@@ -137,7 +137,7 @@ def run(argv, system=None, uname=None, out=None, prepare=True):
         if prepare and option != '-o':  # U.shのmainの始め(-oはその前に動く)
             prepare_system(env, log, option, out)
         if option == '-v':
-            verbose(env, log, ask, out, lambda text: page_with_usilic(system, text))
+            verbose(env, log, ask, out, lambda text: page_with_usilic(env, text))
         elif option == '-f':
             file_system(env, log, args, ask, out)
         elif option == '-a':

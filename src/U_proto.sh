@@ -588,10 +588,13 @@ _ask() { # read -p の代わり。$1 変数名、$2 問い、$3 --list・--ans= 
 
 _page() { # $1 を、戻って読めるページャーで（usilic-py → ユーザーの usilic -c → less → more）
     # more は戻れず、-v で STRAGE の ls の後の df まで送ると終わってしまい、ls へ戻れなかった。usilic は q で終える
-    if [ -x /usr/local/bin/usilic-py ]; then
-        /usr/local/bin/usilic-py $1
+    # usilic はユーザーで、HOME もユーザーのものに（runuser -u は HOME を /root のままにするので、usilic が ~/.usilic を
+    # 見つけられず「最初の起動」になり、HELP を組む groff の警告（cannot select font 'JPM'）が大量に出た）。標準エラー出力は捨てる
+    chmod 644 $1
+    if [ -x /usr/local/bin/usilic-py ] && command -v runuser > /dev/null 2>&1; then
+        runuser -u $USR -- env HOME=/home/$USR /usr/local/bin/usilic-py $1 2>/dev/null
     elif [ -x /home/$USR/.local/bin/usilic ] && command -v runuser > /dev/null 2>&1; then
-        runuser -u $USR -- /home/$USR/.local/bin/usilic -c $1 # root の ~/.usilic を作らないよう、ユーザーで
+        runuser -u $USR -- env HOME=/home/$USR /home/$USR/.local/bin/usilic -c $1 2>/dev/null
     elif command -v less > /dev/null 2>&1; then
         less $1
     else

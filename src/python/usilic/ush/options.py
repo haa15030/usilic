@@ -120,16 +120,19 @@ def file_system(env, log, args, ask, out):
                 system.rmdir(path)
 
 
-def page_with_usilic(system, text):
-    """_page(): usilicのページャー(このusilic.py)で(戻って読める、qで終える)。"""
+def page_with_usilic(env, text):
+    """_page(): usilicのページャー(このusilic.py)で(戻って読める、qで終える)。usilicはユーザーで、HOMEもユーザーのものに
+    (rootのHOMEのままだと~/.usilicが無く「最初の起動」になり、HELPを組むgroffの警告が端末に大量に出た)。"""
+    system = env.system
     fd, path = tempfile.mkstemp(prefix='ush.', suffix='.txt')
     with os.fdopen(fd, 'w', encoding='utf-8') as f:
         f.write(text)
+    os.chmod(path, 0o644)
     usilic = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'usilic.py')
-    if os.path.isfile(usilic):
-        system.interactive([sys.executable, usilic, path])
-    else:
-        system.interactive(['less', path])
+    argv = [sys.executable, usilic, path] if os.path.isfile(usilic) else ['less', path]
+    if system.euid() == 0 and env.user:
+        argv = ['runuser', '-u', env.user, '--', 'env', 'HOME=/home/' + env.user] + argv
+    system.interactive(argv, quiet=True)
     os.unlink(path)
 
 
