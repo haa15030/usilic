@@ -74,6 +74,8 @@ DEBIAN区画の /opt には、カーネルの .deb・RAM-*-base.gz・4GB-rescue.
 ④   -s name㊿：⑲今のホストを ?GB-name.img に保存（. で今のホスト名で上書き）㊿#
 ④   -u㊿：⑲NONE-KERNEL で、カーネル・RAM-*-base.gz・?GB-rescue.img を作る（作ってあるものは飛ばす）㊿#
 ④   -v㊿：⑲DEBIAN区画・STRAGE の /opt、/mnt/番号、df を表示㊿#
+④   --list㊿：⑲一覧を出して最初の問いで止まる（選ばない・N）。オプションが無ければ使えるオプションの一覧（usilic の RESCUE が使う）㊿#
+④   --ans=答え㊿：⑲問いへの答えを問いの順に（例 -f --ans=3、-n --ans=2 --ans=n）。一覧は標準エラー出力へ㊿#
 #
 ⑧使えるオプションは、NONE-KERNEL・RAMDISK 等の状態で変わります（オプション無しの ". U"^M で表示される一覧の通り）。
 RAMDISK の上で -s で保存できるのは、STRAGE が無ければ ?GB-rescue だけです。㊿#

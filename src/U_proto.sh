@@ -559,6 +559,24 @@ _tmpfs_size() {
 	done
 }
 
+_ask() { # read -p の代わり。$1 変数名、$2 問い、$3 --list・--ans= で答えが尽きた時の答え（既定は空＝選ばない・終える）
+    # 前から使う時（usilic の RESCUE）: --ans=答え を問いの順に。答えが無ければ（--list だけなら一覧を出して）$3 で進む
+    local _v
+
+    if [ "$U_BATCH" ]; then
+        if [ "$U_ANS" ]; then
+            _v=${U_ANS%%|*}
+            U_ANS=${U_ANS#*|}
+        else
+            _v=$3
+        fi
+        echo "$2$_v" > $U_TTY # （_list_parts は ` ` の中で呼ばれるので、標準出力へは出さない）
+    else
+        read -p "$2" _v < /dev/tty
+    fi
+    eval "$1=\$_v"
+}
+
 _die() { # ログ（/tmp/log.*、$1 があれば足す）を出して U.sh を終える（main の最後と同じ出し方）
     if [ "$1" ]; then
 	echo "$1" >> /tmp/log.$TMP_LABEL
@@ -1202,23 +1220,23 @@ _list_parts() { # $2 以降の種類の区画を 1) から一覧に出し、番�
     for _type in "$@"
     do
 	if [ "$_type" = "ntfs" ]; then
-	    _is_inst ntfs-3g + > /dev/tty
+	    _is_inst ntfs-3g + > $U_TTY
 	elif [ "$_type" = "exfat" ]; then
-	    _is_inst exfat-fuse + > /dev/tty
+	    _is_inst exfat-fuse + > $U_TTY
 	fi
-	_list_strage $_i $_type > /dev/tty
+	_list_strage $_i $_type > $U_TTY
 	. /tmp/strage.$TMP_LABEL
     done
-    echo "  )<EXIT>" > /dev/tty
+    echo "  )<EXIT>" > $U_TTY
     if [ "$_multi" = "m" ]; then
 	_min=1
     fi
     while :
     do
 	if [ "$_multi" = "m" ]; then
-	    read -p "Input No (e.g. '2' or '2 5'):" _sel < /dev/tty
+	    _ask _sel "Input No (e.g. '2' or '2 5'):"
 	else
-	    read -p "Input No:" _sel < /dev/tty
+	    _ask _sel "Input No:"
 	fi
 	_ok=y
 	for _n in $_sel
@@ -1233,7 +1251,10 @@ _list_parts() { # $2 以降の種類の区画を 1) から一覧に出し、番�
 	if [ "$_ok" ]; then
 	    break
 	fi
-	echo "$_sel: Invalid No. ($_min-$((_i-1)))" > /dev/tty
+	echo "$_sel: Invalid No. ($_min-$((_i-1)))" > $U_TTY
+	if [ "$U_BATCH" ]; then # 聞き直せない
+	    return
+	fi
     done
     for _n in $_sel
     do
@@ -1391,7 +1412,7 @@ make_usb() { # -m)
     else
         echo "-> ${_DST_DISK}1:EFI(100MiB) ${_DST_DISK}2:BIOS boot(1MiB) $_DST_ROOT_PART:/(rest)"
     fi
-    read -p "Erase $_DST_DISK and copy $DEBIAN_ROOT_PART? (Y/N): " _yn
+    _ask _yn "Erase $_DST_DISK and copy $DEBIAN_ROOT_PART? (Y/N): " N
     if [ "$_yn" != "Y" ] && [ "$_yn" != "y" ]; then
         return
     fi
@@ -1532,7 +1553,7 @@ desktop_select() { # -d)
         _n=$((_n+1))
     done < $_list
     echo "  )<EXIT>"
-    read -p "Input No (e.g. '2' or '2 5'):" _sel
+    _ask _sel "Input No (e.g. '2' or '2 5'):"
     for _i in $_sel
     do
         if [ ! "`echo $_i | grep -E '^[0-9]+$'`" ] || [ "$_i" -lt 1 ] || [ "$_i" -ge "$_n" ]; then
@@ -1556,7 +1577,7 @@ desktop_select() { # -d)
     if [ "$_from" ]; then
         echo "($_from -> BASE.u: the desktop stops now)"
     fi
-    read -p "Install and save? (Y/N): " _yn
+    _ask _yn "Install and save? (Y/N): " N
     if [ "$_yn" != "Y" ] && [ "$_yn" != "y" ]; then
         return
     fi
@@ -1617,7 +1638,7 @@ desktop_select() { # -d)
     echo "$1:$_pairs : $LINENO" >> /tmp/log.$TMP_LABEL
     # 最後に入れたもの（今の RAMDISK の中身）は、そのままそのホストとして起動できる
     _name=${RAMDISK_GB}GB-$_name
-    read -p "Start $_name now? (Y/n): " _yn
+    _ask _yn "Start $_name now? (Y/n): " n
     if [ "$_yn" ] && [ "$_yn" != "Y" ] && [ "$_yn" != "y" ]; then
         echo "$1: '. U -n' to boot. : $LINENO" >> /tmp/log.$TMP_LABEL
         return
@@ -1752,7 +1773,7 @@ erase_base() { # -e)
         echo "$_option: BASE.u: No such file.  Please type 'sudo touch /opt/BASE.u'[Enter] : $LINENO" >> /tmp/log.$TMP_LABEL
         return
     fi
-    read -p "Delete base? (Y/N): " _yn
+    _ask _yn "Delete base? (Y/N): " N
     if [ "$_yn" != "Y" ] && [ "$_yn" != "y" ]; then
         return
     fi
@@ -1855,7 +1876,7 @@ next_host() { # -n)
         _n=$((_n+1))
     done < $_list
     echo "  )<EXIT>"
-    read -p "Input No:" _n
+    _ask _n "Input No:"
     case "$_n" in
         ''|*[!0-9]*) return ;;
     esac
@@ -1881,7 +1902,7 @@ next_host() { # -n)
     if [ ! "`grep '^GRUB_DEFAULT=saved' $MNT_DEBIAN/etc/default/grub`" ]; then
         echo "$1: GRUB_DEFAULT is not 'saved' in $MNT_DEBIAN/etc/default/grub. : $LINENO" >> /tmp/log.$TMP_LABEL
     fi
-    read -p "Reboot now? (Y/n): " _yn
+    _ask _yn "Reboot now? (Y/n): " n
     if [ ! "$_yn" ] || [ "$_yn" = "Y" ] || [ "$_yn" = "y" ]; then
         cd /opt
         _fs $LINENO umount $MNT_DEBIAN
@@ -2913,7 +2934,7 @@ EOF
     ls -l /opt
     df /
     if [ "$_first" ]; then
-        read -p "Reboot now ($_rescue_entry)? (Y/n): " _yn
+        _ask _yn "Reboot now ($_rescue_entry)? (Y/n): " n
         if [ ! "$_yn" ] || [ "$_yn" = "Y" ] || [ "$_yn" = "y" ]; then
             reboot
         fi
@@ -2949,7 +2970,11 @@ verbose() { # -v)
     _list_mnt_no >> /tmp/mess.$TMP_LABEL
     echo >> /tmp/mess.$TMP_LABEL
     df >> /tmp/mess.$TMP_LABEL
-    $PAGER /tmp/mess.$TMP_LABEL
+    if [ "$U_BATCH" ]; then
+        cat /tmp/mess.$TMP_LABEL
+    else
+        $PAGER /tmp/mess.$TMP_LABEL
+    fi
 }
 
 UUID=""
@@ -3213,6 +3238,9 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	echo "  -v(ervose)" >> /tmp/mess.$TMP_LABEL
 	sort < /tmp/mess.$TMP_LABEL
 	cat /dev/null > /tmp/mess.$TMP_LABEL
+	if [ "$U_BATCH" ]; then # --list: 使えるオプションの一覧だけ
+	    return
+	fi
 	read -p "Option: -" _n
 	_ARG_LIST=-${_n} # -eおよび-nがechoのためのオプションではないことを明示
 	if [ "`echo $_ARG_LIST | fgrep ' '`" ]; then
@@ -3306,5 +3334,26 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
     sed '/^$/d' < /tmp/tmp.$TMP_LABEL > /tmp/log.$TMP_LABEL
     _save_log /tmp/log.$TMP_LABEL
 }
+
+# --- 前から使う時（usilic の RESCUE、^J^R）の引数。どこに置いてもいい（オプションの引数としては数えない）
+#   --list     一覧を出して、最初の問いで止まる（選ばない・N）。オプションが無ければ、使えるオプションの一覧
+#   --ans=答え  問いへの答え（問いの順に、いくつでも）。例: /opt/U.sh -f --ans=3、/opt/U.sh -n --ans=2 --ans=n
+# どちらかがあれば /dev/tty から読まず、一覧も標準エラー出力へ出す（usilic の画面を乱さない）
+U_BATCH=""
+U_ANS=""
+U_TTY=/dev/tty
+_args=""
+for _x in "$@"
+do
+    case "$_x" in
+        --list) U_BATCH=y ;;
+        --ans=*) U_BATCH=y; U_ANS="$U_ANS${_x#--ans=}|" ;;
+        *) _args="$_args $_x" ;;
+    esac
+done
+if [ "$U_BATCH" ]; then
+    U_TTY=/dev/stderr
+fi
+set -- $_args
 
 main $1 $2 $3 $4 $5
