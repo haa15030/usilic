@@ -408,7 +408,11 @@ if [ "$ON_UBUNTU" ]; then
         software-properties-common upki multipath-tools open-iscsi bcache-tools
         linux-perf linux-tools-* makedumpfile manpages-dev ssh-import-id linux-generic
         linux-firmware-qualcomm-misc linux-firmware-qualcomm-graphics linux-firmware-mellanox-spectrum
-        linux-firmware-netronome linux-firmware-qlogic linux-firmware-marvell-prestera"
+        linux-firmware-netronome linux-firmware-qlogic linux-firmware-marvell-prestera
+        linux-firmware-intel-wireless linux-firmware-qualcomm-wireless linux-firmware-mediatek
+        linux-firmware-broadcom-wireless linux-firmware-marvell-wireless firmware-sof-signed"
+    # （上の最後の2行: 無線 LAN と、Intel のノートパソコンの音声（SOF）の firmware。Debian の BASE_LIST も入れていない。
+    #   rescue なので外す（約250MB）。ノートパソコンで無線 LAN を使うなら、この2行から消す）
 fi
 readonly RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X BASE_LIST JP_LIST
 
@@ -2892,8 +2896,9 @@ EOF
         apt-get clean
         cd /
         # カーネルのモジュールとヘッダは tar で外す（/tmp へ mv すると、tmpfs なので途中で止まった時に SSD から消える）
-        echo "tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' [e-h]* root srv usr var | tar xfp - -C /tmp/loop1.$TMP_LABEL"
-        tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' [e-h]* root srv usr var | tar xfp - -C /tmp/loop1.$TMP_LABEL 2>/tmp/error.$TMP_LABEL
+        # ホームの git（-u が clone した usilic）・.local（前の rescue で作った usilic）・.cache は RAM の土台に要らない（167MB あった）
+        echo "tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' --exclude='home/*/git' --exclude='home/*/.local' --exclude='home/*/.cache' [e-h]* root srv usr var | tar xfp - -C /tmp/loop1.$TMP_LABEL"
+        tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' --exclude='home/*/git' --exclude='home/*/.local' --exclude='home/*/.cache' [e-h]* root srv usr var | tar xfp - -C /tmp/loop1.$TMP_LABEL 2>/tmp/error.$TMP_LABEL
         if [ -s /tmp/error.$TMP_LABEL ]; then
             echo "$1: `cat /tmp/error.$TMP_LABEL` : $LINENO" | tee -a /tmp/log.$TMP_LABEL
             cd /opt

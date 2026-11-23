@@ -175,7 +175,8 @@ def make_template(env, log, option, out, lap):
     fs(env, log, 'mount', '-o', 'loop', shm0 + '/IMG1.img', loop1)
     system.run(['apt-get', 'clean'])
     # カーネルのモジュールとヘッダはtarで外す(/tmpへmvすると、tmpfsなので途中で止まった時にSSDから消える)
-    command = ("tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' [e-h]* root srv usr var "
+    # ホームのgit(-uがcloneしたusilic)・.local(前のrescueで作ったusilic)・.cacheはRAMの土台に要らない(167MBあった)
+    command = ("tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' --exclude='home/*/git' --exclude='home/*/.local' --exclude='home/*/.cache' [e-h]* root srv usr var "
                "| tar xfp - -C " + loop1)
     out(command)
     errors = env.tmp + '/tar.err'

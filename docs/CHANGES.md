@@ -33408,6 +33408,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1369. **src/U_proto.sh・src/python: RAMの土台に、ホームのgit・.local・.cacheを写さない。Ubuntuは無線LANとSOFのfirmwareも外す(2026-11-24)**
+   - 直接のユーザーの話: 項目1366の後もRAM-7.3.1+8gb-base.gzは1.13GB。展開した中身は/usr/lib/firmware 497M(intel 173M: iwlwifi 89M・sof約56M、nvidia 105M: ga102 75M・tu102 27M、mediatek 38M、ath10k/11k/12k 50M等)、/usr/lib/modules 576M、/var/lib/apt 186M、/home 167M(~/git 113M・~/.local 54M)。グラボはRTX3050(GA106/107、nouveauはnvidia/ga102のGSPが要るので残す)。「sofって何？」への答え(Intelの新しいノートパソコンの音声のDSPで動くfirmware、デスクトップのHD Audioには要らない)に「レスキューなので外そう。」
+   - 変更1: TEMPLATE(RAMの土台)を作るtarで、`home/*/git`(-uがcloneしたusilic)・`home/*/.local`(前のrescueで作ったusilic、DEBIAN.uへ戻しても包みでないので残る)・`home/*/.cache`を写さない。rescueのイメージはSSDから別に作るので、rescueには入る。
+   - 変更2: UBUNTU_PURGE_LISTに、無線LAN(linux-firmware-intel-wireless・qualcomm-wireless・mediatek・broadcom-wireless・marvell-wireless)とSOF(firmware-sof-signed)を足す(約250MB)。DebianのBASE_LISTもこれらは入れていない。ノートパソコンで無線LANを使うなら、その2行を消す。
+   - /var/lib/aptはテキストでgzipで縮む(base.gzへの影響は40M程度)ので、そのまま。
+   - 確かめたこと: tests/test_ush.py。`bash -n`・`dash -n`。
+
 1368. **src/U_proto.sh・src/python: 記録へ戻す`dpkg --purge`のやり直しを3回から10回まで(2026-11-24)**
    - 直接のユーザーの話: Ubuntuで-uをやり直した後のU.logに「-o DEBIAN.u -p: not purged: … libdeflate0 libfribidi0 libgraphite2-3 libharfbuzz0b … libwebp7 …」と、それが外れなかった理由(python3-pil・libraqm0・libharfbuzz0b・libtiff6等が要している)が出た。
    - 原因: dpkg --purgeは依存関係を解かないので、外すもの同士で要しているものは1回では外れず、やり直しで1段ずつ外れる。rescueが入れたpython3-pil→libraqm0→libharfbuzz0b→libgraphite2-3のように依存が深いと、3回では残った。
