@@ -2,6 +2,7 @@
 Description=/etc/rc.local (U.sh -r)
 ConditionFileIsExecutable=/etc/rc.local
 After=network.target
+Before=systemd-user-sessions.service getty.target
 
 [Service]
 Type=forking

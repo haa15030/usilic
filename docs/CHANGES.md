@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1374. **src/U_proto.sh・src/python: Ubuntuのrc-local.serviceに、イメージを展開し終わるまでログインさせない(Before=)(2026-11-24)**
+   - 直接のユーザーの話: UbuntuのRAM-7.3.1+8gb-baseで起動したら、いつもあるはずの待ちが無く、ログインすると/にいた。プロンプトは8GB-baseだが、journalctl -u rc-localではホスト名8GB-rescueでrc.localが最後(display-managerの起動・usilicの確認)まで動いていた。/home/usilicにはrescueのもの(Desktop・.local等)があった。
+   - 原因: rc.localが8GB-rescue.imgを展開している途中でログインできた(SHM_LISTで/homeをtmpfsへ付け替えている最中だったので/に出て、ホスト名も変わる前)。Debianのgetty@.serviceはrc-local.serviceの後(After=)だが、Ubuntu 26.04のsystemd 261(258でrc.localの互換が無くなった)では待たない。U.shが置くUbuntu用のrc-local.serviceにも順番が無かった。
+   - 変更: rc-local.serviceに`Before=systemd-user-sessions.service getty.target`(systemd-user-sessionsが/run/nologinを消すまで、sshも含めroot以外はログインできない)。U.shのヒアドキュメントとPython版のdata/rc-local.service。
+   - 確かめたこと: tests/test_ush.py。`bash -n`・`dash -n`。
+
 1373. **src/python: -r(起動の時)で、SHM_LISTのディレクトリの中身を/tmpでなく/optに預ける(2026-11-24)**
    - 直接のユーザーの話: 619MBのRAM-7.3.1+8gb-base.gzは、UbuntuのGRUB(UEFI)ではまだ「Out of memory.」、Debianから BIOSで起動したら起動できた。ただしRAMDISKを展開する待ちが無く、ログインすると/にいる(ホームが無い)。
    - 見つけたこと: Python版の-rは、SHM_LIST(既定「home tmp var」)の中身をtmpfsへ移す時、env.tmp(/tmp/ush.PID)の下に預けていた。「tmp」の番で/tmpにtmpfsを重ねると、/tmpの下に預けたもの(/tmp/ush.PID自身も)が隠れて戻せない(/tmpの中身が消える)。U.shは/opt/shm.$TMP_LABELに預けていた。ホームが無い件の原因かはまだ分からない(調べ中)。

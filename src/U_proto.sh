@@ -2981,11 +2981,14 @@ EOF
         sed -i /tmp/loop1.$TMP_LABEL/etc/rc.local -e "s|@MNT_DEBIAN@|$MNT_DEBIAN|"
         chmod 755 /tmp/loop1.$TMP_LABEL/etc/rc.local
         if [ "$ON_UBUNTU" ]; then # rc.local を動かすユニット（systemd の rc.local の互換（generator）より優先される。無くなっても動く）
+            # Before=: イメージを展開し終わるまでログインさせない（systemd 258 で rc.local の互換が無くなり、getty が
+            # rc-local.service を待たなくなった。展開の途中でログインすると、/home の付け替えの最中で / に出た）
             cat <<'EOF' > /tmp/loop1.$TMP_LABEL/etc/systemd/system/rc-local.service
 [Unit]
 Description=/etc/rc.local (U.sh -r)
 ConditionFileIsExecutable=/etc/rc.local
 After=network.target
+Before=systemd-user-sessions.service getty.target
 
 [Service]
 Type=forking
