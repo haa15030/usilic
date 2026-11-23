@@ -76,8 +76,8 @@ def prepare(env, log, option, out):
         if any(l.startswith('ii') and 'wget' in l for l in installed.splitlines()) and \
                 'ok installed' not in system.output(['dpkg-query', '-W', '-f=${Status}', 'apt-listchanges']):
             system.run(['dpkg', '--purge', 'wget'])  # U.shを取った後は要らない
-        if not system.exists('/opt/DEBIAN.u'):
-            output_u(env, log, ['DEBIAN.u'], out)
+    if env.on_none and not system.exists('/opt/DEBIAN.u'):  # 入れたばかりの状態の記録(Ubuntuも。-uがここへ戻してからBASEを作る)
+        output_u(env, log, ['DEBIAN.u'], out)
     _network(env, log, out)
     if not system.exists('/opt/rc_systemd.txt'):  # BASEの有効なサービスの一覧(start_rc()で使う)
         system.write_text('/opt/rc_systemd.txt', ''.join(u + '\n' for u in enabled_units(env)))

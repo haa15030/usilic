@@ -33408,6 +33408,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1367. **src/U_proto.sh・src/python: UbuntuでもDEBIAN.u(入れたばかりの状態の記録)を作る。Python版は記録が無い時に戻さない(2026-11-23)**
+   - 直接のユーザーの話: 8GB-rescue.*も消してから-uをやり直す話の後、「DEBIAN.uとはubuntu.uのこと？」
+   - 調べたこと: DEBIAN.u(最初にU.shを動かした時の、入れたばかりの状態の記録)は、Debianの時だけ作っていた(wgetを外すのと同じ条件の中)。-uはBASE.uが無い時にDEBIAN.uへ戻してからBASEを作るが、Ubuntuでは記録が無く、U.shの`_output_u`は「not exist」で何もしない。そのため、rescue(setup-debian.sh等)が入れたものが残ったままBASE.uになる。さらにPython版の`purge_to`・`install_from`は、記録が無い時に空の記録として扱い、`purge_to`は今あるものを全部dpkg --purgeしようとする作りだった(危ない)。
+   - 変更1: DEBIAN.uはNONE-KERNELならUbuntuでも作る(Debianのwgetを外すのは今まで通りDebianだけ)。
+   - 変更2: Python版の`purge_to`・`install_from`は、記録が無ければ「-o : /opt/名前: not exist.」をログへ書いて何もしない(U.shと同じ)。
+   - 確かめたこと: tests/test_ush.py。`bash -n`・`dash -n`。
+
 1366. **src/U_proto.sh・src/python: Ubuntuの-uで、BASE.uを記録する前にRAMDISKでは要らないもの(UBUNTU_PURGE_LIST)を外す。モジュールはstrip(2026-11-23)**
    - 直接のユーザーの話: Ubuntuで作ったRAM-7.3.1+8gb-base.gzが1.38GB(DebianのRAM-6.12.117+8gb-base.gzは561MB)で、Z390UDではOut of memoryかも。また「/opt/BASE.u。debian版とのdiffを取ると、-で始まる行が63ある代わりに+が230もある。minimamなはずなのになんでこんなに多いの？」。アシスタントの仕分け(A: 外す、B: 残す、C: firmwareは選ぶ)に「それでやってみて。」
    - 調べたこと: 展開したbase(2.4G)は/usr/lib/firmware 736M(Ubuntuのfirmwareは.zstで圧縮済みなのでgzipで縮まない)、/usr/lib/modules 576M、snapd 242M(/usr/lib/snapd・/var/lib/snapd)、/var/lib/apt 122M。BASE.uの+230は、ubuntu-server-minimal(Ubuntu Serverが最初から入れる。「minimized」はmanのページ等を削っただけ)とそれが引き込むライブラリ、細かく分かれたlinux-firmware-*。

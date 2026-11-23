@@ -55,7 +55,11 @@ def purge_to(env, log, record_name, out):
     「dependency problems」で外さずに残る。外すもの同士の順番の都合で残ったものは、もう一度やれば外れるので3回まで
     (減らなくなったらやめる)。それでも残ったものは、dpkgの理由と一緒にログへ。外したかどうか(True)を返す。"""
     system = env.system
-    record = (system.read_text('/opt/' + record_name) or '').splitlines()
+    record = system.read_text('/opt/' + record_name)
+    if record is None:  # 記録が無い時に空として扱うと、今あるものを全部外してしまう(U.shの_output_uは「not exist」で止める)
+        log.add('-o : /opt/%s: not exist.' % record_name)
+        return False
+    record = record.splitlines()
     packages = added(record, current_lines(system))
     if not packages:
         return False
@@ -81,7 +85,11 @@ def purge_to(env, log, record_name, out):
 def install_from(env, log, record_name, out):
     """記録へ足す(-i): 記録にあって今無いものをapt-get install(全体で止まったら1つずつ)。足したかどうか。"""
     system = env.system
-    record = (system.read_text('/opt/' + record_name) or '').splitlines()
+    record = system.read_text('/opt/' + record_name)
+    if record is None:
+        log.add('-o : /opt/%s: not exist.' % record_name)
+        return False
+    record = record.splitlines()
     packages = added(current_lines(system), record)
     if not packages:
         return False

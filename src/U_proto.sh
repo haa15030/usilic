@@ -3254,9 +3254,9 @@ EOF
 	if [ "`dpkg -l | grep wget | grep ^ii`" ] && [ ! "`_is_inst apt-listchanges`" ]; then # wget標準システムユーティリティの有無をapt-listchanges
 	    dpkg --purge wget # U.sh をゲットしたあとは不要
 	fi
-	if [ ! -f /opt/DEBIAN.u ]; then
-	    _output_u DEBIAN.u $LINENO
-	fi
+    fi
+    if [ "$ON_NONE" ] && [ ! -f /opt/DEBIAN.u ]; then # 入れたばかりの状態の記録（Ubuntu も。-u がここへ戻してから BASE を作る）
+	_output_u DEBIAN.u $LINENO
     fi
     if [ ! "`ip a | grep \<BROADCAST`" ]; then # ネットに繋がってないかまたは有効なethデバイス設定が無い
 	echo "Network unreachable.: $LINENO" >> /tmp/log.$TMP_LABEL
