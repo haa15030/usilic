@@ -47,7 +47,8 @@ rescue-USB の作り方      ㊿：⑲手順⊥㊿#
 USB メモリの中身はすべて消えます。#
 #
 Ubuntu では、4GB に BASE が収まらないので、RAMDISK は 8GB だけ（8GB-base・8GB-rescue）です。
-dracut を使っていれば、ルートの区画を tmpfs へ写して起動する「TORAM」の項目も作ります。#
+dracut を使っていれば、ルートの区画を tmpfs へ写して起動する「TORAM」の項目も作ります。
+mv・cp・ls 等の基本コマンドは、最初に GNU 版（coreutils-from-gnu）へ入れ替えます（GNU_COREUTILS、下の⑧）。#
 #
 所要時間・容量の目安   ㊿：⑲'. U -u'⊥㊿#
 #
@@ -158,6 +159,12 @@ debconf の問い（既定のディスプレイマネージャ等）では止ま
 U.sh は別のプロセスで動き、出力（/tmp/usilic-rescue.log）を SHELL の tail -f で見ます（usilic を終えても U.sh は止まりません）。
 テキストのコンソール（Ctrl+Alt+F3）や ssh でも使えるので、デスクトップのホストの -d にも使えます。
 python3 は、-o -p・-e で外しません（BASE.u 等の記録に載せません）。#
+#
+⑧ Ubuntu は 25.10 から、mv・cp・ls 等の基本コマンドを、C で書かれた GNU coreutils から Rust で書き直した uutils（coreutils-from-uutils）に入れ替えました（sudo も sudo-rs に）。
+uutils は GNU と同じ動きを目指していますが、端のケースはまだ違うことがあります（例: GNU の mv は「mv /home/.」を断りますが、uutils では /home そのものが写り、-r で起動するたびに /home/home ができました）。
+U.sh は何十年分の GNU の動きを前提に書いてあるので、Ubuntu では最初に（DEBIAN.u を記録する前に）"apt-get install --allow-remove-essential coreutils-from-gnu" で GNU 版へ入れ替えます。
+uutils のままにするなら、U.sh の GNU_COREUTILS を "" にします。
+既に DEBIAN.u を記録した後で入れ替えた時は、DEBIAN.u の coreutils-from-uutils の行も coreutils-from-gnu に直します（直さないと、DEBIAN.u へ戻す時に GNU 版を外そうとします）。#
 #
 ファイル⊥㊿#
 ⑦  /opt/U.sh㊿ : ⑲本体㊿#

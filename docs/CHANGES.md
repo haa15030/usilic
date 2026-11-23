@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1376. **src/U_proto.sh・src/python・src/U_sh.txt: Ubuntuでは最初にcoreutilsをGNU版へ入れ替える(GNU_COREUTILS)(2026-11-24)**
+   - 直接のユーザーの話: 「mvって未だに仕様が変わったりするわけ？」(項目1375の/home/home)への答え(Ubuntu 25.10からmv等の実装がRustのuutilsに入れ替わった)に、「マニュアルには事情を説明したうえでGNU版にした方が無難かも。」
+   - 変更1: Ubuntu用の設定`GNU_COREUTILS=y`。下準備で、coreutils-from-uutilsが入っていれば`apt-get install -y --allow-remove-essential coreutils-from-gnu`(DEBIAN.uを記録する前に。U.shは何十年分のGNUの動きを前提に書いてある)。uutilsのままなら""。
+   - 変更2: マニュアル(U_sh.txt)のUbuntuの所に一言と、注⑧(uutilsへの入れ替えの事情・/home/homeの例・GNU版にする理由・既にDEBIAN.uを記録した後で入れ替えた時はDEBIAN.uの行も直すこと)。
+   - 確かめたこと: tests/test_ush.py。`bash -n`・`dash -n`。Ubuntuの実機ではまだ。
+
 1375. **src/U_proto.sh・src/python: -rでSHM_LISTの中身を移すmvに「.*」を使わない(Ubuntuで/home/homeができた)(2026-11-24)**
    - 直接のユーザーの話: UbuntuのRAMで起動したら、/home/homeの下にhome(空)とusilic(16項目、本物は18項目)があった(どれも起動の時刻)。SSDの/homeにもrescueのイメージの/homeにも無かったので、起動の時の-rが作った。
    - 原因: -rはSHM_LIST(home tmp var)の中身を`mv /home/* /home/.* 預け先`で移し、tmpfsを重ねてから戻す。「.*」は「.」「..」にも合う。GNUのmvは「/home/.」を断るが、Ubuntu 26.04の既定のmv(uutils、rust-coreutils)は/homeそのものとして写した(別のファイルシステムへなのでコピー)ようで、戻した時に/home/homeになった。U.shも同じ書き方。

@@ -402,6 +402,9 @@ readonly PAGER=more # _page で usilic・less が無い時だけ（more は戻�
 if [ "$ON_UBUNTU" ]; then
     readonly STD_LIST="ubuntu-standard"
     readonly NO_SNAP=y # snapd を入れず Firefox は Mozilla 公式 apt リポジトリの deb 版を使う（snap を使うなら ""）
+    # mv・cp・ls 等を GNU 版（coreutils-from-gnu）に。Ubuntu 25.10 からの既定は Rust で書き直した uutils（coreutils-from-uutils）で、
+    # 端のケースが GNU と違う（「mv /home/.」を断らず /home/home ができた）。U.sh は GNU の動きを前提に書いてある。uutils のままなら ""
+    readonly GNU_COREUTILS=y
     readonly NETPLAN_NM=/etc/netplan/90-U-network-manager.yaml
     RESCUE_LIST=`echo " $RESCUE_LIST " | sed -e 's/ firefox-esr / firefox /'`
     if [ "$RESCUE_LIST_X" ]; then
@@ -3289,6 +3292,10 @@ EOF
 	if [ "`dpkg -l | grep wget | grep ^ii`" ] && [ ! "`_is_inst apt-listchanges`" ]; then # wget標準システムユーティリティの有無をapt-listchanges
 	    dpkg --purge wget # U.sh をゲットしたあとは不要
 	fi
+    fi
+    if [ "$ON_UBUNTU" ] && [ "$GNU_COREUTILS" ] && [ "`_is_inst coreutils-from-uutils`" ]; then # DEBIAN.u を記録する前に GNU 版へ
+	echo "apt-get install -y --allow-remove-essential coreutils-from-gnu"
+	apt-get install -y --allow-remove-essential coreutils-from-gnu
     fi
     if [ "$ON_NONE" ] && [ ! -f /opt/DEBIAN.u ]; then # 入れたばかりの状態の記録（Ubuntu も。-u がここへ戻してから BASE を作る）
 	_output_u DEBIAN.u $LINENO

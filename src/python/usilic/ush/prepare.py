@@ -76,6 +76,11 @@ def prepare(env, log, option, out):
         if any(l.startswith('ii') and 'wget' in l for l in installed.splitlines()) and \
                 'ok installed' not in system.output(['dpkg-query', '-W', '-f=${Status}', 'apt-listchanges']):
             system.run(['dpkg', '--purge', 'wget'])  # U.shを取った後は要らない
+    if env.on_ubuntu and env.conf('GNU_COREUTILS', '') and \
+            'ok installed' in system.output(['dpkg-query', '-W', '-f=${Status}', 'coreutils-from-uutils']):
+        # mv・cp・ls等をGNU版に(Ubuntu 25.10からの既定はRustのuutilsで、端のケースがGNUと違う。DEBIAN.uを記録する前に)
+        out('apt-get install -y --allow-remove-essential coreutils-from-gnu')
+        system.stream(['apt-get', 'install', '-y', '--allow-remove-essential', 'coreutils-from-gnu'], out)
     if env.on_none and not system.exists('/opt/DEBIAN.u'):  # 入れたばかりの状態の記録(Ubuntuも。-uがここへ戻してからBASEを作る)
         output_u(env, log, ['DEBIAN.u'], out)
     _network(env, log, out)
