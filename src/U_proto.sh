@@ -2596,6 +2596,9 @@ _setup_usilic() { # usilicの環境（tools/setup-debian.sh）を作り、ビル
     local _bin _lib _pkgs
 
     _get_usilic_repo || return 1
+    if [ "$ON_UBUNTU" ]; then # setup-debian.sh が入れる firefox を snap でなく Mozilla の apt リポジトリから（snap の
+        _no_snap_ubuntu       # firefox は snap store から落とすので長く、RAMDISK には snapd も要る）
+    fi
     sh "$_home/git/usilic/tools/setup-debian.sh" "$USR" $SETUP_OPT || return 1
     _bin=$_home/.local/bin/usilic
     if [ "$RESCUE_DEV_PURGE" ] && [ -x "$_bin" ]; then

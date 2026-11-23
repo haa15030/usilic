@@ -7,6 +7,7 @@
 import os
 import re
 
+from .desktop import no_snap_ubuntu
 from .fs import fs
 from .kernel import Lap, compile_kernel, update_base_image
 from .options import entry_titles
@@ -64,6 +65,8 @@ def setup_usilic(env, out):
     home = '/home/' + env.user
     if not get_usilic_repo(env, out):
         return False
+    if env.on_ubuntu:  # setup-debian.shが入れるfirefoxを、snapでなくMozillaのaptリポジトリから(snapのfirefoxは
+        no_snap_ubuntu(env, out)  # snap storeから落とすので長く、RAMDISKにはsnapdも要る)
     if system.stream(['sh', home + '/git/usilic/tools/setup-debian.sh', env.user] +
                      env.conf('SETUP_OPT', '--gpu=none').split(), out) != 0:
         return False
