@@ -14,6 +14,7 @@ python3が無い(-uの最初の一歩)ので、U.shはそのために残る。
   packages.py -o(_output_u、パッケージの記録と、記録へ戻す・足す)
   save.py     -s(save_host・_save_host、-d・-uも使う)
   desktop.py  -d(desktop_select)・-e(erase_base)、ネット・Ubuntuのapt・usilicを入れる・DOT_FILES
+  kernel.py   -k(kernel_remake・_compile)、-uのRAMの土台(_update_base)・起動項目・経過時間
   main.py     引数・ログ(/opt/U.log_日付)
 """
-PORTED = ('-a', '-c', '-d', '-e', '-f', '-n', '-o', '-s', '-v')
+PORTED = ('-a', '-c', '-d', '-e', '-f', '-k', '-n', '-o', '-s', '-v')

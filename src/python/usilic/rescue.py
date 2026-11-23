@@ -24,8 +24,8 @@ LOG = '/tmp/usilic-rescue.log'
 LIST_OPTIONS = ('-a', '-d', '-f', '-n')
 # すぐ終わって出力を見るだけのもの: SHELLのtail -fでなく、出力をFILEで(^Gで戻る)
 VIEW_OPTIONS = ('-v',)
-# 端末で対話するもの(-cのarch-chroot): 別のセッションでなく、SHELLでそのまま動かす(sudoのパスワードもSHELLで)
-INTERACTIVE_OPTIONS = ('-c',)
+# 端末で対話するもの(-cのarch-chroot、-kのmake menuconfig): 別のセッションでなく、SHELLでそのまま動かす(sudoのパスワードもSHELLで)
+INTERACTIVE_OPTIONS = ('-c', '-k')  # -kはmake menuconfig
 # 一覧の番号(または引数)の後にU.shが聞くこと(U.shの_askの順)。(問い, 既定の答え)
 QUESTIONS = {
     '-d': [('Install and save? (Y/N) ', 'N'), ('Start it now? (Y/n) ', 'Y')],

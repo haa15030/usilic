@@ -36,10 +36,10 @@ class System:
         """argvの標準出力(失敗しても、出たものを返す)。"""
         return self.run(argv)[1]
 
-    def interactive(self, argv):
-        """端末をそのまま渡して動かす(ページャー等)。"""
+    def interactive(self, argv, cwd=None):
+        """端末をそのまま渡して動かす(ページャー・make menuconfig等)。"""
         try:
-            return subprocess.run(argv).returncode
+            return subprocess.run(argv, cwd=cwd).returncode
         except OSError:
             return 127
 
@@ -365,6 +365,6 @@ class FakeSystem(System):
         self.links[path] = target
         return True
 
-    def interactive(self, argv):
+    def interactive(self, argv, cwd=None):
         self.calls.append(list(argv))
         return 0
