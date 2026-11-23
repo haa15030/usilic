@@ -267,3 +267,43 @@ def next_host(env, log, ask, out):
     if yn in ('', 'Y', 'y'):
         fs(env, log, 'umount', env.mnt_debian)
         system.run(['reboot'])
+
+
+def change_root(env, log, args, out, command=None, option='-c'):
+    """-c(change_root()・_change_root()): 引数が無ければDEBIAN区画(RAMDISKの時だけ)、あればそのディレクトリ(マウント
+    されたルートの区画、/mnt/usb等)へarch-chroot。commandがあれば、その中で/bin/sh -c command(-mが使う)。終えたら
+    umount -R。"""
+    from .parts import install_if_missing
+    system = env.system
+    target = args[0] if args else ''
+    if not target and (env.on_none or env.on_wsl):
+        log.add('%s: Not on a RAMDISK.' % option)
+    root = ''
+    if not target or target == env.mnt_debian:
+        if not env.on_ramdisk:
+            log.add('%s: Not on a RAMDISK.' % option)
+            return False
+        fs(env, log, 'mount', env.mnt_debian)
+        root = env.mnt_debian
+    else:
+        directory = target.rstrip('/') or '/'
+        if not system.exists(directory):
+            log.add('%s: %s: No such directory.' % (option, directory))
+        elif not system.is_mountpoint(directory):
+            log.add('%s: %s: not mounted.' % (option, directory))
+        elif not all(system.exists(directory + d) for d in ('/dev', '/proc', '/sys')):
+            log.add('%s: %s: not a root system.' % (option, directory))
+        else:
+            root = directory
+    if not root:
+        return False
+    install_if_missing(env, 'arch-install-scripts', out)
+    out('arch-chroot ' + root)
+    if command:
+        code, message = system.run(['arch-chroot', root, '/bin/sh', '-c', command])
+        for line in message.splitlines():
+            out(line)
+    else:
+        code = system.interactive(['arch-chroot', root])
+    fs(env, log, 'umount', '-R', root)
+    return code == 0

@@ -5,7 +5,8 @@ import sys
 from . import PORTED
 from .env import Env
 from .fs import MountError, fs
-from .options import add_strage, file_system, next_host, page_with_usilic, verbose
+from .options import add_strage, change_root, file_system, next_host, page_with_usilic, verbose
+from .packages import output_u
 from .system import System
 
 
@@ -99,6 +100,10 @@ def run(argv, system=None, uname=None, out=None):
             add_strage(env, log, ask, out)
         elif option == '-n':
             next_host(env, log, ask, out)
+        elif option == '-o':
+            output_u(env, log, args, out)
+        elif option == '-c':
+            change_root(env, log, args, out)
     except MountError:
         code = 1
     log.save(env, out)

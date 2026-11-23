@@ -136,7 +136,8 @@ class FakeSystem(System):
     """テスト用。parts: {デバイス: {'TYPE':, 'UUID':, 'free_kb':, 'mountable': True/'ro'/False}}、
     mounted: {マウントポイント: デバイス}、files: {パス: 中身}、dirs: 有るディレクトリ、links: {パス: 行き先}。"""
 
-    def __init__(self, parts=None, mounted=None, files=None, dirs=(), links=None, euid=0):
+    def __init__(self, parts=None, mounted=None, files=None, dirs=(), links=None, euid=0, packages=(), held=(),
+                 hostname='8GB-base'):
         self.parts = dict(parts or {})
         self.mounted = dict(mounted or {})
         self.files = dict(files or {})
@@ -144,6 +145,9 @@ class FakeSystem(System):
         self.links = dict(links or {})
         self.calls = []
         self._euid = euid
+        self.packages = list(packages)   # 入っているパッケージ(dpkg --get-selections)
+        self.held = set(held)            # dpkg --purgeで外れないもの(残す側が要している)
+        self.hostname = hostname
 
     def euid(self):
         return self._euid
@@ -151,7 +155,24 @@ class FakeSystem(System):
     # --- コマンド
     def run(self, argv, input_text=None):
         self.calls.append(list(argv))
+        while argv and (argv[0] == 'env' or '=' in argv[0]):  # env LC_ALL=C 〜
+            argv = argv[1:]
         name = argv[0]
+        if name == 'hostname':
+            return 0, self.hostname + '\n'
+        if name == 'dpkg' and argv[1:2] == ['--get-selections']:
+            return 0, ''.join('%s\t\t\t\tinstall\n' % p for p in self.packages)
+        if name == 'dpkg' and argv[1:2] == ['--purge']:
+            gone = [p for p in argv[2:] if p not in self.held]
+            self.packages = [p for p in self.packages if p not in gone]
+            return (1 if len(gone) < len(argv) - 2 else 0), ''.join(
+                'dpkg: dependency problems prevent removal of %s:\n x depends on %s.\n' % (p, p)
+                for p in argv[2:] if p in self.held)
+        if name == 'apt-get' and argv[1:2] == ['install']:
+            for p in argv[2:]:
+                if not p.startswith('-') and p not in self.packages:
+                    self.packages.append(p)
+            return 0, ''
         if name == 'blkid':
             return self._blkid(argv[1:])
         if name == 'findmnt':

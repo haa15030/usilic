@@ -33408,6 +33408,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1352. **src/python: U.shのPython版に-o・-c(2026-11-23)**
+   - 直接のユーザー依頼: 「このまま終わりまで行っていい。よろしく。」(U.shの残りのオプションを全部Python版へ)。
+   - 変更: usilic/ush/packages.py(-o、`_output_u`)。記録の形はU.shと同じ(dpkg --get-selectionsから、カーネル・GRUB・shim・mokutil・os-prober・python3等を除き「\tinstall」を消した行)で、U.shが作ったBASE.u・DEBIAN.u等をそのまま使える。比べるのはパッケージ名で。「-o 名前」記録、「.」はホスト名.u、「-o 名前 -p」記録に無いものをdpkg --purge(3回まで、残ったものはdpkgの理由と一緒にログへ)、「-o 名前 -i」記録にあって無いものをapt-get install(止まったら1つずつ)、戻した・足した後はcurrent.u。BASE.u・DEBIAN.uは無い時だけ作る。RAMDISKならDEBIAN区画の/optへも。
+   - options.pyに`change_root`(-c、`_change_root`): 引数が無ければDEBIAN区画(RAMDISKの時だけ)、あればマウントされたルートの区画へarch-chroot、終えたらumount -R。-mが使うコマンドの形も。
+   - RESCUE: -cは端末で対話するので、別のセッションでなくSHELLで`sudo python3 ush.py -c …`をそのまま動かす(`rescue.INTERACTIVE_OPTIONS`)。
+   - 確かめたこと: tests/test_ush.py(19件、-o -pで外せないものが残る時のログ・current.u・DEBIAN区画へも、-o -i・「.」・名前に.uを足す・無い記録・BASE.uは作り直さない、-c)。
+
 1351. **src/python: U.shのPython版に-a・-n(2026-11-23)**
    - 直接のユーザー依頼: 項目1350(骨組みと-v・-f)の後、「続けて。」(アシスタントの案の2の残り、-a・-n)。
    - 変更: usilic/ush/options.pyに`add_strage`(-a)・`next_host`(-n)・`entry_titles`(`_entry_titles`)。U.shと同じ手順。

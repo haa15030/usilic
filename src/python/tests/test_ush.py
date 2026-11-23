@@ -162,6 +162,41 @@ class UshTest(unittest.TestCase):
         self.assertIn(['reboot'], system.calls)
         self.assertEqual(system.calls[system.calls.index(['reboot']) - 1], ['umount', '/mnt/debian'])
 
+    def test_o_record_and_purge(self):
+        base = 'acl\t\t\t\t\nbash\t\t\t\t\n'
+        system = fake(files={'/opt/BASE.u': base},
+                      packages=['acl', 'bash', 'grub-pc', 'linux-image-6.12', 'python3', 'sddm', 'kde-a', 'kde-b'],
+                      held=['kde-b'])
+        code, out = run(system, '-o', 'BASE.u', '-p')
+        self.assertIn('dpkg --purge sddm kde-a kde-b', out)               # grub・カーネル・python3は外さない
+        self.assertIn('-o BASE.u -p: not purged: kde-b', out)
+        self.assertIn('x depends on kde-b.', out)
+        self.assertEqual(system.packages, ['acl', 'bash', 'grub-pc', 'linux-image-6.12', 'python3', 'kde-b'])
+        self.assertEqual(system.files['/opt/current.u'], 'acl\t\t\t\nbash\t\t\t\nkde-b\t\t\t\n')
+        self.assertEqual(system.files['/mnt/debian/opt/current.u'], system.files['/opt/current.u'])
+
+    def test_o_install_and_names(self):
+        system = fake(files={'/opt/JP.u': 'acl\t\t\t\nmozc\t\t\t\n'}, packages=['acl'])
+        run(system, '-o', 'JP.u', '-i')
+        self.assertIn(['apt-get', 'install', '-y', 'mozc'], system.calls)
+        run(system, '-o', '.')
+        self.assertIn('/opt/8GB-base.u', system.files)
+        run(system, '-o', 'foo')
+        self.assertIn('/opt/foo.u', system.files)
+        code, out = run(system, '-o', 'nothing.u', '-p')
+        self.assertIn('/opt/nothing.u: not exist.', out)
+        system.files['/opt/BASE.u'] = 'x\n'
+        code, out = run(system, '-o', 'BASE.u')
+        self.assertIn('/opt/BASE.u: already exist.', out)
+
+    def test_c(self):
+        system = fake()
+        code, out = run(system, '-c', '--batch')
+        self.assertIn(['arch-chroot', '/mnt/debian'], system.calls)
+        self.assertIn(['umount', '-R', '/mnt/debian'], system.calls)
+        code, out = run(fake(), '-c', '/mnt/usb', '--batch')
+        self.assertIn('/mnt/usb: No such directory.', out)
+
 
 if __name__ == '__main__':
     unittest.main()

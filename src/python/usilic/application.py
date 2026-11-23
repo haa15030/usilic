@@ -2109,6 +2109,14 @@ class Application:
 
     def rescue_run(self, args):
         """U.shを別のセッションで動かし、SHELLでその出力(rescue.LOG)をtail -fで見る。"""
+        if args and args[0] in rescue.INTERACTIVE_OPTIONS:  # -c: SHELLでそのまま(端末で対話する)
+            self.rescue_password = None
+            if not self.ensure_shell():
+                return False
+            self.enter_mode(SHELL)
+            self.shell.submit_line(rescue.shell_line(args))
+            self.refresh_shell_view()
+            return True
         started = rescue.start(args, self.rescue_password)
         self.rescue_password = None
         if started is None:

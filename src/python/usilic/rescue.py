@@ -24,6 +24,8 @@ LOG = '/tmp/usilic-rescue.log'
 LIST_OPTIONS = ('-a', '-d', '-f', '-n')
 # すぐ終わって出力を見るだけのもの: SHELLのtail -fでなく、出力をFILEで(^Gで戻る)
 VIEW_OPTIONS = ('-v',)
+# 端末で対話するもの(-cのarch-chroot): 別のセッションでなく、SHELLでそのまま動かす(sudoのパスワードもSHELLで)
+INTERACTIVE_OPTIONS = ('-c',)
 # 一覧の番号(または引数)の後にU.shが聞くこと(U.shの_askの順)。(問い, 既定の答え)
 QUESTIONS = {
     '-d': [('Install and save? (Y/N) ', 'N'), ('Start it now? (Y/n) ', 'Y')],
@@ -162,3 +164,11 @@ def start(args, password):
 
 def answer_args(answers):
     return ['--ans=' + a for a in answers]
+
+
+def shell_line(args):
+    """INTERACTIVE_OPTIONSをSHELLで動かす行。"""
+    argv = engine(args) + [a for a in args if not a.startswith('--')]
+    if os.geteuid() != 0:
+        argv = ['sudo'] + argv
+    return ' '.join(shlex.quote(a) for a in argv)
