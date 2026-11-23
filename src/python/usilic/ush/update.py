@@ -262,7 +262,8 @@ def update_base(env, log, option, ask, out):
                 log.add('%s: linux-image-*+%sgb: build failed.' % (option, extra))
                 return False
     if not _installed(env, rescue_gb):
-        system.run(['dpkg', '-i', '/opt/' + _kernels(env, rescue_gb)[0]])
+        out('dpkg -i ' + '/opt/' + _kernels(env, rescue_gb)[0])
+        system.stream(['dpkg', '-i', '/opt/' + _kernels(env, rescue_gb)[0]], out)
     system.shell('rm -f /boot/initrd*+%dgb*' % rescue_gb)  # RAMの土台(RAM-*-base.gz)をinitrdとして使うので要らない
     update_base_image(env, log, rescue_gb, out, lap)
     for name in sorted(system.listdir('/opt')):
@@ -274,7 +275,8 @@ def update_base(env, log, option, ask, out):
             log.add("%s: To update 'RAM-*+%dgb-base.gz', please setup strage-area." % (option, gb))
             continue
         if not _installed(env, gb):
-            system.run(['dpkg', '-i', '/opt/' + name])
+            out('dpkg -i ' + '/opt/' + name)
+            system.stream(['dpkg', '-i', '/opt/' + name], out)
         update_base_image(env, log, gb, out, lap)
     rescue = '%dGB-rescue' % rescue_gb
     # ?GB-rescue: tools/setup-debian.shとRESCUE_LISTで作った環境(ビルドにだけ要るものは外す)を保存する。DEBIAN区画は

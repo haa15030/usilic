@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1364. **src/python: 記録へ戻す`dpkg --purge`(-o … -p・-uの環境削除)と、-uの`dpkg -i`(カーネル)の出力をその場で出す(2026-11-23)**
+   - 直接のユーザーの話: 「カーネルコンパイル後の環境削除でも止まる。」(`/opt/RAM-7.3.1+8gb-base.gz`・`linux-image-7.3.1+8gb_….deb`の一覧の後、`dpkg --purge asciidoc asciidoc-base …`で止まって見えた)
+   - 原因: `purge_to`(記録に無いものをdpkg --purge、数百のパッケージ)は、出力をためてから出していた。-uで作ったカーネルの`dpkg -i`(initrdを作るので長い)は、出力を捨てていた。項目1361・1363と同じ。
+   - 変更: どちらも出力を1行ずつその場で出す。`purge_to`は、出した行をログ用(外れなかった理由)にも取っておく。`dpkg -i`は動かす前にその旨も出す。
+   - 確かめたこと: tests/test_ush.py。
+
 1363. **src/python: -kの`apt build-dep linux -y`・`make mrproper`の出力をその場で出す(2026-11-23)**
    - 直接のユーザーの話: 「BUILD_UBUNTU.imgを-o loopでマウントしたあとの`2 packages can be upgraded. Run 'apt list --upgradable' to see them.`で止まってる。」
    - 原因: その`apt update`の次の`apt build-dep linux -y`(BUILD_LIST、カーネルのビルドに要るものを入れる、長い)を、Python版は出力をためて捨てていた(U.shは端末へ出す)。止まったのではなく、何も出さずに動いていた。`make mrproper`も同じ。

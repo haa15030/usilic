@@ -62,10 +62,12 @@ def purge_to(env, log, record_name, out):
     previous, tries, reasons = None, 0, []
     while packages and packages != previous and tries < 3:
         out('dpkg --purge ' + ' '.join(packages))
-        _, message = system.run(['env', 'LC_ALL=C', 'dpkg', '--purge'] + packages)
-        for line in message.splitlines():
+        reasons = []  # 長い(数百のパッケージ)ので、出たものをその場で出しながら、ログ用に取っておく
+
+        def show(line):
+            reasons.append(line)
             out(line)
-        reasons = message.splitlines()
+        system.stream(['env', 'LC_ALL=C', 'dpkg', '--purge'] + packages, show)
         previous = packages
         packages = added(record, current_lines(system))
         tries += 1
