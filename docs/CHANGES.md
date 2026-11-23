@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1346. **src/U_proto.sh: `-v`をmoreでなくusilicで(戻って読める、2026-11-23)**
+   - 直接のユーザー報告と提案: moreのまずい点は戻れないこと。STRAGE付きで`-v`すると、lsは分かるが残りは出ない。最後までページを送ってdfが出た時にはmoreも終わっていて、lsへは戻れない。moreの代わりにusilicでは。
+   - 変更: `_page`を足し、`-v`の表示に使う。/usr/local/bin/usilic-py(項目1345)があればそれ、無ければユーザーの~/.local/bin/usilic -c(rootの~/.usilicを作らないよう`runuser -u $USR`で)、無ければless、無ければ今まで通り`$PAGER`(more)。usilicはqで終える。
+   - src/U_sh.txtの`-v`・`--batch`の説明も直した。
+   - 確かめたこと: `bash -n`・`dash -n`。
+
 1345. **src/U_proto.sh: `-u`でpython3とPython版のusilic(usilic-py)を入れる、python3は外さない(usilicのRESCUEの3、2026-11-23)**
    - 直接のユーザー依頼: 項目1343のアシスタントの手順(3. `-u`でpython3とPython版をRAM-*-baseとrescueに入れる。`/usr/local/bin/U`はU.shのまま)を「やってみて」。
    - 変更1: `_setup_usilic`のgit clone・pullを`_get_usilic_repo`に分けた。`update_base`のBASE.uの後(RAM-*-base.gzを作る前)に、`_get_usilic_repo`(取れなくても止めない)と`_install_usilic_py`を呼ぶ。`_install_usilic_py`はpython3を入れ、~/git/usilic/src/pythonのusilic.pyとusilic/を/usr/local/lib/usilic-pyへ写し、/usr/local/bin/usilic-py(`exec python3 …/usilic.py "$@"`)を置く。

@@ -372,7 +372,7 @@ readonly TEMPLATE_BASE=TEMPLATE-$KERNEL_VERSION-base
 readonly RAM_DIR_LIST="boot dev media opt proc run sys usr/lib/modules tmp mnt/$DEBIAN" # $MNT_DEBIAN はNG
 # arch-install-scripts（arch-chroot）・gdisk（sgdisk）・dosfstools（mkfs.vfat）・grub-*-bin（BIOSとUEFIの両方のGRUB）は -m で使う
 BASE_LIST="firmware-realtek firmware-misc-nonfree firmware-amd-graphics firmware-nvidia-gsp arch-install-scripts gdisk dosfstools grub-pc-bin grub-efi-amd64-bin"
-readonly PAGER=more
+readonly PAGER=more # _page で usilic・less が無い時だけ（more は戻れない）
 
 # --- Ubuntu（ON_UBUNTU）用の設定 ------------------------------------
 # Ubuntu でも -u は Debian と同じく ${RESCUE_GB}GB（8GB）の RAMDISK 用カーネル・RAM-*-base.gz・${RESCUE_GB}GB-rescue.img を作る。
@@ -575,6 +575,19 @@ _ask() { # read -p の代わり。$1 変数名、$2 問い、$3 --list・--ans= 
         read -p "$2" _v < /dev/tty
     fi
     eval "$1=\$_v"
+}
+
+_page() { # $1 を、戻って読めるページャーで（usilic-py → ユーザーの usilic -c → less → more）
+    # more は戻れず、-v で STRAGE の ls の後の df まで送ると終わってしまい、ls へ戻れなかった。usilic は q で終える
+    if [ -x /usr/local/bin/usilic-py ]; then
+        /usr/local/bin/usilic-py $1
+    elif [ -x /home/$USR/.local/bin/usilic ] && command -v runuser > /dev/null 2>&1; then
+        runuser -u $USR -- /home/$USR/.local/bin/usilic -c $1 # root の ~/.usilic を作らないよう、ユーザーで
+    elif command -v less > /dev/null 2>&1; then
+        less $1
+    else
+        $PAGER $1
+    fi
 }
 
 _die() { # ログ（/tmp/log.*、$1 があれば足す）を出して U.sh を終える（main の最後と同じ出し方）
@@ -3001,7 +3014,7 @@ verbose() { # -v)
     if [ "$U_BATCH" ]; then
         cat /tmp/mess.$TMP_LABEL
     else
-        $PAGER /tmp/mess.$TMP_LABEL
+        _page /tmp/mess.$TMP_LABEL
     fi
 }
 
