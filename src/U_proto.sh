@@ -2578,6 +2578,11 @@ _install_usilic_py() { # Python 版の usilic（src/python、RESCUE の ^J^R で
         echo "-u: $_src/usilic.py: not exist (usilic-py not installed). : $LINENO" >> /tmp/log.$TMP_LABEL
         return
     fi
+    if [ ! -f $_src/ush.py ] || [ ! -f $_src/usilic/ush/data/rc.local ]; then # リポジトリ（GitHub）のものが古い（Python 版の U.sh が
+        # まだ無い）時は、入れ替えない（前は消してから写したので、今のもの・動いている ush.py の data/ も消えた）
+        echo "-u: $_src: old (no ush.py), /usr/local/lib/usilic-py not replaced. : $LINENO" >> /tmp/log.$TMP_LABEL
+        return
+    fi
     rm -rf /usr/local/lib/usilic-py
     mkdir -p /usr/local/lib/usilic-py
     (cd $_src && tar cf - --exclude=__pycache__ usilic.py ush.py usilic) | tar xf - -C /usr/local/lib/usilic-py # ush.py: U.sh の Python 版

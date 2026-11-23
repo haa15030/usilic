@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1362. **src/U_proto.sh・src/python: -uで、リポジトリのPython版が古い(ush.pyが無い)時はusilic-pyを入れ替えない(2026-11-23)**
+   - 直接のユーザーの話: UbuntuでPython版の-uを動かしたら、`create /usr/lib/dracut/modules.d/99ramdisk-root`の後に「FileNotFoundError: … /usr/local/lib/usilic-py/usilic/ush/data/module-setup.sh」で止まった。
+   - 原因: -uは~/git/usilicをGitHubからcloneし、そのsrc/pythonを/usr/local/lib/usilic-pyへ入れ直す(`install_usilic_py`)。GitHubのmpi-gui-fixはまだpushしておらず(61コミット前)、ush.py・usilic/ush/が無い。入れ直す時は先にrm -rfで消すので、手で写した新しいPython版(動いているush.pyのdata/も)が消え、古いusilic.pyだけが残った。その後のtoram_setupがdata/module-setup.shを読めずに止まった。
+   - 変更: Python版・U.shとも、写すもとにush.pyとusilic/ush/data/rc.localが無ければ、入れ替えずに記録(log)へ「old (no ush.py)」と書いて続ける。
+   - 確かめたこと: tests/test_ush.py。`bash -n`・`dash -n`。
+
 1361. **src/python: apt-get install・apt updateの出力をためずに、その場で出す(2026-11-23)**
    - 直接のユーザーの話: 「ubuntuのusilic.pyの-aはapt-get install -y ntfs-3g、exfat-fuseがすごく時間がかかってるんだが。2,3分してやっと終わった。一覧は出てるので続けてみる。」
    - 原因: Python版の`install_if_missing`(-a・-fの区画の一覧の前のntfs-3g・exfat-fuse等)と-o … -iの`apt-get install`、Ubuntuのaptの設定を直した後の`apt update`は、出力を終わりまでためてから出していた(またはまったく出さなかった)。U.shは端末へそのまま出す。かかる時間そのもの(ダウンロード・dpkgのロック待ち等)はU.shと同じはずだが、Python版では何も出ないまま待たされ、止まったように見えた。

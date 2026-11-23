@@ -45,6 +45,11 @@ def install_usilic_py(env, log, out):
     if not system.exists(src + '/usilic.py'):
         log.add('-u: %s/usilic.py: not exist (usilic-py not installed).' % src)
         return
+    if not system.exists(src + '/ush.py') or not system.exists(src + '/usilic/ush/data/rc.local'):
+        # リポジトリ(GitHub)のものが古い(Python版のU.shがまだ無い)時は、入れ替えない(前は消してから写したので、
+        # 今のもの・動いているこのush.pyのdata/も消え、-uが止まった)
+        log.add('-u: %s: old (no ush.py), /usr/local/lib/usilic-py not replaced.' % src)
+        return
     system.run(['rm', '-rf', '/usr/local/lib/usilic-py'])
     system.makedirs('/usr/local/lib/usilic-py')
     system.shell('tar cf - --exclude=__pycache__ usilic.py ush.py usilic | tar xf - -C /usr/local/lib/usilic-py', cwd=src)
