@@ -458,6 +458,7 @@ class UshTest(unittest.TestCase):
         page_with_usilic(Env(system, '6.12.57+8gb'), 'text')
         call = [c for c in system.calls if c[:1] == ['runuser']][0]
         self.assertEqual(call[:6], ['runuser', '-u', 'usilic', '--', 'env', 'HOME=/home/usilic'])  # ユーザーのHOMEで
+        self.assertTrue(call[7].startswith('USILIC_OPEN=/') and call[-1] == '/mnt')   # /mntの(ls)の上にFILEで
 
     def test_a_releases_f_mount(self):
         system = fake(mounted={'/mnt/1': '/dev/sdd1'})

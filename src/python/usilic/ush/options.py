@@ -122,15 +122,19 @@ def file_system(env, log, args, ask, out):
 
 
 def page_with_usilic(env, text):
-    """_page(): usilicのページャー(このusilic.py)で(戻って読める、qで終える)。usilicはユーザーで、HOMEもユーザーのものに
+    """_page(): このusilic.pyで(/mntの(ls)の上にFILEで開く。戻って読め、^Gで/mntへ、qで終える)。usilicはユーザーで、HOMEもユーザーのものに
     (rootのHOMEのままだと~/.usilicが無く「最初の起動」になり、HELPを組むgroffの警告が端末に大量に出た)。"""
     system = env.system
-    fd, path = tempfile.mkstemp(prefix='ush.', suffix='.txt')
+    fd, path = tempfile.mkstemp(prefix='U-v.', suffix='.txt')
     with os.fdopen(fd, 'w', encoding='utf-8') as f:
         f.write(text)
     os.chmod(path, 0o644)
     usilic = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'usilic.py')
-    argv = [sys.executable, usilic, path] if os.path.isfile(usilic) else ['less', path]
+    # ページャーでなく、/mntの(ls)の上にFILEで開く(USILIC_OPEN)。^Gで/mntへ出て、そのまま/mnt/番号へ行ける
+    if os.path.isfile(usilic):
+        argv = ['env', 'USILIC_OPEN=' + path, sys.executable, usilic, '/mnt']
+    else:
+        argv = ['less', path]
     if system.euid() == 0 and env.user:
         argv = ['runuser', '-u', env.user, '--', 'env', 'HOME=/home/' + env.user] + argv
     system.interactive(argv, quiet=True)

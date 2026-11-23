@@ -232,6 +232,9 @@ def main():
     window_slot = os.environ.pop('USILIC_WINDOW_SLOT', '')
     window_slot = int(window_slot) if window_slot.isdigit() else 0
     help_jump = os.environ.pop('USILIC_HELP_JUMP', '') or None  # 親が開き直したHELPの子が飛ぶ行
+    # (ls)の上にこのファイルをFILEで開く(ページャーではないので、^Gでその(ls)へ戻れる)。U.shの-v(DEBIAN区画・STRAGEの
+    # /opt、/mnt/番号、df)を開いて、そのまま/mnt/番号へ行けるように(2026-11-23、U.shの_page・ush.pyのpage_with_usilic)
+    open_after = os.environ.pop('USILIC_OPEN', '')
     stdin_stream = None
     if not sys.stdin.isatty():
         # 標準入力のページャー: データは元の標準入力から読み、キーと画面は端末(/dev/tty)へ(C++版と同じ)。
@@ -299,7 +302,10 @@ def main():
                 started = app.start_resuming_session(last, '.')
             if not started:
                 return 'usilic: cannot list ' + (args[0] if args else '.')
-            if not ephemeral:  # 足りないプログラムのインストールの案内(実行ループの最初でSHELLへ)
+            if open_after and not first_start and os.path.isfile(open_after):
+                app.keep_directory_for = open_after  # ^Gで起動した(ls)へ(fileの/tmpへは移らない)
+                app.open_file(open_after, raw=True)  # rawなのでFILEの履歴には載せない(すぐ消すファイル)
+            if not ephemeral and not open_after:  # 足りないプログラムのインストールの案内(実行ループの最初でSHELLへ。-vの表示の時は出さない)
                 from usilic import install_offer
                 offer = install_offer.plan(usilic_dir, first_start)
                 if offer:

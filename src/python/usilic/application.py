@@ -155,6 +155,7 @@ class Application:
         self.grep = GrepMode()
         self.grep_active = False
         self.grep_prompt = None   # (syntax, LineEditor)を打っている間
+        self.keep_directory_for = None  # このfileから^Gで(ls)へ戻る時は、fileのディレクトリへ移らない(USILIC_OPEN、U.shの-v)
         self.rescue_password = None  # ^J^Rのsudoのパスワード(1回の操作の間だけ、rescue_run()で消す)
         self.prompt_field = (0, 0)  # 入力欄の始まりの桁・出している字の始まり(prompt_mode_line())
         self.jump_highlight = None  # KEYのhで飛んだ行の強調(view, 行, 字, 始まり)(grepJumpHighlightView_)
@@ -900,7 +901,7 @@ class Application:
         self.current_mode = self.return_stack.pop() if self.return_stack else DIRECTORY
         if self.current_mode == LIST and leaving in (FILE, DIRECTORY):
             self.list_mode.prompt_style = False  # 開いた物から戻った一覧は普通の一覧の形(C++と同じ)
-        if leaving == FILE and self.current_mode == DIRECTORY:
+        if leaving == FILE and self.current_mode == DIRECTORY and self.file_mode.current_file != self.keep_directory_for:
             self.move_to_file_directory(self.file_mode.current_file)
         if self.current_mode == ARCHIVE and not self.archives:
             self.current_mode = DIRECTORY

@@ -591,8 +591,9 @@ _page() { # $1 を、戻って読めるページャーで（usilic-py → ユー
     # usilic はユーザーで、HOME もユーザーのものに（runuser -u は HOME を /root のままにするので、usilic が ~/.usilic を
     # 見つけられず「最初の起動」になり、HELP を組む groff の警告（cannot select font 'JPM'）が大量に出た）。標準エラー出力は捨てる
     chmod 644 $1
+    # usilic-py（Python 版）はページャーでなく、/mnt の (ls) の上に FILE で開く（USILIC_OPEN）。^G で /mnt へ出て、そのまま /mnt/番号 へ行ける
     if [ -x /usr/local/bin/usilic-py ] && command -v runuser > /dev/null 2>&1; then
-        runuser -u $USR -- env HOME=/home/$USR /usr/local/bin/usilic-py $1 2>/dev/null
+        runuser -u $USR -- env HOME=/home/$USR USILIC_OPEN=$1 /usr/local/bin/usilic-py /mnt 2>/dev/null
     elif [ -x /home/$USR/.local/bin/usilic ] && command -v runuser > /dev/null 2>&1; then
         runuser -u $USR -- env HOME=/home/$USR /home/$USR/.local/bin/usilic -c $1 2>/dev/null
     elif command -v less > /dev/null 2>&1; then
