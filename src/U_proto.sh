@@ -1550,23 +1550,10 @@ desktop_select() { # -d)
     echo "$1:$_pairs -> '. U -n' to boot. : $LINENO" >> /tmp/log.$TMP_LABEL
 }
 
-include_usilic() { # -i)
-    local _home=/home/$USR _src _lib _pkg _pkgs="" _missing="" _rc
-    local _line='PATH=$HOME/.local/bin:$PATH; export PATH'
-    local _files=".local/bin/usilic .local/lib/usilic .local/share/applications/usilic.desktop .local/usilic-web"
+_usilic_libs() { # $2 の usilic に足りないライブラリ（ldd の not found）を、DEBIAN区画の dpkg の記録（/var/lib/dpkg/info/*.list）から引いて入れる（$1 オプション）
+    local _lib _pkg _pkgs="" _missing=""
 
-    if [ ! "$ON_RAMDISK" ]; then
-        echo "$1: Not on a RAMDISK. : $LINENO" >> /tmp/log.$TMP_LABEL
-        return
-    fi
-    _fs $LINENO mount $MNT_DEBIAN
-    _src=$MNT_DEBIAN$_home
-    if [ ! -x $_src/.local/bin/usilic ]; then
-        echo "$1: $_src/.local/bin/usilic: No such file (build it on the SSD: tools/setup-debian.sh). : $LINENO" >> /tmp/log.$TMP_LABEL
-        return
-    fi
-    # 足りないライブラリ（ldd の not found）を、DEBIAN区画の dpkg の記録（/var/lib/dpkg/info/*.list）から引いてパッケージ名にする
-    for _lib in `ldd $_src/.local/bin/usilic | awk '/=> not found/ {print $1}'`
+    for _lib in `ldd $2 | awk '/=> not found/ {print $1}'`
     do
         _pkg=`grep -l "/$_lib\$" $MNT_DEBIAN/var/lib/dpkg/info/*.list 2>/dev/null | head -n1 | sed -e 's@.*/@@' -e 's/\.list$//'`
         if [ "$_pkg" ]; then
@@ -1589,6 +1576,42 @@ include_usilic() { # -i)
         fi
         apt-get clean
     fi
+}
+
+_boot_usilic_libs() { # -r: 展開したホストの usilic（~/.local/bin、前に -i で入れて保存したもの）にライブラリが足りなければ入れる
+    # （アイコンから起動すると、端末からと違って「shared libraries」のメッセージも出ずに何も起きない。起動の時は root なので sudo は要らない）
+    local _bin=/home/$USR/.local/bin/usilic _i
+
+    if [ ! -x $_bin ] || [ ! "`ldd $_bin 2>/dev/null | grep 'not found'`" ] || ! mountpoint -q $MNT_DEBIAN; then
+        return
+    fi
+    for _i in `seq 1 30` # rc.local はネットにつながる前に動くことがある
+    do
+        if [ "`_on_line`" ]; then
+            break
+        fi
+        sleep 2
+    done
+    echo "-r: `hostname`: $_bin: missing libraries -> install : $LINENO" >> /tmp/log.$TMP_LABEL
+    _usilic_libs -r $_bin
+}
+
+include_usilic() { # -i)
+    local _home=/home/$USR _src _rc
+    local _line='PATH=$HOME/.local/bin:$PATH; export PATH'
+    local _files=".local/bin/usilic .local/lib/usilic .local/share/applications/usilic.desktop .local/usilic-web"
+
+    if [ ! "$ON_RAMDISK" ]; then
+        echo "$1: Not on a RAMDISK. : $LINENO" >> /tmp/log.$TMP_LABEL
+        return
+    fi
+    _fs $LINENO mount $MNT_DEBIAN
+    _src=$MNT_DEBIAN$_home
+    if [ ! -x $_src/.local/bin/usilic ]; then
+        echo "$1: $_src/.local/bin/usilic: No such file (build it on the SSD: tools/setup-debian.sh). : $LINENO" >> /tmp/log.$TMP_LABEL
+        return
+    fi
+    _usilic_libs $1 $_src/.local/bin/usilic
     cd $_src
     echo "cd $_src; tar cf - $_files | tar xvfp - -C $_home"
     tar cf - `ls -d $_files 2>/dev/null` | tar xvfp - -C $_home
@@ -1979,6 +2002,7 @@ EOF
         hostnamectl set-hostname $_next_host
         _start_rc
     fi
+    _boot_usilic_libs
     cd /opt
     _diff_sh &
 }
