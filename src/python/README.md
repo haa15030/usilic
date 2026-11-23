@@ -145,10 +145,12 @@ C++版と違う所: ページャーの読み込み方。C++版は画面が要る
 
 ## U.shのPython版(2026-11-23、`ush.py`・`usilic/ush/`)
 
-- 旧C版(old/)とC++版の関係と同じく、U.sh(旧シェル版、src/U_proto.sh)の機能をオプションごとに移す。移したのは
-  `-a`・`-f`・`-n`・`-v`(`usilic/ush/__init__.py`のPORTED)。他は今まで通り/opt/U.sh。/opt/BASE.uの状態にはpython3が無い
-  (-uの最初の一歩)ので、U.shはそのために残る
-- `sudo python3 src/python/ush.py -f`(U.shと同じ引数、`--list`・`--ans=`・`--batch`も)。RESCUE(^J^R)は、移した
-  オプションをこちらで動かす
-- 外への働きかけは`usilic/ush/system.py`のSystemに集めてあり、テスト(tests/test_ush.py)は偽の区画・マウント
-  (FakeSystem)で手順を確かめる(実機に触れない)
+- 旧C版(old/)とC++版の関係と同じく、U.sh(旧シェル版、src/U_proto.sh)の機能を全部移した(-a・-c・-d・-e・-f・-k・
+  -m・-n・-o・-r・-s・-u・-v、オプション無しの一覧、mainの始めの下準備)。U.shの設定の部分(利用者が書き換える所、
+  DOT_FILESも)は、今の/opt/U.shをbashで読んで使う
+- `. U`(/usr/local/bin/U)と起動の時のrc.localは、/usr/local/lib/usilic-py/ush.pyがあればPython版で、無ければU.shで
+  動かす。最後の引数の`-sh`・`-py`で切り替える(/opt/U.optのUSH=)。/opt/BASE.uの状態(-uの最初の一歩)にはpython3が
+  無いので、そこはU.sh
+- `sudo python3 src/python/ush.py -f`(U.shと同じ引数、`--list`・`--ans=`・`--batch`も)。RESCUE(^J^R)もこちらで動かす
+- 外への働きかけは`usilic/ush/system.py`のSystemに集めてあり、テスト(tests/test_ush.py)は偽の区画・マウント・
+  パッケージ(FakeSystem)で手順を確かめる(実機に触れない)

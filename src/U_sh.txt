@@ -3,7 +3,7 @@
 #
 概要#
 ④sudo bash /opt/U.sh（初回）㊿#
-④. U [-a|-c [dir]|-d|-e|-f [-]|-k arg|-m device|-n|-o arg|-s name|-u|-v] [-d|-b]㊿#
+④. U [-a|-c [dir]|-d|-e|-f [-]|-k arg|-m device|-n|-o arg|-s name|-u|-v] [-d|-b|-sh|-py]㊿#
 #
 説明#
 ④U.sh は、SSD 等に入れた Debian 13（または Ubuntu）を土台に、メモリの上（RAMDISK）で動くシステムと、それを入れた rescue-USB を作るスクリプトです。
@@ -31,6 +31,9 @@ RAMDISK で動いている間は、SSD 等に書くのは '. U -s' 等で保存�
 以後は一般ユーザーで ". U"^M（sudo で U.sh を実行）とし、オプションを付けなければ、その時に使えるオプションの一覧を出して Option: - で聞きます。#
 #
 最後の引数に -d（-dash）・-b（-bash）を付けると、U.sh を動かすシェルを dash・bash に切り換えます（/opt/U.opt の SH=、次の起動の rc.local にも引き継ぎます）。
+U.sh には、同じ働きの Python 版（src/python/ush.py、-u が /usr/local/lib/usilic-py に入れる）があり、あればそちらで動きます（C++ 版と旧 C 版の関係と同じく、U.sh は旧シェル版）。
+最後の引数に -sh を付けると U.sh で、-py を付けると Python 版で動くよう切り換えます（/opt/U.opt の USH=、起動の時の -r にも引き継ぎます）。
+/opt/BASE.u の状態（-u の最初の一歩）には python3 が無いので、その時は U.sh で動きます。
 メッセージ（ログ）は最後にまとめて出し、/opt/U.log_日付 にも残します。#
 #
 rescue-USB の作り方      ㊿：⑲手順⊥㊿#

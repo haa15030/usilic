@@ -101,7 +101,7 @@ USH_PY = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 def engine(args):
     """argsを動かすもの: 移したオプションはPython版(ush.py)、他はU.sh。"""
     from .ush import PORTED
-    if args and args[0] in PORTED and os.path.isfile(USH_PY):
+    if (not args or args[0] in PORTED or args[0].startswith('--')) and os.path.isfile(USH_PY):
         return [sys.executable or 'python3', USH_PY]
     return ['bash', U_SH]
 

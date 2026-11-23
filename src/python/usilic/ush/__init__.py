@@ -16,6 +16,10 @@ python3が無い(-uの最初の一歩)ので、U.shはそのために残る。
   desktop.py  -d(desktop_select)・-e(erase_base)、ネット・Ubuntuのapt・usilicを入れる・DOT_FILES
   kernel.py   -k(kernel_remake・_compile)、-uのRAMの土台(_update_base)・起動項目・経過時間
   usb.py      -m(make_usb、rescue-USBを作る)
+  update.py   -u(update_base、テンプレート・RAMDISKのカーネル・RAMの土台・rescue)、TORAM、usilic-py
+  data/       -uが書くファイル(rc.local・dracutのモジュール等、U.shに埋め込んであったもの)
+  boot.py     -r(rc_local_only、RAMDISKで起動した時)・_start_rc
+  prepare.py  U.shのmainの始めの下準備(apt・ネット・STRAGEのfstab・/mnt/debianのリンク・DOT_FILES)
   main.py     引数・ログ(/opt/U.log_日付)
 """
-PORTED = ('-a', '-c', '-d', '-e', '-f', '-k', '-m', '-n', '-o', '-s', '-v')
+PORTED = ('-a', '-c', '-d', '-e', '-f', '-k', '-m', '-n', '-o', '-r', '-s', '-u', '-v')

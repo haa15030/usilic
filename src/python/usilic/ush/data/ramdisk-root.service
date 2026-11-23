@@ -1,0 +1,14 @@
+[Unit]
+Description=Copy rootfs to tmpfs and switch root to RAM
+DefaultDependencies=no
+After=initrd-root-fs.target
+Before=initrd-switch-root.target
+Wants=initrd-switch-root.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/ramdisk-root.sh
+
+[Install]
+WantedBy=initrd-switch-root.target

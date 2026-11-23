@@ -1,0 +1,37 @@
+#!/bin/sh
+MNT=@MNT_DEBIAN@
+_u=`sed -n 's/.*u_root=\([^ ]*\).*/\1/p' /proc/cmdline`
+if [ "$_u" ]; then
+    sed -i -e "s@^[^#[:space:]]*\([[:space:]][[:space:]]*$MNT[[:space:]]\)@UUID=$_u\1@" /etc/fstab
+    systemctl daemon-reload
+fi
+for _i in `seq 1 10`
+do
+    if mountpoint -q $MNT; then
+        break
+    fi
+    mount $MNT 2>/dev/null
+    sleep 1
+done
+cp $MNT/opt/U.sh $MNT/opt/U.opt /opt
+# Python版(ush.py)もDEBIAN区画の新しいものに(土台の中のものは、-uの時のもの)
+if [ -f $MNT/usr/local/lib/usilic-py/ush.py ]; then
+    rm -rf /usr/local/lib/usilic-py
+    cp -a $MNT/usr/local/lib/usilic-py /usr/local/lib/
+fi
+for _i in `seq 1 10`
+do
+    if ! mountpoint -q $MNT; then
+        break
+    fi
+    umount $MNT 2>/dev/null
+    sleep 1
+done
+# Python版があればそれで(U.optのUSH=shならU.sh(旧シェル版)で)
+_ush=`grep ^USH= /opt/U.opt | awk -FUSH= '{print $2}'`
+if [ "$_ush" != "sh" ] && [ -f /usr/local/lib/usilic-py/ush.py ] && command -v python3 > /dev/null 2>&1; then
+    python3 /usr/local/lib/usilic-py/ush.py -r
+else
+    _sh=`grep ^SH= /opt/U.opt | awk -FSH= '{print $2}'`
+    ${_sh:-bash} /opt/U.sh -r
+fi

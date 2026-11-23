@@ -55,7 +55,7 @@ CONFIG_NAMES = ('DEBIAN USR ROOT_GB EXTRA_GB SETUP_OPT RESCUE_DEV_PURGE IMG_EXCL
                 'RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X JP_LIST USILIC_TOOLS NOSWAP_KBD MNTS SMBFS GRUB_CUSTOM '
                 'DST_STRAGE_FS BUILD BUILD_IMG_GB RESCUE_GB KERNEL_VERSION TEMPLATE_MB LINUX_CONFIG PURGE_LIST CONFIG_NONE '
                 'LINUX_SOURCE TEMPLATE_BASE BASE_LIST STD_LIST NO_SNAP NETPLAN_NM DESKTOP_LIST DESKTOP_APT_OPT '
-                'NETWORK_MANAGER_CONF DISPLAY_MANAGER_LIST OPT_BUILD BUILD_LIST').split()
+                'NETWORK_MANAGER_CONF DISPLAY_MANAGER_LIST OPT_BUILD BUILD_LIST BAK_HOST').split()
 
 
 def evaluate_config(system, path=U_SH):
@@ -132,6 +132,7 @@ class Env:
         meminfo = system.read_text('/proc/meminfo') or ''
         m = re.search(r'^MemTotal:\s*(\d+)', meminfo, re.M)
         self.mem_total_gb = int(m.group(1)) // 1000 // 1000 if m else 0
+        self.tmpfs_kb = int(m.group(1)) // 2 if m else 0  # U.shのTMPFS_KB
         self.ubuntu_build = 'BUILD_UBUNTU' if self.on_ubuntu else 'BUILD_DEBIAN'  # U.shのBUILD(カーネルのビルド用イメージ)
 
     def fstab_uuid(self, mount_point):

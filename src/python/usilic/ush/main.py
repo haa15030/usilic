@@ -11,6 +11,9 @@ from .save import save
 from .desktop import desktop_select, erase_base
 from .kernel import kernel_remake
 from .usb import make_usb
+from .update import update_base
+from .boot import rc_local_only
+from .prepare import InChroot, prepare as prepare_system
 from .system import System
 
 
@@ -77,13 +80,48 @@ def parse(argv):
     return words, answers, batch
 
 
-def run(argv, system=None, uname=None, out=None):
+def options_help(env):
+    """オプションが無い時の一覧(U.shのmainと同じく、ホストに合わせて。名前の順)。"""
+    gb = env.rescue_gb
+    o = "  -o(utput_u) . or filename [-i(nstall) or -p(urge)]"
+    if env.on_wsl:
+        items = ['  -k(ernel_remake) - or %d or ??' % gb, o]
+    elif env.on_ramdisk:
+        items = ['  -c(hange_root) [/mnt/usb]', '  -f(ile_system) [-] : /mnt/No.',
+                 '  -d(esktop) : on ??GB-* (8GB~, STRAGE; on a desktop host: from a text console)',
+                 '  -k(ernel_remake) . or - or / or ?? (STRAGE)', '  -m(ake_usb) device [-]', '  -n(ext_host)', o,
+                 '  -s(ave_host) name [.] or . (without STRAGE: %dGB-rescue only)' % gb, '  -a(dd_strage)']
+    elif env.on_none:
+        items = []
+        if env.system.exists('/opt/BASE.u'):
+            items = ['  -c(hange_root) [/mnt/usb]', '  -e(rase_base)',
+                     '  -k(ernel_remake) . or - or / or %d or ??' % gb, '  -n(ext_host)', o]
+        items += ['  -f(ile_system) [-] : /mnt/No.', '  -u(pdate_base)', '  -a(dd_strage)']
+    elif env.on_toram:
+        items = [o]
+    else:
+        items = ['  -f(ile_system) [-] : /mnt/No.', '  -k(ernel_remake) . or - or %d or ??' % gb, '  -n(ext_host)', o,
+                 '  -u(pdate_base) : TORAM (dracut)', '  -a(dd_strage)']
+    return sorted(items + ['  -v(ervose)'])
+
+
+def run(argv, system=None, uname=None, out=None, prepare=True):
     system = system or System()
     if out is None:
         def out(text):
             print(text, flush=True)
     words, answers, batch = parse(argv)
-    if not words or words[0] not in PORTED:
+    if not words:  # オプションが無ければ一覧(前から使う時はそれだけ)、端末なら選んでもらう
+        env = Env(system, uname)
+        for line in options_help(env):
+            out(line)
+        if batch:
+            return 0
+        chosen = Ask([], False, out)('Option: -').split()
+        if not chosen:
+            return 0
+        words = ['-' + chosen[0]] + chosen[1:]
+    if words[0] not in PORTED:
         out('ush: %s: not in the Python version yet (use /opt/U.sh). Ported: %s'
             % (words[0] if words else '(none)', ' '.join(PORTED)))
         return 2
@@ -96,6 +134,8 @@ def run(argv, system=None, uname=None, out=None):
     option, args = words[0], words[1:]
     code = 0
     try:
+        if prepare and option != '-o':  # U.shのmainの始め(-oはその前に動く)
+            prepare_system(env, log, option, out)
         if option == '-v':
             verbose(env, log, ask, out, lambda text: page_with_usilic(system, text))
         elif option == '-f':
@@ -118,8 +158,14 @@ def run(argv, system=None, uname=None, out=None):
             kernel_remake(env, log, option, args, out)
         elif option == '-m':
             make_usb(env, log, option, args, ask, out)
+        elif option == '-u':
+            update_base(env, log, option, ask, out)
+        elif option == '-r':
+            rc_local_only(env, log, option, out)
     except MountError:
         code = 1
+    except InChroot:
+        return 1
     if option not in ('-v', '-a', '-f'):  # U.shのmainの最後: マウントしたものを外す(-v・-a・-fは見るために残す)
         finish(env, log)
     log.save(env, out)

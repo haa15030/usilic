@@ -33408,6 +33408,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1357. **src/python: U.shのPython版に-u・-r・下準備・オプションの一覧、`. U`と起動の時はPython版で(2026-11-23)**
+   - 直接のユーザー依頼: 「このまま終わりまで行っていい」の続き(これでU.shのオプションは全部)。
+   - 変更1: usilic/ush/update.py(-u、`update_base`): BASE.u・python3とusilic-py・40_custom(GRUB_CUSTOM)・journald・GRUB_DEFAULT=saved・NONE-KERNELの項目・TORAM(Ubuntu、`toram_setup`)・テンプレート(`make_template`、rc.local等)・RAMDISKのカーネル(無ければ`compile_kernel`)・RAMの土台・?GB-rescue(`setup_usilic`・RESCUE_LIST・`save_host`)・update-grub・grub-set-default・NEXT?=・最初なら再起動を聞く。`get_usilic_repo`・`install_usilic_py`も。テンプレートに書くrc.local・rc-local.service・dracutのモジュール(99ramdisk-root)は、U.shに埋め込んであったものを機械的に取り出してusilic/ush/data/へ。
+   - 変更2: usilic/ush/boot.py(-r、`rc_local_only`・`start_rc`): SHM_LISTをtmpfsへ、NEXT?=のホストのイメージを展開(無ければ?GB-baseのまま)、DOT_FILES、/etc/hosts・ホスト名、サービスの初期化、デスクトップがあればusilic。
+   - 変更3: usilic/ush/prepare.py(U.shのmainの始め、-oの他): chrootの中なら断る、U.opt、timesyncd、aptの設定、NONE-KERNELのDebianはwgetを外しDEBIAN.u、ネットにつながらなければ直す、rc_systemd.txt、STRAGEのfstabの行(区画が無ければ使わない)とSMBFS、SSDの上では/mnt/debianを/へのリンクに、-rの他はDOT_FILES。
+   - 変更4: オプションが無ければ、ホストに合わせたオプションの一覧(`options_help`、U.shと同じ)、端末なら「Option: -」で聞く。RESCUEはオプションの一覧もPython版から。
+   - 変更5(src/U_proto.sh): /usr/local/bin/U(`. U`)と、テンプレートのrc.local(U.shとdata/の両方、同じ中身)は、/usr/local/lib/usilic-py/ush.pyとpython3があればPython版で、無ければ(/opt/BASE.uの状態の最初の一歩等)U.shで動かす。最後の引数の`-sh`・`-py`で切り替える(/opt/U.optのUSH=、既定はPython版、-d・-bと同じ形)。rc.localは、DEBIAN区画の/usr/local/lib/usilic-pyも起動の時に写す(新しいPython版を使う)。
+   - src/U_sh.txt・src/python/README.mdに書いた。
+   - 確かめたこと: tests/test_ush.py(32件+オプションの一覧、-r(イメージの展開・hosts・ホスト名・サービスの再起動と起動・DMは除く・DOT_FILES)、イメージが無い時・SSDの上、下準備(STRAGEの区画がある時・無い時・ネット・chroot)、-u(GRUB_DEFAULT・40_customの作り直し・NONE-KERNEL・土台は新しいので項目だけ・カーネルはあるのでビルドしない・update-grub・NEXT4=・再起動n)、Not on a NONE-KERNEL)・tests/test_rescue。/usr/local/bin/Uは、取り出してsudoとpython版の有無を置き換え、bashで-sh・-py・-dの切り替えを確かめた。Linuxの実機では、Python版のどのオプションもまだ動かしていない。
+
 1356. **src/python: U.shのPython版に-m(rescue-USBを作る)(2026-11-23)**
    - 直接のユーザー依頼: 「このまま終わりまで行っていい」の続き。
    - 変更: usilic/ush/usb.py(`make_usb`)。U.shと同じ手順: RAMDISKの上で/dev/sd?だけ、DEBIAN区画のあるディスクは断る、両方のディスクのマウントを外す、区画の大きさ(EFI 100MiB・BIOS boot 1MiB・ルートはROOT_GBかDEBIAN区画の大きい方・STRAGEは残りが512MiB以上なら)、足りなければ消す前にやめる、「Erase … ?」、sgdisk、ddで先頭の4MiBを最後に書いてすぐtune2fs -U random、e2fsck・resize2fs、mkfs(EFI・STRAGEはDST_STRAGE_FS)、fstab・40_customのUUIDを直し(/boot/efiの行は作り直し、スワップは#)、U.optはSTRAGE=""・NEXT?=?GB-rescue、arch-chrootでGRUBをBIOSとUEFIの両方へ(--no-nvram)、saved_entryはrescueのRAM-*。

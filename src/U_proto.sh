@@ -2847,6 +2847,11 @@ do
     sleep 1
 done
 cp $MNT/opt/U.sh $MNT/opt/U.opt /opt
+# Python版(ush.py)もDEBIAN区画の新しいものに(土台の中のものは、-uの時のもの)
+if [ -f $MNT/usr/local/lib/usilic-py/ush.py ]; then
+    rm -rf /usr/local/lib/usilic-py
+    cp -a $MNT/usr/local/lib/usilic-py /usr/local/lib/
+fi
 for _i in `seq 1 10`
 do
     if ! mountpoint -q $MNT; then
@@ -2855,8 +2860,14 @@ do
     umount $MNT 2>/dev/null
     sleep 1
 done
-_sh=`grep ^SH= /opt/U.opt | awk -FSH= '{print $2}'`
-${_sh:-bash} /opt/U.sh -r
+# Python版があればそれで(U.optのUSH=shならU.sh(旧シェル版)で)
+_ush=`grep ^USH= /opt/U.opt | awk -FUSH= '{print $2}'`
+if [ "$_ush" != "sh" ] && [ -f /usr/local/lib/usilic-py/ush.py ] && command -v python3 > /dev/null 2>&1; then
+    python3 /usr/local/lib/usilic-py/ush.py -r
+else
+    _sh=`grep ^SH= /opt/U.opt | awk -FSH= '{print $2}'`
+    ${_sh:-bash} /opt/U.sh -r
+fi
 EOF
         sed -i /tmp/loop1.$TMP_LABEL/etc/rc.local -e "s|@MNT_DEBIAN@|$MNT_DEBIAN|"
         chmod 755 /tmp/loop1.$TMP_LABEL/etc/rc.local
@@ -3055,16 +3066,26 @@ else
 fi
 # 2つ以上の引数の最後が -d・-b（-dash・-bash）と同じ時だけ、U.sh を動かすシェルを切り替える（/opt/U.opt の SH=）
 # （前は最後の引数に「-d」「-b」が含まれるだけで切り替わり、'. U -s test-build' 等で SH=buildash になった）
+# -sh・-py は、U.sh（旧シェル版）と Python 版（/usr/local/lib/usilic-py/ush.py）を切り替える（/opt/U.opt の USH=、既定は Python 版）
 SH=""
+USH=""
 if [ $# -ge 2 ]; then
     eval "OPTION=\${$#}"
     case "$OPTION" in
         -d|-dash) SH=dash ;;
         -b|-bash) SH=bash ;;
+        -sh) USH=sh ;;
+        -py) USH=py ;;
     esac
 fi
-if [ "$SH" ]; then
-    $SUDO sed -i -e "s/^SH=.*/SH=$SH/" /opt/U.opt
+if [ "$SH" ] || [ "$USH" ]; then
+    if [ "$SH" ]; then
+        $SUDO sed -i -e "s/^SH=.*/SH=$SH/" /opt/U.opt
+    elif grep -q '^USH=' /opt/U.opt; then
+        $SUDO sed -i -e "s/^USH=.*/USH=$USH/" /opt/U.opt
+    else
+        echo "USH=$USH" | $SUDO tee -a /opt/U.opt > /dev/null
+    fi
     ARG=""
     _u_i=1
     for _u_a in "$@"
@@ -3074,10 +3095,14 @@ if [ "$SH" ]; then
         fi
         _u_i=$((_u_i+1))
     done
-else
-    SH=`grep ^SH= /opt/U.opt | awk -FSH= '{print $2}'`
 fi
-$SUDO ${SH:-bash} /opt/U.sh $ARG
+SH=`grep ^SH= /opt/U.opt | awk -FSH= '{print $2}'`
+USH=`grep ^USH= /opt/U.opt | awk -FUSH= '{print $2}'`
+if [ "$USH" != "sh" ] && [ -f /usr/local/lib/usilic-py/ush.py ] && command -v python3 > /dev/null 2>&1; then
+    $SUDO python3 /usr/local/lib/usilic-py/ush.py $ARG
+else
+    $SUDO ${SH:-bash} /opt/U.sh $ARG
+fi
 EOF
     if ! cmp -s /tmp/U.$TMP_LABEL /usr/local/bin/U; then
         echo "-> /usr/local/bin/U"

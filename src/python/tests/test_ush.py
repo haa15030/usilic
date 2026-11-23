@@ -35,7 +35,7 @@ def system_tmp(system):
 
 def run(system, *argv):
     lines = []
-    code = ush_main.run(list(argv), system=system, uname='6.12.57+8gb', out=lines.append)
+    code = ush_main.run(list(argv), system=system, uname='6.12.57+8gb', out=lines.append, prepare=False)
     return code, '\n'.join(lines)
 
 
@@ -282,7 +282,7 @@ class UshTest(unittest.TestCase):
                             packages=['acl', 'gparted'], euid=0)
         system.results['dpkg -l'] = (0, 'ii  linux-image-6.12.57+4gb 1 amd64 x\nii  linux-image-6.12.57-amd64 1 amd64 x\n')
         lines = []
-        code = ush_main.run(['-e', '--ans=Y'], system=system, uname='6.12.57-amd64', out=lines.append)
+        code = ush_main.run(['-e', '--ans=Y'], system=system, uname='6.12.57-amd64', out=lines.append, prepare=False)
         out = '\n'.join(lines)
         self.assertIn(['dpkg', '--purge', 'linux-image-6.12.57+4gb'], system.calls)
         self.assertIn('dpkg --purge gparted', out)
@@ -356,6 +356,100 @@ class UshTest(unittest.TestCase):
         system = self.usb_fake(32 * 1000 ** 3)
         code, out = run(system, '-m', 'sde', '--list')                    # 聞いた所で止まる(消さない)
         self.assertFalse(any(c[0] == 'sgdisk' for c in system.calls))
+
+    def test_r(self):
+        system = self.save_fake()
+        system.files['/opt/U.opt'] = 'STRAGE=/mnt/ext4 UUID=DDD\nNEXT8=8GB-KDE\n'
+        system.files['/mnt/ext4/opt/8GB-KDE.img'] = 'x'
+        system.files['/etc/hosts'] = '127.0.0.1 localhost\n127.0.1.1 8GB-base\n::1 ip6\n'
+        system.results['systemctl list-unit-files --type=service --state=enabled,generated --no-legend'] = (
+            0, 'ssh.service enabled\nsddm.service enabled\ncups.service enabled\ngetty@.service enabled\n')
+        system.files['/mnt/debian/opt/rc_systemd.txt'] = 'ssh.service\n'
+        system.results['systemctl show -p ExecMainStartTimestampMonotonic --value cups.service'] = (0, '0\n')
+        code, out = run(system, '-r')
+        loop = [c for c in system.calls if c[0] == 'sh' and '--exclude=etc/fstab' in c[2]][0]
+        self.assertTrue(loop[-1].startswith('(cwd=/tmp/ush.'))
+        self.assertEqual(system.files['/etc/hostname'], '8GB-KDE\n')
+        self.assertTrue(system.files['/etc/hosts'].startswith('127.0.0.1\tlocalhost\n127.0.1.1\t8GB-KDE\n::1 ip6'))
+        self.assertIn(['systemctl', 'try-restart', '--no-block', 'ssh.service'], system.calls)
+        self.assertIn(['systemctl', 'start', '--no-block', 'cups.service'], system.calls)
+        self.assertFalse(any('sddm.service' in c for c in system.calls if c[:2] == ['systemctl', 'start']))
+        self.assertTrue(any(c[:2] == ['bash', '-c'] and 'DOT_FILES' in c[2] for c in system.calls))
+
+    def test_r_missing_image_and_ssd(self):
+        system = self.save_fake()
+        system.files['/opt/U.opt'] = 'STRAGE=/mnt/ext4 UUID=DDD\nNEXT8=8GB-KDE\n'
+        code, out = run(system, '-r')
+        self.assertIn('-r: 8GB-KDE.img: not exist (booted as 8GB-base).', out)
+        self.assertNotIn('/etc/hostname', system.files)
+        system = fake(files={'/opt/BASE.u': 'x'})
+        run(system, '-r')
+        self.assertNotIn(['timedatectl', 'set-local-rtc', '0'], system.calls)   # SSDの上では何もしない
+
+    def test_prepare(self):
+        system = self.save_fake()
+        system.results['blkid'] = (0, '/dev/sdd1: UUID="DDD" TYPE="ext4"\n')
+        system.results['ip a'] = (0, '2: eth0: <BROADCAST> mtu\n    inet 10.0.0.2/24 scope global eth0\n')
+        system.files['/etc/systemd/timesyncd.conf'] = 'x'
+        system.files['/etc/apt/sources.list.d/debian.sources'] = 'Types: deb deb-src\nComponents: main non-free-firmware\n'
+        lines = []
+        ush_main.run(['-v', '--batch'], system=system, uname='6.12.57+8gb', out=lines.append)
+        self.assertIn('UUID=DDD /mnt/ext4 ext4 rw,noauto', system.files['/etc/fstab'])
+        self.assertIn('STRAGE(/mnt/ext4/opt):', '\n'.join(lines))
+        system = self.save_fake()  # STRAGEの区画が無い: 使わない
+        system.results['blkid'] = (0, '')
+        lines = []
+        ush_main.run(['-v', '--batch'], system=system, uname='6.12.57+8gb', out=lines.append)
+        self.assertNotIn('/mnt/ext4', system.files['/etc/fstab'])
+        self.assertNotIn('STRAGE(', '\n'.join(lines))
+        self.assertIn('Network unreachable.', '\n'.join(lines))
+        system = fake()
+        system.results['stat -c %d:%i /'] = (0, '1:2\n')
+        system.results['stat -c %d:%i /proc/1/root/.'] = (0, '1:3\n')
+        lines = []
+        self.assertEqual(ush_main.run(['-v'], system=system, uname='x', out=lines.append), 1)
+        self.assertIn('in chroot', lines[0])
+
+    def test_u_rest(self):
+        files = {'/etc/fstab': 'UUID=ROOT / ext4 errors=remount-ro 0 1\n', '/opt/BASE.u': 'acl\t\t\t\n',
+                 '/opt/U.opt': 'STRAGE=/mnt/ext4 UUID=DDD\n', '/opt/U.sh': '', '/opt/TEMPLATE--base.gz': 'x',
+                 '/opt/linux-image-6.12.57+4gb_1_amd64.deb': 'x', '/opt/RAM-6.12.57+4gb-base.gz': 'x',
+                 'mtime:/opt/RAM-6.12.57+4gb-base.gz': 2, 'mtime:/opt/linux-image-6.12.57+4gb_1_amd64.deb': 1,
+                 '/opt/4GB-rescue.img': 'x', '/etc/default/grub': 'GRUB_DEFAULT=0\n',
+                 '/etc/grub.d/40_custom': '#!/bin/sh\nexec tail -n +3 $0\n#\n#\n#\nold\n'}
+        system = FakeSystem(parts={'/dev/nvme0n1p2': {'TYPE': 'ext4', 'UUID': 'ROOT'},
+                                   '/dev/sdd1': {'TYPE': 'ext4', 'UUID': 'DDD'}},
+                            mounted={'/': '/dev/nvme0n1p2'}, files=files, dirs={'/lib/modules/6.12.57+4gb'},
+                            packages=['acl'])
+        system.files['/etc/fstab'] += 'UUID=DDD /mnt/ext4 ext4 rw,noauto 0 1\n'
+        system.results['dpkg -l'] = (0, 'ii  linux-image-6.12.57+4gb 1 amd64 x\n')
+        lines = []
+        ush_main.run(['-u', '--ans=n'], system=system, uname='6.12.57-amd64', out=lines.append, prepare=False)
+        out = '\n'.join(lines)
+        self.assertIn('GRUB_DEFAULT=saved\nGRUB_SAVEDEFAULT=true', system.files['/etc/default/grub'])
+        custom = system.files['/etc/grub.d/40_custom']
+        self.assertNotIn('old', custom)
+        self.assertIn("menuentry 'NONE-KERNEL'", custom)
+        self.assertIn("menuentry 'RAM-6.12.57+4gb-base'", custom)                 # 土台は新しいので作らず、項目だけ
+        self.assertFalse(any(c[:2] == ['make', '-j9'] for c in system.calls))      # カーネルはある
+        self.assertIn(['update-grub'], system.calls)
+        self.assertIn(['grub-set-default', 'RAM-6.12.57+4gb-base'], system.calls)
+        self.assertIn('NEXT4=4GB-rescue', system.files['/opt/U.opt'])
+        self.assertIn('Reboot now (RAM-6.12.57+4gb-base)? (Y/n): n', out)
+        self.assertNotIn(['reboot'], system.calls)
+        lines = []
+        ush_main.run(['-u'], system=fake(), uname='6.12.57+8gb', out=lines.append, prepare=False)
+        self.assertIn('-u: Not on a NONE-KERNEL.', lines)
+
+    def test_options_list(self):
+        code, out = run(fake(), '--list')
+        self.assertEqual(code, 0)
+        self.assertIn('  -a(dd_strage)', out)
+        self.assertIn('  -m(ake_usb) device [-]', out)
+        self.assertNotIn('-u(pdate_base)', out)                          # RAMDISKには無い
+        from usilic import rescue
+        self.assertEqual([o for o, _ in rescue.parse_options(out)],
+                         ['-a', '-c', '-d', '-f', '-k', '-m', '-n', '-o', '-s', '-v'])
 
 
 if __name__ == '__main__':
