@@ -137,6 +137,28 @@ def _installed(env, gb):
     return any(l.startswith('ii  linux-image') and '+%dgb' % gb in l for l in env.system.output(['dpkg', '-l']).splitlines())
 
 
+def purge_ubuntu(env, out):
+    """_purge_ubuntu(): Ubuntuで、BASE.uを記録する前にRAMDISKでは要らないもの(UBUNTU_PURGE_LIST、「*」も使える)を外す。
+    ubuntu-server-minimal等のメタが一緒に外れると、それが入れた残すもの(netplan.io・chrony・sudo-rs等)までautoremoveで
+    消えるので、今残っているものは手で入れた扱いに。"""
+    system = env.system
+    patterns = env.conf('UBUNTU_PURGE_LIST', '').split()
+    if not env.on_ubuntu or not patterns:
+        return
+    packages = [l.split()[1] for l in system.output(['dpkg-query', '-W', '-f=${db:Status-Abbrev} ${Package}\n']
+                                                     + patterns).splitlines()
+                if len(l.split()) == 2 and l.split()[0] == 'ii']
+    if not packages:
+        return
+    out('apt-get purge -y ' + ' '.join(packages))
+    system.stream(['apt-get', 'purge', '-y'] + packages, out)
+    keep = [l.split()[1] for l in system.output(['apt-get', '-s', 'autoremove']).splitlines()
+            if l.startswith('Remv ') and len(l.split()) > 1]
+    if keep:
+        out('apt-mark manual ' + ' '.join(keep))
+        system.run(['apt-mark', 'manual'] + keep)
+
+
 def make_template(env, log, option, out, lap):
     """RAMDISKの土台のテンプレート(/opt/TEMPLATE-*-base.gz、BASEの状態のルート、カーネルのモジュールは除く)。"""
     system = env.system
@@ -198,6 +220,7 @@ def update_base(env, log, option, ask, out):
     strage = env.strage or env.mnt_debian
     if not system.exists('/opt/BASE.u'):
         purge_to(env, log, 'DEBIAN.u', out)
+        purge_ubuntu(env, out)
         system.stream(['apt-get', 'install', '-y'] + env.conf('BASE_LIST', '').split(), out)  # 要るパッケージを足す
         output_u(env, log, ['BASE.u'], out)
         system.run(['chmod', '444', '/opt/BASE.u'])

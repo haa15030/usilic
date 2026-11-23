@@ -194,7 +194,7 @@ def compile_kernel(env, log, option, args, out, lap):
                     '--set-str', 'SYSTEM_REVOCATION_KEYS', ''], cwd=src)
     for cmd in (['make', 'O=../build/', 'olddefconfig'], ['make', '-j9', 'O=../build/', 'LOCALVERSION=' + local],
                 ['make', 'modules', '-j9', 'O=../build/', 'LOCALVERSION=' + local],
-                ['make', 'bindeb-pkg', 'O=../build/', 'LOCALVERSION=' + local]):
+                ['make', 'bindeb-pkg', 'INSTALL_MOD_STRIP=1', 'O=../build/', 'LOCALVERSION=' + local]):
         out(' '.join(cmd))
         system.stream(cmd, out, cwd=src)
     lap('linux-image-*%s .deb' % local, out)

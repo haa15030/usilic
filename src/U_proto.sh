@@ -399,6 +399,16 @@ if [ "$ON_UBUNTU" ]; then
     readonly DESKTOP_APT_OPT="--no-install-recommends" # 推奨パッケージも入れるなら ""
     JP_LIST="language-pack-ja language-pack-gnome-ja fcitx5-mozc fonts-noto-cjk"
     BASE_LIST="arch-install-scripts gdisk dosfstools grub-pc-bin grub-efi-amd64-bin" # 必要なら "linux-firmware" も（1GB前後あるので RAMDISK 容量に注意）
+    # -u で BASE.u を記録する前に外すもの（Ubuntu Server が最初から入れる、RAMDISK では要らないもの。RAM-*-base.gz が
+    # Debian の倍以上（1.4GB）になった）。クラウド・コンテナ・snap、自動の更新・報告、SAN、開発・解析用、カーネルのメタ
+    # （linux-generic: firmware を選んで外すため。U.sh はカーネルを自分で作る）、携帯端末・サーバーの NIC 用の firmware。
+    # 「*」も使える。入っていないものは飛ばす
+    readonly UBUNTU_PURGE_LIST="cloud-init cloud-init-base cloud-guest-utils lxd-installer snapd squashfs-tools
+        unattended-upgrades needrestart ubuntu-release-upgrader-core apport apport-core-dump-handler packagekit
+        software-properties-common upki multipath-tools open-iscsi bcache-tools
+        linux-perf linux-tools-* makedumpfile manpages-dev ssh-import-id linux-generic
+        linux-firmware-qualcomm-misc linux-firmware-qualcomm-graphics linux-firmware-mellanox-spectrum
+        linux-firmware-netronome linux-firmware-qlogic linux-firmware-marvell-prestera"
 fi
 readonly RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X BASE_LIST JP_LIST
 
@@ -948,8 +958,8 @@ EOF
     make -j9 O=../build/ LOCALVERSION=$_new_version
     echo "make modules -j9 O=../build/ LOCALVERSION=$_new_version"
     make modules -j9 O=../build/ LOCALVERSION=$_new_version
-    echo "make bindeb-pkg O=../build/ LOCALVERSION=$_new_version"
-    make bindeb-pkg O=../build/ LOCALVERSION=$_new_version
+    echo "make bindeb-pkg INSTALL_MOD_STRIP=1 O=../build/ LOCALVERSION=$_new_version"
+    make bindeb-pkg INSTALL_MOD_STRIP=1 O=../build/ LOCALVERSION=$_new_version # モジュールのシンボルは外す（RAM-*-base.gz を小さく）
     _lap "linux-image-*$_new_version .deb"
     if [ ! -L $MNT_DEBIAN ]; then
 	echo "mv /opt/*.deb /opt/linux-upstream* $MNT_DEBIAN/opt"
@@ -2773,6 +2783,29 @@ EOF
     echo "$1: Select 'TORAM' to run on tmpfs (from another GRUB: 'e' -> add 'toram' to the linux line -> Ctrl-x). : $LINENO" >> /tmp/log.$TMP_LABEL
 }
 
+_purge_ubuntu() { # Ubuntu: BASE.u を記録する前に、RAMDISK では要らないもの（UBUNTU_PURGE_LIST）を外す
+    local _pkgs _keep
+
+    if [ ! "$ON_UBUNTU" ] || [ ! "$UBUNTU_PURGE_LIST" ]; then
+        return
+    fi
+    set -f # linux-tools-* 等を、ファイル名でなく dpkg-query の型として
+    _pkgs=`dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' $UBUNTU_PURGE_LIST 2>/dev/null | awk '$1 == "ii" {print $2}'`
+    set +f
+    if [ ! "$_pkgs" ]; then
+        return
+    fi
+    echo "apt-get purge -y" $_pkgs
+    apt-get purge -y $_pkgs
+    # ubuntu-server-minimal 等のメタが一緒に外れると、それが入れたもの（netplan.io・chrony・sudo-rs 等、残すもの）まで
+    # autoremove で消えるので、今残っているものは手で入れた扱いに
+    _keep=`apt-get -s autoremove 2>/dev/null | awk '$1 == "Remv" {print $2}'`
+    if [ "$_keep" ]; then
+        echo "apt-mark manual" $_keep
+        apt-mark manual $_keep > /dev/null
+    fi
+}
+
 update_base() { # -u)
     local _new_gb _new_kernel _rescue_kernel _rescue_entry _first="" _yn
 
@@ -2785,6 +2818,7 @@ update_base() { # -u)
     cd /opt
     if [ ! -f /opt/BASE.u ]; then
         _output_u DEBIAN.u -p $LINENO
+        _purge_ubuntu
         apt-get install -y $BASE_LIST #_９)　必要不可欠なパッケージ追加
         _output_u BASE.u $LINENO #_10)　BASE.u保存
         chmod 444 /opt/BASE.u

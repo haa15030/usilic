@@ -33408,6 +33408,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1366. **src/U_proto.sh・src/python: Ubuntuの-uで、BASE.uを記録する前にRAMDISKでは要らないもの(UBUNTU_PURGE_LIST)を外す。モジュールはstrip(2026-11-23)**
+   - 直接のユーザーの話: Ubuntuで作ったRAM-7.3.1+8gb-base.gzが1.38GB(DebianのRAM-6.12.117+8gb-base.gzは561MB)で、Z390UDではOut of memoryかも。また「/opt/BASE.u。debian版とのdiffを取ると、-で始まる行が63ある代わりに+が230もある。minimamなはずなのになんでこんなに多いの？」。アシスタントの仕分け(A: 外す、B: 残す、C: firmwareは選ぶ)に「それでやってみて。」
+   - 調べたこと: 展開したbase(2.4G)は/usr/lib/firmware 736M(Ubuntuのfirmwareは.zstで圧縮済みなのでgzipで縮まない)、/usr/lib/modules 576M、snapd 242M(/usr/lib/snapd・/var/lib/snapd)、/var/lib/apt 122M。BASE.uの+230は、ubuntu-server-minimal(Ubuntu Serverが最初から入れる。「minimized」はmanのページ等を削っただけ)とそれが引き込むライブラリ、細かく分かれたlinux-firmware-*。
+   - 変更1: Ubuntu用の設定`UBUNTU_PURGE_LIST`(クラウド・コンテナ・snap: cloud-init等・lxd-installer・snapd・squashfs-tools、自動の更新・報告: unattended-upgrades・needrestart・apport・packagekit等、SAN: multipath-tools・open-iscsi・bcache-tools、開発・解析用: linux-perf・linux-tools-*・makedumpfile等、カーネルのメタlinux-generic(firmwareを選んで外すため)、携帯端末・サーバーのNIC用のfirmware: qualcomm-misc・qualcomm-graphics・mellanox-spectrum・netronome・qlogic・marvell-prestera)。「*」も使え、入っていないものは飛ばす。残すもの: ディスク関係(btrfs-progs・cryptsetup・lvm2・mdadm等)、netplan.io・systemd-resolved・chrony、dracut、rust-coreutils・sudo-rs、qualcomm-wireless等のノートパソコンの無線LAN・GPUのfirmware。
+   - 変更2: -uで、DEBIAN.uへ戻した後・BASE_LISTを入れてBASE.uを記録する前に、`_purge_ubuntu`(Python版は`purge_ubuntu`)が入っているものだけを`apt-get purge -y`。autoremoveは使わない。ubuntu-server-minimal等のメタが一緒に外れると、それが入れた残すものまで後のautoremoveで消えるので、`apt-get -s autoremove`に出るもの(今残っているもの)は`apt-mark manual`。
+   - 変更3: `make bindeb-pkg`に`INSTALL_MOD_STRIP=1`(モジュールのシンボルを外す)。
+   - 効かせるには: BASE.uが既にあれば何もしないので、/opt/BASE.u・TEMPLATE-*-base.gz・RAM-*-base.gzを消して-uをやり直す。stripは、カーネルを作り直す時(linux-image-*.debを消した時)から。
+   - 確かめたこと: tests/test_ush.py。`bash -n`・`dash -n`。Ubuntuの実機ではまだ。
+
 1365. **src/U_proto.sh・src/python: Ubuntuの-uのrescueで、setup-debian.shの前にsnapを禁止しfirefoxをMozillaのaptから(2026-11-23)**
    - 直接のユーザーの話: 「ここでも停止風。」(`Preparing to unpack .../firefox_1%3a1snap1-0ubuntu11_amd64.deb ...`・`=> Installing the firefox snap`・`==> Checking connectivity with the snap store`で止まって見えた)
    - 原因: ?GB-rescueを作る時のtools/setup-debian.shはUbuntuでは`firefox`を入れるが、Ubuntuのfirefoxはsnapを入れる中継ぎのパッケージで、snap storeからfirefoxのsnapを落とす(長い、出力も少ない)。snapを禁止しMozillaのaptリポジトリを使う`_no_snap_ubuntu`は、-dの`_install_standard`の時にしか動かず、-uのrescueの時はまだ設定されていなかった。RAMDISKのrescueにsnap(snapd)は向かない。

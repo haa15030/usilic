@@ -300,7 +300,7 @@ class UshTest(unittest.TestCase):
         self.assertIn(['truncate', '-s', '7000000000', '/mnt/ext4/opt/BUILD_DEBIAN.img'], system.calls)  # 無いので作る
         self.assertIn(['make', 'menuconfig'], system.calls)
         self.assertIn(['make', '-j9', 'O=../build/', 'LOCALVERSION=+16gb'], system.calls)
-        self.assertIn(['make', 'bindeb-pkg', 'O=../build/', 'LOCALVERSION=+16gb'], system.calls)
+        self.assertIn(['make', 'bindeb-pkg', 'INSTALL_MOD_STRIP=1', 'O=../build/', 'LOCALVERSION=+16gb'], system.calls)
         code, out = run(self.save_fake(), '-k', 'x')
         self.assertIn("Please type '. U -k (.)(-)(??)'", out)
         code, out = run(fake(), '-k', '16')
