@@ -3338,6 +3338,7 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 # --- 前から使う時（usilic の RESCUE、^J^R）の引数。どこに置いてもいい（オプションの引数としては数えない）
 #   --list     一覧を出して、最初の問いで止まる（選ばない・N）。オプションが無ければ、使えるオプションの一覧
 #   --ans=答え  問いへの答え（問いの順に、いくつでも）。例: /opt/U.sh -f --ans=3、/opt/U.sh -n --ans=2 --ans=n
+#   --batch    問いの無いオプション（-s name・-v 等）を、/dev/tty から読まず・more を使わずに（問いがあれば既定の答え）
 # どちらかがあれば /dev/tty から読まず、一覧も標準エラー出力へ出す（usilic の画面を乱さない）
 U_BATCH=""
 U_ANS=""
@@ -3347,6 +3348,7 @@ for _x in "$@"
 do
     case "$_x" in
         --list) U_BATCH=y ;;
+        --batch) U_BATCH=y ;;
         --ans=*) U_BATCH=y; U_ANS="$U_ANS${_x#--ans=}|" ;;
         *) _args="$_args $_x" ;;
     esac

@@ -23,6 +23,8 @@ from . import bookmarks as bm
 from . import macro as mc
 from . import messages_ja
 from . import prompt as pr
+from . import rescue
+import types
 from .archive_mode import ArchiveMode, remove_paired_apple_double_lines
 from .configuration import Configuration, TAR
 from .content_view import ContentView, Line, wrap_text, expand_tabs
@@ -153,6 +155,7 @@ class Application:
         self.grep = GrepMode()
         self.grep_active = False
         self.grep_prompt = None   # (syntax, LineEditor)を打っている間
+        self.rescue_password = None  # ^J^Rのsudoのパスワード(1回の操作の間だけ、rescue_run()で消す)
         self.prompt_field = (0, 0)  # 入力欄の始まりの桁・出している字の始まり(prompt_mode_line())
         self.jump_highlight = None  # KEYのhで飛んだ行の強調(view, 行, 字, 始まり)(grepJumpHighlightView_)
         # 一覧・各モード
@@ -401,7 +404,10 @@ class Application:
             position = self.notice if p.kind in (pr.OCCUR_FIXED, pr.OCCUR_REGEX) and self.notice else position
             listed = p.candidate_list or p.kind in (pr.BOOKMARK_SET, pr.BOOKMARK_JUMP)  # 一覧の下の戻り先
             under = (self.return_stack[-1] if self.return_stack else DIRECTORY) if listed else None
-            return self.prompt_mode_line(p.label, position, localized(p.message), p.editor, p.kind == pr.EXIT, under)
+            editor = p.editor
+            if p.kind == pr.RESCUE_PASSWORD:  # 打った字は*で(字の数だけ)
+                editor = types.SimpleNamespace(text='*' * len(editor.text), cursor=editor.cursor)
+            return self.prompt_mode_line(p.label, position, localized(p.message), editor, p.kind == pr.EXIT, under)
         if self.grep_prompt is not None:
             syntax, editor = self.grep_prompt
             if syntax == FIXED:  # インクリメンタル: 「FGREP 1/11 打った字」(一致が無ければ位置は空、C++と同じ)
@@ -1985,6 +1991,117 @@ class Application:
             self.directory_mode.temporary_marks = True
         self.current_mode = DIRECTORY
 
+    # --- RESCUE(^J^R、rescue.pyの説明を参照) ---
+    def start_rescue(self):
+        """^J^R: /opt/U.shのオプションの一覧(sudoにパスワードが要れば、先にモードラインで聞く)。"""
+        self.rescue_password = None
+        if not rescue.available():
+            self.show_transient_notice('RESCUE: no ' + rescue.U_SH)
+            return False
+        if rescue.need_password():
+            return self.start_prompt(pr.RESCUE_PASSWORD, '', self.rescue_password_entered)
+        return self.rescue_show_options()
+
+    def rescue_password_entered(self, text):
+        if not rescue.check_password(text):
+            self.show_transient_notice('RESCUE: sudo: wrong password')
+            return False
+        self.rescue_password = text
+        return self.rescue_show_options()
+
+    def rescue_capture(self, args):
+        """U.shを動かして出力を(一覧用、終わるまで待つ)。"""
+        self.show_transient_notice('RESCUE: U.sh ' + ' '.join(args))
+        self.redraw()
+        self.notice = None
+        out = rescue.capture(args, self.rescue_password)
+        if out is None:
+            self.show_transient_notice('RESCUE: cannot run ' + rescue.U_SH)
+        return out
+
+    def rescue_show_list(self, items, on_choose):
+        if not self.show_list(items, 'RESCUE', on_choose, False):
+            return False
+        self.list_view.cursor_index = self.list_view.top_index = 0  # U.shの並びのまま、先頭から
+        return True
+
+    def rescue_show_output(self, out):
+        """選ぶものが無かった時: U.shの出力(「Please boot 8GB-base」等の理由)をFILEで。"""
+        try:
+            with open(rescue.LOG, 'w', encoding='utf-8') as f:
+                f.write(out)
+        except OSError:
+            return False
+        return self.open_file(rescue.LOG, raw=True)
+
+    def rescue_show_options(self):
+        out = self.rescue_capture(['--list'])
+        if out is None:
+            return False
+        options = rescue.parse_options(out)
+        if not options:
+            return self.rescue_show_output(out)
+        by_display = dict((display, option) for option, display in options)
+        return self.rescue_show_list([display for _, display in options],
+                                     lambda item: self.rescue_choose_option(by_display[item], item))
+
+    def rescue_choose_option(self, option, display):
+        if option in rescue.LIST_OPTIONS:
+            out = self.rescue_capture([option, '--list'])
+            if out is None:
+                return False
+            items = [line for _, line in rescue.parse_numbers(out)]
+            if option == '-f':
+                items = [rescue.UNMOUNT_ALL] + items
+            if not items:
+                return self.rescue_show_output(out)
+            return self.rescue_show_list(items, lambda item: self.rescue_after_number(option, item))
+        if rescue.takes_argument(display):  # 「-s 」と出して、名前等を打ってもらう
+            self.start_prompt(pr.RESCUE, option + ' ', self.rescue_argument_entered)
+            self.prompt.message = display.split(')', 1)[1].strip() + ': '
+            return True
+        return self.rescue_ask(option, [], [], rescue.QUESTIONS.get(option, []))
+
+    def rescue_argument_entered(self, text):
+        words = text.split()
+        if not words or not words[0].startswith('-'):
+            return False
+        return self.rescue_ask(words[0], words[1:], [], rescue.QUESTIONS.get(words[0], []))
+
+    def rescue_after_number(self, option, item):
+        number = rescue.number_of(item)
+        if number is None:
+            return False
+        if number == '-':  # -f -: 全部外す
+            return self.rescue_ask(option, ['-'], [], [])
+        return self.rescue_ask(option, [], [number], rescue.QUESTIONS.get(option, []))
+
+    def rescue_ask(self, option, args, answers, questions):
+        """U.shがこの後に聞くことを、モードラインで1つずつ(既定の答えを入れておく)。全部聞いたら動かす。"""
+        if questions:
+            question, default = questions[0]
+            self.start_prompt(pr.RESCUE_ANSWER, default,
+                              lambda text: self.rescue_ask(option, args, answers + [text.strip() or default],
+                                                           questions[1:]))
+            self.prompt.message = question
+            self.prompt.editor.select_all()  # 打つと置き換わる
+            return True
+        return self.rescue_run([option] + args + ['--batch'] + rescue.answer_args(answers))
+
+    def rescue_run(self, args):
+        """U.shを別のセッションで動かし、SHELLでその出力(rescue.LOG)をtail -fで見る。"""
+        started = rescue.start(args, self.rescue_password)
+        self.rescue_password = None
+        if started is None:
+            self.show_transient_notice('RESCUE: cannot run ' + rescue.U_SH)
+            return False
+        if not self.ensure_shell():
+            return False
+        self.enter_mode(SHELL)
+        self.shell.submit_line(started[1])
+        self.refresh_shell_view()
+        return True
+
     # --- HELP・KEY ---
     def start_help(self):
         """^H: HELP.epubをEPUBで(無ければ平文のHELP)。"""
@@ -2835,6 +2952,8 @@ class Application:
             if self.locate_mode.start_update_db():
                 self.show_transient_notice('updatedb')
             return True
+        if number == 156:  # ^J^R: RESCUE(rescue.py)
+            return self.start_rescue()
         if number == 58:  # ^J^L
             return self.start_locate_prompt()
         if number == 59:  # ^Jm

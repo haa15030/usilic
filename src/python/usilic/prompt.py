@@ -13,6 +13,7 @@ TOOL, PART, MACRO_KEY, BOOKMARK_SET, BOOKMARK_JUMP, MARK_REGEX, MARK_EXTENSION, 
     'Tool', 'Part', 'MacroKey', 'BookmarkSet', 'BookmarkJump', 'MarkRegex', 'MarkExtension', 'OccurFixed',
     'OccurRegex')
 SHELL_COMMAND, MACRO_EDIT = 'ShellCommand', 'MacroEdit'
+RESCUE, RESCUE_ANSWER, RESCUE_PASSWORD = 'Rescue', 'RescueAnswer', 'RescuePassword'  # ^J^R(rescue.py)
 
 PROMPT_KILL = {'text': ''}
 
@@ -41,6 +42,9 @@ KINDS = {
     OCCUR_REGEX: ('EGREP', '', hist.RECENT_EGREP_PATTERN),
     SHELL_COMMAND: ('SHELL', '', hist.SHELL_COMMAND),
     MACRO_EDIT: ('MACRO', 'Key: ', None),
+    RESCUE: ('RESCUE', '', None),            # 引数を打つ(「-s 」の後に名前等)
+    RESCUE_ANSWER: ('RESCUE', '', None),     # U.shの問い(尋ねる文は問いごとに替える)
+    RESCUE_PASSWORD: ('RESCUE', 'Password: ', None),  # sudoのパスワード(打った字は*で出す)
 }
 
 

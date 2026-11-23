@@ -33408,6 +33408,17 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1344. **src/python: RESCUEモード(^J^R、/opt/U.shの前に付ける画面、usilicのRESCUEの2、2026-11-23)**
+   - 直接のユーザー依頼: 項目1343のアシスタントの手順(2. Python版にRESCUEモード(^J^R)。一覧は^X^Fと同じ、入力はモードライン)を「やってみて」。
+   - 変更(src/python/usilic/rescue.py・application.py・prompt.py・key_bindings.py): `^J^R`(K-156、Python版だけ。C++版は156を空けておく)で、`/opt/U.sh --list`の出力から、そのホストで使えるオプションの一覧(「-a(dd_strage)」等)を出す。
+     - -a・-d・-f・-n: `U.sh オプション --list`の番号の行(「 3)ntfs /dev/sda3 …」)の一覧から選ぶ(-fは頭に「-) unmount all」)。
+     - 引数の要るもの(説明に「:」でなく引数が書いてあるもの、-s name・-m device・-k・-o・-c): モードラインに「-s 」と出して打ってもらう。
+     - U.shがその後に聞くこと(`rescue.QUESTIONS`、-dのInstall and save・Start now、-nのReboot、-mのErase、-eのDelete base、-uのReboot)を、既定の答えを入れたモードラインで1つずつ聞き、`--ans=`で渡す。
+     - sudoのパスワードが要れば(`sudo -n true`が失敗)、先にモードラインで聞き(打った字は*)、`sudo -S -v`で確かめる。U.shへは`sudo -S`の標準入力で渡し、覚えるのは1回の操作の間だけ。
+     - U.shは`start_new_session`の別のプロセスで動かし、出力は/tmp/usilic-rescue.logへ。SHELLで`tail -n +1 --pid=PID -f`して見る(usilicを終えても、-uの1時間の途中で止まらない)。選ぶものが無かった時(「Please boot 8GB-base」等)は、U.shの出力をFILEで見せる。
+   - src/U_proto.sh: `--batch`(/dev/ttyから読まず、moreを使わない。問いの無いオプションをRESCUEから動かす時)を足した。
+   - 確かめたこと: tests/test_rescue.py(一覧の読み取り・引数の有無・番号)、tests/test_key_bindings。偽のU.shを置いて擬似端末でusilic.pyを動かし、-f(番号の2)・-n(番号の2と再起動n)・-s foo .で、U.shへ`-f --batch --ans=2`・`-n --batch --ans=2 --ans=n`・`-s foo . --batch`が渡ることを確かめた(HOMEは一時的なもの)。パスワードの流れとLinuxの実機では未確認。
+
 1343. **src/U_proto.sh: 前から使うための`--list`・`--ans=`(usilicのRESCUEの1、2026-11-23)**
    - 直接のユーザー提案: U.shをPython版のusilicへ組み込めないか(Python版はC++のCUIと同じ機能を持つだけだが、レスキューの機能を入れれば必須になる)。アシスタントの答え(U.shはそのまま残し、Python版はU.shの前に付ける画面から。1. U.shに一覧だけ出す形と番号を引数で受ける形、2. Python版にRESCUEモード(^J^R)、3. `-u`でpython3とPython版をRAM-*-baseとrescueへ、4. U.shの中身を移すのは必要になってから)に、ユーザーが「やってみて」。
    - 変更: 引数のどこにでも`--list`・`--ans=答え`を置ける(オプションの引数には数えない、mainの前で抜く)。どちらかがあれば、問い(`read -p`)は`_ask`で、`--ans=`の答えを問いの順に使い、尽きたら既定(番号の問いは空＝選ばない、Y/nの問いはn・N)で進む。/dev/ttyから読まず、一覧(`_list_parts`の`> /dev/tty`)は標準エラー出力へ(`$U_TTY`)。`-v`はmoreでなくcat。オプションが無ければ、使えるオプションの一覧を出して終える。
