@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1384. **src/U_proto.sh・src/python・src/U_sh.txt: UbuntuのRAM-*-baseの起動項目で、UEFIの時はGRUBのtpmを外す(2026-11-24)**
+   - 直接のユーザーの話: Z390UDのUEFIで、UbuntuのGRUB(2.14)はRAM-7.3.1+8gb-base.gz(619MB・588MB)で「error: out of memory.」。DebianのGRUBからはBIOS・UEFIとも起動できた。UbuntuのGRUBの`e`でDebianの561MBのRAM-6.12.117+8gb-base.gzを読ませてもout of memory、逆にDebianのGRUB(grub.cfgに足した試しの項目)ではUbuntuの588MBも起動できた。web(Red HatのBugzilla 1838633・RHEL-4401等)で、GRUBにTPMのモジュールがあると、読み込むファイルをTPMに記録するためにinitrdを丸ごともう一度別に読み込むので、大きなinitrdでout of memoryになる例があった。UbuntuのGRUBの`e`で一番上に`rmmod tpm`を足したら起動した。
+   - 変更: Ubuntuなら、RAM-*-baseの起動項目(40_custom、`_ram_entry`・`ram_entry`)の最初に`if [ "$grub_platform" = efi ]; then rmmod tpm; fi`(BIOSのGRUBではtpmが無く、rmmodがエラーを出すので、UEFIの時だけ)。前に作った項目にも、無ければ足す(U.shはawkで、40_customの実行権を残すようcatで書き戻す)。マニュアルのUbuntuの所にも一言。
+   - 確かめたこと: macOSのshとawkで、前に作った項目に1回だけ足すこと。Python版のram_entryをFakeSystemで(前の項目に足す・新しい項目に入る)。tests/test_ush.py。`bash -n`・`dash -n`。
+
 1383. **src/python: USILIC_OPENで開く時は、最初の起動でもHELPを出さずに開く(2026-11-24)**
    - 直接のユーザーの話: 項目1382で「rootで最初に開いた時だけ、-vの表示が出ません(/root/.usilicがまだ無いので最初の起動としてHELPが先)」と伝えたところ、「その場で作ってもいいよ。」
    - 変更: usilic.pyは、USILIC_OPEN(-vの表示)がある時は、最初の起動(~/.usilic/historyが無い)でもHELPをページャーとして出さず、~/.usilic(history)をその場で作ってファイルを開く。

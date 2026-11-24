@@ -263,14 +263,20 @@ def ram_entry(env, module):
     """_ram_entry(): RAM-module-baseの起動項目を40_customへ(u_root=はrc.localがDEBIAN区画として使う)。"""
     system = env.system
     custom = system.read_text('/etc/grub.d/40_custom') or ''
+    # UbuntuのGRUB(2.14、UEFI)は、読み込むファイルをTPMに記録するためにinitrdを丸ごともう一度読み込むので、
+    # RAM-*-base.gz(600MB前後)で「out of memory」になった(DebianのGRUBでは読めた)。UEFIの時はtpmを外す
+    tpm = '\tif [ "$grub_platform" = efi ]; then rmmod tpm; fi\n' if env.on_ubuntu else ''
+    head = "menuentry 'RAM-%s-base' {\n" % module
     if "'RAM-%s-base'" % module in custom:
+        if tpm and head in custom and not custom.split(head, 1)[1].startswith(tpm):
+            system.write_text('/etc/grub.d/40_custom', custom.replace(head, head + tpm, 1))  # 前に作った項目にも
         return
     uuid = env.debian_root_uuid
     system.append_text('/etc/grub.d/40_custom', (
-        "menuentry 'RAM-{m}-base' {{\n\tinsmod part_gpt\n\tinsmod part_msdos\n\tinsmod ext2\n"
+        "menuentry 'RAM-{m}-base' {{\n{t}\tinsmod part_gpt\n\tinsmod part_msdos\n\tinsmod ext2\n"
         "\tsearch --no-floppy --fs-uuid --set=root {u}\n\techo\t'Loading base:vmlinuz-{m} from {u} ...'\n"
         "\tlinux\t/boot/vmlinuz-{m} root=/dev/ram0 ro u_root={u}\n\techo\t'Loading initial ramdisk ...'\n"
-        "\tinitrd\t/opt/RAM-{m}-base.gz\n\tsavedefault\n}}\n").format(m=module, u=uuid))
+        "\tinitrd\t/opt/RAM-{m}-base.gz\n\tsavedefault\n}}\n").format(m=module, u=uuid, t=tpm))
 
 
 def update_base_image(env, log, gb, out, lap):

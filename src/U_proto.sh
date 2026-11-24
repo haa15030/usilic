@@ -1022,11 +1022,24 @@ _correct_uuid() { # ファイル$1の中の、区画$2のUUIDを区画$3のUUID�
 }
 
 _ram_entry() { # RAM-$1-base の起動項目を40_customへ（u_root= は rc.local が $MNT_DEBIAN の区画として使う）
+    # Ubuntu の GRUB（2.14、UEFI）は、読み込むファイルを TPM に記録するために initrd を丸ごともう一度読み込むので、
+    # RAM-*-base.gz（600MB 前後）で「out of memory」になった（Debian の GRUB では読めた）。UEFI の時は tpm を外す
+    local _tpm=""
+
+    if [ "$ON_UBUNTU" ]; then
+        _tpm='	if [ "$grub_platform" = efi ]; then rmmod tpm; fi'
+    fi
     if [ "`fgrep "'RAM-$1-base'" /etc/grub.d/40_custom`" ]; then
+        if [ "$_tpm" ] && [ ! "`grep -A1 "^menuentry 'RAM-$1-base'" /etc/grub.d/40_custom | grep 'rmmod tpm'`" ]; then
+            echo "rmmod tpm -> RAM-$1-base (/etc/grub.d/40_custom)" # 前に作った項目にも足す
+            awk -v h="menuentry 'RAM-$1-base' {" -v t="$_tpm" '{print} $0 == h {print t}' /etc/grub.d/40_custom > /tmp/40.$TMP_LABEL
+            cat /tmp/40.$TMP_LABEL > /etc/grub.d/40_custom # mv だと40_customの実行権が消える
+        fi
         return
     fi
     cat <<EOF >> /etc/grub.d/40_custom
 menuentry 'RAM-$1-base' {
+$_tpm
 	insmod part_gpt
 	insmod part_msdos
 	insmod ext2

@@ -48,7 +48,8 @@ USB メモリの中身はすべて消えます。#
 #
 Ubuntu では、4GB に BASE が収まらないので、RAMDISK は 8GB だけ（8GB-base・8GB-rescue）です。
 dracut を使っていれば、ルートの区画を tmpfs へ写して起動する「TORAM」の項目も作ります。
-mv・cp・ls 等の基本コマンドは、最初に GNU 版（coreutils-from-gnu）へ入れ替えます（GNU_COREUTILS、下の⑧）。#
+mv・cp・ls 等の基本コマンドは、最初に GNU 版（coreutils-from-gnu）へ入れ替えます（GNU_COREUTILS、下の⑧）。
+RAM-*-base の起動項目には、UEFI の時に GRUB の tpm を外す行を入れます（Ubuntu の GRUB は initrd を TPM に記録するためにもう一度丸ごと読み込むので、600MB 前後の RAM-*-base.gz で「out of memory」になります）。#
 #
 所要時間・容量の目安   ㊿：⑲'. U -u'⊥㊿#
 #
