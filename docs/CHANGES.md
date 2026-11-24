@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1388. **src/U_proto.sh・src/python: BASE_LISTにgit、-uでスワップファイル(/swap.img等)を止めて消す(2026-11-24)**
+   - 直接のユーザーの話: NONE-KERNELで「-bash: git: command not found」。dfでDEBIAN区画(sdc2)が15.6GB使用、16GのUSBには乗らない。/swap.img(7GB)を忘れていた。「USBメモリに7G-swapを乗せたところで（空きが無くて乗らんけど）アクセス速度の点で全く使えない。そもそもレスキュー作業をUSBでやってしまってはこんだけ苦労してRAMDISK化した意味がなくなる。」gitをBASEに入れても大丈夫か、には大丈夫(40MB程度、RAM-*-base.gzで10MB前後)と答え、「両方やっといて。」(区画の30GBは、見極めが付いたらDebian 13同様14GBにするので気にしなくていい)
+   - 変更1: BASE_LIST(Debian・Ubuntu)にgit。-uがusilicのリポジトリを取るのに使うが、BASEに無いと記録へ戻すたびに外れて入れ直していた。RAMDISKでも使える。
+   - 変更2: -uの始めに`_no_swap_file`(Python版は`no_swap_file`): /etc/fstabのスワップファイル(1列目が/で始まり/dev/でない、3列目がswap)をswapoffし、fstabの行を消してファイルを消す。スワップの区画(/dev/〜・UUID=〜)はそのまま。
+   - 確かめたこと: macOSのawkで、/swap.imgだけ選び/dev/sda3・UUID=のスワップは残すこと。tests/test_ush.py。`bash -n`・`dash -n`。
+
 1387. **src/U_proto.sh・src/python: -rでイメージを展開した後、D-Bus・logind・journaldは再起動しない(2026-11-24)**
    - 直接のユーザーの話: 「8GB-rescue login:からlightdmログインまで1分近くある。」。journal: rc.localは70.9秒に終わり、lightdmは79.9秒に始まって105.0秒に「Failed to get list of logind seats: Timeout was reached」(25秒待ち)、pam_systemdの「Varlink call io.systemd.Login.CreateSession failed」。dbus-broker・logindのjournalで、69.68秒にdbus-brokerが止められて起動し直されていた。ユーザーの問い「systemdは並列に処理して終了を待たないので、それらが終わっていないのにlogin:が先に出たのでは」。
    - 原因: `_start_rc`(start_rc)は、展開したイメージの有効なサービスのうちBASEにもあるものを`try-restart`する。dbus-broker.serviceもその中にあり、システムのバスを起動し直したので、logindがバスから切れて応えなくなり、lightdmがlogindの返事を25秒待った(前にSSDで出た「Failed to set wall message: Connection timed out」も同じ、logindが応えない症状)。login:が先に出るのは、`--no-block`で起動を待たずにrc.localが終わるため(lightdmの起動は9秒後)で、長い待ちはこの25秒。

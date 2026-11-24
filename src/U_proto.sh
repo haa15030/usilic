@@ -393,7 +393,8 @@ readonly LINUX_SOURCE=linux-source-$KERNEL_VERSION
 readonly TEMPLATE_BASE=TEMPLATE-$KERNEL_VERSION-base
 readonly RAM_DIR_LIST="boot dev media opt proc run sys usr/lib/modules tmp mnt/$DEBIAN" # $MNT_DEBIAN はNG
 # arch-install-scripts（arch-chroot）・gdisk（sgdisk）・dosfstools（mkfs.vfat）・grub-*-bin（BIOSとUEFIの両方のGRUB）は -m で使う
-BASE_LIST="firmware-realtek firmware-misc-nonfree firmware-amd-graphics firmware-nvidia-gsp arch-install-scripts gdisk dosfstools grub-pc-bin grub-efi-amd64-bin"
+# git: -u が usilic のリポジトリを取るのに使う（BASE に無いと、記録へ戻すたびに外れて入れ直していた）。RAMDISK でも使える
+BASE_LIST="firmware-realtek firmware-misc-nonfree firmware-amd-graphics firmware-nvidia-gsp arch-install-scripts gdisk dosfstools grub-pc-bin grub-efi-amd64-bin git"
 readonly PAGER=more # _page で usilic・less が無い時だけ（more は戻れない）
 
 # --- Ubuntu（ON_UBUNTU）用の設定 ------------------------------------
@@ -414,7 +415,7 @@ if [ "$ON_UBUNTU" ]; then
     readonly DESKTOP_LIST="ubuntu-desktop-minimal:GNOME xubuntu-core:Xfce kubuntu-desktop:KDE-Plasma lubuntu-desktop:LXQt ubuntu-mate-core:MATE"
     readonly DESKTOP_APT_OPT="--no-install-recommends" # 推奨パッケージも入れるなら ""
     JP_LIST="language-pack-ja language-pack-gnome-ja fcitx5-mozc fonts-noto-cjk"
-    BASE_LIST="arch-install-scripts gdisk dosfstools grub-pc-bin grub-efi-amd64-bin" # 必要なら "linux-firmware" も（1GB前後あるので RAMDISK 容量に注意）
+    BASE_LIST="arch-install-scripts gdisk dosfstools grub-pc-bin grub-efi-amd64-bin git" # 必要なら "linux-firmware" も（1GB前後あるので RAMDISK 容量に注意）
     # -u で BASE.u を記録する前に外すもの（Ubuntu Server が最初から入れる、RAMDISK では要らないもの。RAM-*-base.gz が
     # Debian の倍以上（1.4GB）になった）。クラウド・コンテナ・snap、自動の更新・報告、SAN、開発・解析用、カーネルのメタ
     # （linux-generic: firmware を選んで外すため。U.sh はカーネルを自分で作る）、携帯端末・サーバーの NIC 用の firmware。
@@ -2874,6 +2875,21 @@ _deb_installed() { # /opt の .deb（名前_版_arch.deb）と同じ版が入っ
     dpkg-query -W -f='${Status} ${Version}\n' $_p 2>/dev/null | grep -q " ok installed $_v\$"
 }
 
+_no_swap_file() { # /etc/fstab のスワップファイル（Ubuntu のインストーラが作る /swap.img 等）を止めて消す。
+    # -m は DEBIAN区画を USB へ写すので、何GBもの使わないファイルが乗る（USB のスワップは遅くて使えず、RAMDISK でも使わない）。
+    # スワップの区画（/dev/〜・UUID=〜）はそのまま
+    local _f
+
+    for _f in `awk '$1 ~ /^\// && $1 !~ /^\/dev\// && $3 == "swap" {print $1}' /etc/fstab`
+    do
+        echo "swapoff $_f; rm -f $_f (/etc/fstab)"
+        swapoff $_f 2>/dev/null
+        awk -v f="$_f" '!($1 == f && $3 == "swap")' /etc/fstab > /tmp/fstab.$TMP_LABEL
+        cat /tmp/fstab.$TMP_LABEL > /etc/fstab
+        rm -f $_f
+    done
+}
+
 update_base() { # -u)
     local _new_gb _new_kernel _rescue_kernel _rescue_entry _first="" _yn
 
@@ -2883,6 +2899,7 @@ update_base() { # -u)
     fi
     export DEBIAN_FRONTEND=noninteractive
     _lap_start $1
+    _no_swap_file
     cd /opt
     if [ ! -f /opt/BASE.u ]; then
         _output_u DEBIAN.u -p $LINENO

@@ -143,6 +143,25 @@ def _installed(env, deb):
     return status.endswith(' ok installed ' + parts[1])
 
 
+def no_swap_file(env, out):
+    """_no_swap_file(): /etc/fstabのスワップファイル(Ubuntuのインストーラが作る/swap.img等)を止めて消す。-mはDEBIAN区画を
+    USBへ写すので、何GBもの使わないファイルが乗る(USBのスワップは遅くて使えず、RAMDISKでも使わない)。スワップの区画は
+    そのまま。"""
+    system = env.system
+    fstab = system.read_text('/etc/fstab') or ''
+    keep = []
+    for line in fstab.splitlines():
+        f = line.split()
+        if len(f) >= 3 and f[0].startswith('/') and not f[0].startswith('/dev/') and f[2] == 'swap':
+            out('swapoff %s; rm -f %s (/etc/fstab)' % (f[0], f[0]))
+            system.run(['swapoff', f[0]])
+            system.run(['rm', '-f', f[0]])
+            continue
+        keep.append(line)
+    if len(keep) != len(fstab.splitlines()):
+        system.write_text('/etc/fstab', ''.join(l + '\n' for l in keep), 0o644)
+
+
 def purge_ubuntu(env, out):
     """_purge_ubuntu(): Ubuntuで、BASE.uを記録する前にRAMDISKでは要らないもの(UBUNTU_PURGE_LIST、「*」も使える)を外す。
     ubuntu-server-minimal等のメタが一緒に外れると、それが入れた残すもの(netplan.io・chrony・sudo-rs等)までautoremoveで
@@ -227,6 +246,7 @@ def update_base(env, log, option, ask, out):
     os.environ['DEBIAN_FRONTEND'] = 'noninteractive'
     lap = Lap(env)
     lap.begin(option)
+    no_swap_file(env, out)
     rescue_gb = env.rescue_gb
     strage = env.strage or env.mnt_debian
     if not system.exists('/opt/BASE.u'):
