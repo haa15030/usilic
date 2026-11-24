@@ -344,8 +344,9 @@ def desktop_select(env, log, option, ask, out):
         out('HOST:%dGB-%s' % (env.ramdisk_gb, name))
         if env.on_ubuntu:
             option_list = env.conf('DESKTOP_APT_OPT', '--no-install-recommends').split()
-            out('apt-get install -y %s %s' % (' '.join(option_list), task))
-            system.stream(noninteractive + ['install'] + option_list + [task], out)
+            packages = task.split(',')  # DESKTOP_LISTの「,」で足した包み(端末等)も
+            out('apt-get install -y %s %s' % (' '.join(option_list), ' '.join(packages)))
+            system.stream(noninteractive + ['install'] + option_list + packages, out)
             desktop_ubuntu(env, True, out)
         else:
             out('apt-get install -y task-' + task)

@@ -412,7 +412,9 @@ if [ "$ON_UBUNTU" ]; then
         RESCUE_LIST_X="$RESCUE_LIST fakeroot libncurses-dev"
     fi
     # -d のデスクトップ一覧（メタパッケージ:名前。名前は ?GB-名前.img になる）。パッケージ名は 'apt-cache search -- -desktop$' 等で確認
-    readonly DESKTOP_LIST="ubuntu-desktop-minimal:GNOME xubuntu-core:Xfce kubuntu-desktop:KDE-Plasma lubuntu-desktop:LXQt ubuntu-mate-core:MATE"
+    # 「,」で包みを足せる（DESKTOP_APT_OPT で推奨を入れないので、メタだけだと端末等が入らない。ubuntu-desktop-minimal は
+    # GNOME Shell だけで、端末（Ubuntu 25.10 からは ptyxis）・ファイルマネージャ（nautilus）・テキストエディタは推奨だった）
+    readonly DESKTOP_LIST="ubuntu-desktop-minimal,ptyxis,nautilus,gnome-text-editor:GNOME xubuntu-core:Xfce kubuntu-desktop:KDE-Plasma lubuntu-desktop:LXQt ubuntu-mate-core:MATE"
     readonly DESKTOP_APT_OPT="--no-install-recommends" # 推奨パッケージも入れるなら ""
     JP_LIST="language-pack-ja language-pack-gnome-ja fcitx5-mozc fonts-noto-cjk"
     BASE_LIST="arch-install-scripts gdisk dosfstools grub-pc-bin grub-efi-amd64-bin git" # 必要なら "linux-firmware" も（1GB前後あるので RAMDISK 容量に注意）
@@ -1742,8 +1744,8 @@ desktop_select() { # -d)
         fi
         echo "HOST:${RAMDISK_GB}GB-$_name"
         if [ "$ON_UBUNTU" ]; then
-            echo "apt-get install -y $DESKTOP_APT_OPT $_task"
-            $_apt install $DESKTOP_APT_OPT $_task < /dev/null # < /dev/null: 抜けた問いがあっても待たずにエラーで終わる
+            echo "apt-get install -y $DESKTOP_APT_OPT `echo $_task | tr , ' '`"
+            $_apt install $DESKTOP_APT_OPT `echo $_task | tr , ' '` < /dev/null # < /dev/null: 抜けた問いがあっても待たずにエラーで終わる
             _desktop_ubuntu on
         else
             echo "apt-get install -y task-$_task"

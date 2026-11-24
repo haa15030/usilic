@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1389. **src/U_proto.sh・src/python: UbuntuのDESKTOP_LISTで「,」で包みを足せる。GNOMEに端末・ファイルマネージャ・テキストエディタ(2026-11-24)**
+   - 直接のユーザーの話: Ubuntuの8GB-GNOME(RAMDISKの46%、swapcaps・usilicはOK)で、「GNOMEってターミナル無いのかな？「アプリを表示」で出るアプリのアイコンもusilic入れて9個しかない。」
+   - 原因: DESKTOP_APT_OPT(既定--no-install-recommends)で推奨を入れないので、ubuntu-desktop-minimalはGNOME Shellだけで、端末(Ubuntu 25.10からはptyxis)・ファイルマネージャ(nautilus)・テキストエディタ(gnome-text-editor)は推奨で入らなかった。
+   - 変更: DESKTOP_LISTの包みの所に「,」で包みを足せる(`ubuntu-desktop-minimal,ptyxis,nautilus,gnome-text-editor:GNOME`)。-dはそれらを一緒にapt-get install。他のデスクトップ(xubuntu-core・kubuntu-desktop等)は、入れてみて足りなければ同じように足す。
+   - 確かめたこと: tests/test_ush.py。`bash -n`・`dash -n`。包みの名前(Ubuntu 26.04のptyxis等)は実機で未確認。
+
 1388. **src/U_proto.sh・src/python: BASE_LISTにgit、-uでスワップファイル(/swap.img等)を止めて消す(2026-11-24)**
    - 直接のユーザーの話: NONE-KERNELで「-bash: git: command not found」。dfでDEBIAN区画(sdc2)が15.6GB使用、16GのUSBには乗らない。/swap.img(7GB)を忘れていた。「USBメモリに7G-swapを乗せたところで（空きが無くて乗らんけど）アクセス速度の点で全く使えない。そもそもレスキュー作業をUSBでやってしまってはこんだけ苦労してRAMDISK化した意味がなくなる。」gitをBASEに入れても大丈夫か、には大丈夫(40MB程度、RAM-*-base.gzで10MB前後)と答え、「両方やっといて。」(区画の30GBは、見極めが付いたらDebian 13同様14GBにするので気にしなくていい)
    - 変更1: BASE_LIST(Debian・Ubuntu)にgit。-uがusilicのリポジトリを取るのに使うが、BASEに無いと記録へ戻すたびに外れて入れ直していた。RAMDISKでも使える。
