@@ -415,7 +415,9 @@ if [ "$ON_UBUNTU" ]; then
     # 「,」で包みを足せる（DESKTOP_APT_OPT で推奨を入れないので、メタだけだと端末等が入らない。ubuntu-desktop-minimal は
     # GNOME Shell だけで、端末（Ubuntu 25.10 からは ptyxis）・ファイルマネージャ（nautilus）・テキストエディタ・音（PipeWire、
     # pipewire-audio は pipewire-pulse・wireplumber・pipewire-alsa をまとめたもの）は推奨だった）
-    readonly DESKTOP_LIST="ubuntu-desktop-minimal,ptyxis,nautilus,gnome-text-editor,pipewire-audio:GNOME xubuntu-core:Xfce kubuntu-desktop:KDE-Plasma lubuntu-desktop:LXQt ubuntu-mate-core:MATE"
+    # 先頭が「+」なら、その項目だけ推奨も入れる（DESKTOP_APT_OPT を使わない）。GNOME-Live は、インストーラの「お試し」と
+    # 同じ構成（ubuntu-desktop-minimal と推奨）
+    readonly DESKTOP_LIST="ubuntu-desktop-minimal,ptyxis,nautilus,gnome-text-editor,pipewire-audio:GNOME +ubuntu-desktop-minimal:GNOME-Live xubuntu-core:Xfce kubuntu-desktop:KDE-Plasma lubuntu-desktop:LXQt ubuntu-mate-core:MATE"
     readonly DESKTOP_APT_OPT="--no-install-recommends" # 推奨パッケージも入れるなら ""
     JP_LIST="language-pack-ja language-pack-gnome-ja fcitx5-mozc fonts-noto-cjk"
     BASE_LIST="arch-install-scripts gdisk dosfstools grub-pc-bin grub-efi-amd64-bin git" # 必要なら "linux-firmware" も（1GB前後あるので RAMDISK 容量に注意）
@@ -1627,7 +1629,7 @@ grub-editenv /boot/grub/grubenv set 'saved_entry=$_rescue_entry'
 }
 
 desktop_select() { # -d)
-    local _list=/tmp/desktop.$TMP_LABEL _sel _n _i _task _name _line _pairs="" _yn _from=""
+    local _list=/tmp/desktop.$TMP_LABEL _sel _n _i _task _name _line _pairs="" _yn _from="" _opt
     # 使う RAMDISK の大きさ: RESCUE_GB（4GB）では最小の xfce4 でも収まらないので、EXTRA_GB（8GB、-u が作る）
     local _gb=${EXTRA_GB:-$((RESCUE_GB*2))}
     # debconf の問い（既定のディスプレイマネージャ等）・設定ファイルを置き換えるかの問いで止まらないように（既定の答え／今のファイルを残す）
@@ -1745,8 +1747,12 @@ desktop_select() { # -d)
         fi
         echo "HOST:${RAMDISK_GB}GB-$_name"
         if [ "$ON_UBUNTU" ]; then
-            echo "apt-get install -y $DESKTOP_APT_OPT `echo $_task | tr , ' '`"
-            $_apt install $DESKTOP_APT_OPT `echo $_task | tr , ' '` < /dev/null # < /dev/null: 抜けた問いがあっても待たずにエラーで終わる
+            case "$_task" in
+                +*) _opt="" ;; # 「+」: 推奨も入れる
+                *) _opt="$DESKTOP_APT_OPT" ;;
+            esac
+            echo "apt-get install -y $_opt `echo ${_task#+} | tr , ' '`"
+            $_apt install $_opt `echo ${_task#+} | tr , ' '` < /dev/null # < /dev/null: 抜けた問いがあっても待たずにエラーで終わる
             _desktop_ubuntu on
         else
             echo "apt-get install -y task-$_task"
