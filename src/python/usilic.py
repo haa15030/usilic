@@ -302,7 +302,8 @@ def main():
                 started = app.start_resuming_session(last, '.')
             if not started:
                 return 'usilic: cannot list ' + (args[0] if args else '.')
-            if open_after and not first_start and os.path.isfile(open_after):
+            # 最初の起動でも、ファイルを開く時(-vの表示、rootで初めて等)はHELPを出さずに開く(~/.usilicはその場で作ってある)
+            if open_after and os.path.isfile(open_after):
                 app.keep_directory_for = open_after  # ^Gで起動した(ls)へ(fileの/tmpへは移らない)
                 app.open_file(open_after, raw=True)  # rawなのでFILEの履歴には載せない(すぐ消すファイル)
             if not ephemeral and not open_after:  # 足りないプログラムのインストールの案内(実行ループの最初でSHELLへ。-vの表示の時は出さない)
@@ -310,7 +311,7 @@ def main():
                 offer = install_offer.plan(usilic_dir, first_start)
                 if offer:
                     app.pending_shell_offer = (offer[0], offer[1], 3, offer[2])
-            if first_start and help_text.help_roff_path(messages_ja.japanese()):
+            if first_start and not open_after and help_text.help_roff_path(messages_ja.japanese()):
                 app.pager_launch = True
                 app.first_start_pager = True
                 app.shell.display_name = 'USILIC'
