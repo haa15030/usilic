@@ -401,9 +401,12 @@ BASE_LIST="firmware-realtek firmware-misc-nonfree firmware-amd-graphics firmware
 readonly PAGER=more # _page で usilic・less が無い時だけ（more は戻れない）
 # NVIDIA の純正ドライバのカーネル側（dkms が作ったカーネル向けにモジュールを組み立てる。GSP の firmware と nouveau を止める設定も入る）。
 # NVIDIA の GPU がある時だけ、-u が BASE に入れる。画面の描画のライブラリ（libnvidia-gl 等、約900MB）は入れない（要るなら DESKTOP_LIST に）。
-# "" なら nouveau のまま。NVIDIA_NOUVEAU_FW は、その時に外す nouveau 用の firmware
+# "" なら nouveau のまま。NVIDIA_NOUVEAU_FW は、その時に外す nouveau 用の firmware。
+# NVIDIA_DESKTOP は、-d がデスクトップと一緒に入れる描画の側（GNOME は nvidia の GBM・EGL が無いとログイン画面が出ない）。
+# 版を変える（NVIDIA_LIST を変える）と、-u が BASE.u の前の版の nvidia-*・libnvidia-* を外して入れ直す
 NVIDIA_LIST=""
 NVIDIA_NOUVEAU_FW=""
+NVIDIA_DESKTOP=""
 
 # --- Ubuntu（ON_UBUNTU）用の設定 ------------------------------------
 # Ubuntu でも -u は Debian と同じく ${RESCUE_GB}GB（8GB）の RAMDISK 用カーネル・RAM-*-base.gz・${RESCUE_GB}GB-rescue.img を作る。
@@ -415,8 +418,12 @@ if [ "$ON_UBUNTU" ]; then
     # 端のケースが GNU と違う（「mv /home/.」を断らず /home/home ができた）。U.sh は GNU の動きを前提に書いてある。uutils のままなら ""
     readonly GNU_COREUTILS=y
     readonly NETPLAN_NM=/etc/netplan/90-U-network-manager.yaml
-    # Z390UD・RTX3050（GA107）で、nouveau では DP の音が鳴らなかった（Ubuntu 26.10 の live、Debian 13 の 6.12 でも。純正なら鳴った）
-    NVIDIA_LIST="nvidia-dkms-580-open"
+    # Z390UD・RTX3050（GA107）で、nouveau では DP の音が鳴らなかった（Ubuntu 26.10 の live、Debian 13 の 6.12 でも。純正なら鳴った）。
+    # 580（ubuntu-drivers の recommended）は 7.3.1+8gb の GNOME で「Failed to apply atomic modeset」の後 nvidia-modeset が
+    # 止まり、画面が真っ暗・キーボードも効かなかった（ssh は可）ので、新しい 615 に
+    NVIDIA_VER=615
+    NVIDIA_LIST="nvidia-dkms-$NVIDIA_VER-open"
+    NVIDIA_DESKTOP="nvidia-driver-$NVIDIA_VER-open"
     NVIDIA_NOUVEAU_FW="linux-firmware-nvidia-graphics" # nouveau 用の GSP（約106MB。純正は nvidia-firmware-580 の方を使う）
     RESCUE_LIST=`echo " $RESCUE_LIST " | sed -e 's/ firefox-esr / firefox /'`
     if [ "$RESCUE_LIST_X" ]; then
@@ -449,7 +456,7 @@ if [ "$ON_UBUNTU" ]; then
     # thermald: Intel のノートパソコンの温度の管理（ACPI の DPTF を読む）。Z390UD では起動に5回失敗し続けた（温度の保護は
     #   ハードウェアがする）
 fi
-readonly RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X BASE_LIST JP_LIST NVIDIA_LIST NVIDIA_NOUVEAU_FW
+readonly RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X BASE_LIST JP_LIST NVIDIA_LIST NVIDIA_NOUVEAU_FW NVIDIA_DESKTOP
 
 _on_line() { # 現在のネット接続状態（readonly の $ON_LINE は起動時の値のまま）
     ip a | grep 'inet ' | grep global
@@ -575,6 +582,10 @@ _desktop_ubuntu() { # Ubuntu: デスクトップ導入後の設定（on）／BAS
 		    break
 		fi
 	    done
+	fi
+	if [ "$NVIDIA_DESKTOP" ] && _nvidia_gpu && [ "`_is_inst ${NVIDIA_LIST%% *}`" ]; then # nvidia の描画の側（GBM・EGL・Xorg 用等）
+	    echo "apt-get install -y --no-install-recommends $NVIDIA_DESKTOP"
+	    apt-get install -y --no-install-recommends $NVIDIA_DESKTOP
 	fi
 	echo "systemctl set-default graphical.target"
 	systemctl set-default graphical.target
@@ -2970,7 +2981,11 @@ _nvidia_base() { # NVIDIA_LIST（純正ドライバのカーネル側）を BASE
         return
     fi
     # BASE.u へ戻してから入れ、nouveau 用の firmware を外し、その状態を BASE.u に（依存の dkms・gcc 等も BASE.u に載り、
-    # TEMPLATE を作る前の「BASE.u -p」で外れない）。前の BASE.u は BASE.u.bak に
+    # TEMPLATE を作る前の「BASE.u -p」で外れない）。前の BASE.u は BASE.u.bak に。前の版の nvidia-*・libnvidia-* は
+    # BASE.u から除いてから戻す（外れる）
+    chmod 644 /opt/BASE.u
+    cp -p /opt/BASE.u /opt/BASE.u.bak
+    grep -vE '^(lib)?nvidia-' /opt/BASE.u.bak > /opt/BASE.u
     _output_u BASE.u -p $LINENO
     echo "apt-get install -y --no-install-recommends $NVIDIA_LIST"
     if ! apt-get install -y --no-install-recommends $NVIDIA_LIST; then
@@ -2986,8 +3001,7 @@ _nvidia_base() { # NVIDIA_LIST（純正ドライバのカーネル側）を BASE
             apt-mark manual $_keep > /dev/null
         fi
     fi
-    chmod 644 /opt/BASE.u
-    mv -f /opt/BASE.u /opt/BASE.u.bak
+    rm -f /opt/BASE.u
     _output_u BASE.u $LINENO
     chmod 444 /opt/BASE.u
 }

@@ -204,6 +204,10 @@ def nvidia_base(env, log, out):
         if missing:  # BASE.uにあるのに外れていたら
             system.stream(['apt-get', 'install', '-y'] + missing, out)
         return
+    # 前の版のnvidia-*・libnvidia-*はBASE.uから除いてから戻す(外れる)
+    system.run(['chmod', '644', '/opt/BASE.u'])
+    system.run(['cp', '-p', '/opt/BASE.u', '/opt/BASE.u.bak'])
+    system.write_text('/opt/BASE.u', ''.join(l + '\n' for l in base.splitlines() if not re.match(r'(lib)?nvidia-', l)))
     purge_to(env, log, 'BASE.u', out)
     out('apt-get install -y --no-install-recommends ' + ' '.join(packages))
     if system.stream(['apt-get', 'install', '-y', '--no-install-recommends'] + packages, out) != 0:
@@ -218,8 +222,7 @@ def nvidia_base(env, log, out):
         if keep:  # linux-firmware等のメタが一緒に外れても残す
             out('apt-mark manual ' + ' '.join(keep))
             system.run(['apt-mark', 'manual'] + keep)
-    system.run(['chmod', '644', '/opt/BASE.u'])
-    system.run(['mv', '-f', '/opt/BASE.u', '/opt/BASE.u.bak'])
+    system.run(['rm', '-f', '/opt/BASE.u'])
     output_u(env, log, ['BASE.u'], out)
     system.run(['chmod', '444', '/opt/BASE.u'])
 

@@ -154,6 +154,13 @@ def desktop_ubuntu(env, on, out):
                     out('systemctl enable --force ' + dm)
                     system.run(['systemctl', 'enable', '--force', dm])
                     break
+        nvidia = env.conf('NVIDIA_DESKTOP', '').split()
+        kernel_side = (env.conf('NVIDIA_LIST', '').split() or [''])[0]
+        if nvidia and kernel_side and 'ok installed' in system.output(['dpkg-query', '-W', '-f=${Status}', kernel_side]):
+            from .update import nvidia_gpu
+            if nvidia_gpu(system):  # nvidiaの描画の側(GBM・EGL・Xorg用等。GNOMEは無いとログイン画面が出ない)
+                out('apt-get install -y --no-install-recommends ' + ' '.join(nvidia))
+                system.stream(['apt-get', 'install', '-y', '--no-install-recommends'] + nvidia, out)
         out('systemctl set-default graphical.target')
         system.run(['systemctl', 'set-default', 'graphical.target'])
     else:
