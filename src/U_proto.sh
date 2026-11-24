@@ -2066,6 +2066,10 @@ _start_rc() { # next_host でホストイメージを展開した後、systemd �
 	case "$_unit" in
 	    rc-local.service|display-manager.service|gdm*|lightdm*|sddm*|wdm*|xdm*) # 自分自身（rc.local）と DM は除外
 		continue ;;
+	    dbus.service|dbus-broker.service|systemd-logind.service|systemd-journald*) # システムのバスは再起動しない
+		# （再起動すると logind がバスから切れて応えなくなり、lightdm が「Failed to get list of logind seats:
+		# Timeout was reached」で25秒待った。バスは設定の変化を自分で読み直す）
+		continue ;;
 	esac
 	case " $_BASE_UNITS " in
 	    *" $_unit "*) # BASE にもあるもの: 動いていれば再起動（設定がイメージ側に変わっているため）

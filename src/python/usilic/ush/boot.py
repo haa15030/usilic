@@ -28,10 +28,14 @@ def start_rc(env, out, log):
         system.run(['systemctl', 'enable', 'NetworkManager.service'])
     out('systemctl daemon-reload')
     system.run(['systemctl', 'daemon-reload'])  # 展開したイメージのユニットを読み込み直す
-    skip = ('rc-local.service', 'display-manager.service')
+    # 自分自身(rc.local)とディスプレイマネージャは除く。システムのバス(D-Bus)・logind・journaldも再起動しない(再起動すると
+    # logindがバスから切れて応えなくなり、lightdmが「Failed to get list of logind seats: Timeout was reached」で25秒
+    # 待った。バスは設定の変化を自分で読み直す)
+    skip = ('rc-local.service', 'display-manager.service', 'dbus.service', 'dbus-broker.service',
+            'systemd-logind.service')
     for unit in enabled_units(env):
-        if unit in skip or unit.startswith(('gdm', 'lightdm', 'sddm', 'wdm', 'xdm')):
-            continue  # 自分自身(rc.local)とディスプレイマネージャは除く
+        if unit in skip or unit.startswith(('gdm', 'lightdm', 'sddm', 'wdm', 'xdm', 'systemd-journald')):
+            continue
         if unit in base_units:  # BASEにもあるもの: 動いていれば再起動(設定がイメージ側に変わっているため)
             code, message = system.run(['systemctl', 'try-restart', '--no-block', unit])
         elif system.output(['systemctl', 'show', '-p', 'ExecMainStartTimestampMonotonic', '--value', unit]).strip() == '0':
