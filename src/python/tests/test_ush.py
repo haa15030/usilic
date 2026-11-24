@@ -101,7 +101,7 @@ class UshTest(unittest.TestCase):
     def test_v_strage(self):
         system = fake(files={'/opt/U.opt': 'STRAGE=/mnt/ext4\nUUID=DDD\n'})
         code, out = run(system, '-v', '--batch')
-        self.assertIn('STRAGE(/mnt/ext4/opt):', out)
+        self.assertIn('STRAGE(/mnt/ext4/img.debian):', out)
         self.assertEqual(system.mounted.get('/mnt/ext4'), '/dev/sdd1')
 
     def test_mount_failure_logs(self):
@@ -128,13 +128,13 @@ class UshTest(unittest.TestCase):
         self.assertIn('UUID=DDD /mnt/ext4 ext4 rw,noauto 0 1', system.files['/etc/fstab'])
         self.assertIn('UUID=ROOT /mnt/debian ext4 noauto 0 1', system.files['/etc/fstab'])
         self.assertEqual(system.mounted.get('/mnt/ext4'), '/dev/sdd1')
-        self.assertNotIn(['cp', '-uv', '/mnt/debian/opt/BUILD_DEBIAN.img', '/mnt/ext4/opt'], system.calls)  # 7GBは10GB以下
+        self.assertNotIn(['cp', '-uv', '/mnt/debian/opt/BUILD_DEBIAN.img', '/mnt/ext4/img.debian'], system.calls)  # 7GBは10GB以下
 
     def test_a_copies_build_image(self):
         system = fake(files={'/mnt/debian/opt/BUILD_DEBIAN.img': 'x'})
         system.parts['/dev/sdd1']['free_kb'] = 70000000
         run(system, '-a', '--ans=2')
-        self.assertIn(['cp', '-uv', '/mnt/debian/opt/BUILD_DEBIAN.img', '/mnt/ext4/opt'], system.calls)
+        self.assertIn(['cp', '-uv', '/mnt/debian/opt/BUILD_DEBIAN.img', '/mnt/ext4/img.debian'], system.calls)
 
     def test_a_zero(self):
         system = fake(files={'/opt/U.opt': 'STRAGE=/mnt/ext4 UUID=DDD\nSH=bash\n'})
@@ -218,15 +218,15 @@ class UshTest(unittest.TestCase):
         system = self.save_fake()
         code, out = run(system, '-s', 'GNOME')
         self.assertIn('HOST:8GB-GNOME', out)
-        self.assertIn('free: 70000000KB (/mnt/ext4/opt)', out)
+        self.assertIn('free: 70000000KB (/mnt/ext4/img.debian)', out)
         self.assertTrue(any(c[:2] == ['sh', '-c'] and c[2].startswith("tar cf - --exclude='usr/lib/modules/*'")
                             for c in system.calls))
-        self.assertIn(['mv', system_tmp(system) + '/shm0/IMG0.img', '/mnt/ext4/opt/8GB-GNOME.img'], system.calls)
+        self.assertIn(['mv', system_tmp(system) + '/shm0/IMG0.img', '/mnt/ext4/img.debian/8GB-GNOME.img'], system.calls)
         self.assertIn('/dev/null', ' '.join(' '.join(c) for c in system.calls))      # RAMDISKの骨組み(mknod dev/null)
         fstab = [v for k, v in system.files.items() if k.endswith('/debian/etc/fstab')][0]
         self.assertTrue(fstab.startswith('/dev/ram / ext4 errors=remount-ro 0 1\n'))
         self.assertIn('UUID=ROOT /mnt/debian ext4 rw,noauto', fstab)
-        system.files['/mnt/ext4/opt/8GB-GNOME.img'] = 'x'
+        system.files['/mnt/ext4/img.debian/8GB-GNOME.img'] = 'x'
         code, out = run(system, '-s', 'GNOME')
         self.assertIn("8GB-GNOME: already exist. To overwrite, type '. U -s GNOME .'", out)
 
@@ -241,7 +241,7 @@ class UshTest(unittest.TestCase):
         system = self.save_fake()
         system.parts['/dev/sdd1']['free_kb'] = 1000
         code, out = run(system, '-s', 'KDE', '.')
-        self.assertIn('-s: 8GB-KDE: img 3850000KB > free 1000KB (/mnt/ext4/opt).', out)  # (3000000+500000)*1.1
+        self.assertIn('-s: 8GB-KDE: img 3850000KB > free 1000KB (/mnt/ext4/img.debian).', out)  # (3000000+500000)*1.1
 
     def test_d(self):
         system = self.save_fake(packages=['acl'])
@@ -255,7 +255,7 @@ class UshTest(unittest.TestCase):
         self.assertTrue(any('task-kde-desktop' in c for c in system.calls))
         self.assertTrue(any('task-japanese-desktop' in c for c in system.calls) or 'install' in out)
         self.assertIn('/opt/JP.u', ' '.join(' '.join(c) for c in system.calls))
-        self.assertTrue(any(c[0] == 'mv' and c[-1] == '/mnt/ext4/opt/8GB-KDE-Plasma.img' for c in system.calls))
+        self.assertTrue(any(c[0] == 'mv' and c[-1] == '/mnt/ext4/img.debian/8GB-KDE-Plasma.img' for c in system.calls))
         self.assertNotIn(['systemctl', 'isolate', 'graphical.target'], system.calls)
         self.assertIn("-d: '. U -n' to boot.", out)
 
@@ -297,8 +297,8 @@ class UshTest(unittest.TestCase):
         system = self.save_fake()
         system.dirs.add('/usr/src/linux-source-')
         code, out = run(system, '-k', '16')
-        self.assertIn(['mount', '-o', 'loop', '/mnt/ext4/opt/BUILD_DEBIAN.img', '/opt/build'], system.calls)
-        self.assertIn(['truncate', '-s', '7000000000', '/mnt/ext4/opt/BUILD_DEBIAN.img'], system.calls)  # 無いので作る
+        self.assertIn(['mount', '-o', 'loop', '/mnt/ext4/img.debian/BUILD_DEBIAN.img', '/opt/build'], system.calls)
+        self.assertIn(['truncate', '-s', '7000000000', '/mnt/ext4/img.debian/BUILD_DEBIAN.img'], system.calls)  # 無いので作る
         self.assertIn(['make', 'menuconfig'], system.calls)
         self.assertIn(['make', '-j9', 'O=../build/', 'LOCALVERSION=+16gb'], system.calls)
         self.assertIn(['make', 'bindeb-pkg', 'INSTALL_MOD_STRIP=1', 'DPKG_FLAGS=-d', 'O=../build/', 'LOCALVERSION=+16gb'], system.calls)
@@ -361,7 +361,7 @@ class UshTest(unittest.TestCase):
     def test_r(self):
         system = self.save_fake()
         system.files['/opt/U.opt'] = 'STRAGE=/mnt/ext4 UUID=DDD\nNEXT8=8GB-KDE\n'
-        system.files['/mnt/ext4/opt/8GB-KDE.img'] = 'x'
+        system.files['/mnt/ext4/img.debian/8GB-KDE.img'] = 'x'
         system.files['/etc/hosts'] = '127.0.0.1 localhost\n127.0.1.1 8GB-base\n::1 ip6\n'
         system.results['systemctl list-unit-files --type=service --state=enabled,generated --no-legend'] = (
             0, 'ssh.service enabled\nsddm.service enabled\ncups.service enabled\ngetty@.service enabled\n')
@@ -396,7 +396,7 @@ class UshTest(unittest.TestCase):
         lines = []
         ush_main.run(['-v', '--batch'], system=system, uname='6.12.57+8gb', out=lines.append)
         self.assertIn('UUID=DDD /mnt/ext4 ext4 rw,noauto', system.files['/etc/fstab'])
-        self.assertIn('STRAGE(/mnt/ext4/opt):', '\n'.join(lines))
+        self.assertIn('STRAGE(/mnt/ext4/img.debian):', '\n'.join(lines))
         system = self.save_fake()  # STRAGEの区画が無い: 使わない
         system.results['blkid'] = (0, '')
         lines = []

@@ -105,8 +105,8 @@ def rc_local_only(env, log, option, out):
         else:
             candidates = [strage, env.mnt_debian]
         for place in candidates:
-            if system.exists('%s/opt/%s.img' % (place, host)):
-                image = '%s/opt/%s.img' % (place, host)
+            if system.exists('%s/%s.img' % (env.opt_dir(place), host)):
+                image = '%s/%s.img' % (env.opt_dir(place), host)
                 break
         if not image:
             message = '-r: %s.img: not exist (booted as %dGB-base).' % (host, gb)

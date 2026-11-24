@@ -77,7 +77,12 @@ class Env:
         self.system = system
         self.uname = uname if uname is not None else os.uname().release
         ush = system.read_text(U_SH)
-        self.debian = shell_value(ush, 'DEBIAN') or 'debian'
+        # DEBIAN区画をRAMDISKでマウントする/mnt/〜と、STRAGEの置き場所(img.〜)の名前。Ubuntuはubuntu(U.shと同じく
+        # /etc/os-releaseのIDで。DebianとUbuntuで同じSTRAGEを使っても取り違えない)
+        debian = shell_value(ush, 'DEBIAN')
+        if not debian or '`' in debian:
+            debian = 'ubuntu' if 'ID=ubuntu' in (system.read_text('/etc/os-release') or '').splitlines() else 'debian'
+        self.debian = debian
         self.mnt_debian = '/mnt/' + self.debian
         self.fstab = system.read_text('/etc/fstab') or ''
         self.on_wsl = 'WSL' in self.uname
@@ -134,6 +139,13 @@ class Env:
         self.mem_total_gb = int(m.group(1)) // 1000 // 1000 if m else 0
         self.tmpfs_kb = int(m.group(1)) // 2 if m else 0  # U.shのTMPFS_KB
         self.ubuntu_build = 'BUILD_UBUNTU' if self.on_ubuntu else 'BUILD_DEBIAN'  # U.shのBUILD(カーネルのビルド用イメージ)
+
+    def opt_dir(self, strage):
+        """U.shの$strage_opt: STRAGEのイメージ等(?GB-名前.img・BUILD.img・IMG0.img)の置き場所。STRAGEの区画なら
+        ディストリビューションごとにimg.debian・img.ubuntu、STRAGEが無ければ(DEBIAN区画)今までどおり/opt。"""
+        if strage and strage != self.mnt_debian:
+            return strage + '/img.' + self.debian
+        return (strage or '') + '/opt'
 
     def fstab_uuid(self, mount_point):
         """_fstab_uuid(): /etc/fstabで$1にマウントする区画のUUID(UUID=〜と/dev/disk/by-uuid/〜のどちらでも)。"""

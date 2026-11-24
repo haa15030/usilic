@@ -1,5 +1,8 @@
 # --- 基本設定
-readonly DEBIAN=debian 	# LiveUSB稼働想定なら「vbox」非推奨
+# DEBIAN区画（SSD 等のルート）を RAMDISK でマウントする /mnt/$DEBIAN と、STRAGE のイメージ等の置き場所（STRAGE/img.$DEBIAN）の名前。
+# Ubuntu は ubuntu（Debian と Ubuntu で同じ STRAGE を使っても、?GB-名前.img 等を取り違えない。Debian の土台で Ubuntu の
+# イメージを展開すると、画面が真っ暗なままだった）。LiveUSB稼働想定なら「vbox」非推奨
+readonly DEBIAN=`grep -qx 'ID=ubuntu' /etc/os-release 2>/dev/null && echo ubuntu || echo debian`
 readonly USR=`awk -F: '$3 >= 1000 && $3 < 60000 && $6 ~ "^/home/" {print $1; exit}' /etc/passwd` # インストーラで作ったユーザー（/home の最初の一般ユーザー）
 SH=bash	# U.sh デフォルト実行シェル
 
@@ -774,28 +777,29 @@ _unmount_part() {
 
 _dd_build_img() {
     # dd で 0 を書かず、中身の無いファイルにする（mkfs.ext4 が要る所だけ書く。USB等の遅いSTRAGEで数分短くなる）
-    echo "truncate -s $((BUILD_IMG_KB*1000)) $mnt_strage/opt/$BUILD.img"
-    truncate -s $((BUILD_IMG_KB*1000)) $mnt_strage/opt/$BUILD.img
-    echo "mkfs.ext4 -q $mnt_strage/opt/$BUILD.img"
-    mkfs.ext4 -q $mnt_strage/opt/$BUILD.img
+    mkdir -p $strage_opt
+    echo "truncate -s $((BUILD_IMG_KB*1000)) $strage_opt/$BUILD.img"
+    truncate -s $((BUILD_IMG_KB*1000)) $strage_opt/$BUILD.img
+    echo "mkfs.ext4 -q $strage_opt/$BUILD.img"
+    mkfs.ext4 -q $strage_opt/$BUILD.img
 }
 
 _mount_build_img() { # ビルド用イメージ（$BUILD.img）はSTRAGEにだけ置く（DEBIAN区画には置かない、圧縮した控えも作らない）
     local _build_img_kb
 
     _fs $LINENO mount $mnt_strage
-    if [ -f $mnt_strage/opt/$BUILD.img ]; then
-	_build_img_kb=$((`ls -l $mnt_strage/opt/$BUILD.img | awk '{print $5}'`/1000))
+    if [ -f $strage_opt/$BUILD.img ]; then
+	_build_img_kb=$((`ls -l $strage_opt/$BUILD.img | awk '{print $5}'`/1000))
     else
 	_build_img_kb=0
     fi
     if [ "$_build_img_kb" -lt "$BUILD_IMG_KB" ]; then # 無いか、BUILD_IMG_GB より小さい（壊れた、またはBUILD_IMG_GBを増やした）
-	rm -f $mnt_strage/opt/$BUILD.img
+	rm -f $strage_opt/$BUILD.img
 	_dd_build_img
     fi
     _fs $LINENO umount $OPT_BUILD
-    echo "mount -o loop $mnt_strage/opt/$BUILD.img $OPT_BUILD"
-    _fs $LINENO mount -o loop $mnt_strage/opt/$BUILD.img $OPT_BUILD
+    echo "mount -o loop $strage_opt/$BUILD.img $OPT_BUILD"
+    _fs $LINENO mount -o loop $strage_opt/$BUILD.img $OPT_BUILD
 }
 
 # --- -u の区切りごとの経過時間（/opt/U_update.log、マニュアルの目安用。動きには関わらない）
@@ -1095,13 +1099,14 @@ _update_base() {
     echo "tar cf - /lib/modules/$_new_module /usr/src/linux-headers-$_new_module 2>/dev/null| tar xf - -C /tmp/loop1.$TMP_LABEL"
     tar cf - /lib/modules/$_new_module /usr/src/linux-headers-$_new_module 2>/dev/null| tar xf - -C /tmp/loop1.$TMP_LABEL
     _new_kb=$((_new_gb*1000*1000))
-    echo "truncate -s $((_new_kb*1000)) $mnt_strage/opt/IMG0.img"
-    rm -f $mnt_strage/opt/IMG0.img
-    truncate -s $((_new_kb*1000)) $mnt_strage/opt/IMG0.img
-    echo "mkfs.ext4 -q $mnt_strage/opt/IMG0.img"
-    mkfs.ext4 -q $mnt_strage/opt/IMG0.img
-    echo "mount -o loop $mnt_strage/opt/IMG0.img /tmp/loop0.$TMP_LABEL"
-    _fs $LINENO mount -o loop $mnt_strage/opt/IMG0.img /tmp/loop0.$TMP_LABEL
+    mkdir -p $strage_opt
+    echo "truncate -s $((_new_kb*1000)) $strage_opt/IMG0.img"
+    rm -f $strage_opt/IMG0.img
+    truncate -s $((_new_kb*1000)) $strage_opt/IMG0.img
+    echo "mkfs.ext4 -q $strage_opt/IMG0.img"
+    mkfs.ext4 -q $strage_opt/IMG0.img
+    echo "mount -o loop $strage_opt/IMG0.img /tmp/loop0.$TMP_LABEL"
+    _fs $LINENO mount -o loop $strage_opt/IMG0.img /tmp/loop0.$TMP_LABEL
     echo "cd /tmp/loop1.$TMP_LABEL"
     cd /tmp/loop1.$TMP_LABEL
     echo "tar cf - * | tar xfp - -C /tmp/loop0.$TMP_LABEL"
@@ -1119,11 +1124,11 @@ _update_base() {
     # BIOS で「the size of initrd is bigger than addr_max」になった）。カーネルは中身の形（xz）を見て展開する（RD_XZ）ので、
     # 名前は .gz のまま（GRUB の項目等を変えずに済む）。カーネルの xz は CRC64 を確かめられないので --check=crc32
     _is_inst xz-utils +
-    echo "xz -T0 --check=crc32 -c $mnt_strage/opt/IMG0.img > /opt/$_new_base.gz"
-    xz -T0 --check=crc32 -c $mnt_strage/opt/IMG0.img > /opt/$_new_base.gz
+    echo "xz -T0 --check=crc32 -c $strage_opt/IMG0.img > /opt/$_new_base.gz"
+    xz -T0 --check=crc32 -c $strage_opt/IMG0.img > /opt/$_new_base.gz
     _lap "$_new_base.gz"
-    echo "rm -f $mnt_strage/opt/IMG0.img"
-    rm -f $mnt_strage/opt/IMG0.img
+    echo "rm -f $strage_opt/IMG0.img"
+    rm -f $strage_opt/IMG0.img
     df /
     ls -l /opt/RAM-*
     _ram_entry $_new_module
@@ -1484,6 +1489,7 @@ add_strage() { # -a)
 	fi
 	. /opt/U.opt
 	mnt_strage=$STRAGE
+	_set_strage_opt
 	if [ ! -d "$mnt_strage" ]; then
 	    mkdir $mnt_strage
 	fi
@@ -1498,19 +1504,20 @@ add_strage() { # -a)
 	do
 	    rmdir $_x 2>/dev/null && ln -s $mnt_strage $_x && echo "ln -s $mnt_strage $_x"
 	done
-	if [ ! -d "$mnt_strage/opt" ]; then
-	    mkdir $mnt_strage/opt
+	if [ ! -d "$strage_opt" ]; then
+	    mkdir -p $strage_opt
 	fi
+	_old_strage_opt
 	df
 	if [ "$((`df $mnt_strage | grep $mnt_strage | awk '{print $4}'`/1000/1000))" -gt 10 ]; then
 	    if [ -f $_opt_img/opt/$BUILD.img ]; then
-		echo "cp -iuv $_opt_img/opt/$BUILD.img $mnt_strage/opt"
-		cp -iuv $_opt_img/opt/$BUILD.img $mnt_strage/opt
+		echo "cp -iuv $_opt_img/opt/$BUILD.img $strage_opt"
+		cp -iuv $_opt_img/opt/$BUILD.img $strage_opt
 	    fi
 	fi
 	echo
-	echo "STRAGE($mnt_strage/opt):"
-	ls -l $mnt_strage/opt/ | grep -v total
+	echo "STRAGE($strage_opt):"
+	ls -l $strage_opt/ | grep -v total
 	echo
     fi
 }
@@ -1718,7 +1725,7 @@ desktop_select() { # -d)
     _n=1
     while read _task _name
     do
-        if [ -f $mnt_strage/opt/${RAMDISK_GB}GB-$_name.img ]; then
+        if [ -f $strage_opt/${RAMDISK_GB}GB-$_name.img ]; then
             echo " $_n)$_name ($_task) [${RAMDISK_GB}GB-$_name.img]"
         else
             echo " $_n)$_name ($_task)"
@@ -1745,7 +1752,7 @@ desktop_select() { # -d)
     echo
     for _line in $_pairs
     do
-        echo "-> $mnt_strage/opt/${RAMDISK_GB}GB-${_line#*:}.img"
+        echo "-> $strage_opt/${RAMDISK_GB}GB-${_line#*:}.img"
     done
     if [ "$_from" ]; then
         echo "($_from -> BASE.u: the desktop stops now)"
@@ -2041,7 +2048,7 @@ next_host() { # -n)
     _fs $LINENO mount $mnt_strage
     cat /dev/null > $_list
     # ホスト（?GB-*.img と ?GB-base）: その大きさの RAM-*+?gb-base で起動し、rc.local が .img を展開する
-    for _name in `ls $mnt_strage/opt $MNT_DEBIAN/opt 2>/dev/null | grep '^[0-9][0-9]*GB-.*\.img$' | sed -e 's/\.img$//' | sort -u` \
+    for _name in `ls $strage_opt $MNT_DEBIAN/opt 2>/dev/null | grep '^[0-9][0-9]*GB-.*\.img$' | sed -e 's/\.img$//' | sort -u` \
                  `_entry_titles $MNT_DEBIAN | sed -n 's/^RAM-.*+\([0-9][0-9]*\)gb-base$/\1GB-base/p' | sort -u`
     do
         _gb=${_name%%GB-*}
@@ -2195,10 +2202,10 @@ _tmp_debian() {
     if [ ! "$1" ] || [ "$1" = "+" ]; then
 	echo "mkdir etc"
 	mkdir etc
-	echo 'fgrep -ve /mnt/debian -ve /boot/efi -ve /mnt/ext4 -ve /mnt/ntfs -ve /mnt/exfat /etc/fstab | awk (/ -> /dev/ram, swap file -> #) > etc/fstab'
+	echo 'fgrep -ve /mnt/debian -ve $MNT_DEBIAN -ve /boot/efi -ve /mnt/ext4 -ve /mnt/ntfs -ve /mnt/exfat /etc/fstab | awk (/ -> /dev/ram, swap file -> #) > etc/fstab'
 	# ルートの行は「/dev/ram / ext4 errors=remount-ro」（ON_RAMDISK はこれで見分ける。Ubuntu の fstab は /dev/disk/by-uuid/〜 で
 	# errors=remount-ro も無い）。ルートの区画の中のスワップファイル（Ubuntu の /swap.img）は RAMDISK に無いので外す
-	fgrep -ve /mnt/debian -ve /boot/efi -ve /mnt/ext4 -ve /mnt/ntfs -ve /mnt/exfat /etc/fstab | \
+	fgrep -ve /mnt/debian -ve $MNT_DEBIAN -ve /boot/efi -ve /mnt/ext4 -ve /mnt/ntfs -ve /mnt/exfat /etc/fstab | \
 	    awk '$1 !~ /^#/ && $2 == "/" {print "/dev/ram / ext4 errors=remount-ro 0 1"; next} $1 ~ /^\// && $1 !~ /^\/dev\// && $3 == "swap" {print "#" $0; next} {print}' > etc/fstab
 	echo 'echo "UUID=$DEBIAN_ROOT_UUID $MNT_DEBIAN ext4 rw,noauto	    0 1" >> etc/fstab'
 	echo "UUID=$DEBIAN_ROOT_UUID $MNT_DEBIAN ext4 rw,noauto	    0 1" >> etc/fstab
@@ -2252,8 +2259,8 @@ rc_local_only() { # -r)
             if [ -f $MNT_DEBIAN/opt/$_next_host.img ]; then
                 _img=$MNT_DEBIAN/opt/$_next_host.img
             fi
-        elif [ -f $mnt_strage/opt/$_next_host.img ]; then
-            _img=$mnt_strage/opt/$_next_host.img
+        elif [ -f $strage_opt/$_next_host.img ]; then
+            _img=$strage_opt/$_next_host.img
         elif [ -f $MNT_DEBIAN/opt/$_next_host.img ]; then
             _img=$MNT_DEBIAN/opt/$_next_host.img
         fi
@@ -2324,7 +2331,7 @@ _save_host() {
     elif [ "$2" ] && [ "$3" = "." ]; then
         _new_host=${RAMDISK_GB}GB-${2#${RAMDISK_GB}GB-}
     elif [ "$2" ]; then
-        _host_list=`ls -r $mnt_strage/opt $MNT_DEBIAN/opt 2>/dev/null | grep "^${RAMDISK_GB}GB-.*\.img$" | sed -e 's/\.img$//' | sort -u`
+        _host_list=`ls -r $strage_opt $MNT_DEBIAN/opt 2>/dev/null | grep "^${RAMDISK_GB}GB-.*\.img$" | sed -e 's/\.img$//' | sort -u`
         _new_host=${RAMDISK_GB}GB-${2#${RAMDISK_GB}GB-}
         if [ "`echo "$_host_list" | grep -x "$_new_host"`" ]; then
             echo "$1: $_new_host: already exist. To overwrite, type '. U $1 $2 .'[Enter] : $LINENO" >> /tmp/log.$TMP_LABEL
@@ -2374,13 +2381,14 @@ _save_host() {
     if [ "$_new_host" = "${RAMDISK_GB}GB-rescue" ]; then
         _dst=$MNT_DEBIAN/opt
     else
-        _dst=$mnt_strage/opt
+        _dst=$strage_opt
     fi
     # イメージを作る場所: rescue でSTRAGEがあればSTRAGE（出来てから保存先へ写す）、それ以外は保存先
     _bld=$_dst
     if [ "$_new_host" = "${RAMDISK_GB}GB-rescue" ] && [ "$mnt_strage" != "$MNT_DEBIAN" ]; then
-        _bld=$mnt_strage/opt
+        _bld=$strage_opt
     fi
+    mkdir -p $_dst $_bld
     # rescue の上書き: 今のイメージを控えてから消す（失敗したらそこから戻す）。
     # STRAGEがあれば、STRAGEへ .BAK.img としてそのまま写す（圧縮しない。保存先（USBメモリ等）に控えを置かない）。
     # STRAGEが無ければ、保存先に .BAK.gz を圧縮して置く
@@ -3328,8 +3336,9 @@ verbose() { # -v)
 	    fi
 	fi
 	echo >> /tmp/mess.$TMP_LABEL
-	echo "STRAGE($mnt_strage/opt):" >> /tmp/mess.$TMP_LABEL
-	ls -l $mnt_strage/opt/ >> /tmp/mess.$TMP_LABEL
+	echo "STRAGE($strage_opt):" >> /tmp/mess.$TMP_LABEL
+	ls -l $strage_opt/ >> /tmp/mess.$TMP_LABEL
+	_old_strage_opt
 	cd /opt
     fi
     _list_mnt_no >> /tmp/mess.$TMP_LABEL
@@ -3342,9 +3351,28 @@ verbose() { # -v)
     fi
 }
 
+_set_strage_opt() { # STRAGE のイメージ等（?GB-名前.img・$BUILD.img・IMG0.img）の置き場所（$strage_opt）。
+    # STRAGE の区画ならディストリビューションごとに img.$DEBIAN、STRAGE が無ければ（DEBIAN区画）今までどおり /opt
+    if [ "$mnt_strage" ] && [ "$mnt_strage" != "$MNT_DEBIAN" ]; then
+        strage_opt=$mnt_strage/img.$DEBIAN
+    else
+        strage_opt=$mnt_strage/opt
+    fi
+}
+
+_old_strage_opt() { # 前の置き場所（STRAGE/opt）に残っているイメージを知らせる（どのディストリビューションのものか分からないので、動かさない）
+    if [ "$strage_opt" = "$mnt_strage/opt" ] || ! mountpoint -q $mnt_strage 2>/dev/null; then
+        return
+    fi
+    if [ "`ls $mnt_strage/opt 2>/dev/null | grep -e '^[0-9][0-9]*GB-.*\.img$' -e '^BUILD_.*\.img$'`" ]; then
+        echo "$mnt_strage/opt: ?GB-*.img etc. -> please move to $mnt_strage/img.debian or $mnt_strage/img.ubuntu. : $LINENO" >> /tmp/log.$TMP_LABEL
+    fi
+}
+
 UUID=""
 temp_name=""
 mnt_strage=""
+strage_opt=/opt
 main() {
     local STRAGE _PART _error
     local _eth_device _ETH_DEVICE_LIST
@@ -3423,6 +3451,7 @@ EOF
     fi
     . /opt/U.opt
     mnt_strage=$STRAGE
+    _set_strage_opt
     if [ -d /tmp/modules.$TMP_LABEL ]; then # 前の版の U.sh が /tmp へ逃がしたまま止まった分（今の版は逃がさない）
 	if [ -d /tmp/modules.$TMP_LABEL/modules ] && [ "`ls /tmp/modules.$TMP_LABEL/modules`" ]; then # モジュールバックアップ分（by save_host()）があればリストア
 	    echo "mv /tmp/modules.$TMP_LABEL/modules/* /usr/lib/modules/ 2>/dev/null"
@@ -3536,14 +3565,17 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	_is_inst cifs-utils +
 	if ! _fs_try $LINENO mount -t cifs -o `echo $SMBFS | awk '{print $4}'` `echo $SMBFS | awk '{print $1}'` `echo $SMBFS | awk '{print $2}'`; then
 	    mnt_strage="" # 失敗はログに書いた
+	    _set_strage_opt
 	else
 	    mnt_strage=/mnt/cifs
+	    _set_strage_opt
 	    echo $SMBFS >> /tmp/fstab.$TMP_LABEL
 	    _fs $LINENO umount /mnt/cifs
 	fi
     fi
     if [ "$mnt_strage" != "$MNT_DEBIAN" ] && [ "$mnt_strage" != "/mnt/cifs" ]; then
 	mnt_strage=$STRAGE
+	_set_strage_opt
 	if [ "$mnt_strage" = "/mnt/ntfs" ]; then
 	    _is_inst ntfs-3g +
 	elif [ "$mnt_strage" = "/mnt/exfat" ]; then
@@ -3554,6 +3586,7 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	    _fs $LINENO umount $mnt_strage
 	else
 	    mnt_strage=""
+	    _set_strage_opt
 	fi
     fi
     mv /tmp/fstab.$TMP_LABEL /etc/fstab
@@ -3561,6 +3594,7 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
     systemctl daemon-reload
     if [ ! "$mnt_strage" ]; then
 	mnt_strage=$MNT_DEBIAN
+	_set_strage_opt
     fi
     _NEW_KERNEL_LIST=`ls /opt | grep linux-image | grep -E '[+][0-9]+gb_' | grep -ve +${RESCUE_GB}gb`
     if [ "$_NEW_KERNEL_LIST" ] && [ "$mnt_strage" = "$MNT_DEBIAN" ]; then

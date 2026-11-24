@@ -16,10 +16,10 @@ RAMDISK で動いている間は、SSD 等に書くのは '. U -s' 等で保存�
 #
 本文中で使用している主な表記は以下の通りです。㊿#
 #
-⑦  DEBIAN区画㊿ : ⑲U.sh を置いた Debian（Ubuntu）のルートの区画（RAMDISK からは /mnt/debian）㊿#
+⑦  DEBIAN区画㊿ : ⑲U.sh を置いた Debian（Ubuntu）のルートの区画（RAMDISK からは /mnt/debian、Ubuntu は /mnt/ubuntu）㊿#
 ⑦ NONE-KERNEL㊿ : ⑲DEBIAN区画をディストリビューションのカーネル（〜-amd64・〜-generic）で起動した状態㊿#
 ⑦     RAMDISK㊿ : ⑲RAM-*-base.gz で起動した状態（/ は /dev/ram0）㊿#
-⑦      STRAGE㊿ : ⑲作業とホストの保存に使う別の区画（ext4・ntfs・exfat、'. U -a' で選ぶ）㊿#
+⑦      STRAGE㊿ : ⑲作業とホストの保存に使う別の区画（ext4・ntfs・exfat、'. U -a' で選ぶ）。置き場所は img.debian・img.ubuntu㊿#
 ⑦      ?GB-base㊿ : ⑲ホストを展開しない RAMDISK（BASE の状態）㊿#
 ⑦      ホスト㊿ : ⑲?GB-名前.img（?GB-rescue.img を含む）㊿#
 ⑦      /opt/U.opt㊿ : ⑲STRAGE・次に展開するホスト（NEXT?=）・実行シェル（SH=）の記録㊿#
@@ -78,7 +78,7 @@ DEBIAN区画の /opt には、カーネルの .deb・RAM-*-base.gz・4GB-rescue.
 ④   -o arg㊿：⑲パッケージの一覧（. ホスト名.u・名前.u、-i でその一覧へ足す・-p でその一覧へ戻す）㊿#
 ④   -s name㊿：⑲今のホストを ?GB-name.img に保存（. で今のホスト名で上書き）㊿#
 ④   -u㊿：⑲NONE-KERNEL で、カーネル・RAM-*-base.gz・?GB-rescue.img を作る（作ってあるものは飛ばす）㊿#
-④   -v㊿：⑲DEBIAN区画・STRAGE の /opt、/mnt/番号、df を usilic（usilic-py、無ければ less）で表示、q で終える㊿#
+④   -v㊿：⑲DEBIAN区画の /opt・STRAGE の img.debian（img.ubuntu）、/mnt/番号、df を usilic（usilic-py、無ければ less）で表示、q で終える㊿#
 ④   --list㊿：⑲一覧を出して最初の問いで止まる（選ばない・N）。オプションが無ければ使えるオプションの一覧（usilic の RESCUE が使う）㊿#
 ④   --ans=答え㊿：⑲問いへの答えを問いの順に（例 -f --ans=3、-n --ans=2 --ans=n）。一覧は標準エラー出力へ㊿#
 ④   --batch㊿：⑲/dev/tty から読まず、-v もページャーを使わない（問いがあれば既定の答え）㊿#
@@ -103,7 +103,7 @@ DEBIAN区画は一覧に出ません。
 #
 ④-n㊿：⑲次の起動⊥㊿#
 #
-⑧?GB-名前.img（STRAGE と DEBIAN区画の /opt）と GRUB の項目を一覧にし、選んだものを次に起動するようにします（GRUB の saved_entry と /opt/U.opt の NEXT?=）。
+⑧?GB-名前.img（STRAGE の img.debian（img.ubuntu）と DEBIAN区画の /opt）と GRUB の項目を一覧にし、選んだものを次に起動するようにします（GRUB の saved_entry と /opt/U.opt の NEXT?=）。
 メモリが足りない、またはその大きさのカーネルが無いホストは出ません。#
 #
 ④-d㊿：⑲デスクトップ⊥㊿#
@@ -166,6 +166,11 @@ uutils は GNU と同じ動きを目指していますが、端のケースは�
 U.sh は何十年分の GNU の動きを前提に書いてあるので、Ubuntu では最初に（DEBIAN.u を記録する前に）"apt-get install --allow-remove-essential coreutils-from-gnu coreutils-from-uutils-" で GNU 版へ入れ替えます。
 uutils のままにするなら、U.sh の GNU_COREUTILS を "" にします。
 既に DEBIAN.u を記録した後で入れ替えた時は、DEBIAN.u の coreutils-from-uutils の行も coreutils-from-gnu に直します（直さないと、DEBIAN.u へ戻す時に GNU 版を外そうとします）。#
+#
+⑧ STRAGE のイメージ等（?GB-名前.img・BUILD_*.img）は、ディストリビューションごとに STRAGE/img.debian・STRAGE/img.ubuntu に置きます（DEBIAN区画は /mnt/debian・/mnt/ubuntu）。
+Debian と Ubuntu で同じ STRAGE を使っても、同じ名前（8GB-GNOME 等）を上書きしたり、-n の一覧に違うディストリビューションのものが出たりしません（Debian の土台で Ubuntu の 8GB-GNOME を展開したら、画面が真っ暗なままでした）。
+前の版の U.sh が置いた STRAGE/opt のものは、どちらのものか分からないので動かしません（-a・-v で知らせます）。手で img.debian・img.ubuntu へ移します（例: "sudo mkdir /mnt/ext4/img.ubuntu; sudo mv /mnt/ext4/opt/BUILD_UBUNTU.img /mnt/ext4/img.ubuntu"^M）。
+Ubuntu で前の版の U.sh が作った RAM-*-base.gz・TEMPLATE-*-base.gz は /mnt/debian のままなので、消して -u で作り直します。#
 #
 ⑧ よそで作った記録（例: Ubuntu のインストール USB の live 環境で "dpkg --get-selections" したもの）も -o 名前.u -i で足せますが、live 環境とそっくり同じにはなりません。
 U.sh は snapd を入れない（NO_SNAP）ので、snapd と、snap へ移るための入れ物の deb（firefox・thunderbird 等）は「no candidate」「unsatisfiable」として外し、ログに残します。

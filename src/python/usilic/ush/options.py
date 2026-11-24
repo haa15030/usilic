@@ -26,7 +26,8 @@ def verbose(env, log, ask, out, page):
                 fs(env, log, 'mount', '-o', 'rw', 'UUID=' + env.uuid, strage)
             else:
                 fs(env, log, 'mount', strage)
-        text += ['', 'STRAGE(%s/opt):' % strage, system.output(['ls', '-l', strage + '/opt/']).rstrip('\n')]
+        text += ['', 'STRAGE(%s):' % env.opt_dir(strage), system.output(['ls', '-l', env.opt_dir(strage) + '/']).rstrip('\n')]
+        old_strage_opt(env, log, strage)
     text += list_mnt_no(env)
     text += ['', system.output(['df']).rstrip('\n')]
     body = '\n'.join(text) + '\n'
@@ -208,7 +209,7 @@ def add_strage(env, log, ask, out):
     for point in relink:  # 外した-fの/mnt/番号は、STRAGEへのリンクに
         if system.rmdir(point) and system.symlink(strage, point):
             out('ln -s %s %s' % (strage, point))
-    system.makedirs(strage + '/opt')
+    system.makedirs(env.opt_dir(strage))
     df = system.output(['df']).rstrip('\n')
     out(df)
     free_gb = 0
@@ -219,20 +220,31 @@ def add_strage(env, log, ask, out):
             pass
     build = '%s/opt/%s.img' % (opt_img, env.ubuntu_build)
     if free_gb > 10 and system.exists(build):
-        destination = strage + '/opt/' + build.rsplit('/', 1)[1]
+        destination = env.opt_dir(strage) + '/' + build.rsplit('/', 1)[1]
         source_time, destination_time = system.mtime(build), system.mtime(destination)
         copy = destination_time is None
         if not copy and source_time is not None and source_time > destination_time:  # cp -iu: 新しければ聞いて
             copy = ask('overwrite %s? (y/n) ' % destination, 'n').strip().lower() == 'y'
         if copy:
-            out('cp -uv %s %s/opt' % (build, strage))
-            for line in system.output(['cp', '-uv', build, strage + '/opt']).splitlines():
+            out('cp -uv %s %s' % (build, env.opt_dir(strage)))
+            for line in system.output(['cp', '-uv', build, env.opt_dir(strage)]).splitlines():
                 out(line)
     out('')
-    out('STRAGE(%s/opt):' % strage)
-    out('\n'.join(l for l in system.output(['ls', '-l', strage + '/opt/']).rstrip('\n').splitlines()
+    old_strage_opt(env, log, strage)
+    out('STRAGE(%s):' % env.opt_dir(strage))
+    out('\n'.join(l for l in system.output(['ls', '-l', env.opt_dir(strage) + '/']).rstrip('\n').splitlines()
                   if not l.startswith('total')))
     out('')
+
+
+def old_strage_opt(env, log, strage):
+    """_old_strage_opt(): 前の置き場所(STRAGE/opt)に残っているイメージを知らせる(どのディストリビューションのものか
+    分からないので、動かさない)。"""
+    import re
+    if env.opt_dir(strage) == strage + '/opt':
+        return
+    if any(re.match(r'^([0-9]+GB-.*|BUILD_.*)\.img$', n) for n in env.system.listdir(strage + '/opt')):
+        log.add('%s/opt: ?GB-*.img etc. -> please move to %s/img.debian or %s/img.ubuntu.' % (strage, strage, strage))
 
 
 def entry_titles(system, root):
@@ -266,7 +278,7 @@ def next_host(env, log, ask, out):
         fs(env, log, 'mount', env.strage)
     titles = entry_titles(system, root)
     names = set()
-    for directory in (env.strage + '/opt' if env.strage else None, root + '/opt'):
+    for directory in (env.opt_dir(env.strage) if env.strage else None, root + '/opt'):
         if directory:
             names.update(n[:-4] for n in system.listdir(directory) if re.match(r'^[0-9]+GB-.*\.img$', n))
     for t in titles:

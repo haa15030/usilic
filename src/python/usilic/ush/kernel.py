@@ -47,7 +47,7 @@ class Lap:
 
 def build_image(env):
     strage = env.strage or env.mnt_debian
-    return '%s/opt/%s.img' % (strage, env.conf('BUILD', env.ubuntu_build))
+    return '%s/%s.img' % (env.opt_dir(strage), env.conf('BUILD', env.ubuntu_build))
 
 
 def mount_build_img(env, log, out):
@@ -63,6 +63,7 @@ def mount_build_img(env, log, out):
         size_kb = int(listing[4]) // 1000
     if size_kb < want_kb:  # 無いか、BUILD_IMG_GBより小さい(壊れた、またはBUILD_IMG_GBを増やした)
         system.run(['rm', '-f', image])
+        system.makedirs(image.rsplit('/', 1)[0])
         out('truncate -s %d %s' % (want_kb * 1000, image))
         system.run(['truncate', '-s', str(want_kb * 1000), image])
         out('mkfs.ext4 -q ' + image)
@@ -327,7 +328,8 @@ def update_base_image(env, log, gb, out, lap):
     nvidia_module(env, log, module, out)
     # このカーネルのモジュールとヘッダだけを写す
     system.shell('tar cf - /lib/modules/%s /usr/src/linux-headers-%s 2>/dev/null | tar xf - -C %s' % (module, module, loop1))
-    img0 = strage + '/opt/IMG0.img'
+    img0 = env.opt_dir(strage) + '/IMG0.img'
+    system.makedirs(env.opt_dir(strage))
     system.run(['rm', '-f', img0])
     out('truncate -s %d %s' % (gb * 1000 * 1000 * 1000, img0))
     system.run(['truncate', '-s', str(gb * 1000 * 1000 * 1000), img0])

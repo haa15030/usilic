@@ -295,7 +295,7 @@ def desktop_select(env, log, option, ask, out):
         return
     out(' No)NAME (package) [image in STRAGE]')
     for i, (task, name) in enumerate(items, 1):
-        image = '%s/opt/%dGB-%s.img' % (strage, env.ramdisk_gb, name)
+        image = '%s/%dGB-%s.img' % (env.opt_dir(strage), env.ramdisk_gb, name)
         shown = ' [%dGB-%s.img]' % (env.ramdisk_gb, name) if system.exists(image) else ''
         out(' %d)%s (%s)%s' % (i, name, task, shown))
     out('  )<EXIT>')
@@ -310,7 +310,7 @@ def desktop_select(env, log, option, ask, out):
         return
     out('')
     for task, name in chosen:
-        out('-> %s/opt/%dGB-%s.img' % (strage, env.ramdisk_gb, name))
+        out('-> %s/%dGB-%s.img' % (env.opt_dir(strage), env.ramdisk_gb, name))
     if origin:
         out('(%s -> BASE.u: the desktop stops now)' % origin)
     if ask('Install and save? (Y/N): ', 'N').strip() not in ('Y', 'y'):

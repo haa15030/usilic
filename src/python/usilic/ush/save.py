@@ -83,7 +83,7 @@ def ram_fstab(env, fstab_text):
     最後にDEBIAN区画を$MNT_DEBIANへ(noauto)。"""
     out = []
     for line in fstab_text.splitlines():
-        if any(m in line for m in ('/mnt/debian', '/boot/efi', '/mnt/ext4', '/mnt/ntfs', '/mnt/exfat')):
+        if any(m in line for m in ('/mnt/debian', env.mnt_debian, '/boot/efi', '/mnt/ext4', '/mnt/ntfs', '/mnt/exfat')):
             continue
         f = line.split()
         if f and not f[0].startswith('#') and len(f) >= 2 and f[1] == '/':
@@ -161,7 +161,7 @@ def save_host(env, log, option, args, out):
         new_host = '%dGB-%s' % (gb, re.sub('^%dGB-' % gb, '', name))
     elif name:
         new_host = '%dGB-%s' % (gb, re.sub('^%dGB-' % gb, '', name))
-        existing = set(n[:-4] for d in (strage + '/opt', env.mnt_debian + '/opt') for n in system.listdir(d)
+        existing = set(n[:-4] for d in (env.opt_dir(strage), env.mnt_debian + '/opt') for n in system.listdir(d)
                        if n.startswith('%dGB-' % gb) and n.endswith('.img'))
         if new_host in existing:
             log.add("%s: %s: already exist. To overwrite, type '. U %s %s .'[Enter]" % (option, new_host, option, name))
@@ -205,8 +205,10 @@ def save_host(env, log, option, args, out):
                 root_used = int(f[2])
         img_kb = tmpfs_size(env, root_used) * 11 // 10  # ルートシステム長の1.1倍
     # 保存先: rescueはDEBIAN区画(-mでUSBへそのまま写り、STRAGEが無くても起動できる)、それ以外はSTRAGE
-    dst = env.mnt_debian + '/opt' if new_host == rescue else strage + '/opt'
-    bld = strage + '/opt' if new_host == rescue and strage != env.mnt_debian else dst
+    dst = env.mnt_debian + '/opt' if new_host == rescue else env.opt_dir(strage)
+    bld = env.opt_dir(strage) if new_host == rescue and strage != env.mnt_debian else dst
+    system.makedirs(dst)
+    system.makedirs(bld)
     image = '%s/%s.img' % (dst, new_host)
     bak = ''
     if new_host == rescue and system.exists(image):
