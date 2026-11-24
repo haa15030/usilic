@@ -33408,6 +33408,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1379. **src/U_proto.sh・src/python: make bindeb-pkgにDPKG_FLAGS=-d(ビルドに要るものの確かめをしない)(2026-11-24)**
+   - 直接のユーザーの話: GNU版のcoreutilsに入れ替えた後の-uが、`make bindeb-pkg`の「dpkg-checkbuilddeps: error: unmet build dependencies: coreutils-from-uutils」「dpkg-buildpackage: error: build dependencies/conflicts unsatisfied; aborting」で止まり、「-u: linux-image-*+8gb: build failed.」。
+   - 原因(推測): dpkg-checkbuilddepsは、Build-Dependsの他に必須(Essential)の包みの一覧(build-essentialの)も確かめる。その一覧がuutilsの時のままで、coreutils-from-uutilsを要るとした。
+   - 変更: `make bindeb-pkg … DPKG_FLAGS=-d`(dpkg-buildpackageに-d、確かめをしない)。ビルドに要るものはBUILD_LISTの`apt build-dep linux`で入れてある。
+   - 確かめたこと: tests/test_ush.py。`bash -n`・`dash -n`。
+   - 残っていること: 同じ-uの「-o DEBIAN.u -p: not purged」に、python3-pil・python3-docutils・libpython3.14-devが要するもの(libharfbuzz0b・libtiff6・libc6-dev等)が残った。記録(_bar・EXCLUDE)は^python3・^libpython3を全部載せない(python3を外さないため、項目1345)ので、rescueが入れたpython3-*は外れず、それが要するものも外れない。python3の本体だけを載せないようにすると、今までの記録(DEBIAN.u等)にpython3-*の行が無いので、戻す時にBASEのpython3-*まで外そうとする。保留。
+
 1378. **src/U_proto.sh・src/python・src/U_sh.txt: GNU版への入れ替えで、uutilsを名指しで外す(2026-11-24)**
    - 直接のユーザーの話: `. U -v`で項目1376の入れ替えが「coreutils-from-gnu : 先行依存: gnu-coreutils しかし、インストールされようとしていません / 競合: coreutils-from」「coreutils-from-uutils : 競合: coreutils-from」「E: Unable to satisfy dependencies. Reached two conflicting assignments」で止まり、mvはuutilsのまま。
    - 原因: coreutils-from-uutilsは必須(Essential)なので、aptは競合を解くために自分では外さない。

@@ -986,8 +986,11 @@ EOF
     make -j9 O=../build/ LOCALVERSION=$_new_version
     echo "make modules -j9 O=../build/ LOCALVERSION=$_new_version"
     make modules -j9 O=../build/ LOCALVERSION=$_new_version
-    echo "make bindeb-pkg INSTALL_MOD_STRIP=1 O=../build/ LOCALVERSION=$_new_version"
-    make bindeb-pkg INSTALL_MOD_STRIP=1 O=../build/ LOCALVERSION=$_new_version # モジュールのシンボルは外す（RAM-*-base.gz を小さく）
+    # INSTALL_MOD_STRIP=1: モジュールのシンボルは外す（RAM-*-base.gz を小さく）。DPKG_FLAGS=-d: ビルドに要るものの確かめを
+    # しない（Ubuntu で GNU 版の coreutils に入れ替えた後、dpkg-checkbuilddeps が「unmet build dependencies:
+    # coreutils-from-uutils」で止まった。必須の包みの一覧が uutils の時のままらしい。要るものは BUILD_LIST の build-dep で入れてある）
+    echo "make bindeb-pkg INSTALL_MOD_STRIP=1 DPKG_FLAGS=-d O=../build/ LOCALVERSION=$_new_version"
+    make bindeb-pkg INSTALL_MOD_STRIP=1 DPKG_FLAGS=-d O=../build/ LOCALVERSION=$_new_version
     _lap "linux-image-*$_new_version .deb"
     if [ ! -L $MNT_DEBIAN ]; then
 	echo "mv /opt/*.deb /opt/linux-upstream* $MNT_DEBIAN/opt"
