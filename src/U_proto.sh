@@ -432,10 +432,11 @@ if [ "$ON_UBUNTU" ]; then
     # -d のデスクトップ一覧（メタパッケージ:名前。名前は ?GB-名前.img になる）。パッケージ名は 'apt-cache search -- -desktop$' 等で確認
     # 「,」で包みを足せる（DESKTOP_APT_OPT で推奨を入れないので、メタだけだと端末等が入らない。ubuntu-desktop-minimal は
     # GNOME Shell だけで、端末（Ubuntu 25.10 からは ptyxis）・ファイルマネージャ（nautilus）・テキストエディタ・音（PipeWire、
-    # pipewire-audio は pipewire-pulse・wireplumber・pipewire-alsa をまとめたもの）は推奨だった）
+    # pipewire-audio は pipewire-pulse・wireplumber・pipewire-alsa をまとめたもの）は推奨だった）。
+    # fonts-ubuntu: 端末（ptyxis）の既定の Ubuntu Sans Mono。無いと monospace が Noto Sans Mono CJK JP になり、字間が広がった
     # 先頭が「+」なら、その項目だけ推奨も入れる（DESKTOP_APT_OPT を使わない）。GNOME-Live は、インストーラの「お試し」と
     # 同じ構成（ubuntu-desktop-minimal と推奨）
-    readonly DESKTOP_LIST="ubuntu-desktop-minimal,ptyxis,nautilus,gnome-text-editor,pipewire-audio:GNOME +ubuntu-desktop-minimal:GNOME-Live xubuntu-core:Xfce kubuntu-desktop:KDE-Plasma lubuntu-desktop:LXQt ubuntu-mate-core:MATE"
+    readonly DESKTOP_LIST="ubuntu-desktop-minimal,ptyxis,nautilus,gnome-text-editor,pipewire-audio,fonts-ubuntu:GNOME +ubuntu-desktop-minimal:GNOME-Live xubuntu-core:Xfce kubuntu-desktop:KDE-Plasma lubuntu-desktop:LXQt ubuntu-mate-core:MATE"
     readonly DESKTOP_APT_OPT="--no-install-recommends" # 推奨パッケージも入れるなら ""
     JP_LIST="language-pack-ja language-pack-gnome-ja fcitx5-mozc fonts-noto-cjk"
     BASE_LIST="arch-install-scripts gdisk dosfstools grub-pc-bin grub-efi-amd64-bin git" # 必要なら "linux-firmware" も（1GB前後あるので RAMDISK 容量に注意）
@@ -1866,6 +1867,12 @@ _usilic_libs() { # $2 の usilic に足りないライブラリ（ldd の not fo
     for _lib in `ldd $2 | awk '/=> not found/ {print $1}'`
     do
         _pkg=`grep -l "/$_lib\$" $MNT_DEBIAN/var/lib/dpkg/info/*.list 2>/dev/null | head -n1 | sed -e 's@.*/@@' -e 's/\.list$//'`
+        if [ ! "$_pkg" ]; then
+            # DEBIAN区画に無ければ（-u が BASE.u へ戻した時に外れる）名前から推して、apt にあれば
+            # （libSDL2_ttf-2.0.so.0 -> libsdl2-ttf-2.0-0、libfoo.so.6 -> libfoo6）
+            _pkg=`echo $_lib | tr 'A-Z_' 'a-z-' | sed -e 's/\.so\.\([0-9]*\)$/-\1/' -e 's/^\(.*[a-z]\)-\([0-9]*\)$/\1\2/'`
+            apt-cache show $_pkg > /dev/null 2>&1 || _pkg=""
+        fi
         if [ "$_pkg" ]; then
             _pkgs="$_pkgs $_pkg"
         else

@@ -182,6 +182,13 @@ def usilic_libs(env, log, option, binary, out):
         found = found.strip()
         if found:
             packages.append(os.path.basename(found)[:-len('.list')])
+            continue
+        # DEBIAN区画に無ければ(-uがBASE.uへ戻した時に外れる)名前から推して、aptにあれば
+        # (libSDL2_ttf-2.0.so.0 -> libsdl2-ttf-2.0-0、libfoo.so.6 -> libfoo6)
+        guess = re.sub(r'\.so\.([0-9]*)$', r'-\1', lib.lower().replace('_', '-'))
+        guess = re.sub(r'^(.*[a-z])-([0-9]*)$', r'\1\2', guess)
+        if system.run(['apt-cache', 'show', guess])[0] == 0:
+            packages.append(guess)
         else:
             missing.append(lib)
     if missing:
