@@ -33408,6 +33408,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1386. **src/U_proto.sh・src/python: journaldは、SSDは既定(persistent)のまま、RAMDISKだけvolatileに(drop-in)(2026-11-24)**
+   - 直接のユーザーの話: 「journaldの出力をNONE-KERNELだとメモリ（Volatile？）だがRAMDISKではエリアが減ると思ってvar/に記録するようにしたはず。本当はどっちが望ましい？」。アシスタントの答え(-uはSSDのjournald.confをStorage=volatileにしていて、それがRAMの土台にも写る。RAMは/varもSHM_LISTでtmpfsなのでどちらもメモリで、RAMDISKの領域は減らない。RAMはvolatile(/runの下、/runの10%まで、/varのtmpfsと取り合わない)、SSDはpersistent(journalctl -b -1で前の起動の記録が見られる)が望ましい)に「その形で直して、pushして。」
+   - 変更1: -uはSSDの/etc/systemd/journald.confを書き換えない。前にStorage=volatileにしていたら#Storage=autoへ戻す。
+   - 変更2: RAMの土台(テンプレート)の中に/etc/systemd/journald.conf.d/U-ram.conf(`[Journal]`・`Storage=volatile`)を置く。drop-inなので、journald.confの書き方が変わっても(Ubuntu 26.04等)効く。
+   - 効かせるには: TEMPLATE-*-base.gz・RAM-*-base.gzを作り直す(-u)。
+   - 確かめたこと: tests/test_ush.py。`bash -n`・`dash -n`。
+
 1385. **src/U_proto.sh・src/python: -nで再起動する前にSTRAGEも外し、syncする(2026-11-24)**
    - 直接のユーザーの話: 「. U -n でNONE-KERNELを選び、Reboot now? (Y/n): yのあとが長い。」「たぶんumountかな。」
    - 変更: -nの「Reboot now?」にyの時、/mnt/debianの前にSTRAGE(/mnt/exfat等、DEBIAN区画でなければ)も外し、syncしてからreboot。exFAT・NTFS(FUSE)をマウントしたままだと、再起動の時にsystemdが外すのを待たされることがある(推測、画面の「A stop job is running for …」でまだ確かめていない)。

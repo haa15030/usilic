@@ -2899,8 +2899,11 @@ update_base() { # -u)
     cat /tmp/40_custom.$TMP_LABEL > /etc/grub.d/40_custom
     chmod 755 /etc/grub.d/40_custom
     cd /opt
-    if [ ! "`fgrep Storage=volatile /etc/systemd/journald.conf`" ]; then
-        sed -i /etc/systemd/journald.conf -e s/#Storage=auto/Storage=volatile/ #_11)　ログはメモリに保存
+    # journald: SSD（NONE-KERNEL）は既定（/var/log/journal、前の起動の記録が残る）のまま。RAMDISK は土台の中の
+    # journald.conf.d/U-ram.conf でメモリ（volatile）に。前に SSD の journald.conf を volatile にしていたら戻す
+    if [ "`grep '^Storage=volatile' /etc/systemd/journald.conf 2>/dev/null`" ]; then
+        echo "sed -i /etc/systemd/journald.conf -e s/^Storage=volatile/#Storage=auto/"
+        sed -i /etc/systemd/journald.conf -e 's/^Storage=volatile/#Storage=auto/'
     fi
     if [ ! -f /opt/grub.ORG ]; then
         echo "cp /etc/default/grub /opt/grub.ORG"
@@ -3015,6 +3018,10 @@ fi
 EOF
         sed -i /tmp/loop1.$TMP_LABEL/etc/rc.local -e "s|@MNT_DEBIAN@|$MNT_DEBIAN|"
         chmod 755 /tmp/loop1.$TMP_LABEL/etc/rc.local
+        # RAMDISK のログはメモリ（/run の下、/run の 10% まで）に。/var は SHM_LIST で tmpfs なのでどちらもメモリだが、
+        # apt 等が使う /var の tmpfs と取り合わない。drop-in なので、journald.conf の書き方が変わっても効く
+        mkdir -p /tmp/loop1.$TMP_LABEL/etc/systemd/journald.conf.d
+        printf '[Journal]\nStorage=volatile\n' > /tmp/loop1.$TMP_LABEL/etc/systemd/journald.conf.d/U-ram.conf
         if [ "$ON_UBUNTU" ]; then # rc.local を動かすユニット（systemd の rc.local の互換（generator）より優先される。無くなっても動く）
             # Before=: イメージを展開し終わるまでログインさせない（systemd 258 で rc.local の互換が無くなり、getty が
             # rc-local.service を待たなくなった。展開の途中でログインすると、/home の付け替えの最中で / に出た）

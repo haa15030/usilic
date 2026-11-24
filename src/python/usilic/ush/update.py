@@ -200,6 +200,10 @@ def make_template(env, log, option, out, lap):
     # rc.local(RAMDISKで動かす)。起動オプションu_root=のUUIDを$MNT_DEBIANの区画としてfstabへ書く
     out('create %s/etc/rc.local' % loop1)
     system.write_text(loop1 + '/etc/rc.local', data('rc.local').replace('@MNT_DEBIAN@', env.mnt_debian), 0o755)
+    # RAMDISKのログはメモリ(/runの下、/runの10%まで)に。/varはSHM_LISTでtmpfsなのでどちらもメモリだが、apt等が使う
+    # /varのtmpfsと取り合わない。drop-inなので、journald.confの書き方が変わっても効く
+    system.makedirs(loop1 + '/etc/systemd/journald.conf.d')
+    system.write_text(loop1 + '/etc/systemd/journald.conf.d/U-ram.conf', '[Journal]\nStorage=volatile\n')
     if env.on_ubuntu:  # rc.localを動かすユニット(systemdのrc.localの互換(generator)より優先される)
         system.write_text(loop1 + '/etc/systemd/system/rc-local.service', data('rc-local.service'))
         system.makedirs(loop1 + '/etc/systemd/system/multi-user.target.wants')
@@ -239,9 +243,12 @@ def update_base(env, log, option, ask, out):
     head = ''.join((system.read_text('/etc/grub.d/40_custom') or '').splitlines(True)[:5])
     custom = env.conf('GRUB_CUSTOM', '')
     system.write_text('/etc/grub.d/40_custom', head + (custom + '\n' if custom else ''), 0o755)
-    journald = system.read_text('/etc/systemd/journald.conf') or ''
-    if 'Storage=volatile' not in journald:  # ログはメモリに
-        system.write_text('/etc/systemd/journald.conf', journald.replace('#Storage=auto', 'Storage=volatile'))
+    # journald: SSD(NONE-KERNEL)は既定(/var/log/journal、前の起動の記録が残る)のまま。RAMDISKは土台の中の
+    # journald.conf.d/U-ram.confでメモリ(volatile)に。前にSSDのjournald.confをvolatileにしていたら戻す
+    journald = system.read_text('/etc/systemd/journald.conf')
+    if journald and re.search(r'^Storage=volatile', journald, re.M):
+        out('sed -i /etc/systemd/journald.conf -e s/^Storage=volatile/#Storage=auto/')
+        system.write_text('/etc/systemd/journald.conf', re.sub(r'^Storage=volatile', '#Storage=auto', journald, flags=re.M))
     if not system.exists('/opt/grub.ORG'):
         out('cp /etc/default/grub /opt/grub.ORG')
         system.run(['cp', '/etc/default/grub', '/opt/grub.ORG'])
