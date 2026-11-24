@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1382. **src/U_proto.sh・src/python: -vのusilicを一般ユーザーにせず、rootのまま(HOMEは/root)で(2026-11-24)**
+   - 直接のユーザーの話: `sudo su -`の後で`. /opt/U.sh -v`や`sh /opt/U.sh -v`から/mnt/debianに入ると、SHELLがusilicユーザーのプロンプトで`cd /root`がPermission denied。usilic.pyをrootで直接起動するとSHELLもroot。C++版も同じか、-vでそうした理由は何か、と聞かれ、理由(項目1346: /rootに~/.usilicを作らないため、項目1358: runuser -uはHOMEを/rootのままにするのでgroffの警告が出たためHOMEもユーザーに)を答えたところ、「/root/.usilic/が出来ても全然かまわない。旧tcbの時も/root/.tcb/が平気であったし気にしたことも無いので。何か問題が想定されそうなら別だがそうでなければそれでよろしく。」
+   - 変更: `_page`(U.sh)と`page_with_usilic`(Python版)で、usilic(usilic-py、無ければC++版の-c)を`runuser -u $USR`で一般ユーザーにせず、U.shと同じrootで、`env HOME=/root`で動かす(SHELLもroot)。標準エラー出力は今まで通り捨てる(rootの最初の起動でHELPを組むgroffの警告が端末に出ないように)。rootの最初の起動ではHELPが先に出て、-vの表示は開かない(USILIC_OPENの決まり、項目1360)。
+   - 確かめたこと: tests/test_ush.py(test_v_pager_as_root)。`bash -n`・`dash -n`。
+
 1381. **src/U_proto.sh: UBUNTU_PURGE_LISTにthermaldを足す(2026-11-24)**
    - 直接のユーザーの話: UbuntuのRAMで起動すると「[FAILED] Failed to start thermald.service - Thermal Daemon service.」が5回(3回目の後はStartingも無し)。`systemctl status thermald`は「Main PID: 670 (code=exited, status=1/FAILURE)」「Failed with result 'start-limit-hit'」。
    - 変更: thermald(Intelのノートパソコンの温度の管理、ACPIのDPTFを読む。デスクトップのマザーボードには無いことが多い。温度の保護はハードウェアがする)をUBUNTU_PURGE_LISTに。項目1366では残すもの(B)にしていた。

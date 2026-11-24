@@ -620,14 +620,15 @@ _ask() { # read -p の代わり。$1 変数名、$2 問い、$3 --list・--ans= 
 
 _page() { # $1 を、戻って読めるページャーで（usilic-py → ユーザーの usilic -c → less → more）
     # more は戻れず、-v で STRAGE の ls の後の df まで送ると終わってしまい、ls へ戻れなかった。usilic は q で終える
-    # usilic はユーザーで、HOME もユーザーのものに（runuser -u は HOME を /root のままにするので、usilic が ~/.usilic を
-    # 見つけられず「最初の起動」になり、HELP を組む groff の警告（cannot select font 'JPM'）が大量に出た）。標準エラー出力は捨てる
+    # usilic は U.sh と同じ root で（SHELL も root。旧 tcb と同じく /root/.usilic ができてかまわない。前は /root に作らないよう
+    # runuser -u $USR で一般ユーザーにしていた）。HOME は root のもの（/root）に。標準エラー出力は捨てる（最初の起動で HELP を
+    # 組む groff の警告（cannot select font 'JPM'）が端末に出ないように）
     chmod 644 $1
     # usilic-py（Python 版）はページャーでなく、/mnt の (ls) の上に FILE で開く（USILIC_OPEN）。^G で /mnt へ出て、そのまま /mnt/番号 へ行ける
-    if [ -x /usr/local/bin/usilic-py ] && command -v runuser > /dev/null 2>&1; then
-        runuser -u $USR -- env HOME=/home/$USR USILIC_OPEN=$1 /usr/local/bin/usilic-py /mnt 2>/dev/null
-    elif [ -x /home/$USR/.local/bin/usilic ] && command -v runuser > /dev/null 2>&1; then
-        runuser -u $USR -- env HOME=/home/$USR /home/$USR/.local/bin/usilic -c $1 2>/dev/null
+    if [ -x /usr/local/bin/usilic-py ]; then
+        env HOME=/root USILIC_OPEN=$1 /usr/local/bin/usilic-py /mnt 2>/dev/null
+    elif [ -x /home/$USR/.local/bin/usilic ]; then
+        env HOME=/root /home/$USR/.local/bin/usilic -c $1 2>/dev/null
     elif command -v less > /dev/null 2>&1; then
         less $1
     else

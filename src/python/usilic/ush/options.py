@@ -122,8 +122,9 @@ def file_system(env, log, args, ask, out):
 
 
 def page_with_usilic(env, text):
-    """_page(): このusilic.pyで(/mntの(ls)の上にFILEで開く。戻って読め、^Gで/mntへ、qで終える)。usilicはユーザーで、HOMEもユーザーのものに
-    (rootのHOMEのままだと~/.usilicが無く「最初の起動」になり、HELPを組むgroffの警告が端末に大量に出た)。"""
+    """_page(): このusilic.pyで(/mntの(ls)の上にFILEで開く。戻って読め、^Gで/mntへ、qで終える)。usilicはU.shと同じrootで
+    (SHELLもroot。旧tcbと同じく/root/.usilicができてかまわない。前は一般ユーザーにしていた)、HOMEはrootのもの。標準エラー出力は
+    捨てる(最初の起動でHELPを組むgroffの警告が端末に出ないように)。"""
     system = env.system
     fd, path = tempfile.mkstemp(prefix='U-v.', suffix='.txt')
     with os.fdopen(fd, 'w', encoding='utf-8') as f:
@@ -135,8 +136,8 @@ def page_with_usilic(env, text):
         argv = ['env', 'USILIC_OPEN=' + path, sys.executable, usilic, '/mnt']
     else:
         argv = ['less', path]
-    if system.euid() == 0 and env.user:
-        argv = ['runuser', '-u', env.user, '--', 'env', 'HOME=/home/' + env.user] + argv
+    if system.euid() == 0:
+        argv = ['env', 'HOME=/root'] + argv
     system.interactive(argv, quiet=True)
     os.unlink(path)
 
