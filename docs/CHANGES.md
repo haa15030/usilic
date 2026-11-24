@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1390. **src/U_proto.sh: UbuntuのDESKTOP_LISTのGNOMEに音(pipewire-audio)(2026-11-24)**
+   - 直接のユーザーの話: 8GB-GNOMEで「サウンド関連が無い。」
+   - 原因: 項目1389と同じく、推奨を入れないので、音のサーバー(PipeWire・WirePlumber・pulseの互換)が入らなかった。
+   - 変更: DESKTOP_LISTのGNOMEに`pipewire-audio`(pipewire-pulse・wireplumber・pipewire-alsaをまとめたもの)を足す。
+   - 確かめたこと: `bash -n`。実機ではまだ。
+
 1389. **src/U_proto.sh・src/python: UbuntuのDESKTOP_LISTで「,」で包みを足せる。GNOMEに端末・ファイルマネージャ・テキストエディタ(2026-11-24)**
    - 直接のユーザーの話: Ubuntuの8GB-GNOME(RAMDISKの46%、swapcaps・usilicはOK)で、「GNOMEってターミナル無いのかな？「アプリを表示」で出るアプリのアイコンもusilic入れて9個しかない。」
    - 原因: DESKTOP_APT_OPT(既定--no-install-recommends)で推奨を入れないので、ubuntu-desktop-minimalはGNOME Shellだけで、端末(Ubuntu 25.10からはptyxis)・ファイルマネージャ(nautilus)・テキストエディタ(gnome-text-editor)は推奨で入らなかった。
