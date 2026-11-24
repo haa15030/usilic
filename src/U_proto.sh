@@ -540,6 +540,13 @@ _netplan_nm() { # Ubuntu: netplan のレンダラを NetworkManager に（on）�
     if [ ! -d /etc/netplan ] || [ ! "`command -v netplan`" ]; then
 	return
     fi
+    # デスクトップの包み（ubuntu-desktop-minimal 等）が /usr/lib/netplan/00-network-manager-all.yaml（renderer: NetworkManager）
+    # を入れるのに、NetworkManager は推奨なので DESKTOP_APT_OPT（--no-install-recommends）では入らない。そのままだと netplan が
+    # networkd 用の設定を書かず、誰も DHCP をしない（8GB-GNOME で enp5s0 にアドレスが付かず、ssh もできなかった）
+    if [ "$1" = "on" ] && [ ! -f "$NETWORK_MANAGER_CONF" ] && [ "`netplan get 2>/dev/null | grep "renderer: NetworkManager"`" ]; then
+	echo "apt-get install -y network-manager (netplan: renderer: NetworkManager)"
+	apt-get install -y network-manager
+    fi
     if [ "$1" = "on" ] && [ -f "$NETWORK_MANAGER_CONF" ]; then
 	echo "create $NETPLAN_NM (renderer: NetworkManager)"
 	printf 'network:\n  version: 2\n  renderer: NetworkManager\n' > $NETPLAN_NM

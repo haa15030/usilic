@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1398. **src/U_proto.sh・src/python: Ubuntuの-dで、netplanのレンダラがNetworkManagerなのに入っていなければnetwork-managerを入れる(2026-11-25)**
+   - 症状: -dで作った8GB-GNOMEで起動すると、enp5s0にアドレスが付かずsshもできない(画面が真っ暗(nvidia、別件)なので、固まったように見えた)。8GB-baseではDHCPで取れていた。
+   - 原因: ubuntu-desktop-minimal等が/usr/lib/netplan/00-network-manager-all.yaml(renderer: NetworkManager)を入れるが、NetworkManager自体は推奨なのでDESKTOP_APT_OPT(--no-install-recommends)では入らない(GNOME-Liveは推奨も入れるので入っていた)。イメージを展開した後のnetplan applyで、netplanがnetworkd用の/run/systemd/network/10-netplan-enp5s0.networkを書かなくなり、networkdは「Unmanaging interface」でDHCPのアドレスを手放し、NetworkManagerは無いので誰もDHCPをしない。
+   - 修正: `_netplan_nm on`で、NetworkManager.confが無く`netplan get`にrenderer: NetworkManagerがあれば`apt-get install -y network-manager`してから、今までどおり90-U-network-manager.yaml・NetworkManagerの有効化。Python版(desktop.pyのnetplan_nm)も同じ。
+
 1397. **src/U_proto.sh・src/python: STRAGEの置き場所をディストリビューションごと(img.debian・img.ubuntu)に、Ubuntuは/mnt/ubuntu(2026-11-24)**
    - 経緯: Debian 13(RAMDISK)の音を確かめた時、試しにUbuntuで作った8GB-GNOMEで起動したら画面が真っ暗なままだった(Debianの土台にUbuntuのイメージ)。ユーザー指摘: 故意でなくうっかり共有(同じSTRAGEに同じ名前の8GB-GNOME等)も起きるので、STRAGE/img.debian・STRAGE/img.ubuntuで区別、Ubuntuでは/mnt/debianを/mnt/ubuntuに。
    - 変更: DEBIANを/etc/os-releaseのID=ubuntuならubuntu、それ以外はdebianに(MNT_DEBIAN=/mnt/$DEBIAN、RAM_DIR_LIST、/tmp/$DEBIAN.*、-uの土台の/etc/hostsのホスト名の置き換え(Ubuntuのホスト名はubuntuなので、今まで置き換わっていなかった)も)。`_set_strage_opt`: mnt_strageを変えるたびに$strage_opt(STRAGEの区画ならmnt_strage/img.$DEBIAN、STRAGEが無ければ今までどおり/mnt/debian/opt)。$mnt_strage/optの38箇所を$strage_optに、作る前にmkdir -p。`_old_strage_opt`: STRAGE/optに?GB-*.img・BUILD_*.imgが残っていれば、-a・-vで「img.debian・img.ubuntuへ移して」とログへ(どちらのものか分からないので動かさない)。/etc/fstabから外す行に$MNT_DEBIANも(/mnt/debianも残す)。Python版はenv.opt_dir(strage)、debianは/etc/os-releaseから、options.pyのold_strage_opt。src/U_sh.txtに⑧で説明。

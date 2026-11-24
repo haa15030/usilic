@@ -125,6 +125,12 @@ def netplan_nm(env, on, out):
     conf = env.conf('NETWORK_MANAGER_CONF', '/etc/NetworkManager/NetworkManager.conf')
     if not system.isdir('/etc/netplan') or not system.output(['sh', '-c', 'command -v netplan']).strip():
         return
+    # デスクトップの包み(ubuntu-desktop-minimal等)が/usr/lib/netplan/00-network-manager-all.yaml(renderer: NetworkManager)を
+    # 入れるのに、NetworkManagerは推奨なので--no-install-recommendsでは入らない。そのままだとnetplanがnetworkd用の設定を
+    # 書かず、誰もDHCPをしない(8GB-GNOMEでenp5s0にアドレスが付かず、sshもできなかった)
+    if on and not system.exists(conf) and 'renderer: NetworkManager' in system.output(['netplan', 'get']):
+        out('apt-get install -y network-manager (netplan: renderer: NetworkManager)')
+        system.stream(['apt-get', 'install', '-y', 'network-manager'], out)
     if on and system.exists(conf):
         out('create %s (renderer: NetworkManager)' % nm)
         system.write_text(nm, 'network:\n  version: 2\n  renderer: NetworkManager\n', 0o600)
