@@ -164,7 +164,8 @@ class UshTest(unittest.TestCase):
         self.assertIn(['grub-editenv', '/mnt/debian/boot/grub/grubenv', 'set', 'saved_entry=Windows 11'], system.calls)
         self.assertIn("GRUB_DEFAULT is not 'saved'", out)
         self.assertIn(['reboot'], system.calls)
-        self.assertEqual(system.calls[system.calls.index(['reboot']) - 1], ['umount', '/mnt/debian'])
+        self.assertEqual(system.calls[system.calls.index(['reboot']) - 2], ['umount', '/mnt/debian'])
+        self.assertEqual(system.calls[system.calls.index(['reboot']) - 1], ['sync'])
 
     def test_o_record_and_purge(self):
         base = 'acl\t\t\t\t\nbash\t\t\t\t\n'

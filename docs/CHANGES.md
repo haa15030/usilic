@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1385. **src/U_proto.sh・src/python: -nで再起動する前にSTRAGEも外し、syncする(2026-11-24)**
+   - 直接のユーザーの話: 「. U -n でNONE-KERNELを選び、Reboot now? (Y/n): yのあとが長い。」「たぶんumountかな。」
+   - 変更: -nの「Reboot now?」にyの時、/mnt/debianの前にSTRAGE(/mnt/exfat等、DEBIAN区画でなければ)も外し、syncしてからreboot。exFAT・NTFS(FUSE)をマウントしたままだと、再起動の時にsystemdが外すのを待たされることがある(推測、画面の「A stop job is running for …」でまだ確かめていない)。
+   - 確かめたこと: tests/test_ush.py(umountの後にsync、その後reboot)。`bash -n`・`dash -n`。
+
 1384. **src/U_proto.sh・src/python・src/U_sh.txt: UbuntuのRAM-*-baseの起動項目で、UEFIの時はGRUBのtpmを外す(2026-11-24)**
    - 直接のユーザーの話: Z390UDのUEFIで、UbuntuのGRUB(2.14)はRAM-7.3.1+8gb-base.gz(619MB・588MB)で「error: out of memory.」。DebianのGRUBからはBIOS・UEFIとも起動できた。UbuntuのGRUBの`e`でDebianの561MBのRAM-6.12.117+8gb-base.gzを読ませてもout of memory、逆にDebianのGRUB(grub.cfgに足した試しの項目)ではUbuntuの588MBも起動できた。web(Red HatのBugzilla 1838633・RHEL-4401等)で、GRUBにTPMのモジュールがあると、読み込むファイルをTPMに記録するためにinitrdを丸ごともう一度別に読み込むので、大きなinitrdでout of memoryになる例があった。UbuntuのGRUBの`e`で一番上に`rmmod tpm`を足したら起動した。
    - 変更: Ubuntuなら、RAM-*-baseの起動項目(40_custom、`_ram_entry`・`ram_entry`)の最初に`if [ "$grub_platform" = efi ]; then rmmod tpm; fi`(BIOSのGRUBではtpmが無く、rmmodがエラーを出すので、UEFIの時だけ)。前に作った項目にも、無ければ足す(U.shはawkで、40_customの実行権を残すようcatで書き戻す)。マニュアルのUbuntuの所にも一言。

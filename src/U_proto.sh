@@ -2027,7 +2027,12 @@ next_host() { # -n)
     _ask _yn "Reboot now? (Y/n): " n
     if [ ! "$_yn" ] || [ "$_yn" = "Y" ] || [ "$_yn" = "y" ]; then
         cd /opt
+        # STRAGE も外してから（exFAT・NTFS（FUSE）は、再起動の時に systemd が外すのを待たされることがある）
+        if [ "$mnt_strage" ] && [ "$mnt_strage" != "$MNT_DEBIAN" ]; then
+            _fs $LINENO umount $mnt_strage
+        fi
         _fs $LINENO umount $MNT_DEBIAN
+        sync
         reboot
     fi
 }

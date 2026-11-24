@@ -306,8 +306,12 @@ def next_host(env, log, ask, out):
         fs(env, log, 'umount', root)
     yn = ask('Reboot now? (Y/n): ', 'n').strip()
     if yn in ('', 'Y', 'y'):
+        # STRAGEも外してから(exFAT・NTFS(FUSE)は、再起動の時にsystemdが外すのを待たされることがある)
+        if env.strage and env.strage != env.mnt_debian:
+            fs(env, log, 'umount', env.strage)
         if not env.on_toram:
             fs(env, log, 'umount', env.mnt_debian)
+        system.run(['sync'])
         system.run(['reboot'])
 
 
