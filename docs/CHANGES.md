@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1381. **src/U_proto.sh: UBUNTU_PURGE_LISTにthermaldを足す(2026-11-24)**
+   - 直接のユーザーの話: UbuntuのRAMで起動すると「[FAILED] Failed to start thermald.service - Thermal Daemon service.」が5回(3回目の後はStartingも無し)。`systemctl status thermald`は「Main PID: 670 (code=exited, status=1/FAILURE)」「Failed with result 'start-limit-hit'」。
+   - 変更: thermald(Intelのノートパソコンの温度の管理、ACPIのDPTFを読む。デスクトップのマザーボードには無いことが多い。温度の保護はハードウェアがする)をUBUNTU_PURGE_LISTに。項目1366では残すもの(B)にしていた。
+   - 確かめたこと: `bash -n`・`dash -n`。効くのはBASE.uを作り直す時から。
+
 1380. **src/U_proto.sh・src/python: -uは、/optのカーネルの.debと同じ版が入っていなければ入れる(2026-11-24)**
    - 直接のユーザーの話: カーネルを作り直した(KERNEL_DISABLE・LEGACY_PTYS、linux-image-7.3.1+8gb_7.3.1-7、.debは114MB→82MB)後も、RAM-7.3.1+8gb-base.gzは618MB、/usr/lib/modules/7.3.1+8gbは576MB、/boot/config-7.3.1+8gbはCONFIG_PCCARD=m・CONFIG_MEDIA_SUPPORT=mのまま。
    - 原因: -uは「linux-image-*+8gbのどれかが入っていれば」dpkg -iしなかった。前に作った7.3.1-4が入ったままだったので、作り直した7.3.1-7は入らず、RAM-*-base.gzは前のカーネルのモジュールで作られた(linux-imageは記録に載せないので、DEBIAN.uへ戻しても外れない)。

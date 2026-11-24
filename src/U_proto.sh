@@ -421,7 +421,7 @@ if [ "$ON_UBUNTU" ]; then
     # 「*」も使える。入っていないものは飛ばす
     readonly UBUNTU_PURGE_LIST="cloud-init cloud-init-base cloud-guest-utils lxd-installer snapd squashfs-tools
         unattended-upgrades needrestart ubuntu-release-upgrader-core apport apport-core-dump-handler packagekit
-        software-properties-common upki multipath-tools open-iscsi bcache-tools
+        software-properties-common upki multipath-tools open-iscsi bcache-tools thermald
         linux-perf linux-tools-* makedumpfile manpages-dev ssh-import-id linux-generic
         linux-firmware-qualcomm-misc linux-firmware-qualcomm-graphics linux-firmware-mellanox-spectrum
         linux-firmware-netronome linux-firmware-qlogic linux-firmware-marvell-prestera
@@ -429,6 +429,8 @@ if [ "$ON_UBUNTU" ]; then
         linux-firmware-broadcom-wireless linux-firmware-marvell-wireless firmware-sof-signed"
     # （上の最後の2行: 無線 LAN と、Intel のノートパソコンの音声（SOF）の firmware。Debian の BASE_LIST も入れていない。
     #   rescue なので外す（約250MB）。ノートパソコンで無線 LAN を使うなら、この2行から消す）
+    # thermald: Intel のノートパソコンの温度の管理（ACPI の DPTF を読む）。Z390UD では起動に5回失敗し続けた（温度の保護は
+    #   ハードウェアがする）
 fi
 readonly RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X BASE_LIST JP_LIST
 
