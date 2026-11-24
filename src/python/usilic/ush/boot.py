@@ -28,6 +28,11 @@ def start_rc(env, out, log):
         system.run(['systemctl', 'enable', 'NetworkManager.service'])
     out('systemctl daemon-reload')
     system.run(['systemctl', 'daemon-reload'])  # 展開したイメージのユニットを読み込み直す
+    if env.on_ubuntu and system.output(['sh', '-c', 'command -v netplan']).strip():
+        # Ubuntu: イメージのnetplan(デスクトップでは90-U-network-manager.yamlでレンダラがNetworkManager)を反映する。
+        # しないと、NetworkManagerを入れたイメージ(GNOME-Live等)で、networkdが持っていたenp5s0のIPアドレスが無くなった
+        out('netplan apply')
+        system.run(['netplan', 'apply'])
     # 自分自身(rc.local)とディスプレイマネージャは除く。システムのバス(D-Bus)・logind・journaldも再起動しない(再起動すると
     # logindがバスから切れて応えなくなり、lightdmが「Failed to get list of logind seats: Timeout was reached」で25秒
     # 待った。バスは設定の変化を自分で読み直す)

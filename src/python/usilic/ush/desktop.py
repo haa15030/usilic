@@ -373,6 +373,9 @@ def desktop_select(env, log, option, ask, out):
              if not l.startswith('NEXT%d=' % env.ramdisk_gb)] + ['NEXT%d=%s' % (env.ramdisk_gb, host)]
     system.write_text('/opt/U.opt', ''.join(l + '\n' for l in lines))
     system.run(['cp', '/opt/U.opt', env.mnt_debian + '/opt'])
+    if env.on_ubuntu and system.output(['sh', '-c', 'command -v netplan']).strip():
+        out('netplan apply')  # レンダラがNetworkManagerになっていれば、ここで移す(networkdが持っていたIPアドレスが無くなった)
+        system.run(['netplan', 'apply'])
     out('systemctl isolate graphical.target')
     system.run(['systemctl', 'isolate', 'graphical.target'])
 

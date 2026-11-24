@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1392. **src/U_proto.sh・src/python: Ubuntuで、イメージを展開した後と-dの「Start … now?」の後にnetplan apply(2026-11-24)**
+   - 直接のユーザーの話: 8GB-GNOME-Live(推奨込み、RAMDISKの62%、「Ubuntu 26.10 へようこそ!」・アイコン25個)を`-d`の「Start 8GB-GNOME-Live now?」で始めたら、`ip a`でenp5s0のIPアドレスが無くなった。「network-managerが入ったから？」
+   - 原因(見立て): 推奨でnetwork-managerが入り、`_desktop_ubuntu`がnetplanのレンダラをNetworkManagerにする(90-U-network-manager.yaml)が、反映は`netplan generate`だけで「次の起動の時」の扱いだった。その場で始める時も、-rでイメージを展開した時も`netplan apply`していないので、networkdが持っていたenp5s0とNetworkManagerの受け渡しができなかった。推奨なしのGNOMEにはnetwork-managerが入らないので起きなかった。
+   - 変更: Ubuntuなら、`_start_rc`(start_rc、-rの展開の後、daemon-reloadの次)と、-dの「Start … now?」にyの後(graphical.targetへ移る前)に`netplan apply`。
+   - 確かめたこと: tests/test_ush.py。`bash -n`・`dash -n`。実機ではまだ。音(設定のサウンドで「出力デバイスがありません」)は調べ中。
+
 1391. **src/U_proto.sh・src/python: UbuntuのDESKTOP_LISTで「+」の項目は推奨も入れる。GNOME-Live(インストーラの「お試し」と同じ構成)(2026-11-24)**
    - 直接のユーザーの話: 「ubuntuインストーラーにはお試しliveアイコンがあるんだが、あれの構成が入るかどうか確かめたい。」
    - 変更: DESKTOP_LISTの包みの先頭が「+」なら、その項目だけDESKTOP_APT_OPT(--no-install-recommends)を使わず推奨も入れる。`+ubuntu-desktop-minimal:GNOME-Live`を足す(Ubuntu 24.04以降のインストーラの既定の構成・お試しは、ubuntu-desktop-minimalと推奨。26.04も同じと見ているが未確認)。

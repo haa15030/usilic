@@ -1782,6 +1782,10 @@ desktop_select() { # -d)
     echo "NEXT${RAMDISK_GB}=$_name" >> /tmp/opt.$TMP_LABEL
     cat /tmp/opt.$TMP_LABEL > /opt/U.opt
     cp /opt/U.opt $MNT_DEBIAN/opt
+    if [ "$ON_UBUNTU" ] && command -v netplan > /dev/null 2>&1; then # レンダラが NetworkManager になっていれば、ここで移す
+        echo "netplan apply"
+        netplan apply
+    fi
     echo "systemctl isolate graphical.target"
     systemctl isolate graphical.target
 }
@@ -2071,6 +2075,12 @@ _start_rc() { # next_host でホストイメージを展開した後、systemd �
     fi
     echo "systemctl daemon-reload"
     systemctl daemon-reload # 展開したイメージのユニット（init.d スクリプト分も含む）を読み込み直す
+    if [ "$ON_UBUNTU" ] && command -v netplan > /dev/null 2>&1; then
+        # Ubuntu: イメージの netplan（デスクトップでは 90-U-network-manager.yaml でレンダラが NetworkManager）を反映する。
+        # しないと、NetworkManager を入れたイメージ（GNOME-Live 等）で、networkd が持っていた enp5s0 の IP アドレスが無くなった
+        echo "netplan apply"
+        netplan apply 2>> /tmp/error.$TMP_LABEL
+    fi
     for _unit in `_enabled_units`
     do
 	case "$_unit" in
