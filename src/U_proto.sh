@@ -2843,6 +2843,12 @@ _purge_ubuntu() { # Ubuntu: BASE.u を記録する前に、RAMDISK では要ら�
     fi
 }
 
+_deb_installed() { # /opt の .deb（名前_版_arch.deb）と同じ版が入っているか
+    local _p=`echo $1 | cut -d_ -f1` _v=`echo $1 | cut -d_ -f2`
+
+    dpkg-query -W -f='${Status} ${Version}\n' $_p 2>/dev/null | grep -q " ok installed $_v\$"
+}
+
 update_base() { # -u)
     local _new_gb _new_kernel _rescue_kernel _rescue_entry _first="" _yn
 
@@ -3046,7 +3052,10 @@ EOF
         fi
     fi
     cd /opt
-    if [ ! "`dpkg -l | grep '^ii  linux-image' | grep +${RESCUE_GB}gb`" ]; then
+    # 入っているのが /opt の .deb と同じ版でなければ入れる（前は「+8gb のどれかが入っていれば入れない」だったので、
+    # 作り直した（KERNEL_DISABLE 等）カーネルが入らず、RAM-*-base.gz は前のカーネルのモジュールのままだった）
+    if ! _deb_installed $_rescue_kernel; then
+        echo "dpkg -i /opt/$_rescue_kernel"
         dpkg -i /opt/$_rescue_kernel > /dev/null
     fi
     rm -f /boot/initrd*+${RESCUE_GB}gb* # RAMDISKの土台（RAM-*-base.gz）を initrd として使うので要らない
@@ -3058,7 +3067,8 @@ EOF
             echo "$1: To update 'RAM-*+${_new_gb}gb-base.gz', please setup strage-area. : $LINENO" >> /tmp/log.$TMP_LABEL
             continue
         fi
-        if [ ! "`dpkg -l | grep '^ii  linux-image' | grep +${_new_gb}gb`" ]; then
+        if ! _deb_installed $_new_kernel; then
+            echo "dpkg -i /opt/$_new_kernel"
             dpkg -i /opt/$_new_kernel > /dev/null
         fi
         _update_base $_new_gb

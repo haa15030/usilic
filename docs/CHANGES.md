@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1380. **src/U_proto.sh・src/python: -uは、/optのカーネルの.debと同じ版が入っていなければ入れる(2026-11-24)**
+   - 直接のユーザーの話: カーネルを作り直した(KERNEL_DISABLE・LEGACY_PTYS、linux-image-7.3.1+8gb_7.3.1-7、.debは114MB→82MB)後も、RAM-7.3.1+8gb-base.gzは618MB、/usr/lib/modules/7.3.1+8gbは576MB、/boot/config-7.3.1+8gbはCONFIG_PCCARD=m・CONFIG_MEDIA_SUPPORT=mのまま。
+   - 原因: -uは「linux-image-*+8gbのどれかが入っていれば」dpkg -iしなかった。前に作った7.3.1-4が入ったままだったので、作り直した7.3.1-7は入らず、RAM-*-base.gzは前のカーネルのモジュールで作られた(linux-imageは記録に載せないので、DEBIAN.uへ戻しても外れない)。
+   - 変更: /optの.deb(名前_版_arch.deb)と同じ版が入っているかで決める(U.shは`_deb_installed`)。dpkg -iする時はその旨を出す。
+   - 確かめたこと: tests/test_ush.py。`bash -n`・`dash -n`。
+
 1379. **src/U_proto.sh・src/python: make bindeb-pkgにDPKG_FLAGS=-d(ビルドに要るものの確かめをしない)(2026-11-24)**
    - 直接のユーザーの話: GNU版のcoreutilsに入れ替えた後の-uが、`make bindeb-pkg`の「dpkg-checkbuilddeps: error: unmet build dependencies: coreutils-from-uutils」「dpkg-buildpackage: error: build dependencies/conflicts unsatisfied; aborting」で止まり、「-u: linux-image-*+8gb: build failed.」。
    - 原因(推測): dpkg-checkbuilddepsは、Build-Dependsの他に必須(Essential)の包みの一覧(build-essentialの)も確かめる。その一覧がuutilsの時のままで、coreutils-from-uutilsを要るとした。

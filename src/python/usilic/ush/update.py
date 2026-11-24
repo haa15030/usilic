@@ -133,8 +133,14 @@ def _kernels(env, gb):
     return sorted(names, key=lambda n: system.mtime('/opt/' + n) or 0, reverse=True)
 
 
-def _installed(env, gb):
-    return any(l.startswith('ii  linux-image') and '+%dgb' % gb in l for l in env.system.output(['dpkg', '-l']).splitlines())
+def _installed(env, deb):
+    """/optの.deb(名前_版_arch.deb)と同じ版が入っているか(前は「+?gbのどれかが入っていれば」だったので、作り直した
+    (KERNEL_DISABLE等)カーネルが入らず、RAM-*-base.gzは前のカーネルのモジュールのままだった)。"""
+    parts = deb.split('_')
+    if len(parts) < 3:
+        return False
+    status = env.system.output(['dpkg-query', '-W', '-f=${Status} ${Version}', parts[0]]).strip()
+    return status.endswith(' ok installed ' + parts[1])
 
 
 def purge_ubuntu(env, out):
@@ -288,7 +294,7 @@ def update_base(env, log, option, ask, out):
             if not _kernels(env, int(extra)):
                 log.add('%s: linux-image-*+%sgb: build failed.' % (option, extra))
                 return False
-    if not _installed(env, rescue_gb):
+    if not _installed(env, _kernels(env, rescue_gb)[0]):
         out('dpkg -i ' + '/opt/' + _kernels(env, rescue_gb)[0])
         system.stream(['dpkg', '-i', '/opt/' + _kernels(env, rescue_gb)[0]], out)
     system.shell('rm -f /boot/initrd*+%dgb*' % rescue_gb)  # RAMの土台(RAM-*-base.gz)をinitrdとして使うので要らない
@@ -301,7 +307,7 @@ def update_base(env, log, option, ask, out):
         if strage == env.mnt_debian:
             log.add("%s: To update 'RAM-*+%dgb-base.gz', please setup strage-area." % (option, gb))
             continue
-        if not _installed(env, gb):
+        if not _installed(env, name):
             out('dpkg -i ' + '/opt/' + name)
             system.stream(['dpkg', '-i', '/opt/' + name], out)
         update_base_image(env, log, gb, out, lap)
