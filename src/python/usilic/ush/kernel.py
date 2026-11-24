@@ -259,6 +259,23 @@ def correct_uuid(env, log, path, part_from, part_to, efi=None):
     return True
 
 
+def nvidia_module(env, log, module, out):
+    """_nvidia_module(): 作ったカーネル向けにdkmsで純正ドライバのモジュールを組み立てる(RAM-*-base.gzへ/lib/modulesごと写る)。"""
+    system = env.system
+    if not env.conf('NVIDIA_LIST', '') or 'ok installed' not in system.output(['dpkg-query', '-W', '-f=${Status}', 'dkms']):
+        return
+    if not system.exists('/lib/modules/%s/build' % module):
+        debs = [n for n in system.listdir('/opt') if n.startswith('linux-headers-%s_' % module) and n.endswith('.deb')]
+        if debs:
+            out('dpkg -i /opt/' + debs[0])
+            system.run(['dpkg', '-i', '/opt/' + debs[0]])
+    out('dkms autoinstall -k ' + module)
+    system.stream(['dkms', 'autoinstall', '-k', module], out)
+    built = [n for n in system.listdir('/lib/modules/%s/updates/dkms' % module) if n.startswith('nvidia.ko')]
+    if not built:
+        log.add('-u: /lib/modules/%s/updates/dkms/nvidia.ko: not built (dkms).' % module)
+
+
 def ram_entry(env, module):
     """_ram_entry(): RAM-module-baseの起動項目を40_customへ(u_root=はrc.localがDEBIAN区画として使う)。"""
     system = env.system
@@ -307,6 +324,7 @@ def update_base_image(env, log, gb, out, lap):
     system.shell('zcat %s > %s/IMG1.img' % (template, shm0))
     fs(env, log, 'umount', loop1)
     fs(env, log, 'mount', '-o', 'loop', shm0 + '/IMG1.img', loop1)
+    nvidia_module(env, log, module, out)
     # このカーネルのモジュールとヘッダだけを写す
     system.shell('tar cf - /lib/modules/%s /usr/src/linux-headers-%s 2>/dev/null | tar xf - -C %s' % (module, module, loop1))
     img0 = strage + '/opt/IMG0.img'

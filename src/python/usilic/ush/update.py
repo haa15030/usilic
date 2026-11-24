@@ -184,6 +184,46 @@ def purge_ubuntu(env, out):
         system.run(['apt-mark', 'manual'] + keep)
 
 
+def nvidia_gpu(system):
+    """_nvidia_gpu(): NVIDIAのGPUがあるか(PCIのベンダー0x10de)。"""
+    code, text = system.shell('cat /sys/bus/pci/devices/*/vendor 2>/dev/null')
+    return '0x10de' in text.split()
+
+
+def nvidia_base(env, log, out):
+    """_nvidia_base(): NVIDIA_LIST(純正ドライバのカーネル側)をBASEに。BASE.uを作った後でも足す。BASE.uへ戻してから入れ、
+    nouveau用のfirmware(NVIDIA_NOUVEAU_FW)を外し、その状態をBASE.uに(前のBASE.uはBASE.u.bakに)。"""
+    system = env.system
+    packages = env.conf('NVIDIA_LIST', '').split()
+    if not packages or not nvidia_gpu(system):
+        return
+    base = system.read_text('/opt/BASE.u') or ''
+    have = set(l.split()[0] for l in base.splitlines() if l.split())
+    if all(p in have for p in packages):
+        missing = [p for p in packages if 'ok installed' not in system.output(['dpkg-query', '-W', '-f=${Status}', p])]
+        if missing:  # BASE.uにあるのに外れていたら
+            system.stream(['apt-get', 'install', '-y'] + missing, out)
+        return
+    purge_to(env, log, 'BASE.u', out)
+    out('apt-get install -y --no-install-recommends ' + ' '.join(packages))
+    if system.stream(['apt-get', 'install', '-y', '--no-install-recommends'] + packages, out) != 0:
+        log.add('-u: %s: not installed.' % ' '.join(packages))
+        return
+    fw = env.conf('NVIDIA_NOUVEAU_FW', '')
+    if fw and 'ok installed' in system.output(['dpkg-query', '-W', '-f=${Status}', fw]):
+        out('apt-get purge -y ' + fw)
+        system.stream(['apt-get', 'purge', '-y', fw], out)
+        keep = [l.split()[1] for l in system.output(['apt-get', '-s', 'autoremove']).splitlines()
+                if l.startswith('Remv ') and len(l.split()) > 1]
+        if keep:  # linux-firmware等のメタが一緒に外れても残す
+            out('apt-mark manual ' + ' '.join(keep))
+            system.run(['apt-mark', 'manual'] + keep)
+    system.run(['chmod', '644', '/opt/BASE.u'])
+    system.run(['mv', '-f', '/opt/BASE.u', '/opt/BASE.u.bak'])
+    output_u(env, log, ['BASE.u'], out)
+    system.run(['chmod', '444', '/opt/BASE.u'])
+
+
 def make_template(env, log, option, out, lap):
     """RAMDISKの土台のテンプレート(/opt/TEMPLATE-*-base.gz、BASEの状態のルート、カーネルのモジュールは除く)。"""
     system = env.system
@@ -201,7 +241,8 @@ def make_template(env, log, option, out, lap):
     system.run(['apt-get', 'clean'])
     # カーネルのモジュールとヘッダはtarで外す(/tmpへmvすると、tmpfsなので途中で止まった時にSSDから消える)
     # ホームのgit(-uがcloneしたusilic)・.local(前のrescueで作ったusilic)・.cacheはRAMの土台に要らない(167MBあった)
-    command = ("tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' --exclude='home/*/git' --exclude='home/*/.local' --exclude='home/*/.cache' [e-h]* root srv usr var "
+    # usr/src/nvidia-*: dkmsが組み立てる元(約30MB)。組み立てはSSDでするので、RAMDISKには要らない
+    command = ("tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' --exclude='usr/src/nvidia-*' --exclude='home/*/git' --exclude='home/*/.local' --exclude='home/*/.cache' [e-h]* root srv usr var "
                "| tar xfp - -C " + loop1)
     out(command)
     errors = env.tmp + '/tar.err'
@@ -255,6 +296,7 @@ def update_base(env, log, option, ask, out):
         system.stream(['apt-get', 'install', '-y'] + env.conf('BASE_LIST', '').split(), out)  # 要るパッケージを足す
         output_u(env, log, ['BASE.u'], out)
         system.run(['chmod', '444', '/opt/BASE.u'])
+    nvidia_base(env, log, out)
     # Python版のusilic(RESCUE)とpython3を、RAM-*-base.gzを作る前に(取れなくても止めない)
     get_usilic_repo(env, out)
     install_usilic_py(env, log, out)

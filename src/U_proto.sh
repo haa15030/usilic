@@ -396,6 +396,11 @@ readonly RAM_DIR_LIST="boot dev media opt proc run sys usr/lib/modules tmp mnt/$
 # git: -u が usilic のリポジトリを取るのに使う（BASE に無いと、記録へ戻すたびに外れて入れ直していた）。RAMDISK でも使える
 BASE_LIST="firmware-realtek firmware-misc-nonfree firmware-amd-graphics firmware-nvidia-gsp arch-install-scripts gdisk dosfstools grub-pc-bin grub-efi-amd64-bin git"
 readonly PAGER=more # _page で usilic・less が無い時だけ（more は戻れない）
+# NVIDIA の純正ドライバのカーネル側（dkms が作ったカーネル向けにモジュールを組み立てる。GSP の firmware と nouveau を止める設定も入る）。
+# NVIDIA の GPU がある時だけ、-u が BASE に入れる。画面の描画のライブラリ（libnvidia-gl 等、約900MB）は入れない（要るなら DESKTOP_LIST に）。
+# "" なら nouveau のまま。NVIDIA_NOUVEAU_FW は、その時に外す nouveau 用の firmware
+NVIDIA_LIST=""
+NVIDIA_NOUVEAU_FW=""
 
 # --- Ubuntu（ON_UBUNTU）用の設定 ------------------------------------
 # Ubuntu でも -u は Debian と同じく ${RESCUE_GB}GB（8GB）の RAMDISK 用カーネル・RAM-*-base.gz・${RESCUE_GB}GB-rescue.img を作る。
@@ -407,6 +412,9 @@ if [ "$ON_UBUNTU" ]; then
     # 端のケースが GNU と違う（「mv /home/.」を断らず /home/home ができた）。U.sh は GNU の動きを前提に書いてある。uutils のままなら ""
     readonly GNU_COREUTILS=y
     readonly NETPLAN_NM=/etc/netplan/90-U-network-manager.yaml
+    # Z390UD・RTX3050（GA107）で、nouveau では DP の音が鳴らなかった（Ubuntu 26.10 の live、Debian 13 の 6.12 でも。純正なら鳴った）
+    NVIDIA_LIST="nvidia-dkms-580-open"
+    NVIDIA_NOUVEAU_FW="linux-firmware-nvidia-graphics" # nouveau 用の GSP（約106MB。純正は nvidia-firmware-580 の方を使う）
     RESCUE_LIST=`echo " $RESCUE_LIST " | sed -e 's/ firefox-esr / firefox /'`
     if [ "$RESCUE_LIST_X" ]; then
         RESCUE_LIST_X="$RESCUE_LIST fakeroot libncurses-dev"
@@ -438,7 +446,7 @@ if [ "$ON_UBUNTU" ]; then
     # thermald: Intel のノートパソコンの温度の管理（ACPI の DPTF を読む）。Z390UD では起動に5回失敗し続けた（温度の保護は
     #   ハードウェアがする）
 fi
-readonly RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X BASE_LIST JP_LIST
+readonly RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X BASE_LIST JP_LIST NVIDIA_LIST NVIDIA_NOUVEAU_FW
 
 _on_line() { # 現在のネット接続状態（readonly の $ON_LINE は起動時の値のまま）
     ip a | grep 'inet ' | grep global
@@ -1082,6 +1090,7 @@ _update_base() {
     _fs $LINENO umount /tmp/loop1.$TMP_LABEL
     echo "mount -o loop /tmp/shm0.$TMP_LABEL/IMG1.img /tmp/loop1.$TMP_LABEL"
     _fs $LINENO mount -o loop /tmp/shm0.$TMP_LABEL/IMG1.img /tmp/loop1.$TMP_LABEL
+    _nvidia_module $_new_module
     # このカーネルのモジュールとヘッダだけを写す（名前で指すので、他のものを /tmp へ逃がさなくてよい）
     echo "tar cf - /lib/modules/$_new_module /usr/src/linux-headers-$_new_module 2>/dev/null| tar xf - -C /tmp/loop1.$TMP_LABEL"
     tar cf - /lib/modules/$_new_module /usr/src/linux-headers-$_new_module 2>/dev/null| tar xf - -C /tmp/loop1.$TMP_LABEL
@@ -2924,6 +2933,65 @@ _purge_ubuntu() { # Ubuntu: BASE.u を記録する前に、RAMDISK では要ら�
     fi
 }
 
+_nvidia_gpu() { # NVIDIA の GPU があるか（PCI のベンダー 0x10de）
+    cat /sys/bus/pci/devices/*/vendor 2>/dev/null | grep -qx 0x10de
+}
+
+_nvidia_base() { # NVIDIA_LIST（純正ドライバのカーネル側）を BASE に。BASE.u を作った後でも足す
+    local _p _missing="" _keep
+
+    if [ ! "$NVIDIA_LIST" ] || ! _nvidia_gpu; then
+        return
+    fi
+    for _p in $NVIDIA_LIST
+    do
+        grep -q "^$_p[[:space:]]" /opt/BASE.u 2>/dev/null || _missing="$_missing $_p"
+    done
+    if [ ! "$_missing" ]; then
+        for _p in $NVIDIA_LIST
+        do
+            _is_inst $_p + # BASE.u にあるのに外れていたら
+        done
+        return
+    fi
+    # BASE.u へ戻してから入れ、nouveau 用の firmware を外し、その状態を BASE.u に（依存の dkms・gcc 等も BASE.u に載り、
+    # TEMPLATE を作る前の「BASE.u -p」で外れない）。前の BASE.u は BASE.u.bak に
+    _output_u BASE.u -p $LINENO
+    echo "apt-get install -y --no-install-recommends $NVIDIA_LIST"
+    if ! apt-get install -y --no-install-recommends $NVIDIA_LIST; then
+        echo "-u: $NVIDIA_LIST: not installed. : $LINENO" >> /tmp/log.$TMP_LABEL
+        return
+    fi
+    if [ "$NVIDIA_NOUVEAU_FW" ] && [ "`_is_inst $NVIDIA_NOUVEAU_FW`" ]; then
+        echo "apt-get purge -y $NVIDIA_NOUVEAU_FW"
+        apt-get purge -y $NVIDIA_NOUVEAU_FW
+        _keep=`apt-get -s autoremove 2>/dev/null | awk '$1 == "Remv" {print $2}'` # linux-firmware 等のメタが一緒に外れても残す
+        if [ "$_keep" ]; then
+            echo "apt-mark manual" $_keep
+            apt-mark manual $_keep > /dev/null
+        fi
+    fi
+    chmod 644 /opt/BASE.u
+    mv -f /opt/BASE.u /opt/BASE.u.bak
+    _output_u BASE.u $LINENO
+    chmod 444 /opt/BASE.u
+}
+
+_nvidia_module() { # $1（作ったカーネル）向けに dkms で純正ドライバのモジュールを組み立てる（RAM-*-base.gz へ /lib/modules ごと写る）
+    if [ ! "$NVIDIA_LIST" ] || [ ! "`_is_inst dkms`" ]; then
+        return
+    fi
+    if [ ! -e /lib/modules/$1/build ] && [ "`ls /opt/linux-headers-${1}_*.deb 2>/dev/null`" ]; then
+        echo "dpkg -i /opt/linux-headers-${1}_*.deb"
+        dpkg -i /opt/linux-headers-${1}_*.deb > /dev/null
+    fi
+    echo "dkms autoinstall -k $1"
+    dkms autoinstall -k $1
+    if [ ! "`ls /lib/modules/$1/updates/dkms/nvidia.ko* 2>/dev/null`" ]; then
+        echo "-u: /lib/modules/$1/updates/dkms/nvidia.ko: not built (dkms). : $LINENO" >> /tmp/log.$TMP_LABEL
+    fi
+}
+
 _deb_installed() { # /opt の .deb（名前_版_arch.deb）と同じ版が入っているか
     local _p=`echo $1 | cut -d_ -f1` _v=`echo $1 | cut -d_ -f2`
 
@@ -2963,6 +3031,7 @@ update_base() { # -u)
         _output_u BASE.u $LINENO #_10)　BASE.u保存
         chmod 444 /opt/BASE.u
     fi
+    _nvidia_base
     # Python 版の usilic（RESCUE）と python3 を、RAM-*-base.gz を作る前に（取れなくても止めない）
     _get_usilic_repo
     _install_usilic_py
@@ -3036,8 +3105,9 @@ EOF
         cd /
         # カーネルのモジュールとヘッダは tar で外す（/tmp へ mv すると、tmpfs なので途中で止まった時に SSD から消える）
         # ホームの git（-u が clone した usilic）・.local（前の rescue で作った usilic）・.cache は RAM の土台に要らない（167MB あった）
-        echo "tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' --exclude='home/*/git' --exclude='home/*/.local' --exclude='home/*/.cache' [e-h]* root srv usr var | tar xfp - -C /tmp/loop1.$TMP_LABEL"
-        tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' --exclude='home/*/git' --exclude='home/*/.local' --exclude='home/*/.cache' [e-h]* root srv usr var | tar xfp - -C /tmp/loop1.$TMP_LABEL 2>/tmp/error.$TMP_LABEL
+        # usr/src/nvidia-*: dkms が組み立てる元（約30MB）。組み立ては SSD でするので、RAMDISK には要らない
+        echo "tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' --exclude='usr/src/nvidia-*' --exclude='home/*/git' --exclude='home/*/.local' --exclude='home/*/.cache' [e-h]* root srv usr var | tar xfp - -C /tmp/loop1.$TMP_LABEL"
+        tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' --exclude='usr/src/nvidia-*' --exclude='home/*/git' --exclude='home/*/.local' --exclude='home/*/.cache' [e-h]* root srv usr var | tar xfp - -C /tmp/loop1.$TMP_LABEL 2>/tmp/error.$TMP_LABEL
         if [ -s /tmp/error.$TMP_LABEL ]; then
             echo "$1: `cat /tmp/error.$TMP_LABEL` : $LINENO" | tee -a /tmp/log.$TMP_LABEL
             cd /opt

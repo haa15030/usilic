@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1396. **src/U_proto.sh・src/python: UbuntuでNVIDIAの純正ドライバ(カーネル側)をBASEに、dkmsで作ったカーネル向けに組み立て(2026-11-24)**
+   - 経緯: Z390UD・RTX3050(GA107)で、8GB-GNOME-LiveのGNOMEの設定に出力デバイス(HDMI/DP、LG HDR WQHD)は出るのに鳴らなかった。Ubuntu 26.10のlive、Debian 13(6.12.117+8gb)でも、PipeWireを止めて`speaker-test -D hdmi:CARD=NVidia,DEV=0〜3`でも鳴らず、nouveauの限界と判断(FreeBSD(純正ドライバ)では鳴った)。SSDでnvidia-driver-580-open(dkms)を入れると、generic・7.3.1+8gbのどちらでもDEV=0で鳴った。
+   - 変更: 設定NVIDIA_LIST(Ubuntuは"nvidia-dkms-580-open"、Debianは"")とNVIDIA_NOUVEAU_FW("linux-firmware-nvidia-graphics"、nouveau用のGSP約106MB)。`_nvidia_base`: NVIDIAのGPU(PCIのベンダー0x10de)がある時、NVIDIA_LISTがBASE.uに無ければ、BASE.uへ戻してから`--no-install-recommends`で入れ、nouveau用のfirmwareを外し、その状態をBASE.uに(前のはBASE.u.bak。依存のdkms・gcc等もBASE.uに載るので、TEMPLATEの前の「BASE.u -p」で外れない)。`_nvidia_module`: `_update_base`でRAM-*-base.gzを作る前に`dkms autoinstall -k 作ったカーネル`(ヘッダが無ければ/optのlinux-headersの.debを入れる)、nvidia.koができなければログへ。/lib/modulesごと土台に写る。TEMPLATEからusr/src/nvidia-*(dkmsの元、約30MB)を外す。画面の描画のライブラリ(libnvidia-gl・libnvidia-compute等、約900MB)は入れない(nvidia-drmの上でMesaのソフト描画になる見込み、要確認)。nouveauを止める設定はnvidia-kernel-commonに入っているはず(要確認)。Python版も同じ(update.pyの`nvidia_base`、kernel.pyの`nvidia_module`)。
+   - 注意: -uは今の環境の時、SSDに手で入れたnvidia-driver-580-open(描画のライブラリ込み)・alsa-utilsはBASE.u -pで外れる。TEMPLATE-*-base.gz・RAM-*-base.gzを消してから-uで作り直す。
+
 1395. **src/U_sh.txt: よそで作った記録(live環境等)を-o -iで足す時の注意(2026-11-24)**
    - 26.10のインストールUSBのlive環境の記録を8GB-GNOME-Liveで`-o 〜 -i`したら、snapd・thunderbirdで止まり(項目1393・1394で除くように)、RAMDISKも99%になった。ユーザー指摘「試すヤツ絶対いる」で、live環境とそっくり同じにはならない(snap系は外れる)こと、8GBでは溢れること、欲しいものはDESKTOP_LISTの「,」か個別にapt-get、溢れたら再起動で戻ることを⑧として補足。
 
