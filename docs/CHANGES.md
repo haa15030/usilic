@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1393. **src/U_proto.sh・src/python: -o 記録 -iで、インストール候補の無いものを先に除く(2026-11-24)**
+   - 症状: 26.10のlive環境の記録(.u)を8GB-GNOME-Liveで`-o 〜 -i`したら、「E: パッケージ 'snapd' にはインストール候補がありません」の後、止まったようになった。
+   - 原因: snapdは`_no_snap_ubuntu`のPin(-10)で止めているので候補が無い。1つでも候補の無いものがあるとapt-getが全体で止まり、その後の「1つずつ入れる」が何百ものパッケージを黙って(出力を捨てて)1回ずつapt-getしていた。
+   - 修正: `LC_ALL=C apt-cache policy`で「Candidate: (none)」のもの・どこにも無いものを先に除き、ログへ「-o 〜 -i: no candidate: 〜」と残す。残りを一括で入れ、それでも止まった時の1つずつは、何を入れているか表示する。Python版(packages.pyの`with_candidate`)も同じ。
+
 1392. **src/U_proto.sh・src/python: Ubuntuで、イメージを展開した後と-dの「Start … now?」の後にnetplan apply(2026-11-24)**
    - 直接のユーザーの話: 8GB-GNOME-Live(推奨込み、RAMDISKの62%、「Ubuntu 26.10 へようこそ!」・アイコン25個)を`-d`の「Start 8GB-GNOME-Live now?」で始めたら、`ip a`でenp5s0のIPアドレスが無くなった。「network-managerが入ったから？」
    - 原因(見立て): 推奨でnetwork-managerが入り、`_desktop_ubuntu`がnetplanのレンダラをNetworkManagerにする(90-U-network-manager.yaml)が、反映は`netplan generate`だけで「次の起動の時」の扱いだった。その場で始める時も、-rでイメージを展開した時も`netplan apply`していないので、networkdが持っていたenp5s0とNetworkManagerの受け渡しができなかった。推奨なしのGNOMEにはnetwork-managerが入らないので起きなかった。

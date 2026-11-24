@@ -1196,10 +1196,26 @@ _output_u() {
 	_diff="diff -ru /tmp/current.$TMP_LABEL /opt/$1"
 	if [ "`$_diff`" ]; then
 	    _pkgs=`echo "$_diff | $_to_u | tr '\n' ' '" | sh`
-	    echo "apt-get install -y $_pkgs"
-	    if ! apt-get install -y $_pkgs; then # 無くなったパッケージ等で全体が止まったら、1つずつ入れる
+	    # 入れられないもの（インストール候補が無い: 別の版の記録にしか無い、snapd のように Pin で止めている等）は
+	    # 先に除く。1つでもあると apt-get が全体で止まり、1つずつ入れ直すことになって何百回もかかる
+	    _ok=`LC_ALL=C apt-cache policy $_pkgs 2>/dev/null | awk '/^[^ ]/ {sub(/:$/, ""); p=$0} /^  Candidate:/ && $2 != "(none)" {print p}'`
+	    if [ "$_ok" ]; then
+		_none=""
 		for _pkg in $_pkgs
 		do
+		    echo "$_ok" | grep -qx -e "$_pkg" -e "$_pkg:amd64" || _none="$_none $_pkg"
+		done
+		if [ "$_none" ]; then
+		    echo "-o $1 -i: no candidate:$_none : $_lineno" >> /tmp/log.$TMP_LABEL
+		    echo "no candidate:$_none"
+		fi
+		_pkgs=`echo $_ok`
+	    fi
+	    echo "apt-get install -y $_pkgs"
+	    if ! apt-get install -y $_pkgs; then # それでも全体が止まったら、1つずつ入れる
+		for _pkg in $_pkgs
+		do
+		    echo "apt-get install -y $_pkg"
 		    apt-get install -y $_pkg > /dev/null 2>&1 || echo "$_pkg: not installed. : $LINENO" >> /tmp/log.$TMP_LABEL
 		done
 	    fi

@@ -93,13 +93,37 @@ def install_from(env, log, record_name, out):
     packages = added(current_lines(system), record)
     if not packages:
         return False
+    # 入れられないもの(インストール候補が無い: 別の版の記録にしか無い、snapdのようにPinで止めている等)は先に除く。
+    # 1つでもあるとapt-getが全体で止まり、1つずつ入れ直すことになって何百回もかかる
+    ok = with_candidate(system, packages)
+    if ok:
+        none = [p for p in packages if p not in ok and p + ':amd64' not in ok]
+        if none:
+            log.add('-o %s -i: no candidate: %s' % (record_name, ' '.join(none)))
+            out('no candidate: ' + ' '.join(none))
+        packages = [p for p in packages if p not in none]
+        if not packages:
+            return False
     out('apt-get install -y ' + ' '.join(packages))
     code = system.stream(['apt-get', 'install', '-y'] + packages, out)
-    if code != 0:
+    if code != 0:  # それでも全体が止まったら、1つずつ
         for p in packages:
+            out('apt-get install -y ' + p)
             if system.run(['apt-get', 'install', '-y', p])[0] != 0:
                 log.add('%s: not installed.' % p)
     return True
+
+
+def with_candidate(system, packages):
+    """apt-cache policyでインストール候補のあるもの(名前の集合)。分からなければ空。"""
+    ok = set()
+    name = None
+    for line in system.run(['env', 'LC_ALL=C', 'apt-cache', 'policy'] + packages)[1].splitlines():
+        if line and not line[0].isspace():
+            name = line.rstrip().rstrip(':')
+        elif name and line.strip().startswith('Candidate:') and line.split()[1:2] != ['(none)']:
+            ok.add(name)
+    return ok
 
 
 def output_u(env, log, args, out):
