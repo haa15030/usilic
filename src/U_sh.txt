@@ -167,6 +167,11 @@ U.sh は何十年分の GNU の動きを前提に書いてあるので、Ubuntu 
 uutils のままにするなら、U.sh の GNU_COREUTILS を "" にします。
 既に DEBIAN.u を記録した後で入れ替えた時は、DEBIAN.u の coreutils-from-uutils の行も coreutils-from-gnu に直します（直さないと、DEBIAN.u へ戻す時に GNU 版を外そうとします）。#
 #
+⑧ よそで作った記録（例: Ubuntu のインストール USB の live 環境で "dpkg --get-selections" したもの）も -o 名前.u -i で足せますが、live 環境とそっくり同じにはなりません。
+U.sh は snapd を入れない（NO_SNAP）ので、snapd と、snap へ移るための入れ物の deb（firefox・thunderbird 等）は「no candidate」「unsatisfiable」として外し、ログに残します。
+また live 環境の記録は、使わないもの（thunderbird・zfs・各国語の辞書等）も含めてとても大きく、8GB の RAMDISK では GNOME-Live（62%）から足していく途中で 99% になりました。
+入れたいものがあれば、DESKTOP_LIST に「,」で足すか、そのパッケージだけ apt-get install します（RAMDISK で溢れた時は、再起動すれば ?GB-名前.img の状態に戻ります）。#
+#
 ファイル⊥㊿#
 ⑦  /opt/U.sh㊿ : ⑲本体㊿#
 ⑦  /usr/local/bin/usilic-py㊿ : ⑲Python 版の usilic（^J^R の RESCUE）㊿#

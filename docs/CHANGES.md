@@ -33408,6 +33408,9 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1395. **src/U_sh.txt: よそで作った記録(live環境等)を-o -iで足す時の注意(2026-11-24)**
+   - 26.10のインストールUSBのlive環境の記録を8GB-GNOME-Liveで`-o 〜 -i`したら、snapd・thunderbirdで止まり(項目1393・1394で除くように)、RAMDISKも99%になった。ユーザー指摘「試すヤツ絶対いる」で、live環境とそっくり同じにはならない(snap系は外れる)こと、8GBでは溢れること、欲しいものはDESKTOP_LISTの「,」か個別にapt-get、溢れたら再起動で戻ることを⑧として補足。
+
 1394. **src/U_proto.sh・src/python: -o 記録 -iで、依存を満たせないもの(snapdを要するthunderbird等)も先に除く(2026-11-24)**
    - 症状: 項目1393でsnapdは外れたが、26.10のlive環境の記録にあるthunderbird(snapへ移る移行用deb)が「先行依存: snapd」で満たせず、apt-getが全体で止まって1つずつに落ちた。
    - 修正: 一括で入れる前に`LC_ALL=C apt-get install -s`(試すだけ)を流し、「 名前 : Depends: 〜」の行の名前を外して満たせるまで繰り返す(10回まで)。外したものは「unsatisfiable: 〜」としてログへ。原因が記録に無いもの(依存で入るもの)の時は外せないので、従来どおり1つずつへ。Python版も同じ。
