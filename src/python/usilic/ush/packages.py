@@ -102,8 +102,21 @@ def install_from(env, log, record_name, out):
             log.add('-o %s -i: no candidate: %s' % (record_name, ' '.join(none)))
             out('no candidate: ' + ' '.join(none))
         packages = [p for p in packages if p not in none]
+    # 候補はあっても依存を満たせないもの(thunderbirdのようなsnapへ移る移行用debはsnapdを要する)も除く。apt-get -s
+    # (試すだけ)の「 名前 : Depends: 〜」の名前を外して、満たせるまで(記録に無いものが原因なら諦めて1つずつへ)
+    for _ in range(10):
         if not packages:
-            return False
+            break
+        text = system.run(['env', 'LC_ALL=C', 'apt-get', 'install', '-s', '-y'] + packages)[1]
+        bad = sorted(set(m.group(1) for m in re.finditer(r'^ (\S+) : ', text, re.M)))
+        left = [p for p in packages if p not in bad]
+        if not bad or left == packages:
+            break
+        log.add('-o %s -i: unsatisfiable: %s' % (record_name, ' '.join(bad)))
+        out('unsatisfiable: ' + ' '.join(bad))
+        packages = left
+    if not packages:
+        return False
     out('apt-get install -y ' + ' '.join(packages))
     code = system.stream(['apt-get', 'install', '-y'] + packages, out)
     if code != 0:  # それでも全体が止まったら、1つずつ

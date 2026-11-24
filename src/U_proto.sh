@@ -1211,6 +1211,26 @@ _output_u() {
 		fi
 		_pkgs=`echo $_ok`
 	    fi
+	    # 候補はあっても依存を満たせないもの（thunderbird のような snap へ移る移行用 deb は snapd を要する）も除く。
+	    # apt-get -s（試すだけ）の「 名前 : Depends: 〜」の名前を外して、満たせるまで（記録に無いものが原因なら諦めて1つずつへ）
+	    _try=0
+	    while [ "$_pkgs" ] && [ "$_try" -lt 10 ]
+	    do
+		_bad=`LC_ALL=C apt-get install -s -y $_pkgs 2>&1 | awk '/^ [^ ]+ : / {print $1}' | sort -u`
+		_left=""
+		for _pkg in $_pkgs
+		do
+		    echo "$_bad" | grep -qx -e "$_pkg" || _left="$_left $_pkg"
+		done
+		_left=`echo $_left`
+		if [ ! "$_bad" ] || [ "$_left" = "$_pkgs" ]; then
+		    break
+		fi
+		echo "-o $1 -i: unsatisfiable:" $_bad ": $_lineno" >> /tmp/log.$TMP_LABEL
+		echo "unsatisfiable:" $_bad
+		_pkgs=$_left
+		_try=$((_try+1))
+	    done
 	    echo "apt-get install -y $_pkgs"
 	    if ! apt-get install -y $_pkgs; then # それでも全体が止まったら、1つずつ入れる
 		for _pkg in $_pkgs
