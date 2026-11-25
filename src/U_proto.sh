@@ -455,7 +455,9 @@ if [ "$ON_UBUNTU" ]; then
     readonly DESKTOP_LIST="ubuntu-desktop-minimal,fonts-ubuntu:GNOME xubuntu-core:Xfce kubuntu-desktop:KDE-Plasma lubuntu-desktop:LXQt ubuntu-mate-core:MATE ubuntucinnamon-desktop:Cinnamon"
     readonly DESKTOP_APT_OPT="" # 推奨パッケージを入れないなら "--no-install-recommends"
     JP_LIST="language-pack-ja language-pack-gnome-ja fcitx5-mozc fonts-noto-cjk"
-    BASE_LIST="arch-install-scripts gdisk dosfstools grub-pc-bin grub-efi-amd64-bin git" # 必要なら "linux-firmware" も（1GB前後あるので RAMDISK 容量に注意）
+    # bsdutils（script・logger 等、2026-11-25、直接のユーザー依頼）: Ubuntu 26.10 の 16GB-base に script が無かった
+    # （Debian では必須（Essential）で最初から入っている。Ubuntu では ubuntu-standard 等が引き込むだけ）
+    BASE_LIST="arch-install-scripts gdisk dosfstools grub-pc-bin grub-efi-amd64-bin git bsdutils" # 必要なら "linux-firmware" も（1GB前後あるので RAMDISK 容量に注意）
     # -u で BASE.u を記録する前に外すもの（Ubuntu Server が最初から入れる、RAMDISK では要らないもの。RAM-*-base.gz が
     # Debian の倍以上（1.4GB）になった）。クラウド・コンテナ・snap、自動の更新・報告、SAN、開発・解析用、カーネルのメタ
     # （linux-generic: firmware を選んで外すため。U.sh はカーネルを自分で作る）、携帯端末・サーバーの NIC 用の firmware。

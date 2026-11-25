@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1419. **src/U_proto.sh: UbuntuのBASE_LISTにbsdutils(script)を足す(2026-11-25)**
+   - 経緯: Ubuntu 26.10の16GB-baseにscriptが無かった(-dの記録を取ろうとした)。apt-fileで探すとbsdutils。Debianでは必須(Essential)で最初から入っているが、UbuntuのBASE(Ubuntu Serverから要らないものを外した土台)には無く、-dが入れる「標準」(ubuntu-standard、16GB-baseでは73個増える)が引き込んでいた。ユーザー判断: ubuntu-standardをまるごとBASEに入れるのではなく、scriptだけ。
+   - 変更: UbuntuのBASE_LISTにbsdutilsを足した(次の-uから。今の土台は手でapt-get install bsdutils)。
+
 1418. **src/U_proto.sh・src/python: Ubuntuの-dは推奨のパッケージも入れる(DESKTOP_APT_OPT="")、Cinnamon(ubuntucinnamon-desktop)を足す(2026-11-25)**
    - 経緯: 推奨を入れない16GB-KDE-Plasmaには、konsole・ファイルマネージャ・メディアプレーヤーが無かった(xfeを入れ、^T^Tはxtermになった、項目1416)。ユーザーの依頼: -dのリストは推奨を既定に、"推奨を既定にした一覧で、もう一度やってみる"。あわせて、Cinnamonは無いのか。
    - 変更: DESKTOP_APT_OPTを""(推奨も入れる、Python版の既定も)。GNOMEの「,」で足していたptyxis・nautilus・gnome-text-editor・pipewire-audio(どれも推奨で入る)を外し、fonts-ubuntu(項目1398、端末の字間)は残した。DESKTOP_LISTにUbuntuの公式フレーバーUbuntu Cinnamonの`ubuntucinnamon-desktop:Cinnamon`を足した(26.10に候補があるかは実機で)。U_sh.txtの-dの節も。推奨を入れないならDESKTOP_APT_OPT="--no-install-recommends"(その時は先頭の「+」の項目だけ推奨も)。
