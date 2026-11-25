@@ -33408,6 +33408,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1411. **src/U_proto.sh・src/python: -dの一覧の括弧は主のパッケージだけ(GNOME-Liveはubuntu-desktop-fullset)、保存先に(new)・(already exists: overwrite)(2026-11-25)**
+   - 経緯: 16GB-baseで`. U -d`→2)GNOME-Liveで`-> /mnt/ntfs/img.ubuntu/16GB-GNOME-Live.img`と出たのはなぜか(-sで作った16GB-GNOME_live.imgとは名前が違い、一覧の[image in STRAGE]にも出ていなかった)。ユーザーの依頼: 既にあるときはそれが出る、との補足を。また、`1)GNOME (ubuntu-desktop-minimal,ptyxis,nautilus,gnome-text-editor,pipewire-audio,fonts-ubuntu)`・`2)GNOME-Live (+ubuntu-desktop-minimal)`では、知らない人には1)の方がたくさん含まれているような印象を与えるので、`ubuntu-desktop-minimal`・`ubuntu-desktop-fullset`のように。
+   - 変更:
+     - 一覧の括弧の中は主のパッケージ(「,」の前)だけ。「+」(推奨も入れる)は、-minimalなら-fullsetに(それ以外は「名前 +recommends」)。名前(GNOME・GNOME-Live)はイメージの名前(?GB-名前.img)なので変えない。見出しは`[image already in STRAGE]`。
+     - 選んだ後の保存先`-> 〜.img`に、既にあれば`(already exists: overwrite)`、無ければ`(new)`を添える。
+     - Python版はdesktop.pyの`desktop_label()`。U_sh.txtの-dの節に、一覧の[]・保存先の添え書き・-sの名前とは別のイメージになること・GNOMEとGNOME-Liveの違いを足した。
+
 1410. **src/U_proto.sh・src/cpp: Linuxのusilicが使うツールにmpvを足す(2026-11-25)**
    - 経緯: 16GB-GNOME_live(-dのGNOME-Live)で、既定の動画プレイヤーが`"H.264 (Main Profile) decoder" codecs are required to play this video.`と出し、「Install Plugin」を押しても「Installing...」のまま何も起きなかった。mpvを入れたら再生できた。ユーザーの依頼: Linux版usilicの必須アプリにmpvを。
    - 変更: U.shのUSILIC_TOOLS(-r・-dでusilicを入れる時に無ければ入れる)と、usilicの最初の起動で案内するもの(app/main.cppのLinuxの一覧)にmpvを足した。macOS・MSYS2・FreeBSDの一覧は変えない。docs/BUILD.mdは前からmpvを入れている。Python版はUSILIC_TOOLSをU.shから読むので同じ。

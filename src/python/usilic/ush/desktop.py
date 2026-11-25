@@ -143,6 +143,15 @@ def netplan_nm(env, on, out):
     system.run(['netplan', 'generate'])  # 反映は次の起動の時(インストール中の接続は切らない)
 
 
+def desktop_label(task):
+    """-dの一覧の括弧の中: 主のパッケージだけ(2026-11-25、直接のユーザー指摘: GNOMEの「,」で足した端末等まで並べると、
+    推奨も入れる「+」のGNOME-Liveより中身が多いように見える)。「+」は推奨も入れる(-minimalなら-fullsetと)。"""
+    label = task.lstrip('+').split(',')[0]
+    if task.startswith('+'):
+        label = label[:-len('-minimal')] + '-fullset' if label.endswith('-minimal') else label + ' +recommends'
+    return label
+
+
 def desktop_ubuntu(env, on, out):
     """_desktop_ubuntu(): デスクトップを入れた後の設定(on)・BASEへ戻した後の後始末(off)。"""
     system = env.system
@@ -313,11 +322,11 @@ def desktop_select(env, log, option, ask, out):
     if not items:
         log.add('%s: No desktop list.' % option)
         return
-    out(' No)NAME (package) [image in STRAGE]')
+    out(' No)NAME (package) [image already in STRAGE]')
     for i, (task, name) in enumerate(items, 1):
         image = '%s/%dGB-%s.img' % (env.opt_dir(strage), env.ramdisk_gb, name)
         shown = ' [%dGB-%s.img]' % (env.ramdisk_gb, name) if system.exists(image) else ''
-        out(' %d)%s (%s)%s' % (i, name, task, shown))
+        out(' %d)%s (%s)%s' % (i, name, desktop_label(task), shown))
     out('  )<EXIT>')
     chosen = []
     for word in ask("Input No (e.g. '2' or '2 5'):").split():
@@ -330,7 +339,8 @@ def desktop_select(env, log, option, ask, out):
         return
     out('')
     for task, name in chosen:
-        out('-> %s/%dGB-%s.img' % (env.opt_dir(strage), env.ramdisk_gb, name))
+        image = '%s/%dGB-%s.img' % (env.opt_dir(strage), env.ramdisk_gb, name)
+        out('-> %s %s' % (image, '(already exists: overwrite)' if system.exists(image) else '(new)'))
     if origin:
         out('(%s -> BASE.u: the desktop stops now)' % origin)
     if ask('Install and save? (Y/N): ', 'N').strip() not in ('Y', 'y'):

@@ -1760,14 +1760,21 @@ desktop_select() { # -d)
         echo "$1: No desktop list. : $LINENO" >> /tmp/log.$TMP_LABEL
         return
     fi
-    echo " No)NAME (package) [image in STRAGE]"
+    echo " No)NAME (package) [image already in STRAGE]"
     _n=1
     while read _task _name
     do
+        # 括弧の中は主のパッケージだけ（2026-11-25、直接のユーザー指摘: GNOME の「,」で足した端末等まで並べると、
+        # 推奨も入れる「+」の GNOME-Live より中身が多いように見える）。「+」は推奨も入れる（-minimal なら -fullset と）
+        _label=`echo ${_task#+} | sed -e 's/,.*//'`
+        case "$_task" in
+            +*-minimal|+*-minimal,*) _label=`echo $_label | sed -e 's/-minimal$/-fullset/'` ;;
+            +*) _label="$_label +recommends" ;;
+        esac
         if [ -f $strage_opt/${RAMDISK_GB}GB-$_name.img ]; then
-            echo " $_n)$_name ($_task) [${RAMDISK_GB}GB-$_name.img]"
+            echo " $_n)$_name ($_label) [${RAMDISK_GB}GB-$_name.img]"
         else
-            echo " $_n)$_name ($_task)"
+            echo " $_n)$_name ($_label)"
         fi
         _n=$((_n+1))
     done < $_list
@@ -1791,7 +1798,11 @@ desktop_select() { # -d)
     echo
     for _line in $_pairs
     do
-        echo "-> $strage_opt/${RAMDISK_GB}GB-${_line#*:}.img"
+        if [ -f $strage_opt/${RAMDISK_GB}GB-${_line#*:}.img ]; then # 既にあれば上書き（一覧の [] に出ているもの）
+            echo "-> $strage_opt/${RAMDISK_GB}GB-${_line#*:}.img (already exists: overwrite)"
+        else
+            echo "-> $strage_opt/${RAMDISK_GB}GB-${_line#*:}.img (new)"
+        fi
     done
     if [ "$_from" ]; then
         echo "($_from -> BASE.u: the desktop stops now)"
