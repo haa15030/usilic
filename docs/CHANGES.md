@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1408. **src/U_proto.sh・src/python: -o -iの「候補無し」の判定で:amd64付きの名前を取り違えていた(2026-11-25)**
+   - 経緯: 16GB-baseで8GB-GNOME_live.uを`-o -i`した結果のcurrent.uが24,214バイト(記録は35,911)で、記録にあって入らなかったものが577件。U.logには、`no candidate: bind9-libs:amd64 dconf-gsettings-backend:amd64 gir1.2-…:amd64 …`と、それに依存するaccountsservice・gdm3・firefox等の`unsatisfiable`が並んでいた。
+   - 原因: `apt-cache policy bind9-libs:amd64`の見出しは`bind9-libs:`(元のアーキテクチャは名前に付かない)。項目1393の照合は「名前」か「名前:amd64」だけを見ていたので、:amd64付きで記録されたもの(Multi-Arch: sameのライブラリ)がすべて候補無しになり、それらを要するものも依存を満たせないとして外れた。
+   - 変更: `${_pkg%:amd64}`(Python版は`p.split(':')[0]`)とも照合する。
+
 1407. **src/U_proto.sh・src/python: -o -iは設定の問いを出さずに既定で答える、kdump-toolsは無効と先に答える(2026-11-25)**
    - 経緯: 16GB-RAMDISKで8GB-GNOME_live.uを`-o -i`すると、`Configuring kdump-tools`の説明の後で止まった。ダイアログを出すものが無いのでReadlineの問いになり、プロンプトも出ない(Enterを押すとy/nの問いが出た、ユーザーはno)。liveの記録にはインストーラが入れるkdump-toolsもある。
    - 変更: `-o -i`のapt-get install(まとめても1つずつでも)を`DEBIAN_FRONTEND=noninteractive`で。kdump-toolsは既定が有効(起動時に`crashkernel=`でメモリを予約する)ので、その前に`kdump-tools kdump-tools/use_kdump boolean false`をdebconf-set-selectionsへ。Python版(packages.py)も同じ。

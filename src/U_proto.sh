@@ -1248,7 +1248,9 @@ _output_u() {
 		_none=""
 		for _pkg in $_pkgs
 		do
-		    echo "$_ok" | grep -qx -e "$_pkg" -e "$_pkg:amd64" || _none="$_none $_pkg"
+		    # apt-cache policy は bind9-libs:amd64 を「bind9-libs:」と答える（2026-11-25、:amd64 付きを全部「候補無し」とし、
+		    # それに依存する gdm3・firefox 等も「unsatisfiable」で外れて、live の記録の577件が入らなかった）
+		    echo "$_ok" | grep -qx -e "$_pkg" -e "$_pkg:amd64" -e "${_pkg%:amd64}" || _none="$_none $_pkg"
 		done
 		if [ "$_none" ]; then
 		    echo "-o $1 -i: no candidate:$_none : $_lineno" >> /tmp/log.$TMP_LABEL

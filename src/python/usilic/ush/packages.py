@@ -97,7 +97,9 @@ def install_from(env, log, record_name, out):
     # 1つでもあるとapt-getが全体で止まり、1つずつ入れ直すことになって何百回もかかる
     ok = with_candidate(system, packages)
     if ok:
-        none = [p for p in packages if p not in ok and p + ':amd64' not in ok]
+        # apt-cache policyはbind9-libs:amd64を「bind9-libs:」と答える(2026-11-25、:amd64付きを全部「候補無し」とし、
+        # それに依存するgdm3・firefox等も「unsatisfiable」で外れて、liveの記録の577件が入らなかった)
+        none = [p for p in packages if p not in ok and p + ':amd64' not in ok and p.split(':')[0] not in ok]
         if none:
             log.add('-o %s -i: no candidate: %s' % (record_name, ' '.join(none)))
             out('no candidate: ' + ' '.join(none))
