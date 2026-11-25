@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1404. **src/cpp: アイコンからの起動の色を-gと別の組に(2026-11-25)**
+   - 症状: GNOMEの端末でusilic -gをすると(アイコン版は消えて)端末に合わせた黒地の窓、その後アイコン版を起動すると(-g側は消えるのはいい)アイコン版の背景も黒になった。ユーザー依頼「アイコン版の設定はhistoryを除き-gとは独立して欲しいので色も同じく引き継がないように」。
+   - 原因: 2026-10-22のアイコンからの起動の組(History::setIconLaunch()、iconGuiPreferences_)はフォントの大きさ・行数桁数・フォント・行間・字間だけで、色は-gと共通(2026-10-16の「usilic.appでも最後に-gした時の色で」の名残り)。-gの終わりに保存した端末の黒が、アイコン版の起動(tryEnterGuiPhase()のsavedGui.hasColors)で使われていた。
+   - 修正: copyIconGuiFields()に色(hasColors・fg・bg)も。~/.usilic/historyのUSILICの行の末尾(40〜46番目)にアイコンの組の色。無ければ色の保存無し(最初の起動と同じ白地に黒)。test_history.cppに「an icon launch keeps its own colors apart from -g」、前のテストの「色は共通」を「色も別」に。
+
 1403. **src/cpp: ^T^Tで今のディレクトリに端末の新しいウィンドウを開く(K-156)(2026-11-25)**
    - 経緯: ユーザー提案「GNOME等のデスクトップで急な作業をした時、usilicのSHELLは使えるがエディタがその場で使えないのがもどかしい。^Tが別のウィンドウの起動・切り替えに使われているので^T^T(erminal)一発で端末を」。全デスクトップにある端末は? → Debian・Ubuntuの共通の名前x-terminal-emulator(各デスクトップの端末が入る時にalternativesに登録する)。
    - 変更: `launchTerminalWindow()`(^Tの後の^T、leaderTPending_)。DISPLAYかWAYLAND_DISPLAYがある時、x-terminal-emulator、無ければptyxis(--new-window)・gnome-terminal・konsole・xfce4-terminal・qterminal・mate-terminal・lxterminal、最後にxterm(既定の字が小さいので-fa Monospace -fs 12)の最初に見つかったものを、今の(ls)のディレクトリで`nohup … &`(USILIC・USILIC_HANDOFF・USILIC_TRANSIENTは渡さない)。画面が無い・端末が無い・macOS/Windowsは知らせだけ。キーの表にK-156「C-t C-t」、src/usilicrc・usilicrc.enのKEY節にも。HELP原稿(src/HELP_.txt・HELP_en_.txt)の^Tn/^Tpの所に追記(未追跡のファイル)。

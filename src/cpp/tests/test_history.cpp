@@ -500,7 +500,31 @@ TEST_CASE("an icon launch keeps its own font size and letter spacing apart from 
   History::setIconLaunch(true);
   CHECK(loaded.guiPreferences().fontPointSize == 20);
   CHECK(loaded.guiPreferences().letterSpacingExtraHorizontal == 3);
-  CHECK(loaded.guiPreferences().fgR == 200);  // 色は共通
+  CHECK(!loaded.guiPreferences().hasColors);  // 色も-gとは別(2026-11-25、アイコンの組には色の保存がまだ無い)
+  History::setIconLaunch(false);
+  CHECK(loaded.guiPreferences().fgR == 200);
+}
+
+// 2026-11-25(copyIconGuiFields()参照): アイコンからの起動の色は-gの色と別に保存し、読み直しても混ざらない。
+TEST_CASE("an icon launch keeps its own colors apart from -g") {
+  History h(10);
+  History::GuiPreferences g;
+  g.hasColors = true;
+  g.bgR = g.bgG = g.bgB = 0;  // -g: 端末の黒
+  h.setGuiPreferences(g);
+  History::setIconLaunch(true);
+  History::GuiPreferences icon = h.guiPreferences();
+  CHECK(!icon.hasColors);
+  icon.hasColors = true;
+  icon.bgR = icon.bgG = icon.bgB = 255;  // アイコン: 白
+  h.setGuiPreferences(icon);
+  History::setIconLaunch(false);
+  History loaded(10);
+  REQUIRE(loaded.loadHistoryText(h.serialize("usilic", "Mon Jan  1 00:00:00 2026"), false));
+  CHECK(loaded.guiPreferences().bgR == 0);
+  History::setIconLaunch(true);
+  CHECK(loaded.guiPreferences().hasColors);
+  CHECK(loaded.guiPreferences().bgR == 255);
   History::setIconLaunch(false);
 }
 

@@ -421,6 +421,15 @@ void copyIconGuiFields(const History::GuiPreferences &from, History::GuiPreferen
   to.lineHeightExtraVertical = from.lineHeightExtraVertical;
   to.letterSpacingExtraHorizontal = from.letterSpacingExtraHorizontal;
   to.letterSpacingExtraVertical = from.letterSpacingExtraVertical;
+  // 2026-11-25、直接のユーザー依頼("アイコン版の設定はhistoryを除き-gとは独立して欲しいので色も同じく引き継がない
+  // ように"、GNOMEの端末でusilic -gの後にアイコン版を起動すると、アイコン側の背景も端末の黒になった): 色も別の組に。
+  to.hasColors = from.hasColors;
+  to.fgR = from.fgR;
+  to.fgG = from.fgG;
+  to.fgB = from.fgB;
+  to.bgR = from.bgR;
+  to.bgG = from.bgG;
+  to.bgB = from.bgB;
 }
 }  // namespace
 
@@ -705,6 +714,14 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     // アイコンからの起動の明朝体・ゴシック体(2026-11-03、serifFontPath()参照)――同じ理由でさらに末尾に。
     iconSerifFontPath_ = toks.size() > 39 ? decodeField(toks[38]) : serifFontPath_;
     iconSansSerifFontPath_ = toks.size() > 39 ? decodeField(toks[39]) : std::string();
+    // アイコンからの起動の色(2026-11-25、copyIconGuiFields()参照)――同じ理由でさらに末尾に。無ければ色の保存無し
+    // (最初の起動と同じ白地に黒。以前は-gの色を使っていた)。
+    iconGuiPreferences_.hasColors = toks.size() > 46 && std::atoi(toks[40].c_str()) != 0;
+    if (iconGuiPreferences_.hasColors) {
+      unsigned char *c[] = {&iconGuiPreferences_.fgR, &iconGuiPreferences_.fgG, &iconGuiPreferences_.fgB,
+                            &iconGuiPreferences_.bgR, &iconGuiPreferences_.bgG, &iconGuiPreferences_.bgB};
+      for (int k = 0; k < 6; k++) *c[k] = static_cast<unsigned char>(std::atoi(toks[41 + k].c_str()));
+    }
   }
 
   complete_ = (i < lines.size() && !lines[i].empty() && lines[i][0] == kSubEof);
@@ -800,7 +817,11 @@ std::string History::serialize(const std::string &programName, const std::string
          std::to_string(epubMargins_[1]) + " " + std::to_string(epubMargins_[2]) + " " + std::to_string(epubMargins_[3]) +
          " " + encodeField(serifFontPath_) + " " + encodeField(sansSerifFontPath_) + " " +
          std::to_string(iconEpubSansSerif_ ? 1 : 0) + " " + std::to_string(helpLanguage_) + " " +
-         encodeField(iconSerifFontPath_) + " " + encodeField(iconSansSerifFontPath_) + "\n";
+         encodeField(iconSerifFontPath_) + " " + encodeField(iconSansSerifFontPath_) + " " +
+         std::to_string(iconGuiPreferences_.hasColors ? 1 : 0) + " " + std::to_string(iconGuiPreferences_.fgR) + " " +
+         std::to_string(iconGuiPreferences_.fgG) + " " + std::to_string(iconGuiPreferences_.fgB) + " " +
+         std::to_string(iconGuiPreferences_.bgR) + " " + std::to_string(iconGuiPreferences_.bgG) + " " +
+         std::to_string(iconGuiPreferences_.bgB) + "\n";
   out += std::string(1, kSubEof) + "\n";
   return out;
 }
