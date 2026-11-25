@@ -183,7 +183,7 @@ class UshTest(unittest.TestCase):
     def test_o_install_and_names(self):
         system = fake(files={'/opt/JP.u': 'acl\t\t\t\nmozc\t\t\t\n'}, packages=['acl'])
         run(system, '-o', 'JP.u', '-i')
-        self.assertIn(['apt-get', 'install', '-y', 'mozc'], system.calls)
+        self.assertIn(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', 'install', '-y', 'mozc'], system.calls)
         run(system, '-o', '.')
         self.assertIn('/opt/8GB-base.u', system.files)
         run(system, '-o', 'foo')

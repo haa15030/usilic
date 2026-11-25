@@ -117,12 +117,17 @@ def install_from(env, log, record_name, out):
         packages = left
     if not packages:
         return False
+    # 設定の問い(debconf)は出さずに既定で答える。ダイアログが無いのでReadlineの問いになり、プロンプトも出ずに止まって
+    # 見える(2026-11-25、liveの記録のkdump-toolsの「既定で有効にするか」)。kdump-toolsは既定が有効(起動時に
+    # crashkernel=でメモリを予約する)なので、先に無効と答えておく
+    system.run(['sh', '-c', 'echo "kdump-tools kdump-tools/use_kdump boolean false" | debconf-set-selections'])
+    apt = ['env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', 'install', '-y']
     out('apt-get install -y ' + ' '.join(packages))
-    code = system.stream(['apt-get', 'install', '-y'] + packages, out)
+    code = system.stream(apt + packages, out)
     if code != 0:  # それでも全体が止まったら、1つずつ
         for p in packages:
             out('apt-get install -y ' + p)
-            if system.run(['apt-get', 'install', '-y', p])[0] != 0:
+            if system.run(apt + [p])[0] != 0:
                 log.add('%s: not installed.' % p)
     return True
 

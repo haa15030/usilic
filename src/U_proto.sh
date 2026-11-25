@@ -1276,12 +1276,16 @@ _output_u() {
 		_pkgs=$_left
 		_try=$((_try+1))
 	    done
+	    # 設定の問い（debconf）は出さずに既定で答える。ダイアログが無いので Readline の問いになり、プロンプトも出ずに
+	    # 止まって見える（2026-11-25、live の記録の kdump-tools の「既定で有効にするか」）。kdump-tools は既定が有効
+	    # （起動時に crashkernel= でメモリを予約する）なので、先に無効と答えておく
+	    echo "kdump-tools kdump-tools/use_kdump boolean false" | debconf-set-selections
 	    echo "apt-get install -y $_pkgs"
-	    if ! apt-get install -y $_pkgs; then # それでも全体が止まったら、1つずつ入れる
+	    if ! DEBIAN_FRONTEND=noninteractive apt-get install -y $_pkgs; then # それでも全体が止まったら、1つずつ入れる
 		for _pkg in $_pkgs
 		do
 		    echo "apt-get install -y $_pkg"
-		    apt-get install -y $_pkg > /dev/null 2>&1 || echo "$_pkg: not installed. : $LINENO" >> /tmp/log.$TMP_LABEL
+		    DEBIAN_FRONTEND=noninteractive apt-get install -y $_pkg > /dev/null 2>&1 || echo "$_pkg: not installed. : $LINENO" >> /tmp/log.$TMP_LABEL
 		done
 	    fi
 	    _u="current.u"

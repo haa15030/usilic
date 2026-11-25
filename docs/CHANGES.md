@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1407. **src/U_proto.sh・src/python: -o -iは設定の問いを出さずに既定で答える、kdump-toolsは無効と先に答える(2026-11-25)**
+   - 経緯: 16GB-RAMDISKで8GB-GNOME_live.uを`-o -i`すると、`Configuring kdump-tools`の説明の後で止まった。ダイアログを出すものが無いのでReadlineの問いになり、プロンプトも出ない(Enterを押すとy/nの問いが出た、ユーザーはno)。liveの記録にはインストーラが入れるkdump-toolsもある。
+   - 変更: `-o -i`のapt-get install(まとめても1つずつでも)を`DEBIAN_FRONTEND=noninteractive`で。kdump-toolsは既定が有効(起動時に`crashkernel=`でメモリを予約する)ので、その前に`kdump-tools kdump-tools/use_kdump boolean false`をdebconf-set-selectionsへ。Python版(packages.py)も同じ。
+
 1406. **src/U_proto.sh・src/python: Ubuntuのlinux-sourceの版をパッケージの依存から取る、展開に失敗したら-kを止める(2026-11-25)**
    - 経緯: 8GB-rescue(7.3.1+8gb)で`. U -k 16`→`Extracting linux-source-7.3.1.tar.bz2 ...`の後、make等がすべて`[Errno 2] No such file or directory: '/usr/src/linux-source-7.3.1'`で、何も作られずに最後まで進んだ。入ったのはlinux-source-7.3.0(7.3.0-11.12)。UbuntuのKERNEL_VERSIONをカーネル名(`7.3.1+8gb`→7.3.1、自作のカーネルの名前はMakefileのSUBLEVEL)から取っていたので、配布のカーネル(7.3.0-11-generic)以外ではパッケージの版とずれる。
    - 変更: UbuntuのKERNEL_VERSIONは`LC_ALL=C apt-cache depends linux-source`の`linux-source-X.Y.Z`から(取れなければ従来どおりカーネル名から)。Python版はU.shの設定をbashで読むので同じ値になる。あわせて、`cd /usr/src/$LINUX_SOURCE`できなければ/tmp/logに出して`_compile`を止める(Python版kernel.pyも)。
