@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1414. **src/U_proto.sh・src/python: -d・-rでusilicを入れた~/.local(と~/.config)がroot:rootになっていた(2026-11-25)**
+   - 経緯: 16GB-KDE(-d)でxfeを入れたら~/.localへ書き込めず、見るとroot:rootだった(usilic:usilicに直して起動)。
+   - 原因: `_put_usilic`はDEBIAN区画のusilic(.local/bin/usilic等のファイル)をtarで写すが、tarはファイルだけなので、途中のディレクトリ(.local・.local/bin・.local/share等)がrootで作られた。~/.configが無ければ、`mkdir -p ~/.config/autostart`も~/.configをrootで作る。
+   - 変更: tarの後に`chown -R $USR:$USR ~/.local`、autostartの前に`chown $USR:$USR ~/.config`。Python版(desktop.pyのput_usilic)も同じ。
+
 1413. **src/U_proto.sh・src/python・src/U_sh.txt: -dの一覧からGNOME-Live(+ubuntu-desktop-minimal)を外す(2026-11-25)**
    - 経緯: 項目1411で一覧の括弧をGNOME-Liveは`ubuntu-desktop-fullset`としたが、ユーザーの指摘: GNOME-Liveは-dのリストにあるわけだから体験版(fullset)にはならない。とするとfullsetはうそになるので、GNOME-Liveは削除でいい(体験版と同じものは、live環境の記録を-iで入れる、項目1412)。
    - 変更: DESKTOP_LISTから`+ubuntu-desktop-minimal:GNOME-Live`を外し、一覧の括弧の「+」の-minimal→-fullsetもやめた(「+」は「名前 +recommends」のまま、仕組みは残す)。U_sh.txtのGNOME-Liveの記述も直した。STRAGEに前に作った?GB-GNOME-Live.imgがあれば、-nではそのまま選べる(要らなければ手で消す)。

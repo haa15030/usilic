@@ -244,6 +244,9 @@ def put_usilic(env, log, option, out):
         present = [f for f in files if system.exists(src + '/' + f)]
         out('cd %s; tar cf - %s | tar xfp - -C %s' % (src, ' '.join(files), home))
         system.shell('tar cf - %s | tar xfp - -C %s' % (' '.join(present), home), cwd=src)
+        # tarはファイルだけを写すので、途中のディレクトリ(.local・.local/bin・.local/share等)はrootで作られる
+        # (2026-11-25、16GB-KDEでxfeが~/.localへ書けなかった)
+        system.run(['chown', '-R', '%s:%s' % (user, user), home + '/.local'])
         line = 'PATH=$HOME/.local/bin:$PATH; export PATH'
         for rc in ('.profile', '.bashrc'):
             text = system.read_text(home + '/' + rc) or ''
@@ -258,6 +261,7 @@ def put_usilic(env, log, option, out):
     if system.exists(desktop):
         system.makedirs(home + '/.config/autostart')
         system.run(['cp', desktop, home + '/.config/autostart'])
+        system.run(['chown', '%s:%s' % (user, user), home + '/.config'])  # 無ければmakedirsがrootで作る
         system.run(['chown', '-R', '%s:%s' % (user, user), home + '/.config/autostart'])
     tools = [t for t in env.conf('USILIC_TOOLS', '').split()
              if 'ok installed' not in system.output(['dpkg-query', '-W', '-f=${Status}', t])]

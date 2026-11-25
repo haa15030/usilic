@@ -1938,6 +1938,9 @@ _put_usilic() { # DEBIAN区画でビルドした usilic（~/.local）を RAMDISK
         cd $_src
         echo "cd $_src; tar cf - $_files | tar xfp - -C $_home"
         tar cf - `ls -d $_files 2>/dev/null` | tar xfp - -C $_home
+        # tar はファイルだけを写すので、途中のディレクトリ（.local・.local/bin・.local/share 等）は root で作られる
+        # （2026-11-25、16GB-KDE で xfe が ~/.local へ書けなかった）
+        chown -R $USR:$USR $_home/.local
         cd /opt
         for _rc in .profile .bashrc
         do
@@ -1953,6 +1956,7 @@ _put_usilic() { # DEBIAN区画でビルドした usilic（~/.local）を RAMDISK
     if [ -f $_home/.local/share/applications/usilic.desktop ]; then
         mkdir -p $_home/.config/autostart
         cp $_home/.local/share/applications/usilic.desktop $_home/.config/autostart
+        chown $USR:$USR $_home/.config # 無ければ mkdir -p が root で作る
         chown -R $USR:$USR $_home/.config/autostart
     fi
     for _i in $USILIC_TOOLS
