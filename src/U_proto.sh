@@ -772,13 +772,17 @@ _fs() { # mount・umount（$1 が数字なら行番号）。マウントでき�
     for _i in `seq 1 2`
     do
 	if [ -s /tmp/tmp.$TMP_LABEL ]; then
-	    echo "$_lineno`cat /tmp/tmp.$TMP_LABEL`"
+	    # 使用中（busy）で外せない umount は表に出さない（2026-11-25、直接のユーザー依頼: -V の子のシェルが
+	    # $MNT_DEBIAN の中にいる時に、そこから別のオプションを動かすと、終わりの umount $MNT_DEBIAN が busy になる）
+	    if [ "$_op" != "umount" ] || ! grep -q 'busy' /tmp/tmp.$TMP_LABEL; then
+		echo "$_lineno`cat /tmp/tmp.$TMP_LABEL`"
+	    fi
 	    break
 	fi
 	if ( [ "$_op" = "mount" ] && _is_mounted $_mount_point ) || ( [ "$_op" = "umount" ] && ! _is_mounted $_mount_point ); then
 	    break
 	fi
-	$_args > /tmp/tmp.$TMP_LABEL 2>&1
+	LC_ALL=C $_args > /tmp/tmp.$TMP_LABEL 2>&1 # busy を英語のまま見るため
 	sleep 1
     done
     cd - > /dev/null
@@ -1178,8 +1182,15 @@ _update_base() {
 
 _output_u() {
     local _u="." _diff _pkgs _pkg _try _prev
-    local _bar="dpkg --get-selections | \
-       grep -ve \
+    # 記録に載せないもの。-i・-p で記録（/opt/名前.u）を読む時も同じものを除く（2026-11-25、直接のユーザー指摘: live 環境で
+    # dpkg --get-selections した記録には linux-image・grub 等があり、除かないと -i で入れてしまう。あわせて「\tinstall」も消え、
+    # 今の記録と同じ形になる）。casper・ubiquity・ubuntu-desktop-bootstrap・ubuntu-desktop-provision は live 環境・インストーラのもの
+    local _filter="grep -ve \
+       deinstall$ -ve \
+       casper -ve \
+       ubiquity -ve \
+       ubuntu-desktop-bootstrap -ve \
+       ubuntu-desktop-provision -ve \
        deinstall$ -ve \
        efibootmgr -ve \
        grub -ve \
@@ -1203,6 +1214,7 @@ _output_u() {
        ^python3 -ve \
        ^libpython3 | \
        sed -e 's/\tinstall//' -e 's/\tpurge//'"
+    local _bar="dpkg --get-selections | $_filter"
     local _to_u="grep -v \
        ^+++ | \
        grep ^+ | \
@@ -1221,8 +1233,11 @@ _output_u() {
 	fi
     fi
     echo $_bar | sh > /tmp/current.$TMP_LABEL
+    if [ "$2" = "-p" ] || [ "$2" = "-i" ]; then
+	echo "cat /opt/$1 | $_filter" | sh > /tmp/record.$TMP_LABEL
+    fi
     if [ "$2" = "-p" ]; then
-	_diff="diff -ru /opt/$1 /tmp/current.$TMP_LABEL"
+	_diff="diff -ru /tmp/record.$TMP_LABEL /tmp/current.$TMP_LABEL"
 	if [ "`$_diff`" ]; then
 	    # dpkg --purge は依存関係を解かない。残す側（$1 にあるもの）が要しているもの（Depends や、mail-transport-agent の
 	    # ような仮想パッケージ）は「dependency problems」で外さずに残す。外すもの同士の順番の都合で残ったものは、
@@ -1249,7 +1264,7 @@ _output_u() {
 	    _u="current.u"
 	fi
     elif [ "$2" = "-i" ]; then
-	_diff="diff -ru /tmp/current.$TMP_LABEL /opt/$1"
+	_diff="diff -ru /tmp/current.$TMP_LABEL /tmp/record.$TMP_LABEL"
 	if [ "`$_diff`" ]; then
 	    _pkgs=`echo "$_diff | $_to_u | tr '\n' ' '" | sh`
 	    # 入れられないもの（インストール候補が無い: 別の版の記録にしか無い、snapd のように Pin で止めている等）は

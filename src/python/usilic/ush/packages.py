@@ -6,14 +6,22 @@ U.shが作った記録(BASE.u・DEBIAN.u等)をそのまま使える。比べる
 import re
 
 # 記録に載せないもの(U.shの_barのgrep -v。python3はRESCUEが使うので、-p・-e・-dで外さない)
-EXCLUDE = [r'deinstall$', 'efibootmgr', 'grub', 'linux-headers', 'linux-image', 'linux-modules', 'mokutil',
+# -i・-pで記録を読む時も同じものを除く(2026-11-25、直接のユーザー指摘: live環境でdpkg --get-selectionsした記録には
+# linux-image・grub等があり、除かないと-iで入れてしまう)。casper・ubiquity・ubuntu-desktop-bootstrap・
+# ubuntu-desktop-provisionはlive環境・インストーラのもの
+EXCLUDE = [r'deinstall$', 'casper', 'ubiquity', 'ubuntu-desktop-bootstrap', 'ubuntu-desktop-provision', 'efibootmgr', 'grub', 'linux-headers', 'linux-image', 'linux-modules', 'mokutil',
            'os-prober', 'shim-helpers-amd64-signed', 'shim-signed', 'shim-unsigned', r'^python3', r'^libpython3']
 
 
 def current_lines(system):
     """今の記録の行(U.shの`echo $_bar | sh`)。"""
+    return record_lines(system.output(['dpkg', '--get-selections']))
+
+
+def record_lines(text):
+    """記録に載せる行(EXCLUDEを除き、「\tinstall」を消す)。今の一覧にも、読んだ記録にも。"""
     out = []
-    for line in system.output(['dpkg', '--get-selections']).splitlines():
+    for line in text.splitlines():
         if not line.strip() or any(re.search(p, line) for p in EXCLUDE):
             continue
         out.append(line.replace('\tinstall', '', 1).replace('\tpurge', '', 1))
@@ -80,7 +88,7 @@ def purge_to(env, log, record_name, out):
     if record is None:  # 記録が無い時に空として扱うと、今あるものを全部外してしまう(U.shの_output_uは「not exist」で止める)
         log.add('-o : /opt/%s: not exist.' % record_name)
         return False
-    record = record.splitlines()
+    record = record_lines(record)
     packages = added(record, current_lines(system))
     if not packages:
         return False
@@ -110,7 +118,7 @@ def install_from(env, log, record_name, out):
     if record is None:
         log.add('-o : /opt/%s: not exist.' % record_name)
         return False
-    record = record.splitlines()
+    record = record_lines(record)
     packages = added(current_lines(system), record)
     if not packages:
         return False

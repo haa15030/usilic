@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1421. **src/U_proto.sh・src/python: -i・-pは読んだ記録からもカーネル・GRUB・live環境のもの等を除く、使用中(busy)で外せないumountは黙る(2026-11-25)**
+   - 経緯(ユーザー指摘): (1)-Vの子のシェルが$MNT_DEBIANの中にいると、そこから動かした別のオプションの終わりのumountがbusyのエラーを出す。表に出さないでほしい。(2)live環境で`dpkg --get-selections`した記録で.uを作って大丈夫か、linux-imageやgrubは除いておかないとまずいのでは。調べると、除くもの(_barのgrep -v・EXCLUDE)は今の一覧にだけ掛けていて、読んだ記録(/opt/名前.u)には掛けていなかった。よその記録のlinux-image・grub・shim等も-iで入れてしまう。シェル版はさらに、生の記録の「\t\t\tinstall」が消えず、全部の行が違うとされ「install」もパッケージ名として渡っていた。
+   - 変更: シェル版は_barの絞り込みを_filterに分け、-i・-pでは記録も同じに通した/tmp/record.*と比べる。Python版はrecord_lines()で記録にもEXCLUDE。除くものにlive環境・インストーラのcasper・ubiquity・ubuntu-desktop-bootstrap・ubuntu-desktop-provisionを足した。_fsのumountは、出力にbusyがあれば表に出さない(LC_ALL=Cで動かす。Python版のumountはもともと出さない)。U_sh.txtのlive環境の手順にも。
+
 1420. **src/U_proto.sh・src/python: -V(DEBIAN区画をマウントしたまま、その中で子のシェル)(2026-11-25)**
    - 経緯: -v・-a・-f以外のオプションは終わる時にRAMDISKの$MNT_DEBIAN(/mnt/ubuntu等)を外す。ユーザーの依頼: マウントしたままのオプション、-V等、マウント後cd /mnt/ubuntuするだけの子プロセスを起動する。
    - 変更: cd_debian()(Python版はoptions.cd_debian)。$MNT_DEBIANをマウントし、そこでbashを起こす(sudoで動くのでroot)。exitで戻り、その後もマウントしたまま(終わりの外す処理から-Vを除いた)。--batch等ではマウントだけ。一覧(RAMDISK)に「-V : cd …」(usilicの^J^Rの一覧は小文字のオプションだけ拾うので出ない)。U_sh.txtにも。

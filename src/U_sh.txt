@@ -190,7 +190,7 @@ U.sh は snapd を入れない（NO_SNAP）ので、snapd と、snap へ移る�
 ⑧ インストーラの「お試し」（体験版）の GNOME と同じものが欲しい時は、-d ではなく、live 環境の記録を -i で入れます。
 Ubuntu 26.10 では展開に約 8.1GB 要り（-s の「= 〜KB」）、8GB の RAMDISK には入らないので、10GB 以上の RAMDISK のホストで作ります（-k 10 等でカーネルを作り、-u）。
   1. インストール USB で「お試し」を起動し、端末で "dpkg --get-selections > /media/ubuntu/USB/live.u"^M（USB メモリ等へ）
-  2. live.u を ?GB-base（10GB 以上）の /opt へ写し、". U -i live.u"^M
+  2. live.u を ?GB-base（10GB 以上）の /opt へ写し、". U -i live.u"^M（カーネル（linux-image 等）・GRUB・shim・casper・インストーラ等は -i が除くので、記録はそのままでかまいません）
   3. NVIDIA の GPU なら "sudo apt-get install -y --no-install-recommends nvidia-driver-615-open"^M（-i は -d と違い、描画の側を入れない）
   4. ". U -s GNOME_live"^M で ?GB-GNOME_live.img に保存し、". U -n"^M で選んで起動
 -s の名前を GNOME にすると、-d の GNOME のイメージと同じ名前になって上書きし合うので、別の名前にします。#
