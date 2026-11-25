@@ -407,6 +407,10 @@ readonly PAGER=more # _page で usilic・less が無い時だけ（more は戻�
 NVIDIA_LIST=""
 NVIDIA_NOUVEAU_FW=""
 NVIDIA_DESKTOP=""
+# -u が ${RESCUE_GB}GB-rescue に、カーネルを組み立てる環境（BUILD_LIST の build-dep linux と、-k が使う fakeroot・libncurses-dev・
+# openssl）も入れておく（rescue の上でネット無しでも -k できる。ソース（linux-source）は -k の時に取る）。Debian の 4GB-rescue は
+# 収まらないので ""
+RESCUE_KERNEL_DEV=""
 
 # --- Ubuntu（ON_UBUNTU）用の設定 ------------------------------------
 # Ubuntu でも -u は Debian と同じく ${RESCUE_GB}GB（8GB）の RAMDISK 用カーネル・RAM-*-base.gz・${RESCUE_GB}GB-rescue.img を作る。
@@ -424,6 +428,7 @@ if [ "$ON_UBUNTU" ]; then
     NVIDIA_VER=615
     NVIDIA_LIST="nvidia-dkms-$NVIDIA_VER-open"
     NVIDIA_DESKTOP="nvidia-driver-$NVIDIA_VER-open"
+    RESCUE_KERNEL_DEV=y # 8GB-rescue は 4.3GB 程度で空きがある（4GB-rescue は作れない）
     NVIDIA_NOUVEAU_FW="linux-firmware-nvidia-graphics" # nouveau 用の GSP（約106MB。純正は nvidia-firmware-580 の方を使う）
     RESCUE_LIST=`echo " $RESCUE_LIST " | sed -e 's/ firefox-esr / firefox /'`
     if [ "$RESCUE_LIST_X" ]; then
@@ -457,7 +462,7 @@ if [ "$ON_UBUNTU" ]; then
     # thermald: Intel のノートパソコンの温度の管理（ACPI の DPTF を読む）。Z390UD では起動に5回失敗し続けた（温度の保護は
     #   ハードウェアがする）
 fi
-readonly RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X BASE_LIST JP_LIST NVIDIA_LIST NVIDIA_NOUVEAU_FW NVIDIA_DESKTOP
+readonly RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X BASE_LIST JP_LIST NVIDIA_LIST NVIDIA_NOUVEAU_FW NVIDIA_DESKTOP RESCUE_KERNEL_DEV
 
 _on_line() { # 現在のネット接続状態（readonly の $ON_LINE は起動時の値のまま）
     ip a | grep 'inet ' | grep global
@@ -3308,6 +3313,11 @@ EOF
         if [ "$RESCUE_LIST_NOREC" ]; then
             echo "apt-get install -y --no-install-recommends $RESCUE_LIST_NOREC"
             apt-get install -y --no-install-recommends $RESCUE_LIST_NOREC
+        fi
+        if [ "$RESCUE_KERNEL_DEV" ] && [ "$BUILD_LIST" ]; then # カーネルを組み立てる環境も
+            echo "apt-get $BUILD_LIST -y; apt-get install -y fakeroot libncurses-dev openssl"
+            apt-get $BUILD_LIST -y
+            apt-get install -y fakeroot libncurses-dev openssl
         fi
         _output_u ${RESCUE_GB}GB-rescue.u $LINENO # 何が入っているかの記録
         _save_host $1 rescue

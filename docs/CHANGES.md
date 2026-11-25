@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1401. **src/U_proto.sh・src/python: Ubuntuの8GB-rescueにカーネルを組み立てる環境も入れる(RESCUE_KERNEL_DEV)(2026-11-25)**
+   - 経緯: 8GB-rescueに空きが多いので4GB-rescueにできないか → 8GB-rescue.img(11/24 14:31)は4,712,546,000バイトで中身は約4.28GB、4GBのRAMDISK(約3.79GB)には収まらない。ユーザー判断: 4GB-rescueはDebian 13で、Ubuntuの8GBの空きにはカーネルのリメーク環境を入れ、レスキュー環境でも新しいカーネルを作れるように(版を選ぶ(6.1.129等、kernel.orgから)のは保留)。
+   - 変更: 設定RESCUE_KERNEL_DEV(Ubuntuはy、Debianは"")。-uが${RESCUE_GB}GB-rescueを保存する前(RESCUE_LIST・RESCUE_LIST_NOREC の後、記録の前)に`apt-get $BUILD_LIST -y`(build-dep linux)と、-kが使うfakeroot・libncurses-dev・opensslを入れる。ソース(linux-source、約150MB)は入れず、-kの時に取る。Python版も同じ。
+   - 注意: -uは${RESCUE_GB}GB-rescue.imgがあれば作り直さないので、/opt/8GB-rescue.imgを消してから-u。増える量は要確認(-sの「used … / RAMDISK」の行)。
+
 1400. **src/U_proto.sh・src/python: UbuntuのGNOMEにfonts-ubuntu、usilicのライブラリをDEBIAN区画で引けなければ名前から推す(2026-11-25)**
    - 経緯: 615(項目1399)の土台で8GB-GNOMEが高解像度で出て、DP(LG HDR WQHD)から音も出た。残りが2つ。
    - 端末の字間: ptyxisの字間が広い。`fc-match monospace`がNoto Sans Mono CJK JP(DejaVu Sans Monoはあるが、日本語の環境ではCJKが先)。ptyxisの既定のUbuntu Sans Mono(fonts-ubuntu)は推奨で入っていなかった。`apt-get install fonts-ubuntu`で直った。DESKTOP_LISTのGNOMEに「,fonts-ubuntu」。

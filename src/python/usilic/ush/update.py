@@ -402,6 +402,11 @@ def update_base(env, log, option, ask, out):
         norec = env.conf('RESCUE_LIST_NOREC', '').split()
         if norec:
             system.stream(['apt-get', 'install', '-y', '--no-install-recommends'] + norec, out)
+        build_list = env.conf('BUILD_LIST', 'build-dep linux').split()
+        if env.conf('RESCUE_KERNEL_DEV', '') and build_list:  # カーネルを組み立てる環境も(rescueの上でネット無しでも-k)
+            out('apt-get %s -y; apt-get install -y fakeroot libncurses-dev openssl' % ' '.join(build_list))
+            system.stream(['apt-get'] + build_list + ['-y'], out)
+            system.stream(['apt-get', 'install', '-y', 'fakeroot', 'libncurses-dev', 'openssl'], out)
         output_u(env, log, [rescue + '.u'], out)  # 何が入っているかの記録
         save_host(env, log, option, ['rescue'], out)
         lap(rescue + '.img', out)
