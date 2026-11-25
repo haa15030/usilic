@@ -8,6 +8,26 @@ class MountError(Exception):
     """_fs: マウントできなかった(U.shは_dieで終える)。"""
 
 
+def cwd_in(point):
+    """_cwd_in(): pointの中にいる(カレントディレクトリがある)プロセスの「PID(名前)」。"""
+    import os
+    found = []
+    try:
+        pids = [p for p in os.listdir('/proc') if p.isdigit()]
+    except OSError:
+        return found
+    for pid in pids:
+        try:
+            cwd = os.readlink('/proc/%s/cwd' % pid)
+            with open('/proc/%s/comm' % pid) as f:
+                name = f.read().strip()
+        except OSError:
+            continue
+        if cwd == point or cwd.startswith(point.rstrip('/') + '/'):
+            found.append('%s(%s)' % (pid, name))
+    return found
+
+
 def is_mounted(system, target):
     """_is_mounted(): ブロックデバイスなら/proc/mountsのデバイスに、他はマウントポイントとして(ちょうど同じもの)。"""
     if system.isblock(target):

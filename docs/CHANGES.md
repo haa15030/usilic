@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1424. **src/U_proto.sh・src/python: -Vを取り消し、-mが外せない時は/mnt/ubuntuの中にいるものを知らせる(2026-11-26)**
+   - 経緯: ユーザー判断"-Vはよくわからないので取り消しでいい"。代わりにマニュアルへ「-v 以外の起動では /mnt/ubuntu/ が毎回アンマウントされますが、. U -v のあと、/mnt/ubuntu/ 上でシェルを起動すればマウントが維持されます」と書き、-mの時だけ/mnt/ubuntu/にいる旨のメッセージを出す。
+   - 変更: 項目1420(-V)・1422(子のシェルの「(-V) 」・U_V、-mのU_V/fuserの案内)のコードを戻した(busyのumountを黙らせる項目1421はそのまま、注釈だけ-vの後のシェルに)。-mが写す前に$MNT_DEBIANを外せずBusyで止まった時、カレントディレクトリが$MNT_DEBIANの中にあるプロセスを「PID(名前)」で並べ「in /mnt/ubuntu: … -> 'cd', then '. U -m sdX'」をログへ(シェル版_cwd_in、Python版fs.cwd_in、/proc/*/cwd)。U_sh.txtの-vの行に上の文。
+
 1423. **src/python: ^J^R(RESCUE)はSHELLで「. U」を動かすだけにする(2026-11-26)**
    - 経緯: ユーザーがusilic-pyを使ってみて: U.sh(シェル)からusilicへ移った後、^J^Rでシェルの機能へ戻ると、オプションがFILE等と同じ一覧(項目1343等、これもユーザーの要望だった)で出るが、シェルで出る一覧と形が違って戸惑いそう。「. U」で起動した時と同じ画面に戻してほしい。シェルとファイル管理の間には仕様上の境界面があり、前者からは-v、後者からは^J^Rが行き来の通過パス。
    - 変更: start_rescue()は、SHELLに入り「. U」(rescue.u_line()。/usr/local/bin/Uが無ければush.py・U.shを直に、rootでなければsudo)を打つだけ。一覧・番号・問い・パスワードをモードラインで聞く部分(rescue_show_options〜rescue_run)とrescue_passwordを外した(rescue.pyのparse_options等は試験のため残す)。U_sh.txtの説明も。U.shはSHELLの中で動くので、-uの途中でusilicを終えると止まる(前は別のセッションで動かしていた)。

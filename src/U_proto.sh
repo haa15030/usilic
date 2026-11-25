@@ -772,8 +772,8 @@ _fs() { # mount・umount（$1 が数字なら行番号）。マウントでき�
     for _i in `seq 1 2`
     do
 	if [ -s /tmp/tmp.$TMP_LABEL ]; then
-	    # 使用中（busy）で外せない umount は表に出さない（2026-11-25、直接のユーザー依頼: -V の子のシェルが
-	    # $MNT_DEBIAN の中にいる時に、そこから別のオプションを動かすと、終わりの umount $MNT_DEBIAN が busy になる）
+	    # 使用中（busy）で外せない umount は表に出さない（2026-11-25、直接のユーザー依頼: -v の後に $MNT_DEBIAN の中で
+	    # シェルを開いていると（マウントを保つ使い方）、そこから動かした別のオプションの終わりの umount $MNT_DEBIAN が busy になる）
 	    if [ "$_op" != "umount" ] || ! grep -q 'busy' /tmp/tmp.$TMP_LABEL; then
 		echo "$_lineno`cat /tmp/tmp.$TMP_LABEL`"
 	    fi
@@ -805,6 +805,17 @@ _is_inst() { # $1（パッケージ名、完全一致）が入っていれば「
         echo "apt-get install -y $1"
         apt-get install -y $1
     fi
+}
+
+_cwd_in() { # $1 の中にいる（カレントディレクトリがある）プロセスの「PID(名前)」
+    local _p _d
+    for _p in /proc/[0-9]*
+    do
+        _d=`readlink $_p/cwd 2>/dev/null`
+        case "$_d" in
+            $1|$1/*) echo "${_p#/proc/}(`cat $_p/comm 2>/dev/null`)" ;;
+        esac
+    done
 }
 
 _unmount_part() {
@@ -1627,11 +1638,10 @@ make_usb() { # -m)
     _unmount_part $_DST_DISK
     if mountpoint -q $MNT_DEBIAN || [ "`fgrep $_DST_DISK /etc/mtab`" ]; then
         echo "$1: $MNT_DEBIAN or $_DST_DISK: Busy. : $LINENO" >> /tmp/log.$TMP_LABEL
-        # 何が使っているか（2026-11-25、直接のユーザー依頼: -V の子のシェルが中にいると、ここで止まる）
-        if [ "$U_V" ]; then
-            echo "$1: in the shell of '. U -V' -> 'exit', then '. U -m $2'" >> /tmp/log.$TMP_LABEL
-        elif mountpoint -q $MNT_DEBIAN && command -v fuser > /dev/null; then
-            fuser -vm $MNT_DEBIAN 2>&1 | head -n10 >> /tmp/log.$TMP_LABEL
+        # 写す前に外せない時、$MNT_DEBIAN の中にいるもの（2026-11-26、直接のユーザー依頼: -v の後に /mnt/ubuntu で
+        # シェルを開いてマウントを保っていると、ここで止まる）
+        if mountpoint -q $MNT_DEBIAN && [ "`_cwd_in $MNT_DEBIAN`" ]; then
+            echo "$1: in $MNT_DEBIAN: `_cwd_in $MNT_DEBIAN | tr '\n' ' '`-> 'cd', then '. U -m $2'" >> /tmp/log.$TMP_LABEL
         fi
         return
     fi
@@ -3518,26 +3528,6 @@ verbose() { # -v)
     fi
 }
 
-cd_debian() { # -V)
-    # 2026-11-25、直接のユーザー依頼: -v 以外は終わる時に $MNT_DEBIAN を外すので、マウントしたままで中に入るオプション。
-    # マウントして、$MNT_DEBIAN で子のシェル（bash）を起こす。exit で戻り、そのあともマウントしたまま（-v と同じ）
-    _fs $LINENO mount $MNT_DEBIAN
-    if [ "$U_BATCH" ]; then
-        echo "$MNT_DEBIAN: mounted"
-        return
-    fi
-    echo "cd $MNT_DEBIAN; bash (exit -> back, $MNT_DEBIAN stays mounted)"
-    # 子のシェルだと分かるように、U_V=1 とプロンプトの頭の「(-V) 」（-m が busy で止まった時に案内する。2026-11-25、
-    # 直接のユーザー依頼）。--rcfile は /etc/bash.bashrc・~/.bashrc の代わりなので、それを読んでから PS1 を変える
-    cat <<'EOF' > /tmp/V_rc.$TMP_LABEL
-[ -f /etc/bash.bashrc ] && . /etc/bash.bashrc
-[ -f ~/.bashrc ] && . ~/.bashrc
-PS1="(-V) $PS1"
-EOF
-    ( cd $MNT_DEBIAN && U_V=1 bash --rcfile /tmp/V_rc.$TMP_LABEL )
-    rm -f /tmp/V_rc.$TMP_LABEL
-}
-
 _set_strage_opt() { # STRAGE のイメージ等（?GB-名前.img・$BUILD.img・IMG0.img）の置き場所（$strage_opt）。
     # STRAGE の区画ならディストリビューションごとに img.$DEBIAN、STRAGE が無ければ（DEBIAN区画）今までどおり /opt
     if [ "$mnt_strage" ] && [ "$mnt_strage" != "$MNT_DEBIAN" ]; then
@@ -3805,7 +3795,7 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	elif [ "$ON_RAMDISK" ]; then
 	    echo "/dev/shm : `_tmpfs_size | tail -n1`"
 	    echo "img-size : $((`df | grep \/$ | awk '{print $3}'`*$_numerator/10))"
-	    echo ". U [-acdfikmnopsvV]"
+	    echo ". U [-acdfikmnopsv]"
 	    echo "  -c(hange_root) [/mnt/usb]" >> /tmp/mess.$TMP_LABEL
 	    echo "  -f(ile_system) [-] : /mnt/No." >> /tmp/mess.$TMP_LABEL
 	    echo "  -d(esktop) : on ??GB-* (8GB~, STRAGE; on a desktop host: from a text console)" >> /tmp/mess.$TMP_LABEL
@@ -3815,7 +3805,6 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	    echo "  -o(utput_u) . or filename" >> /tmp/mess.$TMP_LABEL; echo "  -i(nstall_u) filename" >> /tmp/mess.$TMP_LABEL; echo "  -p(urge_u) filename" >> /tmp/mess.$TMP_LABEL
 	    echo "  -s(ave_host) name [.] or . (without STRAGE: ${RESCUE_GB}GB-rescue only)" >> /tmp/mess.$TMP_LABEL
 	    echo "  -a(dd_strage)" >> /tmp/mess.$TMP_LABEL
-	    echo "  -V : cd $MNT_DEBIAN, sub shell (exit -> back, stays mounted)" >> /tmp/mess.$TMP_LABEL
 	elif [ "$ON_NONE" ]; then
 	    if [ -f /opt/BASE.u ]; then
 		echo ". U [-acefikonpuv]"
@@ -3930,15 +3919,12 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	    -v)
 		verbose $_option
 		;;
-	    -V)
-		cd_debian $_option
-		;;
 	esac
     else
 	echo "$_option: Invalid option. : $LINENO" >> /tmp/log.$TMP_LABEL
     fi
     _fs $LINENO umount /tmp/shm0.$TMP_LABEL
-    if [ "$_option" != "-v" ] && [ "$_option" != "-V" ] && [ "$_option" != "-a" ] && [ "$_option" != "-f" ]; then
+    if [ "$_option" != "-v" ] && [ "$_option" != "-a" ] && [ "$_option" != "-f" ]; then
 	if [ "$ON_RAMDISK" ]; then
 	    _fs $LINENO umount $MNT_DEBIAN
 	    _fs $LINENO umount /boot/efi

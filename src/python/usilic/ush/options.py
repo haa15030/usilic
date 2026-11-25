@@ -37,24 +37,6 @@ def verbose(env, log, ask, out, page):
         page(body)
 
 
-def cd_debian(env, log, ask, out):
-    """-V(cd_debian()、2026-11-25、直接のユーザー依頼): DEBIAN区画をマウントして、その中で子のシェル(bash)を起こす。
-    exitで戻り、そのあともマウントしたまま(-vと同じ)。前から使う時(--batch等)はマウントだけ。"""
-    fs(env, log, 'mount', env.mnt_debian)
-    if ask.batch:
-        out('%s: mounted' % env.mnt_debian)
-        return
-    out('cd %s; bash (exit -> back, %s stays mounted)' % (env.mnt_debian, env.mnt_debian))
-    # 子のシェルだと分かるように、U_V=1とプロンプトの頭の「(-V) 」(-mがbusyで止まった時に案内する)。--rcfileは
-    # /etc/bash.bashrc・~/.bashrcの代わりなので、それを読んでからPS1を変える
-    rc = '/tmp/V_rc.%d' % os.getpid()
-    env.system.write_text(rc, '[ -f /etc/bash.bashrc ] && . /etc/bash.bashrc\n'
-                              '[ -f ~/.bashrc ] && . ~/.bashrc\n'
-                              'PS1="(-V) $PS1"\n')
-    env.system.interactive(['env', 'U_V=1', 'bash', '--rcfile', rc], cwd=env.mnt_debian)
-    env.system.run(['rm', '-f', rc])
-
-
 def list_mnt_no(env):
     """_list_mnt_no(): -fでマウントした/mnt/番号の素性と中身。"""
     system = env.system
