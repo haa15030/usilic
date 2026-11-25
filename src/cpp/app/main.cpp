@@ -2448,8 +2448,11 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
   const std::vector<std::pair<std::string, std::string>> tools = {
       {"groff", "groff"}, {"mg", "mg"}, {"info", "texinfo"}, {"7zz", "7-zip"}, {"w3m", "w3m"}, {"python3", "python3"}};
 #else
+  // mpv(2026-11-25、直接のユーザー依頼"Linux版usilicの必須アプリにmpvを加えたら"): UbuntuのGNOMEの既定の動画プレイヤーは
+  // H.264のcodecが無いと再生できず、「Install Plugin」も何も起きなかった。mpvは自前のcodec(ffmpeg)で再生できる。
   const std::vector<std::pair<std::string, std::string>> tools = {
-      {"groff", "groff"}, {"mg", "mg"}, {"info", "info"}, {"7z", "p7zip-full"}, {"w3m", "w3m"}, {"unzip", "unzip"}};
+      {"groff", "groff"}, {"mg", "mg"}, {"info", "info"}, {"7z", "p7zip-full"}, {"w3m", "w3m"}, {"unzip", "unzip"},
+      {"mpv", "mpv"}};
 #endif
   // 2026-11-06、直接のユーザー報告(mpr、Big Sur付属のgroff 1.19.2でHELPの^Kが"--"): groffの-Kutf8(preconv)は1.20から。
   // それより古いgroffはHELP.1を組めない(平文のHELPになりKEYが空)ので、無いのと同じに数える。

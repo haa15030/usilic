@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1410. **src/U_proto.sh・src/cpp: Linuxのusilicが使うツールにmpvを足す(2026-11-25)**
+   - 経緯: 16GB-GNOME_live(-dのGNOME-Live)で、既定の動画プレイヤーが`"H.264 (Main Profile) decoder" codecs are required to play this video.`と出し、「Install Plugin」を押しても「Installing...」のまま何も起きなかった。mpvを入れたら再生できた。ユーザーの依頼: Linux版usilicの必須アプリにmpvを。
+   - 変更: U.shのUSILIC_TOOLS(-r・-dでusilicを入れる時に無ければ入れる)と、usilicの最初の起動で案内するもの(app/main.cppのLinuxの一覧)にmpvを足した。macOS・MSYS2・FreeBSDの一覧は変えない。docs/BUILD.mdは前からmpvを入れている。Python版はUSILIC_TOOLSをU.shから読むので同じ。
+
 1409. **src/U_proto.sh・src/python: 「-o 名前 -i」「-o 名前 -p」を-i・-pとして別のオプションに、-oは前の記録を名前.u.bakに残す(2026-11-25)**
    - 経緯: live環境で取った8GB-GNOME_live.uを`-o 8GB-GNOME_live.u -i`で足すつもりが、`-i`を忘れて`-o 8GB-GNOME_live.u`とし、今のホスト(16GB-base)の記録で上書きした。RAMDISKなので、控えになるはずのDEBIAN区画の/mnt/ubuntu/opt/8GB-GNOME_live.uまで上書きされ、live環境から取り直した。ユーザーの依頼: こういう取り違えを防ぐため`-i`・`-p`を新設(-iは撤去済み、-pも空き)、`-o`も既存があれば/mnt/ubuntuの方だけ.u.bakを作ってその旨を出す。
    - 変更:

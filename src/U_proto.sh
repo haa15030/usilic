@@ -55,7 +55,9 @@ JP_LIST="task-japanese-desktop"
 # --- usilic が使うツール（usilic の最初の起動で sudo apt install を案内するもの、app/main.cpp の offerGroffInstallOnce()）
 # デスクトップのあるホストへ usilic を入れる時（-r・-d）に、無ければ入れておく（~/.usilic が前のホストから残っていると
 # usilic は「最初の起動」にならず、案内せずに「見つからない」と知らせるだけになる）
-USILIC_TOOLS="groff mg info p7zip-full w3m unzip fonts-noto-cjk python3"
+# mpv（2026-11-25、直接のユーザー依頼）: Ubuntu の GNOME の既定の動画プレイヤーは H.264 の codec が無いと再生できず、
+# 「Install Plugin」も「Installing...」のまま何も起きなかった。mpv は自前の codec（ffmpeg）で再生できる
+USILIC_TOOLS="groff mg info p7zip-full w3m unzip fonts-noto-cjk python3 mpv"
 
 # --- CtrlとCaps Lockの入れ替え（~/.xprofile、Xにログインした時）
 # rescue-USBは色々なキーボードで使うので、入れ替えるかはログインの時につながっているキーボードで決める。
