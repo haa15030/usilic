@@ -83,24 +83,25 @@ def parse(argv):
 def options_help(env):
     """オプションが無い時の一覧(U.shのmainと同じく、ホストに合わせて。名前の順)。"""
     gb = env.rescue_gb
-    o = "  -o(utput_u) . or filename [-i(nstall) or -p(urge)]"
+    o = "  -o(utput_u) . or filename"
+    ip_items = ['  -i(nstall_u) filename', '  -p(urge_u) filename']
     if env.on_wsl:
-        items = ['  -k(ernel_remake) - or %d or ??' % gb, o]
+        items = ['  -k(ernel_remake) - or %d or ??' % gb, o] + ip_items
     elif env.on_ramdisk:
         items = ['  -c(hange_root) [/mnt/usb]', '  -f(ile_system) [-] : /mnt/No.',
                  '  -d(esktop) : on ??GB-* (8GB~, STRAGE; on a desktop host: from a text console)',
-                 '  -k(ernel_remake) . or - or / or ?? (STRAGE)', '  -m(ake_usb) device [-]', '  -n(ext_host)', o,
+                 '  -k(ernel_remake) . or - or / or ?? (STRAGE)', '  -m(ake_usb) device [-]', '  -n(ext_host)', o, ip_items[0], ip_items[1],
                  '  -s(ave_host) name [.] or . (without STRAGE: %dGB-rescue only)' % gb, '  -a(dd_strage)']
     elif env.on_none:
         items = []
         if env.system.exists('/opt/BASE.u'):
             items = ['  -c(hange_root) [/mnt/usb]', '  -e(rase_base)',
-                     '  -k(ernel_remake) . or - or / or %d or ??' % gb, '  -n(ext_host)', o]
+                     '  -k(ernel_remake) . or - or / or %d or ??' % gb, '  -n(ext_host)', o] + ip_items
         items += ['  -f(ile_system) [-] : /mnt/No.', '  -u(pdate_base)', '  -a(dd_strage)']
     elif env.on_toram:
-        items = [o]
+        items = [o] + ip_items
     else:
-        items = ['  -f(ile_system) [-] : /mnt/No.', '  -k(ernel_remake) . or - or %d or ??' % gb, '  -n(ext_host)', o,
+        items = ['  -f(ile_system) [-] : /mnt/No.', '  -k(ernel_remake) . or - or %d or ??' % gb, '  -n(ext_host)', o, ip_items[0], ip_items[1],
                  '  -u(pdate_base) : TORAM (dracut)', '  -a(dd_strage)']
     return sorted(items + ['  -v(ervose)'])
 
@@ -134,7 +135,7 @@ def run(argv, system=None, uname=None, out=None, prepare=True):
     option, args = words[0], words[1:]
     code = 0
     try:
-        if prepare and option != '-o':  # U.shのmainの始め(-oはその前に動く)
+        if prepare and option not in ('-o', '-i', '-p'):  # U.shのmainの始め(-o・-i・-pはその前に動く)
             prepare_system(env, log, option, out)
         if option == '-v':
             verbose(env, log, ask, out, lambda text: page_with_usilic(env, text))
@@ -145,7 +146,12 @@ def run(argv, system=None, uname=None, out=None, prepare=True):
         elif option == '-n':
             next_host(env, log, ask, out)
         elif option == '-o':
-            output_u(env, log, args, out)
+            output_u(env, log, args, out, backup=True)
+        elif option in ('-i', '-p'):  # もとの「-o 名前 -i」「-o 名前 -p」
+            if not args or args[0] == '.':
+                log.add("%s: Please type '. U %s filename'[Enter]" % (option, option))
+            else:
+                output_u(env, log, [args[0], option], out)
         elif option == '-c':
             change_root(env, log, args, out)
         elif option == '-s':

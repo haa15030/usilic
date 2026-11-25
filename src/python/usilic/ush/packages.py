@@ -50,6 +50,27 @@ def write_record(env, log, name, lines, out, option='-o'):
         out('-> %s/opt/%s' % (env.mnt_debian, name))
 
 
+def _u_bak(env, log, name, out):
+    """_u_bak(): DEBIAN区画の/opt(RAMDISKでなければ/opt)に同じ名前の記録があれば名前.u.bakへ写す(2026-11-25、「-o 名前.u -i」
+    のつもりで-iを忘れ、よそで取った記録を今のホストの記録で上書きし、DEBIAN区画の控えまで上書きした。-i・-pは別のオプションに)。"""
+    from .fs import fs
+    system = env.system
+    if name == '.':
+        name = system.output(['hostname']).strip() + '.u'
+    elif not name.endswith('.u'):
+        name += '.u'
+    directory = '/opt'
+    if env.on_ramdisk:
+        fs(env, log, 'mount', env.mnt_debian)
+        directory = env.mnt_debian + '/opt'
+    path = directory + '/' + name
+    if system.exists(path):
+        system.run(['cp', '-p', path, path + '.bak'])
+        message = '-o: %s: already exist -> %s.bak' % (path, path)
+        out(message)
+        log.add(message)
+
+
 def purge_to(env, log, record_name, out):
     """記録へ戻す(-p): 記録に無いものをdpkg --purge。dpkg --purgeは依存関係を解かないので、残す側が要しているものは
     「dependency problems」で外さずに残る。外すもの同士の順番の都合で残ったものは、もう一度やれば外れるので10回まで(依存が深いと3回では残った)
@@ -146,9 +167,9 @@ def with_candidate(system, packages):
     return ok
 
 
-def output_u(env, log, args, out):
-    """_output_u(): 「-o 名前」記録を書く(「.」はホスト名.u)、「-o 名前 -p」戻す、「-o 名前 -i」足す。
-    戻した・足した後は、その後の記録をcurrent.uに。"""
+def output_u(env, log, args, out, backup=False):
+    """_output_u(): 「-o 名前」記録を書く(「.」はホスト名.u)、「-o 名前 -p」(-p 名前)戻す、「-o 名前 -i」(-i 名前)足す。
+    戻した・足した後は、その後の記録をcurrent.uに。backup(利用者の-o)なら、DEBIAN区画の/optの同じ名前を名前.u.bakへ。"""
     system = env.system
     first = args[0] if args else ''
     second = args[1] if len(args) > 1 else ''
@@ -166,4 +187,6 @@ def output_u(env, log, args, out):
     elif second:
         log.add("%s: Please type '. U -o . or filename [-i)nstall or -p)urge]'[Enter]" % second)
         return
+    elif backup:
+        _u_bak(env, log, name, out)
     write_record(env, log, name, current_lines(system), out)

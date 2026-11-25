@@ -2146,8 +2146,48 @@ next_host() { # -n)
     fi
 }
 
+_u_bak() { # -o 名前（-i・-p 無し）: DEBIAN区画の /opt に同じ名前の記録があれば 名前.u.bak へ写してから書く
+    # （2026-11-25、「-o 名前.u -i」のつもりで -i を忘れ、よそで取った記録を今のホストの記録で上書きし、RAMDISK では
+    # DEBIAN区画の控えまで上書きしてしまった。-i・-p は別のオプションにした）
+    local _u=$1 _dir=/opt
+
+    if [ ! "$_u" ] || [ "$2" ]; then
+	return
+    fi
+    if [ "$_u" = "." ]; then
+	_u="`hostname`".u
+    elif [ ! "`echo $_u | grep \.u$`" ]; then
+	_u=${_u}.u
+    fi
+    if [ "$ON_RAMDISK" ]; then
+	_fs $LINENO mount $MNT_DEBIAN
+	_dir=$MNT_DEBIAN/opt
+    fi
+    if [ -f $_dir/$_u ]; then
+	cp -p $_dir/$_u $_dir/$_u.bak
+	echo "-o: $_dir/$_u: already exist -> $_dir/$_u.bak : $LINENO" | tee -a /tmp/log.$TMP_LABEL
+    fi
+}
+
 output_u() { # -o)
+    _u_bak $2 $3
     _output_u $2 $3 $4
+}
+
+input_u() { # -i) 記録にあって今無いものを入れる（もとの「-o 名前 -i」）
+    if [ ! "$2" ] || [ "$2" = "." ]; then
+	echo "$1: Please type '. U -i filename'[Enter] : $LINENO" >> /tmp/log.$TMP_LABEL
+	return
+    fi
+    _output_u $2 -i
+}
+
+purge_u() { # -p) 記録に無いものを外す（もとの「-o 名前 -p」）
+    if [ ! "$2" ] || [ "$2" = "." ]; then
+	echo "$1: Please type '. U -p filename'[Enter] : $LINENO" >> /tmp/log.$TMP_LABEL
+	return
+    fi
+    _output_u $2 -p
 }
 
 _enabled_units() { # 有効なサービス（init.d スクリプトから systemd が生成したもの＝generated を含む）
@@ -3496,10 +3536,11 @@ EOF
 	echo "STRAGE=\"\"" > /opt/U.opt
 	echo "SH=$SH" >> /opt/U.opt
     fi
-    if [ "$1" = "-o" ]; then
-	_output_u $2 $3 $4
-	return
-    fi
+    case "$1" in # 記録だけ（STRAGE 等の準備の前）
+	-o) output_u $1 $2 $3 $4; return ;;
+	-i) input_u $1 $2; return ;;
+	-p) purge_u $1 $2; return ;;
+    esac
     . /opt/U.opt
     mnt_strage=$STRAGE
     _set_strage_opt
@@ -3664,28 +3705,28 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
     else
 	if [ "$ON_WSL" ]; then
 	    echo "  -k(ernel_remake) - or $RESCUE_GB or ??" >> /tmp/mess.$TMP_LABEL
-	    echo "  -o(utput_u) . or filename [-i(nstall) or -p(urge)]" >> /tmp/mess.$TMP_LABEL
+	    echo "  -o(utput_u) . or filename" >> /tmp/mess.$TMP_LABEL; echo "  -i(nstall_u) filename" >> /tmp/mess.$TMP_LABEL; echo "  -p(urge_u) filename" >> /tmp/mess.$TMP_LABEL
 	elif [ "$ON_RAMDISK" ]; then
 	    echo "/dev/shm : `_tmpfs_size | tail -n1`"
 	    echo "img-size : $((`df | grep \/$ | awk '{print $3}'`*$_numerator/10))"
-	    echo ". U [-acdfkmnosv]"
+	    echo ". U [-acdfikmnopsv]"
 	    echo "  -c(hange_root) [/mnt/usb]" >> /tmp/mess.$TMP_LABEL
 	    echo "  -f(ile_system) [-] : /mnt/No." >> /tmp/mess.$TMP_LABEL
 	    echo "  -d(esktop) : on ??GB-* (8GB~, STRAGE; on a desktop host: from a text console)" >> /tmp/mess.$TMP_LABEL
 	    echo "  -k(ernel_remake) . or - or / or ?? (STRAGE)" >> /tmp/mess.$TMP_LABEL
 	    echo "  -m(ake_usb) device [-]" >> /tmp/mess.$TMP_LABEL
 	    echo "  -n(ext_host)" >> /tmp/mess.$TMP_LABEL
-	    echo "  -o(utput_u) . or filename [-i(nstall) or -p(urge)]" >> /tmp/mess.$TMP_LABEL
+	    echo "  -o(utput_u) . or filename" >> /tmp/mess.$TMP_LABEL; echo "  -i(nstall_u) filename" >> /tmp/mess.$TMP_LABEL; echo "  -p(urge_u) filename" >> /tmp/mess.$TMP_LABEL
 	    echo "  -s(ave_host) name [.] or . (without STRAGE: ${RESCUE_GB}GB-rescue only)" >> /tmp/mess.$TMP_LABEL
 	    echo "  -a(dd_strage)" >> /tmp/mess.$TMP_LABEL
 	elif [ "$ON_NONE" ]; then
 	    if [ -f /opt/BASE.u ]; then
-		echo ". U [-acefkonuv]"
+		echo ". U [-acefikonpuv]"
 		echo "  -c(hange_root) [/mnt/usb]" >> /tmp/mess.$TMP_LABEL
 		echo "  -e(rase_base)" >> /tmp/mess.$TMP_LABEL
 		echo "  -k(ernel_remake) . or - or / or $RESCUE_GB or ??" >> /tmp/mess.$TMP_LABEL
 		echo "  -n(ext_host)" >> /tmp/mess.$TMP_LABEL
-		echo "  -o(utput_u) . or filename [-i(nstall) or -p(urge)]" >> /tmp/mess.$TMP_LABEL
+		echo "  -o(utput_u) . or filename" >> /tmp/mess.$TMP_LABEL; echo "  -i(nstall_u) filename" >> /tmp/mess.$TMP_LABEL; echo "  -p(urge_u) filename" >> /tmp/mess.$TMP_LABEL
 	    else
 		echo ". U [-afuv]"
 	    fi
@@ -3693,14 +3734,14 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	    echo "  -u(pdate_base)" >> /tmp/mess.$TMP_LABEL
 	    echo "  -a(dd_strage)" >> /tmp/mess.$TMP_LABEL
 	elif [ "$ON_TORAM" ]; then
-	    echo ". U [-ov]"
-	    echo "  -o(utput_u) . or filename [-i(nstall) or -p(urge)]" >> /tmp/mess.$TMP_LABEL
+	    echo ". U [-iopv]"
+	    echo "  -o(utput_u) . or filename" >> /tmp/mess.$TMP_LABEL; echo "  -i(nstall_u) filename" >> /tmp/mess.$TMP_LABEL; echo "  -p(urge_u) filename" >> /tmp/mess.$TMP_LABEL
 	else
-	    echo ". U [-afknouv]"
+	    echo ". U [-afiknopuv]"
 	    echo "  -f(ile_system) [-] : /mnt/No." >> /tmp/mess.$TMP_LABEL
 	    echo "  -k(ernel_remake) . or - or $RESCUE_GB or ??" >> /tmp/mess.$TMP_LABEL
 	    echo "  -n(ext_host)" >> /tmp/mess.$TMP_LABEL
-	    echo "  -o(utput_u) . or filename [-i(nstall) or -p(urge)]" >> /tmp/mess.$TMP_LABEL
+	    echo "  -o(utput_u) . or filename" >> /tmp/mess.$TMP_LABEL; echo "  -i(nstall_u) filename" >> /tmp/mess.$TMP_LABEL; echo "  -p(urge_u) filename" >> /tmp/mess.$TMP_LABEL
 	    echo "  -u(pdate_base) : TORAM (dracut)" >> /tmp/mess.$TMP_LABEL
 	    echo "  -a(dd_strage)" >> /tmp/mess.$TMP_LABEL
 	fi
@@ -3770,6 +3811,12 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 		;;
 	    -o)
 		output_u $_option $_ARG_1 $_ARG_2 $_ARG_3
+		;;
+	    -i)
+		input_u $_option $_ARG_1
+		;;
+	    -p)
+		purge_u $_option $_ARG_1
 		;;
 	    -r)
 		rc_local_only $_option

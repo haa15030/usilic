@@ -450,7 +450,7 @@ class UshTest(unittest.TestCase):
         self.assertNotIn('-u(pdate_base)', out)                          # RAMDISKには無い
         from usilic import rescue
         self.assertEqual([o for o, _ in rescue.parse_options(out)],
-                         ['-a', '-c', '-d', '-f', '-k', '-m', '-n', '-o', '-s', '-v'])
+                         ['-a', '-c', '-d', '-f', '-i', '-k', '-m', '-n', '-o', '-p', '-s', '-v'])
 
     def test_v_pager_as_root(self):
         from usilic.ush.env import Env
