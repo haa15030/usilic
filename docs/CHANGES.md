@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1420. **src/U_proto.sh・src/python: -V(DEBIAN区画をマウントしたまま、その中で子のシェル)(2026-11-25)**
+   - 経緯: -v・-a・-f以外のオプションは終わる時にRAMDISKの$MNT_DEBIAN(/mnt/ubuntu等)を外す。ユーザーの依頼: マウントしたままのオプション、-V等、マウント後cd /mnt/ubuntuするだけの子プロセスを起動する。
+   - 変更: cd_debian()(Python版はoptions.cd_debian)。$MNT_DEBIANをマウントし、そこでbashを起こす(sudoで動くのでroot)。exitで戻り、その後もマウントしたまま(終わりの外す処理から-Vを除いた)。--batch等ではマウントだけ。一覧(RAMDISK)に「-V : cd …」(usilicの^J^Rの一覧は小文字のオプションだけ拾うので出ない)。U_sh.txtにも。
+
 1419. **src/U_proto.sh: UbuntuのBASE_LISTにbsdutils(script)を足す(2026-11-25)**
    - 経緯: Ubuntu 26.10の16GB-baseにscriptが無かった(-dの記録を取ろうとした)。apt-fileで探すとbsdutils。Debianでは必須(Essential)で最初から入っているが、UbuntuのBASE(Ubuntu Serverから要らないものを外した土台)には無く、-dが入れる「標準」(ubuntu-standard、16GB-baseでは73個増える)が引き込んでいた。ユーザー判断: ubuntu-standardをまるごとBASEに入れるのではなく、scriptだけ。
    - 変更: UbuntuのBASE_LISTにbsdutilsを足した(次の-uから。今の土台は手でapt-get install bsdutils)。

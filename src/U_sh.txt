@@ -3,7 +3,7 @@
 #
 概要#
 ④sudo bash /opt/U.sh（初回）㊿#
-④. U [-a|-c [dir]|-d|-e|-f [-]|-k arg|-m device|-n|-o arg|-i name|-p name|-s name|-u|-v] [-d|-b|-sh|-py]㊿#
+④. U [-a|-c [dir]|-d|-e|-f [-]|-k arg|-m device|-n|-o arg|-i name|-p name|-s name|-u|-v|-V] [-d|-b|-sh|-py]㊿#
 #
 説明#
 ④U.sh は、SSD 等に入れた Debian 13（または Ubuntu）を土台に、メモリの上（RAMDISK）で動くシステムと、それを入れた rescue-USB を作るスクリプトです。
@@ -81,6 +81,7 @@ DEBIAN区画の /opt には、カーネルの .deb・RAM-*-base.gz・4GB-rescue.
 ④   -s name㊿：⑲今のホストを ?GB-name.img に保存（. で今のホスト名で上書き）㊿#
 ④   -u㊿：⑲NONE-KERNEL で、カーネル・RAM-*-base.gz・?GB-rescue.img を作る（作ってあるものは飛ばす）㊿#
 ④   -v㊿：⑲DEBIAN区画の /opt・STRAGE の img.debian（img.ubuntu）、/mnt/番号、df を usilic（usilic-py、無ければ less）で表示、q で終える㊿#
+④   -V㊿：⑲RAMDISK で、DEBIAN区画（/mnt/debian・/mnt/ubuntu）をマウントして、その中で子のシェル（bash）を起こす。exit で戻り、そのあともマウントしたまま（-v と同じ。ほかのオプションは終わる時に外す）㊿#
 ④   --list㊿：⑲一覧を出して最初の問いで止まる（選ばない・N）。オプションが無ければ使えるオプションの一覧（usilic の RESCUE が使う）㊿#
 ④   --ans=答え㊿：⑲問いへの答えを問いの順に（例 -f --ans=3、-n --ans=2 --ans=n）。一覧は標準エラー出力へ㊿#
 ④   --batch㊿：⑲/dev/tty から読まず、-v もページャーを使わない（問いがあれば既定の答え）㊿#

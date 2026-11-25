@@ -3497,6 +3497,18 @@ verbose() { # -v)
     fi
 }
 
+cd_debian() { # -V)
+    # 2026-11-25、直接のユーザー依頼: -v 以外は終わる時に $MNT_DEBIAN を外すので、マウントしたままで中に入るオプション。
+    # マウントして、$MNT_DEBIAN で子のシェル（bash）を起こす。exit で戻り、そのあともマウントしたまま（-v と同じ）
+    _fs $LINENO mount $MNT_DEBIAN
+    if [ "$U_BATCH" ]; then
+        echo "$MNT_DEBIAN: mounted"
+        return
+    fi
+    echo "cd $MNT_DEBIAN; bash (exit -> back, $MNT_DEBIAN stays mounted)"
+    ( cd $MNT_DEBIAN && bash )
+}
+
 _set_strage_opt() { # STRAGE のイメージ等（?GB-名前.img・$BUILD.img・IMG0.img）の置き場所（$strage_opt）。
     # STRAGE の区画ならディストリビューションごとに img.$DEBIAN、STRAGE が無ければ（DEBIAN区画）今までどおり /opt
     if [ "$mnt_strage" ] && [ "$mnt_strage" != "$MNT_DEBIAN" ]; then
@@ -3764,7 +3776,7 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	elif [ "$ON_RAMDISK" ]; then
 	    echo "/dev/shm : `_tmpfs_size | tail -n1`"
 	    echo "img-size : $((`df | grep \/$ | awk '{print $3}'`*$_numerator/10))"
-	    echo ". U [-acdfikmnopsv]"
+	    echo ". U [-acdfikmnopsvV]"
 	    echo "  -c(hange_root) [/mnt/usb]" >> /tmp/mess.$TMP_LABEL
 	    echo "  -f(ile_system) [-] : /mnt/No." >> /tmp/mess.$TMP_LABEL
 	    echo "  -d(esktop) : on ??GB-* (8GB~, STRAGE; on a desktop host: from a text console)" >> /tmp/mess.$TMP_LABEL
@@ -3774,6 +3786,7 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	    echo "  -o(utput_u) . or filename" >> /tmp/mess.$TMP_LABEL; echo "  -i(nstall_u) filename" >> /tmp/mess.$TMP_LABEL; echo "  -p(urge_u) filename" >> /tmp/mess.$TMP_LABEL
 	    echo "  -s(ave_host) name [.] or . (without STRAGE: ${RESCUE_GB}GB-rescue only)" >> /tmp/mess.$TMP_LABEL
 	    echo "  -a(dd_strage)" >> /tmp/mess.$TMP_LABEL
+	    echo "  -V : cd $MNT_DEBIAN, sub shell (exit -> back, stays mounted)" >> /tmp/mess.$TMP_LABEL
 	elif [ "$ON_NONE" ]; then
 	    if [ -f /opt/BASE.u ]; then
 		echo ". U [-acefikonpuv]"
@@ -3888,12 +3901,15 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	    -v)
 		verbose $_option
 		;;
+	    -V)
+		cd_debian $_option
+		;;
 	esac
     else
 	echo "$_option: Invalid option. : $LINENO" >> /tmp/log.$TMP_LABEL
     fi
     _fs $LINENO umount /tmp/shm0.$TMP_LABEL
-    if [ "$_option" != "-v" ] && [ "$_option" != "-a" ] && [ "$_option" != "-f" ]; then
+    if [ "$_option" != "-v" ] && [ "$_option" != "-V" ] && [ "$_option" != "-a" ] && [ "$_option" != "-f" ]; then
 	if [ "$ON_RAMDISK" ]; then
 	    _fs $LINENO umount $MNT_DEBIAN
 	    _fs $LINENO umount /boot/efi

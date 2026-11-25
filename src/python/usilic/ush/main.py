@@ -5,7 +5,7 @@ import sys
 from . import PORTED
 from .env import Env
 from .fs import MountError, fs
-from .options import add_strage, change_root, file_system, next_host, page_with_usilic, verbose
+from .options import add_strage, cd_debian, change_root, file_system, next_host, page_with_usilic, verbose
 from .packages import output_u
 from .save import save
 from .desktop import desktop_select, erase_base
@@ -91,7 +91,8 @@ def options_help(env):
         items = ['  -c(hange_root) [/mnt/usb]', '  -f(ile_system) [-] : /mnt/No.',
                  '  -d(esktop) : on ??GB-* (8GB~, STRAGE; on a desktop host: from a text console)',
                  '  -k(ernel_remake) . or - or / or ?? (STRAGE)', '  -m(ake_usb) device [-]', '  -n(ext_host)', o, ip_items[0], ip_items[1],
-                 '  -s(ave_host) name [.] or . (without STRAGE: %dGB-rescue only)' % gb, '  -a(dd_strage)']
+                 '  -s(ave_host) name [.] or . (without STRAGE: %dGB-rescue only)' % gb, '  -a(dd_strage)',
+                 '  -V : cd %s, sub shell (exit -> back, stays mounted)' % env.mnt_debian]
     elif env.on_none:
         items = []
         if env.system.exists('/opt/BASE.u'):
@@ -139,6 +140,8 @@ def run(argv, system=None, uname=None, out=None, prepare=True):
             prepare_system(env, log, option, out)
         if option == '-v':
             verbose(env, log, ask, out, lambda text: page_with_usilic(env, text))
+        elif option == '-V':
+            cd_debian(env, log, ask, out)
         elif option == '-f':
             file_system(env, log, args, ask, out)
         elif option == '-a':
@@ -172,7 +175,7 @@ def run(argv, system=None, uname=None, out=None, prepare=True):
         code = 1
     except InChroot:
         return 1
-    if option not in ('-v', '-a', '-f'):  # U.shのmainの最後: マウントしたものを外す(-v・-a・-fは見るために残す)
+    if option not in ('-v', '-V', '-a', '-f'):  # U.shのmainの最後: マウントしたものを外す(-v・-V・-a・-fは見るために残す)
         finish(env, log)
     log.save(env, out)
     return code

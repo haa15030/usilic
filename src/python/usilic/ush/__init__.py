@@ -22,4 +22,4 @@ python3が無い(-uの最初の一歩)ので、U.shはそのために残る。
   prepare.py  U.shのmainの始めの下準備(apt・ネット・STRAGEのfstab・/mnt/debianのリンク・DOT_FILES)
   main.py     引数・ログ(/opt/U.log_日付)
 """
-PORTED = ('-a', '-c', '-d', '-e', '-f', '-i', '-k', '-m', '-n', '-o', '-p', '-r', '-s', '-u', '-v')
+PORTED = ('-a', '-c', '-d', '-e', '-f', '-i', '-k', '-m', '-n', '-o', '-p', '-r', '-s', '-u', '-v', '-V')
