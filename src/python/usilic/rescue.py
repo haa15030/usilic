@@ -1,4 +1,8 @@
-"""RESCUE(^J^R、K-156): /opt/U.sh(rescue-USB・RAMDISKの道具、src/U_proto.sh)の前に付ける画面。
+"""RESCUE(^J^R、K-156): /opt/U.sh(rescue-USB・RAMDISKの道具、src/U_proto.sh)。
+
+2026-11-26から、^J^RはSHELLで「. U」を動かすだけ(u_line()、application.start_rescue)。下の一覧から選ぶ画面は
+使わなくなった(シェルで出る一覧と形が違って戸惑う、直接のユーザー依頼)。parse_options等は、残っている試験のため。
+以下はその前の説明:
 
 U.shの中身は移さず、U.shに足した--list(一覧を出して最初の問いで止まる)・--ans=答え(問いへの答えを順に)・
 --batch(/dev/ttyから読まない)で動かす(docs/CHANGES.md項目1343・1344)。
@@ -164,6 +168,16 @@ def start(args, password):
 
 def answer_args(answers):
     return ['--ans=' + a for a in answers]
+
+
+U_COMMAND = '/usr/local/bin/U'
+
+
+def u_line():
+    """^J^RでSHELLへ打つ行: 「. U」(/usr/local/bin/U、/opt/U.optのUSH=でPython版かU.shかを選ぶ)。無ければ同じものを直に。"""
+    if os.path.isfile(U_COMMAND):
+        return '. U'
+    return shell_line([])
 
 
 def shell_line(args):

@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1423. **src/python: ^J^R(RESCUE)はSHELLで「. U」を動かすだけにする(2026-11-26)**
+   - 経緯: ユーザーがusilic-pyを使ってみて: U.sh(シェル)からusilicへ移った後、^J^Rでシェルの機能へ戻ると、オプションがFILE等と同じ一覧(項目1343等、これもユーザーの要望だった)で出るが、シェルで出る一覧と形が違って戸惑いそう。「. U」で起動した時と同じ画面に戻してほしい。シェルとファイル管理の間には仕様上の境界面があり、前者からは-v、後者からは^J^Rが行き来の通過パス。
+   - 変更: start_rescue()は、SHELLに入り「. U」(rescue.u_line()。/usr/local/bin/Uが無ければush.py・U.shを直に、rootでなければsudo)を打つだけ。一覧・番号・問い・パスワードをモードラインで聞く部分(rescue_show_options〜rescue_run)とrescue_passwordを外した(rescue.pyのparse_options等は試験のため残す)。U_sh.txtの説明も。U.shはSHELLの中で動くので、-uの途中でusilicを終えると止まる(前は別のセッションで動かしていた)。
+
 1422. **src/U_proto.sh・src/python: -Vの子のシェルに「(-V) 」とU_V=1、-mがbusyで止まった時に理由を案内(2026-11-25)**
    - 経緯: -mは写す前に$MNT_DEBIANを外すので、-Vの子のシェルが中にいるとbusyで止まる(何も消さずに「Busy.」で終わる、安全ではある)。ユーザー案はU.optにUMOUNT=true等のトグル(. U +で切り換え)。アシスタントの提案: -mはddで写すので外さないわけにいかず、トグルは手順と切り替え忘れを増やすだけ。代わりに、子のシェルを見分けられるようにし、止まった時に理由を出す。ユーザー承認"それでよろしく"。
    - 変更: -Vの子のbashにU_V=1と、--rcfile(/etc/bash.bashrc・~/.bashrcを読んでからPS1の頭に「(-V) 」)。-mのBusyの時、U_Vがあれば「in the shell of '. U -V' -> 'exit', then '. U -m sdX'」、なければfuser -vm $MNT_DEBIANの結果(10行まで)をログへ。U_sh.txtにも。
