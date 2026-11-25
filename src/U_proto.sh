@@ -57,7 +57,9 @@ JP_LIST="task-japanese-desktop"
 # usilic は「最初の起動」にならず、案内せずに「見つからない」と知らせるだけになる）
 # mpv（2026-11-25、直接のユーザー依頼）: Ubuntu の GNOME の既定の動画プレイヤーは H.264 の codec が無いと再生できず、
 # 「Install Plugin」も「Installing...」のまま何も起きなかった。mpv は自前の codec（ffmpeg）で再生できる
-USILIC_TOOLS="groff mg info p7zip-full w3m unzip fonts-noto-cjk python3 mpv"
+# fonts-ipafont（2026-11-25、直接のユーザー報告"IPAフォントが無い"、-d の 16GB-KDE-Plasma）: usilic -g は IPA ゴシック
+# （和文も等幅）があればそれを先に使う（tools/setup-debian.sh は入れていたが、-d は入れていなかった）
+USILIC_TOOLS="groff mg info p7zip-full w3m unzip fonts-noto-cjk fonts-ipafont python3 mpv"
 
 # --- CtrlとCaps Lockの入れ替え（~/.xprofile、Xにログインした時）
 # rescue-USBは色々なキーボードで使うので、入れ替えるかはログインの時につながっているキーボードで決める。

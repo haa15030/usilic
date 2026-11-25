@@ -270,7 +270,7 @@ DEB_VERSION ?= $(shell date +%Y%m%d).$(shell git rev-parse --short HEAD 2>/dev/n
 DEB_ARCH    := $(shell dpkg --print-architecture 2>/dev/null)
 DEB_ROOT     = $(BUILD_DIR)/deb
 DEB_FILE     = $(BUILD_DIR)/usilic_$(DEB_VERSION)_$(DEB_ARCH).deb
-DEB_RECOMMENDS = groff, mg, info, p7zip-full | 7zip, w3m, unzip, fonts-noto-cjk, python3, mpv
+DEB_RECOMMENDS = groff, mg, info, p7zip-full | 7zip, w3m, unzip, fonts-noto-cjk, fonts-ipafont, python3, mpv
 .PHONY: deb
 deb: $(BUILD_DIR)/usilic
 	@command -v dpkg-deb >/dev/null 2>&1 || { echo "make deb: dpkg-deb not found (Debian/Ubuntu only)"; exit 1; }

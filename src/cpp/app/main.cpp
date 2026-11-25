@@ -2486,6 +2486,9 @@ void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir, b
                                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"})
         if (std::filesystem::exists(font, fontEc)) haveCjkFont = true;
       if (!haveCjkFont) missing.push_back("fonts-noto-cjk");
+      // 2026-11-25、直接のユーザー報告("IPAフォントが無い"、UbuntuのU.sh -dのKDE): -gの既定のIPAゴシック
+      // (ipaGothicFontPath()、GraphicalDisplayの和文も)はLinuxでも先に使うので、macOSと同じく案内する。
+      if (ipaGothicFontPath().empty()) missing.push_back("fonts-ipafont");
     }
 #endif
 #ifdef __APPLE__
