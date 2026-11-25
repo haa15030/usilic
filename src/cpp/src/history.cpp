@@ -423,6 +423,9 @@ void copyIconGuiFields(const History::GuiPreferences &from, History::GuiPreferen
   to.letterSpacingExtraVertical = from.letterSpacingExtraVertical;
   // 2026-11-25、直接のユーザー依頼("アイコン版の設定はhistoryを除き-gとは独立して欲しいので色も同じく引き継がない
   // ように"、GNOMEの端末でusilic -gの後にアイコン版を起動すると、アイコン側の背景も端末の黒になった): 色も別の組に。
+  // 同日訂正("macOSのターミナルで-gした時の文字・背景色がアイコン版(色の選択肢が4種類しか無い)にそのまま
+  // 引き継がれるのがいい、と以前言っていた。macOSだけ引き継ぐように"): macOSは今までどおり-gと共通。
+#ifndef __APPLE__
   to.hasColors = from.hasColors;
   to.fgR = from.fgR;
   to.fgG = from.fgG;
@@ -430,6 +433,7 @@ void copyIconGuiFields(const History::GuiPreferences &from, History::GuiPreferen
   to.bgR = from.bgR;
   to.bgG = from.bgG;
   to.bgB = from.bgB;
+#endif
 }
 }  // namespace
 

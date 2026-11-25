@@ -500,12 +500,18 @@ TEST_CASE("an icon launch keeps its own font size and letter spacing apart from 
   History::setIconLaunch(true);
   CHECK(loaded.guiPreferences().fontPointSize == 20);
   CHECK(loaded.guiPreferences().letterSpacingExtraHorizontal == 3);
+#ifdef __APPLE__
+  CHECK(loaded.guiPreferences().fgR == 200);  // macOSは色は共通(2026-11-25、copyIconGuiFields()参照)
+#else
   CHECK(!loaded.guiPreferences().hasColors);  // 色も-gとは別(2026-11-25、アイコンの組には色の保存がまだ無い)
+#endif
   History::setIconLaunch(false);
   CHECK(loaded.guiPreferences().fgR == 200);
 }
 
-// 2026-11-25(copyIconGuiFields()参照): アイコンからの起動の色は-gの色と別に保存し、読み直しても混ざらない。
+// 2026-11-25(copyIconGuiFields()参照): アイコンからの起動の色は-gの色と別に保存し、読み直しても混ざらない
+// (macOSは-gと共通なので、Linux・Windowsだけ)。
+#ifndef __APPLE__
 TEST_CASE("an icon launch keeps its own colors apart from -g") {
   History h(10);
   History::GuiPreferences g;
@@ -527,6 +533,7 @@ TEST_CASE("an icon launch keeps its own colors apart from -g") {
   CHECK(loaded.guiPreferences().bgR == 255);
   History::setIconLaunch(false);
 }
+#endif
 
 // 2026-10-22(History::clearJournal()参照): 保存(replayJournalOnto→clearJournal)を2回しても、ディスク上の
 // 並びが増え続けない(以前はA,B,A,B,Aに増えていた)。2026-10-30以降、A→B→Aは一つ前と同じものの入れ替えで[B,A]。
