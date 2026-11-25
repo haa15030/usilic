@@ -45,7 +45,14 @@ def cd_debian(env, log, ask, out):
         out('%s: mounted' % env.mnt_debian)
         return
     out('cd %s; bash (exit -> back, %s stays mounted)' % (env.mnt_debian, env.mnt_debian))
-    env.system.interactive(['bash'], cwd=env.mnt_debian)
+    # 子のシェルだと分かるように、U_V=1とプロンプトの頭の「(-V) 」(-mがbusyで止まった時に案内する)。--rcfileは
+    # /etc/bash.bashrc・~/.bashrcの代わりなので、それを読んでからPS1を変える
+    rc = '/tmp/V_rc.%d' % os.getpid()
+    env.system.write_text(rc, '[ -f /etc/bash.bashrc ] && . /etc/bash.bashrc\n'
+                              '[ -f ~/.bashrc ] && . ~/.bashrc\n'
+                              'PS1="(-V) $PS1"\n')
+    env.system.interactive(['env', 'U_V=1', 'bash', '--rcfile', rc], cwd=env.mnt_debian)
+    env.system.run(['rm', '-f', rc])
 
 
 def list_mnt_no(env):

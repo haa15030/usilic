@@ -1627,6 +1627,12 @@ make_usb() { # -m)
     _unmount_part $_DST_DISK
     if mountpoint -q $MNT_DEBIAN || [ "`fgrep $_DST_DISK /etc/mtab`" ]; then
         echo "$1: $MNT_DEBIAN or $_DST_DISK: Busy. : $LINENO" >> /tmp/log.$TMP_LABEL
+        # 何が使っているか（2026-11-25、直接のユーザー依頼: -V の子のシェルが中にいると、ここで止まる）
+        if [ "$U_V" ]; then
+            echo "$1: in the shell of '. U -V' -> 'exit', then '. U -m $2'" >> /tmp/log.$TMP_LABEL
+        elif mountpoint -q $MNT_DEBIAN && command -v fuser > /dev/null; then
+            fuser -vm $MNT_DEBIAN 2>&1 | head -n10 >> /tmp/log.$TMP_LABEL
+        fi
         return
     fi
     # EFI(100MiB)・BIOS boot(1MiB)・ルート(ROOT_GB)・STRAGE(残り)。残りが512MiBに満たなければ、ルートを残り全部にする
@@ -3521,7 +3527,15 @@ cd_debian() { # -V)
         return
     fi
     echo "cd $MNT_DEBIAN; bash (exit -> back, $MNT_DEBIAN stays mounted)"
-    ( cd $MNT_DEBIAN && bash )
+    # 子のシェルだと分かるように、U_V=1 とプロンプトの頭の「(-V) 」（-m が busy で止まった時に案内する。2026-11-25、
+    # 直接のユーザー依頼）。--rcfile は /etc/bash.bashrc・~/.bashrc の代わりなので、それを読んでから PS1 を変える
+    cat <<'EOF' > /tmp/V_rc.$TMP_LABEL
+[ -f /etc/bash.bashrc ] && . /etc/bash.bashrc
+[ -f ~/.bashrc ] && . ~/.bashrc
+PS1="(-V) $PS1"
+EOF
+    ( cd $MNT_DEBIAN && U_V=1 bash --rcfile /tmp/V_rc.$TMP_LABEL )
+    rm -f /tmp/V_rc.$TMP_LABEL
 }
 
 _set_strage_opt() { # STRAGE のイメージ等（?GB-名前.img・$BUILD.img・IMG0.img）の置き場所（$strage_opt）。

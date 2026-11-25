@@ -4,6 +4,7 @@ U.shと同じ手順: EFI(100MiB)・BIOS boot(1MiB)・ルート(ROOT_GB、DEBIAN�
 ければ作らない)。ルートは区画ごとddで写す。先頭の4MiB(ext4のスーパーブロック=UUID)は最後に書き、すぐUUIDを変える
 (途中で止まっても、USB側に同じUUIDのext4が無いので、SSDのGRUBがUSBの書きかけを選ばない)。
 """
+import os
 import re
 
 from .fs import fs, is_mounted
@@ -50,6 +51,12 @@ def make_usb(env, log, option, args, ask, out):
     unmount_disk(env, log, disk)
     if system.is_mountpoint(env.mnt_debian) or any(d.startswith(disk) for d, _, _, _ in system.mounts()):
         log.add('%s: %s or %s: Busy.' % (option, env.mnt_debian, disk))
+        # 何が使っているか(2026-11-25、直接のユーザー依頼: -Vの子のシェルが中にいると、ここで止まる)
+        if os.environ.get('U_V'):
+            log.add("%s: in the shell of '. U -V' -> 'exit', then '. U -m %s'" % (option, disk[len('/dev/'):]))
+        elif system.is_mountpoint(env.mnt_debian):
+            for line in system.output(['fuser', '-vm', env.mnt_debian]).splitlines()[:10]:
+                log.add(line)
         return False
     root_kb = int(env.conf('ROOT_GB', '14') or 14) * 1024 * 1024
     source_kb = _size(system, root) // 1024
