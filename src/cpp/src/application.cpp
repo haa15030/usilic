@@ -22710,9 +22710,25 @@ bool Application::launchTerminalWindow() {
       {"xfce4-terminal"},      {"qterminal"},              {"mate-terminal"},  {"lxterminal"},
       {"xterm", "-fa", "Monospace", "-fs", "12"},
   };
+  // 2026-11-25、直接のユーザー報告(16GB-KDE-Plasma、推奨を入れないのでkonsoleが無い。"^T^Tでxtermが極小文字で出た"):
+  // x-terminal-emulator(Debian・Ubuntuのalternatives)の実体がxterm(uxterm・lxterm等)なら、フォントを付けられないので
+  // 飛ばし、ほかの端末か、最後のフォント付きのxtermにする。
+  auto xtermBehindAlternatives = []() {
+    const char *path = std::getenv("PATH");
+    std::stringstream dirs(path ? path : "/usr/bin:/bin");
+    for (std::string dir; std::getline(dirs, dir, ':');) {
+      if (dir.empty()) continue;
+      std::string candidate = dir + "/x-terminal-emulator";
+      if (::access(candidate.c_str(), X_OK) != 0) continue;
+      std::error_code ec;
+      std::string real = std::filesystem::canonical(candidate, ec).filename().string();
+      return !ec && real.find("xterm") != std::string::npos;
+    }
+    return false;
+  };
   const std::vector<std::string> *terminal = nullptr;
   for (const auto &t : kTerminals)
-    if (programOnPath(t[0])) {
+    if (programOnPath(t[0]) && !(t[0] == "x-terminal-emulator" && xtermBehindAlternatives())) {
       terminal = &t;
       break;
     }

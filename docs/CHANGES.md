@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1416. **src/cpp: ^T^Tは、x-terminal-emulatorの実体がxtermなら飛ばす(フォント付きのxtermかほかの端末に)(2026-11-25)**
+   - 経緯: 16GB-KDE-Plasma(-d、推奨を入れないのでkonsoleが無い)で.debのusilicの^T^Tを押すと、xtermが極小の文字で出た。x-terminal-emulator(alternatives)の実体がxtermで、項目1403の候補の先頭のx-terminal-emulatorがそのまま(-fa・-fs無しで)使われた。
+   - 変更: PATHのx-terminal-emulatorをstd::filesystem::canonicalで辿り、実体の名前にxtermが入っていれば(xterm・uxterm・lxterm・koi8rxterm)飛ばして、ほかの端末か、最後の`xterm -fa Monospace -fs 12`にする。Linuxだけのコードなので、macOSでは同じ判定を小さなプログラムに抜き出して確かめた(xtermへのsymlinkで1、無ければ0)。
+
 1415. **src/cpp・src/U_proto.sh・src/python: usilicの.deb(make deb)、-d・-rはDEBIAN区画の/optのusilic_*.debをaptで入れる(2026-11-25)**
    - 経緯: 16GB-KDE(-d)でusilicの^T^Tが効かない(イメージのusilicはDEBIAN区画の~/.localを写したもので、^T^Tより前のもの)。git cloneしてコンパイルしようとしたらg++が無かった。ユーザーの依頼: U.shから(以前の)-iを排除したかわりに、.deb化はどうか、dpkgにて同じ-iで入る。進め方は(a)(U.shが~/.localをtarで写すのをやめ、DEBIAN区画の/optに置いたusilic_*.debを入れる)。
    - 変更:
