@@ -33,8 +33,8 @@ def verbose(env, log, ask, out, page):
     body = '\n'.join(text) + '\n'
     if ask.batch:
         out(body.rstrip('\n'))
-    else:
-        page(body)
+        return False
+    return page(body)  # usilicを^J^Rで終えたらTrue(一覧を出し直す)
 
 
 def list_mnt_no(env):
@@ -134,13 +134,15 @@ def page_with_usilic(env, text):
     usilic = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'usilic.py')
     # ページャーでなく、/mntの(ls)の上にFILEで開く(USILIC_OPEN)。^Gで/mntへ出て、そのまま/mnt/番号へ行ける
     if os.path.isfile(usilic):
-        argv = ['env', 'USILIC_OPEN=' + path, sys.executable, usilic, '/mnt']
+        argv = ['env', 'USILIC_OPEN=' + path, 'USILIC_FROM_U=1', sys.executable, usilic, '/mnt']
     else:
         argv = ['less', path]
     if system.euid() == 0:
         argv = ['env', 'HOME=/root'] + argv
-    system.interactive(argv, quiet=True)
+    code = system.interactive(argv, quiet=True)
     os.unlink(path)
+    # usilicを^J^Rで終えた(シェルの側へ戻る、2026-11-26): 呼んだ側(main.run)が「. U」と同じ一覧を出し直す
+    return os.path.isfile(usilic) and code == 3
 
 
 def _write_opt(env, lines):

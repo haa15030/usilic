@@ -164,9 +164,9 @@ usilic は、DEBIAN区画の /opt（無ければ ~/git/usilic/src/cpp/build）�
 ⑥ -u が github から取る usilic のリポジトリ（~/git/usilic、tools/setup-debian.sh もここにある）は、非公開の間は取れません（git clone に認証が要ります）。㊿#
 #
 ⑦ -u は、Python 版の usilic（src/python）を /usr/local/lib/usilic-py に入れます（RAM-*-base.gz を作る前なので、どのホストにもあります）。
-"usilic-py"^M で起動し、^J^R（RESCUE）で SHELL に ". U" と打った時と同じ画面（オプションの一覧と「Option: -」）になります。
-U.sh（シェル）と usilic（ファイル管理）の行き来は、U.sh からは -v、usilic からは ^J^R です。
-U.sh は usilic の SHELL の中で動くので、-u のように長いものの途中で usilic を終えると止まります（終わるまで待ちます）。
+U.sh（シェル）と usilic（ファイル管理）の行き来は、U.sh からは -v、usilic からは ^J^R（RESCUE）です。
+". U -v"^M で usilic へ移り、usilic で ^J^R を押すと usilic を終えて、端末で ". U"^M と打った時と同じ画面（オプションの一覧と「Option: -」）へ戻ります。
+"usilic-py"^M で単独で起動した usilic でも、^J^R で usilic を終えて ". U" の画面へ移ります。
 テキストのコンソール（Ctrl+Alt+F3）や ssh でも使えるので、デスクトップのホストの -d にも使えます。
 python3 は、-o -p・-e で外しません（BASE.u 等の記録に載せません）。#
 #

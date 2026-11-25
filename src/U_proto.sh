@@ -679,8 +679,13 @@ _page() { # $1 を、戻って読めるページャーで（usilic-py → ユー
     # 組む groff の警告（cannot select font 'JPM'）が端末に出ないように）
     chmod 644 $1
     # usilic-py（Python 版）はページャーでなく、/mnt の (ls) の上に FILE で開く（USILIC_OPEN）。^G で /mnt へ出て、そのまま /mnt/番号 へ行ける
+    # USILIC_FROM_U: usilic-py を ^J^R で終えると 3 で返る。終わった後に「. U」と同じ一覧を出し直す（U_AGAIN、main の後。
+    # 2026-11-26、直接のユーザー依頼: シェルとファイル管理の行き来は、U.sh からは -v、usilic からは ^J^R）
     if [ -x /usr/local/bin/usilic-py ]; then
-        env HOME=/root USILIC_OPEN=$1 /usr/local/bin/usilic-py /mnt 2>/dev/null
+        env HOME=/root USILIC_OPEN=$1 USILIC_FROM_U=1 /usr/local/bin/usilic-py /mnt 2>/dev/null
+        if [ $? -eq 3 ]; then
+            U_AGAIN=y
+        fi
     elif [ -x /home/$USR/.local/bin/usilic ]; then
         env HOME=/root /home/$USR/.local/bin/usilic -c $1 2>/dev/null
     elif [ -x /usr/bin/usilic ]; then # .deb（make deb）で入れたもの
@@ -3960,4 +3965,8 @@ if [ "$U_BATCH" ]; then
 fi
 set -- $_args
 
+U_AGAIN=""
 main $1 $2 $3 $4 $5
+if [ "$U_AGAIN" ]; then # -v の usilic を ^J^R で終えた: 「. U」と同じ一覧へ
+    exec bash $U_SH
+fi

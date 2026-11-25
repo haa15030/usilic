@@ -171,13 +171,19 @@ def answer_args(answers):
 
 
 U_COMMAND = '/usr/local/bin/U'
+# U.shの-vから起動したusilic(U.shの_page・ush.pyのpage_with_usilicが付ける)。^J^Rで終えた時はこの終了コードで返し、
+# U.sh(ush.py)が「. U」と同じ一覧を出し直す
+FROM_U = 'USILIC_FROM_U'
+EXIT_TO_U = 3
 
 
-def u_line():
-    """^J^RでSHELLへ打つ行: 「. U」(/usr/local/bin/U、/opt/U.optのUSH=でPython版かU.shかを選ぶ)。無ければ同じものを直に。"""
+def u_argv():
+    """^J^Rでusilicを終えた後に動かすもの: 「. U」(/usr/local/bin/U、/opt/U.optのUSH=でPython版かU.shかを選ぶ)。
+    無ければ同じものを直に(rootでなければsudo)。"""
     if os.path.isfile(U_COMMAND):
-        return '. U'
-    return shell_line([])
+        return ['sh', U_COMMAND]
+    argv = engine([])
+    return argv if os.geteuid() == 0 else ['sudo'] + argv
 
 
 def shell_line(args):

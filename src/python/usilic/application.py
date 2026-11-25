@@ -132,6 +132,7 @@ class Application:
         self.pager_index = 0
         self.start_directory = os.getcwd()
         self.wants_exit = False
+        self.rescue_exit = False  # ^J^Rで終えた(usilic.pyが終えた後に「. U」へ、U.shの-vからならU.shへ戻る)
         self.notice = None          # showTransientNotice()の文(次のキーで消える)
         self.pending_keys = []      # 照合中のキー(C++のleaderXPending_等をまとめたもの)
         self.goto_digits = None     # ^[Nの数字(gotoLineDigits_)
@@ -2008,18 +2009,16 @@ class Application:
 
     # --- RESCUE(^J^R) ---
     def start_rescue(self):
-        """^J^R: SHELLで「. U」(端末で「. U」と打った時と同じ画面: オプションの一覧と「Option: -」)。
-        2026-11-26、直接のユーザー依頼: 前はオプションをFILE等と同じ一覧で選んだ(rescue.py)が、シェルで出る一覧と
-        形が違って戸惑う。シェル(U.sh)とファイル管理(usilic)の間には境界があり、行き来の道はU.shからは-v、
-        usilicからは^J^R。sudoのパスワードもSHELLで。"""
+        """^J^R: usilicを終えて、端末の「. U」へ(端末で「. U」と打った時と同じ画面: オプションの一覧と「Option: -」)。
+        2026-11-26、直接のユーザー依頼: シェル(U.sh)とファイル管理(usilic)の間には境界があり、行き来の道はU.shからは-v、
+        usilicからは^J^R。^J^Rで戻った先はターミナルで起動した時と同じ画面でないと、シェルの側へ来たことにならない。
+        U.shの-vから起動したusilic(USILIC_FROM_U)なら終わるだけ(U.shが一覧を出し直す)、他はusilic.pyが終えた後に
+        「. U」へ切り替わる(rescue_exit)。前はFILE等と同じ一覧で選び(rescue.py)、その次はusilicのSHELLで「. U」を打っていた。"""
         if not rescue.available():
             self.show_transient_notice('RESCUE: no ' + rescue.U_SH)
             return False
-        if not self.ensure_shell():
-            return False
-        self.enter_mode(SHELL)
-        self.shell.submit_line(rescue.u_line())
-        self.refresh_shell_view()
+        self.rescue_exit = True
+        self.wants_exit = True
         return True
 
     # --- HELP・KEY ---

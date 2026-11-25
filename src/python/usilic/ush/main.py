@@ -134,11 +134,12 @@ def run(argv, system=None, uname=None, out=None, prepare=True):
     ask = Ask(answers, batch, out)
     option, args = words[0], words[1:]
     code = 0
+    again = False  # -vのusilicを^J^Rで終えた: 終わった後に「. U」と同じ一覧を出し直す
     try:
         if prepare and option not in ('-o', '-i', '-p'):  # U.shのmainの始め(-o・-i・-pはその前に動く)
             prepare_system(env, log, option, out)
         if option == '-v':
-            verbose(env, log, ask, out, lambda text: page_with_usilic(env, text))
+            again = verbose(env, log, ask, out, lambda text: page_with_usilic(env, text))
         elif option == '-f':
             file_system(env, log, args, ask, out)
         elif option == '-a':
@@ -175,6 +176,8 @@ def run(argv, system=None, uname=None, out=None, prepare=True):
     if option not in ('-v', '-a', '-f'):  # U.shのmainの最後: マウントしたものを外す(-v・-a・-fは見るために残す)
         finish(env, log)
     log.save(env, out)
+    if again:  # シェルの側(「. U」の画面)へ戻る
+        return run([], system=system, uname=uname, out=out, prepare=prepare)
     return code
 
 

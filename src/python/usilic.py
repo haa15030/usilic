@@ -235,6 +235,8 @@ def main():
     # (ls)の上にこのファイルをFILEで開く(ページャーではないので、^Gでその(ls)へ戻れる)。U.shの-v(DEBIAN区画・STRAGEの
     # /opt、/mnt/番号、df)を開いて、そのまま/mnt/番号へ行けるように(2026-11-23、U.shの_page・ush.pyのpage_with_usilic)
     open_after = os.environ.pop('USILIC_OPEN', '')
+    from_u = os.environ.pop('USILIC_FROM_U', '') == '1'  # U.shの-vから(^J^Rで終えたらU.shへ戻る)
+    rescue_exit = [False]
     stdin_stream = None
     if not sys.stdin.isatty():
         # 標準入力のページャー: データは元の標準入力から読み、キーと画面は端末(/dev/tty)へ(C++版と同じ)。
@@ -345,12 +347,23 @@ def main():
             display.set_mouse_tracking(False)  # 落ちても端末にマウスの報告を残さない
         if getattr(app, 'on_exit', None):
             app.on_exit()
+        rescue_exit[0] = app.rescue_exit
         return None
 
     message = curses.wrapper(run)
     if message:
         print(message, file=sys.stderr)
         return 1
+    if rescue_exit[0]:  # ^J^R: シェルの側(「. U」の画面)へ
+        from usilic import rescue
+        if from_u:
+            return rescue.EXIT_TO_U  # U.shの-vから: U.shが一覧を出し直す
+        argv = rescue.u_argv()
+        try:
+            os.execvp(argv[0], argv)
+        except OSError as e:
+            print('usilic: cannot run %s: %s' % (' '.join(argv), e), file=sys.stderr)
+            return 1
     return 0
 
 
