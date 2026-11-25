@@ -445,9 +445,10 @@ if [ "$ON_UBUNTU" ]; then
     # GNOME Shell だけで、端末（Ubuntu 25.10 からは ptyxis）・ファイルマネージャ（nautilus）・テキストエディタ・音（PipeWire、
     # pipewire-audio は pipewire-pulse・wireplumber・pipewire-alsa をまとめたもの）は推奨だった）。
     # fonts-ubuntu: 端末（ptyxis）の既定の Ubuntu Sans Mono。無いと monospace が Noto Sans Mono CJK JP になり、字間が広がった
-    # 先頭が「+」なら、その項目だけ推奨も入れる（DESKTOP_APT_OPT を使わない）。GNOME-Live は、インストーラの「お試し」と
-    # 同じ構成（ubuntu-desktop-minimal と推奨）
-    readonly DESKTOP_LIST="ubuntu-desktop-minimal,ptyxis,nautilus,gnome-text-editor,pipewire-audio,fonts-ubuntu:GNOME +ubuntu-desktop-minimal:GNOME-Live xubuntu-core:Xfce kubuntu-desktop:KDE-Plasma lubuntu-desktop:LXQt ubuntu-mate-core:MATE"
+    # 先頭が「+」なら、その項目だけ推奨も入れる（DESKTOP_APT_OPT を使わない）。
+    # GNOME-Live（+ubuntu-desktop-minimal）は 2026-11-25 に外した（直接のユーザー指摘: インストーラの「お試し」と同じには
+    # ならない。お試しと同じものは、live 環境の記録を -i で入れる、U_sh.txt 参照）
+    readonly DESKTOP_LIST="ubuntu-desktop-minimal,ptyxis,nautilus,gnome-text-editor,pipewire-audio,fonts-ubuntu:GNOME xubuntu-core:Xfce kubuntu-desktop:KDE-Plasma lubuntu-desktop:LXQt ubuntu-mate-core:MATE"
     readonly DESKTOP_APT_OPT="--no-install-recommends" # 推奨パッケージも入れるなら ""
     JP_LIST="language-pack-ja language-pack-gnome-ja fcitx5-mozc fonts-noto-cjk"
     BASE_LIST="arch-install-scripts gdisk dosfstools grub-pc-bin grub-efi-amd64-bin git" # 必要なら "linux-firmware" も（1GB前後あるので RAMDISK 容量に注意）
@@ -1765,10 +1766,9 @@ desktop_select() { # -d)
     while read _task _name
     do
         # 括弧の中は主のパッケージだけ（2026-11-25、直接のユーザー指摘: GNOME の「,」で足した端末等まで並べると、
-        # 推奨も入れる「+」の GNOME-Live より中身が多いように見える）。「+」は推奨も入れる（-minimal なら -fullset と）
+        # 中身が多いように見える）。「+」は推奨も入れる
         _label=`echo ${_task#+} | sed -e 's/,.*//'`
         case "$_task" in
-            +*-minimal|+*-minimal,*) _label=`echo $_label | sed -e 's/-minimal$/-fullset/'` ;;
             +*) _label="$_label +recommends" ;;
         esac
         if [ -f $strage_opt/${RAMDISK_GB}GB-$_name.img ]; then

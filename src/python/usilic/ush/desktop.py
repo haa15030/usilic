@@ -145,11 +145,9 @@ def netplan_nm(env, on, out):
 
 def desktop_label(task):
     """-dの一覧の括弧の中: 主のパッケージだけ(2026-11-25、直接のユーザー指摘: GNOMEの「,」で足した端末等まで並べると、
-    推奨も入れる「+」のGNOME-Liveより中身が多いように見える)。「+」は推奨も入れる(-minimalなら-fullsetと)。"""
+    中身が多いように見える)。「+」は推奨も入れる。"""
     label = task.lstrip('+').split(',')[0]
-    if task.startswith('+'):
-        label = label[:-len('-minimal')] + '-fullset' if label.endswith('-minimal') else label + ' +recommends'
-    return label
+    return label + ' +recommends' if task.startswith('+') else label
 
 
 def desktop_ubuntu(env, on, out):
@@ -374,7 +372,7 @@ def desktop_select(env, log, option, ask, out):
         out('HOST:%dGB-%s' % (env.ramdisk_gb, name))
         if env.on_ubuntu:
             option_list = env.conf('DESKTOP_APT_OPT', '--no-install-recommends').split()
-            if task.startswith('+'):  # 「+」: 推奨も入れる(GNOME-Live: インストーラの「お試し」と同じ構成)
+            if task.startswith('+'):  # 「+」: 推奨も入れる
                 option_list = []
             packages = task.lstrip('+').split(',')  # DESKTOP_LISTの「,」で足した包み(端末等)も
             out('apt-get install -y %s %s' % (' '.join(option_list), ' '.join(packages)))

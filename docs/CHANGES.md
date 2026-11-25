@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1413. **src/U_proto.sh・src/python・src/U_sh.txt: -dの一覧からGNOME-Live(+ubuntu-desktop-minimal)を外す(2026-11-25)**
+   - 経緯: 項目1411で一覧の括弧をGNOME-Liveは`ubuntu-desktop-fullset`としたが、ユーザーの指摘: GNOME-Liveは-dのリストにあるわけだから体験版(fullset)にはならない。とするとfullsetはうそになるので、GNOME-Liveは削除でいい(体験版と同じものは、live環境の記録を-iで入れる、項目1412)。
+   - 変更: DESKTOP_LISTから`+ubuntu-desktop-minimal:GNOME-Live`を外し、一覧の括弧の「+」の-minimal→-fullsetもやめた(「+」は「名前 +recommends」のまま、仕組みは残す)。U_sh.txtのGNOME-Liveの記述も直した。STRAGEに前に作った?GB-GNOME-Live.imgがあれば、-nではそのまま選べる(要らなければ手で消す)。
+
 1412. **src/U_sh.txt: インストーラの「お試し」のGNOMEは、live環境の記録を-iで(10GB以上のRAMDISK)という補足(2026-11-25)**
    - 経緯: 16GB-baseで8GB-GNOME_live.u(live環境の`dpkg --get-selections`)を-iで入れ、nvidia-driver-615-openを足して-sしたら、展開に8,136,208KB(約8.1GB)要り、8GBのRAMDISKには入らない(16GBで53%)。音も鳴り、mpvで動画も見られた。ユーザーの依頼: 体験版のGNOME環境が-dで入らないなら、それ用の.uを提示してこれで、という補足を。
    - 変更: U_sh.txtの「よそで作った記録」の後に、手順(お試しで`dpkg --get-selections`→10GB以上の?GB-baseの/optへ→`-i`→NVIDIAなら描画の側をapt-get→`-s GNOME_live`→`-n`)と、-sの名前を-dのGNOME-Liveと別にすること(同じだと上書きし合う)を足した。
