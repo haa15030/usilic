@@ -443,15 +443,17 @@ if [ "$ON_UBUNTU" ]; then
         RESCUE_LIST_X="$RESCUE_LIST fakeroot libncurses-dev"
     fi
     # -d のデスクトップ一覧（メタパッケージ:名前。名前は ?GB-名前.img になる）。パッケージ名は 'apt-cache search -- -desktop$' 等で確認
-    # 「,」で包みを足せる（DESKTOP_APT_OPT で推奨を入れないので、メタだけだと端末等が入らない。ubuntu-desktop-minimal は
-    # GNOME Shell だけで、端末（Ubuntu 25.10 からは ptyxis）・ファイルマネージャ（nautilus）・テキストエディタ・音（PipeWire、
-    # pipewire-audio は pipewire-pulse・wireplumber・pipewire-alsa をまとめたもの）は推奨だった）。
-    # fonts-ubuntu: 端末（ptyxis）の既定の Ubuntu Sans Mono。無いと monospace が Noto Sans Mono CJK JP になり、字間が広がった
-    # 先頭が「+」なら、その項目だけ推奨も入れる（DESKTOP_APT_OPT を使わない）。
+    # 「,」で包みを足せる。fonts-ubuntu: 端末（ptyxis）の既定の Ubuntu Sans Mono。無いと monospace が Noto Sans Mono CJK JP
+    # になり、字間が広がった。
+    # 2026-11-25、直接のユーザー依頼（推奨を入れない KDE には konsole・ファイルマネージャ・メディアプレーヤーが無かった。
+    # "推奨を既定にした一覧で"）: 推奨も入れる（DESKTOP_APT_OPT=""）。前は推奨を入れなかったので、GNOME には端末（ptyxis）・
+    # ファイルマネージャ（nautilus）・テキストエディタ・音（pipewire-audio）を「,」で足していた（どれも推奨で入る）。
+    # 推奨を入れないなら DESKTOP_APT_OPT="--no-install-recommends"（その時は先頭の「+」の項目だけ推奨も入れる）。
     # GNOME-Live（+ubuntu-desktop-minimal）は 2026-11-25 に外した（直接のユーザー指摘: インストーラの「お試し」と同じには
-    # ならない。お試しと同じものは、live 環境の記録を -i で入れる、U_sh.txt 参照）
-    readonly DESKTOP_LIST="ubuntu-desktop-minimal,ptyxis,nautilus,gnome-text-editor,pipewire-audio,fonts-ubuntu:GNOME xubuntu-core:Xfce kubuntu-desktop:KDE-Plasma lubuntu-desktop:LXQt ubuntu-mate-core:MATE"
-    readonly DESKTOP_APT_OPT="--no-install-recommends" # 推奨パッケージも入れるなら ""
+    # ならない。お試しと同じものは、live 環境の記録を -i で入れる、U_sh.txt 参照）。
+    # Cinnamon（2026-11-25、直接のユーザー依頼）: Ubuntu の公式のフレーバー Ubuntu Cinnamon のメタパッケージ
+    readonly DESKTOP_LIST="ubuntu-desktop-minimal,fonts-ubuntu:GNOME xubuntu-core:Xfce kubuntu-desktop:KDE-Plasma lubuntu-desktop:LXQt ubuntu-mate-core:MATE ubuntucinnamon-desktop:Cinnamon"
+    readonly DESKTOP_APT_OPT="" # 推奨パッケージを入れないなら "--no-install-recommends"
     JP_LIST="language-pack-ja language-pack-gnome-ja fcitx5-mozc fonts-noto-cjk"
     BASE_LIST="arch-install-scripts gdisk dosfstools grub-pc-bin grub-efi-amd64-bin git" # 必要なら "linux-firmware" も（1GB前後あるので RAMDISK 容量に注意）
     # -u で BASE.u を記録する前に外すもの（Ubuntu Server が最初から入れる、RAMDISK では要らないもの。RAM-*-base.gz が

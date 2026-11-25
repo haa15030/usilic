@@ -395,7 +395,7 @@ def desktop_select(env, log, option, ask, out):
                 net_restart(env, out)
         out('HOST:%dGB-%s' % (env.ramdisk_gb, name))
         if env.on_ubuntu:
-            option_list = env.conf('DESKTOP_APT_OPT', '--no-install-recommends').split()
+            option_list = env.conf('DESKTOP_APT_OPT', '').split()  # 2026-11-25から既定は推奨も入れる
             if task.startswith('+'):  # 「+」: 推奨も入れる
                 option_list = []
             packages = task.lstrip('+').split(',')  # DESKTOP_LISTの「,」で足した包み(端末等)も
