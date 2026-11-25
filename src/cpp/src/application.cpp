@@ -2952,6 +2952,9 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     // 2026-10-20、直接のユーザー提案("稼働中^T^H/^T^Kで子のHELP/KEYを出す"): 子の窓でHELP・KEYを開く(-H・-Kと同じ)。
     if (!special && byte == 0x08) return launchHelpChild();
     if (!special && byte == 0x0b) return launchKeyChild();
+    // 2026-11-25、直接のユーザー提案("デスクトップで急な作業...エディタがその場で使えないのがもどかしいので
+    // ^T^T(erminal)一発でターミナルが出せれば"): 今のディレクトリで端末の新しいウィンドウ(シェル)を開く。
+    if (!special && byte == 0x14) return launchTerminalWindow();
     return byte == 0x07 && !special;
   }
   if (!special && byte == 0x14 && !leaderPending && !universalArgPending_) {
@@ -22688,6 +22691,52 @@ bool Application::launchDirectoryChild(const std::string &directory) {
 // "^Kのウィンドウ"(中身はFileManagerのKEY、2026-10-11): 子のusilicを-K(子の側ではKEYの窓自身になる)で開く。
 // 2026-10-20、直接のユーザー提案("次回以降は-H/-K起動または稼働中^T^H/^T^Kで子のHELP/KEYを出す"): 以前は-H・最初の
 // 起動でHELPの子に続けて必ず開いていたのを、-K・^T^Kの時だけに。
+// ^T^T: 今のディレクトリで、端末の新しいウィンドウ(ログインシェル)を開く(usilicとは別に動き、閉じても知らせない)。
+// 端末はDebian・Ubuntuの共通の名前x-terminal-emulator(各デスクトップの端末(ptyxis・gnome-terminal・konsole・
+// xfce4-terminal・qterminal・mate-terminal等)が入る時に登録する)を先に、無ければ知っている端末、最後にxterm
+// (既定の字が小さいので-fa Monospace -fs 12)。端末のサーバー(gnome-terminal・ptyxis)も起動した側の
+// ディレクトリで開く。
+bool Application::launchTerminalWindow() {
+#if defined(__APPLE__) || defined(_WIN32)
+  showTransientNotice(activeView(), "^T^T: Linux (X11/Wayland) only");
+  return true;
+#else
+  if (!std::getenv("DISPLAY") && !std::getenv("WAYLAND_DISPLAY")) {
+    showTransientNotice(activeView(), "^T^T: No display (X11/Wayland)");
+    return true;
+  }
+  static const std::vector<std::vector<std::string>> kTerminals = {
+      {"x-terminal-emulator"}, {"ptyxis", "--new-window"}, {"gnome-terminal"}, {"konsole"},
+      {"xfce4-terminal"},      {"qterminal"},              {"mate-terminal"},  {"lxterminal"},
+      {"xterm", "-fa", "Monospace", "-fs", "12"},
+  };
+  const std::vector<std::string> *terminal = nullptr;
+  for (const auto &t : kTerminals)
+    if (programOnPath(t[0])) {
+      terminal = &t;
+      break;
+    }
+  if (!terminal) {
+    showTransientNotice(activeView(), "^T^T: No terminal (x-terminal-emulator, xterm, ...)");
+    return true;
+  }
+  std::string dir = directoryMode_.currentDirectory();
+  if (dir.empty()) {
+    std::error_code ec;
+    dir = std::filesystem::current_path(ec).string();
+  }
+  // usilicの中の環境(USILIC等)は渡さない(端末の中で usilic を起動すると、子として扱われる)。
+  std::string line = "unset USILIC USILIC_HANDOFF USILIC_TRANSIENT; " +
+                     cdWrap(dir, "nohup " + shellQuoteArgv(*terminal) + " </dev/null >/dev/null 2>&1 &");
+  if (!ChildProcess::run({"sh", "-c", line}).ok) {
+    showTransientNotice(activeView(), "^T^T: Cannot open " + (*terminal)[0]);
+    return true;
+  }
+  showTransientNotice(activeView(), "Opened " + (*terminal)[0]);
+  return true;
+#endif
+}
+
 bool Application::launchKeyChild() {
 #ifdef _WIN32
   setExternalWindowSlot(2);

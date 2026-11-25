@@ -480,6 +480,7 @@ KEY
     K-128 C-t p   # ^Tp   Previous window
     K-129 C-t C-h # ^T^H  HELP window
     K-130 C-t C-k # ^T^K  KEY window
+    K-156 C-t C-t # ^T^T  New terminal window
     K-131 e       # e     Right after ^Xe: repeat the macro (one key)
     K-132 C-f     # ^F    COPY: forward one character
     K-133 C-b     # ^B    COPY: back one character

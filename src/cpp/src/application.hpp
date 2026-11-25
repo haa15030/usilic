@@ -1876,6 +1876,7 @@ class Application {
   // 最初の起動(~/.usilic/historyが空): 子ではなく、親自身がHELPを開く(2026-10-20)。GUIができてから。
   void scheduleHelpInParent() { helpInParentPending_ = true; }
   bool launchHelpChild();  // ^T^H・-H
+  bool launchTerminalWindow();  // ^T^T
   bool launchKeyChild();
   bool launchDirectoryChild(const std::string &directory);  // HELPのusilic-ls:のリンク(-N)   // ^T^K・-K
 #ifdef _WIN32

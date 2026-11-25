@@ -189,6 +189,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {153, "ESC b", Scope::Prompt},  // ^[b   入力: 1語戻る
       {154, "ESC d", Scope::Prompt},  // ^[d   入力: 1語削除
       {155, "ESC C-h", Scope::Prompt},  // ^[^H 入力: 前の1語を削除(^[DELも)
+      {156, "C-t C-t"},  // ^T^T  端末の新しいウィンドウ(2026-11-25)
   };
   return entries;
 }

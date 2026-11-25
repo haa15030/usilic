@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1403. **src/cpp: ^T^Tで今のディレクトリに端末の新しいウィンドウを開く(K-156)(2026-11-25)**
+   - 経緯: ユーザー提案「GNOME等のデスクトップで急な作業をした時、usilicのSHELLは使えるがエディタがその場で使えないのがもどかしい。^Tが別のウィンドウの起動・切り替えに使われているので^T^T(erminal)一発で端末を」。全デスクトップにある端末は? → Debian・Ubuntuの共通の名前x-terminal-emulator(各デスクトップの端末が入る時にalternativesに登録する)。
+   - 変更: `launchTerminalWindow()`(^Tの後の^T、leaderTPending_)。DISPLAYかWAYLAND_DISPLAYがある時、x-terminal-emulator、無ければptyxis(--new-window)・gnome-terminal・konsole・xfce4-terminal・qterminal・mate-terminal・lxterminal、最後にxterm(既定の字が小さいので-fa Monospace -fs 12)の最初に見つかったものを、今の(ls)のディレクトリで`nohup … &`(USILIC・USILIC_HANDOFF・USILIC_TRANSIENTは渡さない)。画面が無い・端末が無い・macOS/Windowsは知らせだけ。キーの表にK-156「C-t C-t」、src/usilicrc・usilicrc.enのKEY節にも。HELP原稿(src/HELP_.txt・HELP_en_.txt)の^Tn/^Tpの所に追記(未追跡のファイル)。
+   - 確認: macOSで`make usilic`(Linuxの分岐はmacOSではコンパイルされない、Linuxで要確認)、`./build/run_tests --test-case="*usilicrc*,*KEY*,*key*"`が通る。
+
 1402. **src/U_proto.sh・src/python: -s・-uで保存するイメージ(?GB-名前.img)をmkfs.ext4 -m 0で(2026-11-25)**
    - 経緯: 組み立て環境を入れた8GB-rescue(項目1401、4.28GB→5.72GB)の保存で、イメージ(6.06GB)のdfが「Avail 6820KB、100%」。ext4の既定のroot用の予約(5%、約300MB)のためで、tarはrootなので書けていた(書けなければtarのエラーで/tmp/logに出て、前のイメージへ戻す)。
    - 変更: `_save_host`のIMG0.img(STRAGE・/dev/shmのどちらでも)を`mkfs.ext4 -q -m 0`で。RAMDISKへ展開するだけなので予約は要らず、dfも実際の空きと合う。Python版(save.py)も同じ。

@@ -478,6 +478,7 @@ KEY
     K-128 C-t p   # ^Tp   前の窓へ
     K-129 C-t C-h # ^T^H  HELP の窓
     K-130 C-t C-k # ^T^K  KEY の窓
+    K-156 C-t C-t # ^T^T  端末の新しいウィンドウ
     K-131 e       # e     ^Xe の直後: マクロをもう一度(1 文字)
     K-132 C-f     # ^F    COPY: 1文字進む
     K-133 C-b     # ^B    COPY: 1文字戻る
