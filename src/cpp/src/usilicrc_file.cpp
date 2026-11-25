@@ -84,6 +84,12 @@ std::string &installLibDirectory() {
 
 void setInstallLibDirectory(const std::string &dir) { installLibDirectory() = dir; }
 
+std::string installLibDirectoryPath() {
+  std::string dir = installLibDirectory();
+  if (!dir.empty() && dir.back() != '/') dir += '/';
+  return dir;
+}
+
 std::optional<std::string> installedPath(const std::string &home) {
   std::vector<std::string> candidates;
   if (!home.empty()) candidates.push_back(home + "/.local/lib/usilic/usilicrc");

@@ -237,10 +237,31 @@ def put_usilic(env, log, option, out):
     system = env.system
     user = env.conf('USR', '') or env.user
     home, src = '/home/' + user, env.mnt_debian + '/home/' + user
-    if not env.on_ramdisk or not system.is_mountpoint(env.mnt_debian) or not system.exists(src + '/.local/bin/usilic'):
+    if not env.on_ramdisk or not system.is_mountpoint(env.mnt_debian):
         return
     files = ['.local/bin/usilic', '.local/lib/usilic', '.local/share/applications/usilic.desktop', '.local/usilic-web']
-    if not system.exists(home + '/.local/bin/usilic'):
+    binary, desktop = home + '/.local/bin/usilic', home + '/.local/share/applications/usilic.desktop'
+    # 2026-11-25、直接のユーザー依頼(16GB-KDEにg++が無く、usilicを入れ直せなかった): DEBIAN区画でmake debした
+    # usilic_*.deb(/opt、無ければリポジトリのsrc/cpp/build)があれば、新しいものをaptで入れる(依存も入る)。
+    # 入っている版と同じなら入れない。前に~/.localへ写したもの(PATHで/usr/binより先)は消す
+    debs = [d + '/' + n for d in (env.mnt_debian + '/opt', src + '/git/usilic/src/cpp/build')
+            for n in (system.listdir(d) or []) if n.startswith('usilic_') and n.endswith('.deb')]
+    if debs:
+        deb = max(debs, key=lambda p: system.mtime(p) or 0)
+        version = system.output(['dpkg-deb', '-f', deb, 'Version']).strip()
+        if system.output(['dpkg-query', '-W', '-f=${Version}', 'usilic']).strip() != version:
+            wait_online(env)
+            if apt(env, ['install', '-y', deb], out) != 0:
+                apt(env, ['update', '-y'], out)
+                apt(env, ['install', '-y', deb], out)
+            log.add('%s: usilic -> %s' % (option, deb))
+        if system.exists(home + '/.local/bin/usilic') and system.exists('/usr/bin/usilic'):
+            out('rm -rf %s/.local/bin/usilic %s/.local/lib/usilic %s' % (home, home, desktop))
+            system.run(['rm', '-rf', home + '/.local/bin/usilic', home + '/.local/lib/usilic', desktop])
+        binary, desktop = '/usr/bin/usilic', '/usr/share/applications/usilic.desktop'
+    elif not system.exists(src + '/.local/bin/usilic'):
+        return
+    elif not system.exists(home + '/.local/bin/usilic'):
         present = [f for f in files if system.exists(src + '/' + f)]
         out('cd %s; tar cf - %s | tar xfp - -C %s' % (src, ' '.join(files), home))
         system.shell('tar cf - %s | tar xfp - -C %s' % (' '.join(present), home), cwd=src)
@@ -257,7 +278,6 @@ def put_usilic(env, log, option, out):
                      % (home + '/.local/share/applications'))
         log.add('%s: usilic -> %s/.local' % (option, home))
     # ログインした時にusilic(-g)を出す(デスクトップによって端末が出たり出なかったりするので、usilicは必ず)
-    desktop = home + '/.local/share/applications/usilic.desktop'
     if system.exists(desktop):
         system.makedirs(home + '/.config/autostart')
         system.run(['cp', desktop, home + '/.config/autostart'])
@@ -265,7 +285,7 @@ def put_usilic(env, log, option, out):
         system.run(['chown', '-R', '%s:%s' % (user, user), home + '/.config/autostart'])
     tools = [t for t in env.conf('USILIC_TOOLS', '').split()
              if 'ok installed' not in system.output(['dpkg-query', '-W', '-f=${Status}', t])]
-    libs = '=> not found' in system.output(['ldd', home + '/.local/bin/usilic'])
+    libs = '=> not found' in system.output(['ldd', binary])
     if tools or libs:
         wait_online(env)
     if tools:
@@ -276,7 +296,7 @@ def put_usilic(env, log, option, out):
         system.run(['apt-get', 'clean'])
     if libs:
         log.add('%s: usilic: missing libraries -> install' % option)
-        usilic_libs(env, log, option, home + '/.local/bin/usilic', out)
+        usilic_libs(env, log, option, binary, out)
 
 
 def desktop_list(env):

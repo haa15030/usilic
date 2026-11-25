@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include "key_bindings.hpp"
 #include "platform.hpp"
+#include "usilicrc_file.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -875,12 +876,20 @@ const std::vector<Configuration::UrlHandler> &Configuration::urlHandlers() const
               {"Copy", {"sh", "-c", "cat > /dev/clipboard"}}};
 #endif
     // Pdf(2026-10-04): make installが入れるurl2pdfがあればOpenの次に。
+    // 2026-11-25(.deb): ~/.local/lib/usilic/に無ければ、実行ファイルから見たlib/usilic/(/usr/lib/usilic/等)も。
     const char *home = std::getenv("HOME");
-    std::string url2pdf = std::string(home ? home : "") + "/.local/lib/usilic/url2pdf";
-    if (home && ::access(url2pdf.c_str(), X_OK) == 0) list.insert(list.begin() + 1, {"Pdf", {url2pdf}});
+    auto installed = [home](const std::string &name) {
+      std::string path = std::string(home ? home : "") + "/.local/lib/usilic/" + name;
+      if (home && ::access(path.c_str(), X_OK) == 0) return path;
+      std::string dir = fm::usilicrc::installLibDirectoryPath();
+      if (!dir.empty() && ::access((dir + name).c_str(), X_OK) == 0) return dir + name;
+      return std::string();
+    };
+    std::string url2pdf = installed("url2pdf");
+    if (!url2pdf.empty()) list.insert(list.begin() + 1, {"Pdf", {url2pdf}});
     // Epub(2026-10-11): make installが入れるnarou2epubがあれば最後に。
-    std::string narou2epub = std::string(home ? home : "") + "/.local/lib/usilic/narou2epub";
-    if (home && ::access(narou2epub.c_str(), X_OK) == 0) list.push_back({"Epub", {narou2epub}});
+    std::string narou2epub = installed("narou2epub");
+    if (!narou2epub.empty()) list.push_back({"Epub", {narou2epub}});
     return list;
   }();
   return kDefaults;

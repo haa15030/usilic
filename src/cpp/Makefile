@@ -146,8 +146,10 @@ TESTS    = $(wildcard $(TEST_DIR)/*.cpp)
 # where this installed copy actually gets read from at runtime.
 PREFIX      ?= $(HOME)/.local
 INSTALL_NAME = usilic
-INSTALL_DIR  = $(PREFIX)/bin
-LIB_DIR      = $(PREFIX)/lib/usilic
+# 2026-11-25(make deb): DESTDIRは入れる先の頭に付けるだけ(.desktopに書くパスには付けない)。
+DESTDIR     ?=
+INSTALL_DIR  = $(DESTDIR)$(PREFIX)/bin
+LIB_DIR      = $(DESTDIR)$(PREFIX)/lib/usilic
 
 .PHONY: test usilic install clean app help-epub help-epub-en help-man help harness
 
@@ -238,8 +240,9 @@ install: $(BUILD_DIR)/usilic
 	install -m 644 tools/urls2pdf.py $(LIB_DIR)/urls2pdf.py
 	# 2026-10-14: usilic-web(src/web/)の原稿置き場(^J^Eのhttp://localhost/usilic-web/から落とした本もここ、macOSの
 	# src/web/config.phpもここを使う)と、見本の.epub(既にあれば上書きしない)。
-	install -d $(HOME)/.local/usilic-web/texts $(HOME)/.local/usilic-web/books $(HOME)/.local/usilic-web/marks
-	if [ ! -f $(HOME)/.local/usilic-web/texts/sample.epub ]; then install -m 644 ../web/sample/sample.epub $(HOME)/.local/usilic-web/texts/sample.epub; fi
+	# 2026-11-25: .deb(DESTDIRあり)では入れない(利用者ごとのもの。usilicは^J^Eで落とす時にtextsを作る)。
+	if [ -z "$(DESTDIR)" ]; then install -d $(HOME)/.local/usilic-web/texts $(HOME)/.local/usilic-web/books $(HOME)/.local/usilic-web/marks; fi
+	if [ -z "$(DESTDIR)" ] && [ ! -f $(HOME)/.local/usilic-web/texts/sample.epub ]; then install -m 644 ../web/sample/sample.epub $(HOME)/.local/usilic-web/texts/sample.epub; fi
 # 2026-10-31、直接のユーザー依頼(FreeBSD+Xfceでも"最初からアイコン起動"): FreeBSDも同じXDGのランチャー。
 ifneq ($(filter Linux FreeBSD,$(shell uname)),)
 ifneq ($(NO_GUI),1)
@@ -247,15 +250,41 @@ ifneq ($(NO_GUI),1)
 	# 起動はmain()がGUIにする)とアイコン。パスは絶対で書く(デスクトップのセッションのPATHに~/.local/binが無い
 	# ことがある)。端末から-g・^Ogで使った時の色・フォント・大きさ(~/.usilic/history)で開く。
 	install -m 644 packaging/usilic_icon_1024.png $(LIB_DIR)/usilic.png
-	install -d $(PREFIX)/share/applications
+	install -d $(DESTDIR)$(PREFIX)/share/applications
 	# 2026-11-04、直接のユーザー依頼(FreeBSD、"最初のアイコン起動は明朝に"): -gを付けるとmain()のアイコンからの起動の判定
 	# (制御端末が無い)を通らず、-gの組(ゴシック体の既定等)になっていた。$$USILIC_ICON_LAUNCHで明示する。
 	printf '[Desktop Entry]\nType=Application\nName=usilic\nComment=Text-based file manager\nExec=env USILIC_ICON_LAUNCH=1 %s -g\nIcon=%s\nTerminal=false\nCategories=Utility;FileManager;\n' \
-	  "$(INSTALL_DIR)/$(INSTALL_NAME)" "$(LIB_DIR)/usilic.png" > $(PREFIX)/share/applications/usilic.desktop
-	chmod 644 $(PREFIX)/share/applications/usilic.desktop
-	-command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database $(PREFIX)/share/applications
+	  "$(PREFIX)/bin/$(INSTALL_NAME)" "$(PREFIX)/lib/usilic/usilic.png" > $(DESTDIR)$(PREFIX)/share/applications/usilic.desktop
+	chmod 644 $(DESTDIR)$(PREFIX)/share/applications/usilic.desktop
+	-[ -n "$(DESTDIR)" ] || ! command -v update-desktop-database >/dev/null 2>&1 || update-desktop-database $(PREFIX)/share/applications
 endif
 endif
+
+# 2026-11-25、直接のユーザー依頼(16GB-KDEにg++が無く、usilicを入れ直せなかった。"U.shから-iを排除したかわりに、.deb化は
+# どうかなと。dpkgにて同じ-iで入る"): Debian・Ubuntu用の.deb(/usr/bin/usilic・/usr/lib/usilic/・/usr/share/applications/)。
+# build/usilic_版_アーキテクチャ.debを作る。版は今日の日付とgitの短いハッシュ。Dependsはusilicが使う共有ライブラリの
+# パッケージ(dpkg -S)、Recommendsはusilicが使うツール(U.shのUSILIC_TOOLSと同じ)。入れ方は
+# "sudo apt install ./build/usilic_….deb"(依存も入る。dpkg -iなら依存は入らない)。U.shの-d・-rは、DEBIAN区画の
+# /optにあればこれを入れる。
+DEB_VERSION ?= $(shell date +%Y%m%d).$(shell git rev-parse --short HEAD 2>/dev/null || echo 0)
+DEB_ARCH    := $(shell dpkg --print-architecture 2>/dev/null)
+DEB_ROOT     = $(BUILD_DIR)/deb
+DEB_FILE     = $(BUILD_DIR)/usilic_$(DEB_VERSION)_$(DEB_ARCH).deb
+DEB_RECOMMENDS = groff, mg, info, p7zip-full | 7zip, w3m, unzip, fonts-noto-cjk, python3, mpv
+.PHONY: deb
+deb: $(BUILD_DIR)/usilic
+	@command -v dpkg-deb >/dev/null 2>&1 || { echo "make deb: dpkg-deb not found (Debian/Ubuntu only)"; exit 1; }
+	rm -rf $(DEB_ROOT)
+	$(MAKE) install DESTDIR=$(CURDIR)/$(DEB_ROOT) PREFIX=/usr
+	install -d $(DEB_ROOT)/DEBIAN
+	{ echo "Package: usilic"; echo "Version: $(DEB_VERSION)"; echo "Architecture: $(DEB_ARCH)"; \
+	  echo "Maintainer: usilic <usilic@localhost>"; echo "Section: utils"; echo "Priority: optional"; \
+	  echo "Depends: $$(ldd $(BUILD_DIR)/usilic | awk '/=> \//{print $$3}' | xargs -r readlink -f | xargs -r dpkg -S 2>/dev/null | cut -d: -f1 | sort -u | paste -sd, - | sed -e 's/,/, /g')"; \
+	  echo "Recommends: $(DEB_RECOMMENDS)"; \
+	  echo "Description: Text-based file manager"; } > $(DEB_ROOT)/DEBIAN/control
+	cat $(DEB_ROOT)/DEBIAN/control
+	dpkg-deb --root-owner-group --build $(DEB_ROOT) $(DEB_FILE)
+	@echo "-> $(DEB_FILE)  (sudo apt install ./$(DEB_FILE))"
 
 # macOS .app bundle (2026-08-24, docs/CHANGES.md item 421, a direct
 # user request: "アイコンをクリックして起動する形にはできる？"):

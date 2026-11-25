@@ -385,6 +385,14 @@ echo 'PATH=$HOME/.local/bin:$PATH; export PATH' >> ~/.profile; echo 'PATH=$HOME/
 cd ~/git/usilic/src/cpp && make usilic && make install
 ```
 
+※g++の無いホスト(U.shの-dで作ったデスクトップ等)へ入れる時は、ここで.debも作っておく(/usr/bin/usilic・/usr/lib/usilic/、2026-11-25)。U.shの-d・-rは、DEBIAN区画の/optにあればこれをaptで入れる(依存のライブラリと、推奨のgroff・mpv等も)。
+
+```key
+cd ~/git/usilic/src/cpp && make deb && sudo cp build/usilic_*.deb /opt
+```
+
+※手で入れるなら *sudo apt install ./build/usilic_….deb* (dpkg -iでは依存が入らない)。古い.debは/optから消しておく(U.shは一番新しいものを入れる)。
+
 ```key
 sudo reboot
 ```

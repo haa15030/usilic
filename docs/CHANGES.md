@@ -33408,6 +33408,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1415. **src/cpp・src/U_proto.sh・src/python: usilicの.deb(make deb)、-d・-rはDEBIAN区画の/optのusilic_*.debをaptで入れる(2026-11-25)**
+   - 経緯: 16GB-KDE(-d)でusilicの^T^Tが効かない(イメージのusilicはDEBIAN区画の~/.localを写したもので、^T^Tより前のもの)。git cloneしてコンパイルしようとしたらg++が無かった。ユーザーの依頼: U.shから(以前の)-iを排除したかわりに、.deb化はどうか、dpkgにて同じ-iで入る。進め方は(a)(U.shが~/.localをtarで写すのをやめ、DEBIAN区画の/optに置いたusilic_*.debを入れる)。
+   - 変更:
+     - src/cpp/Makefile: `DESTDIR`(入れる先の頭に付けるだけ、.desktopのExec・Iconのパスには付けない)。DESTDIRがあればusilic-web(利用者ごと)は入れず、update-desktop-databaseもしない。`make deb`: `make install DESTDIR=build/deb PREFIX=/usr`→DEBIAN/control(Versionは日付.gitの短いハッシュ、Dependsはlddの共有ライブラリをdpkg -Sしたパッケージ、RecommendsはUSILIC_TOOLSと同じgroff・mg・info・p7zip-full | 7zip・w3m・unzip・fonts-noto-cjk・python3・mpv)→`dpkg-deb --root-owner-group --build`でbuild/usilic_版_アーキ.deb。
+     - src/cpp: /usr/bin/usilicから見た/usr/lib/usilic/も探す。url2pdf・narou2epub(configuration.cpp、`fm::usilicrc::installLibDirectoryPath()`を足した)と、-n・-eの注釈・表紙(main.cppのreadCompanion)。usilicrc・HELP・HELP.1は前から実行ファイルから見たlib/usilic/も探していた。
+     - U.sh `_put_usilic`(Python版put_usilic): DEBIAN区画の/opt(無ければ~/git/usilic/src/cpp/build)のusilic_*.debの一番新しいものを、入っている版と違えば`apt-get install -y`(ネットを待つ、失敗したらapt-get updateしてもう一度)。前に~/.localへ写したもの(PATHで/usr/binより先)は消す。.debが無ければ従来どおり~/.localを写す。autostart・ldd(足りないライブラリ)は入れた方のusilic・.desktopで。-vのページャーも/usr/bin/usilicを使う。
+     - docs/BUILD.md(Ubuntuの5.の後に`make deb && sudo cp build/usilic_*.deb /opt`)・U_sh.txt(-dの節)。
+   - macOSではmake usilic・make installとmake -n debまで確かめた。make deb自体とU.shの-dで入るかはUbuntuで。
+
 1414. **src/U_proto.sh・src/python: -d・-rでusilicを入れた~/.local(と~/.config)がroot:rootになっていた(2026-11-25)**
    - 経緯: 16GB-KDE(-d)でxfeを入れたら~/.localへ書き込めず、見るとroot:rootだった(usilic:usilicに直して起動)。
    - 原因: `_put_usilic`はDEBIAN区画のusilic(.local/bin/usilic等のファイル)をtarで写すが、tarはファイルだけなので、途中のディレクトリ(.local・.local/bin・.local/share等)がrootで作られた。~/.configが無ければ、`mkdir -p ~/.config/autostart`も~/.configをrootで作る。

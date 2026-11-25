@@ -5278,6 +5278,9 @@ std::string readHelpCompanion(const std::string &name, const std::string &markup
   }
   std::vector<std::string> dirs;
   if (const char *home = std::getenv("HOME")) dirs.push_back(std::string(home) + "/.local/lib/usilic");
+  // 2026-11-25(.deb): 実行ファイルから見たlib/usilic/(/usr/bin/usilicなら/usr/lib/usilic/)も。
+  if (std::string exe = resolveOwnExecutablePath(); !exe.empty())
+    dirs.push_back(std::filesystem::path(exe).parent_path().parent_path().string() + "/lib/usilic");
   dirs.push_back("/usr/local/lib/usilic");
   std::string markupDir = std::filesystem::path(markupPath).parent_path().string();
   dirs.push_back(markupDir.empty() ? "." : markupDir);

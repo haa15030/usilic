@@ -677,6 +677,8 @@ _page() { # $1 を、戻って読めるページャーで（usilic-py → ユー
         env HOME=/root USILIC_OPEN=$1 /usr/local/bin/usilic-py /mnt 2>/dev/null
     elif [ -x /home/$USR/.local/bin/usilic ]; then
         env HOME=/root /home/$USR/.local/bin/usilic -c $1 2>/dev/null
+    elif [ -x /usr/bin/usilic ]; then # .deb（make deb）で入れたもの
+        env HOME=/root /usr/bin/usilic -c $1 2>/dev/null
     elif command -v less > /dev/null 2>&1; then
         less $1
     else
@@ -1927,14 +1929,44 @@ _usilic_libs() { # $2 の usilic に足りないライブラリ（ldd の not fo
 }
 
 _put_usilic() { # DEBIAN区画でビルドした usilic（~/.local）を RAMDISK のホームへ入れる（$1 オプション）。ライブラリが足りなければ入れる
-    local _home=/home/$USR _src=$MNT_DEBIAN/home/$USR _rc _i _tools="" _libs
+    local _home=/home/$USR _src=$MNT_DEBIAN/home/$USR _rc _i _tools="" _libs _deb _ver
     local _line='PATH=$HOME/.local/bin:$PATH; export PATH'
     local _files=".local/bin/usilic .local/lib/usilic .local/share/applications/usilic.desktop .local/usilic-web"
+    local _bin=$_home/.local/bin/usilic _desktop=$_home/.local/share/applications/usilic.desktop
 
-    if [ ! "$ON_RAMDISK" ] || ! mountpoint -q $MNT_DEBIAN || [ ! -x $_src/.local/bin/usilic ]; then
+    if [ ! "$ON_RAMDISK" ] || ! mountpoint -q $MNT_DEBIAN; then
         return
     fi
-    if [ ! -x $_home/.local/bin/usilic ]; then # 前に入れて保存したもの（イメージの中）があれば、そのまま
+    # 2026-11-25、直接のユーザー依頼（16GB-KDE に g++ が無く、usilic を入れ直せなかった）: DEBIAN区画で make deb した
+    # usilic_*.deb（/opt、無ければリポジトリの src/cpp/build）があれば、新しいものを apt で入れる（依存も入る）。
+    # 入っている版と同じなら入れない。前に ~/.local へ写したもの（PATH で /usr/bin より先）は消す
+    _deb=`ls -t $MNT_DEBIAN/opt/usilic_*.deb $_src/git/usilic/src/cpp/build/usilic_*.deb 2>/dev/null | head -n1`
+    if [ "$_deb" ]; then
+        _ver=`dpkg-deb -f $_deb Version 2>/dev/null`
+        if [ "`dpkg-query -W -f='${Version}' usilic 2>/dev/null`" != "$_ver" ]; then
+            for _i in `seq 1 30` # rc.local はネットにつながる前に動くことがある
+            do
+                if [ "`_on_line`" ]; then
+                    break
+                fi
+                sleep 2
+            done
+            echo "apt-get install -y $_deb"
+            if ! apt-get install -y $_deb < /dev/null; then
+                apt-get update -y
+                apt-get install -y $_deb < /dev/null
+            fi
+            echo "$1: usilic -> $_deb : $LINENO" >> /tmp/log.$TMP_LABEL
+        fi
+        if [ -e $_home/.local/bin/usilic ] && [ -x /usr/bin/usilic ]; then
+            echo "rm -rf $_home/.local/bin/usilic $_home/.local/lib/usilic $_desktop"
+            rm -rf $_home/.local/bin/usilic $_home/.local/lib/usilic $_desktop
+        fi
+        _bin=/usr/bin/usilic
+        _desktop=/usr/share/applications/usilic.desktop
+    elif [ ! -x $_src/.local/bin/usilic ]; then
+        return
+    elif [ ! -x $_home/.local/bin/usilic ]; then # 前に入れて保存したもの（イメージの中）があれば、そのまま
         cd $_src
         echo "cd $_src; tar cf - $_files | tar xfp - -C $_home"
         tar cf - `ls -d $_files 2>/dev/null` | tar xfp - -C $_home
@@ -1953,9 +1985,9 @@ _put_usilic() { # DEBIAN区画でビルドした usilic（~/.local）を RAMDISK
         echo "$1: usilic -> $_home/.local : $LINENO" >> /tmp/log.$TMP_LABEL
     fi
     # ログインした時に usilic（-g）を出す（デスクトップによって端末が出たり出なかったりするので、usilic は必ず）
-    if [ -f $_home/.local/share/applications/usilic.desktop ]; then
+    if [ -f $_desktop ]; then
         mkdir -p $_home/.config/autostart
-        cp $_home/.local/share/applications/usilic.desktop $_home/.config/autostart
+        cp $_desktop $_home/.config/autostart
         chown $USR:$USR $_home/.config # 無ければ mkdir -p が root で作る
         chown -R $USR:$USR $_home/.config/autostart
     fi
@@ -1965,7 +1997,7 @@ _put_usilic() { # DEBIAN区画でビルドした usilic（~/.local）を RAMDISK
             _tools="$_tools $_i"
         fi
     done
-    _libs=`ldd $_home/.local/bin/usilic 2>/dev/null | grep 'not found'`
+    _libs=`ldd $_bin 2>/dev/null | grep 'not found'`
     if [ "$_tools" ] || [ "$_libs" ]; then
         # （アイコンから起動すると、端末からと違って「shared libraries」のメッセージも出ずに何も起きない）
         for _i in `seq 1 30` # rc.local はネットにつながる前に動くことがある
@@ -1987,7 +2019,7 @@ _put_usilic() { # DEBIAN区画でビルドした usilic（~/.local）を RAMDISK
     fi
     if [ "$_libs" ]; then
         echo "$1: usilic: missing libraries -> install : $LINENO" >> /tmp/log.$TMP_LABEL
-        _usilic_libs $1 $_home/.local/bin/usilic
+        _usilic_libs $1 $_bin
     fi
 }
 
