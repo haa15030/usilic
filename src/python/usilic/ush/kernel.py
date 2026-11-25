@@ -144,6 +144,11 @@ def compile_kernel(env, log, option, args, out, lap):
                              % (source, config, none, source, config, none), cwd='/usr/src')
         out(system.output(['df']).rstrip('\n'))
         lap('%s -> /usr/src' % source, out)
+    if not system.exists(src):  # 展開に失敗(版の食い違い等)。make等を続けても全部失敗するだけなので止める(2026-11-25)
+        message = '%s: %s: No such directory' % (option, src)
+        out(message)
+        log.add(message)
+        return False
     if not system.exists(src + '/.config'):
         if new_config:
             out('cp %s/boot/%s .config' % (env.mnt_debian, new_config))

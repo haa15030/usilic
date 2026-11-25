@@ -336,7 +336,11 @@ if [ "$ON_UBUNTU" ]; then
     readonly BUILD=BUILD_UBUNTU
     readonly BUILD_IMG_GB=7 # kernel-7.3.0 では 6GB では不足
     readonly RESCUE_GB=8 # Ubuntu の土台は 4GB に収まらない（-u は ${RESCUE_GB}GB-base で ${RESCUE_GB}GB-rescue を起動する。EXTRA_GB は作らない）
-    readonly KERNEL_VERSION=`echo $UNAME_R | sed -e 's/[-+].*//'` # 7.0.0-xx-generic / 7.0.0+8gb -> 7.0.0
+    # linux-source-* の版。配布のカーネル（7.3.0-11-generic）ならその名前から取れるが、自作のカーネル（7.3.1+8gb）では
+    # 名前の版（7.3.1、Makefile の SUBLEVEL）とパッケージの版（linux-source-7.3.0）がずれる（2026-11-25、8GB-rescue の
+    # -k 16 で /usr/src/linux-source-7.3.1 が無いと止まった）ので、linux-source が依存するパッケージの名前から取る
+    _kernel_version=`LC_ALL=C apt-cache depends linux-source 2>/dev/null | sed -n 's/.*: linux-source-\([0-9.]*\)$/\1/p' | head -n1`
+    readonly KERNEL_VERSION=${_kernel_version:-`echo $UNAME_R | sed -e 's/[-+].*//'`} # 7.0.0-xx-generic / 7.0.0+8gb -> 7.0.0
     if [ "$ON_RAMDISK" ]; then
         readonly RAMDISK_GB=`echo $UNAME_R | awk -F'+' '{print $2}' | sed -e s/gb//` # カーネル名から抽出
     else
@@ -947,7 +951,10 @@ _compile() {
 	_lap "$LINUX_SOURCE -> /usr/src"
     fi
     echo "cd /usr/src/$LINUX_SOURCE"
-    cd /usr/src/$LINUX_SOURCE
+    if ! cd /usr/src/$LINUX_SOURCE; then # 展開に失敗（版の食い違い等）。make 等を続けても全部失敗するだけなので止める（2026-11-25）
+	echo "$1: /usr/src/$LINUX_SOURCE: No such directory : $LINENO" | tee -a /tmp/log.$TMP_LABEL
+	return 1
+    fi
     if [ ! -f .config ]; then
 	if [ "$_new_config" ]; then
 	    echo "cp $MNT_DEBIAN/boot/$_new_config .config"
