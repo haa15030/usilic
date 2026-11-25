@@ -2470,7 +2470,7 @@ _save_host() {
             cd /opt
             return
         fi
-        mkfs.ext4 -q $_bld/IMG0.img
+        mkfs.ext4 -q -m 0 $_bld/IMG0.img # root 用の予約（既定の5%）は要らない（展開するだけ。予約があると df が 100% に見えた）
         echo "mount -o loop $_bld/IMG0.img /tmp/loop0.$TMP_LABEL"
         _fs $LINENO mount -o loop $_bld/IMG0.img /tmp/loop0.$TMP_LABEL
     else
@@ -2479,7 +2479,7 @@ _save_host() {
         _fs $LINENO mount -t tmpfs -o size=${_ram_img_kb}K /dev/shm /tmp/shm0.$TMP_LABEL
         echo "truncate -s $((_ram_img_kb*1000)) /tmp/shm0.$TMP_LABEL/IMG0.img"
         truncate -s $((_ram_img_kb*1000)) /tmp/shm0.$TMP_LABEL/IMG0.img
-        mkfs.ext4 -q /tmp/shm0.$TMP_LABEL/IMG0.img
+        mkfs.ext4 -q -m 0 /tmp/shm0.$TMP_LABEL/IMG0.img
         echo "mount -o loop /tmp/shm0.$TMP_LABEL/IMG0.img /tmp/loop0.$TMP_LABEL"
         _fs $LINENO mount -o loop /tmp/shm0.$TMP_LABEL/IMG0.img /tmp/loop0.$TMP_LABEL
     fi

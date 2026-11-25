@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1402. **src/U_proto.sh・src/python: -s・-uで保存するイメージ(?GB-名前.img)をmkfs.ext4 -m 0で(2026-11-25)**
+   - 経緯: 組み立て環境を入れた8GB-rescue(項目1401、4.28GB→5.72GB)の保存で、イメージ(6.06GB)のdfが「Avail 6820KB、100%」。ext4の既定のroot用の予約(5%、約300MB)のためで、tarはrootなので書けていた(書けなければtarのエラーで/tmp/logに出て、前のイメージへ戻す)。
+   - 変更: `_save_host`のIMG0.img(STRAGE・/dev/shmのどちらでも)を`mkfs.ext4 -q -m 0`で。RAMDISKへ展開するだけなので予約は要らず、dfも実際の空きと合う。Python版(save.py)も同じ。
+   - 前の版にあった「No space left on deviceなら倍率を0.1増やしてやり直す」は、一度も起きないので消した(ユーザーの記憶)。今もtarのエラーなら保存をやめて前のイメージへ戻すので、復活させない。
+
 1401. **src/U_proto.sh・src/python: Ubuntuの8GB-rescueにカーネルを組み立てる環境も入れる(RESCUE_KERNEL_DEV)(2026-11-25)**
    - 経緯: 8GB-rescueに空きが多いので4GB-rescueにできないか → 8GB-rescue.img(11/24 14:31)は4,712,546,000バイトで中身は約4.28GB、4GBのRAMDISK(約3.79GB)には収まらない。ユーザー判断: 4GB-rescueはDebian 13で、Ubuntuの8GBの空きにはカーネルのリメーク環境を入れ、レスキュー環境でも新しいカーネルを作れるように(版を選ぶ(6.1.129等、kernel.orgから)のは保留)。
    - 変更: 設定RESCUE_KERNEL_DEV(Ubuntuはy、Debianは"")。-uが${RESCUE_GB}GB-rescueを保存する前(RESCUE_LIST・RESCUE_LIST_NOREC の後、記録の前)に`apt-get $BUILD_LIST -y`(build-dep linux)と、-kが使うfakeroot・libncurses-dev・opensslを入れる。ソース(linux-source、約150MB)は入れず、-kの時に取る。Python版も同じ。

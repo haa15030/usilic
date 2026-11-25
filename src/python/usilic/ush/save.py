@@ -254,7 +254,7 @@ def save_host(env, log, option, args, out):
         if code != 0:
             system.run(['rm', '-f', img0])
             return fail('%s: IMG0.img: %s' % (option, (message.splitlines() or [''])[-1]))
-        system.run(['mkfs.ext4', '-q', img0])
+        system.run(['mkfs.ext4', '-q', '-m', '0', img0])  # root用の予約(既定の5%)は要らない
         out('mount -o loop %s %s' % (img0, loop0))
         fs(env, log, 'mount', '-o', 'loop', img0, loop0)
     else:
@@ -264,7 +264,7 @@ def save_host(env, log, option, args, out):
         fs(env, log, 'mount', '-t', 'tmpfs', '-o', 'size=%dK' % img_kb, '/dev/shm', shm0)
         out('truncate -s %d %s' % (img_kb * 1000, img0))
         system.run(['truncate', '-s', str(img_kb * 1000), img0])
-        system.run(['mkfs.ext4', '-q', img0])
+        system.run(['mkfs.ext4', '-q', '-m', '0', img0])  # root用の予約(既定の5%)は要らない
         out('mount -o loop %s %s' % (img0, loop0))
         fs(env, log, 'mount', '-o', 'loop', img0, loop0)
     # カーネルのモジュールは入れない(RAMの土台の側にある)。+なら今のカーネルのものだけ入れる
