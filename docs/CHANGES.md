@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1434. **src/U_proto.sh・src/python: Debianの-dでもnvidiaの描画の側(nvidia-driver)を入れる(2026-11-26)**
+   - 経緯: Debian 13で-dを全部のデスクトップで行った後、8GB-GNOMEで起動するとe2scrub_allの後しばらく止まり、GUIが2回チラッと出て真っ暗(左上にカーソル)。sshで見ると、nvidia-driver・nvidia-smiが無く(dpkg -lはnvidia-open-kernel-dkms・nvidia-alternative等だけ)、gdm-x-sessionが「[drm] Failed to open DRM device for pci:0000:01:00.0: -19」「no screens found」、gdm3が「maximum number of X display failures reached」。
+   - 原因: NVIDIA_DESKTOPを入れる所が_desktop_ubuntu(on)の中にあり、Debianの-d(task-*を入れる側)では呼ばれていなかった。
+   - 変更: 新しい_nvidia_desktop(Python版はdesktop.nvidia_desktop)へ出し、_desktop_ubuntu onと、Debianのtask-*を入れた後の両方から呼ぶ。
+
 1433. **src/U_sh.txt: デスクトップの大きさ(Debian 13・Ubuntu 26.10の-dの「= 〜KB」と?GB-名前.img)、RAMDISK・STRAGEの目安(2026-11-26)**
    - 経緯: ユーザーがUbuntu 26.10(16GBのRAMDISK)とDebian 13(8GB)で-dを全部のデスクトップで行い、「= 〜KB」の行とdu -ab img.ubuntu・img.debianを貼った(Debianは一気に23分)。ユーザー: 10GB(Ubuntu)、STRAGEはUbuntuで80G、Debianの値がわかれば補足しておいてもいいかも。Debian 13のSTRAGEは180G。
    - 変更: 「所要時間・容量の目安」の「要確認」(STRAGE 20GB以上・/optの合計)を直し(/optはDebian 13で約6GB)、新しい節「デスクトップの大きさ」: デスクトップごとの展開に要る量と?GB-名前.img(Debian 13／Ubuntu 26.10)、合計(img.debian 55.8GB／img.ubuntu 65.9GB)。Debianはどれも8GB(KDE-Plasmaで約90%)、UbuntuはKDE-Plasma・GNOME・GNOME_liveが8GBに収まらないので10GB。brdは書いた分だけメモリを使う。STRAGEはrescueの控え等も置いてDebian 70GB・Ubuntu 80GBほど。

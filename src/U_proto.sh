@@ -593,6 +593,15 @@ _netplan_nm() { # Ubuntu: netplan のレンダラを NetworkManager に（on）�
     netplan generate # 反映は次回起動時（インストール中の接続は切らない）
 }
 
+_nvidia_desktop() { # -d: nvidia の描画の側（GBM・EGL・Xorg 用等。GNOME は無いとログイン画面が出ない）
+    # 2026-11-26: 前は _desktop_ubuntu の中にあり、Debian の -d では入らなかった（8GB-GNOME の gdm が
+    # 「[drm] Failed to open DRM device」「no screens found」で、画面は真っ暗にカーソルだけ）
+    if [ "$NVIDIA_DESKTOP" ] && _nvidia_gpu && [ "`_is_inst ${NVIDIA_LIST%% *}`" ]; then
+        echo "apt-get install -y --no-install-recommends $NVIDIA_DESKTOP"
+        apt-get install -y --no-install-recommends $NVIDIA_DESKTOP < /dev/null
+    fi
+}
+
 _desktop_ubuntu() { # Ubuntu: デスクトップ導入後の設定（on）／BASE へ戻した後の後始末（off）
     local _dm
 
@@ -608,10 +617,7 @@ _desktop_ubuntu() { # Ubuntu: デスクトップ導入後の設定（on）／BAS
 		fi
 	    done
 	fi
-	if [ "$NVIDIA_DESKTOP" ] && _nvidia_gpu && [ "`_is_inst ${NVIDIA_LIST%% *}`" ]; then # nvidia の描画の側（GBM・EGL・Xorg 用等）
-	    echo "apt-get install -y --no-install-recommends $NVIDIA_DESKTOP"
-	    apt-get install -y --no-install-recommends $NVIDIA_DESKTOP
-	fi
+	_nvidia_desktop
 	echo "systemctl set-default graphical.target"
 	systemctl set-default graphical.target
     else
@@ -1915,6 +1921,7 @@ desktop_select() { # -d)
         else
             echo "apt-get install -y task-$_task"
             $_apt install task-$_task < /dev/null
+            _nvidia_desktop
         fi
         # 保存する前に、起動の時（-r）と同じ設定（swapcaps の kxkbrc・dconf 等）と usilic を入れておく
         # （起動の時に書くだけだと、自動ログインがそれより先だと最初のログインで効かない）

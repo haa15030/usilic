@@ -150,6 +150,19 @@ def desktop_label(task):
     return label + ' +recommends' if task.startswith('+') else label
 
 
+def nvidia_desktop(env, out):
+    """_nvidia_desktop(): -d: nvidiaの描画の側(GBM・EGL・Xorg用等。GNOMEは無いとログイン画面が出ない)。
+    2026-11-26: 前はdesktop_ubuntuの中にあり、Debianの-dでは入らなかった(8GB-GNOMEのgdmが「no screens found」)。"""
+    system = env.system
+    nvidia = env.conf('NVIDIA_DESKTOP', '').split()
+    kernel_side = (env.conf('NVIDIA_LIST', '').split() or [''])[0]
+    if nvidia and kernel_side and 'ok installed' in system.output(['dpkg-query', '-W', '-f=${Status}', kernel_side]):
+        from .update import nvidia_gpu
+        if nvidia_gpu(system):
+            out('apt-get install -y --no-install-recommends ' + ' '.join(nvidia))
+            system.stream(['apt-get', 'install', '-y', '--no-install-recommends'] + nvidia, out)
+
+
 def desktop_ubuntu(env, on, out):
     """_desktop_ubuntu(): デスクトップを入れた後の設定(on)・BASEへ戻した後の後始末(off)。"""
     system = env.system
@@ -161,13 +174,7 @@ def desktop_ubuntu(env, on, out):
                     out('systemctl enable --force ' + dm)
                     system.run(['systemctl', 'enable', '--force', dm])
                     break
-        nvidia = env.conf('NVIDIA_DESKTOP', '').split()
-        kernel_side = (env.conf('NVIDIA_LIST', '').split() or [''])[0]
-        if nvidia and kernel_side and 'ok installed' in system.output(['dpkg-query', '-W', '-f=${Status}', kernel_side]):
-            from .update import nvidia_gpu
-            if nvidia_gpu(system):  # nvidiaの描画の側(GBM・EGL・Xorg用等。GNOMEは無いとログイン画面が出ない)
-                out('apt-get install -y --no-install-recommends ' + ' '.join(nvidia))
-                system.stream(['apt-get', 'install', '-y', '--no-install-recommends'] + nvidia, out)
+        nvidia_desktop(env, out)
         out('systemctl set-default graphical.target')
         system.run(['systemctl', 'set-default', 'graphical.target'])
     else:
@@ -405,6 +412,7 @@ def desktop_select(env, log, option, ask, out):
         else:
             out('apt-get install -y task-' + task)
             system.stream(noninteractive + ['install', 'task-' + task], out)
+            nvidia_desktop(env, out)
         # 保存する前に、起動の時(-r)と同じ設定(swapcapsのkxkbrc・dconf等)とusilicを入れておく
         dot_files(env, out)
         put_usilic(env, log, option, out)
