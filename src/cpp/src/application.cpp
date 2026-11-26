@@ -3678,6 +3678,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // コメント参照。
       case 0x04:      // ^J ^D : DU(既存の結果を再表示、集計なし)
         return handleCommand(Command::RedisplayDu);
+      case 0x12:  // ^J ^R : RESCUE(2026-11-26、startRescue()参照。下の削除の後、空いていた)
+        return startRescue();
       // (^J ^R: 2026-09-20削除、直接のユーザー依頼(^Rの再設計、
       // "^J^Rを^J^Pに置き換える(^J^Rは廃棄)")。旧Command::
       // StartCommandHistory(M_cmd、"COMMAND"一覧)は^J^P(PromptKind::
@@ -22696,6 +22698,24 @@ bool Application::launchDirectoryChild(const std::string &directory) {
 // xfce4-terminal・qterminal・mate-terminal等)が入る時に登録する)を先に、無ければ知っている端末、最後にxterm
 // (既定の字が小さいので-fa Monospace -fs 12)。端末のサーバー(gnome-terminal・ptyxis)も起動した側の
 // ディレクトリで開く。
+// 2026-11-26、直接のユーザー依頼: シェル(U.sh)とファイル管理(usilic)の間には境界があり、行き来の道はU.shからは-v、
+// usilicからは^J^R。^J^Rで戻った先はターミナルで「. U」と打った時と同じ画面(オプションの一覧と「Option: -」)で
+// ないと、シェルの側へ来たことにならない。ここではusilicを終えるだけで、端末を戻した後にmain()が、U.shの-vから
+// 起動された(USILIC_FROM_U=1)なら終了コード3で返し(U.shが一覧を出し直す)、他は/usr/local/bin/Uへexecする。
+// Python版(usilic-py)のstart_rescue()と同じ。
+bool Application::startRescue() {
+#if defined(__linux__)
+  std::error_code ec;
+  if (std::filesystem::is_regular_file("/opt/U.sh", ec)) {
+    rescueExit_ = true;
+    wantsExit_ = true;
+    return true;
+  }
+#endif
+  showNotice("RESCUE: no /opt/U.sh");
+  return true;
+}
+
 bool Application::launchTerminalWindow() {
 #if defined(__APPLE__) || defined(_WIN32)
   showTransientNotice(activeView(), "^T^T: Linux (X11/Wayland) only");

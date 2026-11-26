@@ -190,6 +190,7 @@ const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
       {154, "ESC d", Scope::Prompt},  // ^[d   入力: 1語削除
       {155, "ESC C-h", Scope::Prompt},  // ^[^H 入力: 前の1語を削除(^[DELも)
       {156, "C-t C-t"},  // ^T^T  端末の新しいウィンドウ(2026-11-25)
+      {157, "F-1 C-r"},  // ^J^R  RESCUE: usilicを終えて「. U」の画面へ(2026-11-26、Python版と同じ番号)
   };
   return entries;
 }

@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1426. **src/cpp・src/U_proto.sh・src/python: C++版のusilicにも^J^R(usilicを終えて「. U」の画面へ)、番号はK-157(2026-11-26)**
+   - 経緯: ユーザーの問い"usilic-pyが無いときに使用されるC++版からは^J^Rでシェル側に戻れない？"。項目1425はPython版だけだった(C++版の^J^Rは2026-09-20に廃止して空いていた)。
+   - 変更: C++版のdispatchLeaderByte()に^J^R→Application::startRescue()(Linuxで/opt/U.shがあればrescueExit_・wantsExit_、無ければ「RESCUE: no /opt/U.sh」)。main()は端末を戻した後、rescueExit()ならUSILIC_FROM_U=1の時は終了コード3、他は端末があれば/usr/local/bin/U(sh、無ければ/opt/U.shをbashで、rootでなければsudo)へexecvp。U.shの_pageはC++版(~/.local/bin/usilic・/usr/bin/usilic)にもUSILIC_FROM_U=1を付け、3ならU_AGAIN。キーの番号: Python版は^J^RをK-156にしていたが、C++版の156は^T^T(項目1416)なので、両方ともK-157にそろえた。
+
 1425. **src/python・src/U_proto.sh: ^J^Rはusilicを終えて「. U」の画面へ(U.shの-vから起動したusilicなら、U.shが一覧を出し直す)(2026-11-26)**
    - 経緯(ユーザーの説明): シェル(U.sh)とファイル管理(usilic)の間には境界面があり、U.shからは-v、usilicからは^J^Rが通過パス。U.shはターミナルから立ち上げるシェルなので、「. U」の時点ではシェルの側にいて、-vで初めてファイル管理の側へ移る。^J^Rで戻った時はシェルなのだから、ターミナルで起動した時と同じ画面でないとシェルの側へ来たことにならない。要するに、U.shで起動した時と同じ画面で始めて、^J^Rでも同じ画面に戻ってほしい。項目1423(usilicのSHELLで「. U」を打つ)は、usilicの中のままだった。
    - 変更: ^J^R(start_rescue)はusilicを終える(rescue_exit)。U.shの-vから起動したusilic(_page・page_with_usilicがUSILIC_FROM_U=1を付ける)なら終了コード3で返し、ush.py(main.runが-vの後にもう一度一覧から)・U.sh(U_AGAINでexec bash $U_SH)が「. U」と同じ一覧と「Option: -」を出し直す。単独で起動したusilic-pyは、終えた後に/usr/local/bin/U(無ければush.py・U.shを直に、rootでなければsudo)へexecvp。U_sh.txtも。

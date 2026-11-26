@@ -1877,6 +1877,9 @@ class Application {
   void scheduleHelpInParent() { helpInParentPending_ = true; }
   bool launchHelpChild();  // ^T^H・-H
   bool launchTerminalWindow();  // ^T^T
+  // ^J^R(RESCUE、2026-11-26): usilicを終えて、端末の「. U」の画面へ(main()が終えた後に、rescueExit()を見る)
+  bool startRescue();
+  bool rescueExit() const { return rescueExit_; }
   bool launchKeyChild();
   bool launchDirectoryChild(const std::string &directory);  // HELPのusilic-ls:のリンク(-N)   // ^T^K・-K
 #ifdef _WIN32
@@ -4051,6 +4054,7 @@ private:
   bool leaderJOPending_ = false;
   bool leaderOPending_ = false;  // ^Oを見た、2バイトのコマンドを完成させるバイトを待っている(2026-09-08のキー再編で^Xの大半の役割を引き継いだ)
   bool wantsExit_ = false;
+  bool rescueExit_ = false;  // ^J^Rで終えた(startRescue())
   // 2026-09-25追加、次のキーで消える一時メッセージ(showTransientNotice()
   // 参照)を今表示しているビュー。nullptrなら表示していない。
   ContentView *transientNoticeView_ = nullptr;

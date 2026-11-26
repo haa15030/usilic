@@ -166,7 +166,7 @@ usilic は、DEBIAN区画の /opt（無ければ ~/git/usilic/src/cpp/build）�
 ⑦ -u は、Python 版の usilic（src/python）を /usr/local/lib/usilic-py に入れます（RAM-*-base.gz を作る前なので、どのホストにもあります）。
 U.sh（シェル）と usilic（ファイル管理）の行き来は、U.sh からは -v、usilic からは ^J^R（RESCUE）です。
 ". U -v"^M で usilic へ移り、usilic で ^J^R を押すと usilic を終えて、端末で ". U"^M と打った時と同じ画面（オプションの一覧と「Option: -」）へ戻ります。
-"usilic-py"^M で単独で起動した usilic でも、^J^R で usilic を終えて ". U" の画面へ移ります。
+"usilic-py"^M・usilic で単独で起動した時も、^J^R で usilic を終えて ". U" の画面へ移ります（Python 版・C++ 版とも）。
 テキストのコンソール（Ctrl+Alt+F3）や ssh でも使えるので、デスクトップのホストの -d にも使えます。
 python3 は、-o -p・-e で外しません（BASE.u 等の記録に載せません）。#
 #

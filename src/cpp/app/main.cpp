@@ -6958,5 +6958,30 @@ int main(int argc, char **argv) {
     saveHistoryToDisk(history, usilicDir, configuration.charsetExplicitlySet());
   }
 
+  // ^J^R(Application::startRescue()): シェルの側(「. U」の画面)へ。U.shの-vから起動された時は終了コード3で
+  // (U.shが一覧を出し直す)、他は端末があれば/usr/local/bin/U(無ければ/opt/U.sh、rootでなければsudo)へexec。
+  if (app.rescueExit()) {
+    const char *fromU = std::getenv("USILIC_FROM_U");
+    if (fromU && std::string(fromU) == "1") return 3;
+    if (::isatty(STDIN_FILENO)) {
+      std::error_code ec;
+      bool haveU = std::filesystem::is_regular_file("/usr/local/bin/U", ec);
+      std::vector<std::string> args;
+      if (haveU) {
+        args = {"sh", "/usr/local/bin/U"};  // Uの中でsudoする
+      } else {
+        if (::geteuid() != 0) args.push_back("sudo");
+        args.push_back("bash");
+        args.push_back("/opt/U.sh");
+      }
+      std::vector<char *> argvU;
+      for (auto &a : args) argvU.push_back(const_cast<char *>(a.c_str()));
+      argvU.push_back(nullptr);
+      ::execvp(argvU[0], argvU.data());
+      std::perror("usilic: cannot run U");
+      return 1;
+    }
+  }
+
   return 0;
 }

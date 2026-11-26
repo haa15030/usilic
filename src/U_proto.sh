@@ -686,10 +686,16 @@ _page() { # $1 を、戻って読めるページャーで（usilic-py → ユー
         if [ $? -eq 3 ]; then
             U_AGAIN=y
         fi
-    elif [ -x /home/$USR/.local/bin/usilic ]; then
-        env HOME=/root /home/$USR/.local/bin/usilic -c $1 2>/dev/null
+    elif [ -x /home/$USR/.local/bin/usilic ]; then # C++ 版も ^J^R で 3 を返す（2026-11-26）
+        env HOME=/root USILIC_FROM_U=1 /home/$USR/.local/bin/usilic -c $1 2>/dev/null
+        if [ $? -eq 3 ]; then
+            U_AGAIN=y
+        fi
     elif [ -x /usr/bin/usilic ]; then # .deb（make deb）で入れたもの
-        env HOME=/root /usr/bin/usilic -c $1 2>/dev/null
+        env HOME=/root USILIC_FROM_U=1 /usr/bin/usilic -c $1 2>/dev/null
+        if [ $? -eq 3 ]; then
+            U_AGAIN=y
+        fi
     elif command -v less > /dev/null 2>&1; then
         less $1
     else

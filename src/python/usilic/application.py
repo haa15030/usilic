@@ -2871,7 +2871,7 @@ class Application:
             if self.locate_mode.start_update_db():
                 self.show_transient_notice('updatedb')
             return True
-        if number == 156:  # ^J^R: RESCUE(rescue.py)
+        if number == 157:  # ^J^R: RESCUE(start_rescue)
             return self.start_rescue()
         if number == 58:  # ^J^L
             return self.start_locate_prompt()

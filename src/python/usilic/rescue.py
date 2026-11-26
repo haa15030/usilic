@@ -1,4 +1,4 @@
-"""RESCUE(^J^R、K-156): /opt/U.sh(rescue-USB・RAMDISKの道具、src/U_proto.sh)。
+"""RESCUE(^J^R、K-157): /opt/U.sh(rescue-USB・RAMDISKの道具、src/U_proto.sh)。
 
 2026-11-26から、^J^RはSHELLで「. U」を動かすだけ(u_line()、application.start_rescue)。下の一覧から選ぶ画面は
 使わなくなった(シェルで出る一覧と形が違って戸惑う、直接のユーザー依頼)。parse_options等は、残っている試験のため。
