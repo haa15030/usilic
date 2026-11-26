@@ -265,19 +265,49 @@ def correct_uuid(env, log, path, part_from, part_to, efi=None):
     return True
 
 
+PCI_RESIZE_CALL = 'pci_resize_resource(pci_dev, NV_GPU_BAR1, requested_size);'
+
+
+def nvidia_pci_resize(env, module, out):
+    """_nvidia_pci_resize(): moduleのpci_resize_resourceが引数4つなら、nvidiaのnv-pci.c(3つで呼ぶ)を合わせる(2026-11-26)。
+    Debian 13のlinux-source 6.12.118では4つ目(除くBAR)が増えていて(stableへ戻された変更)、trixieの550.163.01が
+    組み立てられなかった。0は「除くBAR無し」(前と同じ動き)。dkmsは組み立てのたびに/usr/src/nvidia-*から写すので、そこを直す。"""
+    system = env.system
+    header = system.read_text('/usr/src/linux-headers-%s/include/linux/pci.h' % module) or ''
+    if not re.search(r'^.*pci_resize_resource\(struct pci_dev \*dev, int i, int size,$', header, re.M):
+        return
+    for name in system.listdir('/usr/src'):
+        path = '/usr/src/%s/nvidia/nv-pci.c' % name
+        if not name.startswith('nvidia-'):
+            continue
+        text = system.read_text(path) or ''
+        if PCI_RESIZE_CALL in text:
+            out('sed -i %s (pci_resize_resource: 4 args)' % path)
+            system.write_text(path, text.replace(PCI_RESIZE_CALL, PCI_RESIZE_CALL[:-2] + ', 0);'))
+
+
 def nvidia_module(env, log, module, out):
     """_nvidia_module(): 作ったカーネル向けにdkmsで純正ドライバのモジュールを組み立てる(RAM-*-base.gzへ/lib/modulesごと写る)。"""
     system = env.system
     if not env.conf('NVIDIA_LIST', '') or 'ok installed' not in system.output(['dpkg-query', '-W', '-f=${Status}', 'dkms']):
         return
+    # カーネルを作った時の/usr/srcのtmpfs(Linuxのソース)を外す。付けたままだと、SSDの/usr/srcのdkmsの元(nvidia-*)が
+    # 隠れて組み立てられず(dkms statusは「added」のまま)、headersもtmpfsへ入って再起動で消えた(2026-11-26)
+    if system.is_mountpoint('/usr/src'):
+        out('umount /usr/src')
+        fs(env, log, 'umount', '/usr/src')
+    # existsは指す先を見る(tmpfsへ入って消えたheadersのbuild -> /usr/src/linux-headers-*も入れ直す)
     if not system.exists('/lib/modules/%s/build' % module):
         debs = [n for n in system.listdir('/opt') if n.startswith('linux-headers-%s_' % module) and n.endswith('.deb')]
         if debs:
             out('dpkg -i /opt/' + debs[0])
             system.run(['dpkg', '-i', '/opt/' + debs[0]])
+    nvidia_pci_resize(env, module, out)
     out('dkms autoinstall -k ' + module)
     system.stream(['dkms', 'autoinstall', '-k', module], out)
-    built = [n for n in system.listdir('/lib/modules/%s/updates/dkms' % module) if n.startswith('nvidia.ko')]
+    # Ubuntuはnvidia.ko.zst、Debianはnvidia-current-open.ko.xz(名前を変えて入れる)
+    built = [n for n in system.listdir('/lib/modules/%s/updates/dkms' % module)
+             if n.startswith('nvidia.ko') or n.startswith('nvidia-current')]
     if not built:
         log.add('-u: /lib/modules/%s/updates/dkms/nvidia.ko: not built (dkms).' % module)
 

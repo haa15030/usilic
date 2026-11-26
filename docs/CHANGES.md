@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1431. **src/U_proto.sh・src/python: Debianのnvidiaのモジュールの名前(nvidia-current-open.ko.xz)、Python版にも1429・1430(2026-11-26)**
+   - 経緯: 1430の直し方を実機で手で試し(nv-pci.cへ`, 0`、headersを入れ直してdkms autoinstall)、+4gb・+8gbともinstalled。ただしDebianは/lib/modules/*/updates/dkms/へnvidia-current-open.ko.xz等の名前で入れるので、nvidia.ko*だけを見る確かめでは組み立てられても「not built (dkms)」と出る。またPython版(既定のエンジン)には1429(contrib・non-free)・1430(/usr/srcのtmpfs、pci_resize_resource)が移っていなかった。
+   - 変更: U_proto.shの_nvidia_moduleとkernel.nvidia_moduleの確かめにnvidia-current*.ko*も。kernel.py: nvidia_moduleの初めに/usr/srcがマウントされていれば外す、新しいnvidia_pci_resize。update.py: 新しいapt_nvidia_components(prepare.pyのDebianの取得元の後で呼ぶ)。
+
 1430. **src/U_proto.sh: Debian 13の-uでnvidiaが組み立てられなかった(/usr/srcのtmpfs、pci_resize_resourceの引数)(2026-11-26)**
    - 経緯: 1429の後、Debian 13で-uを実行。U.logに「/lib/modules/6.12.118+4gb(+8gb)/updates/dkms/nvidia.ko: not built (dkms).」、dkms statusは「nvidia-current-open/550.163.01: added」のまま。dkms autoinstall -k 6.12.118+8gbは「Your kernel headers ... cannot be found」。build -> /usr/src/linux-headers-6.12.118+8gbはあるのに/usr/srcにheadersが無かった(dpkg上はii)。dpkg -iで入れ直すと、今度はnv-pci.c:237「too few arguments to function 'pci_resize_resource'」(headersのpci.hは`int pci_resize_resource(struct pci_dev *dev, int i, int size,`と4つ目が次の行)。
    - 原因: (1)_compileがLinuxのソースを展開するために/usr/srcへtmpfs(2.2GB)をマウントし、外さないまま_update_baseの_nvidia_moduleへ進む。SSDの/usr/srcのdkmsの元(nvidia-*)が隠れ、headersはtmpfsに入って再起動で消えた。(2)Debian 13のlinux-source 6.12.118ではpci_resize_resourceの引数が4つになっていて(stableへ戻された変更)、trixieの550.163.01は3つで呼ぶ。

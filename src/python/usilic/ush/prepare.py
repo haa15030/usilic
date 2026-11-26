@@ -71,6 +71,8 @@ def prepare(env, log, option, out):
                 extra = ''.join('deb-src ' + l[4:] + '\n' for l in sources.splitlines() if l.startswith('deb '))
                 system.write_text('/etc/apt/sources.list', sources + extra)
                 system.stream(['apt', 'update', '-y'], out)
+        from .update import apt_nvidia_components
+        apt_nvidia_components(env, out)  # NVIDIAのGPUがあればcontrib・non-free(純正ドライバ)
     if env.on_none and not env.on_ubuntu:
         installed = system.output(['dpkg', '-l'])
         if any(l.startswith('ii') and 'wget' in l for l in installed.splitlines()) and \

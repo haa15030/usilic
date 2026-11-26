@@ -184,6 +184,27 @@ def purge_ubuntu(env, out):
         system.run(['apt-mark', 'manual'] + keep)
 
 
+def apt_nvidia_components(env, out):
+    """_apt_nvidia_components(): Debian: NVIDIAのGPUがあれば、純正ドライバのあるcontrib・non-freeをaptの取得元に(2026-11-26)。"""
+    system = env.system
+    if not env.conf('NVIDIA_LIST', '') or not nvidia_gpu(system):
+        return
+    path = '/etc/apt/sources.list.d/debian.sources'
+    text = system.read_text(path)
+    if text is not None:  # deb822の形(Components:行)
+        new = re.sub(r'^(Components:(?!.* contrib( |$)).*)$', r'\1 contrib', text, flags=re.M)
+        new = re.sub(r'^(Components:(?!.* non-free( |$)).*)$', r'\1 non-free', new, flags=re.M)
+    else:
+        path = '/etc/apt/sources.list'
+        text = system.read_text(path) or ''
+        new = re.sub(r'^(deb.*? main)(?!.* contrib( |$))', r'\1 contrib', text, flags=re.M)
+        new = re.sub(r'^(deb.*? main)(?!.* non-free( |$))', r'\1 non-free', new, flags=re.M)
+    if new != text:
+        out('sed -i %s (contrib, non-free)' % path)
+        system.write_text(path, new)
+        system.stream(['apt', 'update', '-y'], out)
+
+
 def nvidia_gpu(system):
     """_nvidia_gpu(): NVIDIAのGPUがあるか(PCIのベンダー0x10de)。"""
     code, text = system.shell('cat /sys/bus/pci/devices/*/vendor 2>/dev/null')

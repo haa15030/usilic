@@ -3198,7 +3198,8 @@ _nvidia_module() { # $1（作ったカーネル）向けに dkms で純正ドラ
     _nvidia_pci_resize $1
     echo "dkms autoinstall -k $1"
     dkms autoinstall -k $1
-    if [ ! "`ls /lib/modules/$1/updates/dkms/nvidia.ko* 2>/dev/null`" ]; then
+    # Ubuntu は nvidia.ko.zst、Debian は nvidia-current-open.ko.xz（名前を変えて入れる）
+    if [ ! "`ls /lib/modules/$1/updates/dkms/nvidia.ko* /lib/modules/$1/updates/dkms/nvidia-current*.ko* 2>/dev/null`" ]; then
         echo "-u: /lib/modules/$1/updates/dkms/nvidia.ko: not built (dkms). : $LINENO" >> /tmp/log.$TMP_LABEL
     fi
 }
