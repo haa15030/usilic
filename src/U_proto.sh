@@ -3214,9 +3214,11 @@ _nvidia_module() { # $1（作ったカーネル）向けに dkms で純正ドラ
     fi
     # Debian: nouveau を止める（2026-11-26）。止める設定（nvidia-blacklists-nouveau.conf）は nvidia-driver が入れる
     # 「nvidia」の alternatives にしか無く、-d の前の RAMDISK（*-base）では nouveau が先に GPU を取って
-    # 「NVRM: GPU 0000:01:00.0 is already bound to nouveau.」になった。SSD と、マウント中の RAMDISK の土台の両方へ
+    # 「NVRM: GPU 0000:01:00.0 is already bound to nouveau.」になった。SSD と、マウント中の RAMDISK の土台の両方へ。
+    # nvidia-drm の modeset=1 fbdev=1: 無いと、nouveau の代わりにコンソールの画面を受け持つものが無く、*-base が大きな文字になった。
+    # Debian はモジュールの名前を変えて入れる（modprobe・options はファイルの名前の nvidia-current-open-drm、lsmod は nvidia_drm）
     if [ ! "$ON_UBUNTU" ]; then
-        printf '%s\n' "# U.sh: NVIDIA の純正ドライバを使う（nouveau が先に GPU を取ると読み込めない）" "blacklist nouveau" "options nouveau modeset=0" > /tmp/nouveau.$TMP_LABEL
+        printf '%s\n' "# U.sh: NVIDIA の純正ドライバを使う（nouveau が先に GPU を取ると読み込めない）" "blacklist nouveau" "options nouveau modeset=0" "options nvidia-current-open-drm modeset=1 fbdev=1" > /tmp/nouveau.$TMP_LABEL
         if ! cmp -s /tmp/nouveau.$TMP_LABEL /etc/modprobe.d/U-nouveau.conf; then
             echo "-> /etc/modprobe.d/U-nouveau.conf"
             cp /tmp/nouveau.$TMP_LABEL /etc/modprobe.d/U-nouveau.conf

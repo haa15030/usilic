@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1435. **src/U_proto.sh・src/python: Debianのnvidia-drmにmodeset=1 fbdev=1(*-baseのコンソールが大きな文字)(2026-11-26)**
+   - 経緯: 1432(nouveauを止める)の後、8GB-baseの画面が大きな文字になった(ユーザー: GPU利いて無さそう)。/sys/module/nvidia_drm/parameters/modesetはN。nouveauがしていたコンソールの画面(framebuffer)を受け持つものが無くなった。modprobe -r nvidia_drm・modprobe nvidia_drmは「not found」、modprobe -r nvidia-current-open-drmは何もせず0(modprobeはファイルの名前のnvidia_current_open_drmで探し、lsmodのnvidia_drmと別物と見る)。rmmod nvidia_drmの後、modprobe nvidia-current-open-drm modeset=1 fbdev=1でYになり、文字が細かくなった。
+   - 変更: U-nouveau.conf(_nvidia_module・kernel.NOUVEAU_OFF)に「options nvidia-current-open-drm modeset=1 fbdev=1」を足した(GNOMEのWaylandにもmodeset=1が要る)。
+
 1434. **src/U_proto.sh・src/python: Debianの-dでもnvidiaの描画の側(nvidia-driver)を入れる(2026-11-26)**
    - 経緯: Debian 13で-dを全部のデスクトップで行った後、8GB-GNOMEで起動するとe2scrub_allの後しばらく止まり、GUIが2回チラッと出て真っ暗(左上にカーソル)。sshで見ると、nvidia-driver・nvidia-smiが無く(dpkg -lはnvidia-open-kernel-dkms・nvidia-alternative等だけ)、gdm-x-sessionが「[drm] Failed to open DRM device for pci:0000:01:00.0: -19」「no screens found」、gdm3が「maximum number of X display failures reached」。
    - 原因: NVIDIA_DESKTOPを入れる所が_desktop_ubuntu(on)の中にあり、Debianの-d(task-*を入れる側)では呼ばれていなかった。

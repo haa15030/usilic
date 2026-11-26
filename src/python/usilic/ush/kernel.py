@@ -266,7 +266,8 @@ def correct_uuid(env, log, path, part_from, part_to, efi=None):
 
 
 NOUVEAU_CONF = '/etc/modprobe.d/U-nouveau.conf'
-NOUVEAU_OFF = '# U.sh: NVIDIA の純正ドライバを使う（nouveau が先に GPU を取ると読み込めない）\nblacklist nouveau\noptions nouveau modeset=0\n'
+NOUVEAU_OFF = '# U.sh: NVIDIA の純正ドライバを使う（nouveau が先に GPU を取ると読み込めない）\nblacklist nouveau\noptions nouveau modeset=0\n' \
+    'options nvidia-current-open-drm modeset=1 fbdev=1\n'  # 無いと*-baseのコンソールが大きな文字(Debianは名前を変えて入れる)
 PCI_RESIZE_CALL = 'pci_resize_resource(pci_dev, NV_GPU_BAR1, requested_size);'
 
 
