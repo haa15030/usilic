@@ -101,9 +101,6 @@ readonly BAK_HOST="192.168.3.1	router"
 readonly SMBFS=""
 #
 
-#readonly MNTS=""
-readonly MNTS="ubuntu"
-#
 # --- RAMDISK の上で /opt/U.sh を書き換えたら、$MNT_DEBIAN/opt/U.sh へも写すこと（写さないと再起動で消える）
 # （以前の差分の記録（U.diff・「Patch now?」）は廃止。書き換えた直後だと記録されないことがあり、more の表示も扱いにくかった）
 
@@ -2846,41 +2843,6 @@ _list_mnt_no() { # -v: -f でマウントした /mnt/番号 の素性と中身
     done
 }
 
-tm() { # -t)
-    local _mnt _part
-    
-    if [ "$2" = "-" ]; then
-	if [ "`fgrep /mnt/xxx_disk /etc/mtab`" ]; then
-	    umount /mnt/xxx_disk
-	fi
-	for _mnt in `echo $MNTS`
-	do
-	    if [ "$_mnt" != "xxx_disk" ] && [ "`fgrep /mnt/$_mnt /etc/mtab`" ]; then
-		echo "umount /mnt/$_mnt"
-		umount /mnt/$_mnt
-	    fi
-	done
-    elif [ ! "$2" ]; then
-	for _mnt in `echo $MNTS`
-	do
-	    if [ ! -d /mnt/$_mnt ]; then
-		mkdir /mnt/$_mnt
-	    fi
-	    if [ ! "`fgrep /mnt/$_mnt /etc/mtab`" ]; then
-		mount /mnt/$_mnt > /dev/null 2>&1
-		if [ ! -d /mnt/$_mnt/lost+found ]; then
-		    umount /mnt/$_mnt > /dev/null 2>&1
-		else
-		    echo "mount /mnt/$_mnt"
-		fi
-	    fi
-	done
-	for _part in /dev/sd?; do [ -b $_part ] && /sbin/hdparm -S 255 $_part; done
-    else
-	echo "$1 $2: Invalid option. : $LINENO" >> /tmp/log.$TMP_LABEL
-    fi
-}
-
 _get_usilic_repo() { # usilic のリポジトリ（~/git/usilic）を取る・新しくする
     local _home=`getent passwd "$USR" | cut -d: -f6`
 
@@ -3920,9 +3882,6 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 		;;
 	    -s)
 		save_host $_option $_ARG_1 $_ARG_2 $_ARG_3
-		;;
-	    -t)
-		tm $_option $_ARG_1
 		;;
 	    -u | -U)
 		update_base $_option

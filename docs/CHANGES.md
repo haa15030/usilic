@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1427. **src/U_proto.sh: -t(tm、MNTSの/mnt/〜をマウント・hdparm)を外す(2026-11-26)**
+   - 経緯: Python版に移していないオプションは-tと-U(-uの別名)。ユーザー: U.shを使ってしまっては移植したことにならない。-tは/etc/fstabを編集しなくてはならないので削除でいい。
+   - 変更: tm()・mainのcaseの-t・設定のMNTS(Python版env.pyの読む設定の名前からも)を外した。-tは一覧・U_sh.txtには載っていなかった。
+
 1426. **src/cpp・src/U_proto.sh・src/python: C++版のusilicにも^J^R(usilicを終えて「. U」の画面へ)、番号はK-157(2026-11-26)**
    - 経緯: ユーザーの問い"usilic-pyが無いときに使用されるC++版からは^J^Rでシェル側に戻れない？"。項目1425はPython版だけだった(C++版の^J^Rは2026-09-20に廃止して空いていた)。
    - 変更: C++版のdispatchLeaderByte()に^J^R→Application::startRescue()(Linuxで/opt/U.shがあればrescueExit_・wantsExit_、無ければ「RESCUE: no /opt/U.sh」)。main()は端末を戻した後、rescueExit()ならUSILIC_FROM_U=1の時は終了コード3、他は端末があれば/usr/local/bin/U(sh、無ければ/opt/U.shをbashで、rootでなければsudo)へexecvp。U.shの_pageはC++版(~/.local/bin/usilic・/usr/bin/usilic)にもUSILIC_FROM_U=1を付け、3ならU_AGAIN。キーの番号: Python版は^J^RをK-156にしていたが、C++版の156は^T^T(項目1416)なので、両方ともK-157にそろえた。
