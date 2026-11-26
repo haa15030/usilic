@@ -117,10 +117,26 @@ def rc_local_only(env, log, option, out):
         out('tar xfp %s -> /' % image)
         loop0 = env.tmp + '/loop0'
         if fs(env, log, 'mount', '-o', 'loop,ro', image, loop0, try_only=True):
-            # 起動中のRAMDISKのもの(fstabはrc.localがu_root=で書いた)とtar自身は上書きしない
-            system.shell('tar cf - --exclude=etc/fstab --exclude=etc/rc.local --exclude=etc/network/interfaces '
-                         '--exclude=usr/bin/tar * | tar xfp - -C /', cwd=loop0)
-            fs(env, log, 'umount', loop0)
+            # 収まるか(2026-11-27)。収まらないまま展開すると途中で場所が尽き、書きかけのライブラリ(libacl.so.1等が
+            # 「file too short」)でrc.localが止まって、gettyもsshも出なかった(save_hostの最後の確かめと同じ式)
+            need_kb = _kb(system, "df -k %s | sed -n 2p | awk '{print $3}'" % loop0)
+            for d in env.shm_list:
+                if system.isdir(loop0 + '/' + d):
+                    need_kb -= _kb(system, 'du -skx %s/%s | cut -f1' % (loop0, d))
+            need_kb += _kb(system, 'du -skc /usr/lib/modules/* 2>/dev/null | tail -n1 | cut -f1') + env.ramdisk_margin_kb
+            cap_kb = _kb(system, "df -k / | sed -n 2p | awk '{print $2}'")
+            if cap_kb and need_kb > cap_kb:
+                message = '-r: %s.img: %dKB > RAMDISK %dKB (booted as %dGB-base).' % (host, need_kb, cap_kb, gb)
+                out(message)
+                log.add(message)
+                fs(env, log, 'umount', loop0)
+                host = '%dGB-base' % gb
+                image = ''
+            else:
+                # 起動中のRAMDISKのもの(fstabはrc.localがu_root=で書いた)とtar自身は上書きしない
+                system.shell('tar cf - --exclude=etc/fstab --exclude=etc/rc.local --exclude=etc/network/interfaces '
+                             '--exclude=usr/bin/tar * | tar xfp - -C /', cwd=loop0)
+                fs(env, log, 'umount', loop0)
         else:
             host = '%dGB-base' % gb
             image = ''
@@ -141,3 +157,10 @@ def rc_local_only(env, log, option, out):
         start_rc(env, out, log)
     if has_desktop(env):  # デスクトップのあるホストには、usilicが無ければ入れる
         put_usilic(env, log, '-r', out)
+
+
+def _kb(system, command):
+    """commandの出力の最後の数(KB)。無ければ0。"""
+    _, text = system.shell(command, cwd='/')
+    words = text.split()
+    return int(words[-1]) if words and words[-1].isdigit() else 0

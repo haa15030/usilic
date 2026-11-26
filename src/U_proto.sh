@@ -24,6 +24,10 @@ readonly RESCUE_DEV_PURGE="build-essential pkg-config libncurses-dev libsdl2-dev
 # --- -s・-u のイメージ（?GB-*.img）に入れないもの（/ からの相対、* 可）
 # usilic は ~/.local に入っていて、rescue ではビルドしないのでリポジトリ（.git とビルドの中間ファイルで1GB近く）は要らない
 readonly IMG_EXCLUDE="home/*/git/usilic home/*/.cache"
+# ?GB-rescue.img に入れないもの（2026-11-27）。/usr/src は dkms の元（nvidia-*）と linux-headers、gsp_* は nvidia の GSP の
+# firmware（どちらも RAM の土台の側で、展開の前に nvidia を読み込む時に使い終わっている）。入れると Debian 13 の 4GB-rescue が
+# 4GB の RAMDISK を 231224KB 超え、起動の時の展開で場所が尽きて止まった
+readonly RESCUE_EXCLUDE="usr/src/* usr/lib/firmware/nvidia/*/gsp_*"
 readonly RAMDISK_MARGIN_KB=50000 # RAMDISKに収まるかの確認で残す余裕（起動してから / に書かれる分）
 
 # --- データ保存（-s）の作業エリア設定
@@ -2397,7 +2401,7 @@ _tmp_debian() {
 }
 
 rc_local_only() { # -r)
-    local _shm _next_host _img
+    local _shm _next_host _img _need_kb _cap_kb _x
     local _TMPFS_OPT="-o size=${TMPFS_KB}K"
 
     if [ -f "/opt/BASE.u" ]; then
@@ -2450,11 +2454,29 @@ rc_local_only() { # -r)
     if [ "$_img" ]; then
         echo "tar xfp $_img -> /"
         if _fs_try $LINENO mount -o loop,ro $_img /tmp/loop0.$TMP_LABEL; then
-            cd /tmp/loop0.$TMP_LABEL
-            # 起動中のRAMDISKのもの（fstab は rc.local が u_root= で書いた）とtar自身は上書きしない。イメージ自体は書き換えない
-            tar cf - --exclude=etc/fstab --exclude=etc/rc.local --exclude=etc/network/interfaces --exclude=usr/bin/tar * | tar xfp - -C /
-            cd /opt
-            _fs $LINENO umount /tmp/loop0.$TMP_LABEL
+            # 収まるか（2026-11-27）。収まらないまま展開すると途中で場所が尽き、書きかけのライブラリ（libacl.so.1 等が
+            # 「file too short」）で rc.local が止まって、getty も ssh も出なかった（_save_host の最後の確かめと同じ式）
+            _need_kb=`df -k /tmp/loop0.$TMP_LABEL | sed -n 2p | awk '{print $3}'`
+            for _x in $SHM_LIST
+            do
+                if [ -d /tmp/loop0.$TMP_LABEL/$_x ]; then
+                    _need_kb=$((_need_kb - `du -skx /tmp/loop0.$TMP_LABEL/$_x | cut -f1`))
+                fi
+            done
+            _need_kb=$((_need_kb + `du -skc /usr/lib/modules/* 2>/dev/null | tail -n1 | cut -f1` + RAMDISK_MARGIN_KB))
+            _cap_kb=`df -k / | sed -n 2p | awk '{print $2}'`
+            if [ "$_need_kb" -gt "$_cap_kb" ]; then
+                echo "-r: $_next_host.img: ${_need_kb}KB > RAMDISK ${_cap_kb}KB (booted as ${RAMDISK_GB}GB-base). : $LINENO" | tee -a /tmp/log.$TMP_LABEL
+                _fs $LINENO umount /tmp/loop0.$TMP_LABEL
+                _next_host=${RAMDISK_GB}GB-base
+                _img=""
+            else
+                cd /tmp/loop0.$TMP_LABEL
+                # 起動中のRAMDISKのもの（fstab は rc.local が u_root= で書いた）とtar自身は上書きしない。イメージ自体は書き換えない
+                tar cf - --exclude=etc/fstab --exclude=etc/rc.local --exclude=etc/network/interfaces --exclude=usr/bin/tar * | tar xfp - -C /
+                cd /opt
+                _fs $LINENO umount /tmp/loop0.$TMP_LABEL
+            fi
         else
             _next_host=${RAMDISK_GB}GB-base
             _img=""
@@ -2649,6 +2671,14 @@ _save_host() {
     do
         _excl="$_excl --exclude=$_x"
     done
+    if [ "$_new_host" = "${RAMDISK_GB}GB-rescue" ]; then
+        set -f # 「--exclude=usr/src/*」を展開させない
+        for _x in $RESCUE_EXCLUDE
+        do
+            _excl="$_excl --exclude=$_x"
+        done
+        set +f
+    fi
     echo "tar cf - $_excl [e-h]* root srv usr var | tar xfp - -C /tmp/loop0.$TMP_LABEL"
     tar cf - $_excl [e-h]* root srv usr var | tar xfp - -C /tmp/loop0.$TMP_LABEL 2>/tmp/error.$TMP_LABEL
     _tmp_debian $_plus

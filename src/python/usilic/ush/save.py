@@ -33,6 +33,12 @@ def tmpfs_size(env, used=None):
     return free
 
 
+# ?GB-rescue.imgに入れないもの(2026-11-27)。/usr/srcはdkmsの元(nvidia-*)とlinux-headers、gsp_*はnvidiaのGSPのfirmware
+# (どちらもRAMの土台の側で、展開の前にnvidiaを読み込む時に使い終わっている)。入れるとDebian 13の4GB-rescueが4GBの
+# RAMDISKを231224KB超え、起動の時の展開で場所が尽きて止まった
+RESCUE_EXCLUDE = ('usr/src/*', 'usr/lib/firmware/nvidia/*/gsp_*')
+
+
 def ramdisk_cap_kb(env, gb):
     """_ramdisk_cap_kb(): gbのRAMDISK(同じ大きさでmkfs.ext4)に入る量(KB、dfの大きさ)。/tmpに中身の無いファイルで。"""
     system = env.system
@@ -273,6 +279,8 @@ def save_host(env, log, option, args, out):
     else:
         excl = "--exclude='usr/lib/modules/*'"
     excl += ''.join(" --exclude='%s'" % x for x in env.img_exclude)
+    if new_host == rescue:
+        excl += ''.join(" --exclude='%s'" % x for x in RESCUE_EXCLUDE)
     command = 'tar cf - %s [e-h]* root srv usr var | tar xfp - -C %s' % (excl, loop0)
     out(command)
     errors = env.tmp + '/tar.err'  # 写す側(tar xfp)のエラーだけ(U.shの2>/tmp/error.*)

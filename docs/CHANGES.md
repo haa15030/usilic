@@ -33408,6 +33408,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1439. **src/U_proto.sh・src/python: Debian 13の4GB-rescueが起動の時に止まった(4GBに231MB超え)。/usr/srcとnvidiaのGSPのfirmwareをrescueに入れない、-rは収まらなければ?GB-baseで起動(2026-11-27)**
+   - 直接のユーザー報告: 4GB-rescueで起動すると、高精細の黒い画面にカーソルが点滅したまま。Ctrl+Alt+F2でもログインが出ず、sshも繋がらない(dhcpdの割り当ては前半の4GB-baseの1回だけ)。最後にrescueが起動したのはHISTORY.md:71213あたり(11/22)。
+   - 調べたこと: module_blacklistでnvidiaを止めてもrescueでは同じ(nvidiaのせいではない)。systemd.debug-shell=1のtty9で、`/dev/root`が3764096KB中3740336KB(100%)、journalctl・psが「libacl.so.1・libcap.so.2: file too short」。gettyはrc.localの後なのでtty2も空。U.logには「-u: 4GB-rescue.img: 3995320KB > 4GB RAMDISK 3764096KB (over 231224KB, can't boot).」が出ていた。rescueの中は/usr/src 241M(dkmsの元のnvidia-*とlinux-headers)、/usr/lib/firmware/nvidia 123M、gcc 84M(dkmsが要る)。
+   - 原因: 1429〜1432でSSDにnvidia-open-kernel-dkms(dkms・headers・firmware-nvidia-gsp)が入り、11/26の-uで作り直した4GB-rescue.imgにも乗った(11/22の1305でぎりぎり収めていた)。-uの「can't boot」はU.logに書くだけで、-rはそのまま展開して途中で尽きた。
+   - 変更: RESCUE_EXCLUDE="usr/src/* usr/lib/firmware/nvidia/*/gsp_*"を?GB-rescue.imgのtarで外す(nvidiaはRAMの土台の側で、展開の前に読み込み済み)。-r(rc_local_only・boot): イメージをマウントした後、_save_hostと同じ式(中身 − SHM_LIST + /usr/lib/modules + RAMDISK_MARGIN_KB)でRAMDISK(/のdf)と比べ、超えれば展開せず「-r: 名前.img: 〜KB > RAMDISK 〜KB (booted as ?GB-base).」で?GB-baseのまま起動する。
+   - 使い方: /opt/4GB-rescue.imgを消して-u(rescueだけ作り直す)。
+
 1438. **src/U_sh.txt: デスクトップの大きさ、Debian 13を8GB-baseの上の-d(nvidia-driver入り)の値に(2026-11-26)**
    - 経緯: 1437の後、8GB-baseの上で全部のデスクトップの-dをやり直した(scriptで「= 〜KB」の行も残した)。
    - 変更: Debianの展開に要る量・img(GB、KB/10^6)を、GNOME 5.64・6.47、KDE-Plasma 6.95・7.96、Cinnamon 5.71・6.58、MATE 5.27・6.09、LXQt 5.26・6.08、Xfce 4.72・5.47、GNOME-Flashback 5.21・6.02、LXDE 4.67・5.43に。合計img.debian 57.1GB、STRAGE約57GB、KDE-Plasmaは8GBのRAMDISK(7589944KB)の約92%。「nvidia-driverを入れる前の値」の注を消した。
