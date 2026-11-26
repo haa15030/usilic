@@ -3883,7 +3883,7 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	    -s)
 		save_host $_option $_ARG_1 $_ARG_2 $_ARG_3
 		;;
-	    -u | -U)
+	    -u)
 		update_base $_option
 		;;
 	    -v)
