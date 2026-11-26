@@ -3161,14 +3161,41 @@ _nvidia_base() { # NVIDIA_LIST（純正ドライバのカーネル側）を BASE
     chmod 444 /opt/BASE.u
 }
 
+_nvidia_pci_resize() { # $1（作ったカーネル）の pci_resize_resource が引数4つなら、nvidia の nv-pci.c（3つで呼ぶ）を合わせる（2026-11-26）
+    # Debian 13 の linux-source 6.12.118 では4つ目（除く BAR）が増えていて（stable へ戻された変更）、trixie の 550.163.01 の
+    # nv-pci.c が「too few arguments to function 'pci_resize_resource'」で組み立てられなかった。0 は「除く BAR 無し」（前と同じ動き）。
+    # dkms は組み立てのたびに /usr/src/nvidia-* から写すので、そこを直す（版が上がって呼び方が変われば sed は何もしない）
+    local _f
+
+    if ! grep -q 'pci_resize_resource(struct pci_dev \*dev, int i, int size,$' /usr/src/linux-headers-$1/include/linux/pci.h 2>/dev/null; then
+        return
+    fi
+    for _f in /usr/src/nvidia-*/nvidia/nv-pci.c
+    do
+        if grep -q 'pci_resize_resource(pci_dev, NV_GPU_BAR1, requested_size);' $_f 2>/dev/null; then
+            echo "sed -i $_f (pci_resize_resource: 4 args)"
+            sed -i $_f -e 's/pci_resize_resource(pci_dev, NV_GPU_BAR1, requested_size);/pci_resize_resource(pci_dev, NV_GPU_BAR1, requested_size, 0);/'
+        fi
+    done
+}
+
 _nvidia_module() { # $1（作ったカーネル）向けに dkms で純正ドライバのモジュールを組み立てる（RAM-*-base.gz へ /lib/modules ごと写る）
     if [ ! "$NVIDIA_LIST" ] || [ ! "`_is_inst dkms`" ]; then
         return
     fi
+    # カーネルを作った時の /usr/src の tmpfs（Linux のソース）を外す（2026-11-26）。付けたままだと、SSD の /usr/src の
+    # dkms の元（nvidia-*）が隠れて組み立てられず（dkms status は「added」のまま）、headers も tmpfs へ入って再起動で消えた
+    if mountpoint -q /usr/src; then
+        cd /opt
+        echo "umount /usr/src"
+        _fs $LINENO umount /usr/src
+    fi
+    # -e は指す先を見る（tmpfs へ入って消えた headers の build -> /usr/src/linux-headers-* も入れ直す）
     if [ ! -e /lib/modules/$1/build ] && [ "`ls /opt/linux-headers-${1}_*.deb 2>/dev/null`" ]; then
         echo "dpkg -i /opt/linux-headers-${1}_*.deb"
         dpkg -i /opt/linux-headers-${1}_*.deb > /dev/null
     fi
+    _nvidia_pci_resize $1
     echo "dkms autoinstall -k $1"
     dkms autoinstall -k $1
     if [ ! "`ls /lib/modules/$1/updates/dkms/nvidia.ko* 2>/dev/null`" ]; then
