@@ -68,26 +68,26 @@ DEBIAN区画の /opt には、カーネルの .deb・RAM-*-base.gz・4GB-rescue.
 デスクトップの大きさ㊿：⑲'. U -d'⊥㊿#
 #
 ⑧Z390UD・RTX3050（NVIDIA の純正ドライバ）で、-d を全部のデスクトップで行った時の大きさです（2026-11-26）。
-8GB-base の上で行った値で、左は展開に要る量（-d・-s の「= 〜KB」、Debian 13 は nvidia-driver を入れる前の値）、右は STRAGE の ?GB-名前.img の大きさです。
+8GB-base の上で行った値で、左は展開に要る量（-d・-s の「= 〜KB」）、右は STRAGE の ?GB-名前.img の大きさです。
 8GB-LXQt の上で行うと、BASE.u へ戻しきれない分が乗り、どれも 0.7〜1GB 大きくなりました（KDE-Plasma は img 8.90GB・展開に要る量 7.58GB で、8GB の RAMDISK にほぼ一杯）。㊿#
 #
 ⑦      デスクトップ㊿ : ⑲Debian 13（8GB の RAMDISK で）／Ubuntu 26.10（16GB の RAMDISK で）㊿#
-⑦        GNOME㊿ : ⑲5.50GB・6.47GB／7.71GB・9.19GB㊿#
-⑦   KDE-Plasma㊿ : ⑲6.80GB・8.13GB／8.03GB・9.48GB㊿#
-⑦     Cinnamon㊿ : ⑲5.57GB・6.75GB／7.04GB・8.39GB㊿#
-⑦         MATE㊿ : ⑲5.13GB・6.26GB／6.78GB・8.10GB㊿#
-⑦         LXQt㊿ : ⑲5.12GB・6.25GB／7.08GB・8.43GB㊿#
-⑦         Xfce㊿ : ⑲4.58GB・5.64GB／5.71GB・6.89GB㊿#
-⑦GNOME-Flashback㊿ : ⑲5.07GB・6.20GB／（無し）㊿#
-⑦         LXDE㊿ : ⑲4.53GB・5.61GB／（無し）㊿#
+⑦        GNOME㊿ : ⑲5.64GB・6.47GB／7.71GB・9.19GB㊿#
+⑦   KDE-Plasma㊿ : ⑲6.95GB・7.96GB／8.03GB・9.48GB㊿#
+⑦     Cinnamon㊿ : ⑲5.71GB・6.58GB／7.04GB・8.39GB㊿#
+⑦         MATE㊿ : ⑲5.27GB・6.09GB／6.78GB・8.10GB㊿#
+⑦         LXQt㊿ : ⑲5.26GB・6.08GB／7.08GB・8.43GB㊿#
+⑦         Xfce㊿ : ⑲4.72GB・5.47GB／5.71GB・6.89GB㊿#
+⑦GNOME-Flashback㊿ : ⑲5.21GB・6.02GB／（無し）㊿#
+⑦         LXDE㊿ : ⑲4.67GB・5.43GB／（無し）㊿#
 ⑦   GNOME_live㊿ : ⑲（無し）／8.14GB・8.40GB（-i で入れた「お試し」の GNOME）㊿#
 ⑦ BUILD_*.img㊿ : ⑲7.00GB／7.00GB㊿#
-⑦         合計㊿ : ⑲img.debian 58.3GB／img.ubuntu 65.9GB㊿#
+⑦         合計㊿ : ⑲img.debian 57.1GB／img.ubuntu 65.9GB㊿#
 #
-⑧Debian 13 は、どのデスクトップも 8GB の RAMDISK（使えるのは約 7.59GB）に収まります（一番大きい KDE-Plasma で約 90%）。
+⑧Debian 13 は、どのデスクトップも 8GB の RAMDISK（使えるのは約 7.59GB）に収まります（一番大きい KDE-Plasma で約 92%）。
 Ubuntu 26.10 は、KDE-Plasma・GNOME・GNOME_live が 8GB に収まらないので、10GB の RAMDISK（使えるのは約 9.55GB）にします（-k 10 でカーネルを作り、-u）。
 RAMDISK のメモリは書いた分だけ使われる（brd）ので、10GB の RAMDISK でも、展開した量（上の左の値）と、その後に書いた分だけを使います。
-STRAGE は、全部のデスクトップを保存して Debian 13 で約 58GB、Ubuntu 26.10 で約 66GB です。
+STRAGE は、全部のデスクトップを保存して Debian 13 で約 57GB、Ubuntu 26.10 で約 66GB です。
 rescue の控え等も置くなら、Debian 13 で 70GB、Ubuntu 26.10 で 80GB ほどあれば足ります。#
 #
 オプション        ㊿：⑲'. U' の後に付けるもの⊥㊿#

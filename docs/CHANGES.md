@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1438. **src/U_sh.txt: デスクトップの大きさ、Debian 13を8GB-baseの上の-d(nvidia-driver入り)の値に(2026-11-26)**
+   - 経緯: 1437の後、8GB-baseの上で全部のデスクトップの-dをやり直した(scriptで「= 〜KB」の行も残した)。
+   - 変更: Debianの展開に要る量・img(GB、KB/10^6)を、GNOME 5.64・6.47、KDE-Plasma 6.95・7.96、Cinnamon 5.71・6.58、MATE 5.27・6.09、LXQt 5.26・6.08、Xfce 4.72・5.47、GNOME-Flashback 5.21・6.02、LXDE 4.67・5.43に。合計img.debian 57.1GB、STRAGE約57GB、KDE-Plasmaは8GBのRAMDISK(7589944KB)の約92%。「nvidia-driverを入れる前の値」の注を消した。
+   - 1436のimg(GNOME 6.47・KDE-Plasma 8.13等)は8GB-baseからでなく、続けて行った分が混じっていた可能性がある(KDE-Plasmaで0.17GB違う)。
+
 1437. **src/U_proto.sh・src/python・src/U_sh.txt: -dの最後の「Start ?GB-名前 now?」をやめ、-nで起動し直す。-dは?GB-baseの上で(2026-11-26、直接のユーザー依頼)**
    - 経緯: Debian 13の-dをやり直すと、最後に入れたLXQtについて「Start 8GB-LXQt now?」と聞かれ、Yと答えるとデスクトップは出るが音が鳴らなかった。ユーザー: 「-nで再起動限定の方がいい」。
    - 変更: _desktop・desktop: 問いと、hostname・NEXT?=・graphical.targetへの切り換えを消し、「'. U -n' to boot.」を出すだけに。テスト(test_d・test_d_from_desktop_host)を合わせた。
