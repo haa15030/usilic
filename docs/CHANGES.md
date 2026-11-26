@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1433. **src/U_sh.txt: デスクトップの大きさ(Debian 13・Ubuntu 26.10の-dの「= 〜KB」と?GB-名前.img)、RAMDISK・STRAGEの目安(2026-11-26)**
+   - 経緯: ユーザーがUbuntu 26.10(16GBのRAMDISK)とDebian 13(8GB)で-dを全部のデスクトップで行い、「= 〜KB」の行とdu -ab img.ubuntu・img.debianを貼った(Debianは一気に23分)。ユーザー: 10GB(Ubuntu)、STRAGEはUbuntuで80G、Debianの値がわかれば補足しておいてもいいかも。Debian 13のSTRAGEは180G。
+   - 変更: 「所要時間・容量の目安」の「要確認」(STRAGE 20GB以上・/optの合計)を直し(/optはDebian 13で約6GB)、新しい節「デスクトップの大きさ」: デスクトップごとの展開に要る量と?GB-名前.img(Debian 13／Ubuntu 26.10)、合計(img.debian 55.8GB／img.ubuntu 65.9GB)。Debianはどれも8GB(KDE-Plasmaで約90%)、UbuntuはKDE-Plasma・GNOME・GNOME_liveが8GBに収まらないので10GB。brdは書いた分だけメモリを使う。STRAGEはrescueの控え等も置いてDebian 70GB・Ubuntu 80GBほど。
+
 1432. **src/U_proto.sh・src/python: Debianのnvidia、nouveauを止める(/etc/modprobe.d/U-nouveau.conf)(2026-11-26)**
    - 経緯: 1431の後、8GB-base(6.12.118+8gb)で起動するとlsmodにnvidiaが無く、nouveauが読み込まれていた。/lib/modules/*/updates/dkms/にnvidia-current-open*.ko.xzはあり、modprobe nvidia-current-openは「No such device」、dmesgは「NVRM: GPU 0000:01:00.0 is already bound to nouveau.」。/etc/modprobe.d・/usr/lib/modprobe.dにnouveauを止める設定が無かった。
    - 原因: Debianのnouveauを止める設定(nvidia-blacklists-nouveau.conf)はnvidia-driverが入れる「nvidia」のalternativesにしか無く、nvidia-open-kernel-dkms(-uのBASE)だけでは入らない(1429のコメントの「nvidia-kernel-supportが入れる」は誤り、直した)。
