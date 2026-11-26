@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1429. **src/U_proto.sh: Debian 13でもNVIDIAの純正ドライバ(nvidia-open-kernel-dkms・nvidia-driver、550.163.01)(2026-11-26)**
+   - 経緯: Debian 13を-eで真っ新にした後、ユーザーの問い"-uの前にやることは？　nvidiaドライバ関連で"。NVIDIA_LIST等はUbuntuの所にしか無く、Debianはnouveauのまま(DPの音が鳴らない)。実機のapt-cache policy: nvidia-open-kernel-dkms(contrib)・nvidia-kernel-dkms・nvidia-driver(non-free)・firmware-nvidia-gsp(non-free-firmware)がどれも550.163.01-2。Debian 13の/etc/apt/sources.listにはcontrib non-freeが既にあった(debian.sourcesは無い)。
+   - 変更: Debianの時はNVIDIA_LIST="nvidia-open-kernel-dkms"(-uがBASEに入れ、作ったカーネル向けにdkmsで組み立てる)、NVIDIA_DESKTOP="nvidia-driver"(-dが描画の側として)。NVIDIA_NOUVEAU_FWは""(nouveau用はfirmware-misc-nonfreeの中で他の機器と一緒)。_apt_nvidia_components: NVIDIAのGPUがあれば、apt の取得元(debian.sourcesのComponents:・sources.listのdeb行)にcontrib・non-freeを足す(無ければ)。
+
 1428. **src/U_proto.sh: -U(-uの別名)を外す(2026-11-26)**
    - 経緯: -Uは`-u | -U) update_base`だけで、中身は-uと同じ(一覧・U_sh.txtにも無い)。ユーザー: ちょっと思い出せないんで削除でいい。これでPython版に移していないオプションは無くなった。
    - 変更: mainのcaseを`-u)`だけにした。

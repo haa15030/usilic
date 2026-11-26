@@ -472,6 +472,15 @@ if [ "$ON_UBUNTU" ]; then
     # thermald: Intel のノートパソコンの温度の管理（ACPI の DPTF を読む）。Z390UD では起動に5回失敗し続けた（温度の保護は
     #   ハードウェアがする）
 fi
+# --- Debian 13 の NVIDIA（2026-11-26、直接のユーザー依頼）---
+# nouveau では DP の音が鳴らなかった（上の Ubuntu の所と同じ、Z390UD・RTX3050）。trixie の 550.163.01（contrib・non-free）。
+# カーネル側は open 版（nvidia-open-kernel-dkms、Turing 以降。GSP の firmware-nvidia-gsp は BASE_LIST にある）、
+# -d が入れる描画の側は nvidia-driver（カーネル側は open 版で足りる）。nouveau を止める設定は nvidia-kernel-support が入れる。
+# nouveau 用の firmware（firmware-misc-nonfree の nvidia/）は他の機器の firmware と一緒なので外さない（NVIDIA_NOUVEAU_FW=""）
+if [ ! "$ON_UBUNTU" ]; then
+    NVIDIA_LIST="nvidia-open-kernel-dkms"
+    NVIDIA_DESKTOP="nvidia-driver"
+fi
 readonly RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X BASE_LIST JP_LIST NVIDIA_LIST NVIDIA_NOUVEAU_FW NVIDIA_DESKTOP RESCUE_KERNEL_DEV
 
 _on_line() { # 現在のネット接続状態（readonly の $ON_LINE は起動時の値のまま）
@@ -3083,6 +3092,28 @@ _purge_ubuntu() { # Ubuntu: BASE.u を記録する前に、RAMDISK では要ら�
     fi
 }
 
+_apt_nvidia_components() { # Debian: NVIDIA の GPU があれば、純正ドライバのある contrib・non-free を apt の取得元に（2026-11-26）
+    local _f=/etc/apt/sources.list.d/debian.sources
+
+    if [ ! "$NVIDIA_LIST" ] || ! _nvidia_gpu; then
+        return
+    fi
+    if [ -f $_f ]; then # deb822 の形（Components: 行）
+        if grep '^Components:' $_f | grep -v ' contrib' > /dev/null || grep '^Components:' $_f | grep -v ' non-free\( \|$\)' > /dev/null; then
+            echo "sed -i $_f (contrib, non-free)"
+            sed -i $_f -e '/^Components:/{/ contrib/!s/$/ contrib/}' -e '/^Components:/{/ non-free\( \|$\)/!s/$/ non-free/}'
+            apt update -y
+        fi
+    else
+        _f=/etc/apt/sources.list
+        if grep '^deb' $_f | grep -v ' contrib' > /dev/null || grep '^deb' $_f | grep -v ' non-free\( \|$\)' > /dev/null; then
+            echo "sed -i $_f (contrib, non-free)"
+            sed -i $_f -e '/^deb/{/ contrib/!s/ main/ main contrib/}' -e '/^deb/{/ non-free\( \|$\)/!s/ main/ main non-free/}'
+            apt update -y
+        fi
+    fi
+}
+
 _nvidia_gpu() { # NVIDIA の GPU があるか（PCI のベンダー 0x10de）
     cat /sys/bus/pci/devices/*/vendor 2>/dev/null | grep -qx 0x10de
 }
@@ -3650,6 +3681,7 @@ EOF
 		apt update -y
 	    fi
 	fi
+	_apt_nvidia_components
     fi
     cat /dev/null  > /tmp/log.$TMP_LABEL
     ln -sf /tmp/log.$TMP_LABEL /opt/U.log
