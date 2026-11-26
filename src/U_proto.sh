@@ -1935,26 +1935,9 @@ desktop_select() { # -d)
     done
     rm -f /opt/JP.u $MNT_DEBIAN/opt/JP.u
     echo "$1:$_pairs : $LINENO" >> /tmp/log.$TMP_LABEL
-    # 最後に入れたもの（今の RAMDISK の中身）は、そのままそのホストとして起動できる
-    _name=${RAMDISK_GB}GB-$_name
-    _ask _yn "Start $_name now? (Y/n): " n
-    if [ "$_yn" ] && [ "$_yn" != "Y" ] && [ "$_yn" != "y" ]; then
-        echo "$1: '. U -n' to boot. : $LINENO" >> /tmp/log.$TMP_LABEL
-        return
-    fi
-    echo $_name > /etc/hostname
-    hostnamectl set-hostname $_name
-    sed -i /etc/hosts -e "s/^127\.0\.1\.1[[:space:]].*/127.0.1.1\t$_name/"
-    grep -v "^NEXT${RAMDISK_GB}=" /opt/U.opt > /tmp/opt.$TMP_LABEL # 次に起動する時も同じホスト（-n と同じ）
-    echo "NEXT${RAMDISK_GB}=$_name" >> /tmp/opt.$TMP_LABEL
-    cat /tmp/opt.$TMP_LABEL > /opt/U.opt
-    cp /opt/U.opt $MNT_DEBIAN/opt
-    if [ "$ON_UBUNTU" ] && command -v netplan > /dev/null 2>&1; then # レンダラが NetworkManager になっていれば、ここで移す
-        echo "netplan apply"
-        netplan apply
-    fi
-    echo "systemctl isolate graphical.target"
-    systemctl isolate graphical.target
+    # 最後に入れたもの（今の RAMDISK の中身）は -n で選んで起動し直す（2026-11-26、直接のユーザー依頼）。前は
+    # 「Start ?GB-名前 now?」と聞き、Y ならそのまま graphical.target にしていたが、デスクトップは出ても音が鳴らなかった
+    echo "$1: '. U -n' to boot. : $LINENO" | tee -a /tmp/log.$TMP_LABEL
 }
 
 _usilic_libs() { # $2 の usilic に足りないライブラリ（ldd の not found）を、DEBIAN区画の dpkg の記録（/var/lib/dpkg/info/*.list）から引いて入れる（$1 オプション）

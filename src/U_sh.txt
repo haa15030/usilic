@@ -68,7 +68,8 @@ DEBIAN区画の /opt には、カーネルの .deb・RAM-*-base.gz・4GB-rescue.
 デスクトップの大きさ㊿：⑲'. U -d'⊥㊿#
 #
 ⑧Z390UD・RTX3050（NVIDIA の純正ドライバ）で、-d を全部のデスクトップで行った時の大きさです（2026-11-26）。
-左は展開に要る量（-d・-s の「= 〜KB」）、右は STRAGE の ?GB-名前.img の大きさです。㊿#
+8GB-base の上で行った値で、左は展開に要る量（-d・-s の「= 〜KB」、Debian 13 は nvidia-driver を入れる前の値）、右は STRAGE の ?GB-名前.img の大きさです。
+8GB-LXQt の上で行うと、BASE.u へ戻しきれない分が乗り、どれも 0.7〜1GB 大きくなりました（KDE-Plasma は img 8.90GB・展開に要る量 7.58GB で、8GB の RAMDISK にほぼ一杯）。㊿#
 #
 ⑦      デスクトップ㊿ : ⑲Debian 13（8GB の RAMDISK で）／Ubuntu 26.10（16GB の RAMDISK で）㊿#
 ⑦        GNOME㊿ : ⑲5.50GB・6.47GB／7.71GB・9.19GB㊿#
@@ -145,9 +146,10 @@ debconf の問い（既定のディスプレイマネージャ等）では止ま
 保存する前に、DEBIAN区画でビルドした usilic と、Ctrl と Caps Lock の入れ替えの設定を入れておきます。
 usilic は、DEBIAN区画の /opt（無ければ ~/git/usilic/src/cpp/build）に make deb で作った usilic_*.deb があれば、一番新しいものを apt で入れます（/usr/bin/usilic、依存のライブラリと推奨の groff・mpv 等も）。
 無ければ、DEBIAN区画の ~/.local の usilic を写します（イメージには g++ が無いので、新しくするには DEBIAN区画で make deb し直します）。
-最後に「Start ?GB-名前 now?」と聞き、Y なら起動し直さずにそのデスクトップを始めます（次の起動もそのホスト）。#
+終わったら、". U -n"^M で入れたデスクトップを選んで起動し直します（起動し直さずに始めると音が鳴りませんでした）。#
 #
 8GB-KDE 等のデスクトップのホストの上では、BASE.u（-u の後の状態）へ戻してから入れます。
+ただし戻しきれない分が残り、イメージが大きくなるので（下の「デスクトップの大きさ」）、-d は ?GB-base の上で行ってください。
 戻すと今のデスクトップは止まるので、テキストのコンソール（Ctrl+Alt+F3 等）か ssh でログインして ". U -d"^M とします（デスクトップの中の端末からでは断ります）。
 ホームのファイル（~/.config 等）は戻さないので、前のデスクトップの設定も新しいイメージに残ります。#
 #

@@ -421,25 +421,9 @@ def desktop_select(env, log, option, ask, out):
         save_host(env, log, option, [name, '.'], out)  # STRAGEの?GB-名前.img(あれば上書き)
     system.run(['rm', '-f', '/opt/JP.u', env.mnt_debian + '/opt/JP.u'])
     log.add('%s: %s' % (option, ' '.join('%s:%s' % c for c in chosen)))
-    # 最後に入れたもの(今のRAMDISKの中身)は、そのままそのホストとして起動できる
-    host = '%dGB-%s' % (env.ramdisk_gb, chosen[-1][1])
-    yn = ask('Start %s now? (Y/n): ' % host, 'n').strip()
-    if yn and yn not in ('Y', 'y'):
-        log.add("%s: '. U -n' to boot." % option)
-        return
-    system.write_text('/etc/hostname', host + '\n')
-    system.run(['hostnamectl', 'set-hostname', host])
-    hosts = system.read_text('/etc/hosts') or ''
-    system.write_text('/etc/hosts', re.sub(r'^127\.0\.1\.1\s.*$', '127.0.1.1\t' + host, hosts, flags=re.M))
-    lines = [l for l in (system.read_text('/opt/U.opt') or '').splitlines()
-             if not l.startswith('NEXT%d=' % env.ramdisk_gb)] + ['NEXT%d=%s' % (env.ramdisk_gb, host)]
-    system.write_text('/opt/U.opt', ''.join(l + '\n' for l in lines))
-    system.run(['cp', '/opt/U.opt', env.mnt_debian + '/opt'])
-    if env.on_ubuntu and system.output(['sh', '-c', 'command -v netplan']).strip():
-        out('netplan apply')  # レンダラがNetworkManagerになっていれば、ここで移す(networkdが持っていたIPアドレスが無くなった)
-        system.run(['netplan', 'apply'])
-    out('systemctl isolate graphical.target')
-    system.run(['systemctl', 'isolate', 'graphical.target'])
+    # 最後に入れたもの(今のRAMDISKの中身)は-nで選んで起動し直す(2026-11-26、直接のユーザー依頼)。前は
+    # 「Start ?GB-名前 now?」と聞き、Yならそのままgraphical.targetにしていたが、デスクトップは出ても音が鳴らなかった
+    log.add("%s: '. U -n' to boot." % option)
 
 
 def erase_base(env, log, option, ask, out):
