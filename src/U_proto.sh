@@ -598,7 +598,9 @@ _nvidia_desktop() { # -d: nvidia の描画の側（GBM・EGL・Xorg 用等。GNO
     # 「[drm] Failed to open DRM device」「no screens found」で、画面は真っ暗にカーソルだけ）
     if [ "$NVIDIA_DESKTOP" ] && _nvidia_gpu && [ "`_is_inst ${NVIDIA_LIST%% *}`" ]; then
         echo "apt-get install -y --no-install-recommends $NVIDIA_DESKTOP"
-        apt-get install -y --no-install-recommends $NVIDIA_DESKTOP < /dev/null
+        # noninteractive: open 版のモジュールでは xserver-xorg-video-nvidia が版を「for」と読み違え、
+        # 「ロードした nvidia カーネルモジュールが一致しません」の問いで止まる（2026-11-26）
+        env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $NVIDIA_DESKTOP < /dev/null
     fi
 }
 

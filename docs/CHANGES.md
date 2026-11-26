@@ -33411,7 +33411,7 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
 1434. **src/U_proto.sh・src/python: Debianの-dでもnvidiaの描画の側(nvidia-driver)を入れる(2026-11-26)**
    - 経緯: Debian 13で-dを全部のデスクトップで行った後、8GB-GNOMEで起動するとe2scrub_allの後しばらく止まり、GUIが2回チラッと出て真っ暗(左上にカーソル)。sshで見ると、nvidia-driver・nvidia-smiが無く(dpkg -lはnvidia-open-kernel-dkms・nvidia-alternative等だけ)、gdm-x-sessionが「[drm] Failed to open DRM device for pci:0000:01:00.0: -19」「no screens found」、gdm3が「maximum number of X display failures reached」。
    - 原因: NVIDIA_DESKTOPを入れる所が_desktop_ubuntu(on)の中にあり、Debianの-d(task-*を入れる側)では呼ばれていなかった。
-   - 変更: 新しい_nvidia_desktop(Python版はdesktop.nvidia_desktop)へ出し、_desktop_ubuntu onと、Debianのtask-*を入れた後の両方から呼ぶ。
+   - 変更: 新しい_nvidia_desktop(Python版はdesktop.nvidia_desktop)へ出し、_desktop_ubuntu onと、Debianのtask-*を入れた後の両方から呼ぶ。DEBIAN_FRONTEND=noninteractiveで入れる(手で入れたら、open版のモジュールの/proc/driver/nvidia/versionをxserver-xorg-video-nvidiaが「バージョン for」と読み違え、「ロードした nvidia カーネルモジュールが一致しません」の問いが出た)。
 
 1433. **src/U_sh.txt: デスクトップの大きさ(Debian 13・Ubuntu 26.10の-dの「= 〜KB」と?GB-名前.img)、RAMDISK・STRAGEの目安(2026-11-26)**
    - 経緯: ユーザーがUbuntu 26.10(16GBのRAMDISK)とDebian 13(8GB)で-dを全部のデスクトップで行い、「= 〜KB」の行とdu -ab img.ubuntu・img.debianを貼った(Debianは一気に23分)。ユーザー: 10GB(Ubuntu)、STRAGEはUbuntuで80G、Debianの値がわかれば補足しておいてもいいかも。Debian 13のSTRAGEは180G。

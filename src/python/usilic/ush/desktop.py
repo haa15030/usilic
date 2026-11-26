@@ -160,7 +160,9 @@ def nvidia_desktop(env, out):
         from .update import nvidia_gpu
         if nvidia_gpu(system):
             out('apt-get install -y --no-install-recommends ' + ' '.join(nvidia))
-            system.stream(['apt-get', 'install', '-y', '--no-install-recommends'] + nvidia, out)
+            # noninteractive: open版のモジュールではxserver-xorg-video-nvidiaが版を「for」と読み違え、問いで止まる
+            system.stream(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', 'install', '-y', '--no-install-recommends']
+                          + nvidia, out)
 
 
 def desktop_ubuntu(env, on, out):
