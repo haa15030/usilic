@@ -475,7 +475,7 @@ fi
 # --- Debian 13 の NVIDIA（2026-11-26、直接のユーザー依頼）---
 # nouveau では DP の音が鳴らなかった（上の Ubuntu の所と同じ、Z390UD・RTX3050）。trixie の 550.163.01（contrib・non-free）。
 # カーネル側は open 版（nvidia-open-kernel-dkms、Turing 以降。GSP の firmware-nvidia-gsp は BASE_LIST にある）、
-# -d が入れる描画の側は nvidia-driver（カーネル側は open 版で足りる）。nouveau を止める設定は nvidia-kernel-support が入れる。
+# -d が入れる描画の側は nvidia-driver（カーネル側は open 版で足りる）。nouveau を止める設定は _nvidia_module が入れる（Debian の物は nvidia-driver の alternatives にしか無い）。
 # nouveau 用の firmware（firmware-misc-nonfree の nvidia/）は他の機器の firmware と一緒なので外さない（NVIDIA_NOUVEAU_FW=""）
 if [ ! "$ON_UBUNTU" ]; then
     NVIDIA_LIST="nvidia-open-kernel-dkms"
@@ -3201,6 +3201,21 @@ _nvidia_module() { # $1（作ったカーネル）向けに dkms で純正ドラ
     # Ubuntu は nvidia.ko.zst、Debian は nvidia-current-open.ko.xz（名前を変えて入れる）
     if [ ! "`ls /lib/modules/$1/updates/dkms/nvidia.ko* /lib/modules/$1/updates/dkms/nvidia-current*.ko* 2>/dev/null`" ]; then
         echo "-u: /lib/modules/$1/updates/dkms/nvidia.ko: not built (dkms). : $LINENO" >> /tmp/log.$TMP_LABEL
+        return
+    fi
+    # Debian: nouveau を止める（2026-11-26）。止める設定（nvidia-blacklists-nouveau.conf）は nvidia-driver が入れる
+    # 「nvidia」の alternatives にしか無く、-d の前の RAMDISK（*-base）では nouveau が先に GPU を取って
+    # 「NVRM: GPU 0000:01:00.0 is already bound to nouveau.」になった。SSD と、マウント中の RAMDISK の土台の両方へ
+    if [ ! "$ON_UBUNTU" ]; then
+        printf '%s\n' "# U.sh: NVIDIA の純正ドライバを使う（nouveau が先に GPU を取ると読み込めない）" "blacklist nouveau" "options nouveau modeset=0" > /tmp/nouveau.$TMP_LABEL
+        if ! cmp -s /tmp/nouveau.$TMP_LABEL /etc/modprobe.d/U-nouveau.conf; then
+            echo "-> /etc/modprobe.d/U-nouveau.conf"
+            cp /tmp/nouveau.$TMP_LABEL /etc/modprobe.d/U-nouveau.conf
+        fi
+        if [ -d /tmp/loop1.$TMP_LABEL/etc/modprobe.d ]; then
+            cp /tmp/nouveau.$TMP_LABEL /tmp/loop1.$TMP_LABEL/etc/modprobe.d/U-nouveau.conf
+        fi
+        rm -f /tmp/nouveau.$TMP_LABEL
     fi
 }
 

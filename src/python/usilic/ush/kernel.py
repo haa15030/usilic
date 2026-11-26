@@ -265,6 +265,8 @@ def correct_uuid(env, log, path, part_from, part_to, efi=None):
     return True
 
 
+NOUVEAU_CONF = '/etc/modprobe.d/U-nouveau.conf'
+NOUVEAU_OFF = '# U.sh: NVIDIA の純正ドライバを使う（nouveau が先に GPU を取ると読み込めない）\nblacklist nouveau\noptions nouveau modeset=0\n'
 PCI_RESIZE_CALL = 'pci_resize_resource(pci_dev, NV_GPU_BAR1, requested_size);'
 
 
@@ -310,6 +312,16 @@ def nvidia_module(env, log, module, out):
              if n.startswith('nvidia.ko') or n.startswith('nvidia-current')]
     if not built:
         log.add('-u: /lib/modules/%s/updates/dkms/nvidia.ko: not built (dkms).' % module)
+        return
+    # Debian: nouveauを止める(2026-11-26)。止める設定(nvidia-blacklists-nouveau.conf)はnvidia-driverが入れる「nvidia」の
+    # alternativesにしか無く、-dの前のRAMDISK(*-base)ではnouveauが先にGPUを取って「NVRM: GPU 0000:01:00.0 is already
+    # bound to nouveau.」になった。SSDと、マウント中のRAMDISKの土台の両方へ
+    if not env.on_ubuntu:
+        if (system.read_text(NOUVEAU_CONF) or '') != NOUVEAU_OFF:
+            out('-> ' + NOUVEAU_CONF)
+            system.write_text(NOUVEAU_CONF, NOUVEAU_OFF)
+        if system.isdir(env.tmp + '/loop1/etc/modprobe.d'):
+            system.write_text(env.tmp + '/loop1' + NOUVEAU_CONF, NOUVEAU_OFF)
 
 
 def ram_entry(env, module):

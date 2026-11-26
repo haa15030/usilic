@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1432. **src/U_proto.sh・src/python: Debianのnvidia、nouveauを止める(/etc/modprobe.d/U-nouveau.conf)(2026-11-26)**
+   - 経緯: 1431の後、8GB-base(6.12.118+8gb)で起動するとlsmodにnvidiaが無く、nouveauが読み込まれていた。/lib/modules/*/updates/dkms/にnvidia-current-open*.ko.xzはあり、modprobe nvidia-current-openは「No such device」、dmesgは「NVRM: GPU 0000:01:00.0 is already bound to nouveau.」。/etc/modprobe.d・/usr/lib/modprobe.dにnouveauを止める設定が無かった。
+   - 原因: Debianのnouveauを止める設定(nvidia-blacklists-nouveau.conf)はnvidia-driverが入れる「nvidia」のalternativesにしか無く、nvidia-open-kernel-dkms(-uのBASE)だけでは入らない(1429のコメントの「nvidia-kernel-supportが入れる」は誤り、直した)。
+   - 変更: _nvidia_module・kernel.nvidia_module: 組み立てられた後、Ubuntuでなければ/etc/modprobe.d/U-nouveau.conf(blacklist nouveau、options nouveau modeset=0)をSSDと、マウント中のRAMDISKの土台(/tmp/loop1.*)へ。
+
 1431. **src/U_proto.sh・src/python: Debianのnvidiaのモジュールの名前(nvidia-current-open.ko.xz)、Python版にも1429・1430(2026-11-26)**
    - 経緯: 1430の直し方を実機で手で試し(nv-pci.cへ`, 0`、headersを入れ直してdkms autoinstall)、+4gb・+8gbともinstalled。ただしDebianは/lib/modules/*/updates/dkms/へnvidia-current-open.ko.xz等の名前で入れるので、nvidia.ko*だけを見る確かめでは組み立てられても「not built (dkms)」と出る。またPython版(既定のエンジン)には1429(contrib・non-free)・1430(/usr/srcのtmpfs、pci_resize_resource)が移っていなかった。
    - 変更: U_proto.shの_nvidia_moduleとkernel.nvidia_moduleの確かめにnvidia-current*.ko*も。kernel.py: nvidia_moduleの初めに/usr/srcがマウントされていれば外す、新しいnvidia_pci_resize。update.py: 新しいapt_nvidia_components(prepare.pyのDebianの取得元の後で呼ぶ)。
