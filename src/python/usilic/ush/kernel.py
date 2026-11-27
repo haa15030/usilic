@@ -291,9 +291,8 @@ def nvidia_pci_resize(env, module, out):
 
 def nvidia_configure(env, log, out):
     """_nvidia_configure(): 入れた時のdkmsの組み立てが失敗した: nv-pci.cを作ったカーネルに合わせてから、設定をやり直す
-    (2026-11-27)。入れ直したnvidia-*(/usr/src/nvidia-*)は直す前の版で、入れる時(postinst)にdkmsが作ったカーネル
-    (6.12.118)向けに組み立てようとして「bad exit status: 2」になり、nvidia-open-kernel-dkmsが設定されないまま、
-    BASE.uにも載らなかった。"""
+    (2026-11-27)。入れ直したnvidia-*(/usr/src/nvidia-*)は直す前の版で、入れる時(postinst)のdkmsの組み立てが6.12.118
+    では通らない(2026-11-27の失敗そのものはgccが無かったため。U.shのNVIDIA_LISTにgcc等を足した)。"""
     system = env.system
     for module in sorted(system.listdir('/lib/modules')):
         if re.search(r'\+[0-9]+gb$', module):

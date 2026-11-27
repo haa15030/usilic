@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1444. **Debian 13 の NVIDIA_LIST に gcc・make・libc6-dev を足す(dkms が組み立てに使う、2026-11-27)**
+    - 項目1443の `-u` でも「not installed」「not built」。残った /opt/dkms-make.log(+8gb 向け、12:45)は「The C compiler 'gcc' does not appear to be able to create object files.」「*** Failed CC sanity check. Bailing out! ***」「*** Failed CC version check. ***」。`which gcc` は何も出さず、`dpkg -l` は gcc・build-essential とも `un`。
+    - 原因: 11/26 はカーネルを作った時の gcc 等が残っていて dkms が組み立てられ、BASE.u にも載った。項目1441の `-u`(_nvidia_off の autoremove、10:22)で外れ、`apt-get install --no-install-recommends nvidia-open-kernel-dkms` では戻らなかった。項目1443の見当(nv-pci.c が直す前の版)は、このたびの失敗の原因ではなかった(_nvidia_configure はそのまま残す)。12:04 に組み立てられたのは、rescue の大きな install が何かで C コンパイラを入れたためと見られる。
+    - 変更: Debian の NVIDIA_LIST を "nvidia-open-kernel-dkms gcc make libc6-dev" に。_nvidia_base が一緒に入れて BASE.u に載るので、「BASE.u -p」で外れない。NVIDIA_LIST の先頭の語だけを見る所(-d の NVIDIA_DESKTOP、desktop.py の kernel_side)はそのまま。
+
 1443. **`-u`: NVIDIAの純正ドライバを入れ直す時、dkmsの組み立てが失敗したら nv-pci.c を合わせて `dpkg --configure -a` をやり直す、失敗した時の make.log を /opt/dkms-make.log に残す(2026-11-27)**
     - 症状: 項目1441の `-u` で外した nvidia-open-kernel-dkms を、項目1442の `-u`(8GB-base.gz も消して)で入れ直すと、U.log に「-u: nvidia-open-kernel-dkms: not installed.」「-u: /lib/modules/6.12.118+8gb/updates/dkms/nvidia.ko: not built (dkms).」。RAM-6.12.118+8gb-base.gz は nvidia 無しででき、/opt/BASE.u にも nvidia が載らなかった(chmod 644 のまま)。
     - /var/log/apt/term.log: 11:53 と 11:58:19 に、入れる時(postinst)の dkms が +4gb 向けで「Building module(s)...(bad exit status: 2)」「post-installation script subprocess returned error exit status 10」。11:58:40 からの rescue の install の最後でやっと組み立てられた(4gb・8gb とも)。

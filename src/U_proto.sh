@@ -485,7 +485,9 @@ fi
 # ${RESCUE_GB}GB（rescue）のカーネルだけは nouveau のまま（2026-11-27、直接のユーザー判断。_nvidia_module）。
 # 使わないなら、ここを消す（前に入れた分は -u の _nvidia_off が BASE から外す）
 if [ ! "$ON_UBUNTU" ]; then
-    NVIDIA_LIST="nvidia-open-kernel-dkms"
+    # gcc・make・libc6-dev: dkms が組み立てに使う。--no-install-recommends では入らず、BASE.u に無いと -u の「BASE.u -p」で
+    # 外れて、入れ直した時に「Failed CC sanity check」（gcc が無い）で組み立てられなかった（2026-11-27）
+    NVIDIA_LIST="nvidia-open-kernel-dkms gcc make libc6-dev"
     NVIDIA_DESKTOP="nvidia-driver"
 fi
 readonly RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X BASE_LIST JP_LIST NVIDIA_LIST NVIDIA_NOUVEAU_FW NVIDIA_DESKTOP RESCUE_KERNEL_DEV
@@ -3216,8 +3218,8 @@ _nvidia_base() { # NVIDIA_LIST（純正ドライバのカーネル側）を BASE
 }
 
 _nvidia_configure() { # 入れた時の dkms の組み立てが失敗した: nv-pci.c を作ったカーネルに合わせてから、設定をやり直す（2026-11-27）
-    # 入れ直した nvidia-*（/usr/src/nvidia-*）は直す前の版で、入れる時（postinst）に dkms が作ったカーネル（6.12.118）向けに
-    # 組み立てようとして「bad exit status: 2」になり、nvidia-open-kernel-dkms が設定されないまま、BASE.u にも載らなかった
+    # 入れ直した nvidia-*（/usr/src/nvidia-*）は直す前の版で、入れる時（postinst）の dkms の組み立てが 6.12.118 では通らない
+    # （2026-11-27 の失敗そのものは gcc が無かったため。NVIDIA_LIST に gcc 等を足した）
     local _k
 
     for _k in `ls /lib/modules | grep '+[0-9]*gb$'`
