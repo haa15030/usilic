@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1442. **src/U_proto.sh・src/python・src/U_sh.txt: Debian 13のNVIDIAの純正ドライバを戻し、nouveauは4GB-rescueだけに(2026-11-27、直接のユーザー判断)**
+   - 直接のユーザー判断: 1441の後、「他は容量残に余裕があるのでnouveauは4GB-rescueのみってできる？」。8GB(-dのデスクトップ)ではnvidiaで映像もDPの音も出ていた(1434・1435)。
+   - 変更: DebianのNVIDIA_LIST="nvidia-open-kernel-dkms"・NVIDIA_DESKTOP="nvidia-driver"を戻した。1440の、+${RESCUE_GB}gbのカーネルでは組み立てず(dkmsが組み立てた分を消してdepmod)、土台からU-nouveau.conf・GSPのfirmwareを消す分岐を_nvidia_module・kernel.nvidia_moduleに戻した。linux-headersを土台へ写すのは、nvidiaを使い、Debianの${RESCUE_GB}GBでない時だけ。_nvidia_off(NVIDIA_LISTを空にした時の後始末)は残す。U_sh.txtの注を「4GB-rescueだけnouveau」に。
+   - 使い方: /opt/RAM-6.12.118+4gb-base.gzと/opt/4GB-rescue.imgを消して-u(8GBの土台・デスクトップはそのままでよい)。
+
 1441. **src/U_proto.sh・src/python・src/U_sh.txt: Debian 13はNVIDIAの純正ドライバを使わない(nouveau)、前に入れた分を-uで外す(2026-11-27、直接のユーザー判断)**
    - 直接のユーザー判断: Debian 13は最新のLinuxではないが、安定版としてのセキュリティに強みがある。マルチメディア系も含めたレスキュー版はUbuntuという棲み分けもできるので、Debianからはnvidiaドライバを外してよい。
    - 経緯: 1429〜1438でDebianにもnvidia-open-kernel-dkms(-uのBASE)とnvidia-driver(-d)を入れ、デスクトップでは映像もDPの音も出たが、4GB-rescueは描画の側が入らずXがmodesetting(Mesaで加速できない)で遅く、dkmsの一式で4GBにも収まらなかった(1439・1440)。

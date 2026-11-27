@@ -294,6 +294,17 @@ def nvidia_module(env, log, module, out):
     system = env.system
     if not env.conf('NVIDIA_LIST', '') or 'ok installed' not in system.output(['dpkg-query', '-W', '-f=${Status}', 'dkms']):
         return
+    # Debianの?GB(rescue)のカーネルはnouveauのまま(2026-11-27、直接のユーザー判断。他は空きに余裕がある)。rescueには
+    # 描画の側(nvidia-driver、約360MB)が入らず、nvidiaではXがmodesetting(glamorをMesaで加速できない)になって、ログインも
+    # プログラムの起動も遅く、音も途切れた。dkmsがカーネルを入れた時に組み立てた分と、土台のnouveauを止める設定・GSPの
+    # firmwareも外す
+    if not env.on_ubuntu and module.endswith('+%dgb' % env.rescue_gb):
+        if system.isdir('/lib/modules/%s/updates/dkms' % module):
+            out('rm -rf /lib/modules/%s/updates/dkms; depmod %s (%dGB: nouveau)' % (module, module, env.rescue_gb))
+            system.run(['rm', '-rf', '/lib/modules/%s/updates/dkms' % module])
+            system.run(['depmod', module])
+        system.shell('rm -f %s/loop1%s %s/loop1/usr/lib/firmware/nvidia/*/gsp_*' % (env.tmp, NOUVEAU_CONF, env.tmp), cwd='/')
+        return
     # カーネルを作った時の/usr/srcのtmpfs(Linuxのソース)を外す。付けたままだと、SSDの/usr/srcのdkmsの元(nvidia-*)が
     # 隠れて組み立てられず(dkms statusは「added」のまま)、headersもtmpfsへ入って再起動で消えた(2026-11-26)
     if system.is_mountpoint('/usr/src'):
@@ -374,8 +385,9 @@ def update_base_image(env, log, gb, out, lap):
     fs(env, log, 'umount', loop1)
     fs(env, log, 'mount', '-o', 'loop', shm0 + '/IMG1.img', loop1)
     nvidia_module(env, log, module, out)
-    # このカーネルのモジュールとヘッダだけを写す。ヘッダ(約66MB)はnvidia(dkms)を使う時だけ
-    header = '/usr/src/linux-headers-' + module if env.conf('NVIDIA_LIST', '') else ''
+    # このカーネルのモジュールとヘッダだけを写す。ヘッダ(約66MB)はnvidia(dkms)を使う時だけ(Debianの?GB(rescue)はnouveau)
+    nvidia = env.conf('NVIDIA_LIST', '') and (env.on_ubuntu or gb != env.rescue_gb)
+    header = '/usr/src/linux-headers-' + module if nvidia else ''
     system.shell('tar cf - /lib/modules/%s %s 2>/dev/null | tar xf - -C %s' % (module, header, loop1))
     img0 = env.opt_dir(strage) + '/IMG0.img'
     system.makedirs(env.opt_dir(strage))

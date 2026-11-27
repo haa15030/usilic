@@ -477,12 +477,17 @@ if [ "$ON_UBUNTU" ]; then
     # thermald: Intel のノートパソコンの温度の管理（ACPI の DPTF を読む）。Z390UD では起動に5回失敗し続けた（温度の保護は
     #   ハードウェアがする）
 fi
-# --- Debian 13 は NVIDIA の純正ドライバを使わない（nouveau、2026-11-27、直接のユーザー判断）---
-# 11/26 に nvidia-open-kernel-dkms（カーネル側）と、-d で nvidia-driver（描画の側）を入れるようにした（1429〜1438、DP の音も
-# 出た）が、4GB-rescue には描画の側が入らず（約360MB）、X が modesetting で遅く、dkms の一式で 4GB にも収まらなかった。
-# Debian は安定版としてのセキュリティを取り、マルチメディアも含めたものは Ubuntu で、と分ける。
-# 前に入れた分は、-u の _nvidia_off が BASE から外す。入れるなら、ここで NVIDIA_LIST="nvidia-open-kernel-dkms"、
-# NVIDIA_DESKTOP="nvidia-driver"（contrib・non-free は _apt_nvidia_components が足す）
+# --- Debian 13 の NVIDIA（2026-11-26、直接のユーザー依頼）---
+# nouveau では DP の音が鳴らなかった（上の Ubuntu の所と同じ、Z390UD・RTX3050）。trixie の 550.163.01（contrib・non-free）。
+# カーネル側は open 版（nvidia-open-kernel-dkms、Turing 以降。GSP の firmware-nvidia-gsp は BASE_LIST にある）、
+# -d が入れる描画の側は nvidia-driver（カーネル側は open 版で足りる）。nouveau を止める設定は _nvidia_module が入れる（Debian の物は nvidia-driver の alternatives にしか無い）。
+# nouveau 用の firmware（firmware-misc-nonfree の nvidia/）は他の機器の firmware と一緒なので外さない（NVIDIA_NOUVEAU_FW=""）。
+# ${RESCUE_GB}GB（rescue）のカーネルだけは nouveau のまま（2026-11-27、直接のユーザー判断。_nvidia_module）。
+# 使わないなら、ここを消す（前に入れた分は -u の _nvidia_off が BASE から外す）
+if [ ! "$ON_UBUNTU" ]; then
+    NVIDIA_LIST="nvidia-open-kernel-dkms"
+    NVIDIA_DESKTOP="nvidia-driver"
+fi
 readonly RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X BASE_LIST JP_LIST NVIDIA_LIST NVIDIA_NOUVEAU_FW NVIDIA_DESKTOP RESCUE_KERNEL_DEV
 
 _on_line() { # 現在のネット接続状態（readonly の $ON_LINE は起動時の値のまま）
@@ -1180,9 +1185,9 @@ _update_base() {
     _fs $LINENO mount -o loop /tmp/shm0.$TMP_LABEL/IMG1.img /tmp/loop1.$TMP_LABEL
     _nvidia_module $_new_module
     # このカーネルのモジュールとヘッダだけを写す（名前で指すので、他のものを /tmp へ逃がさなくてよい）。
-    # ヘッダ（約66MB）は nvidia（dkms）を使う時だけ
+    # ヘッダ（約66MB）は nvidia（dkms）を使う時だけ（Debian の ${RESCUE_GB}GB は nouveau）
     _hdr=""
-    if [ "$NVIDIA_LIST" ]; then
+    if [ "$NVIDIA_LIST" ] && ( [ "$ON_UBUNTU" ] || [ "$_new_gb" != "$RESCUE_GB" ] ); then
         _hdr=/usr/src/linux-headers-$_new_module
     fi
     echo "tar cf - /lib/modules/$_new_module $_hdr 2>/dev/null| tar xf - -C /tmp/loop1.$TMP_LABEL"
@@ -3230,6 +3235,19 @@ _nvidia_pci_resize() { # $1（作ったカーネル）の pci_resize_resource �
 
 _nvidia_module() { # $1（作ったカーネル）向けに dkms で純正ドライバのモジュールを組み立てる（RAM-*-base.gz へ /lib/modules ごと写る）
     if [ ! "$NVIDIA_LIST" ] || [ ! "`_is_inst dkms`" ]; then
+        return
+    fi
+    # Debian の ${RESCUE_GB}GB（rescue）のカーネルは nouveau のまま（2026-11-27、直接のユーザー判断。他は空きに余裕がある）。
+    # rescue には描画の側（nvidia-driver、約360MB）が入らず、nvidia では X が modesetting（glamor を Mesa で加速できない）に
+    # なって、ログインもプログラムの起動も遅く、音も途切れた。nouveau なら Mesa で描ける。dkms がカーネルを入れた時に
+    # 組み立てた分と、土台の nouveau を止める設定・GSP の firmware も外す（4GB の RAMDISK は空きが少ない）
+    if [ ! "$ON_UBUNTU" ] && [ "$1" != "${1%+${RESCUE_GB}gb}" ]; then
+        if [ -d /lib/modules/$1/updates/dkms ]; then
+            echo "rm -rf /lib/modules/$1/updates/dkms; depmod $1 (${RESCUE_GB}GB: nouveau)"
+            rm -rf /lib/modules/$1/updates/dkms
+            depmod $1
+        fi
+        rm -f /tmp/loop1.$TMP_LABEL/etc/modprobe.d/U-nouveau.conf /tmp/loop1.$TMP_LABEL/usr/lib/firmware/nvidia/*/gsp_*
         return
     fi
     # カーネルを作った時の /usr/src の tmpfs（Linux のソース）を外す（2026-11-26）。付けたままだと、SSD の /usr/src の
