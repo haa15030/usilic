@@ -289,6 +289,31 @@ def nvidia_pci_resize(env, module, out):
             system.write_text(path, text.replace(PCI_RESIZE_CALL, PCI_RESIZE_CALL[:-2] + ', 0);'))
 
 
+def nvidia_configure(env, log, out):
+    """_nvidia_configure(): 入れた時のdkmsの組み立てが失敗した: nv-pci.cを作ったカーネルに合わせてから、設定をやり直す
+    (2026-11-27)。入れ直したnvidia-*(/usr/src/nvidia-*)は直す前の版で、入れる時(postinst)にdkmsが作ったカーネル
+    (6.12.118)向けに組み立てようとして「bad exit status: 2」になり、nvidia-open-kernel-dkmsが設定されないまま、
+    BASE.uにも載らなかった。"""
+    system = env.system
+    for module in sorted(system.listdir('/lib/modules')):
+        if re.search(r'\+[0-9]+gb$', module):
+            nvidia_pci_resize(env, module, out)
+    out('dpkg --configure -a')
+    if system.stream(['dpkg', '--configure', '-a'], out) == 0:
+        return True
+    nvidia_make_log(env, log)
+    return False
+
+
+def nvidia_make_log(env, log):
+    """_nvidia_make_log(): dkmsの組み立てが失敗した時のmake.logを/opt/dkms-make.logに残す(次の組み立てで上書きされるので)。"""
+    system = env.system
+    _, text = system.shell('ls /var/lib/dkms/nvidia*/*/build/make.log 2>/dev/null', cwd='/')
+    for path in text.split():
+        system.run(['cp', path, '/opt/dkms-make.log'])
+        log.add('-u: %s -> /opt/dkms-make.log' % path)
+
+
 def nvidia_module(env, log, module, out):
     """_nvidia_module(): 作ったカーネル向けにdkmsで純正ドライバのモジュールを組み立てる(RAM-*-base.gzへ/lib/modulesごと写る)。"""
     system = env.system
@@ -324,6 +349,7 @@ def nvidia_module(env, log, module, out):
              if n.startswith('nvidia.ko') or n.startswith('nvidia-current')]
     if not built:
         log.add('-u: /lib/modules/%s/updates/dkms/nvidia.ko: not built (dkms).' % module)
+        nvidia_make_log(env, log)
         return
     # Debian: nouveauを止める(2026-11-26)。止める設定(nvidia-blacklists-nouveau.conf)はnvidia-driverが入れる「nvidia」の
     # alternativesにしか無く、-dの前のRAMDISK(*-base)ではnouveauが先にGPUを取って「NVRM: GPU 0000:01:00.0 is already

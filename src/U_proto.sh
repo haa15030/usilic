@@ -3197,7 +3197,7 @@ _nvidia_base() { # NVIDIA_LIST（純正ドライバのカーネル側）を BASE
     grep -vE '^(lib)?nvidia-' /opt/BASE.u.bak > /opt/BASE.u
     _output_u BASE.u -p $LINENO
     echo "apt-get install -y --no-install-recommends $NVIDIA_LIST"
-    if ! apt-get install -y --no-install-recommends $NVIDIA_LIST; then
+    if ! apt-get install -y --no-install-recommends $NVIDIA_LIST && ! _nvidia_configure; then
         echo "-u: $NVIDIA_LIST: not installed. : $LINENO" >> /tmp/log.$TMP_LABEL
         return
     fi
@@ -3213,6 +3213,35 @@ _nvidia_base() { # NVIDIA_LIST（純正ドライバのカーネル側）を BASE
     rm -f /opt/BASE.u
     _output_u BASE.u $LINENO
     chmod 444 /opt/BASE.u
+}
+
+_nvidia_configure() { # 入れた時の dkms の組み立てが失敗した: nv-pci.c を作ったカーネルに合わせてから、設定をやり直す（2026-11-27）
+    # 入れ直した nvidia-*（/usr/src/nvidia-*）は直す前の版で、入れる時（postinst）に dkms が作ったカーネル（6.12.118）向けに
+    # 組み立てようとして「bad exit status: 2」になり、nvidia-open-kernel-dkms が設定されないまま、BASE.u にも載らなかった
+    local _k
+
+    for _k in `ls /lib/modules | grep '+[0-9]*gb$'`
+    do
+        _nvidia_pci_resize $_k
+    done
+    echo "dpkg --configure -a"
+    if dpkg --configure -a; then
+        return 0
+    fi
+    _nvidia_make_log $LINENO
+    return 1
+}
+
+_nvidia_make_log() { # dkms の組み立てが失敗した時の make.log を /opt/dkms-make.log に残す（次の組み立てで上書きされるので）
+    local _f
+
+    for _f in /var/lib/dkms/nvidia*/*/build/make.log
+    do
+        if [ -f $_f ]; then
+            cp $_f /opt/dkms-make.log
+            echo "-u: $_f -> /opt/dkms-make.log : $1" >> /tmp/log.$TMP_LABEL
+        fi
+    done
 }
 
 _nvidia_pci_resize() { # $1（作ったカーネル）の pci_resize_resource が引数4つなら、nvidia の nv-pci.c（3つで呼ぶ）を合わせる（2026-11-26）
@@ -3268,6 +3297,7 @@ _nvidia_module() { # $1（作ったカーネル）向けに dkms で純正ドラ
     # Ubuntu は nvidia.ko.zst、Debian は nvidia-current-open.ko.xz（名前を変えて入れる）
     if [ ! "`ls /lib/modules/$1/updates/dkms/nvidia.ko* /lib/modules/$1/updates/dkms/nvidia-current*.ko* 2>/dev/null`" ]; then
         echo "-u: /lib/modules/$1/updates/dkms/nvidia.ko: not built (dkms). : $LINENO" >> /tmp/log.$TMP_LABEL
+        _nvidia_make_log $LINENO
         return
     fi
     # Debian: nouveau を止める（2026-11-26）。止める設定（nvidia-blacklists-nouveau.conf）は nvidia-driver が入れる

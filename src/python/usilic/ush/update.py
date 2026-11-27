@@ -9,7 +9,7 @@ import re
 
 from .desktop import no_snap_ubuntu
 from .fs import fs
-from .kernel import Lap, compile_kernel, update_base_image
+from .kernel import Lap, compile_kernel, nvidia_configure, update_base_image
 from .options import entry_titles
 from .packages import output_u, purge_to
 from .parts import install_if_missing
@@ -256,7 +256,8 @@ def nvidia_base(env, log, out):
     system.write_text('/opt/BASE.u', ''.join(l + '\n' for l in base.splitlines() if not re.match(r'(lib)?nvidia-', l)))
     purge_to(env, log, 'BASE.u', out)
     out('apt-get install -y --no-install-recommends ' + ' '.join(packages))
-    if system.stream(['apt-get', 'install', '-y', '--no-install-recommends'] + packages, out) != 0:
+    if (system.stream(['apt-get', 'install', '-y', '--no-install-recommends'] + packages, out) != 0
+            and not nvidia_configure(env, log, out)):
         log.add('-u: %s: not installed.' % ' '.join(packages))
         return
     fw = env.conf('NVIDIA_NOUVEAU_FW', '')

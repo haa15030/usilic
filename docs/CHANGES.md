@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1443. **`-u`: NVIDIAの純正ドライバを入れ直す時、dkmsの組み立てが失敗したら nv-pci.c を合わせて `dpkg --configure -a` をやり直す、失敗した時の make.log を /opt/dkms-make.log に残す(2026-11-27)**
+    - 症状: 項目1441の `-u` で外した nvidia-open-kernel-dkms を、項目1442の `-u`(8GB-base.gz も消して)で入れ直すと、U.log に「-u: nvidia-open-kernel-dkms: not installed.」「-u: /lib/modules/6.12.118+8gb/updates/dkms/nvidia.ko: not built (dkms).」。RAM-6.12.118+8gb-base.gz は nvidia 無しででき、/opt/BASE.u にも nvidia が載らなかった(chmod 644 のまま)。
+    - /var/log/apt/term.log: 11:53 と 11:58:19 に、入れる時(postinst)の dkms が +4gb 向けで「Building module(s)...(bad exit status: 2)」「post-installation script subprocess returned error exit status 10」。11:58:40 からの rescue の install の最後でやっと組み立てられた(4gb・8gb とも)。
+    - 見当: 入れ直した /usr/src/nvidia-current-open-550.163.01/nvidia/nv-pci.c は直す前の版(pci_resize_resource を引数3つで呼ぶ)で、_nvidia_pci_resize(引数4つに直す)は _nvidia_module の中でしか呼ばれない(項目1442の4GBの分岐はその前で return)。nv-pci.c は 11:55:29(8GB の _nvidia_module)に直っていたが、11:58:19 にはまだ失敗していて、すべては説明できていない(失敗した時の make.log は後の成功で上書きされた)。
+    - 変更: _nvidia_base(update.nvidia_base)で apt-get install が失敗したら、新しい _nvidia_configure(kernel.nvidia_configure)が /lib/modules の +?gb のカーネルごとに _nvidia_pci_resize をしてから `dpkg --configure -a` をやり直し、通れば先へ(BASE.u に載る)。通らない時と、_nvidia_module の「not built」の時は、_nvidia_make_log が /var/lib/dkms/nvidia*/*/build/make.log を /opt/dkms-make.log へ写す(U.log にも書く)。
+
 1442. **src/U_proto.sh・src/python・src/U_sh.txt: Debian 13のNVIDIAの純正ドライバを戻し、nouveauは4GB-rescueだけに(2026-11-27、直接のユーザー判断)**
    - 直接のユーザー判断: 1441の後、「他は容量残に余裕があるのでnouveauは4GB-rescueのみってできる？」。8GB(-dのデスクトップ)ではnvidiaで映像もDPの音も出ていた(1434・1435)。
    - 変更: DebianのNVIDIA_LIST="nvidia-open-kernel-dkms"・NVIDIA_DESKTOP="nvidia-driver"を戻した。1440の、+${RESCUE_GB}gbのカーネルでは組み立てず(dkmsが組み立てた分を消してdepmod)、土台からU-nouveau.conf・GSPのfirmwareを消す分岐を_nvidia_module・kernel.nvidia_moduleに戻した。linux-headersを土台へ写すのは、nvidiaを使い、Debianの${RESCUE_GB}GBでない時だけ。_nvidia_off(NVIDIA_LISTを空にした時の後始末)は残す。U_sh.txtの注を「4GB-rescueだけnouveau」に。
