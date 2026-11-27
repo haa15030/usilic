@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1445. **Debian 13: nouveau を止める設定(U-nouveau.conf)を SSD(NONE-KERNEL)に置かない、前に置いた分は消して initramfs を作り直す(2026-11-28)**
+    - 症状: NONE-KERNEL(SSD の Debian 13、6.12.117+deb13-amd64)で起動すると低解像度。
+    - 原因: _nvidia_module(kernel.nvidia_module)が /etc/modprobe.d/U-nouveau.conf(blacklist nouveau、nouveau modeset=0)を、RAM の土台(loop1)だけでなく SSD にも書いていた(項目1429ごろから)。nvidia は +4gb・+8gb 向けにしか組み立てない(dkms status)ので、NONE-KERNEL では nvidia も nouveau も動かず、UEFI の素の画面のままになる。
+    - 変更: SSD には書かない。残っていれば消し、`update-initramfs -u -k $(uname -r)`(initramfs の中に modprobe.d が入る)。RAM の土台(loop1)へは今まで通り書く。rescue(SSD から保存)の RESCUE_EXCLUDE の U-nouveau.conf はそのまま残す(害は無い)。
+
 1444. **Debian 13 の NVIDIA_LIST に gcc・make・libc6-dev を足す(dkms が組み立てに使う、2026-11-27)**
     - 項目1443の `-u` でも「not installed」「not built」。残った /opt/dkms-make.log(+8gb 向け、12:45)は「The C compiler 'gcc' does not appear to be able to create object files.」「*** Failed CC sanity check. Bailing out! ***」「*** Failed CC version check. ***」。`which gcc` は何も出さず、`dpkg -l` は gcc・build-essential とも `un`。
     - 原因: 11/26 はカーネルを作った時の gcc 等が残っていて dkms が組み立てられ、BASE.u にも載った。項目1441の `-u`(_nvidia_off の autoremove、10:22)で外れ、`apt-get install --no-install-recommends nvidia-open-kernel-dkms` では戻らなかった。項目1443の見当(nv-pci.c が直す前の版)は、このたびの失敗の原因ではなかった(_nvidia_configure はそのまま残す)。12:04 に組み立てられたのは、rescue の大きな install が何かで C コンパイラを入れたためと見られる。

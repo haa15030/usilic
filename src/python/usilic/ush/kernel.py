@@ -352,11 +352,15 @@ def nvidia_module(env, log, module, out):
         return
     # Debian: nouveauを止める(2026-11-26)。止める設定(nvidia-blacklists-nouveau.conf)はnvidia-driverが入れる「nvidia」の
     # alternativesにしか無く、-dの前のRAMDISK(*-base)ではnouveauが先にGPUを取って「NVRM: GPU 0000:01:00.0 is already
-    # bound to nouveau.」になった。SSDと、マウント中のRAMDISKの土台の両方へ
+    # bound to nouveau.」になった。マウント中のRAMDISKの土台へ。SSD(NONE-KERNEL)には置かない(2026-11-28)。NONE-KERNELの
+    # カーネル(配布のもの)にはnvidiaを組み立てないので、置くとnouveauも止まって低解像度になった。前に置いた分は消し、
+    # initramfs(中にmodprobe.dが入る)も作り直す
     if not env.on_ubuntu:
-        if (system.read_text(NOUVEAU_CONF) or '') != NOUVEAU_OFF:
-            out('-> ' + NOUVEAU_CONF)
-            system.write_text(NOUVEAU_CONF, NOUVEAU_OFF)
+        if system.exists(NOUVEAU_CONF):
+            release = system.output(['uname', '-r']).strip()
+            out('rm -f %s; update-initramfs -u -k %s' % (NOUVEAU_CONF, release))
+            system.run(['rm', '-f', NOUVEAU_CONF])
+            system.stream(['update-initramfs', '-u', '-k', release], out)
         if system.isdir(env.tmp + '/loop1/etc/modprobe.d'):
             system.write_text(env.tmp + '/loop1' + NOUVEAU_CONF, NOUVEAU_OFF)
 
