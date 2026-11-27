@@ -68,6 +68,7 @@ DEBIAN区画の /opt には、カーネルの .deb・RAM-*-base.gz・4GB-rescue.
 デスクトップの大きさ㊿：⑲'. U -d'⊥㊿#
 #
 ⑧Z390UD・RTX3050（NVIDIA の純正ドライバ）で、-d を全部のデスクトップで行った時の大きさです（2026-11-26）。
+Debian 13 は今は純正ドライバを使わない（nouveau、マルチメディアは Ubuntu で）ので、展開に要る量は 0.14GB ほど小さくなります。
 8GB-base の上で行った値で、左は展開に要る量（-d・-s の「= 〜KB」）、右は STRAGE の ?GB-名前.img の大きさです。
 8GB-LXQt の上で行うと、BASE.u へ戻しきれない分が乗り、どれも 0.7〜1GB 大きくなりました（KDE-Plasma は img 8.90GB・展開に要る量 7.58GB で、8GB の RAMDISK にほぼ一杯）。㊿#
 #

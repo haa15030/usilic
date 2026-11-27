@@ -33408,6 +33408,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1441. **src/U_proto.sh・src/python・src/U_sh.txt: Debian 13はNVIDIAの純正ドライバを使わない(nouveau)、前に入れた分を-uで外す(2026-11-27、直接のユーザー判断)**
+   - 直接のユーザー判断: Debian 13は最新のLinuxではないが、安定版としてのセキュリティに強みがある。マルチメディア系も含めたレスキュー版はUbuntuという棲み分けもできるので、Debianからはnvidiaドライバを外してよい。
+   - 経緯: 1429〜1438でDebianにもnvidia-open-kernel-dkms(-uのBASE)とnvidia-driver(-d)を入れ、デスクトップでは映像もDPの音も出たが、4GB-rescueは描画の側が入らずXがmodesetting(Mesaで加速できない)で遅く、dkmsの一式で4GBにも収まらなかった(1439・1440)。
+   - 変更: DebianのNVIDIA_LIST・NVIDIA_DESKTOPを空に(nvidia_module・nvidia_desktop・apt_nvidia_componentsは何もしない)。1440の4GBだけの分岐は消した。_update_base・update_base_image: linux-headersを土台へ写すのはNVIDIA_LISTがある時だけ(8GBの土台も約66MB小さくなる)。新しく_nvidia_off・update.nvidia_off(-uの_nvidia_baseの前): Debianで、/etc/modprobe.d/U-nouveau.confを消し、BASE.uにnvidia-*・dkmsがあれば除いて戻し(外れる)、autoremove --purgeでgcc等も外してBASE.uを作り直す(前のものはBASE.u.bak)。RESCUE_EXCLUDEのU-nouveau.confは残す。U_sh.txtの大きさの表に、今のDebianは0.14GBほど小さいと添えた。
+   - 使い方: /opt/RAM-*-base.gzと/opt/4GB-rescue.imgを消して-u。-dで作ったデスクトップのimgにはnvidia-driverが残るので、要るなら-dし直す。
+
 1440. **src/U_proto.sh・src/python: Debianの4GB(rescue)のカーネルはnvidiaを使わずnouveauに戻す(2026-11-27)**
    - 直接のユーザー報告: 1439で4GB-rescueは起動するようになったが、ログインしてからデスクトップが出るまでが長く(2回目も)、プログラムの起動も遅く、音もやや途切れる。df -k /の残りは25256KB。
    - 調べたこと: Xorg.0.logは「Failed to load module "nv"」「[drm] Failed to open DRM device」の後「modeset(0): using drv /dev/dri/card0」「glamoregl」(nvidia-drmの上のmodesettingで、MesaはnvidiaのGPUを加速できない)。CPUは97.8%空き、メモリは23GB空き。展開は土台の上に重ねるので、土台の/usr/src/linux-headers-6.12.118+4gb(66M)とGSPのfirmware(60M)はrescueから外しても残っていた。

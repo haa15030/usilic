@@ -211,6 +211,31 @@ def nvidia_gpu(system):
     return '0x10de' in text.split()
 
 
+def nvidia_off(env, log, out):
+    """_nvidia_off(): NVIDIA_LISTが空(Debian): 前に入れた純正ドライバ(nvidia-*・dkms)とnouveauを止める設定を外す(2026-11-27)。
+    Debianは安定版としてのセキュリティを取り、マルチメディアも含めたものはUbuntuで(4GB-rescueに描画の側が入らなかった)。"""
+    from .kernel import NOUVEAU_CONF
+    system = env.system
+    if env.conf('NVIDIA_LIST', '') or env.on_ubuntu:
+        return
+    if system.exists(NOUVEAU_CONF):
+        out('rm -f ' + NOUVEAU_CONF)
+        system.run(['rm', '-f', NOUVEAU_CONF])
+    base = system.read_text('/opt/BASE.u') or ''
+    drop = re.compile(r'((lib)?nvidia-|dkms\s)')
+    if not any(drop.match(l) for l in base.splitlines()):
+        return
+    # BASE.uから除いて戻し(外れる)、依存で入ったgcc等もautoremoveで外してから、その状態をBASE.uに
+    system.run(['chmod', '644', '/opt/BASE.u'])
+    system.run(['cp', '-p', '/opt/BASE.u', '/opt/BASE.u.bak'])
+    system.write_text('/opt/BASE.u', ''.join(l + '\n' for l in base.splitlines() if not drop.match(l)))
+    purge_to(env, log, 'BASE.u', out)
+    system.stream(['apt-get', 'autoremove', '--purge', '-y'], out)
+    system.run(['rm', '-f', '/opt/BASE.u'])
+    output_u(env, log, ['BASE.u'], out)
+    system.run(['chmod', '444', '/opt/BASE.u'])
+
+
 def nvidia_base(env, log, out):
     """_nvidia_base(): NVIDIA_LIST(純正ドライバのカーネル側)をBASEに。BASE.uを作った後でも足す。BASE.uへ戻してから入れ、
     nouveau用のfirmware(NVIDIA_NOUVEAU_FW)を外し、その状態をBASE.uに(前のBASE.uはBASE.u.bakに)。"""
@@ -320,6 +345,7 @@ def update_base(env, log, option, ask, out):
         system.stream(['apt-get', 'install', '-y'] + env.conf('BASE_LIST', '').split(), out)  # 要るパッケージを足す
         output_u(env, log, ['BASE.u'], out)
         system.run(['chmod', '444', '/opt/BASE.u'])
+    nvidia_off(env, log, out)
     nvidia_base(env, log, out)
     # Python版のusilic(RESCUE)とpython3を、RAM-*-base.gzを作る前に(取れなくても止めない)
     get_usilic_repo(env, out)
