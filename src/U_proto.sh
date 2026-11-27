@@ -27,7 +27,8 @@ readonly IMG_EXCLUDE="home/*/git/usilic home/*/.cache"
 # ?GB-rescue.img に入れないもの（2026-11-27）。/usr/src は dkms の元（nvidia-*）と linux-headers、gsp_* は nvidia の GSP の
 # firmware（どちらも RAM の土台の側で、展開の前に nvidia を読み込む時に使い終わっている）。入れると Debian 13 の 4GB-rescue が
 # 4GB の RAMDISK を 231224KB 超え、起動の時の展開で場所が尽きて止まった
-readonly RESCUE_EXCLUDE="usr/src/* usr/lib/firmware/nvidia/*/gsp_*"
+# U-nouveau.conf: Debian の rescue は nouveau で描く（_nvidia_module。rescue-USB を別のマシンで使っても同じ）
+readonly RESCUE_EXCLUDE="usr/src/* usr/lib/firmware/nvidia/*/gsp_* etc/modprobe.d/U-nouveau.conf"
 readonly RAMDISK_MARGIN_KB=50000 # RAMDISKに収まるかの確認で残す余裕（起動してから / に書かれる分）
 
 # --- データ保存（-s）の作業エリア設定
@@ -1159,7 +1160,7 @@ EOF
 
 _update_base() {
     local _new_kb _new_gb=$1
-    local _new_base _new_module _new_kernel
+    local _new_base _new_module _new_kernel _hdr
 
     cd /opt
     _new_kernel=`ls -t /opt | grep linux-image | grep +${_new_gb}gb | head -n1`
@@ -1181,9 +1182,14 @@ _update_base() {
     echo "mount -o loop /tmp/shm0.$TMP_LABEL/IMG1.img /tmp/loop1.$TMP_LABEL"
     _fs $LINENO mount -o loop /tmp/shm0.$TMP_LABEL/IMG1.img /tmp/loop1.$TMP_LABEL
     _nvidia_module $_new_module
-    # このカーネルのモジュールとヘッダだけを写す（名前で指すので、他のものを /tmp へ逃がさなくてよい）
-    echo "tar cf - /lib/modules/$_new_module /usr/src/linux-headers-$_new_module 2>/dev/null| tar xf - -C /tmp/loop1.$TMP_LABEL"
-    tar cf - /lib/modules/$_new_module /usr/src/linux-headers-$_new_module 2>/dev/null| tar xf - -C /tmp/loop1.$TMP_LABEL
+    # このカーネルのモジュールとヘッダだけを写す（名前で指すので、他のものを /tmp へ逃がさなくてよい）。
+    # Debian の ${RESCUE_GB}GB は nvidia を組み立てないので、ヘッダ（約66MB）は要らない
+    _hdr=/usr/src/linux-headers-$_new_module
+    if [ ! "$ON_UBUNTU" ] && [ "$_new_gb" = "$RESCUE_GB" ]; then
+        _hdr=""
+    fi
+    echo "tar cf - /lib/modules/$_new_module $_hdr 2>/dev/null| tar xf - -C /tmp/loop1.$TMP_LABEL"
+    tar cf - /lib/modules/$_new_module $_hdr 2>/dev/null| tar xf - -C /tmp/loop1.$TMP_LABEL
     _new_kb=$((_new_gb*1000*1000))
     mkdir -p $strage_opt
     echo "truncate -s $((_new_kb*1000)) $strage_opt/IMG0.img"
@@ -3203,6 +3209,19 @@ _nvidia_pci_resize() { # $1（作ったカーネル）の pci_resize_resource �
 
 _nvidia_module() { # $1（作ったカーネル）向けに dkms で純正ドライバのモジュールを組み立てる（RAM-*-base.gz へ /lib/modules ごと写る）
     if [ ! "$NVIDIA_LIST" ] || [ ! "`_is_inst dkms`" ]; then
+        return
+    fi
+    # Debian の ${RESCUE_GB}GB（rescue）のカーネルは nouveau のまま（2026-11-27）。rescue には描画の側（nvidia-driver、約360MB）が
+    # 入らず、nvidia では X が modesetting（glamor を Mesa で加速できない）になって、ログインもプログラムの起動も遅く、音も
+    # 途切れた。nouveau なら Mesa で描ける。dkms がカーネルを入れた時に組み立てた分と、土台の nouveau を止める設定・GSP の
+    # firmware も外す（4GB の RAMDISK は空きが少ない）
+    if [ ! "$ON_UBUNTU" ] && [ "$1" != "${1%+${RESCUE_GB}gb}" ]; then
+        if [ -d /lib/modules/$1/updates/dkms ]; then
+            echo "rm -rf /lib/modules/$1/updates/dkms; depmod $1 (${RESCUE_GB}GB: nouveau)"
+            rm -rf /lib/modules/$1/updates/dkms
+            depmod $1
+        fi
+        rm -f /tmp/loop1.$TMP_LABEL/etc/modprobe.d/U-nouveau.conf /tmp/loop1.$TMP_LABEL/usr/lib/firmware/nvidia/*/gsp_*
         return
     fi
     # カーネルを作った時の /usr/src の tmpfs（Linux のソース）を外す（2026-11-26）。付けたままだと、SSD の /usr/src の

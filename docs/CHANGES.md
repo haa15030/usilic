@@ -33408,6 +33408,13 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1440. **src/U_proto.sh・src/python: Debianの4GB(rescue)のカーネルはnvidiaを使わずnouveauに戻す(2026-11-27)**
+   - 直接のユーザー報告: 1439で4GB-rescueは起動するようになったが、ログインしてからデスクトップが出るまでが長く(2回目も)、プログラムの起動も遅く、音もやや途切れる。df -k /の残りは25256KB。
+   - 調べたこと: Xorg.0.logは「Failed to load module "nv"」「[drm] Failed to open DRM device」の後「modeset(0): using drv /dev/dri/card0」「glamoregl」(nvidia-drmの上のmodesettingで、MesaはnvidiaのGPUを加速できない)。CPUは97.8%空き、メモリは23GB空き。展開は土台の上に重ねるので、土台の/usr/src/linux-headers-6.12.118+4gb(66M)とGSPのfirmware(60M)はrescueから外しても残っていた。
+   - 原因: rescueには描画の側(nvidia-driver、約360MB)が入らないのに、1430〜1432で4GBの土台もnvidiaにした(nouveauを止めた)。11/22はnouveauで描けていた。
+   - 変更: _nvidia_module・kernel.nvidia_module: Debianで+${RESCUE_GB}gbのカーネルなら組み立てず、dkmsがカーネルを入れた時に組み立てた/lib/modules/*/updates/dkmsを消してdepmod、土台(/tmp/loop1.*)のU-nouveau.confとGSPのfirmware(usr/lib/firmware/nvidia/*/gsp_*)も消す。_update_base・update_base_image: そのカーネルではlinux-headersを土台へ写さない。RESCUE_EXCLUDEにetc/modprobe.d/U-nouveau.confを足す(rescueはnouveau)。8GB以上(-dのデスクトップ)は今のnvidiaのまま、Ubuntuは変えない(8GBだけ)。
+   - 使い方: /opt/RAM-*+4gb-base.gzと/opt/4GB-rescue.imgを消して-u。
+
 1439. **src/U_proto.sh・src/python: Debian 13の4GB-rescueが起動の時に止まった(4GBに231MB超え)。/usr/srcとnvidiaのGSPのfirmwareをrescueに入れない、-rは収まらなければ?GB-baseで起動(2026-11-27)**
    - 直接のユーザー報告: 4GB-rescueで起動すると、高精細の黒い画面にカーソルが点滅したまま。Ctrl+Alt+F2でもログインが出ず、sshも繋がらない(dhcpdの割り当ては前半の4GB-baseの1回だけ)。最後にrescueが起動したのはHISTORY.md:71213あたり(11/22)。
    - 調べたこと: module_blacklistでnvidiaを止めてもrescueでは同じ(nvidiaのせいではない)。systemd.debug-shell=1のtty9で、`/dev/root`が3764096KB中3740336KB(100%)、journalctl・psが「libacl.so.1・libcap.so.2: file too short」。gettyはrc.localの後なのでtty2も空。U.logには「-u: 4GB-rescue.img: 3995320KB > 4GB RAMDISK 3764096KB (over 231224KB, can't boot).」が出ていた。rescueの中は/usr/src 241M(dkmsの元のnvidia-*とlinux-headers)、/usr/lib/firmware/nvidia 123M、gcc 84M(dkmsが要る)。

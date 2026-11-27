@@ -36,7 +36,8 @@ def tmpfs_size(env, used=None):
 # ?GB-rescue.imgに入れないもの(2026-11-27)。/usr/srcはdkmsの元(nvidia-*)とlinux-headers、gsp_*はnvidiaのGSPのfirmware
 # (どちらもRAMの土台の側で、展開の前にnvidiaを読み込む時に使い終わっている)。入れるとDebian 13の4GB-rescueが4GBの
 # RAMDISKを231224KB超え、起動の時の展開で場所が尽きて止まった
-RESCUE_EXCLUDE = ('usr/src/*', 'usr/lib/firmware/nvidia/*/gsp_*')
+# U-nouveau.conf: Debianのrescueはnouveauで描く(kernel.nvidia_module。rescue-USBを別のマシンで使っても同じ)
+RESCUE_EXCLUDE = ('usr/src/*', 'usr/lib/firmware/nvidia/*/gsp_*', 'etc/modprobe.d/U-nouveau.conf')
 
 
 def ramdisk_cap_kb(env, gb):
