@@ -702,9 +702,85 @@ Add another user? (yes/no) [no]:
 
 ※sshでログイン中にシステムを入れ直した場合は、ログインする側のマシンで *ssh-keygen -R \<IP\>* を実行する(ホスト鍵が変わるため)。
 
+### 1.の別法: 外付けSSDの1区画にZFSで、sshとコピペで入れる(2026-11-28)
+
+Linux等と共用の外付けSSD(RTL9210のケース、`da1`の6番目の区画`da1p6`の例)へ、[Partitioning]の[Shell]でZFSを作って入れる。*zpool create*・*zfs create*のような長いコマンドを本体の画面で打ち続けるのは打ち間違いのもとなので、**インストーラにsshで入り、このページ(BUILD.html)からコピペする**。2.以降も同じsshからコピペで進めるとよい(画面を写真に撮らずに、出力をそのまま貼れる)。
+
+1\. インストーラにsshで入れるようにする。<span style="color:#0097a7">Welcome</span>で[Shell]を選び(またはどこかの[Shell]で):
+
+```key
+ifconfig -l
+dhclient re0
+mkdir /tmp/etc
+cp -Rp /etc/ /tmp/etc
+mount_nullfs /tmp/etc /etc
+passwd
+echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
+service sshd onestart
+ifconfig re0 | grep 'inet '
+```
+
+(`re0`は *ifconfig -l* に出た名前に。USBメモリの`/etc`は書き込めないので、`/tmp`に写して重ねる。メモリの上だけなので再起動で消える)。Macから *ssh root@IPアドレス*。本体の画面は *exit* でインストーラに戻る。
+
+2\. RTL9210が読み込みの途中で落ちないよう、quirkを足して、ケースを抜き差しする(下の注意点を参照。sshはケースが落ちても切れない):
+
+```key
+usbconfig add_dev_quirk_vplh 0x0bda 0x9210 0 0xffff UQ_MSC_NO_SYNC_CACHE
+usbconfig add_dev_quirk_vplh 0x0bda 0x9210 0 0xffff UQ_MSC_NO_TEST_UNIT_READY
+usbconfig add_dev_quirk_vplh 0x0bda 0x9210 0 0xffff UQ_MSC_NO_PREVENT_ALLOW
+usbconfig add_dev_quirk_vplh 0x0bda 0x9210 0 0xffff UQ_MSC_NO_START_STOP
+```
+
+抜き差しした後、*dmesg | tail* で`quirks = 0xc005<...>`と出ればよい。**ここからは再起動しない**(quirkが消える)。
+
+3\. インストーラを[Install]から進め、<span style="color:#0097a7">Select Installation type</span>は[Packages](16.0-CURRENTの時。下の注意点を参照)、<span style="color:#0097a7">Partitioning</span>は[Shell]。区画を *gpart show da1* で確かめてから、sshで:
+
+```key
+sysctl vfs.zfs.vdev.trim_on_init=0
+sysctl kern.cam.da.1.delete_method=DISABLE
+zpool create -f -o altroot=/mnt -o compatibility=openzfs-2.3-linux -O compress=lz4 -O atime=off -O mountpoint=none zroot /dev/da1p6
+zfs create -o mountpoint=none zroot/ROOT
+zfs create -o mountpoint=/ zroot/ROOT/default
+zfs create -o mountpoint=/home zroot/home
+zfs create -o mountpoint=/tmp -o setuid=off zroot/tmp
+zfs create -o mountpoint=/usr -o canmount=off zroot/usr
+zfs create zroot/usr/src
+zfs create zroot/usr/ports
+zfs create -o mountpoint=/var -o canmount=off zroot/var
+zfs create zroot/var/log
+zfs create zroot/var/tmp
+zpool set bootfs=zroot/ROOT/default zroot
+mkdir -p /mnt/boot/zfs /mnt/boot/efi
+zpool set cachefile=/mnt/boot/zfs/zpool.cache zroot
+: > /tmp/bsdinstall_etc/fstab
+zfs list -r zroot
+```
+
+(`da1p6`・`da.1`はその時の名前に。最初の2行は、作る時に区画全体をTRIMしてケースが落ちるのを避ける。`compatibility=openzfs-2.3-linux`はLinuxからも読めるようにするため。前に作ったプールが残っていれば *zpool create* の代わりに *zpool import -f -o altroot=/mnt zroot* で、*zfs create* は要らない)。本体の画面で *exit* すると、ダウンロードと展開に進む。
+
+4\. その後は1.と同じ(パスワード・時刻・ユーザー等)。<span style="color:#0097a7">Final Configuration</span>の[Finish]は`/etc/rc.conf`と`/boot/loader.conf`を書き直すので、設定は[Finish]の後の<span style="color:#0097a7">Manual Configuration</span>で[Yes]にしてから書く(sshで書くなら、どのパスにも`/mnt`を付けて、[Finish]の後に):
+
+```key
+cat >> /boot/loader.conf <<'EOF'
+zfs_load="YES"
+kern.cam.boot_delay="10000"
+hw.usb.quirk.0="0x0bda 0x9210 0 0xffff UQ_MSC_NO_SYNC_CACHE"
+hw.usb.quirk.1="0x0bda 0x9210 1 0xffff UQ_MSC_NO_TEST_UNIT_READY"
+hw.usb.quirk.2="0x0bda 0x9210 2 0xffff UQ_MSC_NO_PREVENT_ALLOW"
+hw.usb.quirk.3="0x0bda 0x9210 3 0xffff UQ_MSC_NO_START_STOP"
+EOF
+sysrc zfs_enable=YES
+mount -t msdosfs /dev/da1p1 /boot/efi
+mkdir -p /boot/efi/EFI/freebsd
+cp /boot/loader.efi /boot/efi/EFI/freebsd/loader.efi
+umount /boot/efi
+```
+
+(`da1p1`はEFIシステム区画。ほかのOSと共用でよい)。起動はファームウェアの起動メニュー(Gigabyteなら *F12*)か、GRUBからchainloadで`EFI/freebsd/loader.efi`。起動したら *zfs list -o name,mounted -r zroot* で`/home`等がマウントされているか、*dmesg | grep 'umass.\*quirks'* で`0xc005`かを確かめる。
+
 ### 2.〜8.をスクリプトで進める(2026-11-07)
 
-2.〜8.(9.の日本語入力の設定とusilicの起動の前まで)は、`tools/setup-freebsd.sh`で一度に実行できる。インストーラが終わって再起動し、rootでログインした所(sshでつないでもよい)で:
+2.〜8.(9.の日本語入力の設定とusilicの起動の前まで)は、`tools/setup-freebsd.sh`で一度に実行できる。インストーラが終わって再起動し、rootでログインした所(**別のマシンからsshでつなぎ、このページからコピペするのがよい**。本体の画面で打つより間違えず、出力もそのまま貼れる。インストーラの[Add User Accounts]で作ったユーザーでsshし、*su -* でrootに)で:
 
 ```key
 env IGNORE_OSVERSION=yes pkg bootstrap -y && env IGNORE_OSVERSION=yes pkg install -y git
