@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1448. **docs/BUILD.md(FreeBSD): 16.0-CURRENT はスナップショットで変わるので、この手順どおりでも通らないことがある(2026-11-28)**
+    - ユーザーの指摘: 「16.0-CURRENTはpackageでない方でも最初は入ったので仕様が変わりやすいんじゃない？　それも補足しておいたほうがいいのでは？　この通りにやってもダメかもとか。」
+    - **追加**: 項目1447の Packages の項に、2026-11-05 のスナップショットでは Distribution Sets で入った(ネットから取ってきた)こと、CURRENT はインストーラの選択肢や置いてあるものが予告なく変わるのでこの手順どおりでも通らないことがあること、始める前に Shell で `ls /usr/freebsd-dist`・`uname -r` を見て MANIFEST だけなら Packages、手順どおりに進めたいなら RELEASE(15.x 等)を使うことを足した。docs/BUILD.html を作り直した。
+
 1447. **docs/BUILD.md(FreeBSD): RTL9210 の USB の quirk、16.0-CURRENT は Packages で入れる、インストーラが rc.conf・loader.conf を書き直す(2026-11-28)**
     - 経緯: 外付け SSD(RTL9210)の p6 に 16.0-CURRENT を ZFS で入れた時にわかったこと(ユーザーの依頼「足しておいて」)。
     - **追加**(注意点、UFS の mountroot の項の後):
