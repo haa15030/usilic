@@ -490,7 +490,17 @@ if [ ! "$ON_UBUNTU" ]; then
     NVIDIA_LIST="nvidia-open-kernel-dkms gcc make libc6-dev"
     NVIDIA_DESKTOP="nvidia-driver"
 fi
-readonly RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X BASE_LIST JP_LIST NVIDIA_LIST NVIDIA_NOUVEAU_FW NVIDIA_DESKTOP RESCUE_KERNEL_DEV
+# --- ZFS（2026-11-28、直接のユーザー依頼: 外付けSSDの STORAGE を ZFS にして FreeBSD と共有する）---
+# STRAGE が ZFS の時か ZFS の区画（blkid の zfs_member）がある時だけ、-u が BASE に入れる。作ったカーネル（+?gb）向けには
+# zfs-dkms が組み立てる（_zfs_module。Ubuntu の配布のカーネルには付いてくるが、作ったカーネルには無い）。
+# Debian は contrib（_apt_nvidia_components が足す）で、配布のカーネル（NONE-KERNEL）向けにも組み立てるので headers も。
+# gcc・make・libc6-dev は NVIDIA_LIST と同じ理由（BASE.u に無いと外れて組み立てられない）。使わないなら ""
+if [ "$ON_UBUNTU" ]; then
+    ZFS_LIST="zfs-dkms zfsutils-linux gcc make libc6-dev"
+else
+    ZFS_LIST="zfs-dkms zfsutils-linux linux-headers-amd64 gcc make libc6-dev"
+fi
+readonly RESCUE_LIST RESCUE_LIST_NOREC RESCUE_LIST_X BASE_LIST JP_LIST NVIDIA_LIST NVIDIA_NOUVEAU_FW NVIDIA_DESKTOP RESCUE_KERNEL_DEV ZFS_LIST
 
 _on_line() { # 現在のネット接続状態（readonly の $ON_LINE は起動時の値のまま）
     ip a | grep 'inet ' | grep global
@@ -1230,6 +1240,7 @@ _update_base() {
     echo "mount -o loop /tmp/shm0.$TMP_LABEL/IMG1.img /tmp/loop1.$TMP_LABEL"
     _fs $LINENO mount -o loop /tmp/shm0.$TMP_LABEL/IMG1.img /tmp/loop1.$TMP_LABEL
     _nvidia_module $_new_module
+    _zfs_module $_new_module
     # このカーネルのモジュールとヘッダだけを写す（名前で指すので、他のものを /tmp へ逃がさなくてよい）。
     # ヘッダ（約66MB）は nvidia（dkms）を使う時だけ（Debian の ${RESCUE_GB}GB は nouveau）
     _hdr=""
@@ -3213,10 +3224,11 @@ _purge_ubuntu() { # Ubuntu: BASE.u を記録する前に、RAMDISK では要ら�
     fi
 }
 
-_apt_nvidia_components() { # Debian: NVIDIA の GPU があれば、純正ドライバのある contrib・non-free を apt の取得元に（2026-11-26）
+_apt_nvidia_components() { # Debian: NVIDIA の GPU があれば、純正ドライバのある contrib・non-free を apt の取得元に（2026-11-26）。
+    # ZFS を使う時も（zfs-dkms・zfsutils-linux は contrib、2026-11-28）
     local _f=/etc/apt/sources.list.d/debian.sources
 
-    if [ ! "$NVIDIA_LIST" ] || ! _nvidia_gpu; then
+    if ( [ ! "$NVIDIA_LIST" ] || ! _nvidia_gpu ) && ( [ ! "$ZFS_LIST" ] || ! _zfs_wanted ); then
         return
     fi
     if [ -f $_f ]; then # deb822 の形（Components: 行）
@@ -3306,6 +3318,63 @@ _nvidia_base() { # NVIDIA_LIST（純正ドライバのカーネル側）を BASE
     chmod 444 /opt/BASE.u
 }
 
+_zfs_wanted() { # ZFS を使うか（STRAGE が ZFS、または ZFS の区画がある）
+    [ "$STRAGE" = "/mnt/zfs" ] || [ "`blkid -o device -t TYPE=zfs_member 2>/dev/null`" ]
+}
+
+_zfs_base() { # ZFS_LIST を BASE に（2026-11-28）。BASE.u を作った後でも足す（BASE.u へ戻してから入れ、その状態を BASE.u に）
+    local _p _missing=""
+
+    if [ ! "$ZFS_LIST" ] || ! _zfs_wanted; then
+        return
+    fi
+    for _p in $ZFS_LIST
+    do
+        grep -q "^$_p[[:space:]]" /opt/BASE.u 2>/dev/null || _missing="$_missing $_p"
+    done
+    if [ ! "$_missing" ]; then
+        for _p in $ZFS_LIST
+        do
+            _is_inst $_p + # BASE.u にあるのに外れていたら
+        done
+        return
+    fi
+    chmod 644 /opt/BASE.u
+    cp -p /opt/BASE.u /opt/BASE.u.bak
+    _output_u BASE.u -p $LINENO
+    echo "apt-get install -y --no-install-recommends $ZFS_LIST"
+    if apt-get install -y --no-install-recommends $ZFS_LIST; then
+        rm -f /opt/BASE.u
+        _output_u BASE.u $LINENO
+    else
+        echo "-u: $ZFS_LIST: not installed. : $LINENO" >> /tmp/log.$TMP_LABEL
+    fi
+    chmod 444 /opt/BASE.u
+}
+
+_zfs_module() { # $1（作ったカーネル）向けに dkms で ZFS のモジュールを組み立てる（2026-11-28。RAM-*-base.gz へ /lib/modules ごと写る）
+    local _v
+
+    if [ ! "`_is_inst zfs-dkms`" ] || [ "`ls /lib/modules/$1/updates/dkms/zfs.ko* 2>/dev/null`" ]; then
+        return
+    fi
+    if mountpoint -q /usr/src; then # _nvidia_module と同じ（Linux のソースの tmpfs が dkms の元を隠す）
+        cd /opt
+        echo "umount /usr/src"
+        _fs $LINENO umount /usr/src
+    fi
+    if [ ! -e /lib/modules/$1/build ] && [ "`ls /opt/linux-headers-${1}_*.deb 2>/dev/null`" ]; then
+        echo "dpkg -i /opt/linux-headers-${1}_*.deb"
+        dpkg -i /opt/linux-headers-${1}_*.deb > /dev/null
+    fi
+    _v=`ls -d /usr/src/zfs-* 2>/dev/null | sed -e 's|^/usr/src/zfs-||' | sort -V | tail -n1`
+    echo "dkms install -m zfs -v $_v -k $1"
+    dkms install -m zfs -v $_v -k $1
+    if [ ! "`ls /lib/modules/$1/updates/dkms/zfs.ko* 2>/dev/null`" ]; then
+        echo "-u: /lib/modules/$1/updates/dkms/zfs.ko: not built (dkms). : $LINENO" >> /tmp/log.$TMP_LABEL
+    fi
+}
+
 _nvidia_configure() { # 入れた時の dkms の組み立てが失敗した: nv-pci.c を作ったカーネルに合わせてから、設定をやり直す（2026-11-27）
     # 入れ直した nvidia-*（/usr/src/nvidia-*）は直す前の版で、入れる時（postinst）の dkms の組み立てが 6.12.118 では通らない
     # （2026-11-27 の失敗そのものは gcc が無かったため。NVIDIA_LIST に gcc 等を足した）
@@ -3362,9 +3431,9 @@ _nvidia_module() { # $1（作ったカーネル）向けに dkms で純正ドラ
     # なって、ログインもプログラムの起動も遅く、音も途切れた。nouveau なら Mesa で描ける。dkms がカーネルを入れた時に
     # 組み立てた分と、土台の nouveau を止める設定・GSP の firmware も外す（4GB の RAMDISK は空きが少ない）
     if [ ! "$ON_UBUNTU" ] && [ "$1" != "${1%+${RESCUE_GB}gb}" ]; then
-        if [ -d /lib/modules/$1/updates/dkms ]; then
-            echo "rm -rf /lib/modules/$1/updates/dkms; depmod $1 (${RESCUE_GB}GB: nouveau)"
-            rm -rf /lib/modules/$1/updates/dkms
+        if [ "`ls /lib/modules/$1/updates/dkms/nvidia* 2>/dev/null`" ]; then # nvidia だけ（ZFS は残す、2026-11-28）
+            echo "rm -f /lib/modules/$1/updates/dkms/nvidia*; depmod $1 (${RESCUE_GB}GB: nouveau)"
+            rm -f /lib/modules/$1/updates/dkms/nvidia*
             depmod $1
         fi
         rm -f /tmp/loop1.$TMP_LABEL/etc/modprobe.d/U-nouveau.conf /tmp/loop1.$TMP_LABEL/usr/lib/firmware/nvidia/*/gsp_*
@@ -3453,6 +3522,7 @@ update_base() { # -u)
     fi
     _nvidia_off
     _nvidia_base
+    _zfs_base
     # Python 版の usilic（RESCUE）と python3 を、RAM-*-base.gz を作る前に（取れなくても止めない）
     _get_usilic_repo
     _install_usilic_py
@@ -3526,9 +3596,9 @@ EOF
         cd /
         # カーネルのモジュールとヘッダは tar で外す（/tmp へ mv すると、tmpfs なので途中で止まった時に SSD から消える）
         # ホームの git（-u が clone した usilic）・.local（前の rescue で作った usilic）・.cache は RAM の土台に要らない（167MB あった）
-        # usr/src/nvidia-*: dkms が組み立てる元（約30MB）。組み立ては SSD でするので、RAMDISK には要らない
-        echo "tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' --exclude='usr/src/nvidia-*' --exclude='home/*/git' --exclude='home/*/.local' --exclude='home/*/.cache' [e-h]* root srv usr var | tar xfp - -C /tmp/loop1.$TMP_LABEL"
-        tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' --exclude='usr/src/nvidia-*' --exclude='home/*/git' --exclude='home/*/.local' --exclude='home/*/.cache' [e-h]* root srv usr var | tar xfp - -C /tmp/loop1.$TMP_LABEL 2>/tmp/error.$TMP_LABEL
+        # usr/src/nvidia-*・zfs-*: dkms が組み立てる元（約30MB）。組み立ては SSD でするので、RAMDISK には要らない
+        echo "tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' --exclude='usr/src/nvidia-*' --exclude='usr/src/zfs-*' --exclude='home/*/git' --exclude='home/*/.local' --exclude='home/*/.cache' [e-h]* root srv usr var | tar xfp - -C /tmp/loop1.$TMP_LABEL"
+        tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' --exclude='usr/src/nvidia-*' --exclude='usr/src/zfs-*' --exclude='home/*/git' --exclude='home/*/.local' --exclude='home/*/.cache' [e-h]* root srv usr var | tar xfp - -C /tmp/loop1.$TMP_LABEL 2>/tmp/error.$TMP_LABEL
         if [ -s /tmp/error.$TMP_LABEL ]; then
             echo "$1: `cat /tmp/error.$TMP_LABEL` : $LINENO" | tee -a /tmp/log.$TMP_LABEL
             cd /opt

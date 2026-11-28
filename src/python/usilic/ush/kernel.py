@@ -313,6 +313,30 @@ def nvidia_make_log(env, log):
         log.add('-u: %s -> /opt/dkms-make.log' % path)
 
 
+def zfs_module(env, log, module, out):
+    """_zfs_module(): 作ったカーネル向けにdkmsでZFSのモジュールを組み立てる(2026-11-28。RAM-*-base.gzへ/lib/modulesごと写る)。"""
+    import re
+    system = env.system
+    dkms_dir = '/lib/modules/%s/updates/dkms' % module
+    if 'ok installed' not in system.output(['dpkg-query', '-W', '-f=${Status}', 'zfs-dkms']) or \
+            any(n.startswith('zfs.ko') for n in system.listdir(dkms_dir)):
+        return
+    if system.is_mountpoint('/usr/src'):  # nvidia_moduleと同じ(Linuxのソースのtmpfsがdkmsの元を隠す)
+        out('umount /usr/src')
+        fs(env, log, 'umount', '/usr/src')
+    headers = [n for n in system.listdir('/opt') if n.startswith('linux-headers-%s_' % module) and n.endswith('.deb')]
+    if not system.exists('/lib/modules/%s/build' % module) and headers:
+        out('dpkg -i /opt/' + headers[0])
+        system.run(['dpkg', '-i', '/opt/' + headers[0]])
+    versions = [n[len('zfs-'):] for n in system.listdir('/usr/src') if n.startswith('zfs-')]
+    versions.sort(key=lambda v: [int(x) if x.isdigit() else x for x in re.split(r'[.-]', v)])
+    version = versions[-1] if versions else ''
+    out('dkms install -m zfs -v %s -k %s' % (version, module))
+    system.stream(['dkms', 'install', '-m', 'zfs', '-v', version, '-k', module], out)
+    if not any(n.startswith('zfs.ko') for n in system.listdir(dkms_dir)):
+        log.add('-u: %s/zfs.ko: not built (dkms).' % dkms_dir)
+
+
 def nvidia_module(env, log, module, out):
     """_nvidia_module(): 作ったカーネル向けにdkmsで純正ドライバのモジュールを組み立てる(RAM-*-base.gzへ/lib/modulesごと写る)。"""
     system = env.system
@@ -323,9 +347,10 @@ def nvidia_module(env, log, module, out):
     # プログラムの起動も遅く、音も途切れた。dkmsがカーネルを入れた時に組み立てた分と、土台のnouveauを止める設定・GSPの
     # firmwareも外す
     if not env.on_ubuntu and module.endswith('+%dgb' % env.rescue_gb):
-        if system.isdir('/lib/modules/%s/updates/dkms' % module):
-            out('rm -rf /lib/modules/%s/updates/dkms; depmod %s (%dGB: nouveau)' % (module, module, env.rescue_gb))
-            system.run(['rm', '-rf', '/lib/modules/%s/updates/dkms' % module])
+        dkms_dir = '/lib/modules/%s/updates/dkms' % module
+        if any(n.startswith('nvidia') for n in system.listdir(dkms_dir)):  # nvidiaだけ(ZFSは残す、2026-11-28)
+            out('rm -f %s/nvidia*; depmod %s (%dGB: nouveau)' % (dkms_dir, module, env.rescue_gb))
+            system.shell('rm -f %s/nvidia*' % dkms_dir, cwd='/')
             system.run(['depmod', module])
         system.shell('rm -f %s/loop1%s %s/loop1/usr/lib/firmware/nvidia/*/gsp_*' % (env.tmp, NOUVEAU_CONF, env.tmp), cwd='/')
         return
@@ -414,6 +439,7 @@ def update_base_image(env, log, gb, out, lap):
     fs(env, log, 'umount', loop1)
     fs(env, log, 'mount', '-o', 'loop', shm0 + '/IMG1.img', loop1)
     nvidia_module(env, log, module, out)
+    zfs_module(env, log, module, out)
     # このカーネルのモジュールとヘッダだけを写す。ヘッダ(約66MB)はnvidia(dkms)を使う時だけ(Debianの?GB(rescue)はnouveau)
     nvidia = env.conf('NVIDIA_LIST', '') and (env.on_ubuntu or gb != env.rescue_gb)
     header = '/usr/src/linux-headers-' + module if nvidia else ''

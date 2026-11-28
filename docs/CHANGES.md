@@ -33408,6 +33408,18 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1452. **src/U_proto.sh・src/python: ZFS を使う時、-u が zfs-dkms・zfsutils-linux を BASE に入れ、作ったカーネルにも ZFS のモジュールを組み立てる(2026-11-28)**
+    - 項目1451の続き(STRAGE を ZFS にする)。作ったカーネル(+?gb)には ZFS が無い(Ubuntu も配布のカーネルにしか付いていない)ので、nvidia と同じく dkms で組み立てる。
+    - **変更**:
+      - 設定に ZFS_LIST(Ubuntu: zfs-dkms zfsutils-linux gcc make libc6-dev、Debian: それに linux-headers-amd64。Debian の配布のカーネル(NONE-KERNEL)向けにも組み立てるため)。
+      - _zfs_wanted: STRAGE が /mnt/zfs か、blkid に zfs_member がある時だけ使う。
+      - _zfs_base(-u、_nvidia_base の後): ZFS_LIST が BASE.u に無ければ、BASE.u へ戻してから入れ、その状態を BASE.u に。
+      - _zfs_module(作ったカーネル、_nvidia_module の後): /usr/src の tmpfs を外し、headers の .deb を入れてから `dkms install -m zfs -v 版 -k カーネル`。zfs.ko ができなければ「not built (dkms)」をログに。
+      - Debian の _apt_nvidia_components: ZFS を使う時も contrib を足す。
+      - Debian の ${RESCUE_GB}GB(nouveau)で updates/dkms をまるごと消していたのを、nvidia* だけに(ZFS を残す)。
+      - RAMDISK の土台に /usr/src/zfs-*(dkms の元)を入れない。
+    - 確かめたのは `bash -n`・`dash -n`・tests.test_ush(35)のみ。4GB-rescue に収まるかは実機で量る。
+
 1451. **src/U_proto.sh・src/python: STRAGE に ZFS のプールも選べるように(-a)(2026-11-28)**
     - ユーザーの依頼: 外付け SSD(128GB)を 14(Ubuntu)+14(Debian)+80(STORAGE、ZFS)+残り(FreeBSD、ZFS)で作り直し、STORAGE を FreeBSD(/usr/src・/usr/ports・/usr/obj)と Linux で共有する(「この構成で最初から作り直したいのでよろしく。」「その順でよろしく。」)。その 2. の最初(U.sh 側)。
     - **変更**:

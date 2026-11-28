@@ -185,9 +185,11 @@ def purge_ubuntu(env, out):
 
 
 def apt_nvidia_components(env, out):
-    """_apt_nvidia_components(): Debian: NVIDIAのGPUがあれば、純正ドライバのあるcontrib・non-freeをaptの取得元に(2026-11-26)。"""
+    """_apt_nvidia_components(): Debian: NVIDIAのGPUがあれば、純正ドライバのあるcontrib・non-freeをaptの取得元に(2026-11-26)。
+    ZFSを使う時も(zfs-dkms・zfsutils-linuxはcontrib、2026-11-28)。"""
     system = env.system
-    if not env.conf('NVIDIA_LIST', '') or not nvidia_gpu(system):
+    if (not env.conf('NVIDIA_LIST', '') or not nvidia_gpu(system)) and \
+            (not env.conf('ZFS_LIST', '') or not zfs_wanted(env)):
         return
     path = '/etc/apt/sources.list.d/debian.sources'
     text = system.read_text(path)
@@ -203,6 +205,37 @@ def apt_nvidia_components(env, out):
         out('sed -i %s (contrib, non-free)' % path)
         system.write_text(path, new)
         system.stream(['apt', 'update', '-y'], out)
+
+
+def zfs_wanted(env):
+    """_zfs_wanted(): ZFSを使うか(STRAGEがZFS、またはZFSの区画がある)。"""
+    return env.opt.get('STRAGE', '') == '/mnt/zfs' or \
+        bool(env.system.output(['blkid', '-o', 'device', '-t', 'TYPE=zfs_member']).strip())
+
+
+def zfs_base(env, log, out):
+    """_zfs_base(): ZFS_LISTをBASEに(2026-11-28)。BASE.uを作った後でも足す(BASE.uへ戻してから入れ、その状態をBASE.uに)。"""
+    system = env.system
+    packages = env.conf('ZFS_LIST', '').split()
+    if not packages or not zfs_wanted(env):
+        return
+    base = system.read_text('/opt/BASE.u') or ''
+    have = set(l.split()[0] for l in base.splitlines() if l.split())
+    if all(p in have for p in packages):
+        missing = [p for p in packages if 'ok installed' not in system.output(['dpkg-query', '-W', '-f=${Status}', p])]
+        if missing:  # BASE.uにあるのに外れていたら
+            system.stream(['apt-get', 'install', '-y'] + missing, out)
+        return
+    system.run(['chmod', '644', '/opt/BASE.u'])
+    system.run(['cp', '-p', '/opt/BASE.u', '/opt/BASE.u.bak'])
+    purge_to(env, log, 'BASE.u', out)
+    out('apt-get install -y --no-install-recommends ' + ' '.join(packages))
+    if system.stream(['apt-get', 'install', '-y', '--no-install-recommends'] + packages, out) == 0:
+        system.run(['rm', '-f', '/opt/BASE.u'])
+        output_u(env, log, ['BASE.u'], out)
+    else:
+        log.add('-u: %s: not installed.' % ' '.join(packages))
+    system.run(['chmod', '444', '/opt/BASE.u'])
 
 
 def nvidia_gpu(system):
@@ -291,8 +324,8 @@ def make_template(env, log, option, out, lap):
     system.run(['apt-get', 'clean'])
     # カーネルのモジュールとヘッダはtarで外す(/tmpへmvすると、tmpfsなので途中で止まった時にSSDから消える)
     # ホームのgit(-uがcloneしたusilic)・.local(前のrescueで作ったusilic)・.cacheはRAMの土台に要らない(167MBあった)
-    # usr/src/nvidia-*: dkmsが組み立てる元(約30MB)。組み立てはSSDでするので、RAMDISKには要らない
-    command = ("tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' --exclude='usr/src/nvidia-*' --exclude='home/*/git' --exclude='home/*/.local' --exclude='home/*/.cache' [e-h]* root srv usr var "
+    # usr/src/nvidia-*・zfs-*: dkmsが組み立てる元(約30MB)。組み立てはSSDでするので、RAMDISKには要らない
+    command = ("tar cf - --exclude='usr/lib/modules/*' --exclude='usr/src/linux-headers*' --exclude='usr/src/nvidia-*' --exclude='usr/src/zfs-*' --exclude='home/*/git' --exclude='home/*/.local' --exclude='home/*/.cache' [e-h]* root srv usr var "
                "| tar xfp - -C " + loop1)
     out(command)
     errors = env.tmp + '/tar.err'
@@ -348,6 +381,7 @@ def update_base(env, log, option, ask, out):
         system.run(['chmod', '444', '/opt/BASE.u'])
     nvidia_off(env, log, out)
     nvidia_base(env, log, out)
+    zfs_base(env, log, out)
     # Python版のusilic(RESCUE)とpython3を、RAM-*-base.gzを作る前に(取れなくても止めない)
     get_usilic_repo(env, out)
     install_usilic_py(env, log, out)
