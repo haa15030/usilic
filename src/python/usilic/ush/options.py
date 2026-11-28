@@ -168,7 +168,7 @@ def add_strage(env, log, ask, out):
         return
     others = [l for l in (system.read_text('/opt/U.opt') or '').splitlines() if not l.startswith('STRAGE=')]
     out(' 0)TYPE DEVICENAME UUID (free) [mounted]')
-    chosen = list_parts(env, log, ['ntfs', 'exfat', 'ext4'], ask, out, tmp=default_tmp())
+    chosen = list_parts(env, log, ['ntfs', 'exfat', 'ext4', 'zfs'], ask, out, tmp=default_tmp())
     out('')
     if not chosen:
         return
@@ -203,8 +203,12 @@ def add_strage(env, log, ask, out):
     log.add(part.strage() + ' -> /opt/U.opt')
     system.makedirs(strage)
     fstab = [l for l in (system.read_text('/etc/fstab') or '').splitlines()
-             if l.strip() and not any(m in l for m in ('/mnt/ext4', '/mnt/ntfs', '/mnt/exfat'))]
-    fstab.append('UUID=%s %s %s rw,noauto 0 1' % (part.uuid, strage, part.kind))
+             if l.strip() and not any(m in l for m in ('/mnt/ext4', '/mnt/ntfs', '/mnt/exfat', '/mnt/zfs'))]
+    from . import zfs
+    line = zfs.fstab_line(env, part.uuid, strage, out)
+    if line:
+        fstab.append(line)
+    env.uuid = part.uuid  # fs()がZFSのプールを読み込むのに使う
     system.write_text('/etc/fstab', ''.join(l + '\n' for l in fstab))
     system.run(['systemctl', 'daemon-reload'])
     fs(env, log, 'mount', strage)

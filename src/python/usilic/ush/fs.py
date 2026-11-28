@@ -45,6 +45,9 @@ def fs(env, log, op, *args, try_only=False, wait=None):
         return True
     if env.keep_mnt_debian and point == env.mnt_debian:
         return True
+    if op == 'mount' and point == '/mnt/zfs' and env.uuid:  # ZFSのSTRAGEは、プールを読み込んでから(fstabのデータセットで)
+        from . import zfs
+        zfs.import_pool(env, env.uuid)
     if op == 'mount':
         if system.isdir(point):
             system.run(['umount', point])

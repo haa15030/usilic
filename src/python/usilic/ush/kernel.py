@@ -258,7 +258,7 @@ def correct_uuid(env, log, path, part_from, part_to, efi=None):
     text = (system.read_text(path) or '').replace(uuid_from, uuid_to)
     if efi:
         lines = [l for l in text.splitlines()
-                 if not any(m in l for m in ('/boot/efi', '/mnt/cifs', '/mnt/ext4', '/mnt/ntfs', '/mnt/exfat'))]
+                 if not any(m in l for m in ('/boot/efi', '/mnt/cifs', '/mnt/ext4', '/mnt/ntfs', '/mnt/exfat', '/mnt/zfs'))]
         efi_uuid = system.output(['blkid', '-c', '/dev/null', '-s', 'UUID', '-o', 'value', efi]).strip()
         text = ''.join(l + '\n' for l in lines) + 'UUID=%s /boot/efi vfat umask=0077 0 1\n' % efi_uuid
     system.write_text(path, text)  # 中身だけ書き換える(40_customの実行権を残す)

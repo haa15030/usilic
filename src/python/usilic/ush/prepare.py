@@ -142,7 +142,7 @@ def _strage(env, log, out):
     """/etc/fstabのSTRAGEの行(STRAGE・UUIDの区画が無ければ、STRAGEを使わない)とSMBFS。"""
     system = env.system
     fstab = [l for l in (system.read_text('/etc/fstab') or '').splitlines()
-             if not any(m in l for m in ('/mnt/cifs', '/mnt/ntfs', '/mnt/exfat', '/mnt/ext4'))]
+             if not any(m in l for m in ('/mnt/cifs', '/mnt/ntfs', '/mnt/exfat', '/mnt/ext4', '/mnt/zfs'))]
     strage = env.strage
     smbfs = env.conf('SMBFS', '')
     if smbfs:
@@ -159,8 +159,11 @@ def _strage(env, log, out):
             install_if_missing(env, 'ntfs-3g', out)
         elif strage == '/mnt/exfat':
             install_if_missing(env, 'exfat-fuse', out)
-        if env.uuid and env.uuid in system.output(['blkid']):  # STRAGEの区画があるか
-            fstab.append('UUID=%s %s %s rw,noauto\t    0 1' % (env.uuid, strage, strage.split('/')[2]))
+        from . import zfs
+        line = zfs.fstab_line(env, env.uuid, strage, out) \
+            if env.uuid and env.uuid in system.output(['blkid']) else ''  # STRAGEの区画があるか
+        if line:
+            fstab.append(line)
             fs(env, log, 'umount', strage)
         else:
             strage = ''

@@ -90,7 +90,8 @@ def ram_fstab(env, fstab_text):
     最後にDEBIAN区画を$MNT_DEBIANへ(noauto)。"""
     out = []
     for line in fstab_text.splitlines():
-        if any(m in line for m in ('/mnt/debian', env.mnt_debian, '/boot/efi', '/mnt/ext4', '/mnt/ntfs', '/mnt/exfat')):
+        if any(m in line for m in ('/mnt/debian', env.mnt_debian, '/boot/efi', '/mnt/ext4', '/mnt/ntfs', '/mnt/exfat',
+                                   '/mnt/zfs')):
             continue
         f = line.split()
         if f and not f[0].startswith('#') and len(f) >= 2 and f[1] == '/':

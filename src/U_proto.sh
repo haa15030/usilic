@@ -795,6 +795,9 @@ _fs() { # mount・umount（$1 が数字なら行番号）。マウントでき�
 	_op=$1
     fi
     cat /dev/null > /tmp/tmp.$TMP_LABEL
+    if [ "$_op" = "mount" ] && [ "$_mount_point" = "/mnt/zfs" ] && [ "$UUID" ]; then
+	_zfs_import $UUID > /dev/null # ZFS の STRAGE は、プールを読み込んでから（fstab のデータセットで）
+    fi
     if [ "$_op" = "mount" ]; then
 	# 前にマウントしたもの（ループのイメージ等）が残っていれば外してから（外せない＝使用中なら、そのまま使う）
 	if [ -d $_mount_point ]; then
@@ -828,6 +831,47 @@ _fs() { # mount・umount（$1 が数字なら行番号）。マウントでき�
 	_die
     fi
     return 0
+}
+
+# 2026-11-28、直接のユーザー依頼（外付けSSDのSTORAGEをZFSにして、FreeBSDとLinuxで共有する）: STRAGE に ZFS のプールも
+# 選べるように。区画は blkid の TYPE=zfs_member、UUID はプールの guid（zpool import に渡せる）。UUID= では指せないので、
+# /etc/fstab にはデータセット（プール名/data、無ければプール名）を書く。データセットは mountpoint=legacy にしておく
+# （プールに書いたマウント先はどの OS でも同じになるので、OS ごとに fstab で決める）。マウントの前にプールを読み込む
+# （-N: マウントしない、-f: FreeBSD 等で使ったまま export していなくても）
+_zfs_ready() { # ZFS のモジュールと zpool が使えるか（無ければ zfsutils-linux を入れてみる。モジュールは zfs-dkms 等）
+    _is_inst zfsutils-linux + > /dev/null 2>&1
+    command -v zpool > /dev/null 2>&1 && modprobe zfs > /dev/null 2>&1
+}
+
+_zfs_pool() { # guid $1 のプールが読み込まれていれば、その名前を出す
+    zpool list -H -o name,guid 2>/dev/null | awk -v g="$1" '$2 == g {print $1}'
+}
+
+_zfs_import() { # guid $1 のプールを読み込み（済んでいればそのまま）、名前を出す
+    if [ ! "`_zfs_pool $1`" ] && _zfs_ready; then
+        zpool import -N -f $1 > /dev/null 2>&1
+    fi
+    _zfs_pool $1
+}
+
+_zfs_dataset() { # guid $1 のプールの STRAGE にするデータセット（プール名/data があればそれ、無ければプール名）
+    local _pool=`_zfs_import $1`
+    if [ ! "$_pool" ]; then
+        return 1
+    elif zfs list -H -o name $_pool/data > /dev/null 2>&1; then
+        echo $_pool/data
+    else
+        echo $_pool
+    fi
+}
+
+_strage_fstab() { # STRAGE の /etc/fstab の行（$1: UUID、$2: マウントポイント /mnt/種類）
+    local _dataset
+    if [ "$2" = "/mnt/zfs" ]; then
+        _dataset=`_zfs_dataset $1` && echo "$_dataset $2 zfs rw,noauto 0 0"
+    else
+        echo "UUID=$1 $2 `echo $2 | awk -F/ '{print $3}'` rw,noauto 0 1"
+    fi
 }
 
 _is_inst() { # $1（パッケージ名、完全一致）が入っていれば「ii  $1」を出力。$2が「+」なら、無い時だけ入れる
@@ -1123,7 +1167,7 @@ _correct_uuid() { # ファイル$1の中の、区画$2のUUIDを区画$3のUUID�
     echo "sed $1 -e s/$_uuid_1/$_uuid_2/g"
     sed $1 -e "s/$_uuid_1/$_uuid_2/g" > /tmp/uuid.$TMP_LABEL
     if [ "$4" ]; then
-        grep -ve /boot/efi -ve /mnt/cifs -ve /mnt/ext4 -ve /mnt/ntfs -ve /mnt/exfat /tmp/uuid.$TMP_LABEL > $1
+        grep -ve /boot/efi -ve /mnt/cifs -ve /mnt/ext4 -ve /mnt/ntfs -ve /mnt/exfat -ve /mnt/zfs /tmp/uuid.$TMP_LABEL > $1
         echo "UUID=`blkid -c /dev/null -s UUID -o value $4` /boot/efi vfat umask=0077 0 1" >> $1
     else
         cat /tmp/uuid.$TMP_LABEL > $1 # mv だと40_customの実行権が消える
@@ -1436,6 +1480,10 @@ _list_strage() { # $1 から番号を振って、$2（ntfs・exfat・ext4 等）
     local _i=$1 _type=$2
     local _device _uuid _strage_gb _mp _tmp=/tmp/mount.$TMP_LABEL
 
+    if [ "$_type" = "zfs" ]; then
+	_list_zfs $_i
+	return
+    fi
     for _device in `blkid -o device -t TYPE=$_type 2>/dev/null | grep -v '^/dev/ram' | sort`
     do
 	_uuid=`blkid -c /dev/null -s UUID -o value $_device`
@@ -1467,6 +1515,47 @@ _list_strage() { # $1 から番号を振って、$2（ntfs・exfat・ext4 等）
 	fi
 	_i=$((_i+1))
 	echo "_i=$_i #$((_i-1)))STRAGE=/mnt/$_type UUID=$_uuid" >> /tmp/strage.$TMP_LABEL
+    done
+}
+
+_list_zfs() { # _list_strage の ZFS（プールごとに1行）。読み込んでいないプールは読み込まない（FreeBSD の zroot 等を
+    # 一覧のためだけに読み込まない）ので、空きは「?」。選んだ時に読み込む
+    local _i=$1 _device _uuid _done="" _pool _dataset _strage_gb _mp
+
+    if [ ! "`blkid -o device -t TYPE=zfs_member 2>/dev/null`" ]; then
+	return
+    fi
+    if ! _zfs_ready; then
+	echo "  -)zfs (no ZFS module: zfs-dkms)"
+	return
+    fi
+    for _device in `blkid -o device -t TYPE=zfs_member 2>/dev/null | grep -v '^/dev/ram' | sort`
+    do
+	_uuid=`blkid -c /dev/null -s UUID -o value $_device`
+	if [ ! "$_uuid" ] || echo " $_done " | grep -q " $_uuid "; then
+	    continue
+	fi
+	_done="$_done $_uuid"
+	_pool=`_zfs_pool $_uuid`
+	_strage_gb="?"
+	_mp=""
+	if [ "$_pool" ]; then
+	    _dataset=`_zfs_dataset $_uuid`
+	    _strage_gb=$((`zfs get -Hp -o value available $_dataset`/1000/1000/1000))
+	    _mp=`findmnt -no TARGET -S $_dataset 2>/dev/null | head -n1`
+	    if [ "$_mp" ]; then
+		_mp=" [$_mp]"
+	    fi
+	else
+	    _pool=`blkid -c /dev/null -s LABEL -o value $_device`
+	fi
+	if [ "$_i" -lt 10 ]; then
+	    echo " $_i)zfs $_device $_uuid $_pool ($_strage_gb GB)$_mp"
+	else
+	    echo "$_i)zfs $_device $_uuid $_pool ($_strage_gb GB)$_mp"
+	fi
+	_i=$((_i+1))
+	echo "_i=$_i #$((_i-1)))STRAGE=/mnt/zfs UUID=$_uuid" >> /tmp/strage.$TMP_LABEL
     done
 }
 
@@ -1562,7 +1651,7 @@ add_strage() { # -a)
     grep -v ^STRAGE= /opt/U.opt > /tmp/opt.$TMP_LABEL
     echo " 0)TYPE DEVICENAME UUID (free) [mounted]"
     # 一覧に無い番号は入れられない（もう一度聞く。空なら終える）
-    _STRAGE_INFO=`_list_parts - ntfs exfat ext4`
+    _STRAGE_INFO=`_list_parts - ntfs exfat ext4 zfs`
     _n=`echo $_STRAGE_INFO | awk -F\) '{print $1}'`
     echo
     if [ ! "$_n" ]; then
@@ -1607,8 +1696,8 @@ add_strage() { # -a)
 	    mkdir $mnt_strage
 	fi
 	if [ "$UUID" ]; then
-	    grep -ve /mnt/ext4 -ve /mnt/ntfs -ve /mnt/exfat -ve ^$ /etc/fstab > /tmp/fstab.$TMP_LABEL
-	    echo "UUID=$UUID $mnt_strage `echo $mnt_strage | awk -F /mnt/ '{print $2}'` rw,noauto 0 1" >> /tmp/fstab.$TMP_LABEL 
+	    grep -ve /mnt/ext4 -ve /mnt/ntfs -ve /mnt/exfat -ve /mnt/zfs -ve ^$ /etc/fstab > /tmp/fstab.$TMP_LABEL
+	    _strage_fstab $UUID $mnt_strage >> /tmp/fstab.$TMP_LABEL
 	    mv /tmp/fstab.$TMP_LABEL /etc/fstab
 	    systemctl daemon-reload
 	fi
@@ -2394,10 +2483,10 @@ _tmp_debian() {
     if [ ! "$1" ] || [ "$1" = "+" ]; then
 	echo "mkdir etc"
 	mkdir etc
-	echo 'fgrep -ve /mnt/debian -ve $MNT_DEBIAN -ve /boot/efi -ve /mnt/ext4 -ve /mnt/ntfs -ve /mnt/exfat /etc/fstab | awk (/ -> /dev/ram, swap file -> #) > etc/fstab'
+	echo 'fgrep -ve /mnt/debian -ve $MNT_DEBIAN -ve /boot/efi -ve /mnt/ext4 -ve /mnt/ntfs -ve /mnt/exfat -ve /mnt/zfs /etc/fstab | awk (/ -> /dev/ram, swap file -> #) > etc/fstab'
 	# ルートの行は「/dev/ram / ext4 errors=remount-ro」（ON_RAMDISK はこれで見分ける。Ubuntu の fstab は /dev/disk/by-uuid/〜 で
 	# errors=remount-ro も無い）。ルートの区画の中のスワップファイル（Ubuntu の /swap.img）は RAMDISK に無いので外す
-	fgrep -ve /mnt/debian -ve $MNT_DEBIAN -ve /boot/efi -ve /mnt/ext4 -ve /mnt/ntfs -ve /mnt/exfat /etc/fstab | \
+	fgrep -ve /mnt/debian -ve $MNT_DEBIAN -ve /boot/efi -ve /mnt/ext4 -ve /mnt/ntfs -ve /mnt/exfat -ve /mnt/zfs /etc/fstab | \
 	    awk '$1 !~ /^#/ && $2 == "/" {print "/dev/ram / ext4 errors=remount-ro 0 1"; next} $1 ~ /^\// && $1 !~ /^\/dev\// && $3 == "swap" {print "#" $0; next} {print}' > etc/fstab
 	echo 'echo "UUID=$DEBIAN_ROOT_UUID $MNT_DEBIAN ext4 rw,noauto	    0 1" >> etc/fstab'
 	echo "UUID=$DEBIAN_ROOT_UUID $MNT_DEBIAN ext4 rw,noauto	    0 1" >> etc/fstab
@@ -3655,7 +3744,7 @@ verbose() { # -v)
     fi
     if [ "$mnt_strage" ] && [ "$mnt_strage" != "$MNT_DEBIAN" ]; then
 	mkdir -p $mnt_strage
-	if [ "$UUID" ]; then
+	if [ "$UUID" ] && [ "$mnt_strage" != "/mnt/zfs" ]; then
 	    if [ ! "`fgrep $mnt_strage /etc/mtab`" ]; then
 		_fs $LINENO mount -o rw UUID=$UUID $mnt_strage
 	    fi
@@ -3890,7 +3979,7 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
     if [ ! -f /opt/rc_systemd.txt ]; then # BASE の有効サービス一覧（_start_rc で使用）
 	_enabled_units > /opt/rc_systemd.txt
     fi
-    grep -ve /mnt/cifs -ve /mnt/ntfs -ve /mnt/exfat -ve /mnt/ext4 /etc/fstab > /tmp/fstab.$TMP_LABEL
+    grep -ve /mnt/cifs -ve /mnt/ntfs -ve /mnt/exfat -ve /mnt/ext4 -ve /mnt/zfs /etc/fstab > /tmp/fstab.$TMP_LABEL
     if [ "$SMBFS" ]; then
 	grep -ve /mnt/cifs /etc/fstab > /tmp/fstab.$TMP_LABEL
 	_is_inst cifs-utils +
@@ -3912,8 +4001,8 @@ echo _ETH_DEVICE_LIST=$_ETH_DEVICE_LIST
 	elif [ "$mnt_strage" = "/mnt/exfat" ]; then
 	    _is_inst exfat-fuse +
 	fi
-	if [ "$UUID" ] && [ "`blkid | grep $UUID`" ]; then # STRAGEが設定されている場合はデバイスの有効性を検証
-	    echo "UUID=$UUID $mnt_strage `echo $mnt_strage | awk -F\/ '{print $3}'` rw,noauto	    0 1" >> /tmp/fstab.$TMP_LABEL
+	if [ "$UUID" ] && [ "`blkid | grep $UUID`" ] && _strage_fstab $UUID $mnt_strage > /tmp/strage_fstab.$TMP_LABEL; then # STRAGEが設定されている場合はデバイスの有効性を検証
+	    cat /tmp/strage_fstab.$TMP_LABEL >> /tmp/fstab.$TMP_LABEL
 	    _fs $LINENO umount $mnt_strage
 	else
 	    mnt_strage=""

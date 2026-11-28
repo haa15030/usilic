@@ -19,7 +19,7 @@ RAMDISK で動いている間は、SSD 等に書くのは '. U -s' 等で保存�
 ⑦  DEBIAN区画㊿ : ⑲U.sh を置いた Debian（Ubuntu）のルートの区画（RAMDISK からは /mnt/debian、Ubuntu は /mnt/ubuntu）㊿#
 ⑦ NONE-KERNEL㊿ : ⑲DEBIAN区画をディストリビューションのカーネル（〜-amd64・〜-generic）で起動した状態㊿#
 ⑦     RAMDISK㊿ : ⑲RAM-*-base.gz で起動した状態（/ は /dev/ram0）㊿#
-⑦      STRAGE㊿ : ⑲作業とホストの保存に使う別の区画（ext4・ntfs・exfat、'. U -a' で選ぶ）。置き場所は img.debian・img.ubuntu㊿#
+⑦      STRAGE㊿ : ⑲作業とホストの保存に使う別の区画（ext4・ntfs・exfat・zfs、'. U -a' で選ぶ）。置き場所は img.debian・img.ubuntu㊿#
 ⑦      ?GB-base㊿ : ⑲ホストを展開しない RAMDISK（BASE の状態）㊿#
 ⑦      ホスト㊿ : ⑲?GB-名前.img（?GB-rescue.img を含む）㊿#
 ⑦      /opt/U.opt㊿ : ⑲STRAGE・次に展開するホスト（NEXT?=）・実行シェル（SH=）の記録㊿#
@@ -116,10 +116,13 @@ RAMDISK の上で -s で保存できるのは、STRAGE が無ければ ?GB-rescu
 #
 ④-a㊿：⑲STRAGE⊥㊿#
 #
-⑧ntfs・exfat・ext4 の区画を、番号・種類・デバイス名・UUID・空きの GB（マウント中ならそのマウントポイント）で一覧にします。
+⑧ntfs・exfat・ext4 の区画と ZFS のプールを、番号・種類・デバイス名・UUID・空きの GB（マウント中ならそのマウントポイント）で一覧にします。
 一覧に無い番号を入れるともう一度聞き、何も入れずに ^M で終えます。
 DEBIAN区画は一覧に出ません。
-選んだ区画は /etc/fstab と /opt/U.opt に書き、/mnt/ext4（ntfs・exfat）にマウントします。#
+選んだ区画は /etc/fstab と /opt/U.opt に書き、/mnt/ext4（ntfs・exfat・zfs）にマウントします。
+ZFS は、プールの UUID の後にプール名を出し、読み込んでいないプールは空きを ? にします（選んだ時に zpool import -N -f で読み込みます）。
+マウントするのはプール名/data（無ければプール名）で、mountpoint=legacy にしておきます。
+ZFS のモジュールが無ければ（自作のカーネルは zfs-dkms が要る）、一覧に出ません。#
 #
 ④-f㊿：⑲/mnt/番号⊥㊿#
 #

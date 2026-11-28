@@ -33408,6 +33408,16 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1451. **src/U_proto.sh・src/python: STRAGE に ZFS のプールも選べるように(-a)(2026-11-28)**
+    - ユーザーの依頼: 外付け SSD(128GB)を 14(Ubuntu)+14(Debian)+80(STORAGE、ZFS)+残り(FreeBSD、ZFS)で作り直し、STORAGE を FreeBSD(/usr/src・/usr/ports・/usr/obj)と Linux で共有する(「この構成で最初から作り直したいのでよろしく。」「その順でよろしく。」)。その 2. の最初(U.sh 側)。
+    - **変更**:
+      - -a の一覧に ZFS を足した(blkid の TYPE=zfs_member、プールごとに1行、UUID はプールの guid、その後にプール名)。読み込んでいないプールは一覧のためには読み込まず(FreeBSD の zroot 等)、空きは「?」。ZFS のモジュールが無ければ「-)zfs (no ZFS module: zfs-dkms)」。
+      - 選んだら STRAGE=/mnt/zfs UUID=guid。/etc/fstab にはデータセット(プール名/data、無ければプール名)を `zfs rw,noauto 0 0` で書く(UUID= では指せない)。データセットは mountpoint=legacy にしておく前提(プールに書いたマウント先はどの OS でも同じになるので、OS ごとに fstab で)。
+      - /mnt/zfs をマウントする前に `zpool import -N -f guid`(_fs・fs())。-f は FreeBSD 等で使ったまま export していない時のため。
+      - 起動の時の fstab(_prepare の STRAGE の行)・-v・RAMDISK の etc/fstab・_correct_uuid の除外に /mnt/zfs を足した。
+      - 新しい関数: _zfs_ready(zfsutils-linux を入れてみて modprobe zfs)・_zfs_pool・_zfs_import・_zfs_dataset・_strage_fstab・_list_zfs。Python は usilic/ush/zfs.py と parts.list_zfs。src/U_sh.txt の -a も直した。
+    - 確かめたのは `bash -n`・`dash -n`・tests.test_ush(35)のみ。ZFS のモジュール(Debian は contrib の zfs-dkms、自作のカーネルは Ubuntu も)と /etc/hostid をそろえるのは次の項目。
+
 1450. **tools/setup-freebsd.sh: Xfceにログインしたらusilicを自動で開く(2026-11-28)**
     - ユーザーの報告と依頼: 「usilicはメニューにあってクリックすれば出る。最初からは出てない。」「Linuxはそうなってるのでこちらもそうして。」
     - **変更**: 5. で gmake install の後、`~/.local/share/applications/usilic.desktop`(メニューと同じランチャー)を `~/.config/autostart/` へ写す(既にあれば触らない)。最後のメッセージも「ログインすると自動で開きます」に。docs/BUILD.md の 10. に、自動で開くこと・止め方・手で設定するコマンドを足し、docs/BUILD.html を作り直した。確かめたのは `sh -n` のみ(今の機械ではユーザーが手でコピーする)。

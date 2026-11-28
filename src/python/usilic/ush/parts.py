@@ -5,14 +5,16 @@ from .fs import fs, is_mounted
 
 
 class Part:
-    def __init__(self, number, kind, device, uuid, free_gb, mount_point):
+    def __init__(self, number, kind, device, uuid, free_gb, mount_point, name=''):
         self.number, self.kind, self.device, self.uuid = number, kind, device, uuid
-        self.free_gb, self.mount_point = free_gb, mount_point
+        self.free_gb, self.mount_point, self.name = free_gb, mount_point, name
 
     def line(self):
-        """U.shと同じ形(「 3)ntfs /dev/sda3 UUID (12 GB) [/mnt/ntfs]」)。"""
+        """U.shと同じ形(「 3)ntfs /dev/sda3 UUID (12 GB) [/mnt/ntfs]」。ZFSはUUIDの後にプール名、空きが分からなければ?)。"""
         mp = ' [%s]' % self.mount_point if self.mount_point else ''
-        return '%2d)%s %s %s (%d GB)%s' % (self.number, self.kind, self.device, self.uuid, self.free_gb, mp)
+        name = ' ' + self.name if self.name else ''
+        free = '?' if self.free_gb is None else '%d' % self.free_gb
+        return '%2d)%s %s %s%s (%s GB)%s' % (self.number, self.kind, self.device, self.uuid, name, free, mp)
 
     def strage(self):
         """U.optの行(「STRAGE=/mnt/種類 UUID=〜」)。"""
@@ -31,6 +33,8 @@ def list_strage(env, log, kind, first, out, tmp):
     """_list_strage(): firstから番号を振って、kind(ntfs・exfat・ext4・vfat)の区画を出す。DEBIAN区画は出さない。
     マウント中の区画は外さずに空きを見る。マウントしていなければ空きを見るために仮にマウント(できなくても止めない、
     休止したWindowsのNTFS等は読むだけで)。[Part]を返す。"""
+    if kind == 'zfs':
+        return list_zfs(env, first, out)
     system = env.system
     parts, number = [], first
     devices = sorted(d for d in system.output(['blkid', '-o', 'device', '-t', 'TYPE=' + kind]).split()
@@ -53,6 +57,42 @@ def list_strage(env, log, kind, first, out, tmp):
             free = _free_gb(system, tmp)
             fs(env, log, 'umount', tmp, wait=0)
         part = Part(number, kind, device, uuid, free, mount_point)
+        out(part.line())
+        parts.append(part)
+        number += 1
+    return parts
+
+
+def list_zfs(env, first, out):
+    """_list_zfs(): list_strageのZFS(プールごとに1行)。読み込んでいないプールは読み込まない(FreeBSDのzroot等を
+    一覧のためだけに読み込まない)ので、空きは?。選んだ時に読み込む。"""
+    from . import zfs
+    system = env.system
+    devices = sorted(d for d in system.output(['blkid', '-o', 'device', '-t', 'TYPE=zfs_member']).split()
+                     if not d.startswith('/dev/ram'))
+    if not devices:
+        return []
+    if not zfs.ready(env, out):
+        out('  -)zfs (no ZFS module: zfs-dkms)')
+        return []
+    parts, number, done = [], first, set()
+    for device in devices:
+        uuid = system.output(['blkid', '-c', '/dev/null', '-s', 'UUID', '-o', 'value', device]).strip()
+        if not uuid or uuid in done:
+            continue
+        done.add(uuid)
+        name, free, mount_point = zfs.pool(env, uuid), None, ''
+        if name:
+            data = zfs.dataset(env, uuid)
+            try:
+                free = int(system.output(['zfs', 'get', '-Hp', '-o', 'value', 'available', data]).strip()) \
+                    // 1000 // 1000 // 1000
+            except ValueError:
+                pass
+            mount_point = (system.output(['findmnt', '-no', 'TARGET', '-S', data]).splitlines() or [''])[0].strip()
+        else:
+            name = system.output(['blkid', '-c', '/dev/null', '-s', 'LABEL', '-o', 'value', device]).strip()
+        part = Part(number, 'zfs', device, uuid, free, mount_point, name)
         out(part.line())
         parts.append(part)
         number += 1
