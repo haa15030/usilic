@@ -1049,7 +1049,11 @@ echo 'PATH=$HOME/.local/bin:$PATH; export PATH' >> ~/.bash_profile
 
 ### 10. usilicの起動
 
-アプリケーション ＞ アクセサリー ＞ usilic をクリックする。
+スクリプトで進めた時は、Xfceにログインするとusilicが自動で開く(`~/.config/autostart/usilic.desktop`。止めるならこれを消す)。手で進めた時や閉じた後は、アプリケーション ＞ アクセサリー ＞ usilic をクリックする。手で自動で開くようにするなら:
+
+```key
+mkdir -p ~/.config/autostart && cp ~/.local/share/applications/usilic.desktop ~/.config/autostart/
+```
 
 ※アクセサリーにusilicが無い時だけ、XfceのTerminalでパネルを再起動してから選ぶ(ログインした後で *gmake install* したusilicがメニューに出ないことがある。2026-11-07のi5-7500では再起動しなくても出ていた)。
 

@@ -33408,6 +33408,10 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1450. **tools/setup-freebsd.sh: Xfceにログインしたらusilicを自動で開く(2026-11-28)**
+    - ユーザーの報告と依頼: 「usilicはメニューにあってクリックすれば出る。最初からは出てない。」「Linuxはそうなってるのでこちらもそうして。」
+    - **変更**: 5. で gmake install の後、`~/.local/share/applications/usilic.desktop`(メニューと同じランチャー)を `~/.config/autostart/` へ写す(既にあれば触らない)。最後のメッセージも「ログインすると自動で開きます」に。docs/BUILD.md の 10. に、自動で開くこと・止め方・手で設定するコマンドを足し、docs/BUILD.html を作り直した。確かめたのは `sh -n` のみ(今の機械ではユーザーが手でコピーする)。
+
 1449. **docs/BUILD.md(FreeBSD): 外付けSSDの1区画にZFSで、sshとコピペで入れる手順を足す、2.〜8.もsshからコピペを勧める(2026-11-28)**
     - ユーザーの依頼: 「ここからはBUILD.htmlの`2.〜8.をスクリプトで進める(2026-11-07)`からsshでやってみる。特に延々create ...とやる操作では、BUILD.htmlからコピペでやるほうがずっといい。補足しといて。」
     - **追加**: 「### 1.の別法: 外付けSSDの1区画にZFSで、sshとコピペで入れる」を 2.〜8. の節の前に新設。①インストーラで sshd を立てる(/etc を /tmp に写して mount_nullfs、PermitRootLogin、service sshd onestart)、②RTL9210 の quirk を usbconfig で足して抜き差し、③Packages・Partitioning の Shell で TRIM を止めて zpool create・zfs create 一式・bootfs・cachefile・空の fstab(コピペできるよう1ブロックに)、④[Finish] の後に loader.conf(quirk を版の範囲をずらして4行)・zfs_enable・ESP への loader.efi。今日実際に通った手順(HISTORY.md:72856 の計画を /dev/da1p6 に直したもの)。

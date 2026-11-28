@@ -286,6 +286,13 @@ fi
 cd "$HOME/git/usilic/src/cpp"
 gmake usilic
 gmake install
+# 2026-11-28、直接のユーザー依頼("Linuxはそうなってるのでこちらもそうして"): Xfceにログインしたらusilicを自動で開く。
+# メニューと同じランチャー(gmake installが置く)をautostartへ写す(既にあれば触らない、消せば止まる)。
+app="$HOME/.local/share/applications/usilic.desktop"
+if [ -f "$app" ] && [ ! -f "$HOME/.config/autostart/usilic.desktop" ]; then
+  mkdir -p "$HOME/.config/autostart"
+  cp "$app" "$HOME/.config/autostart/"
+fi
 EOF
 
 # IntelのiGPU(i5-4570SのHaswellで確認)では、GTK4のアプリ(pavucontrol等)がGPUで描こうとして、drm-kmod(linuxkpi)の
@@ -317,7 +324,7 @@ if [ "${reboot_needed:-no}" = yes ]; then
 fi
 echo "reboot して、Xfceに $user でログインしてください。"
 echo "その後: アプリケーション → 設定 → Fcitx5 設定 でMozcがあることを確かめ、"
-echo "        アプリケーション → アクセサリー → usilic で起動します(docs/BUILD.mdの9.・10.)。"
+echo "        usilic はログインすると自動で開きます(閉じた後は アプリケーション → アクセサリー → usilic、docs/BUILD.mdの9.・10.)。"
 echo "音が出ない時: cat /dev/sndstat で出力先(pcmN)を見て、sysctl hw.snd.default_unit=N(docs/BUILD.mdの注意点)。"
 echo "              パッケージのmpvはOSSにだけ出すので、PulseAudio(パネル・pavucontrol)の出力先の切り換えは効かない。"
 echo "              mpvが「Permission denied」なら、$user が audio グループに入っているか(ログインし直すと効く)。"
