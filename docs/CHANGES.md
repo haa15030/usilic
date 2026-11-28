@@ -33408,6 +33408,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1447. **docs/BUILD.md(FreeBSD): RTL9210 の USB の quirk、16.0-CURRENT は Packages で入れる、インストーラが rc.conf・loader.conf を書き直す(2026-11-28)**
+    - 経緯: 外付け SSD(RTL9210)の p6 に 16.0-CURRENT を ZFS で入れた時にわかったこと(ユーザーの依頼「足しておいて」)。
+    - **追加**(注意点、UFS の mountroot の項の後):
+      - RTL9210 は FreeBSD では Bulk-Only で動き、読んでいる途中でケースごと USB から落ちることがある。quirk を4つ(NO_SYNC_CACHE・NO_TEST_UNIT_READY・NO_PREVENT_ALLOW・NO_START_STOP)足すと落ちなくなった。インストーラでは `usbconfig add_dev_quirk_vplh`、入れた後は loader.conf の `hw.usb.quirk.N`。1行に4つ並べると効かず、同じ版の範囲で4行書くと最後の1つしか効かないので、範囲の下限を 0・1・2・3 とずらす(実機で確かめた、`quirks = 0xc005`)。
+      - 16.0-CURRENT の memstick には配布セットが無いので Packages(pkgbase)。src 無しでダウンロード1分ほど、1.24G。
+      - 共用のディスクの1区画に入れる時は Partitioning の Shell でプールを /mnt に、fstab は空。
+      - 最後の Finish で rc.conf・loader.conf が書き直され、zfs_enable が NO になって /home 等がマウントされない(「Could not chdir to home directory」)。sysrc zfs_enable=YES・zfs mount -a、loader.conf は書き直す。
+    - docs/BUILD.html を作り直した。
+
 1446. **docs/BUILD.html: docs/BUILD.md の変更(項目1302〜1415)が反映されていなかったので作り直す(2026-11-28)**
     - 症状: docs/BUILD.md の仮の名前 ABC・DEF・GHI を実際の値にした変更(項目1304)などが docs/BUILD.html に出ない(ユーザーの報告)。
     - 原因: docs/BUILD.html は 2026-11-19(項目1299)のまま、それ以降の docs/BUILD.md のコミット(1302・1304・1307・1318・1415)で作り直していなかった。

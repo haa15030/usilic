@@ -1001,6 +1001,21 @@ usilicが開いたら、「usilic-1.5b:~\$ sudo pkg install -y groff mg texinfo 
   - `/etc/fstab`の`/dev/da2p5`を`/dev/gpt/fbsdroot`に、`/dev/da2p1`を`/dev/gpt/efiboot`に書き換える。
   - `/boot/loader.conf`に`vfs.root.mountfrom="ufs:/dev/gpt/fbsdroot"`と`kern.cam.boot_delay="10000"`(USBのディスクが見えるまで待つ)を足す。
   - ZFSで入れればプールの名前で探すので、この問題は起きない。
+- 同じRTL9210のケースでは、読んでいる途中でケースごとUSBから落ちる(`disconnected`の後に`<Unknown>`が並んでつながり直す)ことがある(2026-11-28、16.0-CURRENT、インストーラのシェルで*zpool import*をした時。Linuxはこのケースを`UAS`で、FreeBSDは`SCSI over Bulk-Only`で動かすので、Linuxで平気でもFreeBSDでは落ちる)。USBのquirk(その機器に送らないコマンド)を4つ足すと落ちなくなった:
+  - インストーラのシェルでは、*usbconfig add_dev_quirk_vplh 0x0bda 0x9210 0 0xffff UQ_MSC_NO_SYNC_CACHE* を`UQ_MSC_NO_TEST_UNIT_READY`・`UQ_MSC_NO_PREVENT_ALLOW`・`UQ_MSC_NO_START_STOP`についても打ち、ケースを挿し直す(`0x0bda`・`0x9210`は *usbconfig -d ugen0.N dump_device_desc* の`idVendor`・`idProduct`)。dmesgの`umass1: SCSI over Bulk-Only; quirks = 0xc005<...>`が`0x0`でなくなれば効いている。
+  - 入れた後は起動ディスクそのものなので挿し直せない。`/boot/loader.conf`に書く。**1行に1つずつ、版の範囲の下限(3番目の数)をずらして書く**。1行に4つ並べると1つも効かず、同じ範囲で4行書くと最後の1つしか効かない(同じ範囲の行は上書きされる)。範囲はどれもこのケースの版(`rev 3.20/30.00`、0x3000)を含んでいればよい:
+
+```text
+hw.usb.quirk.0="0x0bda 0x9210 0 0xffff UQ_MSC_NO_SYNC_CACHE"
+hw.usb.quirk.1="0x0bda 0x9210 1 0xffff UQ_MSC_NO_TEST_UNIT_READY"
+hw.usb.quirk.2="0x0bda 0x9210 2 0xffff UQ_MSC_NO_PREVENT_ALLOW"
+hw.usb.quirk.3="0x0bda 0x9210 3 0xffff UQ_MSC_NO_START_STOP"
+```
+
+  - 確かめるのは *usbconfig dump_device_quirks | grep 9210*(4行出る)と *dmesg | grep 'umass.\*quirks' | tail -1*。`NO_SYNC_CACHE`は書き込みのキャッシュを書き出させないので、書いている最中に電源が落ちると最後の分を失うことがある。
+- 16.0-CURRENTのmemstickには配布セット(base.txz等)が入っていない(`/usr/freebsd-dist`は`MANIFEST`だけ)。<span style="color:#0097a7">Select Installation type</span>で[Distribution Sets]を選ぶとファイルが無いと言われるので、[Packages](pkgbase)を選ぶ。srcを選ばなければダウンロードは1分ほど、入った大きさは1.24G(*zfs list -o name,used,refer -r zroot*)。srcは後から *pkg install FreeBSD-src*。
+- 外付けSSDの一つの区画(Linux等と共用のディスク)にZFSで入れる時は、<span style="color:#0097a7">Partitioning</span>で[Shell]を選び、*zpool create* したプール(または *zpool import -f -o altroot=/mnt zroot*)を`/mnt`にマウントしてから *exit* する。その時、`/tmp/bsdinstall_etc/fstab`は空にしておく(ZFSはfstabを使わない)。
+- インストーラは最後の<span style="color:#0097a7">Final Configuration</span>の[Finish]で`/etc/rc.conf`と`/boot/loader.conf`を書き直すので、それより前に(sshや[Shell]から)書き足した分は消える。書くのは[Finish]の後の<span style="color:#0097a7">Manual Configuration</span>で[Yes]にしてから、または起動した後。[Shell]から入れた時は`zfs_enable`が`NO`にされていて、`/`以外のデータセット(`/home`・`/tmp`・`/var/log`等)がマウントされず、ログインすると「Could not chdir to home directory /home/usilic」になる(ホームは作られていて、マウントされていないだけ)。*sysrc zfs_enable=YES* と *zfs mount -a* で直る。`/boot/loader.conf`には`zfs_load="YES"`しか残らないので、`kern.cam.boot_delay="10000"`と上のquirkを書き直す。
 
 **GPUと画面**
 
