@@ -33408,6 +33408,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **変更**: コンソールの無いusilic.exeはアイコンからの起動の組(-gを付けても)。usilic-c.exeは$USILIC_CONSOLE_PARENTを置き、その子の窓のusilic.exeは-gの組。以前のusilic.exeの設定は-gの組に残るので、usilic.exeは既定の値から始まる。
    - **同時起動(ユーザーの判断、"マニュアル記載があれば同時起動は今のままでいい")**: 「ファイルマネージャーのusilicは1つだけ」(2026-09-15)の排他は、古いプロセスの名前を`ps`で確かめるのでWindowsのネイティブでは効かず、同時に動く。historyはロックと読み直しで混ざって残るが、~/.usilic/error・shellは共有になる。今のままとし、HELPの-gの説明の後に記した(src/HELP_.txt・HELP_en_.txt)。**(項目1204で撤回、Windowsでも1つだけにした。)**
    - 確かめたこと: Windows向けのビルドが通ること(実機は未確認)。
+1446. **docs/BUILD.html: docs/BUILD.md の変更(項目1302〜1415)が反映されていなかったので作り直す(2026-11-28)**
+    - 症状: docs/BUILD.md の仮の名前 ABC・DEF・GHI を実際の値にした変更(項目1304)などが docs/BUILD.html に出ない(ユーザーの報告)。
+    - 原因: docs/BUILD.html は 2026-11-19(項目1299)のまま、それ以降の docs/BUILD.md のコミット(1302・1304・1307・1318・1415)で作り直していなかった。
+    - 変更: `cd docs && python3 md2html.py BUILD.md BUILD.html` で作り直した。BUILD.html に残る ABC 等は 26 件から 1 件(ifconfig_DEFAULT、本物の名前)になった。
+
 1445. **Debian 13: nouveau を止める設定(U-nouveau.conf)を SSD(NONE-KERNEL)に置かない、前に置いた分は消して initramfs を作り直す(2026-11-28)**
     - 症状: NONE-KERNEL(SSD の Debian 13、6.12.117+deb13-amd64)で起動すると低解像度。
     - 原因: _nvidia_module(kernel.nvidia_module)が /etc/modprobe.d/U-nouveau.conf(blacklist nouveau、nouveau modeset=0)を、RAM の土台(loop1)だけでなく SSD にも書いていた(項目1429ごろから)。nvidia は +4gb・+8gb 向けにしか組み立てない(dkms status)ので、NONE-KERNEL では nvidia も nouveau も動かず、UEFI の素の画面のままになる。

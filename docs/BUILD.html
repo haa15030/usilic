@@ -104,71 +104,72 @@ make usilic</code></pre>
 <p>1台のSSDにUbuntuとDebianを並べ、UEFIでもBIOS(CSM)でも起動できるようにする例(片方だけなら、その節だけでよい)。<strong>Ubuntuを先に入れる</strong>(Debianを先に入れると、Ubuntuのインストーラは既にあるDebianの区画を「空き」として扱ってしまう)。どちらもUEFIで入れ、BIOSでの起動は最後にDebianから足す(下の「BIOS(CSM)でも起動できるようにする」)。</p>
 <h4>Ubuntu 26.10(Server版のISO)</h4>
 <p>Desktop版ではなく<strong>Server版</strong>のISO(Desktop版は最小のインストールでもGNOMEが入る)。</p>
-<p><span class="item-orange">GNU GRUB</span> -&gt; <strong>Try or Install Ubuntu Server</strong></p>
-<p><span class="item-orange">Welcome!</span> -&gt; <strong>English</strong></p>
-<p><span class="item-orange">Keyboard configuration</span> -&gt; <em>Tab</em> で「Layout:」へ -&gt; <strong>Japanese</strong> -&gt;<br>
-「Variant:」-&gt; <strong>Japanese</strong> -&gt; [Done]</p>
-<p><span class="item-orange">Choose the type of installation</span> -&gt; <strong>Ubuntu Server (minimized)</strong> を <em>Space</em> で選ぶ -&gt; [Done]<br>
+<p><span class="item-orange">GNU GRUB</span> ＞ <strong>Try or Install Ubuntu Server</strong></p>
+<p><span class="item-orange">Welcome!</span> ＞ <strong>English</strong></p>
+<p><span class="item-orange">Keyboard configuration</span> ＞ <em>Tab</em> で「Layout:」へ ＞ <strong>Japanese</strong> ＞<br>
+「Variant:」＞ <strong>Japanese</strong> ＞ [Done]</p>
+<p><span class="item-orange">Choose the type of installation</span> ＞ <strong>Ubuntu Server (minimized)</strong> を <em>Space</em> で選ぶ ＞ [Done]<br>
 (Debianの「SSH server」だけに近い。削られたmanのページ等は、2.のスクリプトが<code>unminimize</code>で戻す)</p>
-<p><span class="item-orange">Network configuration</span> -&gt; 「DHCPv4」のアドレスが出たら [Done]</p>
-<p><span class="item-orange">Proxy configuration</span> -&gt; 「Proxy address:」(使わなければ空) -&gt; [Done]</p>
-<p><span class="item-orange">Ubuntu archive mirror configuration</span> -&gt; 「Mirror address:」<code>http://jp.archive.ubuntu.com/ubuntu/</code> -&gt;<br>
-「... Reading package lists...」-&gt; [Done]</p>
-<p><span class="item-orange">Guided storage configuration</span> -&gt; <strong>Custom storage layout</strong> -&gt; [Done]</p>
-<p><span class="item-orange">Storage configuration</span> -&gt; <strong>Realtek_RTL9210_NVME_…</strong>(環境による) の <strong>free space</strong> -&gt; [Add GPT Partition] -&gt;<br>
-「Size (max 119.240G):」<code>50G</code> -&gt; 「Format:」<strong>ext4</strong> -&gt; 「Mount:」<strong>/</strong> -&gt; [Create] -&gt; [Done]</p>
-<p class="note">※空のSSDなら、先にSSDの行を選んで [Use As Boot Device](UEFIの起動に要るEFIシステム区画ができる)。前のインストールの区画が残っていて使い回すなら、その区画を選んで [Edit] -&gt; 「Format:」<strong>ext4</strong> -&gt; 「Mount:」<strong>/</strong> -&gt; [Save]。</p>
+<p><span class="item-orange">Network configuration</span> ＞ 「DHCPv4」のアドレスが出たら [Done]</p>
+<p><span class="item-orange">Proxy configuration</span> ＞ 「Proxy address:」(使わなければ空) ＞ [Done]</p>
+<p><span class="item-orange">Ubuntu archive mirror configuration</span> ＞ 「Mirror address:」<code>http://jp.archive.ubuntu.com/ubuntu/</code> ＞<br>
+「... Reading package lists...」＞ [Done]</p>
+<p><span class="item-orange">Guided storage configuration</span> ＞ <strong>Custom storage layout</strong> ＞ [Done]</p>
+<p><span class="item-orange">Storage configuration</span> ＞ <strong>Realtek_RTL9210_NVME_…</strong>(環境による) の <strong>free space</strong> ＞ [Add GPT Partition] ＞<br>
+「Size (max 119.240G):」<code>50G</code> ＞ 「Format:」<strong>ext4</strong> ＞ 「Mount:」<strong>/</strong> ＞ [Create] ＞ [Done]</p>
+<p class="note">※空のSSDなら、先にSSDの行を選んで [Use As Boot Device](UEFIの起動に要るEFIシステム区画ができる)。前のインストールの区画が残っていて使い回すなら、その区画を選んで [Edit] ＞ 「Format:」<strong>ext4</strong> ＞ 「Mount:」<strong>/</strong> ＞ [Save]。</p>
 <p class="note">※スワップは区画を作らず、Ubuntuが<code>/swap.img</code>(ファイル)を作る。Debianからも使える(下の「Ubuntuのスワップファイルを使う」)。</p>
-<p><span class="item-orange">Confirm destructive action</span> -&gt; [Continue]</p>
-<p><span class="item-orange">Profile configuration</span> -&gt; 「Your name:」<code>DEF</code> -&gt; 「Your servers name:」<code>HOST</code> -&gt;<br>
-「Pick a username:」<code>ABC</code> -&gt; 「Choose a password:」<code>GHI</code> -&gt; 「Confirm your password:」<code>GHI</code> -&gt; [Done]</p>
-<p><span class="item-orange">SSH configuration</span> -&gt; <strong>Install OpenSSH server</strong> を <em>Space</em> で選ぶ -&gt;<br>
-<strong>Allow password authentication over SSH</strong> -&gt; [Done]</p>
-<p><span class="item-orange">Featured server snaps</span> -&gt; 何も選ばず [Done]</p>
+<p><span class="item-orange">Confirm destructive action</span> ＞ [Continue]</p>
+<p><span class="item-orange">Profile configuration</span> ＞ 「Your name:」<code>Yu Silic</code> ＞ 「Your servers name:」<code>HOST</code> ＞<br>
+「Pick a username:」<code>usilic</code> ＞ 「Choose a password:」<code>U</code> ＞ 「Confirm your password:」<code>U</code> ＞ [Done]</p>
+<p><span class="item-orange">SSH configuration</span> ＞ <strong>Install OpenSSH server</strong> を <em>Space</em> で選ぶ ＞<br>
+<strong>Allow password authentication over SSH</strong> ＞ [Done]</p>
+<p><span class="item-orange">Featured server snaps</span> ＞ 何も選ばず [Done]</p>
 <p><span class="item-orange">Installing system</span> ...</p>
-<p><span class="item-orange">Installation complete!</span> -&gt; [Reboot Now] -&gt;<br>
-「Please remove the installation medium, then press ENTER:」-&gt; USBメモリを抜いて <em>Enter</em></p>
+<p><span class="item-orange">Installation complete!</span> ＞ [Reboot Now] ＞<br>
+「Please remove the installation medium, then press ENTER:」＞ USBメモリを抜いて <em>Enter</em></p>
 <p class="note">※時刻はServer版では協定世界時のまま。2.のスクリプトが日本(<em>timedatectl set-timezone Asia/Tokyo</em>)にする。</p>
 <p class="note">※作ったユーザーは最初からsudoできる(rootのパスワードは無い)。</p>
 <p class="note">※最初の<code>apt</code>の途中で「Failed to disable unit: Unit friendly-recovery.service does not exist」と出るのは害が無い(minimizedには無いサービスを止めようとしているだけ)。</p>
 <h4>Debian 13(netinstのISO)</h4>
 <p>UEFIのインストーラが起動するよう、マザーボードの設定でCSMを無効にしておく(CSMが有効だとBIOSのインストーラが起動することがある)。</p>
+<p class="note">※<strong>他のディスク(Windowsの内蔵SSD等)にEFIシステム区画がある機械では、UEFIで入れない</strong>。UEFIのインストーラは、入れる先とは別のディスクでも既にあるEFIシステム区画へGRUBを書き、<code>/boot/efi</code>もそこになる(2026-11-16、USBの外付けSSDへ入れて、GRUBが内蔵SSDのEFI区画へ入った)。その時はCSMを有効にしてBIOSのインストーラで入れ(BIOS用のGRUBは書く先のディスクを選べる)、UEFIでの起動は後で足す(下の「BIOSで入れたDebianに、UEFIでの起動を足す」)。</p>
 <p>ISOは<strong>netinst</strong>(<code>debian-13.x.0-amd64-netinst.iso</code>、14のテスト版なら<code>debian-testing-amd64-netinst.iso</code>)を使う。ネットブート用の小さな<code>mini.iso</code>は中にカーネルしか無く、ファイルシステムのモジュールとファームウェアをインストール中にネットから取るため、<code>mini.iso</code>のカーネルとアーカイブのカーネルの版がずれていると、パーティショニングの「利用方法」に<strong>ext4が出ず</strong>先へ進めない。最初に「見つからないファームウェアファイル: rtl_nic/rtl8125b-2.fw」等と聞かれるのも<code>mini.iso</code>だから(2026-11-18、i5-9400Fの機械で13.7・14とも)。</p>
-<p><span class="item-orange">GNU GRUB</span> -&gt; <strong>Install</strong></p>
-<p><span class="item-orange">Select a language</span> -&gt; 「Language:」<strong>Japanese - 日本語</strong></p>
-<p><span class="item-orange">場所の選択</span> -&gt; 「国・領土・地域:」<strong>日本</strong></p>
-<p><span class="item-orange">キーボードの設定</span> -&gt; 「利用するキーマップ:」<strong>日本語</strong><br>
+<p><span class="item-orange">GNU GRUB</span> ＞ <strong>Install</strong></p>
+<p><span class="item-orange">Select a language</span> ＞ 「Language:」<strong>Japanese - 日本語</strong></p>
+<p><span class="item-orange">場所の選択</span> ＞ 「国・領土・地域:」<strong>日本</strong></p>
+<p><span class="item-orange">キーボードの設定</span> ＞ 「利用するキーマップ:」<strong>日本語</strong><br>
 (スクリプトはこれ(<code>/etc/default/keyboard</code>の<code>XKBLAYOUT="jp"</code>)を見てjp106にする)</p>
-<p><span class="item-orange">ネットワークの設定</span> -&gt; 「ホスト名:」<code>HOST</code> -&gt; 「ドメイン名:」<code>DOMAIN</code>(無ければ空)</p>
-<p><span class="item-orange">Debian アーカイブのミラーを選択</span> -&gt; 「Debian アーカイブミラーの国:」<strong>日本</strong> -&gt;<br>
-「Debian アーカイブミラー:」<strong>deb.debian.org</strong> -&gt; 「HTTP プロキシの情報(なければ空):」-&gt;<br>
+<p><span class="item-orange">ネットワークの設定</span> ＞ 「ホスト名:」<code>HOST</code> ＞ 「ドメイン名:」<code>DOMAIN</code>(無ければ空)</p>
+<p><span class="item-orange">Debian アーカイブのミラーを選択</span> ＞ 「Debian アーカイブミラーの国:」<strong>日本</strong> ＞<br>
+「Debian アーカイブミラー:」<strong>deb.debian.org</strong> ＞ 「HTTP プロキシの情報(なければ空):」＞<br>
 「Debian アーカイブミラーを確認しています」...</p>
-<p><span class="item-orange">ユーザとパスワードのセットアップ</span> -&gt; 「root のパスワード:」空のまま <em>Enter</em> -&gt; 確認も空のまま <em>Enter</em> -&gt;<br>
-「新しいユーザの本名(フルネーム):」<code>DEF</code> -&gt; 「あなたのアカウントのユーザ名:」<code>ABC</code> -&gt; パスワード <code>GHI</code> -&gt; 確認 <code>GHI</code></p>
+<p><span class="item-orange">ユーザとパスワードのセットアップ</span> ＞ 「root のパスワード:」空のまま <em>Enter</em> ＞ 確認も空のまま <em>Enter</em> ＞<br>
+「新しいユーザの本名(フルネーム):」<code>Yu Silic</code> ＞ 「あなたのアカウントのユーザ名:」<code>usilic</code> ＞ パスワード <code>U</code> ＞ 確認 <code>U</code></p>
 <p class="note">※rootのパスワードを空にすると、作ったユーザーがsudoできるようになる(設定した時は、2.のスクリプトがsudoのグループに入れる)。</p>
-<p><span class="item-orange">ディスクのパーティショニング</span> -&gt; 「パーティショニングの方法:」<strong>手動</strong> -&gt;<br>
-<strong>SCSI1 (0,0,0) (sda) - 128.0 GB Realtek RTL9210 NVME</strong>(環境による) の <strong>73.2 GB 空き領域</strong> -&gt;<br>
-<strong>新しいパーティションの作成</strong> -&gt; 「新しいパーティションのサイズ:」<code>53.2 GB</code> -&gt; <strong>先頭</strong> -&gt;<br>
-(利用方法 ext4・マウントポイント / のまま) <strong>パーティションのセットアップを終了</strong> -&gt;<br>
-<strong>20.0 GB 空き領域</strong> -&gt; <strong>新しいパーティションの作成</strong> -&gt; <code>20.0 GB</code> -&gt; <strong>先頭</strong> -&gt;<br>
-<strong>利用方法: ext4 ジャーナリングファイルシステム</strong> -&gt; <strong>スワップ領域</strong> -&gt; <strong>パーティションのセットアップを終了</strong> -&gt;<br>
-<strong>パーティショニングの終了とディスクへの変更の書き込み</strong> -&gt; 「ディスクに変更を書き込みますか?」<strong>はい</strong></p>
+<p><span class="item-orange">ディスクのパーティショニング</span> ＞ 「パーティショニングの方法:」<strong>手動</strong> ＞<br>
+<strong>SCSI1 (0,0,0) (sda) - 128.0 GB Realtek RTL9210 NVME</strong>(環境による) の <strong>73.2 GB 空き領域</strong> ＞<br>
+<strong>新しいパーティションの作成</strong> ＞ 「新しいパーティションのサイズ:」<code>53.2 GB</code> ＞ <strong>先頭</strong> ＞<br>
+(利用方法 ext4・マウントポイント / のまま) <strong>パーティションのセットアップを終了</strong> ＞<br>
+<strong>20.0 GB 空き領域</strong> ＞ <strong>新しいパーティションの作成</strong> ＞ <code>20.0 GB</code> ＞ <strong>先頭</strong> ＞<br>
+<strong>利用方法: ext4 ジャーナリングファイルシステム</strong> ＞ <strong>スワップ領域</strong> ＞ <strong>パーティションのセットアップを終了</strong> ＞<br>
+<strong>パーティショニングの終了とディスクへの変更の書き込み</strong> ＞ 「ディスクに変更を書き込みますか?」<strong>はい</strong></p>
 <p class="note">※Ubuntuの区画(ext4)とEFIシステム区画には触らない(EFIシステム区画はそのまま共用される)。</p>
 <p class="note">※スワップの区画を作らずにUbuntuの<code>/swap.img</code>を使うなら、空き領域を全部<code>/</code>にし、「スワップ領域が選択されていません」には <strong>いいえ</strong>(戻らない)。インストールの後で下の「Ubuntuのスワップファイルを使う」。</p>
 <p><span class="item-orange">ベースシステムをインストールしています</span> ...</p>
-<p><span class="item-orange">popularity-contest を設定しています</span> -&gt; どちらでもよい</p>
-<p><span class="item-orange">ソフトウェアの選択</span> -&gt; 「インストールするソフトウェアの選択:」は <em>Space</em> で <strong>SSH server</strong> だけ<br>
+<p><span class="item-orange">popularity-contest を設定しています</span> ＞ どちらでもよい</p>
+<p><span class="item-orange">ソフトウェアの選択</span> ＞ 「インストールするソフトウェアの選択:」は <em>Space</em> で <strong>SSH server</strong> だけ<br>
 (「Debian デスクトップ環境」「GNOME」等は外す。「標準システムユーティリティ」は付けたままでよい)</p>
-<p><span class="item-orange">インストールの完了</span> -&gt; 「システム時間を UTC に設定していますか?」<strong>はい</strong> -&gt; [続ける]</p>
+<p><span class="item-orange">インストールの完了</span> ＞ 「システム時間を UTC に設定していますか?」<strong>はい</strong> ＞ [続ける]</p>
 <p class="note">※Ubuntuは、Debianの起動メニュー(GRUB)に「Ubuntu」として出る。出なければ下の「BIOS(CSM)でも起動できるようにする」の1.。</p>
 <p class="note">※sshでログイン中にシステムを入れ直した場合は、ログインする側のマシンで <em>ssh-keygen -R &lt;IP&gt;</em> を実行する(ホスト鍵が変わるため)。</p>
 <h3>2. 3.〜6.をスクリプトで進める</h3>
-<p>インストーラが終わって再起動したら、別のマシンから <em>ssh <code>ABC</code>@&lt;IP&gt;</em> でつなぐ(IPはこのマシンで <em>ip -4 addr</em> の<code>inet</code>)。</p>
+<p>インストーラが終わって再起動したら、別のマシンから <em>ssh <code>usilic</code>@&lt;IP&gt;</em> でつなぐ(IPはこのマシンで <em>ip -4 addr</em> の<code>inet</code>)。</p>
 <p><em>sudo -i</em> でrootになり(Debianでrootのパスワードを設定した時は <em>su -</em>):</p>
 <pre class="key"><code>apt-get update &amp;&amp; apt-get install -y git</code></pre>
-<pre class="key"><code>su ABC -c 'git clone https://github.com/haa15030/usilic.git ~/git/usilic'</code></pre>
-<pre class="key"><code>sh ~ABC/git/usilic/tools/setup-debian.sh ABC</code></pre>
-<p class="note">※<code>ABC</code>はインストーラで作ったユーザー名。DebianかUbuntuかは<code>/etc/os-release</code>で見分ける。GPUは<code>lspci</code>で見分ける(違う時は最後に<code>--gpu=nvidia</code>・<code>--gpu=amd</code>・<code>--gpu=intel</code>・<code>--gpu=none</code>)。キーボードがjpならjp106にし、Caps LockとCtrlを入れ替える(入れ替えない時は<code>--noswapcaps</code>)。途中で止まったら、同じコマンドをもう一度実行すれば続きから進む。記録は<code>/var/log/usilic-setup.log</code>。</p>
+<pre class="key"><code>su usilic -c 'git clone https://github.com/haa15030/usilic.git ~/git/usilic'</code></pre>
+<pre class="key"><code>sh ~usilic/git/usilic/tools/setup-debian.sh usilic</code></pre>
+<p class="note">※<code>usilic</code>はインストーラで作ったユーザー名。DebianかUbuntuかは<code>/etc/os-release</code>で見分ける。GPUは<code>lspci</code>で見分ける(違う時は最後に<code>--gpu=nvidia</code>・<code>--gpu=amd</code>・<code>--gpu=intel</code>・<code>--gpu=none</code>)。キーボードがjpならjp106にし、Caps LockとCtrlを入れ替える(入れ替えない時は<code>--noswapcaps</code>)。途中で止まったら、同じコマンドをもう一度実行すれば続きから進む。記録は<code>/var/log/usilic-setup.log</code>。</p>
 <p class="note">※終わったら <em>reboot</em> し、6.へ進む(NVIDIAの合成表示はスクリプトが切ってある)。</p>
 <h3>3.〜6.を手で進める</h3>
 <h4>3. パッケージ</h4>
@@ -194,7 +195,7 @@ make usilic</code></pre>
 <p>(システム全体の言語。インストーラをEnglishで進めた時は、これが無いとXfceのメニューもusilicのHELPも英語になる)</p>
 <pre class="key"><code>timedatectl set-timezone Asia/Tokyo</code></pre>
 <pre class="key"><code>systemctl set-default graphical.target</code></pre>
-<pre class="key"><code>usermod -aG sudo,video,audio ABC</code></pre>
+<pre class="key"><code>usermod -aG sudo,video,audio usilic</code></pre>
 <p>キーボードは<code>/etc/default/keyboard</code>を<code>XKBMODEL="jp106"</code>・<code>XKBLAYOUT="jp"</code>・<code>XKBOPTIONS="ctrl:swapcaps"</code>にする(XとコンソールとでCaps LockとCtrlを入れ替える。入れ替えないなら<code>XKBOPTIONS=""</code>)。</p>
 <p>ユーザーに戻って(<em>exit</em>):</p>
 <pre class="key"><code>cat &gt; ~/.xprofile &lt;&lt;'EOF'
@@ -207,10 +208,13 @@ EOF</code></pre>
 <pre class="key"><code>echo 'PATH=$HOME/.local/bin:$PATH; export PATH' &gt;&gt; ~/.profile; echo 'PATH=$HOME/.local/bin:$PATH; export PATH' &gt;&gt; ~/.bashrc</code></pre>
 <p class="note">※~/.bashrcにも足すのは、usilicのSHELLがbashをログインシェルとしてではなく起動し、~/.bashrcだけを読むため(FreeBSDの8.と同じ)。</p>
 <pre class="key"><code>cd ~/git/usilic/src/cpp &amp;&amp; make usilic &amp;&amp; make install</code></pre>
+<p class="note">※g++の無いホスト(U.shの-dで作ったデスクトップ等)へ入れる時は、ここで.debも作っておく(/usr/bin/usilic・/usr/lib/usilic/、2026-11-25)。U.shの-d・-rは、DEBIAN区画の/optにあればこれをaptで入れる(依存のライブラリと、推奨のgroff・mpv等も)。</p>
+<pre class="key"><code>cd ~/git/usilic/src/cpp &amp;&amp; make deb &amp;&amp; sudo cp build/usilic_*.deb /opt</code></pre>
+<p class="note">※手で入れるなら <em>sudo apt install ./build/usilic_….deb</em> (dpkg -iでは依存が入らない)。古い.debは/optから消しておく(U.shは一番新しいものを入れる)。</p>
 <pre class="key"><code>sudo reboot</code></pre>
 <h4>6. 日本語入力・音声・usilicの起動</h4>
 <p>lightdmのログイン画面でログインし、Xfceに入る。</p>
-<ul><li>アプリケーション -&gt; 設定 -&gt; Fcitx 5 の設定 で、「入力メソッド」にMozcがあることを確かめる(無ければ右の一覧のMozcを左へ移して「適用」。Englishで入れると無かった。スクリプトは<code>~/.config/fcitx5/profile</code>にMozcを入れてある)。「DBusがFcitxと接続できませんでした。Fcitxは動いていますか?」と出たら、Fcitx 5が自動で起動していない。その画面の「Fcitx 5 を実行する」でつながる。次から自動で起動するよう、端末で <em>mkdir -p ~/.config/autostart &amp;&amp; cp /usr/share/applications/org.fcitx.Fcitx5.desktop ~/.config/autostart/</em>(スクリプトは済ませてある)。</li><li>音声: パネルに音量のアイコンが無ければ、パネルを右クリック -&gt; パネル -&gt; 新しいアイテムの追加 -&gt; 「PulseAudio プラグイン」。出力先(マザーボードの内蔵・HDMI)は、そのアイコンかpavucontrol(アプリケーション -&gt; マルチメディア -&gt; PulseAudio 音量調節)で切り換える。再生中の音もそのまま付いてくる。</li><li>アプリケーション -&gt; アクセサリー -&gt; usilic で起動する。</li></ul>
+<ul><li>アプリケーション ＞ 設定 ＞ Fcitx 5 の設定 で、「入力メソッド」にMozcがあることを確かめる(無ければ右の一覧のMozcを左へ移して「適用」。Englishで入れると無かった。スクリプトは<code>~/.config/fcitx5/profile</code>にMozcを入れてある)。「DBusがFcitxと接続できませんでした。Fcitxは動いていますか?」と出たら、Fcitx 5が自動で起動していない。その画面の「Fcitx 5 を実行する」でつながる。次から自動で起動するよう、端末で <em>mkdir -p ~/.config/autostart &amp;&amp; cp /usr/share/applications/org.fcitx.Fcitx5.desktop ~/.config/autostart/</em>(スクリプトは済ませてある)。</li><li>音声: パネルに音量のアイコンが無ければ、パネルを右クリック ＞ パネル ＞ 新しいアイテムの追加 ＞ 「PulseAudio プラグイン」。出力先(マザーボードの内蔵・HDMI)は、そのアイコンかpavucontrol(アプリケーション ＞ マルチメディア ＞ PulseAudio 音量調節)で切り換える。再生中の音もそのまま付いてくる。</li><li>アプリケーション ＞ アクセサリー ＞ usilic で起動する。</li></ul>
 <h3>BIOS(CSM)でも起動できるようにする(Debianから)</h3>
 <p>UEFIで入れたDebianに、BIOS用のGRUBを足す。BIOSで起動した時もDebianの起動メニュー(UEFIと同じ<code>/boot/grub/grub.cfg</code>)が出て、そこからUbuntuも選べる。Debianにrootでログインし(<em>sudo -i</em>):</p>
 <p>1. 起動メニューにUbuntuが出るようにする(インストーラが他のOSを見つけた時は済んでいる):</p>
@@ -232,6 +236,30 @@ EOF</code></pre>
 <p class="note">※BIOSで「起動できるディスクが無い」と言われたら、そのマザーボードは保護MBRの起動フラグを見ている: <em>parted /dev/sda disk_set pmbr_boot on</em>。これでUEFIで起動しなくなる機械があるので、その時は<code>off</code>に戻す。</p>
 <p class="note">※他のマシンにつないでUEFIで起動するには、SSDのEFIシステム区画の<code>EFI/BOOT/BOOTX64.EFI</code>(機械に登録の無いディスクを起動する時の決まった場所)が要る。Debianのを置く:</p>
 <pre class="key"><code>echo 'grub-efi-amd64 grub2/force_efi_extra_removable boolean true' | debconf-set-selections &amp;&amp; dpkg-reconfigure -f noninteractive grub-efi-amd64</code></pre>
+<h3>BIOSで入れたDebianに、UEFIでの起動を足す</h3>
+<p>上の※のとおりDebianをBIOS(CSM)のインストーラで入れた時、UEFIでも起動できるようにする。インストーラを使わず<code>grub-install</code>に書く先を自分で指定するので、他のディスクのEFIシステム区画には触らない(src/U.shの<code>-m</code>がUSBメモリに書くのと同じやり方)。</p>
+<p><strong>入れる時に用意しておくもの</strong>(Debianだけを入れるディスクの場合):</p>
+<ul><li><strong>EFIシステム区画にする100MBほどの空き</strong>。BIOSのインストーラはEFIシステム区画を作れないので、先頭(か最後)を空けておき、後で作る。</li><li>ディスクがGPTなら、<strong>BIOS boot区画</strong>(1MB)。パーティショニングで、先頭の小さな空き領域に「利用方法:」<strong>BIOS ブート領域</strong> で作る。作り忘れても、後で上の「BIOS(CSM)でも起動できるようにする」の3.で先頭の隙間に作れる(無いとBIOS用のGRUBはディスクの中に置く場所が無い)。空のディスクにBIOSのインストーラで入れると区画表はMBR(msdos)になり、その時は要らない。</li></ul>
+<p>UbuntuとSSDを共用していてEFIシステム区画が既にある時は、Ubuntuの起動メニュー(UEFI)からDebianも起動できるので、これは要らない。その区画の<code>EFI/BOOT/BOOTX64.EFI</code>は(UbuntuやWindowsの)ものなので、下の<code>--removable</code>で上書きしない。</p>
+<p>Debianにrootでログインし(<em>sudo -i</em>):</p>
+<p>1. ディスクの名前と区画表の種類(<code>PTTYPE</code>が<code>gpt</code>か<code>dos</code>)を確かめる(以下<code>sda</code>の例):</p>
+<pre class="key"><code>lsblk -o NAME,SIZE,TRAN,PTTYPE,PARTTYPENAME,MOUNTPOINTS</code></pre>
+<p>2. 空けておいた所にEFIシステム区画を作る。GPTなら(<code>sgdisk -p</code>の最後の「Total free space」と区画の並びで空きを確かめ、<code>-n 0:開始:終了</code>を合わせる。下は空いている先頭の100MBの例):</p>
+<pre class="key"><code>apt-get install -y gdisk dosfstools grub-efi-amd64-bin</code></pre>
+<pre class="key"><code>sgdisk -p /dev/sda</code></pre>
+<pre class="key"><code>sgdisk -n 0:2048:+100M -t 0:ef00 -c 0:EFI /dev/sda &amp;&amp; partprobe /dev/sda</code></pre>
+<p>MBR(<code>dos</code>)なら <em>fdisk /dev/sda</em> で <em>n</em>(空きに100MB) ＞ <em>t</em>(その区画) ＞ <code>ef</code> ＞ <em>w</em>。</p>
+<p>3. FAT32にして、仮の場所へつなぐ(<code>/etc/fstab</code>には書かない。<code>/boot/efi</code>にするとGRUBの更新がこちらを書き換えようとする):</p>
+<pre class="key"><code>mkfs.vfat -F 32 -n EFI /dev/sda1</code></pre>
+<pre class="key"><code>mkdir -p /mnt/esp &amp;&amp; mount /dev/sda1 /mnt/esp</code></pre>
+<p>(<code>sda1</code>は2.で作った区画)</p>
+<p>4. UEFI用のGRUBを書く。<code>--removable</code>で<code>EFI/BOOT/BOOTX64.EFI</code>(機械に登録の無いディスクを起動する時の決まった場所)に置くので、他の機械につないでも起動できる。<code>--no-nvram</code>で、機械の起動の設定(NVRAM)には触らない(BIOSで起動している今はもともと触れない):</p>
+<pre class="key"><code>grub-install --target=x86_64-efi --efi-directory=/mnt/esp --boot-directory=/boot --removable --no-nvram --no-uefi-secure-boot</code></pre>
+<pre class="key"><code>umount /mnt/esp</code></pre>
+<p>「Installation finished. No error reported.」と出ればよい。マザーボードの設定でCSMを無効にし、UEFIで起動を確かめる(起動メニューの<code>/boot/grub/grub.cfg</code>はBIOSと共用)。</p>
+<p class="note">※<code>grub-efi-amd64</code>(パッケージ)ではなく<code>grub-efi-amd64-bin</code>なのは、<code>grub-efi-amd64</code>はBIOSの<code>grub-pc</code>と同時に入れられない(入れるとBIOS側が外れる)ため。</p>
+<p class="note">※<code>grub-pc</code>が更新されてもUEFI側は書き直されないので、GRUBの大きな更新の後は3.の<code>mount</code>と4.をもう一度実行しておく(カーネルの更新だけなら要らない)。</p>
+<p class="note">※セキュアブートには対応しない(署名の無いGRUB)。UEFIの設定でセキュアブートを切っておく。</p>
 <h3>Ubuntuのスワップファイルを使う(Debianから)</h3>
 <p>UbuntuはSSDの区画ではなく<code>/swap.img</code>(Ubuntuの<code>/</code>の中のファイル)をスワップにしている。Debianからも、Ubuntuの区画を<code>/mnt/ubuntu</code>へつないで同じファイルを使える(同時に動くことは無いので、2つのOSで共用して困らない。休止状態(ハイバネート)を使わない場合)。Debianのrootで:</p>
 <p>1. Ubuntuの区画を探す(<code>ext4</code>で、Debianの<code>/</code>ではない方。<code>LABEL</code>か大きさで見分ける):</p>
@@ -245,7 +273,7 @@ EOF</code></pre>
 <p class="note">※Debianにもスワップの区画を作ったなら、<code>swapon --show</code>に両方が出る(両方使われる)。区画を外すなら、<code>/etc/fstab</code>の<code>swap</code>の区画の行を消す。</p>
 <p class="note">※Ubuntuの<code>/swap.img</code>の大きさはUbuntuのインストーラが決める(<code>swapon --show</code>の<code>SIZE</code>)。逆にUbuntuからDebianのスワップの区画を使うこともでき、その時はUbuntuの<code>/etc/fstab</code>へ<code>UUID=(スワップの区画) none swap sw,nofail 0 0</code>を足し、<code>/swap.img</code>の行を消してファイルも消す。</p>
 <h3>注意点(Linux)</h3>
-<ul><li><strong>音声</strong>: 音声のサーバーはPipeWire(<code>pipewire-pulse</code>がPulseAudioの役)。マザーボードの内蔵もHDMIもALSAの装置として自動で並び、mpv・mplayerは何も設定しなくてもそこへ出す。FreeBSDのような<code>hw.snd.default_unit</code>やアプリごとの設定、audioグループは要らない(systemd-logindがログインした人に権限を渡す)。</li><li><strong>HDMIが出力先に出ない</strong>: 音源のカードの構成が「アナログ出力」だけになっている。pavucontrolの「設定」タブで、そのカードの構成を「Digital Stereo (HDMI) Output」等にする。NVIDIA・AMDのGPUのHDMIは、マザーボードの音源とは別のカードとして並ぶ。</li><li><strong>NVIDIAとセキュアブート</strong>: UEFIのセキュアブートが有効だと、DKMSでビルドしたNVIDIAのモジュールは署名を登録(MOK)するまで読み込まれない。インストールの途中か再起動の時に青い「Perform MOK management」の画面が出たら、「Enroll MOK」を選び、インストールの時に決めたパスワードを入れる。分からなければ、UEFIの設定でセキュアブートを切る。</li><li><strong>インストーラをEnglishで進めた時</strong>(BIOSで起動したDebianのテキストのインストーラは「Language:」に日本語が無い。日本語の文字を出せない画面のため。起動メニューの <strong>Graphical install</strong> なら日本語を選べる): メニューやusilicのHELPが英語になるのは、システムの言語(<code>/etc/default/locale</code>)が<code>en_US.UTF-8</code>のままだから。rootで <em>update-locale LANG=ja_JP.UTF-8</em> して、ログインし直す(スクリプトは済ませてある)。時刻は <em>timedatectl set-timezone Asia/Tokyo</em>。既にFcitx 5を一度起動していたら、Mozcは6.のとおり手で足す。</li><li><strong>Ubuntuでホスト名(<code>mpi</code>等)が引けない</strong>: Debianは<code>/etc/resolv.conf</code>にDHCPのドメイン(<code>domain …</code>)が入り、<code>ssh mpi</code>・<code>scp … mpi:</code>がルーターのDNSで<code>mpi.ドメイン</code>として引ける。UbuntuのServer版はsystemd-networkdがDHCPのドメインを使わない設定なので(<code>/etc/resolv.conf</code>が<code>nameserver 127.0.0.53</code>と<code>search .</code>)、IPアドレスを打つしかなかった。スクリプトは<code>/etc/systemd/networkd.conf.d/usilic.conf</code>に<code>[DHCPv4]</code>の<code>UseDomains=yes</code>を置く(再起動の後で<code>resolvectl domain</code>にドメインが出る)。手でするなら同じファイルを作って再起動。</li><li><strong>小説のEPUB(<code>narou2epub</code>)で「ensurepip is not available」</strong>: Debian・Ubuntuは、Pythonのvenvに<code>python3-venv</code>が要る(スクリプトは入れてある)。手で <em>sudo apt-get install python3-venv</em> した後は、そのままもう一度実行すればよい(作りかけのvenvは作り直す)。</li><li><strong>Ubuntuのfirefox</strong>: aptの<code>firefox</code>はsnapを入れる中継ぎのパッケージ。minimizedでsnapdが無い時は <em>apt-get install -y snapd</em> してから。</li></ul>
+<ul><li><strong>音声</strong>: 音声のサーバーはPipeWire(<code>pipewire-pulse</code>がPulseAudioの役)。マザーボードの内蔵もHDMIもALSAの装置として自動で並び、mpv・mplayerは何も設定しなくてもそこへ出す。FreeBSDのような<code>hw.snd.default_unit</code>やアプリごとの設定、audioグループは要らない(systemd-logindがログインした人に権限を渡す)。</li><li><strong>HDMIが出力先に出ない</strong>: 音源のカードの構成が「アナログ出力」だけになっている。pavucontrolの「設定」タブで、そのカードの構成を「Digital Stereo (HDMI) Output」等にする。NVIDIA・AMDのGPUのHDMIは、マザーボードの音源とは別のカードとして並ぶ。</li><li><strong>NVIDIAとセキュアブート</strong>: UEFIのセキュアブートが有効だと、DKMSでビルドしたNVIDIAのモジュールは署名を登録(MOK)するまで読み込まれない。インストールの途中か再起動の時に青い「Perform MOK management」の画面が出たら、「Enroll MOK」を選び、インストールの時に決めたパスワードを入れる。分からなければ、UEFIの設定でセキュアブートを切る。</li><li><strong>インストーラをEnglishで進めた時</strong>(BIOSで起動したDebianのテキストのインストーラは「Language:」に日本語が無い。日本語の文字を出せない画面のため。起動メニューの <strong>Graphical install</strong> なら日本語を選べる): メニューやusilicのHELPが英語になるのは、システムの言語(<code>/etc/default/locale</code>)が<code>en_US.UTF-8</code>のままだから。rootで <em>update-locale LANG=ja_JP.UTF-8</em> して、ログインし直す(スクリプトは済ませてある)。時刻は <em>timedatectl set-timezone Asia/Tokyo</em>。既にFcitx 5を一度起動していたら、Mozcは6.のとおり手で足す。</li><li><strong>Ubuntuでホスト名(<code>mpi</code>等)が引けない</strong>: Debianは<code>/etc/resolv.conf</code>にDHCPのドメイン(<code>domain …</code>)が入り、<code>ssh mpi</code>・<code>scp … mpi:</code>がルーターのDNSで<code>mpi.ドメイン</code>として引ける。UbuntuのServer版はsystemd-networkdがDHCPのドメインを使わない設定なので(<code>/etc/resolv.conf</code>が<code>nameserver 127.0.0.53</code>と<code>search .</code>)、IPアドレスを打つしかなかった。スクリプトは<code>/etc/systemd/networkd.conf.d/usilic.conf</code>に<code>[DHCPv4]</code>の<code>UseDomains=yes</code>を置く(再起動の後で<code>resolvectl domain</code>にドメインが出る)。手でするなら同じファイルを作って再起動。</li><li><strong>小説のEPUB(<code>narou2epub</code>)で「ensurepip is not available」</strong>: Debian・Ubuntuは、Pythonのvenvに<code>python3-venv</code>が要る(スクリプトは入れてある)。手で <em>sudo apt-get install python3-venv</em> した後は、そのままもう一度実行すればよい(作りかけのvenvは作り直す)。</li><li><strong>Ubuntuのfirefox</strong>: aptの<code>firefox</code>はsnapを入れる中継ぎのパッケージ。minimizedでsnapdが無い時は <em>apt-get install -y snapd</em> してから。</li><li><strong>有線LANの片方(<code>enp5s0</code>等)が消えた</strong>(2026-11-21、Z390 UDのRealtek RTL8125B): 前の日まで使えていたNICが、Linuxだけで<code>ip a</code>に出なくなった(dmesgにも何も無い)。同じマシンのWindows 11とFreeBSDでは見えていた。Windowsの高速スタートアップ(または休止)で終わると、NICが省電力の状態のまま残り、Linuxのドライバ(r8169)がそこから起こせないことがある。Windowsで <em>powercfg /h off</em> (管理者のコマンドプロンプト)して高速スタートアップを切り、Windowsから「再起動」ではなく「シャットダウン」してから電源を30秒ほど抜く。それでも戻らなければ、別のOS(Windows・FreeBSD等)を一度起動するとNICが初期化し直されて戻ることがある(今回はFreeBSDを起動した後、Linuxでも<code>Link is Up</code>になった。BIOSのFast Bootは元から無効だったので関係なかった)。</li></ul>
 <h3>ビルドだけ(デスクトップが既にある時)</h3>
 <pre><code>sudo apt-get update
 sudo apt-get install -y build-essential libncurses-dev pkg-config \
@@ -262,78 +290,78 @@ make test    # 任意(時間がかかる、上のmacOSの手順5参照)</code></
 <ul><li><span class="item">設定項目名</span></li><li><strong>選択対象のハイライト表示</strong></li><li><code>自分で決めてよい値</code></li><li><em>キー入力</em></li><li>[Enterで選択]</li><li>「表示文字列」</li></ul>
 <p>NVIDIAのGPUを使う例で書いている。AMD・Intelは「3. GPUのドライバ」の表を参照。</p>
 <h3>1. インストーラー</h3>
-<p><span class="item">Welcome</span> -&gt; [Install]</p>
-<p><span class="item">Keymap Selection</span> -&gt; 「Japanese 106」を <em>Space</em> で選ぶ -&gt;<br>
+<p><span class="item">Welcome</span> ＞ [Install]</p>
+<p><span class="item">Keymap Selection</span> ＞ 「Japanese 106」を <em>Space</em> で選ぶ ＞<br>
 一番上の行 <strong>&gt;&gt;&gt; Continue with jp.kbd keymap</strong> で [Select]<br>
 (2行目の「-&gt;- Test default keymap」 は試し打ちだけ)</p>
-<p><span class="item">Set Hostname</span> -&gt; <code>HOST</code> [OK]</p>
-<p><span class="item">Select Installation type</span> -&gt; [Distribution Sets] (従来のtarball、portsとは無関係)</p>
-<p><span class="item">Distribution Select</span> -&gt; 「src」を選ぶ -&gt; [OK]</p>
-<p><span class="item">Network Installation</span> -&gt; [OK]</p>
-<p><span class="item">Network Configuration</span> -&gt; <strong>rge0 RTL8125</strong> (環境による) -&gt; [Auto]</p>
-<p><span class="item">Partitioning</span> -&gt; <strong>Auto (ZFS) Guided Root-on-ZFS</strong> -&gt; [OK]</p>
-<p><span class="item">ZFS Configuration</span> -&gt; 「zroot」 -&gt; [OK] -&gt;<br>
-<strong>&gt;&gt;&gt; Install Proceed with Installation</strong> [Select] -&gt;<br>
-<strong>stripe Stripe - No Redundancy</strong> [OK] -&gt;<br>
-<strong>nda0 Patriot M.2 P300 128GB</strong>（環境による）を選ぶ [OK] -&gt; [YES]</p>
-<p><span class="item">Mirror Selection</span> -&gt; <strong><a href="http://download.freebsd.org">http://download.freebsd.org</a> Main Site</strong> -&gt; [OK]</p>
+<p><span class="item">Set Hostname</span> ＞ <code>HOST</code> [OK]</p>
+<p><span class="item">Select Installation type</span> ＞ [Distribution Sets] (従来のtarball、portsとは無関係)</p>
+<p><span class="item">Distribution Select</span> ＞ 「src」を選ぶ ＞ [OK]</p>
+<p><span class="item">Network Installation</span> ＞ [OK]</p>
+<p><span class="item">Network Configuration</span> ＞ <strong>rge0 RTL8125</strong> (環境による) ＞ [Auto]</p>
+<p><span class="item">Partitioning</span> ＞ <strong>Auto (ZFS) Guided Root-on-ZFS</strong> ＞ [OK]</p>
+<p><span class="item">ZFS Configuration</span> ＞ 「zroot」 ＞ [OK] ＞<br>
+<strong>&gt;&gt;&gt; Install Proceed with Installation</strong> [Select] ＞<br>
+<strong>stripe Stripe - No Redundancy</strong> [OK] ＞<br>
+<strong>nda0 Patriot M.2 P300 128GB</strong>（環境による）を選ぶ [OK] ＞ [YES]</p>
+<p><span class="item">Mirror Selection</span> ＞ <strong><a href="http://download.freebsd.org">http://download.freebsd.org</a> Main Site</strong> ＞ [OK]</p>
 <p><span class="item">Fetching Distribution</span> ...</p>
 <p><span class="item">Archive Extraction</span> ...</p>
-<p><span class="item">Boot Configuration</span> -&gt; [Yes]</p>
-<p><span class="item">Set root password</span> -&gt; Password -&gt; Repeat password -&gt; [OK]</p>
-<p><span class="item">Time Zone Selector</span> -&gt; <strong>5  Asia</strong> -&gt; <strong>20 Japan</strong> -&gt; [OK] -&gt;<br>
-<span class="item">Confirmation</span> -&gt; [Yes]</p>
-<p><span class="item">Time &amp; Date</span> -&gt; [Set Date] (合ってれば [Skip]) -&gt;<br>
+<p><span class="item">Boot Configuration</span> ＞ [Yes]</p>
+<p><span class="item">Set root password</span> ＞ Password ＞ Repeat password ＞ [OK]</p>
+<p><span class="item">Time Zone Selector</span> ＞ <strong>5  Asia</strong> ＞ <strong>20 Japan</strong> ＞ [OK] ＞<br>
+<span class="item">Confirmation</span> ＞ [Yes]</p>
+<p><span class="item">Time &amp; Date</span> ＞ [Set Date] (合ってれば [Skip]) ＞<br>
 [Set Time] (合ってれば [Skip])</p>
-<p><span class="item">System Configuration</span> -&gt; [OK]</p>
-<p><span class="item">System Hardening</span> -&gt; [OK]</p>
+<p><span class="item">System Configuration</span> ＞ [OK]</p>
+<p><span class="item">System Hardening</span> ＞ [OK]</p>
 <p><span class="item">FreeBSD firmware installation</span> ...</p>
-<p><span class="item">Add User Accounts</span> -&gt; [Yes]</p>
+<p><span class="item">Add User Accounts</span> ＞ [Yes]</p>
 <pre class="screen"><code>「FreeBSD Installer
 ========================
 Add Users」</code></pre>
-<p>Username: <code>ABC</code> -&gt;<br>
-Full name: <code>DEF</code> -&gt;<br>
-Uid: (Leave empty for default): -&gt;<br>
-Login group [ABC]: -&gt;<br>
-Login group is ABC Invite ABC into other groups? [] : <em>wheel video operator audio</em><br>
-Login class [default]: -&gt;<br>
-Shell (sh csh tcsh nologin) [sh]: -&gt;<br>
-Home directory [/home/ABC] -&gt;<br>
-Home directory permissions (Leave empty for default): -&gt;<br>
-Enable ZFS encryption? (yes/no) [no] -&gt;<br>
-Use password-based authentication? [yes]: -&gt;<br>
-Use an empty password? (yes/no) [no]: -&gt;<br>
-Use a random password? (yes/no) [no]: -&gt;<br>
-Enter password: <code>GHI</code><br>
-Enter password again: <code>GHI</code><br>
-Lock out the account after creation? [no]: -&gt;</p>
-<pre class="screen"><code>「Username    : ABC
+<p>Username: <code>usilic</code> ＞<br>
+Full name: <code>Yu Silic</code> ＞<br>
+Uid: (Leave empty for default): ＞<br>
+Login group [usilic]: ＞<br>
+Login group is usilic Invite usilic into other groups? [] : <em>wheel video operator audio</em><br>
+Login class [default]: ＞<br>
+Shell (sh csh tcsh nologin) [sh]: ＞<br>
+Home directory [/home/usilic] ＞<br>
+Home directory permissions (Leave empty for default): ＞<br>
+Enable ZFS encryption? (yes/no) [no] ＞<br>
+Use password-based authentication? [yes]: ＞<br>
+Use an empty password? (yes/no) [no]: ＞<br>
+Use a random password? (yes/no) [no]: ＞<br>
+Enter password: <code>U</code><br>
+Enter password again: <code>U</code><br>
+Lock out the account after creation? [no]: ＞</p>
+<pre class="screen"><code>「Username    : usilic
   Password    : *****
-  Full Name   : DEF
+  Full Name   : Yu Silic
   Uid         : 1001
-  ZFS dataset : zroot/home/ABC
+  ZFS dataset : zroot/home/usilic
   Class       :
-  Groups      : ABC wheel video operator audio
-  Home        : /home/ABC
+  Groups      : usilic wheel video operator audio
+  Home        : /home/usilic
   Home Mode   :
   Shell       : /bin/sh
   Locked      : no」</code></pre>
-<p>OK? (yes/no) [yes]: -&gt;<br>
-adduser: INFO: Successfully added (ABC) to the user database.<br>
+<p>OK? (yes/no) [yes]: ＞<br>
+adduser: INFO: Successfully added (usilic) to the user database.<br>
 Add another user? (yes/no) [no]:</p>
-<p><span class="item">Final Configuration</span> -&gt;<br>
-<strong>Finish Apply configuration and exit installer</strong> -&gt; [Select]</p>
-<p><span class="item">Manual Configuration</span> -&gt; [No]</p>
-<p><span class="item">Complete</span> -&gt; [Reboot]</p>
+<p><span class="item">Final Configuration</span> ＞<br>
+<strong>Finish Apply configuration and exit installer</strong> ＞ [Select]</p>
+<p><span class="item">Manual Configuration</span> ＞ [No]</p>
+<p><span class="item">Complete</span> ＞ [Reboot]</p>
 <p class="note">※sshでログイン中にシステムを入れ直した場合は、ログインする側のマシンで <em>ssh-keygen -R &lt;IP&gt;</em> を実行する(ホスト鍵が変わるため)。</p>
 <h3>2.〜8.をスクリプトで進める(2026-11-07)</h3>
 <p>2.〜8.(9.の日本語入力の設定とusilicの起動の前まで)は、<code>tools/setup-freebsd.sh</code>で一度に実行できる。インストーラが終わって再起動し、rootでログインした所(sshでつないでもよい)で:</p>
 <pre class="key"><code>env IGNORE_OSVERSION=yes pkg bootstrap -y &amp;&amp; env IGNORE_OSVERSION=yes pkg install -y git</code></pre>
 <p class="note">※<code>env IGNORE_OSVERSION=yes</code>は、CURRENTでpkgのパッケージが今のシステムより新しい版向け(例: <code>package: 1600030</code>・<code>running userland: 1600029</code>)の時に、「Newer FreeBSD version for package pkg」で止まって<em>Ignore the mismatch and continue? [y/N]</em>と聞かれるのを省くため(-yを付けても聞かれる)。付けずに聞かれたら<em>y</em>でよい。スクリプトの中も同じにしてある。</p>
-<pre class="key"><code>su ABC -c 'git clone https://github.com/haa15030/usilic.git ~/git/usilic'</code></pre>
-<pre class="key"><code>sh ~ABC/git/usilic/tools/setup-freebsd.sh ABC</code></pre>
-<p class="note">※<code>ABC</code>はインストーラで作ったユーザー名。GPUは<code>pciconf -l</code>で見分ける(NVIDIA・AMD・Intel)。違う時やAMDのHD 7000番台以前は、最後に<code>--gpu=nvidia</code>・<code>--gpu=amd</code>・<code>--gpu=radeon</code>・<code>--gpu=intel</code>を足す。コンソールのキーマップがjpならXのキーボードもjp106にし、Caps LockとCtrlを入れ替える(入れ替えない時は<code>--noswapcaps</code>を足す)。後から切り替えるには、rootで<code>/usr/local/etc/X11/xorg.conf.d/keyboard.conf</code>の <em>Option "XkbOptions" "ctrl:swapcaps"</em> の行を消す(入れ替えに戻す時は<code>EndSection</code>の前にその行を足す)。ログインし直すと変わる(スクリプトを実行し直しても、keyboard.confが既にあれば変わらない)。USキーボード等でkeyboard.confが無い時は、後の4.の手順でXkbModel・XkbLayoutの2行を省いて作る。</p>
+<pre class="key"><code>su usilic -c 'git clone https://github.com/haa15030/usilic.git ~/git/usilic'</code></pre>
+<pre class="key"><code>sh ~usilic/git/usilic/tools/setup-freebsd.sh usilic</code></pre>
+<p class="note">※<code>usilic</code>はインストーラで作ったユーザー名。GPUは<code>pciconf -l</code>で見分ける(NVIDIA・AMD・Intel)。違う時やAMDのHD 7000番台以前は、最後に<code>--gpu=nvidia</code>・<code>--gpu=amd</code>・<code>--gpu=radeon</code>・<code>--gpu=intel</code>を足す。コンソールのキーマップがjpならXのキーボードもjp106にし、Caps LockとCtrlを入れ替える(入れ替えない時は<code>--noswapcaps</code>を足す)。後から切り替えるには、rootで<code>/usr/local/etc/X11/xorg.conf.d/keyboard.conf</code>の <em>Option "XkbOptions" "ctrl:swapcaps"</em> の行を消す(入れ替えに戻す時は<code>EndSection</code>の前にその行を足す)。ログインし直すと変わる(スクリプトを実行し直しても、keyboard.confが既にあれば変わらない)。USキーボード等でkeyboard.confが無い時は、後の4.の手順でXkbModel・XkbLayoutの2行を省いて作る。</p>
 <p class="note">※<code>kldload</code>がカーネルとの版のずれで失敗したら(下の注意点)、/usr/srcに合わせてportsからドライバをビルドし、<code>pkg lock</code>する。ドライバが読むファームウェア(RX580なら<code>gpu-firmware-amd-kmod-polaris10</code>)の版のずれも<em>dmesg</em>で見つけて同じようにする(この時は最後に「必ず reboot」と出る)。NVIDIAは、portsでビルドしたカーネルモジュール(<code>nvidia-kmod</code>)がpkgのドライバ本体(<code>nvidia-driver</code>)より新しい版になることがある。版がずれているとXが<code>NVRM: API mismatch</code>で起動しないので、その時は<code>nvidia-driver</code>も同じportsからビルドしてlockする。SDL2のportsからのビルドもあるので、時間がかかる。途中で止まったら、同じコマンドをもう一度実行すれば、済んだ所を飛ばして続きから進む。記録は<code>/var/log/usilic-setup.log</code>。</p>
 <p class="note">※最初の起動で入れるgroff・mg・texinfo・7-zip・w3mも、ここで入れる。</p>
 <p class="note">※終わったら <em>reboot</em> し、9.・10.へ進む。</p>
@@ -341,15 +369,15 @@ Add another user? (yes/no) [no]:</p>
 <h3>2. パッケージ</h3>
 <pre class="screen"><code>「FreeBSD/amd64 (HOST) (ttyv0)
  login: 」</code></pre>
-<p class="note">※ここから先は、別のマシン(Mac等)からsshでつなぐと、この手順書のコマンドをブラウザからコピー&amp;ペーストでき、打ち間違いを避けられる。作ったユーザーでログインして <em>ifconfig | grep broadcast</em> を実行し、「inet」の次の値(例: <code>192.168.1.23</code>)がこのマシンのIPアドレス。別のマシンの端末で <em>ssh <code>ABC</code>@&lt;IP&gt;</em> とつなぎ、以降はそこで続ける(sshdはインストーラのSystem Configurationで既定で有効。無効なら、このマシンのrootで <em>sysrc sshd_enable=YES; service sshd start</em>)。</p>
+<p class="note">※ここから先は、別のマシン(Mac等)からsshでつなぐと、この手順書のコマンドをブラウザからコピー&amp;ペーストでき、打ち間違いを避けられる。作ったユーザーでログインして <em>ifconfig | grep broadcast</em> を実行し、「inet」の次の値(例: <code>192.168.1.23</code>)がこのマシンのIPアドレス。別のマシンの端末で <em>ssh <code>usilic</code>@&lt;IP&gt;</em> とつなぎ、以降はそこで続ける(sshdはインストーラのSystem Configurationで既定で有効。無効なら、このマシンのrootで <em>sysrc sshd_enable=YES; service sshd start</em>)。</p>
 <pre class="key"><code>su -</code></pre>
-<p><em>pkg bootstrap</em> -&gt; <em>y</em></p>
+<p><em>pkg bootstrap</em> ＞ <em>y</em></p>
 <p class="note">※<em>Newer FreeBSD version for package pkg</em>(<code>package: 1600030</code>・<code>running userland: 1600029</code>等)の後に<em>Ignore the mismatch and continue? [y/N]</em>と聞かれたら<em>y</em>。この後のpkgでも同じことを聞かれたら<em>y</em>(省くには、先に <em>export IGNORE_OSVERSION=yes</em> しておく)。</p>
 <pre class="key"><code>pkg update</code></pre>
-<p><em>pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf xfce4-screenshooter-plugin firefox xdg-utils python3</em> -&gt; <em>y</em></p>
+<p><em>pkg install git gmake pkgconf sudo bash sdl2 sdl2_ttf xfce4-screenshooter-plugin firefox xdg-utils python3</em> ＞ <em>y</em></p>
 <p class="note">※firefoxの最後に長いメッセージ(boost・gcc14・libjxl・firefoxの未対応機能等)が出るが、対応が要るものは無い。</p>
-<p><em>pkg install xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa dejavu noto-jp fcitx5 fcitx5-configtool fcitx5-gtk3 fcitx5-qt6 ja-fcitx5-mozc3</em> -&gt; <em>y</em></p>
-<p><em>pkg install mpv pulseaudio pavucontrol xfce4-pulseaudio-plugin dsbmixer</em> -&gt; <em>y</em></p>
+<p><em>pkg install xorg xfce lightdm lightdm-gtk-greeter ja-font-ipa dejavu noto-jp fcitx5 fcitx5-configtool fcitx5-gtk3 fcitx5-qt6 ja-fcitx5-mozc3</em> ＞ <em>y</em></p>
+<p><em>pkg install mpv pulseaudio pavucontrol xfce4-pulseaudio-plugin dsbmixer</em> ＞ <em>y</em></p>
 <p class="note">※動画・音声のプレーヤー(mpv、macOSのIINAの元になったもの)と、音声(pulseaudio、Xfceのパネルの音量のプラグインと、出力先・音量を選ぶpavucontrol、FreeBSDの既定の装置と音量を見るdsbmixer)。パッケージのmpvはOSSにだけ出すので、mpvの出力先は既定の装置で決まる(下の注意点の「音声」)。</p>
 <pre class="key"><code>sysrc dbus_enable=YES lightdm_enable=YES</code></pre>
 <pre class="key"><code>sysrc -f /boot/loader.conf snd_hda_load=YES snd_uaudio_load=YES</code></pre>
@@ -405,18 +433,18 @@ EOF</code></pre>
 <p>NVIDIAの場合は、ウィンドウの合成表示を切る(有効のままだと画面が固まることがある)。</p>
 <pre class="key"><code>xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false</code></pre>
 <p>鍵を作って、公開鍵を表示する。</p>
-<p><em>ssh-keygen -t ed25519</em> -&gt; shプロンプトに戻るまでは <em>Enter</em> のみ</p>
+<p><em>ssh-keygen -t ed25519</em> ＞ shプロンプトに戻るまでは <em>Enter</em> のみ</p>
 <p><em>cat ~/.ssh/id_ed25519.pub</em>(折り返し無しでコピーする)</p>
 <p>firefoxで <em><a href="https://github.com/settings/keys">https://github.com/settings/keys</a></em> へアクセスし、GitHubのアカウントでログインする。アカウントが無ければ作成する。</p>
 <p>New SSH key をクリック</p>
-<p>Title -&gt; <code>任意</code></p>
-<p>Key type -&gt; そのまま</p>
-<p>Key -&gt; 先ほどコピーした公開鍵をペースト</p>
+<p>Title ＞ <code>任意</code></p>
+<p>Key type ＞ そのまま</p>
+<p>Key ＞ 先ほどコピーした公開鍵をペースト</p>
 <p>Authentication keys の欄に、Titleの公開鍵が登録されていることを確かめる。</p>
 <p class="note">※リポジトリが非公開の間だけ必要な手順。</p>
 <h3>8. usilicのビルド</h3>
 <p>Terminalで実行する。</p>
-<p><em>ssh -T git@github.com</em> -&gt; 初回は <em>yes</em>(Hi ...! と出ればよい)</p>
+<p><em>ssh -T git@github.com</em> ＞ 初回は <em>yes</em>(Hi ...! と出ればよい)</p>
 <pre class="key"><code>mkdir git</code></pre>
 <pre class="key"><code>cd git</code></pre>
 <pre class="key"><code>git clone -b mpi-gui-fix git@github.com:haa15030/usilic.git</code></pre>
@@ -430,10 +458,10 @@ EOF</code></pre>
 <p class="note">※bashをログインシェルにするなら <em>chsh -s /usr/local/bin/bash</em>。bashは~/.bash_profileがあれば~/.profileを読まないので、その時だけ次も実行する。</p>
 <pre class="key"><code>echo 'PATH=$HOME/.local/bin:$PATH; export PATH' &gt;&gt; ~/.bash_profile</code></pre>
 <h3>9. 日本語入力の設定</h3>
-<p>アプリケーション -&gt; 設定 -&gt; Fcitx5 設定</p>
-<p>「入力メソッド」に Mozc があることを確かめる。無ければ追加して「適用」。一覧に出なければ「現在の言語のみ表示」のチェックを外す。 -&gt; 「閉じる」</p>
+<p>アプリケーション ＞ 設定 ＞ Fcitx5 設定</p>
+<p>「入力メソッド」に Mozc があることを確かめる。無ければ追加して「適用」。一覧に出なければ「現在の言語のみ表示」のチェックを外す。 ＞ 「閉じる」</p>
 <h3>10. usilicの起動</h3>
-<p>アプリケーション -&gt; アクセサリー -&gt; usilic をクリックする。</p>
+<p>アプリケーション ＞ アクセサリー ＞ usilic をクリックする。</p>
 <p class="note">※アクセサリーにusilicが無い時だけ、XfceのTerminalでパネルを再起動してから選ぶ(ログインした後で <em>gmake install</em> したusilicがメニューに出ないことがある。2026-11-07のi5-7500では再起動しなくても出ていた)。</p>
 <pre class="key"><code>xfce4-panel -r</code></pre>
 <p>usilicが開いたら、「usilic-1.5b:~$ sudo pkg install -y groff mg texinfo 7-zip w3m」で <em>Enter</em></p>
@@ -441,7 +469,8 @@ EOF</code></pre>
 <h3>注意点</h3>
 <p>以下は上の表記の区別とは別で、<code>`</code> はコマンドやファイル名を表す。</p>
 <p><strong>インストールとパッケージ</strong></p>
-<ul><li><code>pkg install</code>の<code>firefox</code>の最後に長いメッセージ(boost・gcc14・libjxl・firefoxの未対応機能等)が出るが、対応が要るものは無い。</li><li><code>python3</code>はEPUBのリンクのEpub(narou2epub)・Pdf(url2pdf)に要る。そのほかの準備はHELPのnarou2epub・url2pdfの所。</li><li>最初の起動のインストールの案内で入らなかったものは、次の起動でもう一度だけ実行し、その後はモードラインに「見つかりません」と出すだけなので、手で入れる。</li><li><code>su</code>はwheelグループのユーザーだけ。インストーラで入れなかったユーザーは<code>pw groupmod wheel -m ユーザー名</code>。</li><li><code>noto-jp</code>は-cの表示に要る(無いと端末で豆腐になる字がある)。入れた後はログインし直す。</li></ul>
+<ul><li><code>pkg install</code>の<code>firefox</code>の最後に長いメッセージ(boost・gcc14・libjxl・firefoxの未対応機能等)が出るが、対応が要るものは無い。</li><li><code>python3</code>はEPUBのリンクのEpub(narou2epub)・Pdf(url2pdf)に要る。そのほかの準備はHELPのnarou2epub・url2pdfの所。</li><li>最初の起動のインストールの案内で入らなかったものは、次の起動でもう一度だけ実行し、その後はモードラインに「見つかりません」と出すだけなので、手で入れる。</li><li><code>su</code>はwheelグループのユーザーだけ。インストーラで入れなかったユーザーは<code>pw groupmod wheel -m ユーザー名</code>。</li><li><code>noto-jp</code>は-cの表示に要る(無いと端末で豆腐になる字がある)。入れた後はログインし直す。</li><li>USBでつないだディスク(外付けのSSD等)にUFSで入れると、再起動で<code>Root mount waiting for: usbus0</code>の後に<code>mountroot&gt;</code>で止まることがある(2026-11-21、16.0-CURRENT、RealtekのUSB変換(RTL9210)のケースで実際に)。インストーラは<code>/etc/fstab</code>に<code>/dev/da2p5</code>のような装置の名前で書くが、<code>da</code>の番号は挿さっているUSB機器の数で変わる(インストールの時はインストーラのUSBメモリ等もあって<code>da2</code>、再起動の後は<code>da1</code>だった)。<code>mountroot&gt;</code>で <em>?</em> を打つと見えている名前が出るので、<em>ufs:/dev/da1p5</em> のように答えれば起動する(<code>nda1</code>のような内蔵のNVMeの区画を指定しても、<code>unknown file system</code>等で起動しない)。起動したら、区画に名前(GPTのラベル)を付けて、番号の代わりにそれで指定する(LinuxのfstabのUUID=にあたる。FreeBSDでは<code>/dev/gpt/ラベル</code>・<code>/dev/gptid/UUID</code>・<code>/dev/ufsid/ID</code>がある):
+<ul><li><em>gpart modify -i 5 -l fbsdroot da1</em> と <em>gpart modify -i 1 -l efiboot da1</em>(<code>-i</code>は区画の番号、<code>da1</code>はその時の名前。EFI区画はほかのOSと共用でも、ラベルを付けて差し支えない。<code>Operation not permitted</code>なら先に <em>sysctl kern.geom.debugflags=16</em>)</li><li><code>/etc/fstab</code>の<code>/dev/da2p5</code>を<code>/dev/gpt/fbsdroot</code>に、<code>/dev/da2p1</code>を<code>/dev/gpt/efiboot</code>に書き換える。</li><li><code>/boot/loader.conf</code>に<code>vfs.root.mountfrom="ufs:/dev/gpt/fbsdroot"</code>と<code>kern.cam.boot_delay="10000"</code>(USBのディスクが見えるまで待つ)を足す。</li><li>ZFSで入れればプールの名前で探すので、この問題は起きない。</li></ul></li></ul>
 <p><strong>GPUと画面</strong></p>
 <ul><li>再起動の前に<code>kldload</code>が何も言わずに戻ればカーネルと合っている(AMDはコンソールの文字が細かくなる。Intelはi5-7500では変わらなかった)。CURRENTで失敗するならportsからビルドする(3.の※、インストーラのDistribution Selectで<code>src</code>を入れておく)。2026-11-07、i5-7500ではpkgの<code>drm-612-kmod</code>が<code>1600030</code>向け、カーネルが<code>1600029</code>で読み込めず、Xが<code>/dev/dri/card0</code>を開けずに<code>Cannot run in framebuffer mode</code>で止まり、<code>login:</code>のままだった。</li><li>このカーネルとドライバの版のずれは、GPUの種類によらない(AMDのamdgpuもIntelのi915kmsも同じ<code>drm-kmod</code>のパッケージで、ファームウェアの<code>gpu-firmware-*-kmod</code>、NVIDIAの<code>nvidia-driver</code>もカーネルのモジュール)。インストールした日のスナップショットとpkgの組み合わせで決まるので、RX580で一度動いても、別の日のスナップショットで入れ直した時や、カーネルはそのままで<code>pkg upgrade</code>した後の再起動で起きうる。3.の※のビルドの後で<code>pkg lock</code>しておけば、<code>pkg upgrade</code>でのずれは避けられる(ビルドしていなくても、動いているうちに<code>pkg lock -y drm-612-kmod</code>しておいてよい)。NVIDIAは<code>pkg lock -y nvidia-driver</code>。カーネルのモジュールが別のパッケージ(<code>nvidia-kmod</code>等、<code>pkg info -d nvidia-driver</code>で分かる)なら一緒にロックする(ドライバ本体とモジュールの版が違うと動かないので、片方だけにしない)。drm系はユーザーを<code>video</code>グループに入れる。</li><li>ログインできず<code>login:</code>のままなら、<code>/var/log/lightdm/x-0.log</code>と<code>/var/log/Xorg.0.log</code>を見る。<code>keyboard.conf</code>の書き間違いや、<code>kld_list</code>の設定漏れでXが起動しない(2026-11-05に実際に両方)。</li><li>NVIDIAでウィンドウの合成表示が有効だと、xfwm4が<code>glXBindTexImageEXT</code>で止まり、画面が固まることがある(RTX 3050・ドライバ595.112.07、2026-11-05。引き金は未特定)。マウスカーソルだけ動く状態になったら、sshから<code>pkill -9 xfwm4</code>で戻る。合成表示を切る<code>xfconf-query</code>はsshからでは届かないので、XfceのTerminalで実行する。</li><li>端末に重ねる-gはmacOSだけ(Linux・FreeBSDは重ねない、ユーザー判断2026-10-31)。</li><li>IntelのiGPU(i5-4570SのHaswell、2026-11-13)では、GTK4のアプリ(pavucontrol等)を開くと固まり、<em>kill -9</em> でも止まらず(<em>ps</em> で<code>R</code>のままCPU99%)、<em>dmesg</em> に<code>lkpi_vmf_insert_pfn_prot_locked: page rename failed: page is mapped</code>が並ぶ。GTK4がGPUで描く所でdrm-kmod(linuxkpi)の不具合を踏んでいる(<em>procstat -kk PID</em> で<code>vm_fault</code>→<code>lkpi_vmf_insert_pfn_prot_locked</code>)。そのプロセスは再起動しないと消えない。<code>~/.xprofile</code>に<code>export GSK_RENDERER=cairo</code>を書いてGPUを使わずに描かせる(スクリプトは<code>--gpu=intel</code>の時に書く)。固まったpavucontrolが残っていると、次からは「Failed to register: タイムアウトしました」で開かない(同時に1つしか起動しない作りのため)。</li><li>mpvの「ioctl(I915_GEM_USERPTR) failed. Try running as root but expect poor stability.」は、IntelのiGPUで映像をGPUで描く時の警告で、映像は出る(rootで動かす必要は無い)。固まるようなら <em>mpv --vo=x11</em>(<code>~/.config/mpv/mpv.conf</code>に<code>vo=x11</code>)。</li></ul>
 <p><strong>別のマシンへディスクを付け替えた時(2026-11-13)</strong></p>
